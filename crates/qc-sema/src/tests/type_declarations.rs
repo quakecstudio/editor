@@ -1033,3 +1033,11 @@ fn arrays_of_functions_are_checked() {
     );
     assert_eq!(errors("void() g = [1, g] {};", &[]), []);
 }
+
+// spec FTEF-15.9: with `qcfuncs` off `(name)` after a function type is a QC parameter list, which
+// leaves the typedef no name
+#[test]
+fn a_parenthesised_name_needs_qcfuncs() {
+    assert_eq!(errors("typedef void() (fn); fn g;", &[]), [Code::E0211]);
+    assert!(!errors("#pragma flag disable qcfuncs\ntypedef void() (fn);", &[]).is_empty());
+}

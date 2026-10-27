@@ -355,6 +355,8 @@ pub(crate) struct Parser<'a> {
     recovering: bool,
     /// Whether the type last read had a `*` or a parameter list after its base.
     type_derived: bool,
+    /// How many parameter lists the declaration's type last read took (FTEF-18.15).
+    type_lists: usize,
     /// Whether the member just read is a bitfield, which a `,` does not go on with.
     after_bitfield: bool,
     /// Whether the struct member being read is `static` or `virtual`, a global of the struct's
@@ -435,6 +437,7 @@ impl<'a> Parser<'a> {
             in_typedef: false,
             recovering: false,
             type_derived: false,
+            type_lists: 0,
             after_bitfield: false,
             member_global: false,
             member_function: false,
@@ -1555,6 +1558,11 @@ impl<'a> Parser<'a> {
         // so a type may stand alone, an enum's or a struct's in a body among them; a class's
         // member is `QCC_PR_ParseEntClass`'s, which needs a name (FTEF-9.4).
         if self.fteqcc() && site != Site::Member && self.at(K::Semicolon) {
+            // FTEF-18.36: with `qcfuncs` on `QCC_PR_ParseType` takes one parameter list; a
+            // further one is the declarator's, which then needs a name.
+            if self.type_lists > 1 && self.flag_ahead(0, FteFlag::Qcfuncs) {
+                self.error(Code::E0201, "\";\" - not a name");
+            }
             self.bump();
             return;
         }
@@ -1702,6 +1710,12 @@ impl<'a> Parser<'a> {
         while self.fteqcc() && self.at(K::LParen) {
             levels = levels.saturating_add(1);
             if !self.enter() {
+                break;
+            }
+            // FTEF-15.9: `(name)` after a function type.
+            if ty.function && self.at_parenthesised_name() {
+                self.bump();
+                pointer = true;
                 break;
             }
             if self.nth(1).is_some_and(|t| t.kind == K::Star) {
@@ -2123,6 +2137,21 @@ impl<'a> Parser<'a> {
             local: self.bodies > 0,
             function,
         });
+    }
+
+    /// Whether the token `n` ahead names a type the program declared, in any case under
+    /// `caseinsens` (FTEF-19.33).
+    pub(super) fn declared_type(&self, n: usize) -> bool {
+        let any_case = self.any_case(n);
+        self.nth(n).is_some_and(|tok| {
+            self.types.iter().any(|t| {
+                if any_case {
+                    t.name.eq_ignore_ascii_case(&tok.text)
+                } else {
+                    t.name == tok.text
+                }
+            })
+        })
     }
 
     /// Whether the token `n` ahead names a declared type of function type, in any case under

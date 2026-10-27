@@ -177,9 +177,12 @@ impl Resolver<'_> {
         {
             return Found::Error(Code::E0203, format!("\"{prefix}\" is not a type"));
         }
-        // FTEF-6.11: a struct's members are reached through a value, never as `Struct::name`.
+        // FTEF-6.11: a struct's members are reached through a value, never as `Struct::name`,
+        // but its `static` members are the globals `Struct::name` (FTEF-6.16).
         if class.is_none() && self.struct_defs.contains_key(&self.type_key(prefix)) {
-            return Found::Unknown;
+            return self
+                .lookup_global(&format!("{prefix}::{name}"))
+                .map_or(Found::Unknown, Found::Def);
         }
         if let Some(class) = class
             && let Some(def) = self.member_in(class, name)

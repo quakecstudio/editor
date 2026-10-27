@@ -316,3 +316,20 @@ fn a_scoped_member_name_is_the_member() {
         assert_eq!(messages(source), [], "{source}");
     }
 }
+
+// spec FTEF-9.19: a vector data member has its components' fields, an array of vectors none
+#[test]
+fn a_vector_member_has_component_fields() {
+    assert_eq!(
+        messages("class C { vector v; }; C c; void() g = { c.v_x = 1; c.v_y = 2; };"),
+        []
+    );
+    assert_eq!(
+        messages("class C { vector v; }; C c; void() g = { c.v_w = 1; };"),
+        one(Code::E0319, "Unknown field \"v_w\" in class \"C\"")
+    );
+    assert_eq!(
+        messages("class C { vector v[2]; }; C c; void() g = { c.v_x = 1; };"),
+        one(Code::E0319, "Unknown field \"v_x\" in class \"C\"")
+    );
+}

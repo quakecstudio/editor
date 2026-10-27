@@ -167,3 +167,29 @@ fn a_struct_cast_names_the_struct() {
         [d(Code::E0213, "Cannot cast from struct S to float")]
     );
 }
+
+// spec FTEF-6.16: a struct's static member is the global `S::NAME`, and an array of structs has
+// only its length
+#[test]
+fn a_struct_static_member_is_a_global() {
+    assert_eq!(
+        messages("struct S { static float a; float b; }; void() g = { S::a = 1; };"),
+        []
+    );
+    assert_eq!(
+        messages("struct S { static float a; float b; }; float x = S::a;"),
+        [d(Code::E0214, "initializer for 'x' is not constant")]
+    );
+    assert_eq!(
+        messages("struct S { float b; }; void() g = { S::b = 1; };"),
+        [d(Code::E0301, "Unknown value \"S::b\"")]
+    );
+    assert_eq!(
+        messages("struct S { float a; }; void() g = { local S x[2]; local float n = x.length; };"),
+        []
+    );
+    assert_eq!(
+        messages("struct S { float a; }; S x[2]; void() g = { local float n = x.a; };"),
+        [d(Code::E0204, "expected length, found a")]
+    );
+}

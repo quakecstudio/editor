@@ -1037,7 +1037,8 @@ pub(super) fn lower_declarators(
         // FTEF-4.1, FTE-17.1, FTEF-21.7: the declarator's `*`s and parameter lists.
         let ty = declarator_type(base, &declarator, cx);
         let init = declarator.initializer();
-        pointer_var |= declarator.pointer_form().is_some();
+        // `isvar |= isptr>0`: a parenthesised name with no `*` is no pointer (FTEF-15.9).
+        pointer_var |= declarator.pointer_form().is_some_and(|stars| stars > 0);
         let mut raw = RawDecl::new(name, span, ty.clone());
         raw.pointer_var = pointer_var;
         // FTEF-21.11: `flag_assumevar` as `QCC_PR_ParseDefs` reads it, after the `=`.

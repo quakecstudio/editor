@@ -17,7 +17,9 @@ use crate::lower::{
     MemberBase, MemberKind, MemberStorage, Qualification, RawClass, RawDecl, RawMember, RawUse,
     top_level_kind,
 };
-use crate::resolve::{ClassInfo, Found, MAX_CLASS_DEPTH, Pending, Resolver, Scope, StructMatch};
+use crate::resolve::{
+    COMPONENTS, ClassInfo, Found, MAX_CLASS_DEPTH, Pending, Resolver, Scope, StructMatch,
+};
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
 
@@ -251,6 +253,9 @@ impl<'a> Resolver<'a> {
                 if constant && let Some(facts) = self.facts.get_mut(id.0) {
                     facts.constant = true;
                 }
+                if kind == DefKind::Field && member.array.is_none() {
+                    self.declare_component_fields(def, member, location);
+                }
                 // FTEF-31.2: a member array is an array of fields, indexed by its length.
                 if let Some(size) = &member.array
                     && let Some(facts) = self.facts.get_mut(id.0)
@@ -344,6 +349,31 @@ impl<'a> Resolver<'a> {
                 location,
                 format!("Parent class changed on redeclaration of {name}"),
             );
+        }
+    }
+
+    /// FTEF-9.19: a vector data member is a `.vector` field, which has its components' fields
+    /// too, `NAME_x`, `NAME_y` and `NAME_z`, members of the class `def`.
+    fn declare_component_fields(&mut self, def: DefId, member: &RawMember, location: Location) {
+        if self.resolved(&member.ty) != Type::Simple(SimpleType::Vector) {
+            return;
+        }
+        for suffix in COMPONENTS {
+            let component = format!("{}{suffix}", member.name);
+            let id = self.push_def(Definition {
+                name: component.clone(),
+                ty: Type::Simple(SimpleType::Float),
+                kind: DefKind::Field,
+                location,
+                owner: None,
+                initialized: false,
+                member_of: Some(def),
+                generated: true,
+            });
+            if let Some(info) = self.classes.get_mut(&def) {
+                info.members.entry(component.clone()).or_insert(id);
+            }
+            self.any_member.entry(component).or_insert(id);
         }
     }
 

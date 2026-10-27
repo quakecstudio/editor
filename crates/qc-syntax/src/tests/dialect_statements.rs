@@ -507,3 +507,36 @@ fn field_of_field_parses() {
         Some(ast::Stmt::Local(_))
     ));
 }
+
+// spec FTEF-15.9: `(name)` after a function type is the declarator's parenthesised name
+#[test]
+fn a_parenthesised_name_after_a_function_type() {
+    assert!(fte_codes("typedef void() (fn);\nfn g;\n").is_empty());
+    assert!(fte_codes("typedef float() (fn); fn g = { return 1; };\n").is_empty());
+    assert!(fte_codes("void() (g) = {};\n").is_empty());
+    assert!(fte_codes("void() (g), (h);\n").is_empty());
+    let parsed = fte_ok("void() (g) = {};\n");
+    let names: Vec<String> = parsed
+        .tree()
+        .unwrap()
+        .declarations()
+        .filter_map(|d| d.declarators().next())
+        .filter_map(|d| d.name().map(|t| t.text_lossless()))
+        .collect();
+    assert_eq!(names, ["g"]);
+}
+
+// spec FTEF-15.9: before a type's name `(name)` is a parameter list
+// spec FTEF-18.36: a further parameter list after a type's is the declarator's, which needs a
+// name
+#[test]
+fn a_further_parameter_list_needs_a_name() {
+    assert!(fte_codes("void();\n").is_empty());
+    for source in [
+        "void()();\n",
+        "void() (float);\n",
+        "typedef float t; void() (t);\n",
+    ] {
+        assert!(fte_codes(source).contains(&Code::E0201), "{source}");
+    }
+}

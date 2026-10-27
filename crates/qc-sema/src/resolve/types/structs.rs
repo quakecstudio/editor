@@ -9,7 +9,7 @@
 use qc_diag::Code;
 
 use crate::check::StructMemberFacts;
-use crate::lower::{MemberBase, RawStruct, StructMember};
+use crate::lower::{MemberBase, RawStruct, StructMember, top_level_kind};
 use crate::resolve::{ComparedMember, MAX_CLASS_DEPTH, Resolver, Scope, StructDef, StructMatch};
 use crate::symbol::{FileId, Location};
 use crate::ty::Type;
@@ -124,6 +124,21 @@ impl<'a> Resolver<'a> {
         }
         let members: Vec<&StructMember> = st.members.iter().collect();
         self.check_struct_members(file, location, st, &members);
+        // FTEF-6.16: "static members are technically just funny-named globals", `S::NAME`.
+        if let Some(owner) = name {
+            for member in st.members.iter().filter(|m| m.is_static) {
+                let global = format!("{owner}::{}", member.name);
+                let at = self.at(file, member.span);
+                let kind = top_level_kind(&member.ty);
+                self.declare_global(
+                    &global,
+                    &member.ty,
+                    kind,
+                    at,
+                    member.initialized.then_some(None),
+                );
+            }
+        }
         // `oldparm = QCC_PR_FindStructMember(newt, parmname, &ofs, &bitofs)`: a member the
         // parent has with the name and type is the parent's, not counted, so a body of such
         // members alone "has no members" (FTEF-6.7).
@@ -345,6 +360,10 @@ impl<'a> Resolver<'a> {
         }) else {
             return StructMatch::NotStruct;
         };
+        // FTE-13: an array's member is its `length`, no member of its elements' struct.
+        if self.facts.get(def.0).is_some_and(|f| f.array.is_some()) {
+            return StructMatch::NotStruct;
+        }
         let Some(Type::Named(type_name)) = self.index.def(def).map(|d| self.resolved(&d.ty)) else {
             return StructMatch::NotStruct;
         };

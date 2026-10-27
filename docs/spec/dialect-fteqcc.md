@@ -385,6 +385,12 @@ inheritance, bitfields and nested members.
   fatal error `E0353` "ptr-to-bitfld has unsupported bit depth". A pointer to `__int8`,
   `__uint8`, `__int16` or `__uint16` is read by the same loads (FTEF-27.10), its index made an
   integer first and 0 when there is none.
+- **FTEF-6.16** A struct's `static` member is no member but the global `STRUCT::NAME` of its
+  type ("static members are technically just funny-named globals", `QCC_PR_GetDef(type,
+  membername, ...)`, a constant only for a function), so `S::a = 1;` stores it, `float x = S::a;`
+  is "initializer for 'x' is not constant", and `S::b` of an instance member is "Unknown value
+  \"S::b\"". An array's only member is `length` (FTE-13), its elements' struct's members none, so
+  `x.length` of an array of structs is its length and `x.a` "expected length, found a".
 - **FTEF-6.14** A struct or union read through a pointer is read word by word
   (`QCC_LoadFromPointer`, `case ev_struct: case ev_union:`): `OP_LOADP_V` for each three of its
   words and `OP_LOADP_I` for each word after them, each a `QCC_PR_SimpleStatement`, which
@@ -636,6 +642,10 @@ heavily class-based (547 `class` declarations across the three mods).
   (`if (isvirt+isnonvirt+isstatic != 1)`). A member function, virtual or not, that nothing
   defines is "function CLASS::NAME has no body" (FTEF-19.41), by the name it is defined as; an
   array of member functions is an array of fields and is not reported.
+- **FTEF-9.19** A class's `vector` data member, no array, is a `.vector` field, which has its
+  components' fields too, `NAME_x`, `NAME_y` and `NAME_z` (`QCC_PR_GetDef` of a vector field
+  makes them), so `c.v_x = 1;` stores one and `c.v_w` is "Unknown field \"v_w\" in class \"C\"";
+  a `vector v[2]` member has none.
 - **FTEF-9.18** A `static` or `const` data member is the global `CLASS::NAME` of its type, no
   field, a `const` one a constant (`GDF_CONST`), and `CLASS::NAME` names a member through the
   class (`QCC_PR_GetDef` of `CLASS::NAME`): a data member that is no global is the field, of
@@ -2104,6 +2114,14 @@ declares parameters without names or with `optional` and `__out`.
   `void() f = #5, ;` and `void() g, f = #5,;` declare `f` the builtin 5, as the pinned FTEQCC
   compiles them, and so does `#define E(...) #5 __VA_ARGS__` used as `E(, )` (FTEF-14.26);
   `void() f = #5, , ;` is refused, a `,` being no name. The vanilla parser is unchanged.
+- **FTEF-15.9** With `qcfuncs` on, after a function type, `(name)` followed by `;`, `=`, `,` or
+  `[`, `name` no type, is C's parenthesised name: `QCC_PR_ParseDefs` tries
+  `QCC_PR_ParseFunctionType` after the `(`, which finds no type there, and its C-style branch
+  reads the name with no `*` (`isvar |= isptr>0`, so no variable). So `typedef void() (fn);` and
+  `typedef float() (fn);` define `fn` a function type, `void() (g) = {};` defines `g`, and
+  `void() (g), (h);` declares two functions with no body. With `qcfuncs` off the list is a QC
+  parameter list and the declarator has no name, `";" - not a name`, as it has for a type's name
+  (`typedef float t; void() (t);`).
 
 ## FTEF-16 Statements and expressions
 
@@ -2542,6 +2560,10 @@ against FTEQCC.
   are read, and the labels of its block are those of the statement. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseStatement`.
+- **FTEF-18.36** With `qcfuncs` on, `QCC_PR_ParseType` takes one parameter list after a type;
+  a further one is `QCC_PR_ParseDefs`'s (`while(QCC_PR_CheckToken ("("))`), and the declarator it
+  starts then needs a name (`name = QCC_PR_ParseName ()`): `void()();` and `void() (float);` are
+  the error `E0201` `";" - not a name`, and `void();` declares nothing.
 - **FTEF-18.34** This profile's error recovery (QCD-1.4) ends the body of a struct, class,
   accessor, `switch` or function at a declaration line, a token at column 0 that has a
   declaration's shape or is one of `typedef`, `class`, `accessor`, `enum`, `enumflags`, `struct`
