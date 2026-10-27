@@ -147,3 +147,36 @@ fn initialised_globals_fold() {
         ]
     );
 }
+
+// spec FTEF-26.3: the 64-bit and double conversions of a constant fold, warning of a fraction
+// lost or bits a float cannot hold; a whole value folds with no warning
+#[test]
+fn wide_conversions_fold() {
+    let cases = [
+        (
+            "__int64 x; void() g = { x = 1.5; };\n",
+            "Numerical overflow. 1.500000 will be rounded to 1",
+        ),
+        (
+            "__uint64 x; void() g = { x = -1.5; };\n",
+            "Numerical overflow. -1.500000 will be rounded to 0",
+        ),
+        (
+            "float f; void() g = { f = 16777217l; };\n",
+            "Numerical truncation of 0x1000001 to 0x1000000.",
+        ),
+        (
+            "__double d; void() g = { d = 9007199254740993l; };\n",
+            "Numerical truncation of 0x20000000000001 to 0x20000000000000.",
+        ),
+    ];
+    for (source, message) in cases {
+        assert_eq!(
+            diags(source),
+            [(Code::W0234, message.to_owned())],
+            "{source}"
+        );
+    }
+    assert_eq!(diags("__int64 x; void() g = { x = 1; };\n"), []);
+    assert_eq!(diags("__uint64 x; void() g = { x = 1; };\n"), []);
+}

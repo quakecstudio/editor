@@ -16,6 +16,7 @@
     reason = "test code: a failed unwrap, expect, panic or index is a failed test"
 )]
 
+mod assignments;
 mod casts;
 mod comparisons;
 mod definitions;

@@ -231,6 +231,21 @@ pub enum Code {
     E0320,
     /// "strcmp function not defined: cannot emulate string<=>string" (QCD-4.27).
     E0321,
+    /// "Assignment to post-inc result", "postincrement: lhs is readonly" and "postdecrement: lhs is
+    /// readonly" (QCD-4.28).
+    E0322,
+    /// "Type mismatch on assignment. A OP B is not supported" (QCD-4.29).
+    E0323,
+    /// "Implicit type mismatch on assignment to NAME. Needed A, got B." (QCD-4.30).
+    E0324,
+    /// "left operand must be an l-value (did you mean NAME[0]?)" (QCD-4.31).
+    E0325,
+    /// "void* maths was disabled.", "pointer* maths was disabled on this type.", "pointer sizes
+    /// were marked as undefined." and "Making assumptions about pointer sizes was blocked."
+    /// (QCD-4.32).
+    E0326,
+    /// "incompatible pointer types" (QCD-4.33).
+    E0327,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -400,6 +415,12 @@ pub enum Code {
     W0239,
     /// "'OP' type mismatch: A with B" (QCD-7.82).
     W0240,
+    /// "Assignment to const" and "Assignment to constant NAME" (QCD-7.83).
+    W0241,
+    /// "suggest parenthesis for assignment used as truth value" (QCD-7.84).
+    W0242,
+    /// "Implicit type mismatch on assignment to NAME. Needed A, got B." with `lax` on (QCD-7.85).
+    W0243,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -414,7 +435,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 187] = [
+    pub const ALL: [Self; 196] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -518,6 +539,12 @@ impl Code {
         Self::E0319,
         Self::E0320,
         Self::E0321,
+        Self::E0322,
+        Self::E0323,
+        Self::E0324,
+        Self::E0325,
+        Self::E0326,
+        Self::E0327,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -597,6 +624,9 @@ impl Code {
         Self::W0238,
         Self::W0239,
         Self::W0240,
+        Self::W0241,
+        Self::W0242,
+        Self::W0243,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -745,6 +775,9 @@ impl Code {
             Self::W0238 => "W0238",
             Self::W0239 => "W0239",
             Self::W0240 => "W0240",
+            Self::W0241 => "W0241",
+            Self::W0242 => "W0242",
+            Self::W0243 => "W0243",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -772,6 +805,12 @@ impl Code {
             Self::E0319 => "E0319",
             Self::E0320 => "E0320",
             Self::E0321 => "E0321",
+            Self::E0322 => "E0322",
+            Self::E0323 => "E0323",
+            Self::E0324 => "E0324",
+            Self::E0325 => "E0325",
+            Self::E0326 => "E0326",
+            Self::E0327 => "E0327",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -870,6 +909,9 @@ impl Code {
             | Self::W0238
             | Self::W0239
             | Self::W0240
+            | Self::W0241
+            | Self::W0242
+            | Self::W0243
             | Self::W0402 => false,
             Self::E0101
             | Self::E0102
@@ -990,6 +1032,12 @@ impl Code {
             | Self::E0319
             | Self::E0320
             | Self::E0321
+            | Self::E0322
+            | Self::E0323
+            | Self::E0324
+            | Self::E0325
+            | Self::E0326
+            | Self::E0327
             | Self::E0408 => true,
         }
     }

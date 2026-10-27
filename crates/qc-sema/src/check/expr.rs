@@ -12,6 +12,7 @@ use qc_diag::{Code, Span};
 use qc_preproc::FteFlag;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 
+use crate::check::assign::assign_spelling;
 use crate::check::constant::Constant;
 use crate::check::convert::{Choice, Operand, choose_opcode};
 use crate::check::emulate::conversion_opcodes;
@@ -25,6 +26,9 @@ use crate::ty::{SimpleType, Type};
 pub(super) struct Checker<'e> {
     pub(super) env: &'e mut dyn Env,
     types: HashMap<(usize, usize), Type>,
+    /// Whether the checker is in a condition of `if`, `while` or `do`, outside parentheses
+    /// (FTEQCC's `conditional`).
+    pub(super) in_condition: bool,
 }
 
 /// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which nothing more of the
@@ -40,6 +44,7 @@ impl<'e> Checker<'e> {
         Self {
             env,
             types: HashMap::new(),
+            in_condition: false,
         }
     }
 
@@ -64,23 +69,28 @@ impl<'e> Checker<'e> {
             ast::Stmt::Expr(s) => self.value_of(s.expr())?,
             ast::Stmt::Return(s) => self.value_of(s.value())?,
             ast::Stmt::If(s) => {
-                self.value_of(s.condition())?;
+                self.condition(s.condition())?;
                 self.statement_of(s.then_branch());
                 self.statement_of(s.else_branch());
             }
             ast::Stmt::While(s) => {
-                self.value_of(s.condition())?;
+                self.condition(s.condition())?;
                 self.statement_of(s.body());
             }
             ast::Stmt::Do(s) => {
                 self.statement_of(s.body());
-                self.value_of(s.condition())?;
+                self.condition(s.condition())?;
             }
             ast::Stmt::Loop(s) => self.statement_of(s.body()),
             ast::Stmt::For(s) => {
+                let condition = s.condition();
                 for clause in s.clauses() {
                     for expr in clause.children().filter_map(ast::Expr::cast) {
-                        self.expr(&expr)?;
+                        if condition.as_ref() == Some(&clause) {
+                            self.condition(Some(expr))?;
+                        } else {
+                            self.expr(&expr)?;
+                        }
                     }
                 }
                 self.statement_of(s.body());
@@ -114,6 +124,15 @@ impl<'e> Checker<'e> {
         }
     }
 
+    /// A condition of `if`, `while`, `do` or `for`: an assignment at its top, outside
+    /// parentheses, is "suggest parenthesis" (FTEF-29.6).
+    fn condition(&mut self, expr: Option<ast::Expr>) -> Result<(), Fatal> {
+        self.in_condition = true;
+        let checked = self.value_of(expr);
+        self.in_condition = false;
+        checked
+    }
+
     fn value_of(&mut self, expr: Option<ast::Expr>) -> Result<(), Fatal> {
         if let Some(expr) = expr {
             self.expr(&expr)?;
@@ -131,12 +150,20 @@ impl<'e> Checker<'e> {
         let value = match expr {
             ast::Expr::Literal(literal) => self.literal(literal),
             ast::Expr::Name(name) => self.name(name),
-            ast::Expr::Paren(paren) => self.expr_of(paren.expr())?,
-            ast::Expr::Binary(binary) => self.binary(binary)?,
+            ast::Expr::Paren(paren) => {
+                let in_condition = std::mem::replace(&mut self.in_condition, false);
+                let value = self.expr_of(paren.expr());
+                self.in_condition = in_condition;
+                value?
+            }
+            ast::Expr::Binary(binary) => match binary.op() {
+                Some(op) if assign_spelling(op).is_some() => self.assign(binary, op)?,
+                Some(_) | None => self.binary(binary)?,
+            },
+            ast::Expr::Postfix(postfix) => self.postfix(postfix)?,
             ast::Expr::Field(field) => self.member(field)?,
             ast::Expr::Not(_)
             | ast::Expr::Call(_)
-            | ast::Expr::Postfix(_)
             | ast::Expr::Ternary(_)
             | ast::Expr::Index(_)
             | ast::Expr::Unary(_)
@@ -203,19 +230,27 @@ impl<'e> Checker<'e> {
         let Some(ty) = self.env.definition(def).map(|def| def.ty.clone()) else {
             return Value::unknown();
         };
+        let name = token.text_lossless();
         // FTEF-17.14: in a member function's body a field named bare is `this.field`, the
         // value it holds (`QCC_PR_ParseRefValue`, `pr_classtype && expandmemberfields`).
-        let ty = match ty {
-            Type::Field(held) if self.env.in_class() => held.as_ref().clone(),
-            ty => ty,
-        };
+        if let Type::Field(held) = &ty
+            && self.env.in_class()
+        {
+            let this = Value {
+                name: Some("this".to_owned()),
+                ..Value::unknown()
+            };
+            return Value::field_of(&this, name, held.as_ref().clone());
+        }
         Value {
             array,
             constness,
-            name: Some(token.text_lossless()),
+            name: Some(name),
             // A function's definition is no constant symbol to the comparison warnings: `ff != vf`
             // of two functions gives none (FTEF-28.1).
             sym: Sym::Def(def, constness != Constness::Variable && !ty.is_function()),
+            // `QCC_DefToRef`: `!!def.sym->constant || def.sym->temp`.
+            readonly: self.env.constant(def),
             ..Value::of(ty)
         }
     }
@@ -269,7 +304,7 @@ impl<'e> Checker<'e> {
         if let Choice::Mismatch(_) = choice {
             self.mismatch(spelling, lhs, rhs, span);
         }
-        let [a, b, c] = opcode.types;
+        let [a, b, _] = opcode.types;
         for (value, operand, row) in [(lhs, left, a), (rhs, right, b)] {
             self.convert(value, operand, row, span)?;
         }
@@ -294,11 +329,8 @@ impl<'e> Checker<'e> {
         };
         let lhs = converted(lhs, left, a);
         let rhs = converted(rhs, right, b);
-        let value = self.emit(choice.op(), &lhs, &rhs, span)?;
-        Ok(Some(Value {
-            ty: c.value_type(),
-            ..value
-        }))
+        // The value is what the opcode, its folding or its emulation gives, of that one's type.
+        Ok(Some(self.emit(choice.op(), &lhs, &rhs, span)?))
     }
 
     /// Converts the operand `value` to the opcode's type `row` for it, if it is another, with

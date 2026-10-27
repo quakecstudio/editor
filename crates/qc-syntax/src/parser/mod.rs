@@ -2781,10 +2781,9 @@ impl<'a> Parser<'a> {
                 self.bump_error();
                 break;
             }
-            // FTEF-16.10: FTEQCC also assigns to what a call returns, as a chained
-            // `a = f() = b` does.
-            let call = self.fteqcc() && lhs.kind == K::CallExpr;
-            if assign && !lhs.assignable && !call {
+            // FTEF-16.10: FTEQCC's parser takes any left side; its checker warns of a
+            // read-only one (FTEF-29.1).
+            if assign && !lhs.assignable && !self.fteqcc() {
                 self.error_at(Code::E0508, "cannot assign to this expression", lhs.span);
             }
             self.builder.start_node_at(checkpoint, K::BinaryExpr);

@@ -9,6 +9,7 @@
 //! one-pass compilers. It reads them through [`Env`], which the resolver implements; the check
 //! knows nothing else of resolution.
 
+mod assign;
 mod compare;
 pub(crate) mod constant;
 pub(crate) mod convert;
@@ -18,6 +19,7 @@ mod expr;
 pub(crate) mod fold;
 mod member;
 pub(crate) mod opcodes;
+mod pointer;
 
 #[cfg(test)]
 mod tests;
@@ -47,6 +49,9 @@ pub(crate) trait Env {
     fn is_array(&self, def: DefId) -> bool;
     /// Whether a definition is a constant, and its value (`QCC_SRef_EvalConst`, FTEF-26.5).
     fn constness(&self, def: DefId) -> Constness;
+    /// Whether FTEQCC made a definition constant (`def->constant`, FTEF-19.3), which makes it
+    /// read-only to an assignment (FTEF-29.1) whether or not its value is known.
+    fn constant(&self, def: DefId) -> bool;
     /// What `ty` is at bottom, through typedefs, enums, accessors and truth values; `None` for
     /// a type the model does not follow, on which nothing is checked.
     fn shape(&self, ty: &Type) -> Option<Shape>;
@@ -104,6 +109,12 @@ pub(crate) struct Value {
     pub(crate) name: Option<String>,
     /// The symbol that holds it, which the comparison warnings read (FTEF-28).
     pub(crate) sym: Sym,
+    /// Whether an assignment to it is to a constant (`ref->readonly`, FTEF-29.1).
+    pub(crate) readonly: bool,
+    /// What it refers to, which a store names and a compound assignment may update in place.
+    pub(crate) reference: Reference,
+    /// Whether it is the operand of a postfix `++` or `--` (`ref->postinc`).
+    pub(crate) postinc: bool,
 }
 
 /// What holds a value, `QCC_sref_t`'s `sym` as the comparison warnings read it (FTEF-28.1).
@@ -137,6 +148,9 @@ impl Value {
             array: false,
             name: None,
             sym: Sym::Temp,
+            readonly: true,
+            reference: Reference::Global,
+            postinc: false,
         }
     }
 
@@ -174,16 +188,55 @@ impl Value {
         }
     }
 
-    /// The name FTEQCC prints for it: its definition's, or for a value the compiler made a
-    /// temporary's, whose number the model does not follow (FTEF-27.4).
-    pub(crate) fn label(&self) -> &str {
-        self.name.as_deref().unwrap_or("temp")
+    /// The name FTEQCC prints for it (`QCC_GetSRefName`, FTEF-27.4): `IMMEDIATE` for an
+    /// immediate, its definition's name, or for a temporary the name of its type.
+    pub(crate) fn label(&self) -> String {
+        match (self.sym, self.name.as_deref()) {
+            (Sym::Immediate(_), _) => "IMMEDIATE".to_owned(),
+            (_, Some(name)) => name.to_owned(),
+            (_, None) => self.ty.fteqcc_name(),
+        }
     }
 
     /// The value of an expression the checker does not follow, on which nothing is reported.
     pub(crate) const fn unknown() -> Self {
         Self::of(Type::Unknown)
     }
+
+    /// How FTEQCC names it as the target of a store (`QCC_GetRefName`): `base.field` for a
+    /// field, else its label.
+    pub(crate) fn place(&self) -> String {
+        match &self.reference {
+            Reference::Field { base, field } => format!("{base}.{field}"),
+            Reference::Global => self.label(),
+        }
+    }
+
+    /// The field `field` of the entity `base`, holding a `ty`, which may be assigned to.
+    pub(crate) fn field_of(base: &Self, field: String, ty: Type) -> Self {
+        Self {
+            readonly: false,
+            reference: Reference::Field {
+                base: base.label(),
+                field,
+            },
+            ..Self::of(ty)
+        }
+    }
+}
+
+/// What a value refers to, as FTEQCC's references are of kinds (`QCC_ref_t::type`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Reference {
+    /// A definition, temporary or immediate, read directly (`REF_GLOBAL`).
+    Global,
+    /// An entity's field (`REF_FIELD`): the labels of the entity and of the field.
+    Field {
+        /// The entity's label.
+        base: String,
+        /// The field's label.
+        field: String,
+    },
 }
 
 /// Whether a value is a constant (`QCC_SRef_EvalConst`, FTEF-26.5).

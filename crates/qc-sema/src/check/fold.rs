@@ -331,9 +331,92 @@ fn unary(op: Op, a: Constant, notices: &mut Vec<Notice>) -> Option<Folded> {
         Op::ConvIi64 => Constant::int64(ia.into()),
         Op::ConvUi64 => Constant::uint64(ua.into()),
         Op::ConvI64i => Constant::int(low(a.i64())),
+        Op::ConvFi64 | Op::ConvDi64 | Op::ConvFu64 | Op::ConvDu64 => wide_from_real(op, a, notices),
+        Op::ConvI64f | Op::ConvU64f | Op::ConvI64d | Op::ConvU64d => real_from_wide(op, a, notices),
         _ => return None,
     };
     Some(Folded::Constant(c))
+}
+
+/// FTEF-26.3: `OP_CONV_FI64`, `OP_CONV_DI64`, `OP_CONV_FU64` and `OP_CONV_DU64` of a constant:
+/// the value made a 64-bit integer, with "Numerical overflow. F will be rounded to N" when
+/// `(pint64_t)value != value` (`(puint64_t)` for `OP_CONV_FU64`), N printed as the conversion
+/// gives it.
+#[expect(
+    clippy::float_cmp,
+    reason = "spec FTEF-26.3: C compares the converted value with the float exactly"
+)]
+fn wide_from_real(op: Op, a: Constant, notices: &mut Vec<Notice>) -> Constant {
+    let value = if matches!(op, Op::ConvFi64 | Op::ConvFu64) {
+        f64::from(a.f())
+    } else {
+        a.d()
+    };
+    let (changed, rounded, constant) = match op {
+        Op::ConvFi64 | Op::ConvDi64 => {
+            let i = real_to_i64(value);
+            (
+                i64_to_real(i, op) != value,
+                i.to_string(),
+                Constant::int64(i),
+            )
+        }
+        Op::ConvFu64 => {
+            let u = real_to_u64(value);
+            (
+                u64_to_real(u, op) != value,
+                u.to_string(),
+                Constant::uint64(u),
+            )
+        }
+        _ => {
+            let u = real_to_u64(value);
+            let signed = i64::from_le_bytes(u.to_le_bytes());
+            (
+                i64_to_real(real_to_i64(value), op) != value,
+                signed.to_string(),
+                Constant::uint64(u),
+            )
+        }
+    };
+    if changed {
+        let message = format!("Numerical overflow. {value:.6} will be rounded to {rounded}");
+        notice(notices, Code::W0234, message);
+    }
+    constant
+}
+
+/// FTEF-26.3: `OP_CONV_I64F`, `OP_CONV_U64F`, `OP_CONV_I64D` and `OP_CONV_U64D` of a constant:
+/// the 64-bit integer made a float or double, with "Numerical truncation of A to B." when the
+/// result converted back differs, as `%#llx`.
+fn real_from_wide(op: Op, a: Constant, notices: &mut Vec<Notice>) -> Constant {
+    let unsigned = matches!(op, Op::ConvU64f | Op::ConvU64d);
+    let bits = a.u64();
+    let value = if unsigned {
+        u64_to_real(bits, op)
+    } else {
+        i64_to_real(a.i64(), op)
+    };
+    // `(pint64_t)d != eval_a->u64` compares the unsigned value with the signed conversion.
+    let back = if unsigned && op == Op::ConvU64f {
+        real_to_u64(value)
+    } else {
+        u64::from_le_bytes(real_to_i64(value).to_le_bytes())
+    };
+    if back != bits {
+        let shown = if unsigned { real_to_u64(value) } else { back };
+        let message = format!(
+            "Numerical truncation of {} to {}.",
+            c_hash_x(bits),
+            c_hash_x(shown)
+        );
+        notice(notices, Code::W0234, message);
+    }
+    if matches!(op, Op::ConvI64f | Op::ConvU64f) {
+        Constant::float(d_to_f32(value))
+    } else {
+        Constant::double(value)
+    }
 }
 
 /// FTEF-26.4: only the right operand constant.
@@ -476,6 +559,57 @@ const fn int_to_f32(value: i32) -> f32 {
 )]
 const fn u_to_f32(value: u32) -> f32 {
     value as f32
+}
+
+/// C's `(pint64_t)` of a float or double: toward zero, saturating as arm64 does.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "spec FTEF-26.3: C's double to 64-bit integer conversion, saturating on arm64"
+)]
+const fn real_to_i64(value: f64) -> i64 {
+    value as i64
+}
+
+/// C's `(puint64_t)` of a float or double, saturating as arm64 does.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "spec FTEF-26.3: C's double to unsigned 64-bit conversion, saturating on arm64"
+)]
+const fn real_to_u64(value: f64) -> u64 {
+    value as u64
+}
+
+/// C's `(float)` or `(double)` of a 64-bit integer, by the conversion `op` makes, as a double.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "spec FTEF-26.3: C's 64-bit integer to float and double conversions round"
+)]
+fn i64_to_real(value: i64, op: Op) -> f64 {
+    if matches!(
+        op,
+        Op::ConvFi64 | Op::ConvFu64 | Op::ConvI64f | Op::ConvU64f
+    ) {
+        f64::from(value as f32)
+    } else {
+        value as f64
+    }
+}
+
+/// C's `(float)` or `(double)` of an unsigned 64-bit integer, by the conversion `op` makes.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "spec FTEF-26.3: C's 64-bit integer to float and double conversions round"
+)]
+fn u64_to_real(value: u64, op: Op) -> f64 {
+    if matches!(
+        op,
+        Op::ConvFi64 | Op::ConvFu64 | Op::ConvI64f | Op::ConvU64f
+    ) {
+        f64::from(value as f32)
+    } else {
+        value as f64
+    }
 }
 
 /// C's `(float)` of a double, rounding to nearest.

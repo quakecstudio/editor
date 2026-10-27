@@ -13,6 +13,7 @@
 use qc_diag::{Code, Span};
 use qc_preproc::{FteFlag, Op, OpcodeTarget, TargetFormat};
 
+use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
 use crate::check::fold::{Folded, fold};
@@ -37,8 +38,23 @@ enum Emulation {
     /// Emit these opcodes on the operands in turn, the last giving the value; each is emitted
     /// or emulated in turn. For `%` when no `mod` function is defined (FTEF-27.4).
     Expand(&'static [Op]),
-    /// Emit this opcode instead.
+    /// `return QCC_PR_StatementFlags(OTHER, a, b, ...)`: this opcode instead, folded, emitted or
+    /// emulated in turn.
     Instead(Op),
+    /// `return QCC_PR_StatementFlags(OTHER, b, a, ...)`: this opcode on the operands swapped.
+    Swapped(Op),
+    /// `op = OTHER; break;`: emitted as this opcode, with no further check (FTEF-27.9).
+    Replaced(Op),
+    /// A bit clear, `b - (b & a)`: the store opcode when there is one and the target has it,
+    /// else the `&` emitted in turn and the `-` replacing the opcode (FTEF-27.9).
+    Clear {
+        /// The `&` opcode.
+        and: Op,
+        /// The `-` opcode.
+        sub: Op,
+        /// The opcode that clears in place, used when the target has it.
+        store: Option<Op>,
+    },
     /// `QCC_SupplyConversion`'s conversions: fold a constant, else call the helper, else warn
     /// that denormals are unsafe and emit the opcode that stands for it.
     Conversion,
@@ -61,7 +77,7 @@ impl Checker<'_> {
         rhs: &Value,
         span: Span,
     ) -> Result<Value, Fatal> {
-        let result = row(op).map_or_else(Value::unknown, |r| Value::of(r.types[2].value_type()));
+        let result = replaced(op);
         if lhs.constness == Constness::Opaque || rhs.constness == Constness::Opaque {
             // Its value decides no folding or emulation; the comparison warnings read no value.
             if self.env.target_at(span.start).valid(op) {
@@ -133,6 +149,19 @@ impl Checker<'_> {
                 ty: result.ty,
                 ..self.emit(other, lhs, rhs, span)?
             }),
+            Emulation::Swapped(other) => Ok(Value {
+                ty: result.ty,
+                ..self.emit(other, rhs, lhs, span)?
+            }),
+            Emulation::Replaced(other) => Ok(replaced(other)),
+            Emulation::Clear { and, sub, store } => {
+                let target = self.env.target_at(span.start);
+                if let Some(store) = store.filter(|&store| target.valid(store)) {
+                    return Ok(replaced(store));
+                }
+                self.emit(and, lhs, rhs, span)?;
+                Ok(replaced(sub))
+            }
             Emulation::Conversion => self.conversion(op, lhs, span, result),
             Emulation::Special => self.special(op, lhs, rhs, span, result),
             Emulation::Emitted => Ok(result),
@@ -309,6 +338,30 @@ impl Checker<'_> {
                 self.env.report(Code::E0321, span, message.to_owned());
                 Err(Fatal)
             }
+            Op::AddPf
+            | Op::AddFp
+            | Op::AddPi
+            | Op::AddIp
+            | Op::AddPu
+            | Op::AddUp
+            | Op::SubPf
+            | Op::SubPi
+            | Op::SubPu => self.pointer_offset(op, lhs, rhs, span),
+            Op::SubPp => self.pointer_difference(lhs, rhs, span),
+            Op::AddPiw => self.word_offset(lhs, rhs, span),
+            Op::LoadpU8 | Op::LoadpI8 | Op::LoadpU16 | Op::LoadpI16 => {
+                self.narrow_load(op, lhs, rhs, span)
+            }
+            Op::LoadpF | Op::LoadpS | Op::LoadpEnt | Op::LoadpFld | Op::LoadpFnc | Op::LoadpI => {
+                self.word_load(op, rhs, span, result)
+            }
+            Op::LtU | Op::LeU | Op::DivU | Op::BitextendI | Op::BitextendU => {
+                self.unsigned(op, lhs, rhs, span, result)
+            }
+            Op::BitandD | Op::BitorD | Op::BitxorV | Op::BitxorD => {
+                self.bitwise(op, lhs, rhs, span)
+            }
+            Op::IfF | Op::IfnotF | Op::IfS | Op::IfnotS | Op::NotI => self.truth(op, lhs, span),
             _ => {
                 self.refuse(op, span);
                 Ok(result)
@@ -316,9 +369,125 @@ impl Checker<'_> {
         }
     }
 
+    /// FTEF-27.7: the unsigned comparisons, division and sign extension.
+    fn unsigned(
+        &mut self,
+        op: Op,
+        lhs: &Value,
+        rhs: &Value,
+        span: Span,
+        result: Value,
+    ) -> Result<Value, Fatal> {
+        match op {
+            Op::LtU | Op::LeU => {
+                // FTEF-27.7: as floats when the target has no integer comparison, else biased
+                // by 2^31 to compare as signed integers.
+                let target = self.env.target_at(span.start);
+                if !target.valid(Op::LtI) {
+                    let lhs = self.emit(Op::ConvUf, lhs, &Value::unknown(), span)?;
+                    let rhs = self.emit(Op::ConvUf, rhs, &Value::unknown(), span)?;
+                    let then = if op == Op::LtU { Op::LtF } else { Op::LeF };
+                    return self.emit(then, &lhs, &rhs, span);
+                }
+                let bias = Value::constant(Constant::uint(0x8000_0000));
+                let lhs = self.emit(Op::SubU, lhs, &bias, span)?;
+                let rhs = self.emit(Op::SubU, rhs, &bias, span)?;
+                let then = if op == Op::LtU { Op::LtI } else { Op::LeI };
+                self.emit(then, &lhs, &rhs, span)
+            }
+            Op::DivU => {
+                let message = "OP_DIV_U emulation: assuming the high bit is not set...";
+                self.env.report(Code::W0235, span, message.to_owned());
+                Ok(Value {
+                    ty: result.ty,
+                    ..self.emit(Op::DivI, lhs, rhs, span)?
+                })
+            }
+            Op::BitextendI | Op::BitextendU => {
+                // FTEF-27.7: by shifts, when the width and offset are a constant.
+                let Some(field) = rhs.known() else {
+                    self.refuse(op, span);
+                    return Ok(result);
+                };
+                let bits = field.u() & 0xff;
+                let offset = field.u() >> 8;
+                let (up, down) = if op == Op::BitextendI {
+                    (Op::LshiftI, Op::RshiftI)
+                } else {
+                    (Op::LshiftU, Op::RshiftU)
+                };
+                let int = |value: u32| {
+                    let value = 32_u32.wrapping_sub(value);
+                    Value::constant(Constant::int(i32::from_le_bytes(value.to_le_bytes())))
+                };
+                let high = self.emit(up, lhs, &int(bits.wrapping_add(offset)), span)?;
+                self.emit(down, &high, &int(bits), span)
+            }
+            _ => Ok(result),
+        }
+    }
+
+    /// FTEF-27.7: the bitwise opcodes of doubles, by 64-bit integers, and `^` of vectors and
+    /// doubles, as `(a & ~b) | (b & ~a)`.
+    fn bitwise(&mut self, op: Op, lhs: &Value, rhs: &Value, span: Span) -> Result<Value, Fatal> {
+        match op {
+            Op::BitandD | Op::BitorD => {
+                let lhs = self.emit(Op::ConvDi64, lhs, &Value::unknown(), span)?;
+                let rhs = self.emit(Op::ConvDi64, rhs, &Value::unknown(), span)?;
+                let then = if op == Op::BitandD {
+                    Op::BitandI64
+                } else {
+                    Op::BitorI64
+                };
+                let value = self.emit(then, &lhs, &rhs, span)?;
+                self.emit(Op::ConvI64d, &value, &Value::unknown(), span)
+            }
+            Op::BitxorV | Op::BitxorD => {
+                // `(a & ~b) | (b & ~a)`.
+                let (not, and, or) = if op == Op::BitxorV {
+                    (Op::BitnotV, Op::BitandV, Op::BitorV)
+                } else {
+                    (Op::BitnotD, Op::BitandD, Op::BitorD)
+                };
+                let not_b = self.emit(not, rhs, &Value::unknown(), span)?;
+                let left = self.emit(and, lhs, &not_b, span)?;
+                let not_a = self.emit(not, lhs, &Value::unknown(), span)?;
+                let right = self.emit(and, rhs, &not_a, span)?;
+                self.emit(or, &left, &right, span)
+            }
+            _ => Ok(Value::unknown()),
+        }
+    }
+
+    /// FTEF-27.9: a float or string tested by comparing it with 0, then the integer test; `!` of
+    /// an integer as `== 0`.
+    fn truth(&mut self, op: Op, lhs: &Value, span: Span) -> Result<Value, Fatal> {
+        match op {
+            Op::IfF | Op::IfnotF | Op::IfS | Op::IfnotS => {
+                // A float or string tested by comparing it with 0, then the integer test.
+                let (compare, zero) = if matches!(op, Op::IfF | Op::IfnotF) {
+                    (Op::NeF, Constant::float(0.0))
+                } else {
+                    (Op::NeS, Constant::string(true))
+                };
+                self.emit(compare, lhs, &Value::constant(zero), span)?;
+                Ok(replaced(if matches!(op, Op::IfF | Op::IfS) {
+                    Op::IfI
+                } else {
+                    Op::IfnotI
+                }))
+            }
+            Op::NotI => {
+                let zero = Value::constant(Constant::int(0));
+                self.emit(Op::EqFnc, lhs, &zero, span)
+            }
+            _ => Ok(Value::unknown()),
+        }
+    }
+
     /// FTEF-27.5: `badopcode`, "Opcode \"NAME|OPNAME\" not valid for target", suggesting the FTE
     /// target or its newest revision when either has the opcode, else "is not supported".
-    fn refuse(&mut self, op: Op, span: Span) {
+    pub(super) fn refuse(&mut self, op: Op, span: Span) {
         let name = row(op).map_or("", |r| r.name);
         let opname = op.name();
         let message = if OpcodeTarget::new(TargetFormat::Fte, FTE_DEFAULT).valid(op) {
@@ -343,6 +512,9 @@ const fn emulation(op: Op) -> Emulation {
     use Emulation::{
         Conversion, ConvertLeft, ConvertRight, Emitted, Expand, Helper, Instead, Refuse, Special,
     };
+    if let Some(substitution) = substitution(op) {
+        return substitution;
+    }
     match op {
         Op::AddSf
         | Op::AddSi
@@ -375,23 +547,43 @@ const fn emulation(op: Op) -> Emulation {
         Op::ConvItof | Op::StoreIf | Op::ConvFtoi | Op::StoreFi | Op::ConvUf => Conversion,
         Op::ConvFu => Instead(Op::ConvFtoi),
         Op::BitnotI => Helper(&["SubInt"], "~int"),
-        Op::BitnotF => Instead(Op::SubF),
-        Op::BitnotV => Instead(Op::SubV),
-        Op::StoreP | Op::StoreI => Instead(Op::StoreF),
-        Op::AddstoreF => Instead(Op::AddF),
-        Op::SubstoreF => Instead(Op::SubF),
-        Op::MulstoreF => Instead(Op::MulF),
-        Op::DivstoreF => Instead(Op::DivF),
-        Op::AddstoreV => Instead(Op::AddV),
-        Op::SubstoreV => Instead(Op::SubV),
-        Op::MulstoreVf => Instead(Op::MulVf),
-        Op::BitsetstoreF => Instead(Op::BitorF),
-        Op::EqP => Instead(Op::EqE),
-        Op::NeP => Instead(Op::NeE),
-        Op::GtP => Instead(Op::GtI),
-        Op::GeP => Instead(Op::GeI),
-        Op::LeP => Instead(Op::LeI),
-        Op::LtP => Instead(Op::LtI),
+        Op::LshiftDi => ConvertLeft(Op::ConvDi64, Op::LshiftI64i),
+        Op::RshiftDi => ConvertLeft(Op::ConvDi64, Op::RshiftI64i),
+        Op::AddPf
+        | Op::AddFp
+        | Op::AddPi
+        | Op::AddIp
+        | Op::AddPu
+        | Op::AddUp
+        | Op::SubPf
+        | Op::SubPi
+        | Op::SubPu
+        | Op::SubPp
+        | Op::AddPiw
+        | Op::LoadpF
+        | Op::LoadpS
+        | Op::LoadpEnt
+        | Op::LoadpFld
+        | Op::LoadpFnc
+        | Op::LoadpI
+        | Op::LoadpU8
+        | Op::LoadpI8
+        | Op::LoadpU16
+        | Op::LoadpI16
+        | Op::LtU
+        | Op::LeU
+        | Op::DivU
+        | Op::BitextendI
+        | Op::BitextendU
+        | Op::BitandD
+        | Op::BitorD
+        | Op::BitxorV
+        | Op::BitxorD
+        | Op::IfF
+        | Op::IfnotF
+        | Op::IfS
+        | Op::IfnotS
+        | Op::NotI => Special,
         Op::LshiftIf => ConvertRight(Op::ConvFtoi, Op::LshiftI),
         Op::RshiftIf => ConvertRight(Op::ConvFtoi, Op::RshiftI),
         Op::LshiftFi => ConvertLeft(Op::ConvFtoi, Op::LshiftI),
@@ -459,9 +651,97 @@ const fn emulation(op: Op) -> Emulation {
         Op::EqI64 => Expand(&[Op::EqI, Op::AndI]),
         Op::NeI64 => Expand(&[Op::NeI, Op::OrI]),
         // `QCC_PR_SimpleStatement`, which emits with no check of the target.
-        Op::LoadI64 | Op::BitandI64 | Op::BitorI64 | Op::BitxorI64 => Emitted,
+        Op::LoadI64
+        | Op::BitandI64
+        | Op::BitorI64
+        | Op::BitxorI64
+        | Op::BitandV
+        | Op::BitorV
+        | Op::StoreI64
+        | Op::LoadaStruct => Emitted,
         _ => Refuse,
     }
+}
+
+/// FTEF-27.9: the opcodes `QCC_PR_StatementFlags` replaces by others: `op = OTHER; break;`,
+/// emitted with no further check, a bit clear, and a comparison of the operands swapped.
+const fn substitution(op: Op) -> Option<Emulation> {
+    use Emulation::{Clear, Replaced, Swapped};
+    Some(match op {
+        Op::BitnotF => Replaced(Op::SubF),
+        Op::BitnotV => Replaced(Op::SubV),
+        Op::BitnotI64 => Replaced(Op::SubI64),
+        Op::StoreP | Op::StoreI => Replaced(Op::StoreF),
+        Op::LoadP | Op::LoadI => Replaced(Op::LoadF),
+        Op::StorepP => Replaced(Op::StorepI),
+        Op::AddstoreF => Replaced(Op::AddF),
+        Op::AddstoreI => Replaced(Op::AddI),
+        Op::AddstoreFi => Replaced(Op::AddFi),
+        Op::SubstoreF => Replaced(Op::SubF),
+        Op::SubstoreFi => Replaced(Op::SubFi),
+        Op::SubstoreI => Replaced(Op::SubI),
+        Op::MulstoreF => Replaced(Op::MulF),
+        Op::MulstoreFi => Replaced(Op::MulFi),
+        Op::DivstoreF => Replaced(Op::DivF),
+        Op::DivstoreFi => Replaced(Op::DivFi),
+        Op::DivstoreI => Replaced(Op::DivI),
+        Op::AddstoreV => Replaced(Op::AddV),
+        Op::SubstoreV => Replaced(Op::SubV),
+        Op::MulstoreVf => Replaced(Op::MulVf),
+        Op::MulstoreVi => Replaced(Op::MulVi),
+        Op::BitsetstoreF => Replaced(Op::BitorF),
+        Op::BitsetstoreI => Replaced(Op::BitorI),
+        Op::EqP => Replaced(Op::EqE),
+        Op::NeP => Replaced(Op::NeE),
+        Op::GtP => Replaced(Op::GtI),
+        Op::GeP => Replaced(Op::GeI),
+        Op::LeP => Replaced(Op::LeI),
+        Op::LtP => Replaced(Op::LtI),
+        Op::BitclrF => Clear {
+            and: Op::BitandF,
+            sub: Op::SubF,
+            store: Some(Op::BitclrstoreF),
+        },
+        Op::BitclrstoreF => Clear {
+            and: Op::BitandF,
+            sub: Op::SubF,
+            store: None,
+        },
+        Op::BitclrI => Clear {
+            and: Op::BitandI,
+            sub: Op::SubI,
+            store: Some(Op::BitclrstoreI),
+        },
+        Op::BitclrstoreI => Clear {
+            and: Op::BitandI,
+            sub: Op::SubI,
+            store: None,
+        },
+        Op::BitclrV => Clear {
+            and: Op::BitandV,
+            sub: Op::SubV,
+            store: None,
+        },
+        Op::BitclrD => Clear {
+            and: Op::BitandD,
+            sub: Op::SubD,
+            store: None,
+        },
+        Op::BitclrI64 => Clear {
+            and: Op::BitandI64,
+            sub: Op::SubI64,
+            store: None,
+        },
+        Op::GeU => Swapped(Op::LeU),
+        Op::GtU => Swapped(Op::LtU),
+        Op::GeU64 => Swapped(Op::LeU64),
+        Op::GtU64 => Swapped(Op::LtU64),
+        Op::GeI64 => Swapped(Op::LeI64),
+        Op::GtI64 => Swapped(Op::LtI64),
+        Op::GeD => Swapped(Op::LeD),
+        Op::GtD => Swapped(Op::LtD),
+        _ => return None,
+    })
 }
 
 /// The conversion opcodes `QCC_TryEvaluateCast` emits to make a `from` into a `to`, in order
@@ -492,4 +772,9 @@ pub(super) fn conversion_opcodes(from: Etype, to: Etype) -> &'static [Op] {
         (Int64 | Uint64, Integer | Uint) => &[Op::ConvI64i],
         _ => &[],
     }
+}
+
+/// The value of `op` emitted: a temporary of the opcode's result type.
+fn replaced(op: Op) -> Value {
+    row(op).map_or_else(Value::unknown, |r| Value::of(r.types[2].value_type()))
 }

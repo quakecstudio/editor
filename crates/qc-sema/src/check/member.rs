@@ -82,7 +82,7 @@ impl Checker<'_> {
                 if let Some(member) = self.env.class_member(&base.ty, &name)
                     && let Some(def) = self.env.definition(member)
                 {
-                    return Ok(Value::of(def.ty.clone()));
+                    return Ok(Value::field_of(base, name, def.ty.clone()));
                 }
                 let Some(def) = self
                     .env
@@ -92,14 +92,16 @@ impl Checker<'_> {
                 else {
                     return Ok(self.unknown_field(base, &name, token.span()));
                 };
-                (def.ty.clone(), name, token.span())
+                (def.ty.clone(), name.clone(), name, token.span())
             }
             ast::Expr::Paren(paren) => {
                 let value = self.expr_of(paren.expr())?;
                 let span = selector.syntax().span();
+                let label = value.label();
                 (
                     value.ty,
                     String::from_utf8_lossy(&selector.syntax().text()).into_owned(),
+                    label,
                     span,
                 )
             }
@@ -108,13 +110,20 @@ impl Checker<'_> {
                 return Ok(Value::unknown());
             }
         };
-        let (ty, name, span) = field;
+        let (ty, name, label, span) = field;
         match self.env.shape(&ty).map(|s| s.etype) {
-            Some(Etype::Field) => Ok(match ty {
-                Type::Field(held) => Value::of(held.as_ref().clone()),
-                other => Value::of(other),
-            }),
-            Some(Etype::Variant) => Ok(Value::of(Type::Named("__variant".into()))),
+            Some(Etype::Field) => {
+                let held = match ty {
+                    Type::Field(held) => held.as_ref().clone(),
+                    other => other,
+                };
+                Ok(Value::field_of(base, label, held))
+            }
+            Some(Etype::Variant) => Ok(Value::field_of(
+                base,
+                label,
+                Type::Named("__variant".into()),
+            )),
             None => Ok(Value::unknown()),
             Some(_) => {
                 let message = match &base.ty {
@@ -129,7 +138,7 @@ impl Checker<'_> {
     /// FTEF-24.6: a member no definition has is made a `variant` definition by
     /// `QCC_PR_GetSRef(type_variant, ..., true)` and is the error "Unknown field \"NAME\" in class
     /// \"CLASS\"" (`QCC_PR_ParseWarning(ERR_UNKNOWNVALUE, ...)`), which does not end the
-    /// statement; the member's value is a `variant`.
+    /// statement; the member is a `variant` field of the entity, which may be assigned to.
     fn unknown_field(&mut self, base: &Value, name: &str, span: Span) -> Value {
         let class = match &base.ty {
             Type::Named(class) => class.to_string(),
@@ -137,7 +146,7 @@ impl Checker<'_> {
         };
         let message = format!("Unknown field \"{name}\" in class \"{class}\"");
         self.env.report(Code::E0319, span, message);
-        Value::of(Type::Named("__variant".into()))
+        Value::field_of(base, name.to_owned(), Type::Named("__variant".into()))
     }
 
     /// FTEF-24.2: a vector's single-channel swizzle, `x`, `y` or `z` (or `r`, `g`, `b`), is a
@@ -148,7 +157,10 @@ impl Checker<'_> {
             return Ok(Value::unknown());
         };
         if matches!(name.as_str(), "x" | "y" | "z" | "r" | "g" | "b") {
-            return Ok(Value::of(ty));
+            return Ok(Value {
+                readonly: false,
+                ..Value::of(ty)
+            });
         }
         self.fatal(
             Code::E0314,
@@ -183,7 +195,10 @@ impl Checker<'_> {
             return Value::unknown();
         };
         match self.env.struct_member(ty, &name) {
-            Some((member, false)) => Value::of(member),
+            Some((member, false)) => Value {
+                readonly: false,
+                ..Value::of(member)
+            },
             Some((_, true)) | None => Value::unknown(),
         }
     }

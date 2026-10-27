@@ -220,3 +220,144 @@ fn constants_are_not_emulated() {
                   for (float i = 0; i < names.length; i++) a = i; };\n";
     assert_eq!(diags(source), []);
 }
+
+fn typed(statements: &str) -> Vec<(Code, String)> {
+    diags(&format!(
+        "void() g = {{ local float a; local vector v; local float *p; local float *q; \
+         local int *r; local void *w; local int i; local __uint32 u; {statements} }};\n"
+    ))
+}
+
+fn not_valid(op: &str) -> (Code, String) {
+    d(
+        Code::E0320,
+        &format!("Opcode \"{op}\" not valid for target. Consider the use of: #pragma target fte"),
+    )
+}
+
+fn no_helper(name: &str, what: &str) -> (Code, String) {
+    d(
+        Code::W0235,
+        &format!("{name} function not defined: cannot emulate {what}"),
+    )
+}
+
+// spec FTEF-27.7: unsigned `<` and `>=` are float comparisons of converted operands, the `>=`
+// swapped, when the target has no integer comparison
+#[test]
+fn unsigned_comparisons() {
+    let converted = [
+        d(Code::E0125, "itof emulation: denormals are unsafe u"),
+        d(Code::W0238, "utof emulation: will break if u is big"),
+        d(Code::E0125, "itof emulation: denormals are unsafe u"),
+        d(Code::W0238, "utof emulation: will break if u is big"),
+    ];
+    assert_eq!(typed("if (u < u) a = 1;"), converted);
+    assert_eq!(typed("if (u >= u) a = 1;"), converted);
+}
+
+// spec FTEF-27.7: unsigned division warns that it assumes the high bit clear, then divides as
+// signed
+#[test]
+fn unsigned_division() {
+    assert_eq!(
+        typed("u = u / u;"),
+        [
+            d(
+                Code::W0235,
+                "OP_DIV_U emulation: assuming the high bit is not set..."
+            ),
+            no_helper("DivInt", "int/int"),
+            not_valid("/|DIV_I"),
+        ]
+    );
+}
+
+// spec FTEF-27.7: `^` of vectors is `(a & ~b) | (b & ~a)`, whose opcodes are replaced or emitted
+// spec FTEF-27.9: `&` and `|` of vectors and a float bit clear are emitted with no check
+#[test]
+fn replaced_opcodes_are_not_checked() {
+    for quiet in [
+        "v = v ^ v;",
+        "v = v | v;",
+        "v |= v;",
+        "a = a &~ 1;",
+        "a &~= 1;",
+        "a = !i;",
+        "if (p > q) a = 1;",
+    ] {
+        assert_eq!(typed(quiet), [], "{quiet}");
+    }
+}
+
+// spec FTEF-27.10: a pointer offset is scaled by the pointee's size in words and added with
+// `OP_ADD_PIW`, whose emulation multiplies by 4 and adds
+#[test]
+fn pointer_offsets() {
+    assert_eq!(
+        typed("p = p + 1;"),
+        [no_helper("AddInt", "int+int"), not_valid("+|ADD_I")]
+    );
+    assert_eq!(
+        typed("p = p + i;"),
+        [
+            no_helper("MulInt", "int*int"),
+            not_valid("*|MUL_I"),
+            no_helper("AddInt", "int+int"),
+            not_valid("+|ADD_I"),
+        ]
+    );
+}
+
+// spec FTEF-27.10: a subtraction's size is the unsigned size negated, which is truncated
+// spec QCD-7.76: W0234 for a constant truncated
+#[test]
+fn pointer_subtraction_truncates_its_size() {
+    assert_eq!(
+        typed("p = p - 1;"),
+        [
+            d(
+                Code::W0234,
+                "Constant int operand 4294967295 will be truncated to -1"
+            ),
+            no_helper("AddInt", "int+int"),
+            not_valid("+|ADD_I"),
+        ]
+    );
+}
+
+// spec FTEF-27.10: two pointers of different types are "incompatible pointer types", a fatal
+// error; of one type, their difference is divided by the size
+// spec QCD-4.33: E0327 for incompatible pointer types
+#[test]
+fn pointer_differences() {
+    assert_eq!(
+        typed("i = p - r;"),
+        [d(Code::E0327, "incompatible pointer types")]
+    );
+    assert_eq!(
+        typed("i = p - q;"),
+        [
+            no_helper("SubInt", "int-int"),
+            not_valid("-|SUB_I"),
+            no_helper("DivInt", "int/int"),
+            not_valid("/|DIV_I"),
+        ]
+    );
+}
+
+// spec FTEF-27.10: under `undefwordsize`, pointer arithmetic on `void` is an error
+// spec QCD-4.32: E0326 for pointer arithmetic that assumes a size
+#[test]
+fn undefined_word_size() {
+    let undefined = "#pragma flag enable undefwordsize\n";
+    let source = format!("{undefined}void() g = {{ local void *w; local int i; w = w + i; }};\n");
+    assert_eq!(
+        diags(&source),
+        [
+            d(Code::E0326, "void* maths was disabled."),
+            no_helper("AddInt", "int+int"),
+            not_valid("+|ADD_I"),
+        ]
+    );
+}

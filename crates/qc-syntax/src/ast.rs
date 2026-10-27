@@ -1481,6 +1481,25 @@ impl ForStmt {
         self.0.children().filter(|n| n.kind() == K::ForClause)
     }
 
+    /// The condition clause, between the header's two `;`; `None` when it is empty.
+    #[must_use]
+    pub fn condition(&self) -> Option<SyntaxNode> {
+        let mut semicolons = 0_u8;
+        for element in self.0.children_with_tokens() {
+            match element {
+                SyntaxElement::Token(token) if token.kind() == K::Semicolon => {
+                    semicolons = semicolons.saturating_add(1);
+                }
+                SyntaxElement::Token(_) => {}
+                SyntaxElement::Node(node) if node.kind() == K::ForClause && semicolons == 1 => {
+                    return Some(node);
+                }
+                SyntaxElement::Node(_) => {}
+            }
+        }
+        None
+    }
+
     /// The loop body: the statement after the header's `)`.
     #[must_use]
     pub fn body(&self) -> Option<Stmt> {

@@ -49,9 +49,12 @@ impl Env for BodyEnv<'_, '_> {
             .is_some_and(|f| f.array.is_some())
     }
 
+    fn constant(&self, def: DefId) -> bool {
+        self.resolver.facts.get(def.0).is_some_and(|f| f.constant)
+    }
+
     fn constness(&self, def: DefId) -> Constness {
-        let constant = self.resolver.facts.get(def.0).is_some_and(|f| f.constant);
-        if !constant {
+        if !self.constant(def) {
             return Constness::Variable;
         }
         match self.resolver.literals.get(&def) {

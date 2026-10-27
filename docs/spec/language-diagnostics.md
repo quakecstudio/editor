@@ -270,6 +270,21 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   lacks and FTEQCC cannot emulate (FTEF-27.5), at the operator; not a fatal error.
 - **QCD-4.27** `E0321` "strcmp function not defined: cannot emulate string<=>string": `<=>` of
   strings when the target lacks it and no `strcmp` is defined (FTEF-27.3); a fatal error.
+- **QCD-4.28** `E0322` "Assignment to post-inc result", "postincrement: lhs is readonly" and
+  "postdecrement: lhs is readonly": under an FTEQCC profile, an assignment to a postfix `++` or
+  `--`, or one of those of a read-only value (FTEF-29.1, FTEF-29.5); a fatal error.
+- **QCD-4.29** `E0323` "Type mismatch on assignment. A OP B is not supported": a compound
+  assignment with no opcode for its types (FTEF-29.2); a fatal error.
+- **QCD-4.30** `E0324` "Implicit type mismatch on assignment to NAME. Needed A, got B.": a
+  compound assignment's result the target cannot hold, not under `lax` (FTEF-29.4); a fatal
+  error.
+- **QCD-4.31** `E0325` "left operand must be an l-value (did you mean NAME[0]?)": a store to an
+  array named bare (FTEF-29.3); not a fatal error.
+- **QCD-4.32** `E0326` "void* maths was disabled.", "pointer* maths was disabled on this type.",
+  "pointer sizes were marked as undefined." and "Making assumptions about pointer sizes was
+  blocked.": pointer arithmetic under `undefwordsize` (FTEF-27.10); not a fatal error.
+- **QCD-4.33** `E0327` "incompatible pointer types": the difference of pointers of different
+  types (FTEF-27.10); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -550,11 +565,13 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.76** `W0234` "Numerical overflow. F will be rounded to N", "Denormalized float F will be
   rounded to N. This is probably not what you want.", "Numerical truncation of A to B." and
   "Constant float operand F will be truncated to N": under an FTEQCC profile, a constant folding
-  converts with a loss (FTEF-26.2, FTEF-26.3), at the operator. `WARN_OVERFLOW`, F312.
+  converts with a loss (FTEF-26.2, FTEF-26.3), at the operator; and "Constant int operand N will
+  be truncated to M", a pointer subtraction's negated size (FTEF-27.10). `WARN_OVERFLOW`, F312.
 - **QCD-7.77** `W0235` "NAME function not defined: cannot emulate WHAT", "bitshift function not
   defined: cannot emulate OP_LSHIFT_F*" (and `RSHIFT`), "the nextent builtin is not defined" and
   "qccx entity offsets are unsafe": under an FTEQCC profile, an opcode the target lacks whose
-  emulation needs a helper the program does not define (FTEF-27.2, FTEF-27.3), at the operator.
+  emulation needs a helper the program does not define (FTEF-27.2, FTEF-27.3, FTEF-27.10), at the
+  operator; and "OP_DIV_U emulation: assuming the high bit is not set..." (FTEF-27.7).
   Warning 0, which no name sets.
 - **QCD-7.78** `W0236` "OP_ADD_SF: string+float may be unsafe" and "OP_ADD_SI: string+int may be
   unsafe": a string offset the target lacks (FTEF-27.3). `WARN_STRINGOFFSET`, which no name sets.
@@ -568,7 +585,16 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   emitted on constants or on one operand twice (FTEF-28.1), at the operator.
   `WARN_CONSTANTCOMPARISON`, F319.
 - **QCD-7.82** `W0240` "'OP' type mismatch: A with B": a comparison emitted on operands of
-  different basic types (FTEF-28.2). `WARN_STRICTTYPEMISMATCH`, F307.
+  different basic types (FTEF-28.2); and "type mismatch: A NAME to B TARGET", a value stored that
+  keeps a type the target's is not (FTEF-29.7). `WARN_STRICTTYPEMISMATCH`, F307.
+- **QCD-7.83** `W0241` "Assignment to const" and "Assignment to constant NAME": under an FTEQCC
+  profile, an assignment to a read-only reference (FTEF-29.1, FTEF-29.3), at the operator.
+  `WARN_ASSIGNMENTTOCONSTANT`, Q106.
+- **QCD-7.84** `W0242` "suggest parenthesis for assignment used as truth value": an assignment
+  that is a condition, not parenthesised (FTEF-29.6). `WARN_ASSIGNMENTINCONDITIONAL`, Q201.
+- **QCD-7.85** `W0243` "Implicit type mismatch on assignment to NAME. Needed A, got B." under
+  `lax`: a compound assignment's result the target cannot hold (FTEF-29.4). `WARN_LAXCAST`,
+  F314.
 
 ## QCD-8 Preprocessor errors
 

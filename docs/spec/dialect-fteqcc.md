@@ -2035,6 +2035,12 @@ The corpus writes locals of class and pointer types, casts to classes (`(ncPlaye
   `{ .name = value, ... }`.
 - **FTEF-16.12** A `case` or `default` label may stand in a block nested in the `switch` body,
   as C allows; the corpus does so (`client/viewmodel.qc`).
+- **FTEF-16.13** Any expression may stand left of an assignment operator: `QCC_PR_RefExpression`
+  reads the left side as a term whatever it is, and an assignment to a value that is no
+  variable is checked, not refused by the parser (FTEF-29.1). `~a = 1`, `1 = a` and
+  `(a = 2) = 3` each give the two "Assignment to const" warnings, not a syntax error (the
+  pinned FTEQCC, 2026-10-27), so this profile's parser reports none; vanilla's E0508
+  (QC-27.10) stays.
 
 ## FTEF-17 Name resolution
 
@@ -3524,7 +3530,10 @@ saturates, as on the arm64 build the differential is recorded on.
 - **FTEF-26.3** With only the left operand constant: the unary opcodes and conversions fold, a
   conversion that loses the value being "Numerical overflow. %f will be rounded to %i", for a
   float with a zero exponent "Denormalized float %g will be rounded to %i. This is probably not
-  what you want.", or "Numerical truncation of %#x to %#x."; `0 + b`, `0 | b` and `1 * b` are
+  what you want.", or "Numerical truncation of %#x to %#x."; the 64-bit and double conversions
+  (`OP_CONV_FI64`, `OP_CONV_DI64`, `OP_CONV_FU64`, `OP_CONV_DU64` and back) fold the same way,
+  with "Numerical overflow" for any fraction lost and "Numerical truncation" as `%#llx`, so
+  `__int64 x; x = 1.5;` warns and `x = 1;` folds; `0 + b`, `0 | b` and `1 * b` are
   `b`; `0 & b` and a shift of 0 are 0; a false left operand of `&&` is 0 and a true one of `||`
   1, as floats.
 - **FTEF-26.4** With only the right operand constant: `a + 0`, `a - 0`, `a | 0`, `a * 1` and
@@ -3572,8 +3581,9 @@ the statements it would emit are code generation's.
   `strcmp`, else the fatal error `E0321`.
 - **FTEF-27.4** A conversion folds a constant (FTEF-26.3); else it calls `itof`, `ftoi`, or for
   `OP_CONV_UF` `utof`, `quake_utof`, `itof` or `quake_itof`, when defined; else it is the warning
-  `W0237` "itof emulation: denormals are unsafe NAME" (NAME the value's definition, a temporary's
-  `temp_N` whose number the model does not follow) or "ftoi emulation: denormals are unsafe",
+  `W0237` "itof emulation: denormals are unsafe NAME" (NAME as `QCC_GetSRefName` gives it: the
+  value's definition, `IMMEDIATE` for an immediate, a temporary's type name for a temporary, as
+  `__int32`) or "ftoi emulation: denormals are unsafe",
   F313, an error by default, or for `OP_CONV_UF` `W0238` "utof emulation: will break if NAME is
   big". `%` with no `mod` (or `ModInt`) function is expanded into division, `|`, multiplication
   and subtraction; `^` into `~`, `&` and `|`; `v / f` into `1 / f` and `OP_MUL_VF`. An integer
@@ -3589,12 +3599,46 @@ the statements it would emit are code generation's.
   not end the statement.
 - **FTEF-27.6** `&&` and `||` are `OP_AND_F` and `OP_OR_F` when the target has no other logic
   opcode for their operands.
+- **FTEF-27.7** The unsigned, 64-bit and double opcodes the target lacks: `<` and `<=` of
+  unsigned values are the float comparisons of `OP_CONV_UF`'s conversions when the target has no
+  `OP_LT_I`, else the signed ones of the values less `0x80000000`; `>` and `>=` of unsigned, 64-bit
+  and double values are `<` and `<=` of the operands swapped; unsigned division warns `W0235`
+  "OP_DIV_U emulation: assuming the high bit is not set..." and divides as signed; a sign or zero
+  extension of a constant width and offset is two shifts, of any other refused; `&` and `|` of
+  doubles are the 64-bit integer ones between conversions (`OP_CONV_DI64`, `OP_CONV_I64D`); `^` of
+  vectors and doubles is `(a & ~b) | (b & ~a)`; a shift of a double converts it to a 64-bit
+  integer first; `!` of an integer is `OP_EQ_FNC` with 0.
 - **FTEF-27.8** A cast of an operand to its opcode's type (FTEF-23.5) emits the conversion
   opcodes `QCC_TryEvaluateCast` names for the pair of types, in order: `OP_CONV_UF` for an
   unsigned value made a float, `OP_CONV_ITOF` for an integer, `OP_CONV_FTOI` back, the double and
   64-bit conversions, two of them for a double and a 32-bit integer; each is folded, emitted or
   emulated in turn. With no `utof`, `quake_utof`, `itof` or `quake_itof`, `OP_CONV_UF` is
   `OP_CONV_ITOF`, with its warning, then "utof emulation: will break if NAME is big".
+- **FTEF-27.9** Some opcodes are replaced by another, `op = OTHER; break;`, which is emitted with
+  no check of the target, no folding and no helper: the compound stores (`OP_ADDSTORE_F` and the
+  rest, their operands swapped), `OP_STORE_P` and `OP_STORE_I` as `OP_STORE_F`, `OP_LOAD_P` and
+  `OP_LOAD_I` as `OP_LOAD_F`, `OP_STOREP_P` as `OP_STOREP_I`, `~` of a float, vector or 64-bit value
+  as a subtraction from -1, and the pointer comparisons as the entity or integer ones, so `p > q`
+  of pointers on the standard target warns of nothing. `&` and `|` of vectors are three float
+  statements emitted the same way. A bit clear, `a &~ b`, is the target's clearing opcode when it
+  has one, else `a & b` emitted in turn and a subtraction replacing it. A float or string tested
+  by an `if` is compared with 0 (`OP_NE_F`, `OP_NE_S`) and tested as an integer. The commented-out
+  mixed stores (`OP_ADDSTORE_IF` and the like) and the pointer stores under `IAMNOTLAZY`, which the
+  pinned source does not define, are refused (FTEF-27.5).
+- **FTEF-27.10** Pointer arithmetic scales the offset by what the pointer points at: a float
+  offset is first converted to an integer; for `void` it is bytes (`OP_ADD_I`, `OP_SUB_I`), for an
+  8- or 16-bit type bytes times its width, and for any other type the offset times its size in
+  words is added by `OP_ADD_PIW`, which, emulated, multiplies by `VMWORDSIZE` (4) and adds. A
+  subtraction's size is negated as an unsigned value, `QCC_MakeIntConst(-aux_type->size)`, so it is
+  always the warning `W0234` "Constant int operand 4294967295 will be truncated to -1" (for a size
+  of 1). The difference of two pointers of different types by `typecmp` is the fatal error `E0327`
+  "incompatible pointer types"; of one type it is their byte difference divided by the size.
+  Under `undefwordsize` each assumption is the error `E0326` ("void* maths was disabled.",
+  "pointer* maths was disabled on this type.", "pointer sizes were marked as undefined.", "Making
+  assumptions about pointer sizes was blocked."). A load of 8 or 16 bits reads the word that holds
+  it and shifts; a word load calls `memgetval`, else `W0235` "memgetval function not defined:
+  cannot emulate OP_LOADP_*" and refused. The semantic model does not follow the layout of a
+  struct or union, so pointer arithmetic on one decides no folding and gives no truncation warning.
 
 The statements an emulation emits are code generation's; the semantic model follows them only
 as far as they report.
@@ -3623,3 +3667,54 @@ temporary). The semantic model keeps each value's symbol (`crates/qc-sema/src/ch
   the other's, is "'OP' type mismatch: A with B". `typecmp_lax` compares no names, so two classes
   are the same, and a truth value is its parent's type. The semantic model compares basic types
   only: the pinned FTEQCC gives no warning for `.float == .vector` or `float() != void()`.
+
+## FTEF-29 Assignments
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_RefExpression` (the assignment operators),
+`QCC_StoreSRefToRef`, `QCC_SupplyConversionForAssignment`, `QCC_PR_ParseRefArrayPointer` (`++` and
+`--` after a term), fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+An assignment's left side is read as a term (FTEF-16.13) into a reference that knows whether it
+is read-only (a constant, an immediate, or what an operator or another assignment gave) and
+whether it is the result of a postfix `++` or `--`. The semantic model checks assignments in
+`crates/qc-sema/src/check/assign.rs`.
+
+### Behaviour
+
+- **FTEF-29.1** Before the right side is read, an assignment to the result of a postfix `++` or
+  `--` is the fatal error `E0322` "Assignment to post-inc result", and one to a read-only
+  reference the warning `W0241` "Assignment to const". `1 = a`, `~a = 1`, `(a + 1) = 2` and
+  `(a = 2) = 3` are each warned, not refused.
+- **FTEF-29.2** `=` casts the value to the left side's type (`QCC_EvaluateCast(rhs, lhs, true)`,
+  FTEF-19.31), so a value of another type is "Cannot cast from A to B" (`E0213`), a fatal error,
+  and an array named bare is a pointer to its elements: `arr = 1` is "Cannot cast from float to
+  float*". A compound assignment takes the first opcode of its list (`opcodes_addstore` and the
+  others) whose operands are the left side's and the value's basic types; with none, the value is
+  cast to the left side's type and the list searched again; with none still it is the fatal error
+  `E0323` "Type mismatch on assignment. A OP B is not supported" (`s += s`). A field or pointer
+  updated by an in-place opcode the target has (`opcodes_addstorep` and the others) is checked no
+  further.
+- **FTEF-29.3** The store (`QCC_StoreSRefToRef`) to a read-only reference warns `W0241`
+  "Assignment to constant NAME", NAME as `QCC_GetSRefName` gives it (FTEF-27.4), and to an array
+  named bare is "left operand must be an l-value (did you mean NAME[0]?)" (`E0325`). An
+  assignment's value is the value stored, read-only, so `(a = 2) = 3` warns "Assignment to
+  constant IMMEDIATE".
+- **FTEF-29.4** A compound assignment's opcode is emitted (FTEF-27), and its result converted for
+  the store by `QCC_SupplyConversionForAssignment`: an explicit cast (`QCC_TryEvaluateCast` with
+  `implicit` off, which also casts between an entity and a float), else `QCC_ShouldConvert`'s
+  conversion; with none it is the fatal error `E0324` "Implicit type mismatch on assignment to
+  NAME. Needed A, got B." (under `typeexplicit` for any conversion), or under `lax` the warning
+  `W0243`. `a *= v` of a float and a vector is the error: `OP_MUL_FV` gives a vector.
+- **FTEF-29.5** A postfix `++` or `--` of a read-only value is the fatal error `E0322`
+  "postincrement: lhs is readonly" or "postdecrement: lhs is readonly"; otherwise the operand
+  plus or minus 1 of its type is emitted (FTEF-27), and the result is marked as a postfix's.
+- **FTEF-29.6** An assignment that is the whole condition of an `if`, `while`, `do` or `for`,
+  not parenthesised (`a = 1 && a` is one, `a = (1 && a)`), warns `W0242` "suggest parenthesis for assignment used as truth value" after its
+  right side is read; `if ((a = 1))` does not.
+- **FTEF-29.7** The store checks the value's type against the left side's: unless the value is
+  null, or its type or a parent's is the left side's by `typecmp_lax`, or either is a `variant`,
+  or the value is a `void*` or `variant*` stored into a pointer, a number is converted to the left
+  side's type (`QCC_SupplyConversion`) and anything else is the warning `W0240` "type mismatch: A
+  NAME to B TARGET", TARGET `base.field` for a field. A cast, `lax` included, gives the value the
+  left side's type first, so only a compound assignment's result kept under `lax` (FTEF-29.4)
+  reaches the warning: `a *= v` is "type mismatch: vector vector to float a".

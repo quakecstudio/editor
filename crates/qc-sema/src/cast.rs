@@ -551,6 +551,21 @@ impl Source<'_> {
         }
     }
 
+    /// `QCC_SupplyConversionForAssignment(to, var, wanted, true)` of this value stored into a
+    /// `to` (FTEF-29.4): `QCC_TryEvaluateCast` with `implicit` off, which also casts an entity
+    /// and a float either way, and else [`Source::supply`].
+    #[must_use]
+    pub fn supply_for_assignment(self, to: &Type, flags: CompilerFlags) -> Supply {
+        let entity_float = matches!(
+            (self.kind(), Kind::of(to)),
+            (Kind::Entity, Kind::Float) | (Kind::Float, Kind::Entity)
+        );
+        if entity_float || self.try_cast(to, flags).is_some() {
+            return Supply::Converted;
+        }
+        self.supply(Kind::of(to), flags)
+    }
+
     /// The kind of this value's type.
     #[must_use]
     pub fn kind(self) -> Kind {
