@@ -3022,11 +3022,26 @@ impl<'a> Parser<'a> {
         Some(expr)
     }
 
-    /// `( args )` (QC-18.8).
+    /// `( args )` (QC-18.8). Under FTEQCC `va_arg(index, TYPE)` and `...(index, TYPE)` read an
+    /// expression, a `,` and a type (`QCC_PR_ParseFunctionCall`, FTEF-32.7).
     fn arg_list(&mut self) {
+        let va_arg = self.fteqcc()
+            && self
+                .pos
+                .checked_sub(1)
+                .and_then(|at| self.input.tokens.get(at))
+                .is_some_and(|t| matches!(t.text.as_str(), "va_arg" | "..."));
         self.start_node(K::ArgList);
         self.bump();
-        if self.at(K::RParen) {
+        if va_arg {
+            self.expression();
+            if self.expect(K::Comma, ",") {
+                self.fte_type();
+                self.expect(K::RParen, ")");
+            } else if self.at(K::RParen) {
+                self.bump();
+            }
+        } else if self.at(K::RParen) {
             self.bump();
         } else {
             loop {

@@ -715,8 +715,12 @@ impl<'a> Resolver<'a> {
                 .map(|body| vec![(file, def, None, body, Some(decl))])
                 .unwrap_or_default()
         };
-        // FTEF-19.6: the default values are read with the type, before the name.
-        let mut aborted = self.profile.definition_checks() && self.check_defaults(file, decl);
+        // FTEF-19.6: the default values are read with the type, before the name, so a fatal
+        // error in one ends the declaration before it defines or checks the name.
+        if self.profile.definition_checks() && self.check_defaults(file, decl) {
+            return Vec::new();
+        }
+        let mut aborted = false;
         let existing = match self.find_existing(decl, location) {
             Ok(existing) => existing,
             Err(found) => return pending(found),

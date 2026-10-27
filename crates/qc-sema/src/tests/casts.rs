@@ -81,10 +81,7 @@ fn lax_makes_refused_casts_warnings() {
         codes(&format!("{lax}float(float a = \"a\") g = #2;\n")),
         [Code::W0229]
     );
-    assert_eq!(
-        codes("float(float a = \"a\") g = #2;\n"),
-        [Code::E0213, Code::E0211]
-    );
+    assert_eq!(codes("float(float a = \"a\") g = #2;\n"), [Code::E0213]);
     assert_eq!(
         diags(&format!(
             "{lax}enum class E : float {{ A }};\nfloat x = E::A;\n"

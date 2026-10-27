@@ -3097,8 +3097,10 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   its text (FTEF-17.10), and typed by the check stage (FTEF-34.9); the warnings FTEQCC gives as
   it writes the program rather than as it defines a name, a definition never referred to ("no
   references", `WARN_NOTREFERENCED`), a field allocated twice ("Field def already has a value",
-  "Inconsistant field def") and the end_sys checks, which belong to the compiler's output
-  (QC-25); designated initialisers, `{ .a = 1 }`, whose members are read as written (FTEF-19.47
+  "Inconsistant field def"), the precache checks ("Sound \"NAME\" was used but not directly
+  precached" and the others of `QCC_WriteData`, from the names `precache_*`, `setmodel`,
+  `sound`, `localsound`, `used_sound` and `used_model` are given) and the end_sys checks, which
+  belong to the compiler's output (QC-25); designated initialisers, `{ .a = 1 }`, whose members are read as written (FTEF-19.47
   reads the others), and a definition of a struct type not yet defined ("redeclared with
   different storage type"), the compiler's (QC-21); and FTEQCC's reacc and hexenc syntaxes (`flag_acc`, `var name
   : type`, a field `alias`), which `-Tid` does not enable.
@@ -3123,6 +3125,12 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
 - **FTEF-19.48** An initialiser of a global or `static` naming no definition is "Unknown value
   \"NAME\"." where it is used and then `E0214` "initializer for 'X' is not constant"; an unknown
   `Scope::name` is the first alone.
+- **FTEF-19.49** A default value is read with the parameter's type, before the declaration's name
+  (FTEF-19.6), so a fatal error in it ends the declaration there: the name is neither defined nor
+  compared with an earlier definition, and a body after it is not read. `void(float a, optional
+  float b = '1 2 3') g;` then `g(1);` is "Cannot cast from vector to float" and "Unknown value
+  \"g\"."; a redeclaration with such a default is that error alone, no "Type mismatch on
+  redeclaration".
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and
@@ -4222,7 +4230,12 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   accepts only a string immediate"; `random` makes its arguments floats (`QCC_SupplyConversion`,
   the fatal error `E0227` "Implicit type mismatch. Needed float, got TYPE." for a type with no
   conversion); `randomv` takes vectors as they are, any other type the fatal error `E0340` "type
-  mismatch on parm N"; `alloca` makes its size an integer; `entnum(e)` is `(e / 1i) /
+  mismatch on parm N"; `alloca` makes its size an integer, rounds it up to words (`OP_ADD_I` of 3,
+  `OP_DIV_I` by 4) and pushes them by `OP_PUSH`, a plain statement, which only FTE's highest
+  revision has ("Opcode \"<PUSH>|PUSH\" not valid for target. Consider the use of: #pragma
+  target fte_6614"); `alloca`, `used_sound` and `used_model` read their first argument whatever
+  follows the `(` (`QCC_PR_Expression`), so with none they are the fatal error `E0201` "\")\" -
+  not a name"; `entnum(e)` is `(e / 1i) /
   (nextent(world) / 1i)` by `OP_DIV_I`, and with no `nextent` the fatal error `E0347` "the nextent
   builtin is not defined"; `used_sound` and `used_model` take a string immediate, else the error
   `E0340` "Argument to used_sound intrinsic was not a string immediate.".
@@ -4249,8 +4262,11 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   a constant or an immediate, is the error `E0339` "Unable to write to read-only out argument",
   not fatal.
 
-- **FTEF-32.7** `va_arg(index, TYPE)` reads its second argument as a type
-  (`QCC_PR_ParseType`), and its index as a float times 3 (`OP_MUL_F`), or else made an integer
+- **FTEF-32.7** `va_arg(index, TYPE)` (and `...(index, TYPE)`) reads its index, the `,` ("expected
+  ,, found X" without it) and its second argument as a type (`QCC_PR_ParseType`, `"X" is not a
+  type` for another token; any type, `string`, `vector`, `float*`, `.float`); the parser reads
+  any call of that name so, a function of the name with parameters included. Its index is read
+  as a float times 3 (`OP_MUL_F`), or else made an integer
   (`QCC_SupplyConversion`, "Implicit type mismatch. Needed integer, got TYPE.") times 3; in a
   function with no `...`, which has no `__va_list`, it is the fatal error `E0346` "va_arg()
   intrinsic only works inside varadic functions". Its value is of TYPE.
@@ -4383,7 +4399,11 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   (OPNAME)." (`QCC_PR_StatementFlags`, `ERR_BADEXTENSION` as a warning, so the read goes on),
   OPNAME the opcode's: an operator's that is not folded, `LOADF_F` and the like for an entity's
   field, `STORE_F` for each component of a vector built, the stores of a call's arguments (by
-  their words, `STORE_V`, `STORE_I64` or `STORE_F`) and `CALLn`, `IFNOT`, `STORE_*`, `GOTO` and
+  their words, `STORE_V`, `STORE_I64` or `STORE_F`; an argument of more than three words copied
+  as it is read, three words a parameter, by the widest store the target has for the words left,
+  and the others stored after every argument is read; on a target with `OP_CALL1H` the first two
+  parameters passed with no store) and `CALLn`, or `CALLnH` with `OP_CALL1H` (`CALL0` with no
+  argument), `IFNOT`, `STORE_*`, `GOTO` and
   `STORE_*` for `?:` (the first arm stored by its size, `STORE_V`, `STORE_I64` or `STORE_F`,
   the last by its type as `QCC_StoreToSRef` stores it, a double's with plain statements that
   report nothing, an `OP_STORE_I64` two `STORE_FLD`s on a target without it, and a store of a

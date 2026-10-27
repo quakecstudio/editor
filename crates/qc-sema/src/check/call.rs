@@ -29,12 +29,18 @@ impl Checker<'_> {
     pub(super) fn call(&mut self, call: &ast::CallExpr) -> Checked {
         let span = call.syntax().span();
         let args: Vec<ast::Expr> = call.args().map(|a| a.args().collect()).unwrap_or_default();
+        // `va_arg`'s type, written in its argument list (FTEF-32.7).
+        let written = call
+            .args()
+            .and_then(|list| list.syntax().children().find_map(ast::Type::cast))
+            .and_then(|ty| self.env.written_type(ty.syntax().span().start));
         // An intrinsic no definition names, which FTEQCC declares as it is called.
         if let Some(ast::Expr::Name(name)) = call.callee()
             && let Some(token) = name.name()
             && self.env.reference(token.span().start).is_none()
             && self.env.fteqcc()
-            && let Some(value) = self.intrinsic(&token.text_lossless(), &args, span)?
+            && let Some(value) =
+                self.intrinsic(&token.text_lossless(), &args, written.clone(), span)?
         {
             return Ok(value);
         }
@@ -95,7 +101,7 @@ impl Checker<'_> {
         if !method
             && function.params.is_empty()
             && !function.variadic
-            && let Some(value) = self.intrinsic(&name, &args, span)?
+            && let Some(value) = self.intrinsic(&name, &args, written, span)?
         {
             return Ok(value);
         }
@@ -172,47 +178,107 @@ impl Checker<'_> {
 
     /// FTEF-34.9: the statements a call generates, each argument stored to its parameter by its
     /// words, `OP_STORE_V`, `OP_STORE_I64` where the target has it, else `OP_STORE_F`, then
-    /// `OP_CALLn`; only at global scope do they matter.
+    /// `OP_CALLn`; on a target with `OP_CALL1H` the first two arguments of at most three words
+    /// are passed as they are, with no store, and the call is `OP_CALLnH`. An argument of more
+    /// than three words is copied three at a time, each three a parameter, by the widest store
+    /// the target has for the words left (`QCC_PR_GenerateFunctionCallRef`). Only at global
+    /// scope do they matter.
     pub(super) fn generate_call(&mut self, values: &[Value], span: Span) {
         if !self.global {
             return;
         }
         let target = self.env.target_at(span.start);
+        let registers = target.valid(Op::Call1h);
+        let mut parms: usize = 0;
+        // The arguments of at most three words, by parameter, stored after every argument is
+        // read (`QCC_RemapTemp`'s loop), from the third with `OP_CALL1H`.
+        let mut simple: Vec<(usize, u32)> = Vec::new();
         for value in values {
-            let store = match self.env.layout(&value.ty).map(|l| l.words) {
-                Some(3) => Op::StoreV,
-                Some(2) if target.valid(Op::StoreI64) => Op::StoreI64,
-                Some(2) => Op::StoreV,
+            let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
+            if words <= 3 {
+                simple.push((parms, words));
+                parms = parms.saturating_add(1);
+                continue;
+            }
+            // Copied as it is read, three words at a time, by the widest store the target has
+            // for what is left of them, each three a parameter of its own.
+            let mut at: u32 = 0;
+            while at < words {
+                let left_in_parm = 3_u32.saturating_sub(at.checked_rem(3).unwrap_or(0));
+                let mut size = left_in_parm.min(words.saturating_sub(at));
+                if size == 2 && !target.valid(Op::StoreI64) {
+                    size = 1;
+                }
+                let store = match size {
+                    3 => Op::StoreV,
+                    2 => Op::StoreI64,
+                    _ => Op::StoreF,
+                };
+                if at.is_multiple_of(3) {
+                    parms = parms.saturating_add(1);
+                }
+                self.generate(store, span);
+                at = at.saturating_add(size);
+            }
+        }
+        let first = if registers { 2 } else { 0 };
+        for (_, words) in simple.into_iter().filter(|&(parm, _)| parm >= first) {
+            let store = match words {
+                3 => Op::StoreV,
+                2 if target.valid(Op::StoreI64) => Op::StoreI64,
+                2 => Op::StoreV,
                 _ => Op::StoreF,
             };
             self.generate(store, span);
         }
-        let calls = [
-            Op::Call0,
-            Op::Call1,
-            Op::Call2,
-            Op::Call3,
-            Op::Call4,
-            Op::Call5,
-            Op::Call6,
-            Op::Call7,
-            Op::Call8,
-        ];
-        let call = calls.get(values.len()).copied().unwrap_or(Op::Call8);
+        let calls: [Op; 8] = if registers {
+            [
+                Op::Call1h,
+                Op::Call2h,
+                Op::Call3h,
+                Op::Call4h,
+                Op::Call5h,
+                Op::Call6h,
+                Op::Call7h,
+                Op::Call8h,
+            ]
+        } else {
+            [
+                Op::Call1,
+                Op::Call2,
+                Op::Call3,
+                Op::Call4,
+                Op::Call5,
+                Op::Call6,
+                Op::Call7,
+                Op::Call8,
+            ]
+        };
+        let call = match parms.checked_sub(1) {
+            None => Op::Call0,
+            Some(last) => calls.get(last.min(7)).copied().unwrap_or(Op::Call8),
+        };
         self.generate(call, span);
     }
 
     /// FTEF-32.2: the intrinsics a call of a function with no parameters stands for, by the
     /// function's name: `_`, which takes only a string immediate; `random` and `randomv`, whose
-    /// arguments are made floats; `alloca`, whose size is made an integer; `va_arg`; and
+    /// arguments are made floats; `alloca`, whose size is made an integer, rounded up to words and
+    /// pushed by `OP_PUSH`, a plain statement; `va_arg`; and
     /// `used_sound`, `used_model`, which take a string immediate. `None` for any other name.
     fn intrinsic(
         &mut self,
         name: &str,
         args: &[ast::Expr],
+        written: Option<Type>,
         span: Span,
     ) -> Result<Option<Value>, Fatal> {
         let string = || Value::of(Type::Simple(SimpleType::String));
+        // `QCC_PR_Expression` reads their first argument whatever follows the `(`.
+        if args.is_empty() && matches!(name, "alloca" | "used_sound" | "used_model") {
+            let message = "\")\" - not a name".to_owned();
+            return self.fatal(Code::E0201, span, message).map(Some);
+        }
         match name {
             "_" => {
                 let immediate = args.first().is_some_and(is_string_literal);
@@ -274,6 +340,8 @@ impl Checker<'_> {
                     let rounded = self.emit(qc_preproc::Op::AddI, &size, &three, span)?;
                     self.emit(qc_preproc::Op::DivI, &rounded, &four, span)?;
                 }
+                // `push_words((sz+3)/4)`, a plain statement.
+                self.simple_statement(qc_preproc::Op::Push, span)?;
                 Ok(Some(Value::of(Type::Pointer(
                     Type::Simple(SimpleType::Void).into(),
                 ))))
@@ -292,10 +360,7 @@ impl Checker<'_> {
                         self.emit(qc_preproc::Op::MulI, &index, &three, arg_span)?;
                     }
                 }
-                let ty = args
-                    .get(1)
-                    .and_then(|a| self.env.written_type(a.syntax().span().start))
-                    .unwrap_or(Type::Unknown);
+                let ty = written.unwrap_or(Type::Unknown);
                 if !self.function.variadic {
                     let message = "va_arg() intrinsic only works inside varadic functions";
                     return self.fatal(Code::E0346, span, message.to_owned()).map(Some);

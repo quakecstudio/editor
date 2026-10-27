@@ -218,14 +218,20 @@ pub(super) fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, cx: Cx<'_>) 
     body
 }
 
-/// The types written in casts and `sizeof` under `node`, each by where it starts, which the
-/// check stage reads (FTEF-34.9).
+/// The types written in casts, `sizeof` and `va_arg` under `node`, each by where it starts,
+/// which the check stage reads (FTEF-34.9).
 pub(super) fn written_types(node: &SyntaxNode, cx: Cx<'_>) -> Vec<(usize, Type)> {
     let mut out = Vec::new();
     for node in node.descendants() {
+        // A `va_arg`'s type is a child of its argument list (FTEF-32.7).
+        let argument = node
+            .parent()
+            .filter(|parent| parent.kind() == SyntaxKind::ArgList)
+            .and_then(|_| ast::Type::cast(node.clone()));
         let written = ast::CastExpr::cast(node.clone())
             .and_then(|cast| cast.ty())
-            .or_else(|| ast::SizeofExpr::cast(node).and_then(|sizeof| sizeof.ty()));
+            .or_else(|| ast::SizeofExpr::cast(node).and_then(|sizeof| sizeof.ty()))
+            .or(argument);
         if let Some(ty) = written {
             out.push((ty.syntax().span().start, cx.ty(&ty)));
         }

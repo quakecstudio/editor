@@ -691,3 +691,46 @@ fn a_return_names_types_by_their_own_names() {
     nothing("ptr");
     nothing("__function");
 }
+
+// spec FTEF-34.9: at global scope an argument of more than three words is copied three words a
+// parameter as it is read, the others stored after; `OP_CALL1H` passes the first two parameters
+// with no store and calls by `OP_CALLnH`
+#[test]
+fn global_calls_store_their_arguments() {
+    let unable = |op: &str| {
+        d(
+            Code::E0345,
+            &format!("Unable to generate statements at global scope ({op})."),
+        )
+    };
+    let defs = "struct st { vector a, b; }; struct s5 { vector a; float b, c; }; st S; s5 S5; \
+                __int64 L;\nfloat(float f, s5 s) q5 = #6; float(st s) q = #4; \
+                float(__int64 l, vector v, float x) q7 = #8; float() z = #3;\n";
+    let at = |target: &str, init: &str| {
+        let found = diags(&format!("{target}\n{defs}float r = {init};\n"));
+        found
+            .into_iter()
+            .filter(|(code, _)| *code == Code::E0345)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        at("", "q5(1, S5)"),
+        ["STORE_V", "STORE_F", "STORE_F", "STORE_F", "CALL3"].map(unable)
+    );
+    assert_eq!(at("", "q(S)"), ["STORE_V", "STORE_V", "CALL2"].map(unable));
+    assert_eq!(
+        at("", "q7(L, '1 1 1', 2)"),
+        ["STORE_V", "STORE_V", "STORE_F", "CALL3"].map(unable)
+    );
+    assert_eq!(at("", "z()"), [unable("CALL0")]);
+    let fte = "#pragma target fte";
+    assert_eq!(
+        at(fte, "q5(1, S5)"),
+        ["STORE_V", "STORE_I64", "CALL3H"].map(unable)
+    );
+    assert_eq!(
+        at(fte, "q7(L, '1 1 1', 2)"),
+        ["STORE_F", "CALL3H"].map(unable)
+    );
+    assert_eq!(at(fte, "z()"), [unable("CALL0")]);
+}

@@ -521,10 +521,7 @@ fn default_values() {
         (Code::E0218, "Default value not initialized yet".to_owned())
     );
     assert_eq!(fte("float y = 1;\nvoid(float a = y) g = #6;\n"), []);
-    assert_eq!(
-        fte("void(float a = \"s\") g = #6;\n"),
-        [Code::E0213, Code::E0211]
-    );
+    assert_eq!(fte("void(float a = \"s\") g = #6;\n"), [Code::E0213]);
     assert_eq!(
         fte("void(float a = 1) g;\nvoid(float a = 2) g = #6;\n"),
         [Code::E0205, Code::E0211]
@@ -1357,5 +1354,26 @@ fn intrinsics_autocvars_keywords_and_qualifiers() {
     assert_eq!(
         messages("extern static void() g;\n"),
         ["Conflicting storage classes."]
+    );
+}
+
+// spec FTEF-19.49: a refused default value ends the declaration before its name, which is then
+// neither defined nor compared with an earlier definition
+#[test]
+fn a_refused_default_ends_the_declaration() {
+    let cast = (Code::E0213, "Cannot cast from vector to float".to_owned());
+    assert_eq!(
+        fte_messages("void(float a, optional float b = '1 2 3') g;\nvoid() h = { g(1); };\n"),
+        [
+            cast.clone(),
+            (Code::E0301, "Unknown value \"g\".".to_owned())
+        ]
+    );
+    assert_eq!(
+        fte_messages(
+            "void(float a, optional float b = '1 2') g;\n\
+             void(float a, optional float b = '1 2', float c) g;\n"
+        ),
+        [cast.clone(), cast]
     );
 }

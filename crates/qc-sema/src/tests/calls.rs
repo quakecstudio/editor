@@ -246,6 +246,77 @@ fn va_arg_intrinsic() {
     );
 }
 
+// spec FTEF-32.7: `va_arg`'s second argument is any type, after a `,`
+// spec QCD-3.3: E0203 `"X" is not a type`
+// spec QCD-3.4: E0204 "expected X, found Y"
+// spec QCD-3.62: E0201 `")" - not a name` for no index
+#[test]
+fn va_arg_reads_any_type() {
+    let body = |statement: &str| {
+        diags(&format!(
+            "#pragma target fte\nvoid *p; string x; float f; vector w; int i;\n\
+             void(...) g = {{ {statement} }};\n"
+        ))
+    };
+    for statement in [
+        "x = va_arg(1, string);",
+        "w = va_arg(1, vector);",
+        "i = va_arg(1, int);",
+        "p = va_arg(1, float*);",
+    ] {
+        assert_eq!(body(statement), [], "{statement}");
+    }
+    assert_eq!(
+        body("f = va_arg(1, string);"),
+        [d(Code::E0213, "Cannot cast from string to float")]
+    );
+    assert_eq!(
+        body("f = va_arg(i, .float);"),
+        [d(Code::E0213, "Cannot cast from .float to float")]
+    );
+    assert_eq!(
+        body("x = va_arg(1);"),
+        [d(Code::E0204, "expected ,, found )")]
+    );
+    assert_eq!(
+        body("x = va_arg(1, 2);"),
+        [d(Code::E0203, "\"2\" is not a type")]
+    );
+    assert_eq!(
+        body("x = va_arg();"),
+        [d(Code::E0201, "\")\" - not a name")]
+    );
+}
+
+// spec FTEF-32.2: `alloca`, `used_sound` and `used_model` read an argument whatever follows, and
+// `alloca` pushes its words by `OP_PUSH`
+// spec QCD-4.26: E0320 for the `OP_PUSH` the target refuses
+#[test]
+fn alloca_pushes_and_intrinsics_need_an_argument() {
+    let body = |target: &str, statement: &str| {
+        diags(&format!(
+            "{target}\nvoid *p; string x; int i;\nvoid() g = {{ {statement} }};\n"
+        ))
+    };
+    let push = d(
+        Code::E0320,
+        "Opcode \"<PUSH>|PUSH\" not valid for target. Consider the use of: #pragma target fte_6614",
+    );
+    assert_eq!(
+        body("#pragma target fte", "p = alloca(5);"),
+        std::slice::from_ref(&push)
+    );
+    assert_eq!(body("", "p = alloca(i);").last(), Some(&push));
+    assert_eq!(body("#pragma target fte_6614", "p = alloca(i);"), []);
+    for statement in ["p = alloca();", "x = used_sound();", "x = used_model();"] {
+        assert_eq!(
+            body("#pragma target fte", statement),
+            [d(Code::E0201, "\")\" - not a name")],
+            "{statement}"
+        );
+    }
+}
+
 // spec FTEF-32.2: `randomv` takes vectors as they are; `entnum` needs `nextent`
 // spec QCD-4.53: E0347 for `entnum` with no `nextent`
 // spec FTEF-24.9: an intrinsic's name or `nil` after `.` is no field
