@@ -361,3 +361,81 @@ fn undefined_word_size() {
         ]
     );
 }
+
+const ADD_I: &str =
+    "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte";
+const ADD_INT: &str = "AddInt function not defined: cannot emulate int+int";
+const MEMGETVAL: &str = "memgetval function not defined: cannot emulate OP_LOADP_*";
+
+fn loadp(name: &str) -> (Code, String) {
+    d(
+        Code::E0320,
+        &format!(
+            "Opcode \"=|{name}\" not valid for target. Consider the use of: #pragma target fte"
+        ),
+    )
+}
+
+// spec FTEF-27.10: a struct pointed at is sized by its layout, a subtraction's size truncated
+#[test]
+fn struct_pointer_arithmetic_scales_by_the_layout() {
+    let add = [d(Code::W0235, ADD_INT), d(Code::E0320, ADD_I)];
+    assert_eq!(
+        diags("struct S { float a; }; S *p; void() g = { p = p + 1; };\n"),
+        add
+    );
+    assert_eq!(
+        diags("struct S { float a; }; void() g = { local S *p = 0; p++; };\n"),
+        add
+    );
+    assert_eq!(
+        diags("struct S { float a; vector v; }; S *p; void() g = { p = p - 1; };\n"),
+        [
+            d(
+                Code::W0234,
+                "Constant int operand 4294967292 will be truncated to -4"
+            ),
+            d(Code::W0235, ADD_INT),
+            d(Code::E0320, ADD_I),
+        ]
+    );
+}
+
+// spec FTEF-6.14: a member through a pointer is loaded by its type at its offset, the pointer
+// read first, and a struct through a pointer word by word, each word a statement the target
+// must have
+#[test]
+fn struct_reads_through_a_pointer() {
+    let member = [d(Code::W0235, MEMGETVAL), loadp("LOADP_F")];
+    for read in ["p->a", "p.a", "(*p).a", "p[0].a"] {
+        let source = format!(
+            "struct S {{ float a; }}; void() g = {{ local S *p = 0; local float f = {read}; }};\n"
+        );
+        assert_eq!(diags(&source), member, "{read}");
+    }
+    assert_eq!(
+        diags(
+            "struct S { float a; }; void() g = { local S **pp = 0; local float f = (*pp)->a; };\n"
+        ),
+        [
+            d(Code::W0235, MEMGETVAL),
+            loadp("LOADP_I"),
+            d(Code::W0235, MEMGETVAL),
+            loadp("LOADP_F"),
+        ]
+    );
+    for read in ["*p", "p[0]"] {
+        let source = format!(
+            "struct S {{ float a; }}; void() g = {{ local S *p = 0; local S y = {read}; }};\n"
+        );
+        assert_eq!(diags(&source), [loadp("LOADP_I")], "{read}");
+    }
+    assert_eq!(
+        diags("struct S { float a; vector v; }; void() g = { local S *p = 0; local S y = *p; };\n"),
+        [loadp("LOADP_V")]
+    );
+    assert_eq!(
+        diags("struct S { float a; }; void() g = { local S *p = 0; p->a = 1; };\n"),
+        []
+    );
+}

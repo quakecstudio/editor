@@ -78,7 +78,8 @@ impl Checker<'_> {
                 {
                     self.converted(index, Etype::Integer, span)?;
                 }
-                self.load_from_pointer(value, span)
+                let index = pointer.index.clone();
+                self.load_from_pointer(value, index.as_ref(), span)
             }
             Reference::Character { float_index } => {
                 let op = if float_index { Op::LoadpC } else { Op::LoadpU8 };
@@ -128,11 +129,19 @@ impl Checker<'_> {
     }
 
     /// FTEF-31.3: `QCC_LoadFromPointer`: the index made an integer, then the load of the
-    /// pointee's type.
-    fn load_from_pointer(&mut self, value: Value, span: Span) -> Checked {
+    /// pointee's type; a struct or union word by word (FTEF-6.14).
+    fn load_from_pointer(&mut self, value: Value, index: Option<&Value>, span: Span) -> Checked {
         let Some(etype) = self.etype_of(&value.ty) else {
             return Ok(value);
         };
+        if matches!(etype, Etype::Struct | Etype::Union) {
+            self.load_words_from_pointer(&value.ty, index, span)?;
+            return Ok(Value {
+                reference: Reference::Global,
+                sym: Sym::Temp,
+                ..value
+            });
+        }
         let op = match etype {
             Etype::Int64 | Etype::Uint64 => Op::LoadpI64,
             Etype::Float => Op::LoadpF,
@@ -148,7 +157,7 @@ impl Checker<'_> {
                 let message = "ptr-to-variants must be cast to a different type before being read";
                 return self.fatal(Code::E0336, span, message.to_owned());
             }
-            // A struct, union or double is loaded word by word with no check of the target.
+            // A double is loaded word by word with no check of the target.
             Etype::Struct | Etype::Union | Etype::Double | Etype::Enum | Etype::Boolean => {
                 return Ok(Value {
                     reference: Reference::Global,
@@ -163,6 +172,37 @@ impl Checker<'_> {
             ty: value.ty,
             ..loaded
         })
+    }
+
+    /// FTEF-6.14: a struct or union of `ty` read through a pointer, `OP_LOADP_V` for each
+    /// three words and `OP_LOADP_I` for each word after them (`QCC_PR_SimpleStatement`, whose
+    /// opcode the target must have, a fatal error), each word's offset added to the index by
+    /// `OP_ADD_I` when there is one.
+    fn load_words_from_pointer(
+        &mut self,
+        ty: &Type,
+        index: Option<&Value>,
+        span: Span,
+    ) -> Result<(), Fatal> {
+        let Some(words) = self.env.layout(ty).map(|layout| layout.words) else {
+            return Ok(());
+        };
+        let mut at: u32 = 0;
+        while at < words {
+            let vector = at.checked_add(2).is_some_and(|last| last < words);
+            if let Some(index) = index {
+                let offset = Value::constant(Constant::int(i32::try_from(at).unwrap_or(i32::MAX)));
+                self.emit(Op::AddI, index, &offset, span)?;
+            }
+            let (op, step) = if vector {
+                (Op::LoadpV, 3)
+            } else {
+                (Op::LoadpI, 1)
+            };
+            self.simple_statement(op, span)?;
+            at = at.saturating_add(step);
+        }
+        Ok(())
     }
 
     /// FTEF-31.2: `base[index]` (`QCC_PR_ParseRefArrayPointer`): an array's element, with the

@@ -342,6 +342,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (FTEF-32.2); a fatal error.
 - **QCD-4.54** `E0348` "Accessor NAME has no get function" (FTEF-10.7); a fatal error.
 - **QCD-4.55** `E0349` "Accessor has no set function" (FTEF-10.7); a fatal error.
+- **QCD-4.56** `E0352` "Duplicated default case": a `switch` with a second `default`
+  (FTEF-34.10); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 

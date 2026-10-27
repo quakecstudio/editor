@@ -510,6 +510,17 @@ impl<'a> Resolver<'a> {
         };
         let member = match self.member_in(class, &decl.name) {
             Some(existing) => {
+                // FTEF-17.15: `QCC_PR_GetDef` of `CLASS::NAME` with the definition's type finds
+                // the member with another; the definition is not read on.
+                let old = self.index.def(existing).map(|d| d.ty.clone());
+                if self.profile.fteqcc_diagnostics()
+                    && let Some(old) = old
+                    && !self.typecmp(&old, &decl.ty)
+                {
+                    let name = format!("{scope}::{}", decl.name);
+                    self.mismatch(&name, location, &old, &decl.ty);
+                    return Vec::new();
+                }
                 // FTEF-19.4: a body for a member already initialised, as for any definition.
                 if decl.body.is_some()
                     && !decl.redefinable()

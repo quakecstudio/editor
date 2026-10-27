@@ -656,12 +656,19 @@ impl Type {
     /// `entity*`.
     #[must_use]
     pub fn fteqcc_name(&self) -> String {
+        self.fteqcc_name_with(&Self::fteqcc_name)
+    }
+
+    /// [`Self::fteqcc_name`] with the types this one holds, a field's, a pointer's and a
+    /// function's parameters, named by `name_of`.
+    #[must_use]
+    pub fn fteqcc_name_with(&self, name_of: &dyn Fn(&Self) -> String) -> String {
         let ty = self;
         match ty {
             Type::Unknown => "__variant".to_owned(),
             Type::Simple(simple) => simple.as_str().to_owned(),
-            Type::Field(inner) => format!(".{}", inner.fteqcc_name()),
-            Type::Pointer(inner) => format!("{}*", inner.fteqcc_name()),
+            Type::Field(inner) => format!(".{}", name_of(inner)),
+            Type::Pointer(inner) => format!("{}*", name_of(inner)),
             Type::Named(name) => match Kind::of(ty) {
                 Kind::Opaque => name.to_string(),
                 kind => kind.name().to_owned(),
@@ -672,7 +679,7 @@ impl Type {
                     .iter()
                     .enumerate()
                     .map(|(at, param)| {
-                        let ty = param.fteqcc_name();
+                        let ty = name_of(param);
                         let Some(label) = func.labels.0.get(at) else {
                             return ty;
                         };
@@ -698,6 +705,7 @@ impl Type {
                 if func.variadic {
                     params.push("...".to_owned());
                 }
+                // The return type by its name, `type->aux_type->name`, not by `TypeName`.
                 format!("{}({})", func.ret.fteqcc_name(), params.join(", "))
             }
         }

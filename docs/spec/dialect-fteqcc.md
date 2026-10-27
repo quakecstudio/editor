@@ -370,6 +370,16 @@ inheritance, bitfields and nested members.
   a struct whose array sizes and widths are numbers. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_ParseStruct`; `engine/qclib/qccmain.c`, `QCC_PR_NewType`, `type_size`.
+- **FTEF-6.14** A struct or union read through a pointer is read word by word
+  (`QCC_LoadFromPointer`, `case ev_struct: case ev_union:`): `OP_LOADP_V` for each three of its
+  words and `OP_LOADP_I` for each word after them, each a `QCC_PR_SimpleStatement`, which
+  emulates nothing and refuses an opcode the target lacks with the fatal error `E0320` "Opcode
+  \"=|LOADP_V\" not valid for target. ..." (the first refused ends the statement); with an index,
+  each word's offset is added to it by `OP_ADD_I`. A member reached through a pointer, `p->a`,
+  `p.a`, `(*p).a` or `p[0].a` for a `struct S *p`, is read by the load of its own type at its
+  offset (FTEF-27.10), the pointer read first, so `(*pp)->a` loads `*pp` with `OP_LOADP_I` and
+  then `a` with `OP_LOADP_F`. On the id target `local S y = *p;` is "Opcode \"=|LOADP_I\" not
+  valid for target" for a one-word `S`, and `OP_LOADP_V` for one of four words.
 
 ## FTEF-7 `typedef` of any type
 
@@ -2214,6 +2224,16 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   class's own name there is the class, as `spawn(Thing)` takes it, not its constructor. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseValue`.
+- **FTEF-17.15** `TYPE Class::member` of a member the class or a parent declares is
+  `QCC_PR_GetDef` of `Class::member` with TYPE, so a TYPE that `typecmp` tells from the
+  member's is the error `E0205` "Type mismatch on redeclaration of Class::member. TYPE, should
+  be MEMBERTYPE", and the definition is not read on. Parameter names do not count, a class is
+  told from the entity and another class, and a typedef is its type: `void() C::m` and
+  `float(float x) C::m` for `void(float x) m` are refused, `void(float y) C::m` is not. A
+  constructor declared `C();` is of type `void()` (`QCC_PR_GenFunctionType(type_void, ...)`),
+  so `C() C::C = {};` is "C(), should be void()" and `void() C::C = {};` defines it. The
+  types are named as `TypeName` names them, a class as `class NAME`, inside a function's
+  parameters too.
 
 ## FTEF-18 Further statements, terms and frame macros
 
@@ -2503,6 +2523,11 @@ against FTEQCC.
   declaration after the next, and a body that has its `}` is read whole whatever its columns.
   Under the vanilla profile a function's statements end at a declaration line as before, where a
   declaration needs `local`.
+- **FTEF-18.35** A duplicate C-style label (FTEF-18.23) is warned of and its name read, but not
+  its `:` (`QCC_PR_ParseWarning(WARN_DUPLICATELABEL, ...); QCC_PR_Lex(); return;`), so the `:`
+  starts a FrikQCC-style label: `l: ; l: x;` defines `x`, and `l: ; l: ;` is the error `E0201`
+  `invalid label name ";"` (`QCC_PR_ParseError(ERR_BADLABELNAME, "invalid label name \"%s\"",
+  pr_token);`), which a `:` before any token that is no name is.
 
 ## FTEF-19 Definitions as FTEQCC makes them
 
@@ -3750,8 +3775,10 @@ the statements it would emit are code generation's.
   "pointer* maths was disabled on this type.", "pointer sizes were marked as undefined.", "Making
   assumptions about pointer sizes was blocked."). A load of 8 or 16 bits reads the word that holds
   it and shifts; a word load calls `memgetval`, else `W0235` "memgetval function not defined:
-  cannot emulate OP_LOADP_*" and refused. The semantic model does not follow the layout of a
-  struct or union, so pointer arithmetic on one decides no folding and gives no truncation warning.
+  cannot emulate OP_LOADP_*" and refused. A struct or union pointed at is sized by its layout
+  (FTEF-6.13), so `p + 1` for a `struct S { float a; vector v; } *p` scales by 4 and `p - 1`
+  warns "Constant int operand 4294967292 will be truncated to -4"; a struct whose layout the
+  model does not follow decides no folding and gives no truncation warning.
 
 The statements an emulation emits are code generation's; the semantic model follows them only
 as far as they report.
@@ -4166,3 +4193,8 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   then cast to the global's type, and a value that is no constant is `E0214` "initializer for
   'NAME' is not constant". So `float b = a + 1;` gives both, `float b = 1 + 2;` neither, and
   `const vector v = [19, 20];` is a constant.
+- **FTEF-34.10** A `switch`'s cases are compared in order after its body is read, and a second
+  `default` is the fatal error `E0352` "Duplicated default case" there (`if (defaultcase >= 0)
+  QCC_PR_ParseError(ERR_MULTIPLEDEFAULTS, "Duplicated default case");`), after the errors of the
+  cases before it: `switch (1) { default: case 1: default: ; }` is refused, and `switch (1) {
+  case "a": default: default: ; }` reports the string case's mismatch instead.

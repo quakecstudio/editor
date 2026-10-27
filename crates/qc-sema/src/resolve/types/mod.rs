@@ -398,7 +398,8 @@ impl Resolver<'_> {
                     self.type_name(&resolved)
                 }
             }
-            Type::Unknown | Type::Simple(_) | Type::Function(_) => ty.fteqcc_name(),
+            Type::Function(_) => ty.fteqcc_name_with(&|inner| self.type_name(inner)),
+            Type::Unknown | Type::Simple(_) => ty.fteqcc_name(),
         }
     }
 

@@ -841,10 +841,18 @@ fn lower_member(
             .child_tokens()
             .find(|t| t.kind() == SyntaxKind::Name)
     {
+        // `QCC_PR_GenFunctionType(type_void, ...)`: the constructor returns nothing.
+        let ty = match cx.ty(&ast::Type::Function(func)) {
+            Type::Function(f) => Type::Function(Rc::new(FunctionType {
+                ret: Type::Simple(SimpleType::Void),
+                ..(*f).clone()
+            })),
+            other => other,
+        };
         out.push(RawMember {
             name: class.to_owned(),
             span: token.span(),
-            ty: cx.ty(&ast::Type::Function(func)),
+            ty,
             kind: MemberKind::Method,
             initialized: false,
             body: None,

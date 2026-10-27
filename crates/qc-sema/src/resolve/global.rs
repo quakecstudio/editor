@@ -408,8 +408,8 @@ impl<'a> Resolver<'a> {
         let message = if self.profile.fteqcc_diagnostics() {
             format!(
                 "Type mismatch on redeclaration of {name}. {}, should be {}",
-                ty.fteqcc_name(),
-                old.fteqcc_name()
+                self.type_name(ty),
+                self.type_name(old)
             )
         } else {
             format!("Type mismatch on redeclaration of {name}")

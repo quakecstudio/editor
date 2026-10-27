@@ -434,6 +434,11 @@ impl Checker<'_> {
         let mut default = None;
         for case in cases {
             let Some(min) = case.value else {
+                // FTEF-34.10: `if (defaultcase >= 0) QCC_PR_ParseError(ERR_MULTIPLEDEFAULTS, ...)`.
+                if default.is_some() {
+                    let message = "Duplicated default case".to_owned();
+                    return self.fatal(Code::E0352, case.span, message).map(drop);
+                }
                 default = Some(case.at);
                 continue;
             };

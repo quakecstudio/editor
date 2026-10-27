@@ -630,3 +630,30 @@ fn messages_name_the_file_and_line_fteqcc_has() {
         ["g: contains unreachable code (line 40)"]
     );
 }
+
+// spec FTEF-34.10, QCD-4.56: a second `default` is "Duplicated default case", after the errors
+// of the cases before it
+#[test]
+fn a_second_default_is_refused() {
+    let found = |source: &str| -> Vec<(Code, String)> {
+        diags(source)
+            .into_iter()
+            .filter(|(code, _)| *code != Code::W0204)
+            .collect()
+    };
+    assert_eq!(
+        found("void() g = { switch (1) { default: case 1: default: ; } };\n"),
+        [d(Code::E0352, "Duplicated default case")]
+    );
+    assert_eq!(
+        found("void() g = { switch (1) { default: break; } switch (2) { default: ; } };\n"),
+        []
+    );
+    assert_eq!(
+        found("void() g = { switch (1) { case \"a\": default: default: ; } };\n"),
+        [d(
+            Code::E0227,
+            "Implicit type mismatch. Needed float, got string."
+        )]
+    );
+}

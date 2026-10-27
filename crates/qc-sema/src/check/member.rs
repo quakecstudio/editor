@@ -11,10 +11,11 @@
 use qc_diag::{Code, Span};
 use qc_syntax::ast::{self, AstNode as _};
 
+use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::reference::expected_after;
-use crate::check::{Constness, Value};
+use crate::check::{Constness, Reference, Value};
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -67,7 +68,17 @@ impl Checker<'_> {
                 Type::Field(Type::Simple(SimpleType::Float).into()),
             )?,
             Etype::String => self.string_method(&base, &selector)?,
-            Etype::Struct | Etype::Union => self.struct_member(&base.ty, &selector),
+            Etype::Struct | Etype::Union => {
+                let member = self.struct_member(&base.ty, &selector);
+                match &base.reference {
+                    // `(*p).a` and `p[0].a` are members through the pointer.
+                    Reference::Pointer(_) => Value {
+                        reference: base.reference.clone(),
+                        ..member
+                    },
+                    _ => member,
+                }
+            }
             Etype::Field if matches!(shape.holds, Some(Etype::Struct | Etype::Union)) => {
                 let Type::Field(held) = &base.ty else {
                     return Ok(Value::unknown());
@@ -75,7 +86,11 @@ impl Checker<'_> {
                 let member = self.struct_member(held, &selector);
                 Value::of(Type::Field(member.ty.into()))
             }
-            Etype::Pointer => self.pointer_member(&base, &selector)?,
+            // The pointer is read to select through it, as an entity is.
+            Etype::Pointer => {
+                let pointer = self.read(base, field.syntax().span())?;
+                self.pointer_member(&pointer, &selector)?
+            }
             // FTEF-24.10: a value of a type with no members ends the expression before the
             // `.`: the statement goes on with the value, and the `.` is then "expected ;, found
             // ."; inside parentheses, a call's arguments or an index the construct expects its
@@ -258,7 +273,11 @@ impl Checker<'_> {
             return Ok(Value::unknown());
         };
         match self.env.shape(pointee).map(|s| s.etype) {
-            Some(Etype::Struct | Etype::Union) => Ok(self.struct_member(pointee, selector)),
+            // FTEF-6.14: read through the pointer at the member's offset.
+            Some(Etype::Struct | Etype::Union) => Ok(Value {
+                reference: Reference::pointer(base.label(), Some(member_offset())),
+                ..self.struct_member(pointee, selector)
+            }),
             None => Ok(Value::unknown()),
             Some(_) => {
                 let span = selector.syntax().span();
@@ -306,5 +325,14 @@ fn intrinsic_value(name: &str) -> Option<&str> {
         "randomv" | "alloca" | "entnum" | "autocvar" | "used_model" | "used_sound" | "va_arg"
         | "..." | "_" | "random" => Some(name),
         _ => None,
+    }
+}
+
+/// A member's offset in its struct, `QCC_MakeIntConst(ofs)`: an integer constant, whose value
+/// no check reads.
+fn member_offset() -> Value {
+    Value {
+        constness: Constness::Opaque,
+        ..Value::constant(Constant::int(0))
     }
 }

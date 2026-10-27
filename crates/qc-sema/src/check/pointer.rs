@@ -30,8 +30,8 @@ enum Pointee {
     /// A type narrower than a word (`aux_type->bits`): `__int8`, `__int16` and their unsigned
     /// kinds.
     Bits(i32),
-    /// A type of whole words (`aux_type->size`); `None` for a struct or union, whose layout the
-    /// semantic model does not follow.
+    /// A type of whole words (`aux_type->size`); `None` for a type whose size the semantic
+    /// model does not follow.
     Words(Option<i32>),
 }
 
@@ -237,7 +237,11 @@ impl Checker<'_> {
         Pointee::Words(match self.env.shape(inner).map(|shape| shape.etype) {
             Some(Etype::Vector) => Some(3),
             Some(Etype::Int64 | Etype::Uint64 | Etype::Double) => Some(2),
-            Some(Etype::Struct | Etype::Union) | None => None,
+            Some(Etype::Struct | Etype::Union) => self
+                .env
+                .layout(inner)
+                .and_then(|layout| i32::try_from(layout.words).ok()),
+            None => None,
             Some(_) => Some(1),
         })
     }

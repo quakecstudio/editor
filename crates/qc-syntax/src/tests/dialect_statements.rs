@@ -212,6 +212,34 @@ fn sequences_where_fteqcc_allows_them() {
     );
 }
 
+// spec FTEF-18.35: a duplicate `name:` leaves its `:`, which starts a `:name` label, and a `:`
+// before no name is "invalid label name"
+#[test]
+fn a_duplicate_c_label_leaves_its_colon() {
+    let parsed = fte(&in_body("l: ;\nl: x: ;"));
+    let found: Vec<(Code, String)> = parsed
+        .diagnostics()
+        .iter()
+        .filter(|d| d.code != Code::W0204)
+        .map(|d| (d.code, d.message.clone()))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (Code::W0312, "Duplicate label l".to_owned()),
+            (Code::E0201, "invalid label name \";\"".to_owned()),
+        ]
+    );
+    let labels: Vec<String> = statements(&fte(&in_body("l: a = 1;\nl: x; a = 2;")))
+        .iter()
+        .filter_map(|s| match s {
+            ast::Stmt::Label(label) => Some(label.name().unwrap().text_lossless()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(labels, ["l", "l", "x"]);
+}
+
 // spec FTEF-18.23: `name:` and `:name` are labels and `goto name;` jumps to one; a label read since the end of the last function is a duplicate
 // spec QCD-7.30: W0312 "Duplicate label NAME" for a label read since the last function's end
 #[test]
@@ -237,7 +265,7 @@ fn labels_and_goto_parse() {
     // A name and a `:` with a space between is no label.
     assert!(fte(&in_body("top :\na = 1;")).errors().next().is_some());
     // A label twice in a function is a warning; another function may have its own.
-    let parsed = fte(&in_body("l:\nl:\n:l\na = 1;"));
+    let parsed = fte(&in_body("l:\n:l\n:l\na = 1;"));
     let codes: Vec<Code> = parsed.diagnostics().iter().map(|d| d.code).collect();
     assert_eq!(codes, [Code::W0312, Code::W0312]);
     assert_eq!(parsed.diagnostics()[0].message, "Duplicate label l");
@@ -245,7 +273,7 @@ fn labels_and_goto_parse() {
     assert!(fte_codes(two).is_empty(), "{:?}", fte_codes(two));
     // A function defined inside another shares the labels read before it, and its end
     // forgets them all.
-    let nested = "float a;\nvoid() f = { l: a = 2; void() h = { l: a = 3; }; l: a = 4; };\n";
+    let nested = "float a;\nvoid() f = { l: a = 2; void() h = { :l a = 3; }; l: a = 4; };\n";
     assert_eq!(fte_codes(nested), [Code::W0312]);
     // A label or goto without a name is an error.
     assert_eq!(fte_codes(&in_body(":1\na = 1;")), [Code::E0201]);

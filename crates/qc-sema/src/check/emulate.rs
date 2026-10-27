@@ -558,6 +558,16 @@ impl Checker<'_> {
 
     /// FTEF-27.5: `badopcode`, "Opcode \"NAME|OPNAME\" not valid for target", suggesting the FTE
     /// target or its newest revision when either has the opcode, else "is not supported".
+    /// `QCC_PR_SimpleStatement`: `op` emitted as it is, the fatal error `refuse` reports when
+    /// the target does not have it.
+    pub(super) fn simple_statement(&mut self, op: Op, span: Span) -> Result<(), Fatal> {
+        if self.env.target_at(span.start).valid(op) {
+            return Ok(());
+        }
+        self.refuse(op, span);
+        Err(Fatal)
+    }
+
     pub(super) fn refuse(&mut self, op: Op, span: Span) {
         let name = row(op).map_or("", |r| r.name);
         let opname = op.name();

@@ -1669,30 +1669,33 @@ impl Parser<'_> {
     }
 
     /// `name:` or `:name` (FTEF-18.23). A label read since the end of the last function is
-    /// "Duplicate label NAME", a warning, and is not added again.
+    /// "Duplicate label NAME", a warning, and is not added again; a duplicate `name:` leaves its
+    /// `:` (`QCC_PR_Lex(); return;`), which starts a `:name` label. A `:` before no name is
+    /// `invalid label name "TOKEN"`.
     pub(super) fn label_stmt(&mut self) {
         self.start_node(K::LabelStmt);
         let frikqcc = self.at(K::Colon);
         if frikqcc {
             self.bump();
         }
-        let label = self
+        let Some((name, span)) = self
             .current()
             .filter(|t| t.kind == K::Name)
-            .map(|t| (t.text.clone(), t.span));
-        if !self.name() {
-            // `invalid label name`: the statement is abandoned.
+            .map(|t| (t.text.clone(), t.span))
+        else {
+            let token = self.current().map(|t| t.text.clone()).unwrap_or_default();
+            self.error(Code::E0201, format!("invalid label name \"{token}\""));
             self.recover(true);
+            self.finish_node();
+            return;
+        };
+        self.name();
+        if self.labels.contains(&name) {
+            self.warning_at(Code::W0312, format!("Duplicate label {name}"), span);
         } else {
+            self.labels.push(name);
             if !frikqcc {
                 self.bump();
-            }
-            if let Some((name, span)) = label {
-                if self.labels.contains(&name) {
-                    self.warning_at(Code::W0312, format!("Duplicate label {name}"), span);
-                } else {
-                    self.labels.push(name);
-                }
             }
         }
         self.finish_node();

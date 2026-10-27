@@ -228,3 +228,41 @@ fn a_member_function_with_no_body_is_named_by_its_class() {
     );
     assert_eq!(messages("class C { virtual void() n[2]; };"), []);
 }
+
+// spec FTEF-17.15: a member defined with a type `typecmp` tells from the declared one is a type
+// mismatch, a bare constructor being of type `void()`
+#[test]
+fn a_member_defined_with_another_type_is_refused() {
+    let mismatch = |message: &str| one(Code::E0205, message);
+    let found = |source: &str| -> Vec<(Code, String)> {
+        messages(source)
+            .into_iter()
+            .filter(|(code, _)| *code != Code::E0211)
+            .collect()
+    };
+    assert_eq!(
+        found("class C { nonvirtual void(float x) m; }; void() C::m = {};"),
+        mismatch("Type mismatch on redeclaration of C::m. void(), should be void(float x)")
+    );
+    assert_eq!(
+        found("class C { virtual void(float x) m; }; float(float x) C::m = { return 1; };"),
+        mismatch("Type mismatch on redeclaration of C::m. float(float x), should be void(float x)")
+    );
+    assert_eq!(
+        found("class C { C(); }; C() C::C = {};"),
+        mismatch("Type mismatch on redeclaration of C::C. C(), should be void()")
+    );
+    assert_eq!(
+        found("class C { nonvirtual void(C x) m; }; void(entity x) C::m = {};"),
+        mismatch(
+            "Type mismatch on redeclaration of C::m. void(entity x), should be void(class C x)"
+        )
+    );
+    for source in [
+        "class C { nonvirtual void(float x) m; }; void(float y) C::m = {};",
+        "class C { C(); }; void() C::C = {};",
+        "typedef void(float) fn; class C { nonvirtual fn m; }; void(float x) C::m = {};",
+    ] {
+        assert_eq!(messages(source), [], "{source}");
+    }
+}
