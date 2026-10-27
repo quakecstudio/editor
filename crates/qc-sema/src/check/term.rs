@@ -238,8 +238,9 @@ impl Checker<'_> {
 
     /// FTEF-30.7: `QCC_PR_GenerateVector`: a component that is no float or integer is cast to a
     /// float (`QCC_EvaluateCast(x, type_float, true)`), and one still not one is the fatal error
-    /// "Argument not a single numeric value in vector constructor"; three constants are a
-    /// vector constant; else each integer component is stored with `OP_STORE_IF`.
+    /// "Argument not a single numeric value in vector constructor"; a component left out is a
+    /// float 0; three constants are a vector constant; else each component is stored, an integer
+    /// with `OP_STORE_IF`.
     fn vector(&mut self, elements: &[ast::Expr], span: Span) -> Checked {
         let float = Type::Simple(SimpleType::Float);
         let mut components = Vec::new();
@@ -265,9 +266,13 @@ impl Checker<'_> {
                 }
             }));
         }
-        let Some(values) = components.into_iter().collect::<Option<Vec<Value>>>() else {
+        let Some(mut values) = components.into_iter().collect::<Option<Vec<Value>>>() else {
             return Ok(Value::of(Type::Simple(SimpleType::Vector)));
         };
+        // `[x]` and `[x, y]`: a component left out is `QCC_MakeFloatConst(0)`.
+        while values.len() < 3 {
+            values.push(Value::constant(Constant::float(0.0)));
+        }
         let known: Option<Vec<Constant>> = values.iter().map(Value::known).collect();
         if let Some([x, y, z]) = known.as_deref() {
             let float_of = |c: &Constant| {
@@ -283,9 +288,29 @@ impl Checker<'_> {
                 float_of(z),
             ])));
         }
+        // Two null components make the vector the third times an axis, `OP_MUL_VF`.
+        let null = |at: usize| values.get(at).is_some_and(Value::null);
+        for (at, axis) in [
+            (0, [1.0, 0.0, 0.0]),
+            (1, [0.0, 1.0, 0.0]),
+            (2, [0.0, 0.0, 1.0]),
+        ] {
+            let others = [0, 1, 2].iter().filter(|&&i| i != at).all(|&i| null(i));
+            if let Some(value) = values.get(at)
+                && others
+            {
+                let value = value.clone();
+                let float = self.supplied(&value, &float, span)?;
+                let axis = Value::constant(Constant::vector(axis));
+                self.emit(Op::MulVf, &axis, &float, span)?;
+                return Ok(Value::of(Type::Simple(SimpleType::Vector)));
+            }
+        }
         for value in &values {
             if self.etype_of(&value.ty) == Some(Etype::Integer) {
                 self.emit(Op::StoreIf, value, &Value::unknown(), span)?;
+            } else {
+                self.generate(Op::StoreF, span);
             }
         }
         Ok(Value::of(Type::Simple(SimpleType::Vector)))

@@ -509,7 +509,7 @@ const FTEQCC: &[&str] = &[
 /// its statement says, or none: the profile's warnings must be FTEQCC's (FTEF-19).
 const WARNINGS: &[&str] = &[
     // FTEF-2.9, FTEF-2.11: narrowed types and `const` in a type. Each program uses what it
-    // defines, since FTEQCC warns of an unreferenced global (Q302, FTEF-19.32).
+    // defines, since FTEQCC warns of an unreferenced global (Q302, FTEF-19.46).
     "unsigned float x;\nvoid() g = { x = 1; };\n",
     "__long __double x;\nvoid() g = { x = 1; };\n",
     "unsigned __long __double x;\nvoid() g = { x = 1; };\n",

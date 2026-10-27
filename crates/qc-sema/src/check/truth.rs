@@ -164,6 +164,7 @@ impl Checker<'_> {
         let span = ternary.syntax().span();
         let condition = self.value(ternary.condition())?;
         self.branch(&condition, Jump::IfNot, span)?;
+        self.generate(Op::IfnotI, span);
         let (middle, last) = ternary.arms();
         let (kept, kept_null) = match middle {
             None => {
@@ -177,8 +178,11 @@ impl Checker<'_> {
                 (value, null)
             }
         };
+        self.generate(Self::store_op(self.etype_of(&kept.ty)), span);
+        self.generate(Op::Goto, span);
         let other = self.value(last)?;
         let other = self.stored_arm(other, span)?;
+        self.generate(Self::store_op(self.etype_of(&other.ty)), span);
         self.arms(kept, kept_null, other, span)
     }
 

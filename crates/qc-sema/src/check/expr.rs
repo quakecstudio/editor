@@ -42,6 +42,9 @@ pub(super) struct Checker<'e> {
     pub(super) layout: Layout,
     /// The statements emitted so far, `numstatements`, which a `case` value may not change.
     pub(super) emitted: usize,
+    /// Whether the checker reads an initialiser at global scope, where no statement may be
+    /// generated (`!pr_scope`, FTEF-34.9).
+    pub(super) global: bool,
 }
 
 /// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which nothing more of the
@@ -63,6 +66,7 @@ impl<'e> Checker<'e> {
             returned: false,
             layout: Layout::default(),
             emitted: 0,
+            global: false,
         }
     }
 

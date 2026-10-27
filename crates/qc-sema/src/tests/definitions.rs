@@ -1167,7 +1167,11 @@ fn qualifiers_are_read() {
 fn character_constants_and_calls() {
     assert_eq!(fte("float f = 'a';\n"), []);
     assert_eq!(fte("string s = 'a';\n"), [Code::E0213]);
-    assert_eq!(fte("string(float a) t = #6;\nstring s = t(5);\n"), []);
+    // A call at global scope generates statements (FTEF-34.9).
+    assert_eq!(
+        fte("string(float a) t = #6;\nstring s = t(5);\n"),
+        [Code::E0345, Code::E0345, Code::E0214]
+    );
 }
 
 // spec FTEF-19.7: the type with more parameters becomes the definition's, and an out parameter
@@ -1268,15 +1272,16 @@ fn extern_and_static_on_a_variable() {
     );
 }
 
-// spec FTEF-19.32: an initialiser that is an expression is compared by its text and not typed,
-// and an attribute before the type is refused, as the pinned FTEQCC refuses it
+// spec FTEF-19.46: an initialiser that is an expression is compared by its text, and an
+// attribute before the type is refused, as the pinned FTEQCC refuses it
 // spec FTEF-22.5: a module resolved without its preprocessing has no target, and its `extern`
 // functions are not checked
 #[test]
 fn what_the_profile_does_not_model() {
     assert_eq!(fte("float x = 1 + 1;\nfloat x = 2;\n"), [Code::E0206]);
     assert_eq!(fte("float x = 1 + 1;\nfloat x = 1 + 1;\n"), []);
-    assert_eq!(fte("string s = 1 + 1;\n"), []);
+    // The check stage types it (FTEF-34.9).
+    assert_eq!(fte("string s = 1 + 1;\n"), [Code::E0213]);
     assert_eq!(fte("extern void() g;\n"), []);
     let parse = qc_syntax::parse_with(b"[[alias(\"y\")]] float x;\n", Dialect::Fteqcc);
     let parsed: Vec<Code> = parse.diagnostics().iter().map(|d| d.code).collect();

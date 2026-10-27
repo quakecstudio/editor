@@ -329,6 +329,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-4.50** `E0341` "'NAME' returned nothing, expected TYPE" and "'NAME' not supported when
   returning TYPE": `return;` and `return =` in a function returning a type larger than a vector
   (FTEF-34.8); a fatal error.
+- **QCD-4.51** `E0345` "Unable to generate statements at global scope (OPNAME).": an initialiser
+  of a global that needs code (FTEF-34.9); not a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 

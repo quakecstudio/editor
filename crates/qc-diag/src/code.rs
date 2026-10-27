@@ -287,6 +287,9 @@ pub enum Code {
     E0343,
     /// FTEQCC: "thinktime type mismatch", a `thinktime` of no entity or no float.
     E0344,
+    /// FTEQCC: "Unable to generate statements at global scope (OPNAME).", an initialiser of a
+    /// global that needs code (`ERR_BADEXTENSION`).
+    E0345,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -527,7 +530,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 233] = [
+    pub const ALL: [Self; 234] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -654,6 +657,7 @@ impl Code {
         Self::E0342,
         Self::E0343,
         Self::E0344,
+        Self::E0345,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -977,6 +981,7 @@ impl Code {
             Self::E0342 => "E0342",
             Self::E0343 => "E0343",
             Self::E0344 => "E0344",
+            Self::E0345 => "E0345",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1241,6 +1246,7 @@ impl Code {
             | Self::E0343
             | Self::E0344
             | Self::E0341
+            | Self::E0345
             | Self::E0408 => true,
         }
     }

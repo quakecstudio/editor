@@ -16,7 +16,7 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
 use crate::check::flow::{Finding, Step};
 use crate::check::truth::{Jump, Test};
-use crate::check::{Reference, Value};
+use crate::check::{Constness, Reference, Value};
 use crate::ty::{SimpleType, Type};
 
 /// The words of a vector, `type_vector->size`.
@@ -637,6 +637,24 @@ impl Checker<'_> {
                 .map(drop);
         }
         Ok(())
+    }
+
+    /// FTEF-34.9: the initialiser `expr` of the global `name` of type `ty`, read at global scope.
+    pub(super) fn initialiser(&mut self, expr: &ast::Expr, ty: &Type, name: &str) {
+        let Ok(value) = self.value(Some(expr.clone())) else {
+            return;
+        };
+        if value.ty == Type::Unknown {
+            return;
+        }
+        let span = expr.syntax().span();
+        let Ok(value) = self.cast_to(&value, ty, span) else {
+            return;
+        };
+        if value.constness == Constness::Variable {
+            let message = format!("initializer for '{name}' is not constant");
+            self.env.report(Code::E0214, span, message);
+        }
     }
 
     /// Whether the function returns a type larger than a vector, through a pointer its caller

@@ -200,7 +200,7 @@ read as a keyword in one program and as a name in another; the unit tests in
 | `keyword_static` | on | `QCC_PR_ParseDefs`, `QCC_PR_ParseStatement` (`STRCMP`) | `qc_syntax` `Parser::decl_qualifier`, `Parser::fte_looks_like_local` | FTEF-20.7, FTEF-20.14 | `KEYWORD_PROGRAMS` | ported |
 | `keyword_nonstatic` | on | `QCC_PR_ParseDefs` (outside a function) | `qc_syntax` `Parser::decl_qualifier` | FTEF-20.7 | `KEYWORD_PROGRAMS` | ported |
 | `keyword_ignore` | off | `QCC_PR_ParseDefs` | `qc_syntax` `Parser::decl_qualifier` | FTEF-20.7 | `KEYWORD_PROGRAMS` | ported |
-| `keyword_auto` | off | `QCC_PR_ParseDefs`, `QCC_PR_ParseStatement` (`STRCMP`) | `qc_syntax` `Parser::decl_qualifier`, `Parser::fte_looks_like_local` | FTEF-20.7, FTEF-20.14 | none: a definition `auto` makes needs `memalloc` or `OP_PUSH`, code generation's (FTEF-19.32); the unit tests read it | ported |
+| `keyword_auto` | off | `QCC_PR_ParseDefs`, `QCC_PR_ParseStatement` (`STRCMP`) | `qc_syntax` `Parser::decl_qualifier`, `Parser::fte_looks_like_local` | FTEF-20.7, FTEF-20.14 | none: a definition `auto` makes needs `memalloc` or `OP_PUSH`, code generation's (FTEF-19.46); the unit tests read it | ported |
 | `keyword_nosave` | on | `QCC_PR_ParseDefs` | `qc_syntax` `Parser::decl_qualifier` | FTEF-20.7 | `KEYWORD_PROGRAMS` | ported |
 | `keyword_inline` | on | `QCC_PR_ParseDefs` | `qc_syntax` `Parser::decl_qualifier` | FTEF-20.7 | `KEYWORD_PROGRAMS` | ported |
 | `keyword_strip` | on | `QCC_PR_ParseDefs` | `qc_syntax` `Parser::decl_qualifier` | FTEF-20.7 | `KEYWORD_PROGRAMS` | ported |
@@ -229,7 +229,7 @@ read as a keyword in one program and as a name in another; the unit tests in
 | `get`, `set`, `inline` of an accessor, an enum's `class` | `QCC_PR_CheckName` | `QCC_PR_ParseType`, `QCC_PR_ParseEnum` | `qc_syntax` `Parser::names`, `Parser::accessor_member` | FTEF-20.2 | `KEYWORD_OPTIONS` | ported |
 | `keywords_coexist` (`kce`) | on | `QCC_PR_DummyDef` | `qc_preproc` `Keywords::after_definition`, `qc_syntax` `Parser::define` | FTEF-20.4, QCD-7.67 | `KEYWORD_PROGRAMS`, `KEYWORD_WARNINGS`, `KEYWORD_OPTIONS` | ported |
 | `flag_caseinsensitive` (`caseinsens`) | off | `QCC_PR_CheckKeyword`, `QCC_PR_CheckName` | `qc_preproc` `Keywords::checks`, `Keywords::names` | FTEF-20.2 | `KEYWORD_OPTIONS` | ported |
-| the reacc keywords (`flag_acc`) | off | `QCC_PR_ParseDefs`, `QCC_PR_ParseImmediateStatements`, `QCC_PR_ParseStatement` | none: reacc's syntax | FTEF-20.13, FTEF-19.32 | none: `-Tid` and the profile read no reacc | not modelled |
+| the reacc keywords (`flag_acc`) | off | `QCC_PR_ParseDefs`, `QCC_PR_ParseImmediateStatements`, `QCC_PR_ParseStatement` | none: reacc's syntax | FTEF-20.13, FTEF-19.46 | none: `-Tid` and the profile read no reacc | not modelled |
 
 | Where FTEQCC sets them | File | Behaviour | Rust | Statements | Differential | Status |
 | --- | --- | --- | --- | --- | --- | --- |

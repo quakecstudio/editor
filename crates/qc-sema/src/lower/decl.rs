@@ -198,6 +198,9 @@ pub struct RawValue {
     /// The compiler flags at the token after it, where FTEQCC casts or converts it once it has
     /// read it (FTEF-22.1).
     pub cast_flags: CompilerFlags,
+    /// The expression as written, when it is [`ValueKind::Other`], which the check stage reads
+    /// at global scope (FTEF-34.9).
+    pub syntax: Option<ast::Expr>,
 }
 
 /// The shape of a value initialiser (QC-11.3, FTEF-19.31).
@@ -214,7 +217,7 @@ pub enum ValueKind {
     Indexed(String),
     /// A literal cast to a type, `(T)0`, a value of that type (FTEF-19.43).
     Cast(Type),
-    /// Any other expression, whose type the model does not compute (FTEF-19.32).
+    /// Any other expression, whose type the model does not compute (FTEF-19.46).
     Other,
 }
 
@@ -227,7 +230,7 @@ pub enum ArrayDim {
     /// `[]` with nothing to size it, which FTEQCC's `QCC_PR_GetDef` compares with no other
     /// size.
     Unsized,
-    /// A size given by an expression the model does not evaluate (FTEF-19.32).
+    /// A size given by an expression the model does not evaluate (FTEF-19.46).
     Unknown,
 }
 
@@ -450,12 +453,14 @@ pub(super) fn raw_value(expr: &ast::Expr, cx: Cx<'_>) -> RawValue {
         ast::Expr::Literal(literal) => string_len(literal),
         _ => None,
     };
+    let syntax = matches!(kind, ValueKind::Other).then(|| expr.clone());
     RawValue {
         span,
         kind,
         first,
         string_len,
         cast_flags: cx.next_flags(span.end),
+        syntax,
     }
 }
 

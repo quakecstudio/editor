@@ -104,9 +104,37 @@ impl Checker<'_> {
         let target = self.env.target_at(span.start);
         if target.valid(op) {
             self.compare(op, lhs, rhs, span);
+            self.generate(op, span);
             return Ok(result);
         }
         self.emulate(op, lhs, rhs, span, result)
+    }
+
+    /// FTEF-34.9: the store a value of basic type `etype` is copied by, `OP_STORE_*`.
+    pub(super) const fn store_op(etype: Option<Etype>) -> Op {
+        match etype {
+            Some(Etype::Vector) => Op::StoreV,
+            Some(Etype::String) => Op::StoreS,
+            Some(Etype::Entity) => Op::StoreEnt,
+            Some(Etype::Field) => Op::StoreFld,
+            Some(Etype::Function) => Op::StoreFnc,
+            Some(Etype::Integer | Etype::Uint | Etype::Boolean) => Op::StoreI,
+            Some(Etype::Pointer) => Op::StoreP,
+            Some(Etype::Int64 | Etype::Uint64 | Etype::Double) => Op::StoreI64,
+            _ => Op::StoreF,
+        }
+    }
+
+    /// FTEF-34.9: the statement `op` generated, which at global scope (`!pr_scope`) is the error
+    /// "Unable to generate statements at global scope (OPNAME).".
+    pub(super) fn generate(&mut self, op: Op, span: Span) {
+        if self.global {
+            let message = format!(
+                "Unable to generate statements at global scope ({}).",
+                op.name()
+            );
+            self.env.report(Code::E0345, span, message);
+        }
     }
 
     /// FTEF-27.2: the emulation of `op`, which the target lacks.
@@ -155,18 +183,26 @@ impl Checker<'_> {
                 ty: result.ty,
                 ..self.emit(other, rhs, lhs, span)?
             }),
-            Emulation::Replaced(other) => Ok(replaced(other)),
+            Emulation::Replaced(other) => {
+                self.generate(other, span);
+                Ok(replaced(other))
+            }
             Emulation::Clear { and, sub, store } => {
                 let target = self.env.target_at(span.start);
                 if let Some(store) = store.filter(|&store| target.valid(store)) {
+                    self.generate(store, span);
                     return Ok(replaced(store));
                 }
                 self.emit(and, lhs, rhs, span)?;
+                self.generate(sub, span);
                 Ok(replaced(sub))
             }
             Emulation::Conversion => self.conversion(op, lhs, span, result),
             Emulation::Special => self.special(op, lhs, rhs, span, result),
-            Emulation::Emitted => Ok(result),
+            Emulation::Emitted => {
+                self.generate(op, span);
+                Ok(result)
+            }
             Emulation::Refuse => {
                 self.refuse(op, span);
                 Ok(result)
@@ -209,6 +245,20 @@ impl Checker<'_> {
             self.emit(Op::ConvItof, value, &Value::unknown(), span)?;
         }
         self.env.report(code, span, message);
+        // `5i / 1i` and `5.0 * 1i`, then the store a `STORE_*` conversion is.
+        match op {
+            Op::ConvItof => self.generate(Op::DivF, span),
+            Op::StoreIf => {
+                self.generate(Op::DivF, span);
+                self.generate(Op::StoreF, span);
+            }
+            Op::ConvFtoi => self.generate(Op::MulF, span),
+            Op::StoreFi => {
+                self.generate(Op::MulF, span);
+                self.generate(Op::StoreI, span);
+            }
+            _ => {}
+        }
         Ok(result)
     }
 

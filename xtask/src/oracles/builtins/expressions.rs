@@ -245,6 +245,14 @@ const PROGRAMS: &[&str] = &[
     "float a; struct st {float x, y;}; st t;\nvoid() g = { a = (float)t; };\n",
     "float a; struct st {float x, y;}; st t;\nvoid() g = { if (t) a = 1; };\n",
     "float a; struct st {float x, y;}; st t;\nvoid() g = { local st u = t; u = t; };\n",
+    // FTEF-34.9: global initialisers.
+    "float a; float b = a + 1;\n",
+    "float b = 1 + 2;\n",
+    "const vector v = [19, 20];\n",
+    "float a; vector w = [a];\n",
+    "string(float x) f = #1; string b = f(1);\n",
+    "string s = 1 + 1;\n",
+    "entity self; .float fl; float b = self.fl;\n",
 ];
 
 /// The options under which every warning but "no references" (Q302), which the fixtures' unused

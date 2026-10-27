@@ -14,7 +14,7 @@ use qc_preproc::FteFlag;
 use std::rc::Rc;
 
 use crate::cast::{Kind, Source, Supply};
-use crate::check::check_body;
+use crate::check::{check_body, check_initialiser};
 use crate::lower::{
     Qualifier, RawAlias, RawBody, RawDecl, RawLocal, RawUse, StatePart, UseKind, ValueKind,
     top_level_kind,
@@ -268,6 +268,38 @@ impl<'a> Resolver<'a> {
             let typed = check_body(&mut env, syntax);
             self.index.bodies.insert(owner, typed);
         }
+    }
+
+    /// FTEF-34.9: an initialiser of a global that is an expression, read at global scope,
+    /// where every statement it generates is an error, then cast to the global's type, and no
+    /// constant "is not constant".
+    pub(in crate::resolve) fn check_global_initialiser(&mut self, file: FileId, decl: &RawDecl) {
+        if !self.profile.fteqcc_diagnostics() || decl.body.is_some() {
+            return;
+        }
+        let Some(expr) = decl.value.as_ref().and_then(|v| v.syntax.clone()) else {
+            return;
+        };
+        let Some(owner) = self.lookup_global(&decl.name) else {
+            return;
+        };
+        let ty = decl.ty.clone();
+        let uses = self.use_defs.clone();
+        let flags = [(0, decl.flags)];
+        let reported = self.index.diagnostics.len();
+        let mut env = BodyEnv {
+            resolver: self,
+            file,
+            owner,
+            reported,
+            in_class: false,
+            uses: &uses,
+            flags: &flags,
+            lex: &[],
+            written: &[],
+            locals: &[],
+        };
+        check_initialiser(&mut env, &expr, &ty, &decl.name);
     }
 
     /// A definition the attribute `alias(TARGET)` gives (FTEF-21.9): `QCC_PR_GetDef (NULL,

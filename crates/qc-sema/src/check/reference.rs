@@ -40,7 +40,23 @@ impl Checker<'_> {
             return Ok(value);
         }
         match value.reference.clone() {
-            Reference::Global | Reference::Field(_) => Ok(value),
+            Reference::Global => Ok(value),
+            Reference::Field(_) => {
+                // FTEF-34.9: an entity's field is loaded by `OP_LOAD_*` of its type.
+                let load = match self.etype_of(&value.ty) {
+                    Some(Etype::Vector) => Op::LoadV,
+                    Some(Etype::String) => Op::LoadS,
+                    Some(Etype::Entity) => Op::LoadEnt,
+                    Some(Etype::Field) => Op::LoadFld,
+                    Some(Etype::Function) => Op::LoadFnc,
+                    Some(Etype::Integer | Etype::Uint) => Op::LoadI,
+                    Some(Etype::Pointer) => Op::LoadP,
+                    Some(Etype::Int64 | Etype::Uint64 | Etype::Double) => Op::LoadI64,
+                    _ => Op::LoadF,
+                };
+                self.generate(load, span);
+                Ok(value)
+            }
             Reference::ArrayHead => {
                 let address = self.address_of(value, span)?;
                 Ok(address)

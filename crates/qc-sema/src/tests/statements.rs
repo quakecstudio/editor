@@ -450,3 +450,81 @@ fn enum_switches() {
         )]
     );
 }
+
+// spec FTEF-34.9: an initialiser of a global that needs code is "Unable to generate statements
+// at global scope" for each statement, then "is not constant"; a constant one is neither
+// spec QCD-4.51: E0345 for a statement generated at global scope
+// spec FTEF-30.7: a vector of one non-null component is that component times its axis; a
+// component left out is 0
+#[test]
+fn global_initialisers() {
+    let unable = |op: &str| {
+        d(
+            Code::E0345,
+            &format!("Unable to generate statements at global scope ({op})."),
+        )
+    };
+    let not_constant = |name: &str| {
+        d(
+            Code::E0214,
+            &format!("initializer for '{name}' is not constant"),
+        )
+    };
+    let cases: [(&str, Vec<(Code, String)>); 7] = [
+        (
+            "float a; float b = a + 1;",
+            vec![unable("ADD_F"), not_constant("b")],
+        ),
+        ("float b = 1 + 2;", vec![]),
+        ("const vector v = [19, 20];", vec![]),
+        (
+            "float a; vector w = [a];",
+            vec![unable("MUL_VF"), not_constant("w")],
+        ),
+        (
+            "float a; vector w = [a, 1];",
+            vec![
+                unable("STORE_F"),
+                unable("STORE_F"),
+                unable("STORE_F"),
+                not_constant("w"),
+            ],
+        ),
+        (
+            "string(float x, string y, vector z) f = #1; string b = f(1, \"a\", [1,2,3]);",
+            vec![
+                unable("STORE_F"),
+                unable("STORE_F"),
+                unable("STORE_V"),
+                unable("CALL3"),
+                not_constant("b"),
+            ],
+        ),
+        (
+            "float a; float b = a ? 1 : 2;",
+            vec![
+                unable("IFNOT"),
+                unable("STORE_F"),
+                unable("GOTO"),
+                unable("STORE_F"),
+                not_constant("b"),
+            ],
+        ),
+    ];
+    for (source, expected) in cases {
+        assert_eq!(diags(&format!("{source}\n")), expected, "{source}");
+    }
+    assert_eq!(
+        diags("entity self; .float fl; float b = self.fl;\n"),
+        [unable("LOADF_F"), not_constant("b")]
+    );
+    assert_eq!(
+        diags("int i; float b = i + 1;\n"),
+        [
+            d(Code::E0125, "itof emulation: denormals are unsafe i"),
+            unable("DIV_F"),
+            unable("ADD_F"),
+            not_constant("b")
+        ]
+    );
+}

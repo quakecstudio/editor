@@ -457,7 +457,7 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
         ast::Stmt::Continue(node) => illegal_jump(body, flow, node.syntax(), false),
         ast::Stmt::Empty(_) | ast::Stmt::Label(_) | ast::Stmt::Goto(_) | ast::Stmt::Exit(_) => {}
         // FTEF-20.5: an `asm` statement's `local` declarations define locals; its operands are
-        // code generation's (FTEF-19.32).
+        // code generation's (FTEF-19.46).
         ast::Stmt::Asm(asm) => {
             for local in asm.locals() {
                 lower_local(&local, cx, body);

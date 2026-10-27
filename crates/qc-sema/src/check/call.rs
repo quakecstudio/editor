@@ -9,6 +9,7 @@
 //! arguments, default values, and `out` arguments.
 
 use qc_diag::{Code, Span};
+use qc_preproc::Op;
 use qc_syntax::ast::{self, AstNode as _};
 
 use crate::check::constant::Constant;
@@ -140,6 +141,7 @@ impl Checker<'_> {
             self.env.report(Code::W0253, span, message);
         }
         self.verify_arguments(&name, &values, span);
+        self.generate_call(&values, span);
         // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
         for (reference, param) in passed.iter().zip(&params) {
             if !param.out {
@@ -154,6 +156,38 @@ impl Checker<'_> {
             self.store_reference(reference, &returned, span)?;
         }
         Ok(Value::of(function.ret.clone()))
+    }
+
+    /// FTEF-34.9: the statements a call generates, each argument stored to its parameter by its
+    /// words, `OP_STORE_V`, `OP_STORE_I64` where the target has it, else `OP_STORE_F`, then
+    /// `OP_CALLn`; only at global scope do they matter.
+    fn generate_call(&mut self, values: &[Value], span: Span) {
+        if !self.global {
+            return;
+        }
+        let target = self.env.target_at(span.start);
+        for value in values {
+            let store = match self.env.layout(&value.ty).map(|l| l.words) {
+                Some(3) => Op::StoreV,
+                Some(2) if target.valid(Op::StoreI64) => Op::StoreI64,
+                Some(2) => Op::StoreV,
+                _ => Op::StoreF,
+            };
+            self.generate(store, span);
+        }
+        let calls = [
+            Op::Call0,
+            Op::Call1,
+            Op::Call2,
+            Op::Call3,
+            Op::Call4,
+            Op::Call5,
+            Op::Call6,
+            Op::Call7,
+            Op::Call8,
+        ];
+        let call = calls.get(values.len()).copied().unwrap_or(Op::Call8);
+        self.generate(call, span);
     }
 
     /// FTEF-32.2: the intrinsics a call of a function with no parameters stands for, by the

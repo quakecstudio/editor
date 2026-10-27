@@ -423,6 +423,14 @@ impl TypedBody {
     }
 }
 
+/// FTEF-34.9: checks the initialiser `expr` of the global `name` of type `ty` at global scope:
+/// read, cast to `ty`, and "initializer for 'NAME' is not constant" when it is no constant.
+pub(crate) fn check_initialiser(env: &mut dyn Env, expr: &ast::Expr, ty: &Type, name: &str) {
+    let mut checker = expr::Checker::new(env);
+    checker.global = true;
+    checker.initialiser(expr, ty, name);
+}
+
 /// Checks `body`, reporting through `env`, and returns its types.
 pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBody {
     let mut checker = expr::Checker::new(env);

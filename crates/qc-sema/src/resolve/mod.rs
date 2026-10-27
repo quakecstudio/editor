@@ -713,6 +713,9 @@ impl<'a> Resolver<'a> {
                 }
                 if decl.enum_item.is_none() {
                     self.resolve_uses(file_id, None, &decl.uses);
+                    if last {
+                        self.check_global_initialiser(file_id, decl);
+                    }
                 }
                 for pending in pending {
                     if last {
