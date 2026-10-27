@@ -12,11 +12,11 @@ use qc_diag::{Code, Span};
 use qc_preproc::{Op, TargetFormat};
 use qc_syntax::ast::{self, AstNode as _, Negation};
 
-use crate::check::Value;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
 use crate::check::flow::{Finding, Step};
 use crate::check::truth::{Jump, Test};
+use crate::check::{Reference, Value};
 use crate::ty::{SimpleType, Type};
 
 /// The words of a vector, `type_vector->size`.
@@ -384,7 +384,13 @@ impl Checker<'_> {
         let breaks = self.layout.marks().0;
         let value = self.condition(s.scrutinee())?;
         let etype = self.etype_of(&value.ty);
-        let op = match etype {
+        // The opcode and the comparisons read an enum as its base type, a range does not.
+        let compared = match self.env.shape(&value.ty) {
+            Some(shape) if shape.etype == Etype::Enum => shape.holds,
+            Some(shape) => Some(shape.etype),
+            None => None,
+        };
+        let op = match compared {
             Some(Etype::Float) => Some(Op::SwitchF),
             Some(Etype::Entity) => Some(Op::SwitchE),
             Some(Etype::Vector) => Some(Op::SwitchV),
@@ -418,6 +424,7 @@ impl Checker<'_> {
             .then(|| self.layout.push(Step::Goto, None, line));
         let table = self.layout.here();
         self.layout.patch(patch1, table);
+        self.uncovered_items(&value, &cases, span);
         let mut default = None;
         for case in cases {
             let Some(min) = case.value else {
@@ -444,7 +451,10 @@ impl Checker<'_> {
             }
             match max {
                 Some(max) => self.case_range(&value, etype, (&min, &max), case.span, case.at)?,
-                None => self.case_match(&value, etype, &min, case.span, case.at)?,
+                None => {
+                    let compared = compared.unwrap_or(etype);
+                    self.case_match(&value, compared, &min, case.span, case.at)?;
+                }
             }
         }
         if let Some(at) = default {
@@ -456,6 +466,36 @@ impl Checker<'_> {
         }
         self.layout.patch_breaks(breaks, end);
         Ok(())
+    }
+
+    /// FTEF-34.5: each item of a strict enum switched on that no case covers warns "ENUM::ITEM
+    /// not part of switch", the items in the reverse of their order (FTEQCC prepends each to
+    /// `accessors`). A `default`, a range, a value of another type or one that is no constant
+    /// covers every item, as FTEQCC cannot verify past it.
+    fn uncovered_items(&mut self, value: &Value, cases: &[Case], span: Span) {
+        let items = self.env.enum_items(&value.ty);
+        for (item, constant) in items.into_iter().rev() {
+            let Some(constant) = constant else {
+                continue;
+            };
+            let uncovered = cases
+                .iter()
+                .all(|case| match (&case.value, &case.range_end) {
+                    (Some(min), None) => {
+                        min.reference == Reference::Global
+                            && min.ty == value.ty
+                            && min.known().is_some_and(|known| known != constant)
+                    }
+                    (Some(_), Some(_)) | (None, _) => false,
+                });
+            if uncovered {
+                let message = format!(
+                    "{}::{item} not part of switch",
+                    own_name(&self.env.type_name(&value.ty))
+                );
+                self.env.report(Code::W0263, span, message);
+            }
+        }
     }
 
     /// A `case` label where it stands: its value, which may generate no code, "Case statements may

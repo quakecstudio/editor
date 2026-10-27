@@ -683,6 +683,8 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   hexen2" (FTEF-34.2). `WARN_FTE_SPECIFIC`, F311, off by default.
 - **QCD-7.104** `W0262` "Function NAME returns (large) TYPE. This is inefficient." (FTEF-34.8).
   `WARN_SLOW_LARGERETURN`, largereturn.
+- **QCD-7.105** `W0263` "ENUM::ITEM not part of switch": an item of a strict enum no case of its
+  `switch` covers (FTEF-34.5). The warning of code 0.
 
 ## QCD-8 Preprocessor errors
 

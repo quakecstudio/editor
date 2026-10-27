@@ -12,6 +12,7 @@ use qc_syntax::CompilerFlags;
 
 use crate::cast::{Cast, Kind, Source, Supply};
 use crate::check::constant::{Constant, unquoted};
+use crate::check::etype::Etype;
 use crate::check::{Constness, Env, FunctionFacts, ParamFacts, Shape};
 use crate::lower::{ArrayDim, LiteralValue, RawLocal};
 use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
@@ -71,6 +72,35 @@ impl Env for BodyEnv<'_, '_> {
             .is_some_and(|f| f.array.is_some())
     }
 
+    fn enum_items(&self, ty: &Type) -> Vec<(String, Option<Constant>)> {
+        let Type::Named(name) = ty else {
+            return Vec::new();
+        };
+        if self
+            .resolver
+            .named(&self.resolver.strict_enums, name)
+            .is_none()
+        {
+            return Vec::new();
+        }
+        let mut items = Vec::new();
+        for (at, def) in self.resolver.index.defs.iter().enumerate() {
+            if def.ty != *ty || def.kind != DefKind::Global {
+                continue;
+            }
+            let item = def.name.rsplit("::").next().unwrap_or(&def.name).to_owned();
+            if items.iter().any(|(known, _): &(String, _)| *known == item) {
+                continue;
+            }
+            let value = match self.constness(DefId(at)) {
+                Constness::Known(constant) => Some(constant),
+                Constness::Opaque | Constness::Variable => None,
+            };
+            items.push((item, value));
+        }
+        items
+    }
+
     fn layout(&self, ty: &Type) -> Option<Layout> {
         self.resolver.layout(ty)
     }
@@ -118,6 +148,29 @@ impl Env for BodyEnv<'_, '_> {
         let location = self.resolver.at(self.file, span);
         let flags = CompilerFlags::at(self.flags, span.start);
         let ty = self.resolver.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
+        let enum_shape = |t: &Type| {
+            self.resolver
+                .shape(t)
+                .is_some_and(|s| s.etype == Etype::Enum)
+        };
+        // A strict enum is its own basic type, `ev_enum`, to which nothing else converts.
+        if enum_shape(wanted) && !enum_shape(&ty) {
+            let flags_lax = flags.has(qc_preproc::FteFlag::Laxcasts);
+            let (code, text) = if flags.has(qc_preproc::FteFlag::Typeexplicit) {
+                (Code::E0236, "Automatic type conversions disabled.")
+            } else if flags_lax {
+                (Code::W0230, "Implicit type mismatch.")
+            } else {
+                (Code::E0227, "Implicit type mismatch.")
+            };
+            let from = self
+                .resolver
+                .shape(&ty)
+                .map_or("variant", |s| s.etype.basic_name());
+            let message = format!("{text} Needed enum, got {from}.");
+            self.resolver.report(code, location, message);
+            return code != Code::W0230;
+        }
         let wanted = Kind::of(&self.resolver.resolved_deep(wanted, MAX_TYPEDEF_DEPTH));
         let source = Source::Typed(&ty);
         let (code, text) = match source.supply(wanted, flags) {

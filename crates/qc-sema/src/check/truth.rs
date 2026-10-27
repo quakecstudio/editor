@@ -138,7 +138,7 @@ impl Checker<'_> {
             Etype::Int64 | Etype::Uint64 => {
                 self.emit(Op::NeI64, value, &Value::constant(Constant::int64(0)), span)?;
             }
-            Etype::Variant | Etype::Struct | Etype::Union | Etype::Void => {
+            Etype::Variant | Etype::Struct | Etype::Union | Etype::Void | Etype::Enum => {
                 let message = format!("conditional type mismatch: {}", etype.basic_name());
                 self.env.report(Code::W0247, span, message);
             }
@@ -149,8 +149,7 @@ impl Checker<'_> {
             | Etype::Integer
             | Etype::Uint
             | Etype::Boolean
-            | Etype::Float
-            | Etype::Enum => {}
+            | Etype::Float => {}
         }
         Ok(())
     }

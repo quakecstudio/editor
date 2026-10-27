@@ -3773,8 +3773,8 @@ reference are FTEF-31's.
   as integers; a string warns `W0245` "if (string) tests for null, not empty" (with a full stop
   for `QCC_Generate_OP_IF`), F322, off by default; a vector is `!v` under `ifvector`, on by
   default, else `W0246` "if (vector) tests only the first element with the current compiler
-  flags"; a double or 64-bit value is compared with 0; a `variant`, struct, union or `void`
-  warns `W0247` "conditional type mismatch: TYPE", TYPE from `basictypenames[]`. The flags
+  flags"; a double or 64-bit value is compared with 0; a `variant`, struct, union, strict enum
+  or `void` warns `W0247` "conditional type mismatch: TYPE", TYPE from `basictypenames[]`. The flags
   `ifvector` and `vectorlogic` are kept for it (FTEF-21.1). The conditional operator's test is
   checked; the statements' (FTEF-18) are the statement checks'.
 - **FTEF-30.3** `c ? a : b` tests `c` (FTEF-30.2); `c ?: b` takes `c` as the first arm. An
@@ -4022,7 +4022,12 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   testing `e` itself; any other type is the fatal error `E0343` "Bad switch type". A range
   `case a .. b` is `e >= a && e <= b` of a float, a double or an integer of any width, and of
   any other type warns `W0260` "switch caserange MUST be a float or integer"
-  (`WARN_SWITCHTYPEMISMATCH`, which has no name).
+  (`WARN_SWITCHTYPEMISMATCH`, which has no name). A strict enum's opcode and equality are its
+  base type's, its range not, and a value of another type is no enum ("Implicit type mismatch.
+  Needed enum, got TYPE."). Before the comparisons each item of a strict enum switched on that
+  no case covers warns `W0263` "ENUM::ITEM not part of switch" (the warning of code 0), the
+  last item first (each is prepended to the type's `accessors`); a `default`, a range, or a case
+  whose value is no constant of the enum's own type stops the search, covering every item.
 - **FTEF-34.6** When a function is finished (`QCC_PR_FinaliseFunction`), a `return` of the value
   `return =` set is added, then `OP_DONE`, and `QCC_CheckForDeadAndMissingReturns` reads the
   layout: a function whose type is not `void` warns `W0258` "NAME: not all control paths return

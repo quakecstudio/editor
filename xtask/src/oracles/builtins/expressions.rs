@@ -236,6 +236,10 @@ const PROGRAMS: &[&str] = &[
     "struct s {float a, b, c, d;};\ns() g = { local s x; return x; };\n",
     "#pragma target fte\nstruct s {float a, b, c, d;};\ns() g = { local s x; return x; };\n",
     "#pragma target fte\nstruct s {float a, b, c, d;};\ns() g = { return; };\n",
+    "enum class E : float {A, B, C}; E e;\nvoid() g = { switch (e) { case E::A: break; } };\n",
+    "enum class E : float {A, B}; E e;\n\
+     void() g = { switch (e) { case E::A: break; case E::B: break; } };\n",
+    "enum class E : float {A, B}; E e;\nvoid() g = { switch (e) { case 0: break; } };\n",
 ];
 
 /// The options under which every warning but "no references" (Q302), which the fixtures' unused

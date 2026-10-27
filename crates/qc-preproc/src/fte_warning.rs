@@ -503,7 +503,7 @@ impl FteWarning {
             Code::W0225 => Self::EnumflagsNotInteger,
             Code::W0227 => Self::UnaryNotScope,
             Code::W0228 => Self::GmqccSpecific,
-            Code::W0229 => Self::Debugging,
+            Code::W0229 | Code::W0263 => Self::Debugging,
             Code::W0230 => Self::LaxCast,
             Code::W0312 => Self::DuplicateLabel,
             Code::W0314 => Self::DeprecatedVariable,

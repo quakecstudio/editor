@@ -127,6 +127,9 @@ pub(crate) trait Env {
     fn function(&self) -> FunctionFacts;
     /// The line of offset `span.start`, counted from 1, as `pr_source_line` holds it.
     fn line(&self, span: Span) -> u32;
+    /// The items of the strict enum `ty`, in the order they were declared, each with its value
+    /// when the model knows it; empty for any other type.
+    fn enum_items(&self, ty: &Type) -> Vec<(String, Option<Constant>)>;
     /// The size of `ty` as FTEQCC lays it out (FTEF-6.13), `None` when the model does not follow
     /// it.
     fn layout(&self, ty: &Type) -> Option<Layout>;

@@ -510,6 +510,9 @@ pub enum Code {
     /// FTEQCC: "Function NAME returns (large) TYPE. This is inefficient.", a function with a body
     /// returning a type larger than a vector (`WARN_SLOW_LARGERETURN`, largereturn).
     W0262,
+    /// FTEQCC: "ENUM::ITEM not part of switch", a `switch` on a strict enum with no case for one of
+    /// its items (the warning of code 0).
+    W0263,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -524,7 +527,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 232] = [
+    pub const ALL: [Self; 233] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -752,6 +755,7 @@ impl Code {
         Self::W0260,
         Self::W0261,
         Self::W0262,
+        Self::W0263,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -922,6 +926,7 @@ impl Code {
             Self::W0260 => "W0260",
             Self::W0261 => "W0261",
             Self::W0262 => "W0262",
+            Self::W0263 => "W0263",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -1092,6 +1097,7 @@ impl Code {
             | Self::W0260
             | Self::W0261
             | Self::W0262
+            | Self::W0263
             | Self::W0402 => false,
             Self::E0101
             | Self::E0102

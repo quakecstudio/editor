@@ -407,3 +407,46 @@ fn large_returns() {
         [d(Code::W0256, "'g' returned nothing, expected s")]
     );
 }
+
+// spec FTEF-34.5: a switch on a strict enum warns of each item no case covers, the last
+// first; a `default` covers them all
+// spec QCD-7.105: W0263 for an item of a strict enum no case of its switch covers
+// spec FTEF-30.2: a strict enum's test is "conditional type mismatch"
+#[test]
+fn enum_switches() {
+    let source = |cases: &str| {
+        format!(
+            "enum class E : float {{A, B, C}}; E e;\nvoid() g = {{ switch (e) {{ {cases} }} }};\n"
+        )
+    };
+    let mismatch = d(Code::W0247, "conditional type mismatch: enum");
+    assert_eq!(
+        diags(&source("case E::A: break;")),
+        [
+            d(Code::W0263, "E::C not part of switch"),
+            d(Code::W0263, "E::B not part of switch"),
+            mismatch.clone()
+        ]
+    );
+    assert_eq!(
+        diags(&source("case E::A: break; default: break;")),
+        std::slice::from_ref(&mismatch)
+    );
+    assert_eq!(
+        diags(&source(
+            "case E::A: break; case E::B: break; case E::C: break;"
+        )),
+        std::slice::from_ref(&mismatch)
+    );
+    assert_eq!(
+        diags("enum class E : float {A, B}; E e; float a;\nvoid() g = { if (e) a = 1; };\n"),
+        [mismatch]
+    );
+    assert_eq!(
+        diags(&source("case 0: break;")),
+        [d(
+            Code::E0227,
+            "Implicit type mismatch. Needed enum, got float."
+        )]
+    );
+}
