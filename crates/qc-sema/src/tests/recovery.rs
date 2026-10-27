@@ -35,7 +35,7 @@ fn partial_statements_resolve_what_they_have() {
     ] {
         let expected: Vec<_> = names
             .iter()
-            .map(|name| format!("Unknown value \"{name}\""))
+            .map(|name| format!("Unknown value \"{name}\"."))
             .collect();
         assert_eq!(unknown(source), expected, "{source:?}");
     }
@@ -60,7 +60,7 @@ fn partial_expressions_resolve_what_they_have() {
     ] {
         let expected: Vec<_> = names
             .iter()
-            .map(|name| format!("Unknown value \"{name}\""))
+            .map(|name| format!("Unknown value \"{name}\"."))
             .collect();
         assert_eq!(unknown(source), expected, "{source:?}");
     }
@@ -79,11 +79,11 @@ fn nameless_declarations_declare_nothing() {
         ("accessor : float;\n", None),
         ("class A { float; };\n", None),
         ("enum { = 1 };\n", None),
-        ("void(float a) f = ;\n", Some("function f was not defined")),
+        ("void(float a) f = ;\n", Some("function f has no body")),
         ("void() f = [1, ] { };\n", None),
     ] {
         let after = format!("{source}void() g = {{ u1 = 1; }};\n");
-        let mut expected = vec!["Unknown value \"u1\""];
+        let mut expected = vec!["Unknown value \"u1\"."];
         expected.extend(bodyless);
         if source.starts_with("typedef") {
             // FTEF-19.9: a typedef that defines no type is a warning.

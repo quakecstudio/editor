@@ -496,11 +496,17 @@ impl<'a> Resolver<'a> {
                 Found::Nothing => {}
                 Found::Error(code, message) => self.report(code, location, message),
                 Found::Unknown => {
-                    let shown = match &use_.scope {
-                        Some(prefix) => format!("{prefix}::{}", use_.name),
-                        None => use_.name.clone(),
+                    // FTEF-19.45: FTEQCC makes an unknown name a `variant` and reports it with a
+                    // full stop, `QCC_PR_ParseWarning (ERR_UNKNOWNVALUE, "Unknown value
+                    // \"%s\".", name)`; a scoped name has none.
+                    let message = match &use_.scope {
+                        Some(prefix) => format!("Unknown value \"{prefix}::{}\"", use_.name),
+                        None if self.profile.fteqcc_diagnostics() => {
+                            format!("Unknown value \"{}\".", use_.name)
+                        }
+                        None => format!("Unknown value \"{}\"", use_.name),
                     };
-                    self.report(Code::E0301, location, format!("Unknown value \"{shown}\""));
+                    self.report(Code::E0301, location, message);
                 }
             }
         }

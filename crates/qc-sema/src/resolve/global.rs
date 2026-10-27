@@ -992,11 +992,14 @@ impl<'a> Resolver<'a> {
             let function =
                 (def.kind == DefKind::Function && def.member_of.is_none()) || member_function;
             if function && !def.initialized && !def.generated && !skipped {
-                undefined.push(diag(
-                    Code::E0211,
-                    def.location,
-                    format!("function {} was not defined", def.name),
-                ));
+                // FTEF-17.11: FTEQCC's `QCC_PR_Warning(ERR_NOFUNC, ..., "function %s has no
+                // body", d->name)`.
+                let message = if self.profile.fteqcc_diagnostics() {
+                    format!("function {} has no body", def.name)
+                } else {
+                    format!("function {} was not defined", def.name)
+                };
+                undefined.push(diag(Code::E0211, def.location, message));
             }
         }
         self.index.diagnostics.extend(undefined);

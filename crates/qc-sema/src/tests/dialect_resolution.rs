@@ -61,7 +61,7 @@ fn compound_assignment_operands_are_uses() {
         .collect();
     assert_eq!(
         messages,
-        ["Unknown value \"nope\"", "Unknown value \"missing\""]
+        ["Unknown value \"nope\".", "Unknown value \"missing\"."]
     );
     assert_eq!(index.refs.len(), 2);
 }
@@ -164,7 +164,7 @@ fn prefix_and_cast_operands_are_uses() {
         .collect();
     assert_eq!(
         messages,
-        ["Unknown value \"nope\"", "Unknown value \"gone\""]
+        ["Unknown value \"nope\".", "Unknown value \"gone\"."]
     );
 }
 
@@ -177,7 +177,7 @@ fn negative_number_subtraction_resolves_its_operand() {
         .iter()
         .map(|d| d.diagnostic.message.as_str())
         .collect();
-    assert_eq!(messages, ["Unknown value \"nope\""]);
+    assert_eq!(messages, ["Unknown value \"nope\"."]);
 }
 
 // spec FTE-21.1: a local declared without `local`, mid-body, resolves.
@@ -322,7 +322,7 @@ fn local_initialisers_are_uses() {
         .collect();
     assert_eq!(
         messages,
-        ["Unknown value \"nope\"", "Unknown value \"gone\""]
+        ["Unknown value \"nope\".", "Unknown value \"gone\"."]
     );
 }
 
@@ -366,4 +366,20 @@ fn a_local_hides_a_field_of_its_name_after_a_dot() {
     let index =
         fte_index_of(".string target;\nvoid(entity target) use = { target.target = \"\"; };\n");
     assert_eq!(all_codes(&index), [Code::E0318]);
+}
+
+// spec FTEF-19.45: FTEQCC reports an unknown name "Unknown value \"NAME\"." with a full stop, a
+// scoped one with none; vanilla's has none
+#[test]
+fn unknown_values_end_with_a_full_stop_under_fteqcc() {
+    let messages = |index: &ModuleIndex| -> Vec<String> {
+        index
+            .diagnostics
+            .iter()
+            .map(|d| d.diagnostic.message.clone())
+            .collect()
+    };
+    let source = "float a;\nvoid() f = { a = nope; };\n";
+    assert_eq!(messages(&fte_index_of(source)), ["Unknown value \"nope\"."]);
+    assert_eq!(messages(&index_of(source)), ["Unknown value \"nope\""]);
 }

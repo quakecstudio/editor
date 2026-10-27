@@ -367,10 +367,7 @@ fn a_macro_number_for_a_function_cannot_be_cast() {
     // The function it would have been is left with no body.
     assert_eq!(
         found,
-        [
-            "Cannot cast from float to void()",
-            "function f was not defined"
-        ]
+        ["Cannot cast from float to void()", "function f has no body"]
     );
 }
 

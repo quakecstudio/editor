@@ -314,6 +314,13 @@ fn opaque_types_are_compatible() {
 fn undefined_functions_are_reported_unless_noref_and_unused() {
     let unused = fte_index_of("void() never;\n");
     assert_eq!(errors(&unused), [Code::E0211]);
+    assert_eq!(
+        unused
+            .diagnostics
+            .first()
+            .map(|d| d.diagnostic.message.as_str()),
+        Some("function never has no body")
+    );
     let used = fte_index_of("void() needed;\nvoid() f = { needed(); };\n");
     assert_eq!(errors(&used), [Code::E0211]);
     let noref = fte_index_of("noref void() never;\n");

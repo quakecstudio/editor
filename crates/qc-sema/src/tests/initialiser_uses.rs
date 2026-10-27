@@ -48,7 +48,7 @@ fn a_global_initialiser_references_a_known_name() {
 #[test]
 fn a_global_initialiser_reports_an_unknown_name() {
     let index = fte_index_of("const float B = NOPE + 1;\n");
-    assert_eq!(unknown(&index), ["Unknown value \"NOPE\""]);
+    assert_eq!(unknown(&index), ["Unknown value \"NOPE\"."]);
 }
 
 // spec FTE-10.2: an initialiser is resolved where it is, so a name declared after it is not
@@ -58,7 +58,7 @@ fn a_global_initialiser_sees_only_earlier_names() {
     let index = fte_index_of("float A[] = { B, C };\nfloat B;\n");
     assert_eq!(
         unknown(&index),
-        ["Unknown value \"B\"", "Unknown value \"C\""]
+        ["Unknown value \"B\".", "Unknown value \"C\"."]
     );
 }
 
@@ -78,7 +78,7 @@ fn a_default_value_references_a_known_name() {
 #[test]
 fn a_default_value_reports_an_unknown_name() {
     let index = fte_index_of("void(float a = missing_default) f;\n");
-    assert_eq!(unknown(&index), ["Unknown value \"missing_default\""]);
+    assert_eq!(unknown(&index), ["Unknown value \"missing_default\"."]);
 }
 
 // spec FTE-9.1: the selector of an entity field access is a reference to the field, in a

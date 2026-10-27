@@ -195,7 +195,7 @@ fn an_inline_member_body_resolves_in_its_class() {
     let source = "class M { float count; nonvirtual void Bump(void) = { this.count = this.count + 1; \
                   nope = 2; }; };\n";
     let index = fte_index_of(source);
-    assert_eq!(messages(&index), ["Unknown value \"nope\""]);
+    assert_eq!(messages(&index), ["Unknown value \"nope\"."]);
     let count = member(&index, "M", "count");
     assert_eq!(index.refs.iter().filter(|r| r.def == count).count(), 2);
 }
@@ -208,7 +208,7 @@ fn a_class_accessor_member_is_a_function_and_a_member_name() {
     let source = "class H { float v; get float twice = { return nope; }; };\nH h;\n\
                   void() f = { local float n = h.twice; };\n";
     let index = fte_index_of(source);
-    assert_eq!(messages(&index), ["Unknown value \"nope\""]);
+    assert_eq!(messages(&index), ["Unknown value \"nope\"."]);
     assert!(index.defs.iter().any(|d| d.name == "H::get_twice"));
     let params: Vec<_> = index
         .defs

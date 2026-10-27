@@ -2885,6 +2885,12 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseEnum`.
 
+- **FTEF-19.45** A name no definition has, in a body or an initialiser, is made a `variant` and
+  reported `QCC_PR_ParseWarning (ERR_UNKNOWNVALUE, "Unknown value \"%s\".", name)`, an error
+  ending with a full stop (`E0301`, QCD-4.1's message with it); a scoped name `S::n` is
+  `QCC_PR_ParseError (ERR_UNKNOWNVALUE, "Unknown value \"%s::%s\"", ...)` with none. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseRefValue`.
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and
