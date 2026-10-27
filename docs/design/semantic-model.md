@@ -126,11 +126,19 @@ thresholds in `clippy.toml`).
 | `resolve/init.rs` | initialisers and constant values | `QCC_PR_ParseInitializerType`; `PR_ParseImmediate` |
 | `resolve/types/` | typedefs, enums, structs and unions, classes, accessors | `QCC_PR_ParseType` and its callers |
 | `resolve/body.rs` | parameters, locals, aliases, state headers and the uses of a body | `QCC_PR_ParseFunctionBody`, `QCC_PR_ParseState` |
-| `check/mod.rs` | `TypedBody` and checking one function | `QCC_PR_ParseImmediateStatements` |
-| `check/expr.rs` | terms and operators: the type of each expression | `QCC_PR_RefTerm`, `QCC_PR_RefExpression`, `QCC_PR_Statement`; `PR_Term`, `PR_Expression` |
-| `check/call.rs` | calls, arguments and intrinsics | `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCall`; `PR_ParseFunctionCall` |
-| `check/member.rs` | member access on entities, structs, classes, vectors and pointers | `QCC_PR_ParseField`, `QCC_PR_FindStructMember` |
-| `check/stmt.rs` | statements and control flow | `QCC_PR_ParseStatement`; `PR_ParseStatement` |
+| `check/mod.rs` | `TypedBody`, the `Env` the resolver gives the checks, checking one function or a global's initialiser | `QCC_PR_ParseImmediateStatements` |
+| `check/expr.rs` | the checker, terms and binary operators: the type of each expression | `QCC_PR_RefTerm`, `QCC_PR_RefExpression` |
+| `check/convert.rs`, `check/opcodes.rs` | the opcode table and the choice of an operator's opcode | `pr_opcodes`, `QCC_PR_ChooseOpcode`, `QCC_canConv` |
+| `check/fold.rs`, `check/constant.rs` | constant values and their folding | `QCC_SRef_EvalConst`, `QCC_PR_StatementFlags` (folding) |
+| `check/emulate.rs`, `check/pointer.rs`, `check/compare.rs` | opcodes the target lacks, pointer arithmetic, the comparison warnings, statements at global scope | `QCC_PR_StatementFlags` |
+| `check/term.rs`, `check/truth.rs` | prefix operators, casts, vectors, `sizeof`, truth tests and `?:` | `QCC_PR_RefTerm`, `QCC_PR_GenerateLogicalNot`, `QCC_Generate_OP_IFNOT` |
+| `check/reference.rs` | indexing, reads, addresses and stores to references | `QCC_PR_ParseRefArrayPointer`, `QCC_RefToDef`, `QCC_StoreSRefToRef` |
+| `check/assign.rs` | assignments and compound assignments | `QCC_PR_RefExpression` (assignment), `QCC_StoreSRefToRef` |
+| `check/member.rs`, `check/accessor.rs` | member access on entities, structs, classes, vectors and pointers; accessor members | `QCC_PR_ParseField`, `QCC_PR_BuildAccessorRef` |
+| `check/call.rs`, `check/format.rs` | calls, arguments and intrinsics; the builtins whose arguments are checked | `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`, `QCC_VerifyFormatString` |
+| `check/statement.rs`, `check/flow.rs` | statements, and the layout of their jumps for missing returns and unreachable code | `QCC_PR_ParseStatement`, `QCC_CheckForDeadAndMissingReturns` |
+| `check/vanilla.rs` | id's `qcc`'s checks under the vanilla profile | `PR_Expression`, `PR_Term`, `PR_ParseFunctionCall` |
+| `resolve/types/layout.rs` | struct and union layout, `sizeof` | `QCC_PR_ParseStruct` |
 
 [`docs/spec/inventory-l3.md`](../spec/inventory-l3.md) has a row for every function of
 `qcc_pr_comp.c` and `pr_comp.c` and every diagnostic they raise, naming the module above that

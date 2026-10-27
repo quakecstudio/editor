@@ -87,10 +87,12 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   target, QCD-3.36 to QCD-3.39, QCD-7.70 and QCD-7.71); and the
   keywords' parts that are the semantic model's, FTEF-20.4 (the warning for a definition named
   as a keyword), FTEF-20.5 (the names of `using`, `thinktime` and `state`), FTEF-20.9 (the
-  registered type C type words name) and FTEF-20.11 (`this` and `super`). The
-  other statements of those
-  sections are the parser's (`qc-syntax`) or the compiler's (L4): the type rules of
-  expressions, operator checks and code generation. The definitions are ported from id's
+  registered type C type words name) and FTEF-20.11 (`this` and `super`). The check stage
+  (`src/check/`) types every body's expressions and checks its statements as the compilers
+  do: under FTEQCC FTEF-6.13, FTEF-10.7, FTEF-10.8 and FTEF-23 to FTEF-34, under the vanilla
+  profile QC-16, QC-18.2, QC-18.8 and QC-10.10. The other statements of those sections are the
+  parser's (`qc-syntax`) or the compiler's (L4): code generation. The definitions are ported
+  from id's
   `qcc/pr_comp.c` and FTEQCC's `engine/qclib/qcc_pr_comp.c` and `qcc_pr_lex.c`, each function
   cited in the headers of the `src/resolve/` modules and `src/cast.rs`
   ([`inventory-l3.md`](../../docs/spec/inventory-l3.md)).
@@ -134,12 +136,12 @@ where each is given (`#pragma warning` and the command line, `ModuleInput::comma
 
 ## What it is not, yet
 
-This crate resolves names and types and answers navigation and the resolution diagnostics. It
-does not yet type-check expressions and operators (QC-16 to QC-19), fold constants or lay out
-globals and fields (QC-20, QC-21), or emit progs statements (QC-22): those are the compiler's,
-built on this model. Rename builds on it in a later issue. Under FTEQCC it does not type
-expressions, so a member access whose base is not a name, `this`, a cast or a call resolves by
-the member's name, and the values of `enumflags` and other constants are not computed.
+This crate resolves names and types, types and checks expressions and statements, and answers
+navigation and the diagnostics. It does not lay out globals and fields (QC-20, QC-21) or emit
+progs statements (QC-22): those are the compiler's, built on this model. Rename builds on it in
+a later issue. Resolution runs before the check stage, so a member access whose base is not a
+name, `this`, a cast or a call resolves by the member's name, and the values of `enumflags` are
+computed only for literals.
 
 ## Public shape
 

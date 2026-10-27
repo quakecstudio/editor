@@ -149,8 +149,8 @@ modelled**, the second with the statement that says why.
 | `QCC_PR_ParseEntClass` | a member function with no body: "function %s has no body" | `Resolver::check_undefined_functions` | FTEF-19.41, FTEF-17.11 | `CLASS_MEMBERS`, `PROGRAMS` | ported |
 | `QCC_PR_ParseValue` | a name of a type is no value: "Unknown value" | `Resolver::resolve_value`, `UseKind::TypeOrValue` | FTEF-19.38, FTEF-17.1 | `PROGRAMS` | ported |
 | `QCC_PR_ParseValue` | in a member function a field is `this.field`, a nonvirtual member function its bare name | `Resolver::lookup_in_scope_exactly` | FTEF-17.14 | `CLASS_MEMBERS`, `PROGRAMS` | ported |
-| `QCC_PR_ParseFunctionCall` | "not a function" for a float, vector, string, entity or struct callee | `Resolver::not_callable` | FTEF-19.40, QCD-4.17 | `PROGRAMS` | ported |
-| `QCC_PR_ParseFunctionCall` | the type of a call's arguments and result, "type mismatch on parm" | not modelled: FTEF-19.46 (an expression's type is the compiler's) | FTEF-19.46 | none: not compared | not modelled |
+| `QCC_PR_ParseFunctionCall` | "not a function" for a float, vector, string, entity or struct callee | `check::call` | FTEF-19.40, FTEF-32.1, QCD-4.17 | `PROGRAMS` | ported |
+| `QCC_PR_ParseFunctionCall` | the type of a call's arguments and result, each argument cast to its parameter's type | `check::call` | FTEF-32.3 | `PROGRAMS` | ported |
 | `QCC_PR_ParseEnum` | `QCC_PR_ParseError(ERR_TOOMANYINITIALISERS, "%s::%s already declared", enumtype->name, name)` for a value that differs | `Resolver::declare_enum_item` | FTEF-19.36, QCD-3.49 | `PROGRAMS` | ported |
 | `QCC_PR_ParseEnum` | the name read as the base type when it names a type already | `Resolver::declare_type_name` | FTEF-19.10 | `PROGRAMS` | ported |
 | `QCC_PR_ParseInitializerDef` | "initializer for 'y' is not constant" for an element of a variable | `Resolver::check_value` | FTEF-19.39 | `PROGRAMS` | ported |
@@ -175,14 +175,38 @@ modelled**, the second with the statement that says why.
 | `QCC_PR_ParseStatement` | `goto` with no label, a label twice, `case` outside a `switch` | `lower::lower_stmt`, `Parser::goto_stmt` | FTEF-18.23, FTEF-18.24 | `PROGRAMS` | ported |
 | `QCC_PR_ParseStatement` | locals: a type's name starts a definition, `local` and a duplicate local | `lower::lower_local`, `Resolver::declare_scoped` | FTEF-20.14, FTEF-19.1 | `PROGRAMS` | ported |
 
+## 5. The check stage (P2-136)
+
+The functions that type expressions, check calls and statements and lay out the statements a
+body generates, as far as their diagnostics go, are ported into `crates/qc-sema/src/check/`
+(design: [`../design/semantic-model.md`](../design/semantic-model.md)). The check stage reads each
+body's syntax with the resolver's names (`check::Env`), FTEQCC's under the FTEQCC profile and id's
+`qcc`'s under the vanilla one (`check::vanilla`). The differential family is
+`xtask/src/oracles/builtins/expressions.rs`: `STATEMENTS` and `PROGRAMS` (FTEQCC, each plain and
+with every warning an error) and `VANILLA` (id's `qcc`).
+
+| FTEQCC (`engine/qclib/`) or id (`qcc/`) | What it checks | Rust counterpart | Statements | Differential | Status |
+| --- | --- | --- | --- | --- | --- |
+| `QCC_PR_RefExpression`, `QCC_PR_ChooseOpcode`, `QCC_canConv` | An operator's opcode by the fewest conversions, its casts and "type mismatch for OP (A and B)" | `check::expr` (`binary`, `operator`, `convert`), `check::convert`, `check::opcodes` | FTEF-23, FTEF-24.10 | `STATEMENTS`, `PROGRAMS` | ported |
+| `QCC_PR_StatementFlags` | Constant folding and its warnings, the emulation of opcodes the target lacks, the comparison warnings, a statement at global scope | `check::fold`, `check::emulate`, `check::compare`, `check::pointer` | FTEF-26, FTEF-27, FTEF-28, FTEF-34.9 | `STATEMENTS`, `PROGRAMS` | ported |
+| `QCC_PR_RefTerm`, `QCC_PR_GenerateLogicalTruth`, `QCC_PR_GenerateLogicalNot`, `QCC_Generate_OP_IFNOT`, `QCC_PR_GenerateVector` | Prefix operators, `!` and `~`, casts, `?:`, the vector constructor, `sizeof` and `_length`, a condition's test | `check::term`, `check::truth` | FTEF-30 | `STATEMENTS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseRefArrayPointer`, `QCC_RefToDef`, `QCC_PR_GenerateAddressOf`, `QCC_LoadFromArray`, `QCC_StoreToArray` | Indexing, reading a reference, taking an address, storing to an element or a character | `check::reference` | FTEF-31 | `PROGRAMS` | ported |
+| `QCC_PR_ParseField`, `QCC_PR_BuildAccessorRef` | Members of entities, vectors, strings, structs, pointers and classes; accessor members read and stored through their functions | `check::member`, `check::accessor` | FTEF-24, FTEF-10.7, FTEF-10.8 | `STATEMENTS`, `PROGRAMS` | ported |
+| `QCC_StoreSRefToRef`, `QCC_PR_ParseAssignment` (in `QCC_PR_RefExpression`) | Assignments and compound assignments, read-only targets, post-increments, the store's conversion | `check::assign` | FTEF-29 | `PROGRAMS` | ported |
+| `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef` | The callee, the intrinsics, each argument's cast, the argument counts, `out` arguments | `check::call` | FTEF-32 | `PROGRAMS` | ported |
+| `QCC_VerifyFormatString`, `QCC_VerifyArgs_*` | `sprintf`'s format string and the builtins whose arguments FTEQCC checks | `check::format` | FTEF-33 | `PROGRAMS` | ported |
+| `QCC_PR_ParseStatement`, `QCC_PR_ParseStatement_For` | Returns, the tests of conditions, `switch` and its cases, `thinktime` | `check::statement` | FTEF-34.1 to FTEF-34.5, FTEF-34.7, FTEF-34.8 | `PROGRAMS` | ported |
+| `QCC_PR_FinaliseFunction`, `QCC_CheckForDeadAndMissingReturns` | A path that returns no value, code no path reaches | `check::flow` | FTEF-34.6 | `PROGRAMS` | ported |
+| `QCC_PR_ParseStruct` (its layout), `QCC_PR_NewType` | The size of a struct or union, its bitfields | `resolve::types::layout` | FTEF-6.13 | `PROGRAMS` | ported |
+| `QCC_PR_ParseDefaultInitialiser`, a global's initialiser | A parameter's default under autoprototyping, a global initialised by an expression | `lower::RawDecl::prototyped`, `check::check_initialiser` | FTEF-12.21, FTEF-34.9 | `PROGRAMS` | ported |
+| `TypeName`, `QCC_VarAtOffset` | A type and a default value in a message | `Type::fteqcc_name`, `ty::ParamLabels` | FTEF-24.7 | `PROGRAMS` | ported |
+| `pr_comp.c`, `PR_Expression`, `PR_Term`, `PR_ParseFunctionCall` | id's operator rows, `!`, assignments, calls | `check::vanilla` | QC-16.1, QC-16.2, QC-16.4, QC-16.7, QC-18.2, QC-18.8, QC-10.10 | `VANILLA` | ported |
+| `QCC_GetTemp` | A temporary's name in a message, `temp_N` | `check::Value::label` (the type's name) | FTEF-27.4 | none: the slot a temporary takes depends on the temporaries code generation frees | not modelled |
+
 ## Functions of the two files off this path
 
-`pr_comp.c`'s `PR_Statement`, `PR_ParseFunctionCall`, `PR_Term`, `PR_Expression` and
-`PR_ParseStatement` (beyond the names they use and the `local` definitions they start), and
-`PrecacheSound`, `PrecacheModel` and `PrecacheFile`; and their FTEQCC counterparts
-`QCC_PR_StatementFlags`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`,
-`QCC_PR_RefTerm`, `QCC_PR_RefExpression`, `QCC_PR_ParseStatement`, the `QCC_Precache*`
-functions, the temporaries, the array emitters and the optimisations: these type expressions,
-check calls and write statements, the compiler's work (QC-14 to QC-22, QC-26; P2-06, P2-07,
-P2-08). The names they use are on this path, as the uses the lowering records and the resolver
-resolves (QC-12.5).
+What remains of `pr_comp.c`'s `PR_Statement`, `PR_ParseStatement` and `PrecacheSound`,
+`PrecacheModel` and `PrecacheFile`, and of their FTEQCC counterparts, writes the program: the
+statements and their operands, the temporaries' slots, the array emitters, the precache lists and
+the optimisations, the compiler's work (QC-14 to QC-22, QC-26; P2-06, P2-07, P2-08). The check
+stage reads what each decides that a message reports (section 5).
