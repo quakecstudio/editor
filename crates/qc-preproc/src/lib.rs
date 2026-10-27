@@ -21,6 +21,7 @@ mod fte_directive;
 mod fte_keywords;
 mod fte_line;
 mod fte_macro;
+mod fte_opcodes;
 mod fte_options;
 mod fte_pragma;
 pub(crate) mod fte_tables;
@@ -37,6 +38,7 @@ pub use fte_directive::{
 };
 pub use fte_keywords::{Enabled, Keyword, KeywordEdit, Keywords};
 pub use fte_line::{fte_directive_end, relex_from};
+pub use fte_opcodes::OpcodeTarget;
 pub use fte_options::CommandLine;
 pub use fte_pragma::FlagSettings;
 pub use fte_tables::{FteFlag, TargetFormat, is_opcode_name};
@@ -166,6 +168,10 @@ pub struct FileOutput {
     /// index of the first token after it and the change, which sets only what the pragma names
     /// (FTEF-20.1).
     pub keywords: Vec<(usize, KeywordEdit)>,
+    /// In an FTEQCC dialect, the output target and the opcodes it has where the file starts, at
+    /// token 0, and after each `#pragma TARGET` and `#pragma opcode`: the index of the first token
+    /// after it and the target from there on (FTEF-25), which the check stage reads.
+    pub targets: Vec<(usize, OpcodeTarget)>,
 }
 
 /// The macros defined, searched by name as FTEQCC's `compconstantstable` is (FTEF-14.73): by the
@@ -1096,6 +1102,7 @@ impl<L: Loader> Preprocessor<L> {
             // command line is read.
             self.fte.flags.prioritise();
             self.fte.target = self.command_line.target();
+            self.fte.opcodes = self.command_line.opcode_target();
         }
         self
     }
@@ -1249,6 +1256,7 @@ impl<L: Loader> Preprocessor<L> {
             run.out
                 .keywords
                 .push((0, KeywordEdit::whole(self.fte.keywords())));
+            run.out.targets.push((0, self.fte.opcodes));
         }
         let file = self.add_source(&mut run, path.clone(), bytes, start);
         let cursor = self.cursor(file, path, name, start.text_start());

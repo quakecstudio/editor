@@ -3373,7 +3373,12 @@ opcodes.rs`, the rows of `pr_opcodes[]` in order) and picks as FTEQCC picks
   order: `QCC_PrioritiseOpcodes` lists each priority's rows in table order and sorts them by
   name with `qsort`, and `QCC_PR_RefExpression` starts at the first row of the spelling. The
   table has 413 rows before its `NULL` name, the opcode numbering, and every row's `opname`
-  is the name `#pragma opcode` takes (FTEF-12).
+  is the name `#pragma opcode` takes (FTEF-12). `sort_opcodenames` compares names only, so the
+  order of a spelling's rows is the C library's `qsort`'s, which C leaves unspecified: glibc's
+  keeps table order, and macOS's does not (the pinned FTEQCC on macOS arm64 takes `MUL_FI` as
+  the first `*` row). The order decides only a tie of conversions (FTEF-23.4) and the row used
+  after a mismatch; the semantic model takes table order, and the differential has no case
+  whose outcome the order decides.
 - **FTEF-23.2** `QCC_NumericTypeRanking` ranks the numeric types `double` 15, `float` 10,
   `__uint64` 6, `__int64` 3, `__uint32` 1 and `__int32` 0 ("large gap, to try to de-prioritize
   the opcodes that mix float and int types"); every other type is unranked.
@@ -3454,3 +3459,36 @@ statement's checks (FTEF-23.6).
 - **FTEF-24.8** An array's only member is `length`, an `int`, the array's size (`QCC_PR_Expect
   ("length")` after an array's `.`, FTE-13); `LightStyles.length` for an array of strings is the
   array's length, not the string's.
+
+## FTEF-25 The opcodes the target has
+
+**Source:** `qcc_pr_comp.c`, `QCC_OPCodeValidForTarget`, `QCC_OPCodeSetTarget` and
+`QCC_OPCodeSetTargetName`; `qcc_pr_lex.c`, `QCC_PR_Precompiler` (`opcode`),
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+Each opcode of `pr_opcodes[]` is valid for the output or not (`OPF_VALID`). The preprocessor
+keeps the validity where each token stands (`crates/qc-preproc/src/fte_opcodes.rs`), and the
+check stage reads it where it types an operator, an opcode that is not valid being emulated or
+refused (`QCC_PR_StatementFlags`).
+
+### Behaviour
+
+- **FTEF-25.1** `QCC_OPCodeSetTarget(format, revision)` holds the revision to the format's
+  highest (6614 for the FTE formats, 20250104 for DarkPlaces, 0 for QSS and the rest) and sets
+  every opcode valid or not by `QCC_OPCodeValidForTarget`. It runs for the command line's last
+  `-T` option, else for the standard format at revision 0, and again at each `#pragma TARGET`
+  that names a target, with the revision after `_` or the row's default (5768 for `fte`, 12901
+  for `dp`). So a `#pragma TARGET` undoes every `#pragma opcode` before it.
+- **FTEF-25.2** `QCC_OPCodeValidForTarget`: no opcode from `OP_NUMREALOPS` (282) on is valid.
+  The standard, KK7 and QTest formats have the opcodes before `OP_MULSTORE_F`; Hexen II's have
+  those up to `OP_CALL8H` but `OP_SWITCH_V` to `OP_SWITCH_FNC`; the FTE formats have all of
+  them by revision: `OP_PUSH` and those from `OP_STOREP_I16` from 6614, those from `OP_LT_U`
+  from 5768, from `OP_STOREP_I8` from 5744, from `OP_STOREF_V` from 5698, from `OP_IF_F` from
+  3349 and the rest always; QSS has id's and a list of integer, conditional, field-store, array
+  and Hexen II call opcodes; DarkPlaces has id's, its shifts and unsigned opcodes from revision
+  20250104, its pointer loads from 20241108, eight opcodes it once got wrong from 12901 and a
+  list of integer and global-array opcodes always.
+- **FTEF-25.3** `#pragma opcode enable NAME...` (or `on`) makes each named opcode valid, and
+  `disable` (or `off`) not, in order, the names an `opname` in any case; an internal one is "opcode
+  NAME is internal" and changes nothing, and an unknown one "opcode NAME not recognised"
+  (FTEF-12). The change holds from the token after the pragma.

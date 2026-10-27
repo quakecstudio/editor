@@ -306,17 +306,19 @@ pub(crate) fn optimise_warnings(name: &[u8], message: &[u8]) -> Vec<String> {
 /// `#pragma opcode STATE NAME ...` with the text `message`: STATE `enable`, `on`, `disable` or
 /// `off`, else "opcode state not recognised"; each NAME an `opname` of `pr_opcodes[]` in any case,
 /// "opcode NAME is internal" past `OP_NUMREALOPS` and "opcode NAME not recognised" when none.
-/// Returns the warnings.
-pub(crate) fn opcode_warnings(message: &[u8]) -> Vec<String> {
-    let state = com_parse(message, 0).filter(|(state, _)| {
-        matches!(
-            state.to_ascii_lowercase().as_slice(),
-            b"enable" | b"on" | b"disable" | b"off"
-        )
-    });
-    let Some((_, mut at)) = state else {
-        return vec!["opcode state not recognised".to_owned()];
+/// Returns each opcode it turns on or off, by its number, in order (FTEF-25.3), and the
+/// warnings.
+pub(crate) fn opcode_pragma(message: &[u8]) -> (Vec<(usize, bool)>, Vec<String>) {
+    let state =
+        com_parse(message, 0).and_then(|(state, at)| match state.to_ascii_lowercase().as_slice() {
+            b"enable" | b"on" => Some((true, at)),
+            b"disable" | b"off" => Some((false, at)),
+            _ => None,
+        });
+    let Some((on, mut at)) = state else {
+        return (Vec::new(), vec!["opcode state not recognised".to_owned()]);
     };
+    let mut edits = Vec::new();
     let mut warnings = Vec::new();
     while let Some((name, next)) = com_parse(message, at) {
         at = next;
@@ -327,11 +329,11 @@ pub(crate) fn opcode_warnings(message: &[u8]) -> Vec<String> {
             Some(index) if index >= REAL_OPCODES => {
                 warnings.push(format!("opcode {} is internal", lossy(&name)));
             }
-            Some(_) => {}
+            Some(index) => edits.push((index, on)),
             None => warnings.push(format!("opcode {} not recognised", lossy(&name))),
         }
     }
-    warnings
+    (edits, warnings)
 }
 
 /// `#pragma TARGET NAME` with the text `message`: its first token, `QCC_COM_Parse`'s, a name of
@@ -339,13 +341,15 @@ pub(crate) fn opcode_warnings(message: &[u8]) -> Vec<String> {
 /// is "Unknown target 'NAME'. Ignored." with FTEQCC's list, and a revision past the format's
 /// highest "target revision N is unknown, assuming revision M". The switch to or from a Hexen II
 /// format after the first statement, which FTEQCC refuses, is the compiler's to see. Returns the
-/// format it sets, if any, and the warnings, which have no name.
-pub(crate) fn target_warnings(message: &[u8]) -> (Option<TargetFormat>, Vec<String>) {
+/// format and revision it sets, if any, and the warnings, which have no name.
+pub(crate) fn target_warnings(message: &[u8]) -> (Option<(TargetFormat, u32)>, Vec<String>) {
     let name = com_parse(message, 0)
         .map(|(name, _)| name)
         .unwrap_or_default();
     match target_named(&name) {
-        Some((format, warning)) => (Some(format), warning.into_iter().collect()),
+        Some((format, revision, warning)) => {
+            (Some((format, revision)), warning.into_iter().collect())
+        }
         None => (
             None,
             vec![format!(
@@ -359,8 +363,9 @@ pub(crate) fn target_warnings(message: &[u8]) -> (Option<TargetFormat>, Vec<Stri
 /// `QCC_OPCodeSetTargetName(name)`: the format of the row of `targets[]` that `name` names in any
 /// case, with an optional `_` and revision after it (`fte_24`), and the warning "target revision N
 /// is unknown, assuming revision M" for a revision past the format's highest; `None` when no row
-/// is so named.
-pub(crate) fn target_named(name: &[u8]) -> Option<(TargetFormat, Option<String>)> {
+/// is so named. The revision is the one asked for, which `OpcodeTarget::new` holds to the
+/// highest.
+pub(crate) fn target_named(name: &[u8]) -> Option<(TargetFormat, u32, Option<String>)> {
     let (base, revision) = match name.iter().position(|&b| b == b'_') {
         Some(at) => (
             name.get(..at).unwrap_or_default(),
@@ -387,7 +392,7 @@ pub(crate) fn target_named(name: &[u8]) -> Option<(TargetFormat, Option<String>)
     };
     let warning = (revision > max && revision != u32::MAX)
         .then(|| format!("target revision {revision} is unknown, assuming revision {max}"));
-    Some((format, warning))
+    Some((format, revision, warning))
 }
 
 /// `bytes` as text, each byte that is no UTF-8 replaced.

@@ -34,6 +34,7 @@ use crate::compiler_flags::{FlagEdit, PragmaDefault};
 use crate::cond::{self, FteIfError, fte_white};
 use crate::fte_keywords::{KeywordEdit, Keywords};
 use crate::fte_macro::{Reading, Text};
+use crate::fte_opcodes::OpcodeTarget;
 use crate::fte_tables::{FteFlag, TargetFormat};
 use crate::{
     Body, ChunkReader, FileId, FileSpan, FlagSettings, Loader, Macro, Preprocessor, Run, Undef,
@@ -1366,6 +1367,9 @@ pub(crate) struct FteState {
     pub(crate) flags: FlagSettings,
     /// `qcc_targetformat`: the command line's, then each `#pragma TARGET`'s (FTEF-20.4).
     pub(crate) target: TargetFormat,
+    /// The target and the opcodes it has (`OPF_VALID`), as the command line, `#pragma TARGET`
+    /// and `#pragma opcode` set them (FTEF-25).
+    pub(crate) opcodes: OpcodeTarget,
 }
 
 impl FteState {
@@ -1979,8 +1983,18 @@ impl<L: Loader> Preprocessor<L> {
             }
         } else if pragma.is("opcode") {
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
-            for warning in fte_pragma::opcode_warnings(message) {
+            let (edits, warnings) = fte_pragma::opcode_pragma(message);
+            for warning in warnings {
                 run.report(Code::W0113, warning, at);
+            }
+            // FTEF-25.3: `pr_opcodes[f].flags |= OPF_VALID` or `&= ~OPF_VALID`, in order.
+            if !edits.is_empty() {
+                for (index, on) in edits {
+                    self.fte.opcodes.set(index, on);
+                }
+                run.out
+                    .targets
+                    .push((run.out.tokens.len(), self.fte.opcodes));
             }
         } else if pragma.is("TARGET") {
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
@@ -1990,7 +2004,12 @@ impl<L: Loader> Preprocessor<L> {
             }
             // FTEF-20.4: `QCC_OPCodeSetTargetName` sets `qcc_targetformat`, which a definition
             // named `float` reads.
-            if let Some(target) = target {
+            if let Some((target, revision)) = target {
+                // FTEF-25.1: `QCC_OPCodeSetTarget` makes every opcode valid or not again.
+                self.fte.opcodes = OpcodeTarget::new(target, revision);
+                run.out
+                    .targets
+                    .push((run.out.tokens.len(), self.fte.opcodes));
                 let was = self.fte.target.keeps_float();
                 self.fte.target = target;
                 if target.keeps_float() != was {
