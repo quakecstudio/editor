@@ -199,6 +199,28 @@ pub(super) fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, cx: Cx<'_>) 
                 .push((ty.syntax().span().start, cx.ty(&ty)));
         }
     }
+    // FTEF-32.7: the type `va_arg(index, TYPE)` reads.
+    for call in fn_body
+        .syntax()
+        .descendants()
+        .filter_map(ast::CallExpr::cast)
+    {
+        let Some(ast::Expr::Name(callee)) = call.callee() else {
+            continue;
+        };
+        if !cx.fte || callee.name().is_none_or(|t| t.text_lossless() != "va_arg") {
+            continue;
+        }
+        if let Some(ast::Expr::Name(ty)) = call.args().and_then(|a| a.args().nth(1))
+            && let Some(token) = ty.name()
+        {
+            let start = token.span().start;
+            body.written_types.push((
+                start,
+                Type::named(&token.text_lossless(), cx.c_context(start)),
+            ));
+        }
+    }
     body
 }
 

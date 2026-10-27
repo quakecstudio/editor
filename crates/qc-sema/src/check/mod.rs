@@ -147,6 +147,8 @@ pub(crate) struct FunctionFacts {
     pub(crate) ret: Type,
     /// Whether `accumulate` marks it, so that its parts are one function.
     pub(crate) accumulate: bool,
+    /// Whether it takes `...`, so it has a `__va_list`.
+    pub(crate) variadic: bool,
 }
 
 /// What a type is at bottom, as FTEQCC's checker reads it.

@@ -253,6 +253,14 @@ const PROGRAMS: &[&str] = &[
     "string(float x) f = #1; string b = f(1);\n",
     "string s = 1 + 1;\n",
     "entity self; .float fl; float b = self.fl;\n",
+    // FTEF-32.2, FTEF-32.7, FTEF-24.9, FTEF-16.14: intrinsics and keyword names.
+    "void(...) v = { local float x = va_arg(0, float); };\n",
+    "void() v = { local float x = va_arg(0, float); };\n",
+    "float a; void() g = { a = randomv(1, 2); };\n",
+    "entity e; float a; void() g = { a = entnum(e); };\n",
+    "entity e; float a; void() g = { a = e.entnum; };\n",
+    "float y; void() g = { y = autocvar_x; };\n",
+    "float c; void() g = { c = local; };\n",
 ];
 
 /// The options under which every warning but "no references" (Q302), which the fixtures' unused

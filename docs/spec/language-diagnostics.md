@@ -331,6 +331,10 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (FTEF-34.8); a fatal error.
 - **QCD-4.51** `E0345` "Unable to generate statements at global scope (OPNAME).": an initialiser
   of a global that needs code (FTEF-34.9); not a fatal error.
+- **QCD-4.52** `E0346` "va_arg() intrinsic only works inside varadic functions" (FTEF-32.7); a
+  fatal error.
+- **QCD-4.53** `E0347` "the nextent builtin is not defined": `entnum` with no `nextent`
+  (FTEF-32.2); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 

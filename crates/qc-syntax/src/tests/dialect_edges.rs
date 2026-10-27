@@ -312,12 +312,18 @@ fn for_clauses_and_the_useful_flag() {
     assert_eq!(pointless("for (; a, a < 1; ) c = 1;"), ["a"]);
 }
 
-// spec FTEF-16.9: the first clause of a `for` may declare locals with `local`, a type word or a
-// C type word
+// spec FTEF-16.14: `local` starts no declaration in a `for` header: it is a name there
+#[test]
+fn local_is_no_for_clause_declaration() {
+    let body = "for (local float i = 0; i < 3; i++) c = 1;";
+    assert!(body_codes(body).contains(&Code::E0204), "{body}");
+}
+
+// spec FTEF-16.9: the first clause of a `for` may declare locals with a type word or a C type
+// word
 #[test]
 fn for_clause_declarations() {
     for body in [
-        "for (local float i = 0; i < 3; i++) c = 1;",
         "for (float i = 0; i < 3; i++) c = 1;",
         "for (int i = 0; i < 3; i++) c = 1;",
     ] {

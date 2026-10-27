@@ -104,6 +104,12 @@ impl Checker<'_> {
                         .map(|def| (id, def.ty.clone()))
                 });
                 let Some((id, ty)) = found else {
+                    // FTEF-24.9: a name FTEQCC declares as it reads it, an intrinsic's or
+                    // `nil`, is a value, and no field.
+                    if let Some(shown) = intrinsic_value(&name) {
+                        let message = format!("{shown} is not a field");
+                        return self.fatal(Code::E0318, token.span(), message);
+                    }
                     return Ok(self.unknown_field(base, &name, token.span()));
                 };
                 (ty, name.clone(), name, token.span(), Some(id))
@@ -272,5 +278,17 @@ pub(super) fn length() -> Value {
     Value {
         constness: Constness::Opaque,
         ..Value::of(Type::Named("__int32".into()))
+    }
+}
+
+/// The name a value FTEQCC declares as it reads an unknown name has, as its messages print
+/// it (`QCC_PR_ParseRefValue`): `nil` is the integer constant 0, `IMMEDIATE`; the intrinsics
+/// are functions of their own names. `None` for any other name.
+fn intrinsic_value(name: &str) -> Option<&str> {
+    match name {
+        "nil" => Some("IMMEDIATE"),
+        "randomv" | "alloca" | "entnum" | "autocvar" | "used_model" | "used_sound" | "va_arg"
+        | "..." | "_" | "random" => Some(name),
+        _ => None,
     }
 }

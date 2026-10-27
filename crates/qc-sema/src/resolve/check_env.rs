@@ -160,9 +160,9 @@ impl Env for BodyEnv<'_, '_> {
 
     fn function(&self) -> FunctionFacts {
         let def = self.resolver.index.def(self.owner);
-        let ret = match def.map(|d| self.resolver.resolved(&d.ty)) {
-            Some(Type::Function(function)) => function.ret.clone(),
-            Some(_) | None => Type::Unknown,
+        let (ret, variadic) = match def.map(|d| self.resolver.resolved(&d.ty)) {
+            Some(Type::Function(function)) => (function.ret.clone(), function.variadic),
+            Some(_) | None => (Type::Unknown, false),
         };
         FunctionFacts {
             name: def.map_or_else(String::new, |d| d.name.clone()),
@@ -172,6 +172,7 @@ impl Env for BodyEnv<'_, '_> {
                 .facts
                 .get(self.owner.0)
                 .is_some_and(|f| f.accumulate),
+            variadic,
         }
     }
 

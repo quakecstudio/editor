@@ -528,3 +528,19 @@ fn global_initialisers() {
         ]
     );
 }
+
+// spec FTEF-16.14: an unknown name that is a keyword in force warns that it is used as a name
+// before it is "Unknown value"
+#[test]
+fn an_unknown_keyword_name() {
+    assert_eq!(
+        diags("float c;\nvoid() g = { c = local; };\n"),
+        [
+            d(
+                Code::W0221,
+                "\"local\" keyword used as variable name - coexisting"
+            ),
+            d(Code::E0301, "Unknown value \"local\".")
+        ]
+    );
+}

@@ -216,3 +216,82 @@ fn the_most_arguments() {
         Some(&d(Code::E0338, "More than 136 parameters"))
     );
 }
+
+// spec FTEF-32.7: `va_arg(index, TYPE)` reads a type, makes its index an integer, and works only
+// in a function with `...`
+// spec QCD-4.52: E0346 for `va_arg` outside a variadic function
+#[test]
+fn va_arg_intrinsic() {
+    assert_eq!(
+        diags("void(...) v = { local float x = va_arg(0, float); };\n"),
+        []
+    );
+    assert_eq!(
+        diags("void() v = { local float x = va_arg(0, float); };\n"),
+        [d(
+            Code::E0346,
+            "va_arg() intrinsic only works inside varadic functions"
+        )]
+    );
+    assert_eq!(
+        diags("void(...) v = { local string x = va_arg(0, float); };\n"),
+        [d(Code::E0213, "Cannot cast from float to string")]
+    );
+    assert_eq!(
+        diags("void(...) v = { local float x = va_arg(\"s\", float); };\n"),
+        [d(
+            Code::E0227,
+            "Implicit type mismatch. Needed integer, got string."
+        )]
+    );
+}
+
+// spec FTEF-32.2: `randomv` takes vectors as they are; `entnum` needs `nextent`
+// spec QCD-4.53: E0347 for `entnum` with no `nextent`
+// spec FTEF-24.9: an intrinsic's name or `nil` after `.` is no field
+#[test]
+fn randomv_entnum_and_intrinsic_fields() {
+    assert_eq!(
+        diags("float a; void() g = { a = randomv(1, 2); };\n"),
+        [d(Code::E0340, "type mismatch on parm 1")]
+    );
+    assert_eq!(diags("vector v; void() g = { v = randomv(v, v); };\n"), []);
+    assert_eq!(
+        diags("entity e; float a; void() g = { a = entnum(e); };\n"),
+        [d(Code::E0347, "the nextent builtin is not defined")]
+    );
+    assert_eq!(
+        diags(
+            "#pragma target fte\nentity e; float a; entity(entity x) nextent = #47;\nvoid() g = { a = entnum(e); };\n"
+        ),
+        []
+    );
+    for (name, shown) in [
+        ("entnum", "entnum"),
+        ("nil", "IMMEDIATE"),
+        ("random", "random"),
+    ] {
+        assert_eq!(
+            diags(&format!(
+                "entity e; float a; void() g = {{ a = e.{name}; }};\n"
+            )),
+            [d(Code::E0318, &format!("{shown} is not a field"))],
+            "{name}"
+        );
+    }
+}
+
+// spec FTEF-19.45: an unknown `autocvar_` name in a body warns that it is promoted to a global
+#[test]
+fn an_unknown_autocvar_in_a_body() {
+    assert_eq!(
+        diags("float y; void() g = { y = autocvar_x; };\n"),
+        [
+            d(
+                Code::W0213,
+                "Autocvar \"autocvar_x\" defined with local scope. promoting to global."
+            ),
+            d(Code::E0301, "Unknown value \"autocvar_x\".")
+        ]
+    );
+}

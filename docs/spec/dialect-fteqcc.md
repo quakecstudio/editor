@@ -2065,6 +2065,12 @@ The corpus writes locals of class and pointer types, casts to classes (`(ncPlaye
   pinned FTEQCC, 2026-10-27), so this profile's parser reports none; vanilla's E0508
   (QC-27.10) stays.
 
+- **FTEF-16.14** `local` starts no declaration in a `for` header: `QCC_PR_ParseStatement_For`
+  reads the first clause with `QCC_PR_ParseType (false, true, false)`, which takes no `local`, so
+  the word is a name there, made a `variant` by `QCC_PR_GetDef` with the warning `W0221` "\"local\"
+  keyword used as variable name - coexisting" and then "Unknown value \"local\"." (FTEF-19.45),
+  and the type word after it is "expected ;, found float". The warning is given for any unknown
+  name that is a keyword in force (FTEF-20.4).
 ## FTEF-17 Name resolution
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseRefValue` (`assumeclass`, `this`, `super`, the
@@ -2876,7 +2882,9 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
 
 - **FTEF-19.45** A name no definition has, in a body or an initialiser, is made a `variant` and
   reported `QCC_PR_ParseWarning (ERR_UNKNOWNVALUE, "Unknown value \"%s\".", name)`, an error
-  ending with a full stop (`E0301`, QCD-4.1's message with it); a scoped name `S::n` is
+  ending with a full stop (`E0301`, QCD-4.1's message with it), after `QCC_PR_GetDef`'s
+  warning `W0213` "Autocvar \"NAME\" defined with local scope. promoting to global." for an
+  `autocvar_` name in a body; a scoped name `S::n` is
   `QCC_PR_ParseError (ERR_UNKNOWNVALUE, "Unknown value \"%s::%s\"", ...)` with none. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseRefValue`.
@@ -3498,6 +3506,10 @@ statement's checks (FTEF-23.6).
   ("length")` after an array's `.`, FTE-13); `LightStyles.length` for an array of strings is the
   array's length, not the string's.
 
+- **FTEF-24.9** A member no definition has that names a value FTEQCC declares as it reads it,
+  an intrinsic (`randomv`, `alloca`, `entnum`, `autocvar`, `used_model`, `used_sound`, `va_arg`,
+  `_`, `random`) or `nil`, is that value and no field: the fatal error `E0318` "NAME is not a
+  field", `nil` printed as its constant's name, "IMMEDIATE is not a field".
 ## FTEF-25 The opcodes the target has
 
 **Source:** `qcc_pr_comp.c`, `QCC_OPCodeValidForTarget`, `QCC_OPCodeSetTarget` and
@@ -3917,11 +3929,13 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
 - **FTEF-32.2** A call of a function with no parameters, not variadic and not a method, is an
   intrinsic when its name is one, and a name no definition has is called as one (FTEQCC declares
   them on demand): `_` takes only a string immediate, else the fatal error `E0340` "_() intrinsic
-  accepts only a string immediate"; `random` and `randomv` make their arguments floats
-  (`QCC_SupplyConversion`, the fatal error `E0227` "Implicit type mismatch. Needed float, got
-  TYPE." for a type with no conversion); `alloca` makes its size an integer; `used_sound` and
-  `used_model` take a string immediate, else the error `E0340` "Argument to used_sound intrinsic
-  was not a string immediate.".
+  accepts only a string immediate"; `random` makes its arguments floats (`QCC_SupplyConversion`,
+  the fatal error `E0227` "Implicit type mismatch. Needed float, got TYPE." for a type with no
+  conversion); `randomv` takes vectors as they are, any other type the fatal error `E0340` "type
+  mismatch on parm N"; `alloca` makes its size an integer; `entnum(e)` is `(e / 1i) /
+  (nextent(world) / 1i)` by `OP_DIV_I`, and with no `nextent` the fatal error `E0347` "the nextent
+  builtin is not defined"; `used_sound` and `used_model` take a string immediate, else the error
+  `E0340` "Argument to used_sound intrinsic was not a string immediate.".
 - **FTEF-32.3** Each argument is read and, when `typecmp` tells its type from its parameter's,
   cast to it as an assignment's value is (FTEF-29.2), its conversion emitted: `f1(i)` of an
   integer is "itof emulation". An argument past the last parameter of a function that is not
@@ -3945,6 +3959,11 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   a constant or an immediate, is the error `E0339` "Unable to write to read-only out argument",
   not fatal.
 
+- **FTEF-32.7** `va_arg(index, TYPE)` reads its second argument as a type
+  (`QCC_PR_ParseType`), and its index as a float times 3 (`OP_MUL_F`), or else made an integer
+  (`QCC_SupplyConversion`, "Implicit type mismatch. Needed integer, got TYPE.") times 3; in a
+  function with no `...`, which has no `__va_list`, it is the fatal error `E0346` "va_arg()
+  intrinsic only works inside varadic functions". Its value is of TYPE.
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,

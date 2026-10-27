@@ -534,6 +534,31 @@ impl<'a> Resolver<'a> {
                     let message = match &use_.scope {
                         Some(prefix) => format!("Unknown value \"{prefix}::{}\"", use_.name),
                         None if self.profile.fteqcc_diagnostics() => {
+                            // The `variant` is made by `QCC_PR_GetDef`, which warns of an
+                            // `autocvar_` name in a body (FTEF-19.16) and of a keyword's name
+                            // (FTEF-20.4) first.
+                            if scope.is_some() && use_.name.starts_with("autocvar_") {
+                                let message = format!(
+                                    "Autocvar \"{}\" defined with local scope. promoting to \
+                                     global.",
+                                    use_.name
+                                );
+                                self.report(Code::W0213, location, message);
+                            }
+                            if self.profile.warns_keyword_names()
+                                && self.keywords.named_definition(&use_.name, false).is_some()
+                            {
+                                let what = if self.keywords.coexist() {
+                                    "coexisting"
+                                } else {
+                                    "disabling"
+                                };
+                                let message = format!(
+                                    "\"{}\" keyword used as variable name - {what}",
+                                    use_.name
+                                );
+                                self.report(Code::W0221, location, message);
+                            }
                             format!("Unknown value \"{}\".", use_.name)
                         }
                         None => format!("Unknown value \"{}\"", use_.name),

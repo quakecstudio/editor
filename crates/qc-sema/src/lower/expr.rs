@@ -239,8 +239,22 @@ fn lower_call(call: &ast::CallExpr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
         _ => None,
     };
     let skip = usize::from(callee_name.as_deref() == Some("autocvar"));
+    // FTEF-32.7: `va_arg(index, TYPE)` reads its second argument as a type.
+    let va_arg = callee_name.as_deref() == Some("va_arg");
     if let Some(args) = call.args() {
-        for arg in args.args().skip(skip) {
+        for (at, arg) in args.args().enumerate().skip(skip) {
+            if va_arg
+                && at == 1
+                && let ast::Expr::Name(name) = &arg
+                && let Some(token) = name.name()
+            {
+                uses.push(RawUse::new(
+                    token.text_lossless(),
+                    token.span(),
+                    UseKind::TypeName,
+                ));
+                continue;
+            }
             let before = uses.len();
             lower_expr(&arg, cx, uses);
             // FTEF-17.1: `spawn(Thing)` takes a class by its name.

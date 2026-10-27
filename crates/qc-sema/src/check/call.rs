@@ -210,7 +210,33 @@ impl Checker<'_> {
                 }
                 Ok(Some(string()))
             }
-            "random" | "randomv" => {
+            "randomv" => {
+                // Each argument is a vector as it is, with no conversion.
+                for (at, arg) in args.iter().take(2).enumerate() {
+                    let value = self.value(Some(arg.clone()))?;
+                    if self.etype_of(&value.ty).is_some_and(|e| e != Etype::Vector) {
+                        let message = format!("type mismatch on parm {}", at.saturating_add(1));
+                        return self.fatal(Code::E0340, span, message).map(Some);
+                    }
+                }
+                Ok(Some(Value::of(Type::Simple(SimpleType::Vector))))
+            }
+            "entnum" if !args.is_empty() => {
+                // `(e / 1i) / (nextent(world) / 1i)`, by the `nextent` builtin.
+                let entity = self.value(args.first().cloned())?;
+                let one = Value::constant(Constant::int(1));
+                let index = self.emit(qc_preproc::Op::DivI, &entity, &one, span)?;
+                if !self.env.defines("nextent") {
+                    let message = "the nextent builtin is not defined".to_owned();
+                    return self.fatal(Code::E0347, span, message).map(Some);
+                }
+                self.generate_call(std::slice::from_ref(&entity), span);
+                let first = Value::of(Type::Simple(SimpleType::Entity));
+                let first = self.emit(qc_preproc::Op::DivI, &first, &one, span)?;
+                let number = self.emit(qc_preproc::Op::DivI, &index, &first, span)?;
+                Ok(Some(number))
+            }
+            "random" => {
                 for (at, arg) in args.iter().take(2).enumerate() {
                     let value = self.value(Some(arg.clone()))?;
                     self.supplied(
@@ -225,12 +251,7 @@ impl Checker<'_> {
                         return self.fatal(Code::E0340, span, message).map(Some);
                     }
                 }
-                let ty = if name == "random" {
-                    SimpleType::Float
-                } else {
-                    SimpleType::Vector
-                };
-                Ok(Some(Value::of(Type::Simple(ty))))
+                Ok(Some(Value::of(Type::Simple(SimpleType::Float))))
             }
             "alloca" => {
                 if let Some(arg) = args.first() {
@@ -244,6 +265,30 @@ impl Checker<'_> {
                 Ok(Some(Value::of(Type::Pointer(
                     Type::Simple(SimpleType::Void).into(),
                 ))))
+            }
+            "va_arg" => {
+                let index = self.value(args.first().cloned())?;
+                let arg_span = args.first().map_or(span, |a| a.syntax().span());
+                if index.ty != Type::Unknown {
+                    if self.etype_of(&index.ty) == Some(Etype::Float) {
+                        let three = Value::constant(Constant::float(3.0));
+                        self.emit(qc_preproc::Op::MulF, &index, &three, arg_span)?;
+                    } else {
+                        let int = Type::Named("__int32".into());
+                        let index = self.supplied(&index, &int, arg_span)?;
+                        let three = Value::constant(Constant::int(3));
+                        self.emit(qc_preproc::Op::MulI, &index, &three, arg_span)?;
+                    }
+                }
+                let ty = args
+                    .get(1)
+                    .and_then(|a| self.env.written_type(a.syntax().span().start))
+                    .unwrap_or(Type::Unknown);
+                if !self.function.variadic {
+                    let message = "va_arg() intrinsic only works inside varadic functions";
+                    return self.fatal(Code::E0346, span, message.to_owned()).map(Some);
+                }
+                Ok(Some(Value::of(ty)))
             }
             "used_sound" | "used_model" => {
                 if !args.first().is_some_and(is_string_literal) {

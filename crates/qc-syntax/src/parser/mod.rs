@@ -2346,7 +2346,9 @@ impl<'a> Parser<'a> {
         }
         let init = clause == Clause::Init;
         self.start_node(K::ForClause);
-        let local = self.kw(0, Keyword::Local, "local");
+        // FTEF-16.14: `QCC_PR_ParseType` reads no `local`, so under FTEQCC it starts no
+        // declaration here.
+        let local = !self.fteqcc() && self.kw(0, Keyword::Local, "local");
         let declares =
             local || self.looks_like_declaration(0) || (self.fteqcc() && self.for_init_declares());
         if init && declares {
