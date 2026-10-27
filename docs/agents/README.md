@@ -76,6 +76,15 @@ When the run stops on `WAITING ON PEOPLE`, the issues it lists have a draft ADR 
 | 4 | Autonomous through signing (#23: the secrets are set; agents build the signing workflow) and release, then the license review, the demo and the MVP gate. |
 | 5-7 | The map editor, the same pattern. |
 
+## Cost
+
+What a run spends tokens on, and the rules that keep it down (`.claude/skills/run-phase`, `work-issue`, `readiness-review` and the agent definitions carry them):
+
+- Agents are background subagents with their own worktree, one per issue, and report once at the end. In-process teammates and helper agents are not used: each message to the coordinator costs a full-context turn, and each agent carries its own context on every tool call.
+- The coordinator acts on hand-backs and on the completion of its own background watches, never on polling or progress messages.
+- Defects are found before a PR, where they cost minutes: cargo-mutants on the diff (`--in-diff`) for L0 to L3 crates, the differential families for parser and model work, targeted local checks while other agents share the machine. A defect found by a readiness review instead costs a measurement and a review round, about an hour each.
+- A readiness review measures its own branch once, with its tests on it.
+
 ## Watching a run
 
 - `/goal` with no arguments shows the condition, turns, spend and the evaluator's latest reason.
