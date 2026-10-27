@@ -1704,6 +1704,12 @@ issues:
   - P2-84
   - P2-86
   - P2-87
+  - P2-139
+  - P2-140
+  - P2-141
+  - P2-142
+  - P2-143
+  - P2-144
   - P4-29
   - P2-88
   - P2-89
@@ -2687,6 +2693,175 @@ issues:
   verify:
   - cargo test -p qc-sema
   - cargo xtask oracles builtins
+- key: P2-139
+  title: Refactor the L0 format crates to CONV-17
+  labels:
+  - L0-formats
+  - area:process
+  - type:chore
+  size: L
+  reqs:
+  - CONV-17
+  depends:
+  - P2-60
+  deliverable:
+  - 'One PR with one commit per crate group, in this order: qc-diag, qc-types, qc-progs, qs-bsp, qc-lno, qs-mdl, qs-pak, qs-wad and qs-wav, qs-log and qs-paths, qs-install and qs-vfs, qs-map. The findings each commit fixes are listed by their IDs in docs/audits/conv-17-l0-l3.md'
+  - 'Commit for qc-diag: crates/qc-diag/src/lib.rs: the findings qc-diag/2 to qc-diag/4 of docs/audits/conv-17-l0-l3.md. `Span::covers` (from qc-sema''s free `covers`, crates/qc-sema/src/nav.rs:76), `Span::to` (the span join written out at crates/qc-preproc/src/lib.rs:920, :1056, :1716 and crates/qc-sema/src/expand.rs:89), and `Span::len` and `Span::is_empty` (crates/qc-lexer/src/lib.rs:992, :1051, :1060), each used at those sites'
+  - 'Commit for qc-diag: Public items changed: new methods on `qc_diag::Span` only; dependent crates touched: qc-lexer, qc-preproc, qc-sema'
+  - 'Commit for qc-types: crates/qc-types/src/lib.rs: the findings qc-types/1 and qc-types/2 of docs/audits/conv-17-l0-l3.md. `StringRef`, `EntityRef`, `FieldRef`, `FunctionRef`, `PointerRef` and `Slot` get private fields with `from_bits` and `bits` (and `Slot::ZERO`), and conversions between a reference and a `Slot` replace `Slot::from_i32(world.0)` and the like'
+  - 'Commit for qc-types: Public items changed: the fields of those six types; dependent crates touched: qc-vm, qc-edict, qc-builtins, qc-progs (tests), qs-differential, qs-tests and xtask'
+  - 'Commit for qc-progs: crates/qc-progs: the findings cross/1 (its part) and qc-progs/1 to qc-progs/4 of docs/audits/conv-17-l0-l3.md. `Slot`''s decode reads through `read_array`; `Record::encode` on the sealed trait replaces `encode_statement`, `encode_def` and `encode_function`; `Format::secondary_version` serves both the writer and the reader; one table-offset lookup in `write`'
+  - 'Commit for qc-progs: Public items changed: none'
+  - 'Commit for qs-bsp: crates/qs-bsp: the findings qs-bsp/1 to qs-bsp/8 of docs/audits/conv-17-l0-l3.md. One little-endian reader returning `Option`, with today''s 0 kept by `.unwrap_or_default()` where callers get it; a `LumpId` enum in place of `BSP_LUMP_*` and `lump_name`; `AnimationSet`; exhaustive `match` in `BspLoader::fitz` and `Reader::bsp2`; a `PathId` newtype carrying the doubling rule now only in crates/qs-vfs/examples/walk.rs; one `leaf_of` citing BSP-7.2; the miptex header read through `qs_wad::MipTexHeader`; `calc_surface_extents` returning its values'
+  - 'Commit for qs-bsp: Public items changed: `BSP_LUMP_*`, `lump_name`, the lump fields of `BspError`, the path-ID parameters of `lit.rs`, and possibly the miptex constants; dependent crates touched: qs-vfs (examples/walk.rs); a new dependency of qs-bsp on qs-wad (both L0)'
+  - 'Commit for qc-lno, qs-mdl, qs-pak, qs-wad and qs-wav: crates/qc-lno, crates/qs-mdl, crates/qs-pak, crates/qs-wad and crates/qs-wav: the findings cross/1 (their part), qc-lno/1, qs-mdl/1 to qs-mdl/3, qs-pak/1, qs-wad/1 and qs-wav/1 of docs/audits/conv-17-l0-l3.md. Each crate keeps one generic `read_array<const N>` reader in the qc-progs shape, with today''s result past the end of the input kept at every caller (0 or `None`, as listed in cross/1); qs-mdl shares one cursor between `mdl.rs` and `spr.rs`, with the interval-reading loop as one of its methods'
+  - 'Commit for qc-lno, qs-mdl, qs-pak, qs-wad and qs-wav: Public items changed: none'
+  - 'Commit for qs-log and qs-paths: crates/qs-log and crates/qs-paths: the findings qs-log/1 to qs-log/3 and qs-paths/1 and qs-paths/2 of docs/audits/conv-17-l0-l3.md. `LogError::Directives` keeps the `tracing_subscriber` parse error as its `source` in place of `reason: String`; the panic location is formatted once; `payload_len` is inlined; `Platform::is_absolute`; one `absolute_var` and one `join_all` in qs-paths'
+  - 'Commit for qs-log and qs-paths: Public items changed: `qs_log::LogError::Directives` (no dependent outside qs-log)'
+  - 'Commit for qs-install and qs-vfs: crates/qs-vfs and crates/qs-install: the findings qs-install/1 to qs-install/3, qs-vfs/1 and qs-vfs/2 of docs/audits/conv-17-l0-l3.md. One public `find_entry` in qs-vfs for the FS-3.7 directory-entry match, used by qs-vfs''s `resolve` and qs-install''s `Finder::child` (which keeps its fallback for links); `FileRef` and `Location` with private fields and accessors; `parse_block` without its redundant bool; one canonical-path dedupe and one child-text read in qs-install'
+  - 'Commit for qs-install and qs-vfs: Public items changed: `qs_vfs::FileRef`, `qs_vfs::Location`, and the new `qs_vfs::find_entry`; dependent crates touched: qs-install, and crates/qs-vfs/examples/walk.rs'
+  - 'Commit for qs-map: crates/qs-map: the findings qs-map/1 to qs-map/9 of docs/audits/conv-17-l0-l3.md. A `TokenLimit` enum (or two named constructors) for `Lexer::new`; `next` and `same_line` in place of `Reader::get(crossline)`; the texture-vector and on-plane functions and the dot product written once, generic over the float type, with `qbsp_plane` and `plane` kept apart (MAP-3.6); one `to_f32`; the MAP-2.4, MAP-2.10 and MAP-4.6 limit predicates shared by the checker and the reader; one `WAD_KEYS` and one line-break-aware token read; `Parser::number` without its out-parameter; `Entity::check_pairs`; a named struct from `MapFile::brush_models`'
+  - 'Commit for qs-map: Public items changed: `qs_map::Lexer::new`, the geometry functions, `MapFile::brush_models`; no dependent outside qs-map uses them'
+  acceptance:
+  - 'Behaviour is unchanged: the existing tests pass without changing what they assert (a test changes only to name a new type, variant or method in place of a bool, string or free function), and `cargo xtask ci` passes'
+  - 'Every ratchet is kept for each crate touched: spec citations, line and branch coverage, mutation score, fuzz and differential results in ratchets.toml are not lowered, and no exception or equivalent mutant is added'
+  - 'CONV-17 is met for each finding the issue lists: the code takes the shape docs/conventions.md, "Type design (CONV-17)", asks for, or the PR says why another shape meets it; docs/audits/conv-17-l0-l3.md names the PR against each finding'
+  verify:
+  - 'cargo xtask ci; the Readiness workflow (cargo xtask ratchet) on the PR branch; review of the diff against docs/audits/conv-17-l0-l3.md'
+- key: P2-140
+  title: Refactor the L1 VM crates to CONV-17
+  labels:
+  - L1-vm
+  - area:vm
+  - type:chore
+  size: L
+  reqs:
+  - CONV-17
+  depends:
+  - P2-139
+  deliverable:
+  - 'One PR with one commit per crate group, in this order: qc-edict, qc-vm, qc-builtins, qc-trace. The findings each commit fixes are listed by their IDs in docs/audits/conv-17-l0-l3.md'
+  - 'Commit for qc-edict: crates/qc-edict: the findings qc-edict/1 to qc-edict/5 of docs/audits/conv-17-l0-l3.md. Typed system globals and fields in `qc_edict::system` (constants or `SysGlobal` and `SysField` enums with `const fn slot()`), the tables built from them, used in place of the 53 name lookups in crates/qc-builtins/src/dispatch.rs and the slot numbers hard-coded in crates/qc-vm/src/ops.rs and crates/qc-edict/src/store.rs; `EdictStore::is_client`; `set_field` returning a `#[must_use]` `Result`; the EDICT-1.6 pointer inversion as a method beside `EdictLayout::pointer_value`; an `EdictNumber` newtype with a private field'
+  - 'Commit for qc-edict: Public items changed: new items in `qc_edict::system`, `EdictStore::set_field`, the edict-number parameters of `EdictStore` and `EdictLayout`; dependent crates touched: qc-vm, qc-builtins, qs-differential'
+  - 'Commit for qc-vm: crates/qc-vm: the findings qc-vm/1 to qc-vm/8 of docs/audits/conv-17-l0-l3.md. A `Divergence` enum with one variant per VM rule, `const fn statement()` and a `Display` that writes today''s text byte for byte, in place of `ErrorKind::Divergence { statement: &str, detail: String }`, with one builder in place of six; `read_slot` for the 28 `global_error` wrappers; enums or the `Opcode` in place of the `equal`, `and` and `on_nonzero` bools; one set of float and integer conversions shared with qc-builtins, whose duplicates, `*_public` wrappers and duplicate constant go; `execute` folded into `Machine::execute_program` and `run_error` a method; one function-by-index helper; the dead `trace_flag` removed or justified and the misplaced `set_global_test` rustdoc fixed'
+  - 'Commit for qc-vm: Public items changed: `qc_vm::ErrorKind::Divergence`, `qc_builtins::math::{float_to_int, f64_to_f32_public, int_to_f32_public}`; dependent crates touched: qc-builtins'
+  - 'Commit for qc-builtins: crates/qc-builtins: the findings qc-builtins/1 to qc-builtins/10 and qc-builtins/12 of docs/audits/conv-17-l0-l3.md. `int_to_f64`, `eq_f32` and `exact_eq` inlined, with the float comparisons under `#[expect(clippy::float_cmp, reason = "spec ...")]`; one NaN and infinity text; one `whole_degrees`; slot-level parameter, field and return helpers; `write_bytes` for every `SZ_GetSpace` overflow, one `b_write`, one `precache`, a shared `set_size`; one mock precache helper; the mock''s overflow results as `#[must_use]` `Result`s; `BuiltinError::Runtime` and `Fatal` as variants per error with a `Display` that keeps id''s bytes (DIFF-8.2), `Host(String)` kept; the `0..3` axis loops as array operations; the unused `_header`, `Engine::has_world`, the unreachable `EngineOnly` arm and the generic `MockBuiltins<E>` removed or justified in their rustdoc'
+  - 'Commit for qc-builtins: Public items changed: `qc_builtins::BuiltinError`, the mock''s precache and append functions, and possibly `Engine` and `MockBuiltins`; dependent crates touched: qs-differential, qs-tests'
+  - 'Commit for qc-trace: crates/qc-trace: the finding qc-trace/1 of docs/audits/conv-17-l0-l3.md. A `JsonFault` enum with `Display` in place of `TraceError::Json { reason: String }`'
+  - 'Commit for qc-trace: Public items changed: `qc_trace::TraceError::Json` (`#[non_exhaustive]`; no dependent matches it)'
+  acceptance:
+  - 'Behaviour is unchanged: the existing tests pass without changing what they assert (a test changes only to name a new type, variant or method in place of a bool, string or free function), and `cargo xtask ci` passes'
+  - 'Every ratchet is kept for each crate touched: spec citations, line and branch coverage, mutation score, fuzz and differential results in ratchets.toml are not lowered, and no exception or equivalent mutant is added'
+  - 'CONV-17 is met for each finding the issue lists: the code takes the shape docs/conventions.md, "Type design (CONV-17)", asks for, or the PR says why another shape meets it; docs/audits/conv-17-l0-l3.md names the PR against each finding'
+  - 'The trace error records the VM writes are byte for byte the same, shown by the existing trace and differential tests'
+  - 'The builtin error text the differential compares (DIFF-8.2) is byte for byte the same, shown by the existing differential tests'
+  verify:
+  - 'cargo xtask ci; the Readiness workflow (cargo xtask ratchet) on the PR branch; review of the diff against docs/audits/conv-17-l0-l3.md'
+- key: P2-141
+  title: Refactor the L2 syntax crates to CONV-17
+  labels:
+  - L2-syntax
+  - area:language
+  - type:chore
+  size: L
+  reqs:
+  - CONV-17
+  - LANG-5
+  - TEST-4
+  - TEST-5
+  depends:
+  - P2-140
+  deliverable:
+  - 'One PR with one commit per crate group, in this order: qc-lexer, qc-preproc, qc-project, qc-syntax. The fix of P2-144 comes before the qc-lexer commit and the fix of P2-143 before the qc-syntax commit, each in a commit of its own, and the PR closes both. The findings each commit fixes are listed by their IDs in docs/audits/conv-17-l0-l3.md'
+  - 'Commit for qc-lexer: crates/qc-lexer: the findings qc-lexer/1 to qc-lexer/8 of docs/audits/conv-17-l0-l3.md, the qc-lexer side. `Directive` and `Pragma` enums with `from_word`, used at crates/qc-lexer/src/lib.rs:884; a private `DollarCommand` enum; `Prefix` as `Raw` or `Cooked(Output)`; `fte_escape` and `character` returning `Option` in place of searching the diagnostics; public `is_name_start` and `is_name_char`, `fte_white` (moved from qc-preproc), one integer-to-`f32` function, `latin1` and the vector-literal reader, for the crates above to use'
+  - 'Commit for qc-lexer: Public items changed: new public enums and functions in qc-lexer only; the qc-preproc, qc-project and qc-syntax commits and P2-142 adopt them'
+  - 'Commit for qc-preproc: crates/qc-preproc: the findings qc-preproc/1 to qc-preproc/9 and qc-preproc/11 to qc-preproc/13 of docs/audits/conv-17-l0-l3.md, with its part of qc-lexer/1 and qc-lexer/5 to qc-lexer/7. qc-lexer''s `Directive` and `Pragma` matched exhaustively in `directive`, `fteqcc_conditional` and `fteqcc_directive`; one enum-based conditional stack in `qc_preproc::cond`, keeping the vanilla `#else` (QC-9.6, E0109) and FTEQCC''s; `normalize` made public; a `Level` enum and a `CmpOp` table in `cond.rs`; `collect_args`, `fte_substitute` and `stringified` returning their results; no `literal_next` carried between passes; `FrameMacros` and expansion-guard enums chosen once from `Dialect`; an enum in place of `carry_frame`''s `force`; one whitespace skip; a `DirectiveLine` built once; `FileId` and `ExpansionId` with private fields'
+  - 'Commit for qc-preproc: Public items changed: `qc_preproc::{FileId, ExpansionId}` fields (no dependent uses them), a new public conditional stack in `qc_preproc::cond`, `qc_preproc::normalize`'
+  - 'Commit for qc-project: crates/qc-project: the findings qc-project/1 to qc-project/5 of docs/audits/conv-17-l0-l3.md, with its part of qc-lexer/1, qc-lexer/5, qc-preproc/1 and qc-preproc/2. A `ManifestError` enum in `ProjectError::Manifest` in place of the message `String`; `source_form` returning `Option<Form>`; `FileGraph::is_program_list`; one comment-skip step; a `GraphIndex` newtype for `GraphFile.parent`; qc-lexer''s `Directive`, `Pragma` and name-byte functions and qc-preproc''s conditional stack used in `Builder::directive`; `normalize` re-exported from qc-preproc in place of the copy'
+  - 'Commit for qc-project: Public items changed: `qc_project::ProjectError::Manifest`, `GraphFile::parent`; dependent crates touched: qc-sema (tests), xtask only if it names them'
+  - 'Commit for qc-syntax: crates/qc-syntax: the findings qc-syntax/1 to qc-syntax/5, qc-syntax/8 to qc-syntax/12, qc-syntax/14, qc-syntax/15, qc-syntax/17, qc-syntax/18 and its part of qc-lexer/8 of docs/audits/conv-17-l0-l3.md. `RecoveryFault` and `DeletionFailure` in place of `Result<usize, String>` and `DeletionReport::failures: Vec<String>`; one `Keyword` enum with `from_word` applying FTEF-15.1 once, in place of the string sets and `at_word` sites, with keyword words bumped as their own `SyntaxKind` so that the `ast` accessors read kinds; `ast::Item` and `SourceFile::items` used by recovery and by qc-sema''s `lower_file`; `Scope` and `BlockKind` enums for the recovery and block bools; a `LinePosition` enum; one paren lookahead, star skip, error skip and nesting guard; `TypeShape` constants; `FieldExpr::operator`; `SyntaxKind::from_token_kind`; `ast::Type::params` and `ast::Builtin::binding` used by qc-sema and qc-engines; qc-lexer''s `latin1`'
+  - 'Commit for qc-syntax: Public items changed: `qc_syntax::recovery::DeletionReport`, `SyntaxKind` (new variants), `ast::AccessorMember`, `ast::EnumDecl`, new `ast::Item`, `ast::Type::params`, `ast::Builtin::binding`; dependent crates touched: qc-sema, qc-engines, qs-tests and xtask (parse_corpus.rs and every exhaustive match on `SyntaxKind`)'
+  - 'Commit for the FTEQCC grammar differential (approved by Justin, 2026-10-20): a generator in xtask that writes random FTEQCC programs from the grammar of docs/spec/dialect-fteqcc.md and docs/spec/dialect-fteqcc-rerelease.md, covering every declaration form, every keyword and qualifier spelling including the `__`-prefixed ones (FTEF-15.1), class and accessor member forms, statements and enums, and compares, for each program, whether the FTEQCC profile and the pinned FTEQCC accept or reject it, and the diagnostic code where both reject. It runs as part of the oracle differential (`cargo xtask oracles builtins` or a sibling `cargo xtask oracles` check run by the same CI workflow), so that valid FTEQCC input the profile rejects, or input it accepts that FTEQCC rejects, fails the run unless an expected difference names the spec statement that explains it. A seeded corpus of the generated programs and the oracle''s outcomes is recorded as a fixture under xtask/fixtures/oracles/ (as builtin-outcomes.json is), so that `cargo test -p xtask` replays it without the oracle'
+  - 'Commit for the duplicate-diagnostic invariant (approved by Justin, 2026-10-20): a statement in docs/spec/language-diagnostics.md that the lexer, preprocessor and parser never report two diagnostics with the same code at the same span, checked in the `parser` and `qc-preproc` fuzz targets (fuzz/fuzz_targets/parser.rs, qc_preproc.rs) and in the qc-lexer, qc-preproc and qc-syntax property tests'
+  - 'A difference the grammar differential finds is fixed in a commit of its own with the spec statement and a test that cites it, as P2-143 and P2-144 are, or named as an expected difference with the statement that explains it; the refactor commits themselves change no behaviour'
+  acceptance:
+  - 'Behaviour is unchanged: the existing tests pass without changing what they assert (a test changes only to name a new type, variant or method in place of a bool, string or free function), and `cargo xtask ci` passes'
+  - 'Every ratchet is kept for each crate touched: spec citations, line and branch coverage, mutation score, fuzz and differential results in ratchets.toml are not lowered, and no exception or equivalent mutant is added'
+  - 'CONV-17 is met for each finding the issue lists: the code takes the shape docs/conventions.md, "Type design (CONV-17)", asks for, or the PR says why another shape meets it; docs/audits/conv-17-l0-l3.md names the PR against each finding'
+  - 'The spellings each place accepts are those of P2-143''s fix, and the lossless round trip of the corpus is unchanged (`cargo xtask parse-corpus` or the qs-tests corpus case)'
+  - 'The grammar differential runs in CI over a case count stated in the PR and in the generator''s rustdoc, and reports 0 differences that no expected difference explains; the recorded corpus replays in `cargo test -p xtask` without the oracle'
+  - 'The duplicate-diagnostic invariant holds in the property tests and in a fuzz run of the `parser` and `qc-preproc` targets whose length and result are recorded in the PR (the 24-hour TEST-5 run stays with the readiness review), and catches P2-144: with P2-144''s fix reverted the invariant fails on its double E0101, recorded in the PR'
+  verify:
+  - 'cargo xtask ci; the Readiness workflow (cargo xtask ratchet) on the PR branch; review of the diff against docs/audits/conv-17-l0-l3.md'
+  - 'cargo xtask oracles (the grammar differential); cargo xtask fuzz parser --time 10m and cargo xtask fuzz qc-preproc --time 10m'
+- key: P2-142
+  title: Refactor the L3 semantics crates to CONV-17
+  labels:
+  - L3-semantics
+  - area:language
+  - type:chore
+  size: L
+  reqs:
+  - CONV-17
+  depends:
+  - P2-141
+  deliverable:
+  - 'One PR with one commit per crate group, in this order: qc-sema, qc-engines. The findings each commit fixes are listed by their IDs in docs/audits/conv-17-l0-l3.md'
+  - 'Commit for qc-sema: crates/qc-sema: the findings qc-sema/1 to qc-sema/22 of docs/audits/conv-17-l0-l3.md. `Dialect` in place of `fte: bool` in lower.rs and `fteqcc: bool` in the resolver; a `Qualifier` enum read through qc-syntax''s `Keyword`; `FileId` and `DefId` with private fields (`FileId::new` and `index` public, `DefId`''s constructor `pub(crate)`); `ModuleIndex` with private fields and slice accessors; `RawDecl` without the dead `local`, with `RawInit` and `RawDeclKind` in place of its initialiser and type-name flags; `Type::component`, `DefKind::of_top_level` or `Type::top_level_kind`, `Type::compatible_in`, `Type::function`; an `Init` enum and an `Origin` enum in the resolver; one per-file slice for `resolve_mapped`; `FileDiagnostic::new` and `OriginMap::locate_or`; one scope lookup; member-bookkeeping helpers; one initialiser, aggregate and array-size lowering; one counter bump and one generic memo in `Db`; vector literals read with qc-lexer''s reader'
+  - 'Commit for qc-sema: Public items changed: `qc_sema::{FileId, DefId, ModuleIndex, RawDecl, FileDiagnostic, top_level_kind}`; dependent crates touched: qc-engines (src/check.rs), qs-tests (diagnostics_unified.rs, deep_nesting.rs) and xtask (sema_corpus.rs, fteqcc_profile.rs, oracles/builtins.rs)'
+  - 'Commit for qc-engines: crates/qc-engines: the findings qc-engines/1 to qc-engines/4 of docs/audits/conv-17-l0-l3.md. `qc_sema::FileDiagnostic` in place of qc-engines'' copy; `Engine::builtin_named` in place of the private `Key`, so a name lookup no longer rebuilds the merged table; `missing_builtins` taking `(FileId, &Parse)` pairs; `From<&qc_builtins::Builtin>` in place of `vanilla`'
+  - 'Commit for qc-engines: Public items changed: `qc_engines::FileDiagnostic` (removed), `missing_builtins`; no dependent outside qc-engines'
+  acceptance:
+  - 'Behaviour is unchanged: the existing tests pass without changing what they assert (a test changes only to name a new type, variant or method in place of a bool, string or free function), and `cargo xtask ci` passes'
+  - 'Every ratchet is kept for each crate touched: spec citations, line and branch coverage, mutation score, fuzz and differential results in ratchets.toml are not lowered, and no exception or equivalent mutant is added'
+  - 'CONV-17 is met for each finding the issue lists: the code takes the shape docs/conventions.md, "Type design (CONV-17)", asks for, or the PR says why another shape meets it; docs/audits/conv-17-l0-l3.md names the PR against each finding'
+  verify:
+  - 'cargo xtask ci; the Readiness workflow (cargo xtask ratchet) on the PR branch; review of the diff against docs/audits/conv-17-l0-l3.md'
+- key: P2-143
+  title: The FTEQCC parser rejects `enum __class` and misreads `__set` accessor members
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-140
+  summary: |
+    Found by the CONV-17 audit (docs/audits/conv-17-l0-l3.md, qc-syntax/2 and "Defects found on the way"). Under `Dialect::Fteqcc`, `enum class X { A };` parses, but `enum __class X { A };` gives E0204 "expected {, found X": `at_enum_body` (crates/qc-syntax/src/parser/fte.rs:556) accepts `__class` through `fte_word`, while `enum_head_and_body` (crates/qc-syntax/src/parser/mod.rs:763) tests `at_word("class")`, so `__class` is read as the enum's name. By reading the code, `__get`, `__set` and `__inline` are accepted by the parser as accessor-member words (fte.rs:599-600, :684-688) but `ast::AccessorMember::name` and `is_set` (crates/qc-syntax/src/ast.rs:945-958) compare the exact text, so `__set` is returned as the member's name and `is_set` is false. FTEF-15.1 (docs/spec/dialect-fteqcc.md) says `QCC_PR_CheckKeyword` "matches any keyword written with `__` whether or not it is enabled". Fixed in the P2-141 PR, in a commit of its own.
+  environment: |
+    main at 2a48d73; reproduced with a scratch binary calling `qc_syntax::parse_with(b"enum __class X { A };", Dialect::Fteqcc)`
+  deliverable:
+  - 'crates/qc-syntax/src/parser/fte.rs, src/parser/mod.rs and src/ast.rs: `__class` after `enum` or `enumflags`, and `__get`, `__set` and `__inline` in an accessor, read as FTEQCC reads them, from `QCC_PR_ParseEnum` and the accessor parsing in qcc_pr_comp.c and `QCC_PR_CheckKeyword` in qcc_pr_lex.c (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e); the parser and the `ast` accessors agree on each spelling'
+  - 'docs/spec/dialect-fteqcc.md: a statement for the spellings each of those places accepts, quoting FTEQCC'
+  acceptance:
+  - 'A test citing the new statement parses `enum __class X { A };` and an accessor with `__set` and `__get` members, and shows each read as FTEQCC reads it (the member names and `is_set` included), and fails before the fix'
+  - 'The FTEQCC differential has a case for each spelling, agreeing with the pinned FTEQCC'
+  verify:
+  - cargo test -p qc-syntax; cargo xtask oracles
+- key: P2-144
+  title: A backslash then CR at the end of input reports E0101 twice
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-140
+  summary: |
+    Found by the CONV-17 audit (docs/audits/conv-17-l0-l3.md, qc-lexer/4 and "Defects found on the way"). Under `Dialect::Fteqcc`, lexing `"a\` followed by CR and the end of input gives two identical diagnostics, `E0101 "EOF inside quote"` with span 0..4: `fte_escape` reports one when the byte after the CR is missing (crates/qc-lexer/src/fte_string.rs:295), and `cooked_string`'s loop then finds the end of input and reports another (:157-158). FTEQCC stops at its first `QCC_PR_ParseError`, so it reports one. Fixed in the P2-141 PR, in a commit of its own.
+  environment: |
+    main at 2a48d73; reproduced with a scratch binary calling `qc_lexer::lex_with(b"\"a\\\r", Dialect::Fteqcc)`
+  deliverable:
+  - 'crates/qc-lexer/src/fte_string.rs: an unterminated string that ends in `\` and CR reports E0101 once (QCD-2.1)'
+  - 'docs/spec/dialect-fteqcc.md: a statement beside FTEF-13.11 for a string that ends after a `\` and CR, quoting `QCC_PR_LexEscapedCodepoint` and stating what this profile reports there'
+  acceptance:
+  - 'A test citing the new statement and QCD-2.1 lexes `"a\` CR at the end of input and gets exactly one E0101, and fails before the fix'
+  verify:
+  - cargo test -p qc-lexer
 - key: P2-136
   title: Check struct values, member accesses and C function forms as FTEQCC does
   labels:

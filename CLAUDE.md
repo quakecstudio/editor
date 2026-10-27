@@ -243,6 +243,7 @@ after its `code-review` self-review is recorded in the PR body (`work-issue`), e
 | Rust conventions | `docs/conventions.md` |
 | Testing bar and readiness reports | `docs/testing.md`, `docs/readiness/` |
 | Gate reports | `docs/gates/` |
+| Code audits (CONV-17) | `docs/audits/` |
 | Cross-crate tests | `crates/qs-tests/tests/it/` (one module per area) |
 | App directories | `crates/qs-paths/` |
 | Agent rules, skills, subagents, hooks | `.claude/rules/`, `.claude/skills/`, `.claude/agents/`, `.claude/hooks/` |
