@@ -98,14 +98,17 @@ pub(crate) trait Env {
     fn defines(&self, name: &str) -> bool;
     /// Whether the body is a member function's (`pr_classtype`).
     fn in_class(&self) -> bool;
+    /// The class of `this` in a member function's body, `pr_classtype` (FTEF-17.14).
+    fn this_type(&self) -> Option<Type>;
     /// Whether the module follows FTEQCC (PRJ-2.8).
     fn fteqcc(&self) -> bool;
     /// Reports a diagnostic at `span` of the body's text, under the warning settings in force
     /// there.
     fn report(&mut self, code: Code, span: Span, message: String);
     /// The member `name` of the class `ty` names, found in it or its parents (`CLASS::NAME`,
-    /// FTEF-24.6); `None` when `ty` is no class or none has the member.
-    fn class_member(&self, ty: &Type, name: &str) -> Option<DefId>;
+    /// FTEF-24.6), as the body sees it at offset `at` (FTEF-17.16); `None` when `ty` is no
+    /// class or none has the member.
+    fn class_member(&self, ty: &Type, name: &str, at: usize) -> Option<DefId>;
     /// Whether `a` and `b` are the same type by FTEQCC's `typecmp_lax`, or one is a truth value of
     /// the other (FTEF-28.2).
     fn lax_same(&self, a: &Type, b: &Type) -> bool;

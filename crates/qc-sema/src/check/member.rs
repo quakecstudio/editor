@@ -60,7 +60,26 @@ impl Checker<'_> {
             // `QCC_PR_ParseField` reads the entity to select its field.
             Etype::Entity => {
                 let entity = self.read(base, field.syntax().span())?;
-                self.entity_field(&entity, &selector)?
+                let value = self.entity_field(&entity, &selector)?;
+                // FTEF-31.6: an array of fields with no index after it is its head, whose
+                // address is taken.
+                let indexed = field
+                    .syntax()
+                    .parent()
+                    .and_then(ast::IndexExpr::cast)
+                    .and_then(|index| index.base())
+                    .is_some_and(|b| b.syntax() == field.syntax());
+                if let Reference::Field(f) = &value.reference
+                    && f.def.is_some_and(|def| self.env.is_array(def))
+                    && !indexed
+                {
+                    let head = Value {
+                        reference: Reference::ArrayHead,
+                        ..value.clone()
+                    };
+                    self.address_of(head, field.syntax().span())?;
+                }
+                value
             }
             Etype::Vector => self.swizzle(&selector, Type::Simple(SimpleType::Float))?,
             Etype::Field if shape.holds == Some(Etype::Vector) => self.swizzle(
@@ -130,7 +149,8 @@ impl Checker<'_> {
                 let name = token.text_lossless();
                 // A class's member is a field of its type (`QCC_PR_ParseEntClass`), looked up
                 // as `CLASS::NAME` in the base's class and its parents first (FTEF-24.6).
-                if let Some(member) = self.env.class_member(&base.ty, &name)
+                let at = token.span().start;
+                if let Some(member) = self.env.class_member(&base.ty, &name, at)
                     && let Some(def) = self.env.definition(member)
                 {
                     return Ok(Value::field_of(base, name, def.ty.clone(), Some(member)));

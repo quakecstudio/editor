@@ -377,6 +377,19 @@ impl Resolver<'_> {
             .then(|| lookup(bare))
             .flatten()
         });
+        // FTEF-17.14: `this` in a member function is the entity as its class.
+        if found.is_none()
+            && source_name == "this"
+            && let Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) = holder
+            && let Some(class) = scope.class.and_then(|c| self.index.def(c))
+        {
+            let class = Type::Named(class.name.as_str().into());
+            return if self.cast_value(Source::Typed(&class), ty, location, flags) {
+                Err(Fatal)
+            } else {
+                Ok(None)
+            };
+        }
         let Some(source) = found else {
             // FTEF-19.48: the unknown name, reported where it is used, is then no constant; an
             // unknown `Scope::name` ends the definition.

@@ -151,6 +151,7 @@ impl<'a> Resolver<'a> {
             locals_start: self.index.defs.len(),
             class,
             at: 0,
+            inline_member: class.is_some() && decl.is_none(),
         };
         let reported = self.index.diagnostics.len();
         for d in &body.diagnostics {
@@ -261,6 +262,7 @@ impl<'a> Resolver<'a> {
                 owner,
                 reported,
                 in_class: class.is_some(),
+                inline_member: scope.inline_member,
                 uses: &uses,
                 flags: &body.flags,
                 lex: &body.lex_flags,
@@ -299,6 +301,7 @@ impl<'a> Resolver<'a> {
             owner,
             reported,
             in_class: false,
+            inline_member: false,
             uses: &uses,
             flags: &flags,
             lex: &[],

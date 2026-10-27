@@ -860,4 +860,7 @@ struct Scope {
     /// The byte offset the lookup is made at, which a `for` statement's locals are found
     /// before the end of (FTEF-19.19).
     at: usize,
+    /// Whether the body is a member function's written in its class, compiled where it
+    /// stands (FTEF-17.16).
+    inline_member: bool,
 }

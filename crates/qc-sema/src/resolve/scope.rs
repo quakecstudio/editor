@@ -313,7 +313,7 @@ impl Resolver<'_> {
                 scope
                     .class
                     .filter(|_| !self.has_name_key(&self.class_names, name))
-                    .and_then(|c| self.member_in(c, name))
+                    .and_then(|c| self.member_seen(c, name, scope))
                     .filter(|id| {
                         has_self
                             || self

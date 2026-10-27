@@ -204,6 +204,16 @@ impl<'e> Checker<'e> {
             return Value::unknown();
         };
         let Some(def) = self.env.reference(token.span().start) else {
+            // FTEF-17.14: `this` is the entity `self` as the function's class.
+            if !scoped
+                && token.text() == b"this"
+                && let Some(class) = self.env.this_type()
+            {
+                return Value {
+                    name: Some("this".to_owned()),
+                    ..Value::of(class)
+                };
+            }
             return Value::unknown();
         };
         let array = self.env.is_array(def);

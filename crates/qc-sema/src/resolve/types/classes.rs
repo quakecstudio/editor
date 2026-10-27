@@ -621,6 +621,24 @@ impl<'a> Resolver<'a> {
             .unwrap_or_default()
     }
 
+    /// FTEF-17.16: [`Self::member_in`] as a body at `scope` sees it: a member function written
+    /// in its class is compiled where it stands, so a member the class declares after it in the
+    /// file is not there yet.
+    pub(in crate::resolve) fn member_seen(
+        &self,
+        class: DefId,
+        name: &str,
+        scope: Scope,
+    ) -> Option<DefId> {
+        let file = self.index.def(scope.owner).map(|d| d.location.file);
+        self.member_in(class, name).filter(|id| {
+            !scope.inline_member
+                || self.index.def(*id).is_some_and(|d| {
+                    Some(d.location.file) != file || d.location.span.start <= scope.at
+                })
+        })
+    }
+
     /// The member `name` of class `class` or its parents (FTEF-17.2).
     pub(in crate::resolve) fn member_in(&self, class: DefId, name: &str) -> Option<DefId> {
         let mut current = Some(class);
@@ -714,9 +732,17 @@ impl<'a> Resolver<'a> {
             StructMatch::One | StructMatch::NotStruct => {}
         }
         if let Some(class) = self.base_class(scope, &use_.base)
-            && let Some(def) = self.member_in(class, name)
+            && self.member_in(class, name).is_some()
         {
-            return Found::Def(def);
+            // FTEF-17.16: a member not declared yet is no other class's either.
+            return match scope {
+                Some(scope) => self
+                    .member_seen(class, name, scope)
+                    .map_or(Found::Nothing, Found::Def),
+                None => self
+                    .member_in(class, name)
+                    .map_or(Found::Nothing, Found::Def),
+            };
         }
         let def = match scope {
             Some(scope) => self.lookup_in_scope(scope, name),

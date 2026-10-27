@@ -2276,6 +2276,11 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   class's own name there is the class, as `spawn(Thing)` takes it, not its constructor. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseValue`.
+- **FTEF-17.16** A member function written with its body inside its class is compiled where it
+  stands, so a member the class declares after it is not there yet: `n();` is "Unknown value
+  \"n\"." and `this.n` or `this.a` "Unknown field \"n\" in class \"C\"" for a later `n` or `a`,
+  which a body written after the class sees. `this` there is the entity as the class's type
+  (FTEF-17.14), so `local float f = this;` is "Cannot cast from class C to float".
 - **FTEF-17.15** `TYPE Class::member` of a member the class or a parent declares is
   `QCC_PR_GetDef` of `Class::member` with TYPE, so a TYPE that `typecmp` tells from the
   member's is the error `E0205` "Type mismatch on redeclaration of Class::member. TYPE, should
@@ -4072,6 +4077,11 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   a `void` or `variant` is the fatal error `E0336` "ptr-to-variants must be cast to a different
   type before being read". A store through a pointer is by offset, which needs no emulation on
   the standard target.
+- **FTEF-31.6** An array of fields named after an entity's `.` with no `[` after it,
+  `e.a` for `.float a[2]` or a class's `float a[2]` member, is the array's head, whose address
+  is taken (FTEF-31.4): on the id target the fatal error `E0331` "... Consider the use of either
+  '#pragma target fte' or '#pragma flag enable brokenarray'", stored to or read; `e.a[1]` is the
+  element.
 - **FTEF-31.4** `&e`: under `qccx` a float is a pointer to a float, and a string, field, entity
   or function a float; a temporary not reached through a pointer is the error `E0335` "Address-of
   temp on line FILE:LINE", FILE the file's path as the module names it and LINE its line, and

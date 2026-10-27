@@ -333,3 +333,68 @@ fn a_vector_member_has_component_fields() {
         one(Code::E0319, "Unknown field \"v_x\" in class \"C\"")
     );
 }
+
+// spec FTEF-17.16: an inline member body sees only the members declared before it, and `this` is
+// the entity as the class
+#[test]
+fn an_inline_body_sees_earlier_members() {
+    assert_eq!(
+        messages("class C { void() m = { n(); }; void() n = {}; };")
+            .into_iter()
+            .filter(|(code, _)| *code != Code::W0265)
+            .collect::<Vec<_>>(),
+        one(Code::E0301, "Unknown value \"n\".")
+    );
+    for (source, member) in [
+        (
+            "class C { nonvirtual void() m = { this.n(); }; nonvirtual void() n = {}; };",
+            "n",
+        ),
+        (
+            "class C { nonvirtual void() m = { this.a = 1; }; float a; };",
+            "a",
+        ),
+    ] {
+        assert_eq!(
+            messages(source),
+            one(
+                Code::E0319,
+                &format!("Unknown field \"{member}\" in class \"C\"")
+            ),
+            "{source}"
+        );
+    }
+    for source in [
+        "class C { float a; nonvirtual void() m = { this.a = 1; a = 2; }; };",
+        "class C { nonvirtual void() m; float a; }; void() C::m = { a = 1; this.a = 2; };",
+        "class C { nonvirtual void() m = { local entity e = this; local C c = this; }; };",
+    ] {
+        assert_eq!(messages(source), [], "{source}");
+    }
+    assert_eq!(
+        messages("class C { nonvirtual void() m = { local float f = this; }; };"),
+        one(Code::E0213, "Cannot cast from class C to float")
+    );
+}
+
+// spec FTEF-31.6: an array of fields with no index is its head, whose address the id target
+// refuses
+#[test]
+fn a_field_array_with_no_index_is_its_head() {
+    let refused = one(
+        Code::E0331,
+        "Address-of operator is not supported in this form without extensions. Consider the use \
+         of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+    );
+    for source in [
+        "class C { float a[2]; }; C c; void() g = { c.a = 1; };",
+        "class C { float a[2]; }; C c; void() g = { local float f = c.a; };",
+        ".float a[2]; entity c; void() g = { c.a = 1; };",
+    ] {
+        assert_eq!(messages(source), refused, "{source}");
+    }
+    assert_eq!(
+        messages(".float a[2]; entity c; void() g = { c.a[0] = 1; local float f = c.a[1]; };"),
+        []
+    );
+}

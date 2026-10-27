@@ -30,6 +30,8 @@ pub(in crate::resolve) struct BodyEnv<'r, 'a> {
     pub(in crate::resolve) reported: usize,
     /// Whether it is a member function's.
     pub(in crate::resolve) in_class: bool,
+    /// Whether the body is a member function's written in its class (FTEF-17.16).
+    pub(in crate::resolve) inline_member: bool,
     /// The definition each name of the body resolved to, by where the name starts.
     pub(in crate::resolve) uses: &'r HashMap<usize, DefId>,
     /// The compiler flags in force in the body, from each offset on.
@@ -391,6 +393,12 @@ impl Env for BodyEnv<'_, '_> {
         self.in_class
     }
 
+    fn this_type(&self) -> Option<Type> {
+        let class = self.resolver.index.def(self.owner)?.member_of?;
+        let name = &self.resolver.index.def(class)?.name;
+        Some(Type::Named(name.as_str().into()))
+    }
+
     fn fteqcc(&self) -> bool {
         self.resolver.profile.fteqcc_diagnostics()
     }
@@ -401,8 +409,11 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.report(code, location, message);
     }
 
-    fn class_member(&self, ty: &Type, name: &str) -> Option<DefId> {
-        self.resolver.class_member(ty, name)
+    fn class_member(&self, ty: &Type, name: &str, at: usize) -> Option<DefId> {
+        let member = self.resolver.class_member(ty, name)?;
+        let def = self.resolver.index.def(member)?;
+        (!self.inline_member || def.location.file != self.file || def.location.span.start <= at)
+            .then_some(member)
     }
 
     fn lax_same(&self, a: &Type, b: &Type) -> bool {
