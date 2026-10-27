@@ -120,7 +120,9 @@ fn lax_makes_the_mismatch_a_warning() {
 fn a_bare_field_in_a_member_function_is_its_value() {
     let class = "entity self;\nclass C { float x; void() m; };\n";
     assert_eq!(
-        diags(&format!("{class}void() C::m = {{ local float a; a = x + 1; }};\n")),
+        diags(&format!(
+            "{class}void() C::m = {{ local float a; a = x + 1; }};\n"
+        )),
         []
     );
     assert_eq!(
