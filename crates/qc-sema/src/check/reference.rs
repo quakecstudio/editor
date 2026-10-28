@@ -591,6 +591,13 @@ impl Checker<'_> {
                 })
             }
             _ => {
+                // FTEF-18.38: in a definition's value the value ends before the `[`.
+                if expected_after(index.syntax()) == ";" && in_definition(index.syntax()) {
+                    if self.stray.is_none() {
+                        self.stray = Some(span);
+                    }
+                    return Ok(base);
+                }
                 self.statement_before(index.syntax(), index.base());
                 let expected = expected_after(index.syntax());
                 let message = format!("expected {expected}, found [");
@@ -943,6 +950,16 @@ impl Checker<'_> {
             self.env.report(Code::W0313, base.syntax().span(), message);
         }
     }
+}
+
+/// Whether `node` is in the value of a definition, local or global, with no statement between.
+fn in_definition(node: &qc_syntax::SyntaxNode) -> bool {
+    node.ancestors()
+        .map(|ancestor| ancestor.kind())
+        .find(|&k| {
+            matches!(k, SyntaxKind::LocalDecl | SyntaxKind::Declaration) || ast::Stmt::can_cast(k)
+        })
+        .is_some_and(|k| matches!(k, SyntaxKind::LocalDecl | SyntaxKind::Declaration))
 }
 
 /// Where the first token of `node` that is no trivia starts.

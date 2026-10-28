@@ -675,59 +675,75 @@ impl Checker<'_> {
     /// literal or an element it reports itself, FTEF-19.31).
     pub(super) fn local(&mut self, local: &ast::LocalDecl) -> Result<(), Fatal> {
         for declarator in local.declarators() {
-            self.local_size(&declarator)?;
-            let Some(ast::Initializer::Value(init)) = declarator.initializer() else {
-                continue;
-            };
-            let value = self.value(Some(init.clone()))?;
-            let Some(ty) = declarator
-                .name()
-                .and_then(|name| self.env.local_type(name.span().start))
-            else {
-                continue;
-            };
-            if value.ty == Type::Unknown {
-                continue;
+            let checked = self.local_declarator(&declarator);
+            let stray = self.stray.take();
+            checked?;
+            // FTEF-18.38: the definition ends at the `[`, which starts a statement of its own.
+            if let Some(span) = stray {
+                let message = "Missing semicolon at end of definition".to_owned();
+                self.env.report(Code::W0203, span, message);
+                let message = "Statement does not do anything".to_owned();
+                self.env.report(Code::W0313, span, message);
+                return Err(Fatal);
             }
-            let span = init.syntax().span();
-            let resolver_casts = match &init {
-                ast::Expr::Literal(_) | ast::Expr::Name(_) => true,
-                ast::Expr::Cast(cast) => matches!(cast.operand(), Some(ast::Expr::Literal(_))),
-                ast::Expr::Call(call) => matches!(
-                    call.callee(),
-                    Some(ast::Expr::Name(name)) if name.name().is_some_and(|t| t.text_lossless() == "_")
-                ),
-                _ => false,
-            };
-            let value = if resolver_casts {
-                self.convert_to(&value, &ty, span)?
-            } else {
-                self.cast_to(&value, &ty, span)?
-            };
-            // FTEF-2.12: an 8- or 16-bit local is initialised as a bitfield at bit 0
-            // (`QCC_PR_GenerateInitializerType`), packed into its word; an array of 8-bit ones
-            // by a string, a character, then zeros, to each element.
-            let mut suffixes = declarator.array_suffixes();
-            match (suffixes.next(), string_bytes(&init)) {
-                (None, _) => {
-                    if let Some(local) = self.narrow_local(&ty, 0) {
-                        self.bit_copy(&value, &local, span)?;
-                    }
+        }
+        Ok(())
+    }
+
+    /// [`Checker::local`] of one declarator: its size, then its value cast to its type.
+    fn local_declarator(&mut self, declarator: &ast::Declarator) -> Result<(), Fatal> {
+        self.local_size(declarator)?;
+        let Some(ast::Initializer::Value(init)) = declarator.initializer() else {
+            return Ok(());
+        };
+        let value = self.value(Some(init.clone()))?;
+        let Some(ty) = declarator
+            .name()
+            .and_then(|name| self.env.local_type(name.span().start))
+        else {
+            return Ok(());
+        };
+        if value.ty == Type::Unknown {
+            return Ok(());
+        }
+        let span = init.syntax().span();
+        let resolver_casts = match &init {
+            ast::Expr::Literal(_) | ast::Expr::Name(_) => true,
+            ast::Expr::Cast(cast) => matches!(cast.operand(), Some(ast::Expr::Literal(_))),
+            ast::Expr::Call(call) => matches!(
+                call.callee(),
+                Some(ast::Expr::Name(name)) if name.name().is_some_and(|t| t.text_lossless() == "_")
+            ),
+            _ => false,
+        };
+        let value = if resolver_casts {
+            self.convert_to(&value, &ty, span)?
+        } else {
+            self.cast_to(&value, &ty, span)?
+        };
+        // FTEF-2.12: an 8- or 16-bit local is initialised as a bitfield at bit 0
+        // (`QCC_PR_GenerateInitializerType`), packed into its word; an array of 8-bit ones
+        // by a string, a character, then zeros, to each element.
+        let mut suffixes = declarator.array_suffixes();
+        match (suffixes.next(), string_bytes(&init)) {
+            (None, _) => {
+                if let Some(local) = self.narrow_local(&ty, 0) {
+                    self.bit_copy(&value, &local, span)?;
                 }
-                (Some(suffix), Some(bytes)) if self.narrow_local(&ty, 0).is_some() => {
-                    let size = array_size(&suffix).unwrap_or(bytes.len().saturating_add(1));
-                    let mut offset: u32 = 0;
-                    for at in 0..size {
-                        let byte = bytes.get(at).copied().unwrap_or(0);
-                        let character = Value::constant(Constant::int(i32::from(byte)));
-                        if let Some(element) = self.narrow_local(&ty, offset) {
-                            self.bit_copy(&character, &element, span)?;
-                        }
-                        offset = offset.wrapping_add(8);
-                    }
-                }
-                (Some(_), _) => {}
             }
+            (Some(suffix), Some(bytes)) if self.narrow_local(&ty, 0).is_some() => {
+                let size = array_size(&suffix).unwrap_or(bytes.len().saturating_add(1));
+                let mut offset: u32 = 0;
+                for at in 0..size {
+                    let byte = bytes.get(at).copied().unwrap_or(0);
+                    let character = Value::constant(Constant::int(i32::from(byte)));
+                    if let Some(element) = self.narrow_local(&ty, offset) {
+                        self.bit_copy(&character, &element, span)?;
+                    }
+                    offset = offset.wrapping_add(8);
+                }
+            }
+            (Some(_), _) => {}
         }
         Ok(())
     }

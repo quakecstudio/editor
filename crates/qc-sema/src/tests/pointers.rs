@@ -414,7 +414,13 @@ fn characters_vector_fields_and_two_word_structs() {
         found("local string q = fv[1];"),
         ["Cannot cast from .float to string"]
     );
-    assert_eq!(found("local .float q = ff[1];"), ["expected ;, found ["]);
+    assert_eq!(
+        found("local .float q = ff[1];"),
+        [
+            "Missing semicolon at end of definition",
+            "Statement does not do anything"
+        ]
+    );
     let unevaluated = "Unable to evaluate to numeric constant";
     assert_eq!(
         found("local float q = farr[\"a\"];"),

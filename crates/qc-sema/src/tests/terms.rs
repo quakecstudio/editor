@@ -532,6 +532,40 @@ fn a_statement_that_stops_at_its_first_value() {
     }
 }
 
+// spec FTEF-18.38: a definition's value ends before a `[` its value does not take, the
+// definition is checked with it, then wants its `;` there
+#[test]
+fn a_definition_that_stops_at_a_stray_index() {
+    let found = |source: &str| -> Vec<String> {
+        diags(&format!(
+            "float x; .float ff; entity e; const float c = 3;\n{source}\nvoid() main = {{}};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let semicolon = "Missing semicolon at end of definition";
+    let not_a_type = "\"[\" is not a type";
+    assert_eq!(
+        found("float q = x[1];"),
+        ["initializer for 'q' is not constant", semicolon, not_a_type]
+    );
+    assert_eq!(found(".float q = ff[1];"), [semicolon, not_a_type]);
+    assert_eq!(found("float q = c[1];"), [semicolon, not_a_type]);
+    assert_eq!(
+        found("float q = e[1];"),
+        ["Cannot cast from entity to float"]
+    );
+    assert_eq!(
+        found("void() f = { local float q = x[1]; };"),
+        [semicolon, "Statement does not do anything"]
+    );
+    assert_eq!(
+        found("void() f = { local float q = e[1]; };"),
+        ["Cannot cast from entity to float"]
+    );
+}
+
 // spec FTEF-19.69: an unknown name is a `variant` defined in its function, which its later uses
 // there find, and which the checks after it read
 #[test]

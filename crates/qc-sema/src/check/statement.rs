@@ -675,6 +675,15 @@ impl Checker<'_> {
         {
             self.env.report(Code::E0204, span, message);
         }
+        // FTEF-18.38: the definition ends at the `[`, where the next one's type is read.
+        if let Some(span) = self.stray.take()
+            && checked.is_ok()
+        {
+            let message = "Missing semicolon at end of definition".to_owned();
+            self.env.report(Code::W0203, span, message);
+            self.env
+                .report(Code::E0203, span, "\"[\" is not a type".to_owned());
+        }
     }
 
     /// FTEF-19.62: `QCC_PR_ParseDefArray`'s size: `QCC_SRef_EvalConst` of the expression, an
@@ -726,7 +735,9 @@ impl Checker<'_> {
         }
         let span = expr.syntax().span();
         let value = self.cast_to(&value, ty, span)?;
-        if value.constness == Constness::Variable {
+        // `tmp.sym->constant`: a field's offset is a constant definition (FTEF-18.38).
+        let constant_def = value.sym.def().is_some_and(|def| self.env.constant(def));
+        if value.constness == Constness::Variable && !constant_def {
             let message = format!("initializer for '{name}' is not constant");
             self.env.report(Code::E0214, span, message);
         }

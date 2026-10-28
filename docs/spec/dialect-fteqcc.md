@@ -2814,6 +2814,17 @@ against FTEQCC.
   does (FTEF-18.25); `g()[1] = 2;` does not, nor does `y = x[1];`, whose statement starts
   elsewhere. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_DiscardExpression`, `QCC_PR_ParseStatement`.
+- **FTEF-18.38** In a definition's value the same `[` ends the value before it, which the
+  definition then reads whole: cast to its type, "initializer for 'NAME' is not constant" at
+  global scope when the value's definition is no constant (`tmp.sym->constant`, which a field
+  is), and a refused cast's fatal error ends it there. The `[` is then where the definition
+  wants its `;`: "Missing semicolon at end of definition", and at global scope `"[" is not a
+  type` as it reads the next definition, in a function "Statement does not do anything" of the
+  statement the `[` starts, which this profile does not check further. So `float q = x[1];` of
+  a global `float x` gives all three, `.float q = ff[1];` of a field the last two, `local float
+  q = x[1];` the warnings, and `float q = e[1];` of an entity only "Cannot cast from entity to
+  float". Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_GenerateInitializerType`.
 - **FTEF-18.34** This profile's error recovery (QCD-1.4) ends the body of a struct, class,
   accessor, `switch` or function at a declaration line, a token at column 0 that has a
   declaration's shape or is one of `typedef`, `class`, `accessor`, `enum`, `enumflags`, `struct`

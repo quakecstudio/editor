@@ -323,8 +323,10 @@ impl Resolver<'_> {
                 Ok(None)
             }
             ValueKind::Indexed(array) => {
-                // FTEF-19.39: an element of a variable is no constant.
-                if matches!(holder, Holder::Global | Holder::Static(_)) {
+                // FTEF-19.39: an element of a variable is no constant; a global's value is
+                // checked whole at global scope under FTEQCC's diagnostics (FTEF-34.9).
+                let checked = matches!(holder, Holder::Global) && self.profile.fteqcc_diagnostics();
+                if matches!(holder, Holder::Global | Holder::Static(_)) && !checked {
                     let found = match holder {
                         Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) => {
                             self.lookup_in_scope(scope, array)

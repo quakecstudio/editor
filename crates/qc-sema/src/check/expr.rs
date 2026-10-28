@@ -48,6 +48,9 @@ pub(super) struct Checker<'e> {
     /// A token the statement does not take, found where an expression ended early, reported
     /// once the statement has read the expression it has (FTEF-24.10).
     pub(super) pending: Option<(String, qc_diag::Span)>,
+    /// The `[` a definition's value ended before, reported once the definition has read the
+    /// value it has (FTEF-18.38).
+    pub(super) stray: Option<qc_diag::Span>,
 }
 
 /// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which nothing more of the
@@ -71,6 +74,7 @@ impl<'e> Checker<'e> {
             emitted: 0,
             global: false,
             pending: None,
+            stray: None,
         }
     }
 
