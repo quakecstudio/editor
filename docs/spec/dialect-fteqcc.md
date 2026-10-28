@@ -4755,6 +4755,17 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   `#pragma target hexen2` `farr[i]` does for an `int i`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_LoadFromArray`, `QCC_PR_GetDef`, `QCC_FreeTemp`.
+- **FTEF-31.16** An array of fields, an entity's `e.fa[i]` of a `.float fa[4]` or a class's
+  member array `this.arr[i]`, is indexed in elements of the field's type: an index that is no
+  constant is scaled as an array head's is (FTEF-31.2), so a `.vector` array's `int` index is
+  `OP_MUL_I` by 3, on the id target "MulInt function not defined: cannot emulate int*int" and
+  its refusal, and the scaled index is a temporary. A class's member array is a
+  `QCC_PR_DummyDef` with a root symbol, the class's field, so it has no length prefix
+  (FTEF-31.15): under `#pragma target hexen2` `this.arr[ii]` of an `int ii` warns only "itof
+  emulation", where `e.fa[ii]` of a global array of fields also warns "INTERNAL: over-freed
+  refcount to ii". Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`, `QCC_LoadFromArray`,
+  `QCC_PR_DummyDef`; `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseType` (the class's fields).
 ## FTEF-32 Calls
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`,

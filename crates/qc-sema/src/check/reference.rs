@@ -281,8 +281,15 @@ impl Checker<'_> {
         let target = self.env.target_at(span.start);
         let index_etype = self.etype_of(&index.ty);
         // `def->arraylengthprefix = !rootsymbol && !def->localscope && ...` reads `localscope`
-        // before `QCC_PR_GetDef` sets it, so a local array has the prefix too (FTEF-31.15).
-        let length_prefix = !vector && element.sym.def().is_some() && target.valid(Op::FetchGblF);
+        // before `QCC_PR_GetDef` sets it, so a local array has the prefix too (FTEF-31.15); a
+        // class's member field is a `QCC_PR_DummyDef` with a root symbol, so it has none.
+        let length_prefix = !vector
+            && element.sym.def().is_some_and(|def| {
+                self.env
+                    .definition(def)
+                    .is_none_or(|d| d.member_of.is_none())
+            })
+            && target.valid(Op::FetchGblF);
         let as_integer = target.valid(Op::LoadaF) || target.valid(Op::GloadF);
         if as_integer {
             if index_etype != Some(Etype::Integer) {
@@ -489,6 +496,8 @@ impl Checker<'_> {
         {
             let length = self.env.array_length(def);
             self.bounds(constant, length, span);
+            // The index counts elements of the field's type, a vector's three words each.
+            let at = self.scaled_index(&base.ty, at, span)?;
             if at.known().is_none() {
                 let field = Value {
                     sym: Sym::Def(def, false, 0),
@@ -521,10 +530,9 @@ impl Checker<'_> {
         match (self.etype_of(&base.ty), &base.ty) {
             (Some(Etype::Pointer), Type::Pointer(pointee)) => {
                 let at = self.scaled_index(pointee, at, span)?;
-                let pointer = self.read(base.clone(), span)?;
+                self.read(base.clone(), span)?;
                 Ok(Value {
                     readonly: false,
-                    name: pointer.name.or(Some(label.clone())),
                     reference: Reference::pointer(label, Some(at)),
                     ..Value::of(pointee.as_ref().clone())
                 })
@@ -557,11 +565,7 @@ impl Checker<'_> {
                         .and_then(|i| vector.v().get(i).copied())
                 });
                 if let Some(component) = component {
-                    return Ok(Value {
-                        reference: Reference::element(label, at, true),
-                        readonly: base.readonly,
-                        ..Value::constant(Constant::float(component))
-                    });
+                    return Ok(Value::constant(Constant::float(component)));
                 }
                 Ok(Value {
                     reference: Reference::element(label, at, true),
@@ -679,7 +683,6 @@ impl Checker<'_> {
             };
             return Ok(Value {
                 ty: Type::Simple(SimpleType::String),
-                readonly: true,
                 ..offset
             });
         }
