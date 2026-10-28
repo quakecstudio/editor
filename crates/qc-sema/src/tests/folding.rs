@@ -4263,3 +4263,63 @@ fn every_one_sided_fold_is_fteqccs() {
         assert_eq!(found, expected, "{op} {expr}");
     }
 }
+
+// spec FTEF-26.7: a folded float to int is `QCC_MakeIntConst` of a `long long`, truncated with a
+// warning when it does not fit
+// spec FTEF-26.2: an overflow prints its float as C's `%f`, `nan` for a NaN
+#[test]
+fn a_float_made_an_int_is_truncated_to_32_bits() {
+    let messages = |statement: &str| -> Vec<String> {
+        diags(&format!("int i; void() g = {{ {statement} }};\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    assert_eq!(
+        messages("i = 1i / 0;"),
+        [
+            "Numerical overflow. inf will be rounded to 2147483647",
+            "Constant int operand 9223372036854775807 will be truncated to -1",
+        ]
+    );
+    assert_eq!(
+        messages("i = -1i / 0;"),
+        [
+            "Numerical overflow. -inf will be rounded to -2147483648",
+            "Constant int operand 9223372036854775808 will be truncated to 0",
+        ]
+    );
+    assert_eq!(
+        messages("i = 0i / 0.0;"),
+        ["Numerical overflow. nan will be rounded to 0"]
+    );
+}
+
+// spec FTEF-26.8: a 64-bit constant made an int keeps its low word, warning of the truncation;
+// under `ILP32` in the body an `l` literal is already 32 bits
+#[test]
+fn a_64_bit_constant_made_an_int_is_truncated() {
+    let messages = |prefix: &str, statement: &str| -> Vec<String> {
+        diags(&format!("{prefix}int i; void() g = {{ {statement} }};\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    assert_eq!(
+        messages("", "i = 5000000000l;"),
+        ["Numerical truncation of 12a05f200 to 0x2a05f200."]
+    );
+    assert_eq!(
+        messages("", "i = -5000000000l;"),
+        ["Numerical truncation of fffffffed5fa0e00 to 0xd5fa0e00."]
+    );
+    assert_eq!(
+        messages("", "i = 4294967296l;"),
+        ["Numerical truncation of 100000000 to 0."]
+    );
+    assert_eq!(messages("", "i = -1l;"), Vec::<String>::new());
+    assert_eq!(
+        messages("#pragma flag enable ILP32\n", "i = 5000000000l;"),
+        ["numerical overflow"]
+    );
+}

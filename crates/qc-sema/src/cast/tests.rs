@@ -584,3 +584,88 @@ fn supplied_conversions() {
         assert_eq!(kind.basic_name(), name);
     }
 }
+
+// spec FTEF-19.31: pointers cast silently when `typecmp_lax` of what they point to agrees, a
+// pointer to anything agreeing with a type the model does not follow, and a field of one casts
+// to and from any field
+#[test]
+fn pointees_and_fields_of_unfollowed_types() {
+    let none = CompilerFlags::default();
+    let pointer = |ty: Type| Type::Pointer(Rc::new(ty));
+    let field = |ty: Type| Type::Field(Rc::new(ty));
+    let float = simple(SimpleType::Float);
+    let player = named("Player");
+    let float_2 = pointer(pointer(float.clone()));
+    let float_3 = pointer(float_2.clone());
+    assert_eq!(
+        Source::Typed(&float_2).cast(&pointer(player.clone()), none),
+        Cast::Silent
+    );
+    assert_eq!(
+        Source::Typed(&float_3).cast(&pointer(pointer(player.clone())), none),
+        Cast::Silent
+    );
+    assert_eq!(
+        Source::Typed(&pointer(named("int"))).cast(&pointer(named("__uint32")), none),
+        Cast::Implicit
+    );
+    assert_eq!(
+        Source::Typed(&pointer(simple(SimpleType::Vector)))
+            .cast(&pointer(pointer(float.clone())), none),
+        Cast::Implicit
+    );
+    assert_eq!(
+        Source::Typed(&pointer(named("int"))).cast(&pointer(named("__int64")), none),
+        Cast::Implicit
+    );
+    assert_eq!(
+        Source::Typed(&field(float.clone())).cast(&field(player.clone()), none),
+        Cast::Silent
+    );
+    assert_eq!(
+        Source::Typed(&field(player)).cast(&field(float), none),
+        Cast::Silent
+    );
+}
+
+// spec FTEF-22.3: `QCC_ShouldConvert` needs no conversion from an integer to a function, but
+// one from an unsigned integer, and converts a 64-bit integer to a float
+#[test]
+fn should_convert_between_kinds() {
+    let none = CompilerFlags::default();
+    let explicit = flags(&[FteFlag::Typeexplicit]);
+    assert_eq!(
+        literal("1i").supply(Kind::Function, explicit),
+        Supply::Converted
+    );
+    assert_eq!(literal("1u").supply(Kind::Function, none), Supply::Mismatch);
+    assert_eq!(
+        literal("1l").supply(Kind::Float, explicit),
+        Supply::Explicit
+    );
+    assert_eq!(
+        literal("1l").supply(Kind::Uint64, explicit),
+        Supply::Converted
+    );
+}
+
+// spec FTEF-29.4: a store tries the cast with `implicit` off, which also takes an entity and a
+// float either way, before `QCC_SupplyConversion`
+#[test]
+fn a_store_casts_an_entity_and_a_float() {
+    let none = CompilerFlags::default();
+    let entity = simple(SimpleType::Entity);
+    let float = simple(SimpleType::Float);
+    assert_eq!(
+        Source::Typed(&float).supply_for_assignment(&entity, none),
+        Supply::Converted
+    );
+    assert_eq!(
+        Source::Typed(&entity).supply_for_assignment(&float, none),
+        Supply::Converted
+    );
+    assert_eq!(
+        Source::Typed(&simple(SimpleType::Vector)).supply_for_assignment(&entity, none),
+        Supply::Mismatch
+    );
+}

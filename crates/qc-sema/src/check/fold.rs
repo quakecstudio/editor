@@ -294,7 +294,7 @@ fn unary(op: Op, a: Constant, notices: &mut Vec<Notice>) -> Option<Folded> {
             if int_to_f32(i) != fa {
                 overflow(notices, fa.into(), &i.to_string(), ia);
             }
-            Constant::int(i)
+            Constant::int(make_int(f_to_i64(fa), notices))
         }
         Op::ConvItof => {
             let f = int_to_f32(ia);
@@ -331,7 +331,19 @@ fn unary(op: Op, a: Constant, notices: &mut Vec<Notice>) -> Option<Folded> {
         Op::ConvDf => Constant::float(d_to_f32(a.d())),
         Op::ConvIi64 => Constant::int64(ia.into()),
         Op::ConvUi64 => Constant::uint64(ua.into()),
-        Op::ConvI64i => Constant::int(low(a.i64())),
+        Op::ConvI64i => {
+            let wide = a.i64();
+            let narrow = low(wide);
+            if i64::from(narrow) != wide {
+                let message = format!(
+                    "Numerical truncation of {:x} to {}.",
+                    u64::from_le_bytes(wide.to_le_bytes()),
+                    c_hash_x(u64::from(u32::from_le_bytes(narrow.to_le_bytes())))
+                );
+                notice(notices, Code::W0234, message);
+            }
+            Constant::int(narrow)
+        }
         Op::ConvFi64 | Op::ConvDi64 | Op::ConvFu64 | Op::ConvDu64 => wide_from_real(op, a, notices),
         Op::ConvI64f | Op::ConvU64f | Op::ConvI64d | Op::ConvU64d => real_from_wide(op, a, notices),
         _ => return None,
@@ -381,7 +393,10 @@ fn wide_from_real(op: Op, a: Constant, notices: &mut Vec<Notice>) -> Constant {
         }
     };
     if changed {
-        let message = format!("Numerical overflow. {value:.6} will be rounded to {rounded}");
+        let message = format!(
+            "Numerical overflow. {} will be rounded to {rounded}",
+            c_f(value)
+        );
         notice(notices, Code::W0234, message);
     }
     constant
@@ -468,7 +483,10 @@ fn notice(notices: &mut Vec<Notice>, code: Code, message: String) {
 /// "Denormalized float %g will be rounded to N. This is probably not what you want."
 fn overflow(notices: &mut Vec<Notice>, value: f64, rounded: &str, bits: i32) {
     let message = if bits & 0x7f80_0000 != 0 {
-        format!("Numerical overflow. {value:.6} will be rounded to {rounded}")
+        format!(
+            "Numerical overflow. {} will be rounded to {rounded}",
+            c_f(value)
+        )
     } else {
         format!(
             "Denormalized float {} will be rounded to {rounded}. This is probably not what you \
@@ -490,8 +508,8 @@ fn round(c: Constant, notices: &mut Vec<Notice>) -> i32 {
     let rounded = f_to_i(value);
     if value != int_to_f32(rounded) {
         let message = format!(
-            "Constant float operand {:.6} will be truncated to {rounded}",
-            f64::from(value)
+            "Constant float operand {} will be truncated to {rounded}",
+            c_f(f64::from(value))
         );
         notice(notices, Code::W0234, message);
     }
@@ -532,6 +550,28 @@ fn lanes_f(a: Constant, b: Constant, f: impl Fn(f32, f32) -> f32) -> [f32; 3] {
 )]
 const fn f_to_i(value: f32) -> i32 {
     value as i32
+}
+
+/// C's `(long long)` of a float, saturating as arm64 does.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "spec FTEF-26.7: C's float to long long conversion, saturating on arm64"
+)]
+const fn f_to_i64(value: f32) -> i64 {
+    value as i64
+}
+
+/// `QCC_MakeIntConst(llvalue)`: its low 32 bits, with "Constant int operand %llu will be
+/// truncated to %i" when they are not the value (FTEF-26.7).
+fn make_int(value: i64, notices: &mut Vec<Notice>) -> i32 {
+    let [low @ .., _, _, _, _] = value.to_le_bytes();
+    let truncated = i32::from_le_bytes(low);
+    if i64::from(truncated) != value {
+        let unsigned = u64::from_le_bytes(value.to_le_bytes());
+        let message = format!("Constant int operand {unsigned} will be truncated to {truncated}");
+        notice(notices, Code::W0234, message);
+    }
+    truncated
 }
 
 /// C's `(unsigned int)` of a float, saturating as arm64 does.
@@ -628,6 +668,16 @@ pub(crate) fn c_hash_x(value: u64) -> String {
         "0".to_owned()
     } else {
         format!("{value:#x}")
+    }
+}
+
+/// C's `%f` as the pinned FTEQCC's macOS build prints it: six decimals, `inf` and `-inf`, and
+/// `nan` for any NaN.
+fn c_f(value: f64) -> String {
+    if value.is_nan() {
+        "nan".to_owned()
+    } else {
+        format!("{value:.6}")
     }
 }
 

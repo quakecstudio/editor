@@ -3142,6 +3142,10 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   cast from A to B": `.S fs; .float fa; fs = fa;` is "Cannot cast from .float to .S", and a field
   of a class to a field of a class it derives from "Cannot cast from class Other to class
   Player".
+- **FTEF-19.51** An attribute list is a modifier too: `QCC_PR_ParseDefs` sets `hadmodifier = true;`
+  at the end of each pass of its modifier loop, the `[[...]]` branch included, so after an
+  attribute list alone the type may be left out and is `__int32` (FTEF-19.21): with `attributes`
+  on, `[[eraseable]] x = 5; string s = x;` warns "Implicit cast from __int32 to string".
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and
@@ -3877,6 +3881,17 @@ saturates, as on the arm64 build the differential is recorded on.
   which is not folded (FTEF-26.2), is emulated as `a - b * (a / b)` in that order (FTEF-27.4), its
   steps folding in turn, so `13i % 0i` is 13 (`13 / 0` is 0 with "Division by constant 0", ignored
   by default) and `13.5 % 0.0` is 13 with the truncation warnings of `inf | inf`.
+- **FTEF-26.7** A folded `OP_CONV_FTOI` is `QCC_MakeIntConst(eval_a->_float)`, the float made a
+  `long long` (saturating on arm64) and then an `int`: when the two differ, after the overflow
+  warning, it is `W0234` "Constant int operand %llu will be truncated to %i", the `long long`
+  printed unsigned and the value its low 32 bits. So `i = 1i / 0;` folds `1 / 0.0` to `inf`, warns
+  "Numerical overflow. inf will be rounded to 2147483647" and then "Constant int operand
+  9223372036854775807 will be truncated to -1", and stores -1.
+- **FTEF-26.8** A folded `OP_CONV_I64I` keeps the low 32 bits (`pint_t d = eval_a->i64;`) and,
+  when they are not the value, warns `W0234` "Numerical truncation of %llx to %#x.", the 64-bit
+  value in hex with no prefix and the 32 bits with C's `%#x` (`0` for 0): `i = 5000000000l;` is
+  "Numerical truncation of 12a05f200 to 0x2a05f200.". Under `ILP32` the `l` literal is 32 bits
+  (FTEF-12.12) and there is nothing to convert.
 ## FTEF-27 Opcodes the target lacks
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (its `if (!QCC_OPCodeValid(op))` switch and
