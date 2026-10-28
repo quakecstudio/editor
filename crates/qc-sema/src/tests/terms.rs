@@ -531,3 +531,53 @@ fn a_statement_that_stops_at_its_first_value() {
         assert_eq!(found(statement), ["expected ;, found ["], "{statement}");
     }
 }
+
+// spec FTEF-19.69: an unknown name is a `variant` defined in its function, which its later uses
+// there find, and which the checks after it read
+#[test]
+fn an_unknown_name_is_a_variant_of_its_function() {
+    let found = |source: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nfloat x; float farr[2];\n{source}\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let unknown = "Unknown value \"nope\".";
+    assert_eq!(found("void() f = { x = nope; x = nope; };"), [unknown]);
+    assert_eq!(
+        found("void() f = { x = nope; };\nvoid() g = { x = nope; };"),
+        [unknown, unknown]
+    );
+    assert_eq!(found("void() f = { x = nope; };\nfloat nope;"), [unknown]);
+    assert_eq!(
+        found("void() f = { x = nope[1]; };"),
+        [unknown, "expected ;, found ["]
+    );
+    assert_eq!(
+        found("void() f = { x = nope.y; };"),
+        [unknown, "expected ;, found ."]
+    );
+    assert_eq!(
+        found("void() f = { nope[1] = 2; };"),
+        [
+            unknown,
+            "Statement does not do anything",
+            "expected ;, found ["
+        ]
+    );
+    assert_eq!(
+        found("void() f = { if (nope) x = 1; };"),
+        [unknown, "conditional type mismatch: variant"]
+    );
+    assert_eq!(found("void() f = { x = farr[nope]; };"), [unknown]);
+    assert_eq!(
+        found("struct S { float a; }; S s1;\nvoid() f = { s1 = nope(1); };"),
+        [unknown]
+    );
+    assert!(
+        found("struct S { float a; }; S s1; __variant va;\nvoid() f = { s1 = va; va = s1; };")
+            .is_empty()
+    );
+}

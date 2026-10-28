@@ -3417,6 +3417,15 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   one naming the same type is none, and, being a type, no definition named as a keyword. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseDefs`.
+- **FTEF-19.69** An unknown name in a body (FTEF-19.45) is defined there as a `variant`
+  (`QCC_PR_GetSRef(type_variant, name, pr_scope, true, ...)`): its later uses in the function are
+  that definition and report nothing, another function's report it again, and a later global of
+  the name is no conflict. The checks after the name read it as a `variant`: `nope[1]` and
+  `nope.y` are "expected ;, found [" and "expected ;, found .", `if (nope)` is "conditional type
+  mismatch: variant", `-nope` "type mismatch for -", and a `variant` stores to a struct, as
+  `QCC_SupplyConversionForAssignment` refuses no conversion to or from one. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseValue`, `QCC_PR_GetSRef`, `QCC_SupplyConversionForAssignment`.
 
 ## FTEF-20 Keywords
 

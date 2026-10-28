@@ -643,6 +643,29 @@ impl<'a> Resolver<'a> {
                         None => format!("Unknown value \"{}\"", use_.name),
                     };
                     self.report(Code::E0301, location, message);
+                    // FTEF-19.69: `QCC_PR_GetSRef(type_variant, name, pr_scope, true, ...)`
+                    // defines the name in the function, which its later uses find and the
+                    // check stage reads as a `variant`.
+                    if let Some(scope) = scope
+                        && use_.scope.is_none()
+                        && self.profile.fteqcc_diagnostics()
+                    {
+                        let id = self.push_def(Definition {
+                            name: use_.name.clone(),
+                            ty: Type::Named("__variant".into()),
+                            kind: DefKind::Local,
+                            location,
+                            owner: Some(scope.owner),
+                            initialized: false,
+                            member_of: None,
+                            generated: true,
+                        });
+                        if let Some(f) = self.fact_mut(id) {
+                            f.referenced = true;
+                            f.scope_start = Some(use_.span.start);
+                        }
+                        self.use_defs.insert(use_.span.start, id);
+                    }
                 }
             }
         }

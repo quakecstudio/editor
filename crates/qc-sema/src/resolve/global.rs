@@ -42,7 +42,9 @@ impl<'a> Resolver<'a> {
         // which keeps its meaning beside it with `kce` on and is turned off with it off.
         // A class's members are made by `QCC_PR_ParseEntClass`, not as definitions named so,
         // and a type's name, which `declare_special` defines with no type, as a type.
-        let type_name = def.ty == Type::Unknown && self.type_names.contains(&def.name);
+        // An unknown name's `variant` (FTEF-19.69) is warned of where the name is reported.
+        let type_name = (def.ty == Type::Unknown && self.type_names.contains(&def.name))
+            || def.generated && def.kind == DefKind::Local;
         if self.profile.warns_keyword_names()
             && def.member_of.is_none()
             && !type_name

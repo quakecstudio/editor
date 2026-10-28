@@ -70,7 +70,9 @@ impl BodyEnv<'_, '_> {
     }
 
     /// FTEF-6.12: a struct or union is cast to and from nothing but its own type, "Cannot cast
-    /// from X to Y" reported at `span`; whether the cast is so refused.
+    /// from X to Y" reported at `span`, and a `variant` either way, which
+    /// `QCC_SupplyConversionForAssignment` never refuses (FTEF-19.69); whether the cast is so
+    /// refused.
     fn struct_cast_refused(&mut self, source: Source<'_>, to: &Type, span: Span) -> bool {
         if !self.resolver.profile.type_declarations() {
             return false;
@@ -81,7 +83,12 @@ impl BodyEnv<'_, '_> {
                 let ty = self.resolver.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
                 let structs =
                     self.resolver.is_struct_type(&ty) || self.resolver.is_struct_type(&to);
-                if !structs || self.resolver.typecmp(&ty, &to) {
+                let variant = |t: &Type| {
+                    self.resolver
+                        .shape(t)
+                        .is_some_and(|s| s.etype == Etype::Variant)
+                };
+                if !structs || self.resolver.typecmp(&ty, &to) || variant(&ty) || variant(&to) {
                     return false;
                 }
                 self.resolver.type_name(&ty)
