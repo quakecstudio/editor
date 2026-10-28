@@ -9,8 +9,9 @@ use qc_syntax::ast;
 use qc_syntax::{Dialect, QC_MAX_NESTING};
 
 use crate::db::Db;
-use crate::symbol::FileId;
+use crate::symbol::{DefId, FileId};
 use crate::ty::{FROM_AST_CALLS, FunctionType, ParamLabels, SimpleType, Type, TypeContext};
+use qc_diag::Span;
 
 /// Lowers the type of the first file-level declaration in `source`.
 fn first_decl_type(source: &str) -> Type {
@@ -210,4 +211,25 @@ fn nested_function_types_lower_in_linear_time() {
             }
         }
     }
+}
+
+// spec FTEF-34.9: the check stage keeps the type of each expression it reads, by its span
+#[test]
+fn a_checked_body_keeps_its_expression_types() {
+    let source = "float a; string s; void() g = { a = a + 1; s = \"x\"; };";
+    let index = super::fte_index_of(source);
+    let g = index
+        .defs
+        .iter()
+        .position(|d| d.name == "g")
+        .map(DefId)
+        .unwrap();
+    let body = &index.bodies[&g];
+    let at = |text: &str| {
+        let start = source.find(text).unwrap();
+        body.type_at(Span::new(start, start + text.len()))
+    };
+    assert_eq!(at("a + 1"), Some(&Type::Simple(SimpleType::Float)));
+    assert_eq!(at("\"x\""), Some(&Type::Simple(SimpleType::String)));
+    assert_eq!(at("g = {"), None);
 }

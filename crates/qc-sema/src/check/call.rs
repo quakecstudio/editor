@@ -121,7 +121,7 @@ impl Checker<'_> {
             } else if !extra && at >= function.params.len() {
                 let message = format!(
                     "too many parameters on call to {name}, argument {} will be ignored",
-                    reference.place()
+                    reference.ref_name()
                 );
                 self.env.report(Code::W0252, arg_span, message);
             }

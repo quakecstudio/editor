@@ -398,7 +398,7 @@ impl Checker<'_> {
         let message = || {
             format!(
                 "Implicit type mismatch on assignment to {}. Needed {}, got {}.",
-                lhs.place(),
+                lhs.ref_name(),
                 self.env.type_name(&lhs.ty),
                 self.env.type_name(&value.ty)
             )

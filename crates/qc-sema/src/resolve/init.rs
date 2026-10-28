@@ -650,6 +650,32 @@ impl Resolver<'_> {
                 return false;
             }
         }
+        // FTEF-19.50: fields of struct, union or class types cast only to fields of the same
+        // type or of a `variant` (`typecmp`); the model follows those types here.
+        if let Source::Typed(from) = source
+            && let (Type::Field(from_inner), Type::Field(to_inner)) =
+                (self.resolved_deep(from, MAX_TYPEDEF_DEPTH), to.clone())
+        {
+            let from_inner = self.resolved_deep(&from_inner, MAX_TYPEDEF_DEPTH);
+            let to_inner = self.resolved_deep(&to_inner, MAX_TYPEDEF_DEPTH);
+            let aggregate = |ty: &Type| matches!(ty, Type::Named(n) if class_of(ty) || self.struct_type_name(n).is_some());
+            let variant = |ty: &Type| matches!(ty, Type::Named(n) if matches!(n.as_ref(), "__variant" | "variant"));
+            if (aggregate(&from_inner) || aggregate(&to_inner))
+                && !variant(&from_inner)
+                && !variant(&to_inner)
+            {
+                if from_inner == to_inner {
+                    return false;
+                }
+                let message = format!(
+                    "Cannot cast from {} to {}",
+                    self.type_name(from),
+                    self.type_name(to)
+                );
+                self.report(Code::E0213, location, message);
+                return true;
+            }
+        }
         let as_entity = |ty: Type| if class_of(&ty) { entity.clone() } else { ty };
         let to_checked = as_entity(base_of(to).unwrap_or_else(|| to.clone()));
         let typed;

@@ -482,3 +482,37 @@ fn function_types_print_their_parameters() {
         );
     }
 }
+
+// spec FTEF-19.50: a field of a struct, union or class type casts only to a field of its own type
+// or of a variant
+// spec FTEF-24.12: a named union prints as a struct, one with no tag `<union>`, and a field of a
+// struct its own name
+#[test]
+fn fields_of_aggregates_and_their_names() {
+    let messages = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nstruct S {{ float x; }}; union U {{ float a; }}; \
+             typedef union {{ float a; }} V; class Player {{ float hp; }}; \
+             class Other : Player {{ float y; }};\n.S fs, fs2; .U fu; .Player fc; .Other fo; \
+             .__variant fv; .float fa; S s; U u; V v;\nvoid() g = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .filter(|(code, _)| *code == Code::E0213)
+        .map(|(_, message)| message)
+        .collect()
+    };
+    for quiet in ["fs = fs2;", "fs = fv;", "fv = fs;"] {
+        assert_eq!(messages(quiet), Vec::<String>::new(), "{quiet}");
+    }
+    for (statement, message) in [
+        ("fs = fu;", "Cannot cast from .U to .S"),
+        ("fs = fa;", "Cannot cast from .float to .S"),
+        ("fa = fs;", "Cannot cast from .S to .float"),
+        ("fc = fo;", "Cannot cast from class Other to class Player"),
+        ("fc = fa;", "Cannot cast from .float to class Player"),
+        ("s = u;", "Cannot cast from struct U to struct S"),
+        ("s = v;", "Cannot cast from union <union> to struct S"),
+    ] {
+        assert_eq!(messages(statement), [message], "{statement}");
+    }
+}

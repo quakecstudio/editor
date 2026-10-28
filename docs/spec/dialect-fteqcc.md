@@ -3137,6 +3137,11 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   float b = '1 2 3') g;` then `g(1);` is "Cannot cast from vector to float" and "Unknown value
   \"g\"."; a redeclaration with such a default is that error alone, no "Type mismatch on
   redeclaration".
+- **FTEF-19.50** A field of a struct, union or class type casts only to a field of the same type
+  or of a `variant` (`typecmp`), any other field or value being the fatal error `E0213` "Cannot
+  cast from A to B": `.S fs; .float fa; fs = fa;` is "Cannot cast from .float to .S", and a field
+  of a class to a field of a class it derives from "Cannot cast from class Other to class
+  Player".
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and
@@ -3777,6 +3782,11 @@ statement's checks (FTEF-23.6).
   type's own name (`QCC_PR_FieldType`); a struct, union, class or enum its name with no keyword
   or base (`s` for `struct s`); any other type by its name. `float *p; void() g = { return p; };`
   is "'g' returned ptr, expected void".
+- **FTEF-24.12** A named union is made `ev_struct` (`QCC_PR_ParseStruct`, `newt =
+  QCC_PR_NewType(tname, ev_struct, true)`), so `TypeName` prints it as `struct NAME`; a struct or
+  union with no tag is `struct <struct>` or `union <union>` (`QCC_PR_NewType(structtype==ev_union?
+  "<union>":"<struct>", structtype, false)`); and a field of a struct or union prints its own name,
+  `.NAME`.
 ## FTEF-25 The opcodes the target has
 
 **Source:** `qcc_pr_comp.c`, `QCC_OPCodeValidForTarget`, `QCC_OPCodeSetTarget` and
@@ -4055,6 +4065,17 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   NAME to B TARGET", TARGET `base.field` for a field. A cast, `lax` included, gives the value the
   left side's type first, so only a compound assignment's result kept under `lax` (FTEF-29.4)
   reaches the warning: `a *= v` is "type mismatch: vector vector to float a".
+- **FTEF-29.8** Two names are given to a target. A compound assignment's "Implicit type mismatch
+  on assignment to NAME" and a call's "argument NAME will be ignored" name it by
+  `QCC_GetRefName`: `base.field`, `base[index]` for an element or a string's character, the
+  index `IMMEDIATE` for a constant (`arr[IMMEDIATE]`), `base->index` through a pointer, `TEMP`
+  for no index (`p->TEMP` for `*p`), and the base's name for anything else, an accessor's member
+  included (its branch writes the member's name, then `break`s and returns the base's). The
+  store's "type mismatch" names it as `QCC_StoreSRefToRef` does (FTEF-29.7): `base.field`,
+  `base[index]` but for an `IMMEDIATE` index, else the base.
+- **FTEF-29.9** A constant that is null (`QCC_SRef_IsNull`, an integer, float or pointer 0) casts
+  as a null whatever its definition's type, a `typedef` or `int` one included: `const int zi = 0;
+  string s = zi;` is no cast warning.
 
 ## FTEF-30 Terms
 

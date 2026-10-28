@@ -390,7 +390,14 @@ impl Resolver<'_> {
             // `*ret++ = '.'`, which the class branch then overwrites with `class NAME`.
             Type::Field(inner) => match self.class_type_name(inner) {
                 Some(class) => class,
-                None => format!(".{}", self.type_name(inner)),
+                // The field type's own name, `.NAME`, for a struct or union.
+                None => match self.resolved(inner) {
+                    Type::Named(name) => match self.struct_type_name(&name) {
+                        Some(bare) => format!(".{bare}"),
+                        None => format!(".{}", self.type_name(inner)),
+                    },
+                    _ => format!(".{}", self.type_name(inner)),
+                },
             },
             Type::Named(name) => {
                 if let Some(class) = self.class_type_name(ty) {
@@ -399,13 +406,18 @@ impl Resolver<'_> {
                 if let Some(base) = self.named(&self.strict_enums, name) {
                     return format!("enum {name}:{}", self.type_name(base));
                 }
+                // FTEF-24.7: a named union is made `ev_struct` (`QCC_PR_NewType(tname, ev_struct,
+                // ...)`) and prints as a struct; one with no tag is `<struct>` or `<union>`.
                 if let Some(bare) = self.struct_type_name(name) {
-                    let union = self
-                        .struct_defs
-                        .get(&self.type_key(bare))
-                        .is_some_and(|st| st.union);
-                    let kind = if union { "union" } else { "struct" };
-                    return format!("{kind} {bare}");
+                    if bare == "{}" {
+                        let kind = if name.starts_with("union ") {
+                            "union"
+                        } else {
+                            "struct"
+                        };
+                        return format!("{kind} <{kind}>");
+                    }
+                    return format!("struct {bare}");
                 }
                 let resolved = self.resolved(ty);
                 if &resolved == ty {
