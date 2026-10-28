@@ -715,7 +715,23 @@ impl Checker<'_> {
     /// FTEF-34.6: the checks of the finished function, at the end of its body `span`: "not all
     /// control paths return a value", and "contains unreachable code".
     pub(super) fn finish_function(&mut self, span: Span) {
-        if self.function.accumulate || self.function.ret == Type::Unknown || self.env.failed() {
+        if self.env.failed() {
+            return;
+        }
+        // FTEF-21.19: a `continue` or `break` no loop took, which a stripped `if` arm does not
+        // leave (`QCC_UngenerateStatements`), is "%s: function contains illegal ...".
+        let (continues, breaks) = self.layout.left_over();
+        for (left, code, what) in [
+            (continues, Code::E0245, "continues"),
+            (breaks, Code::E0244, "breaks"),
+        ] {
+            if left {
+                let message = format!("{}: function contains illegal {what}", self.function.name);
+                self.env.report(code, span, message);
+                return;
+            }
+        }
+        if self.function.accumulate || self.function.ret == Type::Unknown {
             return;
         }
         if self.returns_large() {

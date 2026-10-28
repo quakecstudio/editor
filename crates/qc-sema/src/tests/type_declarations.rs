@@ -1194,3 +1194,38 @@ fn a_structs_redeclaration_stands_at_its_tag() {
         .collect();
     assert_eq!(found, [(Code::E0249, 2)]);
 }
+
+// spec FTEF-21.24: a stripped arm's breaks are forgotten; end messages name CLASS::NAME
+#[test]
+fn stripped_arms_leave_no_illegal_jumps() {
+    let messages = |source: &str| -> Vec<String> {
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![FileId(0)],
+            command_line: CommandLine::new::<&str>(&[]),
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .map(|d| d.diagnostic.message.clone())
+        .collect()
+    };
+    assert!(
+        messages("float f; float() g = { if (0) { break; continue; } return 2; };\n").is_empty()
+    );
+    assert_eq!(
+        messages("float f; float() g = { if (1) { break; } return 2; };\n"),
+        ["g: function contains illegal breaks"]
+    );
+    assert_eq!(
+        messages("void() g = { continue; break; };\n"),
+        ["g: function contains illegal continues"]
+    );
+    assert_eq!(
+        messages(
+            "float time; class C : entity { nonvirtual float() m = { if (time) return 1; }; };\n"
+        ),
+        ["C::m: not all control paths return a value"]
+    );
+}

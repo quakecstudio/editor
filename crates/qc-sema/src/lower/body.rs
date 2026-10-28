@@ -288,28 +288,17 @@ fn param_list_of(fn_body: &ast::FunctionBody) -> Option<ast::ParamList> {
     function_params(&ty)
 }
 
-/// Which loops and `switch`es a statement is in, which `break` and `continue` find their target
-/// in (FTEF-21.20).
+/// Which `switch`es a statement is in, which a `case` finds its `switch` in (FTEF-21.19).
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct Flow {
-    loops: usize,
     switches: usize,
 }
 
 impl Flow {
-    /// The flow in a loop's body.
-    fn in_loop(self) -> Self {
-        Self {
-            loops: self.loops.saturating_add(1),
-            ..self
-        }
-    }
-
     /// The flow in a `switch`'s body.
     fn in_switch(self) -> Self {
         Self {
             switches: self.switches.saturating_add(1),
-            ..self
         }
     }
 }
@@ -393,23 +382,6 @@ fn block_typedefs(node: &qc_syntax::SyntaxNode) -> Vec<ast::TypedefDecl> {
     found
 }
 
-/// A `break` (`is_break`) or `continue` that no loop, and for a `break` no `switch`, holds
-/// (FTEF-21.19): FTEQCC counts it and reports the function once.
-fn illegal_jump(body: &mut RawBody, flow: Flow, node: &SyntaxNode, is_break: bool) {
-    let (held, code, what) = if is_break {
-        (flow.loops > 0 || flow.switches > 0, Code::E0244, "breaks")
-    } else {
-        (flow.loops > 0, Code::E0245, "continues")
-    };
-    if !held && !body.diagnostics.iter().any(|d| d.code == code) {
-        body.diagnostics.push(Diagnostic {
-            code,
-            message: format!("function contains illegal {what}"),
-            span: node.span(),
-        });
-    }
-}
-
 fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
     match stmt {
         ast::Stmt::Local(local) => lower_local(local, cx, body),
@@ -441,12 +413,12 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
                 lower_expr(&cond, cx, &mut body.uses);
             }
             if let Some(inner) = while_stmt.body() {
-                lower_stmt(&inner, cx, body, flow.in_loop());
+                lower_stmt(&inner, cx, body, flow);
             }
         }
         ast::Stmt::Do(do_stmt) => {
             if let Some(inner) = do_stmt.body() {
-                lower_stmt(&inner, cx, body, flow.in_loop());
+                lower_stmt(&inner, cx, body, flow);
             }
             if let Some(cond) = do_stmt.condition() {
                 lower_expr(&cond, cx, &mut body.uses);
@@ -468,7 +440,7 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
                 }
             }
             if let Some(inner) = for_stmt.body() {
-                lower_stmt(&inner, cx, body, flow.in_loop());
+                lower_stmt(&inner, cx, body, flow);
             }
             let end = for_stmt.syntax().span().end;
             for local in body.locals.iter_mut().skip(first) {
@@ -499,9 +471,12 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
         }
         // `break;`, `continue;` (FTE-4) and `;` (FTE-21.5) bind no names and use none, and
         // neither do a label and `goto` (FTEF-18.23), whose names are labels, not values.
-        ast::Stmt::Break(node) => illegal_jump(body, flow, node.syntax(), true),
-        ast::Stmt::Continue(node) => illegal_jump(body, flow, node.syntax(), false),
-        ast::Stmt::Empty(_) | ast::Stmt::Label(_) | ast::Stmt::Goto(_) | ast::Stmt::Exit(_) => {}
+        ast::Stmt::Break(_)
+        | ast::Stmt::Continue(_)
+        | ast::Stmt::Empty(_)
+        | ast::Stmt::Label(_)
+        | ast::Stmt::Goto(_)
+        | ast::Stmt::Exit(_) => {}
         // FTEF-20.5: an `asm` statement's `local` declarations define locals; its operands are
         // code generation's (FTEF-19.46).
         ast::Stmt::Asm(asm) => {
@@ -512,7 +487,7 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
         // FTEF-20.5: `loop s` runs its statement.
         ast::Stmt::Loop(loop_stmt) => {
             if let Some(inner) = loop_stmt.body() {
-                lower_stmt(&inner, cx, body, flow.in_loop());
+                lower_stmt(&inner, cx, body, flow);
             }
         }
         // FTEF-20.5: `thinktime e : t;` uses its operands and, unless the target is Hexen II's,

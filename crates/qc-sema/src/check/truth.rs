@@ -43,7 +43,7 @@ pub(super) enum Jump {
 impl Test {
     /// The opcode the test is for a value of basic type `etype`, and the zero it is compared
     /// with; `None` for a type the test refuses.
-    fn opcode(self, etype: Etype) -> Option<(Op, Option<Constant>)> {
+    pub(super) fn opcode(self, etype: Etype) -> Option<(Op, Option<Constant>)> {
         use Etype::{
             Double, Entity, Float, Function, Int64, Integer, Pointer, String, Uint, Uint64, Vector,
         };

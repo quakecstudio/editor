@@ -111,6 +111,12 @@ impl Layout {
         self.continues.push(at);
     }
 
+    /// Whether a `continue` and whether a `break` is left that no loop or `switch` took,
+    /// `num_continues` and `num_breaks` at the function's end (FTEF-21.19).
+    pub(super) fn left_over(&self) -> (bool, bool) {
+        (!self.continues.is_empty(), !self.breaks.is_empty())
+    }
+
     /// The `break`s and `continue`s so far, `num_breaks` and `num_continues`, from which a loop
     /// patches its own.
     pub(super) fn marks(&self) -> (usize, usize) {
