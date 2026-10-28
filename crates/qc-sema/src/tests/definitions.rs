@@ -861,11 +861,13 @@ fn shared_and_extern() {
 // spec FTEF-19.12: a static global is visible in its unit only, and static on another file's
 // name is an error
 // spec QCD-3.31: E0231 "can't redefine non-static as static"
+// spec FTEF-19.60: a name found only as another unit's static warns "NAME defined static"
+// spec QCD-7.108: W0315 "NAME defined static"
 #[test]
 fn statics_are_their_units() {
     assert_eq!(
         fte_module(&["static float w;\n", "void() g = { w = 1; };\n"]),
-        [Code::E0301]
+        [Code::W0315, Code::E0301]
     );
     assert_eq!(
         fte_module(&[
@@ -1148,6 +1150,7 @@ fn a_for_statements_locals_leave_scope() {
 
 // spec FTEF-19.1: the qualifiers a declaration starts with are each read
 // spec FTEF-15.1: written as such or after `__`
+// spec FTEF-19.61: `register` is no qualifier, and undoes an `auto`
 #[test]
 fn qualifiers_are_read() {
     use crate::lower::{Qualifier, lower_file};
@@ -1165,7 +1168,7 @@ fn qualifiers_are_read() {
             vec![Qualifier::Strip],
             vec![Qualifier::Strip],
             vec![Qualifier::Auto],
-            vec![Qualifier::Auto],
+            vec![],
         ]
     );
 }
@@ -1416,4 +1419,44 @@ fn defaults_print_as_their_constants() {
     ] {
         assert_eq!(printed(param), text, "{param}");
     }
+}
+
+// spec FTEF-19.59: a static local redefining a local that is not static is a fatal error
+// spec QCD-4.65: E0364 "static redefinition of NAME follows non-static definition."
+#[test]
+fn a_static_local_after_a_plain_one() {
+    assert_eq!(
+        fte_messages("void() f = { local float x; static float x; };\n"),
+        [(
+            Code::E0364,
+            "static redefinition of x follows non-static definition.".to_owned()
+        )]
+    );
+    assert_eq!(fte("void() f = { static float x; static float x; };\n"), []);
+}
+
+// spec FTEF-19.61: a global or static __auto needs memalloc; a local's qualifiers are checked
+// spec QCD-4.66: E0365 "memalloc not yet defined, cannot define __auto NAME at global scope"
+#[test]
+fn auto_definitions_need_memalloc() {
+    let memalloc = (
+        Code::E0365,
+        "memalloc not yet defined, cannot define __auto x at global scope".to_owned(),
+    );
+    assert_eq!(
+        fte_messages("__auto float x;\n"),
+        std::slice::from_ref(&memalloc)
+    );
+    assert!(fte("void(float n) memalloc = #1;\n__auto float x;\n").is_empty());
+    assert_eq!(
+        fte_messages("void() f = { static __auto float x; };\n"),
+        [
+            (Code::W0214, "Conflicting storage classes.".to_owned()),
+            memalloc
+        ]
+    );
+    assert_eq!(
+        fte_messages("void() f = { const var float x = 1; };\n"),
+        [(Code::W0214, "Conflicting constness.".to_owned())]
+    );
 }

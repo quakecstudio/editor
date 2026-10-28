@@ -375,6 +375,10 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (FTEF-6.28); a fatal error.
 - **QCD-4.64** `E0363` "incompatible redeclaration": a definition initialised again with a
   constant of another value (FTE-22.6); a fatal error.
+- **QCD-4.65** `E0364` "static redefinition of NAME follows non-static definition.": a
+  `static` local redefining a local that is not (FTEF-19.59); a fatal error.
+- **QCD-4.66** `E0365` "memalloc not yet defined, cannot define __auto NAME at global scope": a
+  global or `static` `__auto` with no `memalloc` or `malloc` (FTEF-19.61); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -736,6 +740,8 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.107** `W0265` "CLASS::NAME was not qualified. Assuming non-virtual." and a
   constructor's "should not be static.", "does not return void." and "Constructor arguments are
   not supported at this time" (FTEF-9.16). `WARN_MISSINGMEMBERQUALIFIER`, F334.
+- **QCD-7.108** `W0315` "NAME defined static": a name found only as a `static` global of another
+  unit (FTEF-19.60), the warning `WARN_SAMENAMEASGLOBAL`.
 
 ## QCD-8 Preprocessor errors
 

@@ -3252,6 +3252,28 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `E0345` "Unable to generate statements at global scope (GLOBALADDRESS)."; and a global's or a
   `static`'s value is then `E0214` "initializer for 'p' is not constant". A plain or `const`
   local takes it with no message.
+- **FTEF-19.59** A `static` local whose function already has a local of the name that is not
+  `static` is the fatal error `E0364` "static redefinition of NAME follows non-static definition."
+  (`QCC_PR_GetDef`: `else if (allocate && (flags & GDF_STATIC) && !def->isstatic)`): `void() f = {
+  local float x; static float x; };`. A second `static` is the same definition, and a `static`
+  local of a global's name hides the global (FTEF-19.1). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GetDef`.
+- **FTEF-19.60** A lookup that passes over a `static` global of another unit (`if
+  ((def->isstatic||(flags&GDF_STATIC)) && strcmp(def->unitn, ...)) { if (!foundstatic)
+  foundstatic = def; ...}`) and finds nothing warns `W0315` "NAME defined static" (`if
+  (foundstatic && !allocate && !(flags & GDF_SILENT))`, `WARN_SAMENAMEASGLOBAL`, `F306`) before
+  FTEF-19.45's "Unknown value": `a.qc` `static float x;` and `b.qc` `void() f = { x = 1; };`.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GetDef`.
+- **FTEF-19.61** A global or `static` local `__auto` (`isauto`, not in a body unless `static`)
+  is allocated at start-up by `memalloc`, or `malloc`, which `QCC_PR_EmulationFunc` looks up by
+  name; with neither defined it is the fatal error `E0365` "memalloc not yet defined, cannot
+  define __auto NAME at global scope". A local's qualifiers are checked as a global's
+  (FTEF-21.14): two storage classes are `W0214` "Conflicting storage classes." (`static __auto`
+  is), and `const` with `var` "Conflicting constness.". `auto` itself is a keyword only once
+  enabled; `__auto` always is. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`.
 
 ## FTEF-20 Keywords
 

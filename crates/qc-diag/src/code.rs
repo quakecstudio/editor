@@ -345,6 +345,11 @@ pub enum Code {
     /// "incompatible redeclaration": a definition initialised again with another value
     /// (QCD-4.64).
     E0363,
+    /// "static redefinition of NAME follows non-static definition.": a `static` local
+    /// redefining a local that is not (QCD-4.65).
+    E0364,
+    /// "memalloc not yet defined, cannot define __auto NAME at global scope" (QCD-4.66).
+    E0365,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -585,13 +590,15 @@ pub enum Code {
     W0313,
     /// "Variable \"NAME\" is deprecated" (QCD-7.44).
     W0314,
+    /// "NAME defined static": a name found only as a `static` of another unit (QCD-7.108).
+    W0315,
     /// "NAME differs in case from the file it opens, STORED" (QCD-7.16).
     W0402,
 }
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 259] = [
+    pub const ALL: [Self; 262] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -742,6 +749,8 @@ impl Code {
         Self::E0361,
         Self::E0362,
         Self::E0363,
+        Self::E0364,
+        Self::E0365,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -850,6 +859,7 @@ impl Code {
         Self::W0312,
         Self::W0313,
         Self::W0314,
+        Self::W0315,
         Self::W0402,
     ];
 
@@ -1029,6 +1039,7 @@ impl Code {
             Self::W0313 => "W0313",
             Self::W0402 => "W0402",
             Self::W0314 => "W0314",
+            Self::W0315 => "W0315",
             Self::W0218 => "W0218",
             Self::W0217 => "W0217",
             Self::W0216 => "W0216",
@@ -1093,6 +1104,8 @@ impl Code {
             Self::E0361 => "E0361",
             Self::E0362 => "E0362",
             Self::E0363 => "E0363",
+            Self::E0364 => "E0364",
+            Self::E0365 => "E0365",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1181,6 +1194,7 @@ impl Code {
             | Self::W0217
             | Self::W0218
             | Self::W0314
+            | Self::W0315
             | Self::W0231
             | Self::W0232
             | Self::W0233
@@ -1383,6 +1397,8 @@ impl Code {
             | Self::E0361
             | Self::E0362
             | Self::E0363
+            | Self::E0364
+            | Self::E0365
             | Self::E0408 => true,
         }
     }

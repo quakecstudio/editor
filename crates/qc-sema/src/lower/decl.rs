@@ -146,7 +146,7 @@ pub enum Qualifier {
     Accumulate,
     /// `deprecated`, with its reason if it gives one (FTEF-19.13).
     Deprecated(Option<String>),
-    /// `auto` or `register`.
+    /// `auto`, which a later `register` undoes (FTEF-19.61).
     Auto,
     /// The attribute `alias(NAME)` or `alias("NAME")`: the definition names the one `NAME`
     /// names (FTEF-21.9).
@@ -174,7 +174,7 @@ impl Qualifier {
             "wrap" => Self::Wrap,
             "weak" => Self::Weak,
             "accumulate" => Self::Accumulate,
-            "auto" | "register" => Self::Auto,
+            "auto" => Self::Auto,
             "deprecated" => Self::Deprecated(
                 text.split_once('"')
                     .and_then(|(_, rest)| rest.rsplit_once('"'))
@@ -644,7 +644,17 @@ pub(super) fn qualifiers_of(node: &SyntaxNode) -> Vec<Qualifier> {
     for child in node.children() {
         match child.kind() {
             SyntaxKind::Qualifier => {
-                out.extend(Qualifier::of(&first_word(&child), &token_text(&child)))
+                let word = first_word(&child);
+                // FTEF-19.61: `register` sets `isauto=false`.
+                if word
+                    .strip_prefix("__")
+                    .unwrap_or(&word)
+                    .eq_ignore_ascii_case("register")
+                {
+                    out.retain(|q| *q != Qualifier::Auto);
+                    continue;
+                }
+                out.extend(Qualifier::of(&word, &token_text(&child)));
             }
             SyntaxKind::AttributeList => {
                 let Some(list) = ast::AttributeList::cast(child) else {

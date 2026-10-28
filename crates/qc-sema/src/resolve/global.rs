@@ -1005,6 +1005,19 @@ impl<'a> Resolver<'a> {
             );
             return true;
         }
+        // FTEF-19.61: a global `__auto` is allocated by `memalloc`, or `malloc`, which
+        // `QCC_PR_EmulationFunc` finds by name.
+        if decl.has(&Qualifier::Auto)
+            && self.lookup_global("memalloc").is_none()
+            && self.lookup_global("malloc").is_none()
+        {
+            let message = format!(
+                "memalloc not yet defined, cannot define __auto {} at global scope",
+                decl.name
+            );
+            self.report(Code::E0365, location, message);
+            return true;
+        }
         false
     }
 

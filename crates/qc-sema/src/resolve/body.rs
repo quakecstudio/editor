@@ -557,6 +557,12 @@ impl<'a> Resolver<'a> {
                     let message = match &use_.scope {
                         Some(prefix) => format!("Unknown value \"{prefix}::{}\"", use_.name),
                         None if self.profile.fteqcc_diagnostics() => {
+                            // FTEF-19.60: the lookup passed over another unit's `static` of
+                            // the name (`foundstatic && !allocate`).
+                            if self.static_elsewhere(&use_.name) {
+                                let message = format!("{} defined static", use_.name);
+                                self.report(Code::W0315, location, message);
+                            }
                             // The `variant` is made by `QCC_PR_GetDef`, which warns of an
                             // `autocvar_` name in a body (FTEF-19.16) and of a keyword's name
                             // (FTEF-20.4) first.
@@ -592,6 +598,43 @@ impl<'a> Resolver<'a> {
         }
     }
 
+    /// FTEF-19.61: `QCC_PR_ParseDefs`'s checks of a local's qualifiers, as of a global's:
+    /// "Conflicting storage classes." and "Conflicting constness.", and a `static` `__auto`
+    /// allocated by `memalloc` or `malloc`, the fatal error without either. Whether that error
+    /// ended the declaration.
+    fn warn_local_qualifiers(&mut self, local: &RawLocal, location: Location) -> bool {
+        let alias = local
+            .qualifiers
+            .iter()
+            .any(|q| matches!(q, Qualifier::Alias(_)));
+        let storage = [Qualifier::Auto, Qualifier::Shared]
+            .iter()
+            .filter(|q| local.has(q))
+            .count()
+            .saturating_add(usize::from(local.is_static()))
+            .saturating_add(usize::from(alias));
+        if storage > 1 {
+            let message = "Conflicting storage classes.".to_owned();
+            self.report(Code::W0214, location, message);
+        }
+        if local.has(&Qualifier::Const) && local.has(&Qualifier::Var) {
+            self.report(Code::W0214, location, "Conflicting constness.".to_owned());
+        }
+        if local.has(&Qualifier::Auto)
+            && local.is_static()
+            && self.lookup_global("memalloc").is_none()
+            && self.lookup_global("malloc").is_none()
+        {
+            let message = format!(
+                "memalloc not yet defined, cannot define __auto {} at global scope",
+                local.name
+            );
+            self.report(Code::E0365, location, message);
+            return true;
+        }
+        false
+    }
+
     /// Declares a local of a function body (QC-11.10, FTEF-19.1), with its initialiser's
     /// checks. Under FTEQCC an `autocvar_` local is a global (FTEF-19.16), and a `static` or
     /// `const` local is a constant whose initialiser FTEQCC compares as a global's.
@@ -602,6 +645,9 @@ impl<'a> Resolver<'a> {
         local: &RawLocal,
         location: Location,
     ) {
+        if self.profile.qualifiers() && self.warn_local_qualifiers(local, location) {
+            return;
+        }
         if self.profile.qualifiers() && local.name.starts_with("autocvar_") {
             self.report(
                 Code::W0213,
@@ -821,6 +867,12 @@ impl<'a> Resolver<'a> {
                         format!("{name} duplicate definition ignored")
                     };
                     self.report(Code::W0207, location, message);
+                } else if !was_static && !global {
+                    // FTEF-19.59: `QCC_PR_GetDef`'s `(flags & GDF_STATIC) && !def->isstatic`.
+                    let message =
+                        format!("static redefinition of {name} follows non-static definition.");
+                    self.report(Code::E0364, location, message);
+                    return None;
                 }
             } else if self.profile.components_initialised() && kind == DefKind::Param {
                 // A parameter's vector components are made with no lookup (FTEF-19.1).
