@@ -62,6 +62,8 @@ pub(crate) trait Env {
     /// Whether the type `ty` names declares accessor members, `t->accessors`, through a class's
     /// parents.
     fn has_accessors(&self, ty: &Type) -> bool;
+    /// Whether `ty` is an accessor type (`ev_accessor`, FTEF-10.8), which opcodes never take.
+    fn is_accessor(&self, ty: &Type) -> bool;
     /// The type of the local whose name starts at offset `at`, through typedefs.
     fn local_type(&self, at: usize) -> Option<Type>;
     /// The type a cast or `sizeof` writes starting at offset `at`, through typedefs.

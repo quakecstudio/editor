@@ -600,8 +600,17 @@ impl Resolver<'_> {
         flags: CompilerFlags,
     ) -> bool {
         // FTEF-10.8: an accessor and its base cast either way with a warning
-        // (`QCC_EvaluateCast`'s `cast->parentclass == src.cast`).
-        if let Source::Typed(from) = source
+        // (`QCC_EvaluateCast`'s `cast->parentclass == src.cast`), a literal of the base's type
+        // to the accessor too.
+        let literal_type = match source {
+            Source::Literal(literal) => Some(literal.ty.value_type()),
+            Source::Typed(_) => None,
+        };
+        let from = match source {
+            Source::Typed(from) => Some(from),
+            Source::Literal(_) => literal_type.as_ref(),
+        };
+        if let Some(from) = from
             && self.accessor_of(from, to)
         {
             let message = format!(

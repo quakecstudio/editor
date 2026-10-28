@@ -406,3 +406,47 @@ fn accessor_reads_and_stores() {
         ["Cannot cast from string to float"]
     );
 }
+
+// spec FTEF-10.8: a literal of an accessor's base type casts to it with a warning, an operator
+// casts an accessor operand to its opcode's type, negation refuses one, and a member that takes
+// an index needs its `[`
+// spec QCD-7.106: W0264 "Implicit cast from A to B"
+#[test]
+fn accessor_values_in_expressions() {
+    let body = |statement: &str| -> Vec<(Code, String)> {
+        let source = format!(
+            "#pragma target fte\naccessor A : float {{ get float y = {{ return 1; }}; \
+             get float z[__int32 i] = {{ return 1; }}; set float z[__int32 i] = {{}}; }};\n\
+             A a; float f;\nvoid() g = {{ {statement} }};\n"
+        );
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        let file = FileId(0);
+        db.set_file(file, PathBuf::from("t.qc"), source.into_bytes());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![file],
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .map(|d| (d.diagnostic.code, d.diagnostic.message.clone()))
+        .collect()
+    };
+    let cast = |from: &str, to: &str| (Code::W0264, format!("Implicit cast from {from} to {to}"));
+    assert_eq!(body("a = 1;"), [cast("float", "A")]);
+    assert_eq!(body("local A l = 0;"), [cast("float", "A")]);
+    assert_eq!(body("a = 1i;"), []);
+    assert_eq!(body("f = a * f;"), [cast("A", "float")]);
+    assert_eq!(body("f = f + a;"), [cast("A", "float")]);
+    assert_eq!(
+        body("f = -a;"),
+        [(Code::E0302, "type mismatch for -".to_owned())]
+    );
+    for (statement, found) in [("a.z = f;", "="), ("f = a.z + 1;", "+"), ("f = a.z;", ";")] {
+        assert_eq!(
+            body(statement),
+            [(Code::E0204, format!("expected [, found {found}"))],
+            "{statement}"
+        );
+    }
+    assert_eq!(body("a.z[1] = f; f = a.z[1];"), []);
+}

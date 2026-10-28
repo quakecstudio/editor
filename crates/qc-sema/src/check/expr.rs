@@ -352,7 +352,11 @@ impl<'e> Checker<'e> {
         row: OpType,
         span: Span,
     ) -> Result<(), Fatal> {
-        if row.etype() == operand.etype || row == OpType::Variant {
+        // `(*op->type_a)->type != lhsd.cast->type`: an accessor's type is never the row's, so
+        // it is cast to it, with the warning of a cast from an accessor to its base (FTEF-10.8).
+        if (row.etype() == operand.etype && !self.env.is_accessor(&value.ty))
+            || row == OpType::Variant
+        {
             return Ok(());
         }
         let costly = operand

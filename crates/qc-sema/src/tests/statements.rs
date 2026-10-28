@@ -570,6 +570,19 @@ fn a_dot_after_a_value_with_no_members() {
             "float a, b; float c[2]; void() g = { b = c[a.x]; };",
             vec![d(Code::E0204, "expected ], found .")],
         ),
+        // The construct's end is fatal at once, before what follows it is read.
+        (
+            "float a, b; string s; void(float x, float y) f = {}; void() g = { f((a.x), \"s\"); };",
+            vec![d(Code::E0204, "expected ), found .")],
+        ),
+        (
+            "float a, b; string s; void() g = { b = (a.x) + s; };",
+            vec![d(Code::E0204, "expected ), found .")],
+        ),
+        (
+            "float a, b; string s; float c[2]; void() g = { b = c[a.x] + s; };",
+            vec![d(Code::E0204, "expected ], found .")],
+        ),
         (
             ".float fl; float b; void() g = { b = fl.x; };",
             vec![d(Code::E0213, "Cannot cast from .float to float")],

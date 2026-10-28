@@ -785,8 +785,14 @@ others).
   void to float".
 - **FTEF-10.8** An accessor type and its base cast to each other with the warning `W0264`
   "Implicit cast from A to B" (`QCC_EvaluateCast`, `cast->parentclass == src.cast`, the warning of
-  code 0); a value of an accessor type is otherwise cast as its base's, and a cast to one is
-  checked against its base, "Cannot cast from string to float" for an `accessor H : string`. A
+  code 0), a literal of the base's own type to the accessor too (`a = 1;` for an `accessor A :
+  float`, not `a = 1i;`); a value of an accessor type is otherwise cast as its base's, and a cast
+  to one is checked against its base, "Cannot cast from string to float" for an `accessor H :
+  string`. No opcode takes an accessor (`(*op->type_a)->type != lhsd.cast->type`), so an
+  operator's operand of one is cast to the opcode's type, `a * f` warning "Implicit cast from A
+  to float", and `-a` is the fatal error "type mismatch for -" (FTEF-30.4). A member that takes
+  an index is followed by its `[` (`QCC_PR_Expect("[")`), `a.z = f` the fatal error "expected [,
+  found =". A
   member's body is a function (`QCC_PR_GenFunctionType`) whose `this` is of the accessor's type,
   whose index is of its indexer's and whose `value`, for `set`, is of the member's, and is
   checked as any function's body is: `bufstr_get(this, idx)` with a `float` parameter warns

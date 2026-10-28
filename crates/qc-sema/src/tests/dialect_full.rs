@@ -363,7 +363,7 @@ fn accessor_members_resolve() {
         "float(float b, float i) bufstr_get = #0;\n\
          accessor strbuf : float { inline get float at[float idx] = { return bufstr_get(this, idx); }; \
          set float at[float idx] = { bufstr_get(this, value); }; };\n\
-         strbuf b;\nvoid() f = { local float n = b.at; };\n",
+         strbuf b;\nvoid() f = { local float n = b.at[1]; };\n",
     );
     assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
 }

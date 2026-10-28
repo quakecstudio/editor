@@ -39,6 +39,22 @@ impl Checker<'_> {
         if let Some((name, _)) = selector_name(&selector)
             && let Some(accessor) = self.accessor_member(&base, &name)
         {
+            // FTEF-10.7: a member that takes an index is followed by its `[`
+            // (`QCC_PR_Expect("[")`).
+            let indexed = field
+                .syntax()
+                .parent()
+                .and_then(ast::IndexExpr::cast)
+                .and_then(|index| index.base())
+                .is_some_and(|b| b.syntax() == field.syntax());
+            if let Reference::Accessor(member) = &accessor.reference
+                && member.facts.indexer.is_some()
+                && !indexed
+            {
+                let found = token_after(field.syntax());
+                let message = format!("expected [, found {found}");
+                return self.fatal(Code::E0204, field.syntax().span(), message);
+            }
             return Ok(accessor);
         }
         // FTEF-10.7: a member an accessor type does not have, but on an entity's, is "NAME is
@@ -461,4 +477,16 @@ fn alignment(ty: &Type) -> u32 {
         Some(CScalar::Int16 | CScalar::Uint16) => 16,
         _ => 32,
     }
+}
+
+/// The text of the token after `node` in its tree, empty at the end.
+fn token_after(node: &qc_syntax::SyntaxNode) -> String {
+    let end = node.span().end;
+    node.ancestors()
+        .last()
+        .into_iter()
+        .flat_map(|root| root.tokens().collect::<Vec<_>>())
+        .find(|token| !token.kind().is_trivia() && token.span().start >= end)
+        .map(|token| token.text_lossless())
+        .unwrap_or_default()
 }

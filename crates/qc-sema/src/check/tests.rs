@@ -121,3 +121,48 @@ fn choosing_an_opcode() {
     assert_eq!(opname(mismatch), "ADD_F");
     assert_eq!(choose_opcode(&[], f, f, false), None);
 }
+
+// spec FTEF-23.4: of candidates needing as many conversions the first in table order is taken,
+// `int + vector` by `OP_ADD_F` before `OP_ADD_IF`; a field access takes only the rows of the
+// type the field holds
+#[test]
+fn ties_and_field_access() {
+    let i = value(Etype::Integer);
+    let v = value(Etype::Vector);
+    assert_eq!(opname(chosen("+", i, v)), "ADD_F");
+    assert_eq!(opname(chosen("+", v, i)), "ADD_F");
+    let entity = value(Etype::Entity);
+    let field = |holds| Operand {
+        holds: Some(holds),
+        ..value(Etype::Field)
+    };
+    let loads = [Op::LoadF, Op::LoadV, Op::LoadS];
+    let load = |rhs| choose_opcode(&loads, entity, rhs, false).unwrap();
+    assert_eq!(opname(load(field(Etype::Vector))), "LOADF_V");
+    assert_eq!(opname(load(field(Etype::String))), "LOADF_S");
+    assert_eq!(opname(load(field(Etype::Float))), "LOADF_F");
+    assert!(matches!(load(value(Etype::Float)), Choice::Mismatch(_)));
+}
+
+// spec FTEF-23.4: an assignment's row takes the value converted, never the target: the target's
+// type must be the row's, and a pointer the row's pointer to the same type (`__pointeraux`, a
+// float)
+#[test]
+fn an_assignment_row_keeps_its_target() {
+    let f = value(Etype::Float);
+    let i = value(Etype::Integer);
+    let pointer = |holds| Operand {
+        holds: Some(holds),
+        ..value(Etype::Pointer)
+    };
+    let store = |ops: &[Op], lhs, rhs| choose_opcode(ops, lhs, rhs, false).unwrap();
+    assert_eq!(opname(store(&[Op::StoreF], f, i)), "STORE_F");
+    assert!(matches!(store(&[Op::StoreF], i, f), Choice::Mismatch(_)));
+    let p = pointer(Etype::Float);
+    assert_eq!(opname(store(&[Op::StoreP], p, p)), "STORE_P");
+    assert!(matches!(
+        store(&[Op::StoreP], pointer(Etype::Integer), p),
+        Choice::Mismatch(_)
+    ));
+    assert!(matches!(store(&[Op::StoreP], f, p), Choice::Mismatch(_)));
+}

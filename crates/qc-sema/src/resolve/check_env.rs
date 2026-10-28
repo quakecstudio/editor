@@ -363,6 +363,19 @@ impl Env for BodyEnv<'_, '_> {
         None
     }
 
+    fn is_accessor(&self, ty: &Type) -> bool {
+        match self.resolver.resolved(ty) {
+            Type::Named(name) => self
+                .resolver
+                .named(
+                    &self.resolver.accessor_bases,
+                    &self.resolver.type_key(&name),
+                )
+                .is_some(),
+            _ => false,
+        }
+    }
+
     fn has_accessors(&self, ty: &Type) -> bool {
         let mut current = self.resolver.resolved(ty);
         for _ in 0..MAX_TYPEDEF_DEPTH {

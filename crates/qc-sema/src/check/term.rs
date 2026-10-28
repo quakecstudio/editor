@@ -93,6 +93,12 @@ impl Checker<'_> {
         let Some(etype) = self.etype_of(&operand.ty) else {
             return Ok(Value::unknown());
         };
+        // `switch(type->type)` strips only a truth value: an accessor is no number to it.
+        let etype = if self.env.is_accessor(&operand.ty) {
+            Etype::Void
+        } else {
+            etype
+        };
         let (op, zero) = match etype {
             Etype::Float => (Op::SubF, Constant::float(0.0)),
             Etype::Double => (Op::SubD, Constant::double(0.0)),
