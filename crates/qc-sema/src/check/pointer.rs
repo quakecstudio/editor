@@ -285,7 +285,7 @@ impl Checker<'_> {
 
     /// `QCC_MakeIntConst(-aux_type->size)`: the size is unsigned, so its negation is
     /// `2^32 - size`, which "will be truncated" to `-size`.
-    fn negated_size(&mut self, words: Option<i32>, span: Span) -> Value {
+    pub(super) fn negated_size(&mut self, words: Option<i32>, span: Span) -> Value {
         let Some(words) = words else {
             return opaque_int();
         };
@@ -509,7 +509,7 @@ impl Checker<'_> {
 }
 
 /// `QCC_MakeIntConst(value)`.
-fn int(value: i32) -> Value {
+pub(super) fn int(value: i32) -> Value {
     Value::constant(Constant::int(value))
 }
 
@@ -524,7 +524,7 @@ fn bytes(bits: i32) -> Value {
 }
 
 /// An integer constant whose value the model does not know.
-fn opaque_int() -> Value {
+pub(super) fn opaque_int() -> Value {
     Value {
         constness: Constness::Opaque,
         ..int(0)

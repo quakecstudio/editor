@@ -19,6 +19,7 @@ use crate::check::expr::{Checker, Fatal};
 use crate::check::fold::{Folded, fold};
 use crate::check::opcodes::row;
 use crate::check::{Constness, Value};
+use crate::ty::Type;
 
 /// `QCTARGVER_FTE_DEF` and `QCTARGVER_FTE_MAX`: the FTE revisions `badopcode` suggests.
 const FTE_DEFAULT: u32 = 5768;
@@ -38,6 +39,9 @@ enum Emulation {
     /// Emit these opcodes on the operands in turn, the last giving the value; each is emitted
     /// or emulated in turn. For `%` when no `mod` function is defined (FTEF-27.4).
     Expand(&'static [Op]),
+    /// A 64-bit `==` or `!=` word by word: the first opcode on the operands' low words, then
+    /// on their high words, each cast to `int`, joined by the second (FTEF-27.13).
+    Words(Op, Op),
     /// `a % b` as `a - b * (a / b)`: the division, the floor (`d | d`) for a float one, the
     /// product of `b` and the quotient and the difference from `a`, each emitted in turn
     /// (FTEF-27.4).
@@ -186,6 +190,20 @@ impl Checker<'_> {
                     ..result
                 })
             }
+            Emulation::Words(compare, join) => {
+                let int = Type::Named("__int32".into());
+                let lhs = Value {
+                    ty: int.clone(),
+                    ..lhs.clone()
+                };
+                let rhs = Value {
+                    ty: int,
+                    ..rhs.clone()
+                };
+                let low = self.emit(compare, &lhs, &rhs, span)?;
+                let high = self.emit(compare, &lhs, &rhs, span)?;
+                self.emit(join, &low, &high, span)
+            }
             Emulation::Remainder(steps) => {
                 let &[div, ref rest @ .., mul, sub] = steps else {
                     return Ok(result);
@@ -197,10 +215,17 @@ impl Checker<'_> {
                 let product = self.emit(mul, rhs, &quotient, span)?;
                 self.emit(sub, lhs, &product, span)
             }
-            Emulation::Instead(other) => Ok(Value {
-                ty: result.ty,
-                ..self.emit(other, lhs, rhs, span)?
-            }),
+            Emulation::Instead(other) => {
+                // `var_c.cast = type_uint;` (or `type_uint64`) after an unsigned operator's
+                // signed one, a comparison's truth value included (FTEF-27.12).
+                let value = self.emit(other, lhs, rhs, span)?;
+                let ty = match op {
+                    Op::EqU | Op::NeU => Type::Named("__uint32".into()),
+                    Op::EqU64 | Op::NeU64 => Type::Named("__uint64".into()),
+                    _ => value.ty.clone(),
+                };
+                Ok(Value { ty, ..value })
+            }
             Emulation::Swapped(other) => Ok(Value {
                 ty: result.ty,
                 ..self.emit(other, rhs, lhs, span)?
@@ -641,7 +666,7 @@ impl Checker<'_> {
 const fn emulation(op: Op) -> Emulation {
     use Emulation::{
         Conversion, ConvertLeft, ConvertRight, Emitted, Expand, Forced, Helper, Instead, Refuse,
-        Remainder, Simple, Special,
+        Remainder, Simple, Special, Words,
     };
     if let Some(substitution) = substitution(op) {
         return substitution;
@@ -792,8 +817,8 @@ const fn emulation(op: Op) -> Emulation {
         Op::LshiftU64i => Instead(Op::LshiftI64i),
         Op::EqU64 => Instead(Op::EqI64),
         Op::NeU64 => Instead(Op::NeI64),
-        Op::EqI64 => Expand(&[Op::EqI, Op::AndI]),
-        Op::NeI64 => Expand(&[Op::NeI, Op::OrI]),
+        Op::EqI64 => Words(Op::EqI, Op::AndI),
+        Op::NeI64 => Words(Op::NeI, Op::OrI),
         // `case OP_STORE_I64:` its two words by `OP_STORE_FLD`.
         Op::StoreI64 => Expand(&[Op::StoreFld, Op::StoreFld]),
         // `QCC_PR_SimpleStatement` of the word opcodes, which the target must have.

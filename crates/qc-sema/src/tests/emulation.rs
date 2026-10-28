@@ -882,3 +882,39 @@ fn a_field_read_at_global_scope_is_its_load() {
         );
     }
 }
+
+// spec FTEF-27.12: an int comparison emulated as `OP_EQ_FNC` gives a float, stored with no
+// conversion; an unsigned one is cast back, so a `__uint64`'s truth value needs `OP_CONV_U64F`
+#[test]
+fn an_emulated_comparison_has_the_type_of_its_opcode() {
+    let int = "void() g = { local int i; local int j; local float b; b = (i == j); b = (i && j); \
+               b = (i || j); };\n";
+    assert_eq!(diags(int), []);
+    let unsigned = "__uint64 ul; float b; void() g = { b = !ul; };\n";
+    assert_eq!(diags(unsigned), [u64f()],);
+}
+
+// spec FTEF-27.13: a 64-bit `==` or `!=` compares each word, each with its comparison warnings
+#[test]
+fn a_64_bit_comparison_compares_each_word() {
+    let constant = d(Code::W0239, "Result of comparison is constant");
+    assert_eq!(
+        diags("__int64 l; float b; void() g = { b = (l != l); };\n"),
+        [constant.clone(), constant.clone()],
+    );
+    assert_eq!(
+        diags("__int64 l; __int64 m; float b; void() g = { b = (l == m); b = !l; };\n"),
+        [],
+    );
+    assert_eq!(
+        diags("__uint64 ul; float b; void() g = { b = (ul == ul); };\n"),
+        [constant.clone(), constant, u64f()],
+    );
+}
+
+fn u64f() -> (Code, String) {
+    d(
+        Code::E0320,
+        "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+    )
+}

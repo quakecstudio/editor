@@ -3990,6 +3990,21 @@ as far as they report.
   (`force` off); a vector's `&` and `|` as three float ones with `force` on, never refused. So
   `d & e` of doubles on the id target is the two `OP_CONV_DI64` refusals and then `OP_BITAND_I`'s,
   which ends the statement before `OP_CONV_I64D`.
+- **FTEF-27.12** An opcode emulated as another (`return QCC_PR_StatementFlags(OTHER, ...)`)
+  gives the other's result, of the other's type: `OP_EQ_I` is `OP_EQ_FNC` and `OP_AND_I` is
+  `OP_AND_F`, so `b = (i == j);` and `b = (i && j);` of ints store a float with no conversion.
+  An unsigned operator emulated by its signed one then casts the result back
+  (`var_c.cast = type_uint;` or `type_uint64`), a comparison's included: `b = !ul;` of a
+  `__uint64` on the id target needs `OP_CONV_U64F`, refused with `E0320`.
+- **FTEF-27.13** `OP_EQ_I64` and `OP_NE_I64` compare word by word: the operands cast to `int`,
+  `OP_EQ_I` (or `OP_NE_I`) of the low words, then of the high words, joined by `OP_AND_I` (or
+  `OP_OR_I`), each emitted or emulated in turn. Each word's comparison gives FTEF-28.1's
+  warnings, so `l == l` of an `__int64` warns "Result of comparison is constant" twice.
+- **FTEF-27.14** A prefix `++` or `--` of a pointer adds `QCC_MakeIntConst(preinc *
+  aux_type->size)` by `OP_ADD_PIW`, the size in words of what it points at, 1 for `void`. The size
+  is unsigned, so `--` adds its negation and warns as FTEF-27.10's subtraction: `--p` of a `vector
+  *` is `W0234` "Constant int operand 4294967293 will be truncated to -3", and on the id target
+  both steps are then `OP_ADD_I`'s helper warning and refusal.
 ## FTEF-28 The warnings of an emitted comparison
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (the switch after the emulation),
