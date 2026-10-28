@@ -272,8 +272,15 @@ impl Checker<'_> {
                 .unwrap_or_else(|| class.to_string()),
             _ => "entity".to_owned(),
         };
-        let message = format!("Unknown field \"{name}\" in class \"{class}\"");
-        self.env.report(Code::E0319, span, message);
+        // FTEF-24.15: `else if (!assumeclass->parentclass && assumeclass != type_entity)`.
+        if self.env.class_undefined(&base.ty) {
+            let message =
+                format!("Class \"{class}\" is not defined, cannot access member \"{name}\"");
+            self.env.report(Code::E0371, span, message);
+        } else {
+            let message = format!("Unknown field \"{name}\" in class \"{class}\"");
+            self.env.report(Code::E0319, span, message);
+        }
         Value::field_of(base, name.to_owned(), Type::Named("__variant".into()), None)
     }
 

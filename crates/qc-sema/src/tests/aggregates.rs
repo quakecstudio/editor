@@ -357,3 +357,23 @@ fn braced_pointer_initialisers() {
         ]
     );
 }
+
+// spec FTEF-19.64: designated braces name a member in every element
+// spec QCD-4.73: E0372 for an element that names none
+#[test]
+fn designated_initialisers_name_every_member() {
+    let mixed = d(
+        Code::E0372,
+        "designated initialisers require all members to be initialised the same way",
+    );
+    let defs = "#pragma target fte\nstruct S { float a; vector b; };\n";
+    assert_eq!(
+        messages(&format!("{defs}S st = {{ .a = 1, 2 }};")),
+        [mixed.clone()]
+    );
+    assert_eq!(
+        messages(&format!("{defs}S st = {{ .a = 1, .b = '1 2 3', }};")),
+        [mixed]
+    );
+    assert!(messages(&format!("{defs}S st = {{ .a = 1, .b = {{1, 2, 3}} }};")).is_empty());
+}

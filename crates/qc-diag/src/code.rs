@@ -359,6 +359,13 @@ pub enum Code {
     /// "[non]virtual members must be functions": a `virtual` struct member that is no function
     /// (QCD-4.70).
     E0369,
+    /// "oversized ternary result": a conditional whose first arm is larger than a vector
+    /// (QCD-4.71).
+    E0370,
+    /// "Class \"CLASS\" is not defined, cannot access member \"NAME\"" (QCD-4.72).
+    E0371,
+    /// "designated initialisers require all members to be initialised the same way" (QCD-4.73).
+    E0372,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -607,7 +614,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 266] = [
+    pub const ALL: [Self; 269] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -764,6 +771,9 @@ impl Code {
         Self::E0367,
         Self::E0368,
         Self::E0369,
+        Self::E0370,
+        Self::E0371,
+        Self::E0372,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -1123,6 +1133,9 @@ impl Code {
             Self::E0367 => "E0367",
             Self::E0368 => "E0368",
             Self::E0369 => "E0369",
+            Self::E0370 => "E0370",
+            Self::E0371 => "E0371",
+            Self::E0372 => "E0372",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1420,6 +1433,9 @@ impl Code {
             | Self::E0367
             | Self::E0368
             | Self::E0369
+            | Self::E0370
+            | Self::E0371
+            | Self::E0372
             | Self::E0408 => true,
         }
     }

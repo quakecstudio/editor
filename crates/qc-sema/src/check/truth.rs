@@ -180,12 +180,17 @@ impl Checker<'_> {
                 let value = self.value(Some(middle))?;
                 let value = self.stored_arm(value, span)?;
                 let null = value.known().is_some_and(Constant::null);
-                // `switch(r.cast->size)`: the first arm is stored by its size.
+                // `switch(r.cast->size)`: the first arm is stored by its size, and one of more
+                // than three words is "oversized ternary result" (FTEF-30.10).
                 let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
                 let op = match words {
                     3 => Some(Op::StoreV),
                     2 => Some(Op::StoreI64),
-                    _ => Some(Op::StoreF),
+                    0 | 1 => Some(Op::StoreF),
+                    _ => {
+                        let message = "oversized ternary result".to_owned();
+                        return self.fatal(Code::E0370, span, message);
+                    }
                 };
                 self.arm_store(op, &value, before, span)?;
                 (value, null)

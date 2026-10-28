@@ -450,3 +450,36 @@ fn accessor_values_in_expressions() {
     }
     assert_eq!(body("a.z[1] = f; f = a.z[1];"), []);
 }
+
+// spec FTEF-24.15: a member of a class declared but never defined
+// spec QCD-4.72: E0371 "Class \"CLASS\" is not defined, cannot access member \"NAME\""
+// spec FTEF-30.10: a conditional of more than three words is "oversized ternary result"
+// spec QCD-4.71: E0370 "oversized ternary result"
+#[test]
+fn undefined_classes_and_oversized_conditionals() {
+    let messages = |source: &str| -> Vec<(Code, String)> {
+        fte_index_of(source)
+            .diagnostics
+            .iter()
+            .map(|d| (d.diagnostic.code, d.diagnostic.message.clone()))
+            .collect()
+    };
+    assert_eq!(
+        messages("class C; C c; float x;\nvoid() g = { x = c.y; };\n"),
+        [(
+            Code::E0371,
+            "Class \"C\" is not defined, cannot access member \"y\"".to_owned()
+        )]
+    );
+    assert_eq!(
+        messages("class C : entity { float m; }; C c; float x;\nvoid() g = { x = c.y; };\n"),
+        [(Code::E0319, "Unknown field \"y\" in class \"C\"".to_owned())]
+    );
+    assert_eq!(
+        messages(
+            "struct S { float a, b, c, d; }; S s1, s2; float c;\n\
+             void() g = { local S r = c ? s1 : s2; };\n"
+        ),
+        [(Code::E0370, "oversized ternary result".to_owned())]
+    );
+}

@@ -387,6 +387,12 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   `autocvar` call whose default differs from the cvar's earlier value (FTEF-17.17); a fatal error.
 - **QCD-4.70** `E0369` "[non]virtual members must be functions": a `virtual` struct member that
   is no function (FTEF-6.29); the declaration goes on.
+- **QCD-4.71** `E0370` "oversized ternary result": a conditional whose first arm is larger than a
+  vector (FTEF-30.10); a fatal error.
+- **QCD-4.72** `E0371` "Class \"CLASS\" is not defined, cannot access member \"NAME\"": a member
+  of a class declared but never defined (FTEF-24.15); the statement goes on.
+- **QCD-4.73** `E0372` "designated initialisers require all members to be initialised the same
+  way": designated braces with an element that names no member (FTEF-19.64); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 

@@ -3307,7 +3307,13 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   under `qcfuncs` off, when the local is not `static` and has no initialiser. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseDefArray`.
-
+- **FTEF-19.64** Designated braces, whose first element starts with `.`, name a member in every
+  element (`QCC_PR_ParseInitializerType_Internal`: `if (QCC_PR_CheckToken(".")) ... else
+  QCC_PR_ParseError (ERR_EXPECTED, "designated initialisers require all members to be initialised
+  the same way")`), a `}` after a trailing `,` among them: `S st = { .a = 1, 2 };` and `{ .a = 1, .b =
+  2, }` are the fatal error `E0372`, at the element. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseInitializerType_Internal`.
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and
@@ -4009,6 +4015,12 @@ statement's checks (FTEF-23.6).
   `__int64` `%#xill` and an `__uint64` `%#xull` of its bits (C writes `0` for zero, so `0u`), a
   vector `'%g %g %g'` whatever form it was written in (`[1, 2, 3]` is `'1 2 3'`), a string
   quoted.
+- **FTEF-24.15** A member of a class declared (`class C;`) but never defined, which has no
+  `parentclass`, is the error `E0371` "Class \"C\" is not defined, cannot access member \"NAME\""
+  (`QCC_PR_ParseRefValue`: `else if (!assumeclass->parentclass && assumeclass != type_entity)`)
+  in place of FTEF-24.6's "Unknown field"; once the class is defined its unknown member is that
+  error again. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefValue`.
 ## FTEF-25 The opcodes the target has
 
 **Source:** `qcc_pr_comp.c`, `QCC_OPCodeValidForTarget`, `QCC_OPCodeSetTarget` and
@@ -4446,6 +4458,11 @@ reference are FTEF-31's.
 
 - **FTEF-30.9** `?:` compares its arms' types (FTEF-30.3) before it stores the last arm, so
   "Type mismatch on ternary operator: A vs B" comes before that store's statement.
+- **FTEF-30.10** A conditional's first arm is stored by its size (`switch(r.cast->size)`: three
+  words by `OP_STORE_V`, two by `OP_STORE_I64`, one by `OP_STORE_F`), and one of more than
+  three words is the fatal error `E0370` "oversized ternary result": `struct S { float a, b, c, d;
+  }; S r = c ? s1 : s2;`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefExpression`.
 ## FTEF-31 References
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`, `QCC_RefToDef`,

@@ -131,6 +131,15 @@ impl Resolver<'_> {
             return Ok(());
         };
         if braces.designated {
+            // FTEF-19.64: after a `.` first, every element names its member.
+            if let Some(plain) = braces.plain {
+                let location = self.at(file, plain);
+                let message = "designated initialisers require all members to be initialised \
+                               the same way"
+                    .to_owned();
+                self.report(Code::E0372, location, message);
+                return Err(Fatal);
+            }
             return Ok(());
         }
         if struct_def.parent.is_some() {

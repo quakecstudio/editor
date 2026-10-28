@@ -490,6 +490,16 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.index.def(class).map(|def| def.name.clone())
     }
 
+    fn class_undefined(&self, ty: &Type) -> bool {
+        // `parentclass` is set where the class is defined, its parent the entity by default.
+        self.resolver.class_of(ty).is_some_and(|class| {
+            self.resolver
+                .classes
+                .get(&class)
+                .is_none_or(|c| c.shape.is_none() && c.parent.is_none())
+        })
+    }
+
     fn struct_of_no_size(&self, ty: &Type) -> bool {
         self.resolver.struct_of_no_size(ty)
     }

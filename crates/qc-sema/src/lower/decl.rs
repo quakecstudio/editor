@@ -522,6 +522,9 @@ pub struct RawAggregate {
 pub struct RawBraces {
     /// Whether it names its members, `{ .a = 1 }`.
     pub designated: bool,
+    /// In designated braces, the first element that names no member, which FTEQCC refuses
+    /// (FTEF-19.64).
+    pub plain: Option<Span>,
     /// The span of its `{`, where an error about it as an element stands.
     pub open: Span,
     /// Its elements, in order.
@@ -567,8 +570,37 @@ fn raw_braces(agg: &ast::AggregateInit, cx: Cx<'_>) -> RawBraces {
             None => ast::Expr::cast(node).map(|expr| RawElement::Value(raw_value(&expr, cx))),
         })
         .collect();
+    // The first significant element after `{` and after each `,`, the braces' own children:
+    // a designated one starts with its `.`.
+    // `}` straight after `{` is empty braces; after a `,` it stands where a `.` is expected.
+    let mut starts = Vec::new();
+    let mut after = None;
+    for element in agg.syntax().children_with_tokens() {
+        let (text, span) = match &element {
+            qc_syntax::SyntaxElement::Token(t) if t.kind().is_trivia() => continue,
+            qc_syntax::SyntaxElement::Token(t) => (t.text_lossless(), t.span()),
+            qc_syntax::SyntaxElement::Node(n) => (String::new(), n.span()),
+        };
+        if matches!(text.as_str(), "{" | ",") {
+            after = Some(text);
+            continue;
+        }
+        if after.as_deref() == Some(",") || (after.is_some() && text != "}") {
+            starts.push((text, span));
+        }
+        after = None;
+    }
+    let plain = designated
+        .then(|| {
+            starts
+                .iter()
+                .find(|(text, _)| text != ".")
+                .map(|(_, span)| *span)
+        })
+        .flatten();
     RawBraces {
         designated,
+        plain,
         open,
         elements,
     }

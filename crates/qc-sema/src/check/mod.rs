@@ -121,6 +121,9 @@ pub(crate) trait Env {
     /// The name of the class `ty` names, its typedefs followed (`QCC_TypeForName`); `None`
     /// when it names none.
     fn class_name(&self, ty: &Type) -> Option<String>;
+    /// Whether `ty` names a class declared but never defined, which has no parent class
+    /// (FTEF-24.15).
+    fn class_undefined(&self, ty: &Type) -> bool;
     /// Whether `ty` is a struct or union of size 0, named with no body yet or laid out to no
     /// word (FTEF-6.28).
     fn struct_of_no_size(&self, ty: &Type) -> bool;
