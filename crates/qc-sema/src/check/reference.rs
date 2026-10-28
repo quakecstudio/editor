@@ -491,6 +491,19 @@ impl Checker<'_> {
                     let message = "(vector) array index out of bounds".to_owned();
                     return self.fatal(Code::E0333, span, message);
                 }
+                // FTEF-31.9: a constant vector's component at a constant index is a constant.
+                let component = base.known().zip(constant).and_then(|(vector, i)| {
+                    usize::try_from(i)
+                        .ok()
+                        .and_then(|i| vector.v().get(i).copied())
+                });
+                if let Some(component) = component {
+                    return Ok(Value {
+                        reference: Reference::element(label, at, true),
+                        readonly: base.readonly,
+                        ..Value::constant(Constant::float(component))
+                    });
+                }
                 Ok(Value {
                     reference: Reference::element(label, at, true),
                     ..Value {

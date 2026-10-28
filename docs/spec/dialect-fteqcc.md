@@ -4264,6 +4264,8 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   numeric constant", twice for an array's, a vector's and a `.vector` field's index (the bounds
   and the element's read) and 0 for the index; a pointer's index is made an integer instead, a
   string "Implicit type mismatch. Needed integer, got string.".
+- **FTEF-31.9** A constant vector's component at a constant index is a constant, the component's
+  value: `('13 5 2' + '1 2 3')[1]` is 7, and `vc[1]` of a `const vector vc = '4 9 2'` is 9.
 ## FTEF-32 Calls
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`,
