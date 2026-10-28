@@ -675,6 +675,7 @@ impl Checker<'_> {
     /// literal or an element it reports itself, FTEF-19.31).
     pub(super) fn local(&mut self, local: &ast::LocalDecl) -> Result<(), Fatal> {
         for declarator in local.declarators() {
+            self.local_size(&declarator)?;
             let Some(ast::Initializer::Value(init)) = declarator.initializer() else {
                 continue;
             };

@@ -66,6 +66,10 @@ pub(crate) trait Env {
     fn is_accessor(&self, ty: &Type) -> bool;
     /// The type of the local whose name starts at offset `at`, through typedefs.
     fn local_type(&self, at: usize) -> Option<Type>;
+    /// Whether the local whose name starts at offset `at` is `static` (FTEF-21.14).
+    fn local_static(&self, at: usize) -> bool;
+    /// FTEF-19.62: the local whose name starts at offset `at` is an array of `size` elements.
+    fn size_local(&mut self, at: usize, size: u32);
     /// The type a cast or `sizeof` writes starting at offset `at`, through typedefs.
     fn written_type(&self, at: usize) -> Option<Type>;
     /// A definition of the module.
@@ -539,6 +543,14 @@ pub(crate) fn check_initialiser(env: &mut dyn Env, expr: &ast::Expr, ty: &Type, 
     let mut checker = expr::Checker::new(env);
     checker.global = true;
     checker.initialiser(expr, ty, name);
+}
+
+/// FTEF-19.62: the size `expr` of a global array, read at global scope and folded; one that is
+/// no constant is "Array length is not a constant". The size, when it is one.
+pub(crate) fn array_length(env: &mut dyn Env, expr: &ast::Expr) -> Option<u32> {
+    let mut checker = expr::Checker::new(env);
+    checker.global = true;
+    checker.array_length(expr).ok().flatten()
 }
 
 /// Checks `body`, reporting through `env`, and returns its types.

@@ -25,8 +25,9 @@ pub(in crate::resolve) struct BodyEnv<'r, 'a> {
     pub(in crate::resolve) resolver: &'r mut Resolver<'a>,
     /// The file the body is in.
     pub(in crate::resolve) file: FileId,
-    /// The function whose body it is.
-    pub(in crate::resolve) owner: DefId,
+    /// The function whose body it is, or the definition whose initialiser or size it is; none
+    /// for a size read before its definition is made (FTEF-19.62).
+    pub(in crate::resolve) owner: Option<DefId>,
     /// The diagnostics reported before the body's own.
     pub(in crate::resolve) reported: usize,
     /// Whether it is a member function's.
@@ -109,6 +110,24 @@ impl Env for BodyEnv<'_, '_> {
             .map(|local| self.resolver.resolved_deep(&local.ty, MAX_TYPEDEF_DEPTH))
     }
 
+    fn local_static(&self, at: usize) -> bool {
+        self.locals
+            .iter()
+            .any(|local| local.span.start == at && local.is_static())
+    }
+
+    fn size_local(&mut self, at: usize, size: u32) {
+        let place = self.resolver.at(self.file, Span::new(at, at));
+        let found = self.resolver.index.defs.iter().position(|d| {
+            d.kind == DefKind::Local
+                && d.location.file == place.file
+                && d.location.span.start == place.span.start
+        });
+        if let Some(facts) = found.and_then(|at| self.resolver.facts.get_mut(at)) {
+            facts.array = Some(ArrayDim::Sized(size));
+        }
+    }
+
     fn written_type(&self, at: usize) -> Option<Type> {
         self.written
             .iter()
@@ -177,7 +196,7 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn function(&self) -> FunctionFacts {
-        let def = self.resolver.index.def(self.owner);
+        let def = self.owner.and_then(|owner| self.resolver.index.def(owner));
         let (ret, variadic) = match def.map(|d| self.resolver.resolved(&d.ty)) {
             Some(Type::Function(function)) => (function.ret.clone(), function.variadic),
             Some(_) | None => (Type::Unknown, false),
@@ -192,9 +211,8 @@ impl Env for BodyEnv<'_, '_> {
             }),
             ret,
             accumulate: self
-                .resolver
-                .facts
-                .get(self.owner.0)
+                .owner
+                .and_then(|owner| self.resolver.facts.get(owner.0))
                 .is_some_and(|f| f.accumulate),
             variadic,
         }
@@ -405,7 +423,7 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn this_type(&self) -> Option<Type> {
-        let class = self.resolver.index.def(self.owner)?.member_of?;
+        let class = self.resolver.index.def(self.owner?)?.member_of?;
         let name = &self.resolver.index.def(class)?.name;
         Some(Type::Named(name.as_str().into()))
     }

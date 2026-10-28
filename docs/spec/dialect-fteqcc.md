@@ -418,7 +418,7 @@ inheritance, bitfields and nested members.
   `E0262` "Value is not an integer constant", and a name the module does not define, there or
   as a bitfield's width (FTEF-6.9), is "Unknown value \"A\"." and then that error. A defined
   name is taken as a constant; an expression of more than a literal or a name is not folded
-  (FTEF-19.46).
+  (FTEF-19.63).
 - **FTEF-6.18** A store through a pointer (`QCC_StoreToPointer`, the type the source's when the
   pointer points at a `variant`): to an 8- or 16-bit integer or a bitfield by `OP_STOREP_I8` or
   `OP_STOREP_I16`, any other width the fatal error `E0353` "ptr-to-bitfld has unsupported bit
@@ -1020,7 +1020,7 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   parser reads the priorities it sets (FTEF-21.4). Replaced by FTEF-12.17.
 - **FTEF-12.17** The other flags `qcc_pr_lex.c` reads are not modelled, as they belong to the
   compiler or its console output rather than to the tokens or the definitions: `acc` (its `|`
-  in a string as a line feed, and reacc's type names and keywords, FTEF-19.46, FTEF-20.13); and
+  in a string as a line feed, and reacc's type names and keywords, FTEF-19.63, FTEF-20.13); and
   `msvcstyle` and `debugmacros`, which change only what FTEQCC prints. The keyword flags, which
   `#pragma keyword` and `#pragma flag` set with the others, are FTEF-20's, and the flags the
   parser and the semantic model read, `cpriority` among them, FTEF-21's. A pragma emits no
@@ -2843,7 +2843,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   unsized definition takes the size a later one gives; an unsized array's initialiser sizes it
   (`QCC_PR_ParseDefArray` counts the elements of `{ ... }`, and a string's bytes and its
   terminator, `dim[0] = pr_immediate_strlen+1;`). A size that is no number literal is not
-  compared (FTEF-19.46). An array is initialised with `{ ... }`, or an array of an 8-bit
+  compared (FTEF-19.63). An array is initialised with `{ ... }`, or an array of an 8-bit
   integer (`__int8`, `__uint8`, `__char`: `def.cast->type == ev_bitfld && def.cast->bits == 8`)
   with a string: anything else is the error `E0204` "expected {, found X"
   (`QCC_PR_ParseInitializerType_Internal`, `QCC_PR_Expect("{");`). A string of more bytes than
@@ -2865,7 +2865,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   gives another, made with `QCC_PR_DummyDef`. A name's value is the one after its `=`, a number
   or a numeric constant converted to the base type, or the one before it plus 1; under
   `enumflags` times 2, starting at 1, and 1 after a 0 (`if (!next_i) next_f = next_i = 1;`).
-  Each enum starts its count again. After a value this profile does not compute (FTEF-19.46)
+  Each enum starts its count again. After a value this profile does not compute (FTEF-19.63)
   the names that follow have no value it compares. A
   string or vector after `=` is the error `E0227` "Implicit type mismatch. Needed float, got
   string." (`QCC_SupplyConversion`), a name that is no constant with a value the error `E0228`
@@ -2952,7 +2952,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   value \"NAME\"", FTEF-2.10); this profile, whose parser cannot tell a type name from a value,
   reports the same `E0203` there and makes no local, an error either way. A type of more than
   one word that is no run of C words (`struct tag`, an inline `enum` or `struct`) and the types
-  of a class's or struct's members are not checked (FTEF-19.46).
+  of a class's or struct's members are not checked (FTEF-19.63).
 - **FTEF-19.21** After a qualifier the type may be left out: `QCC_PR_ParseDefs` sets
   `hadmodifier` for each storage class or modifier it reads and calls `QCC_PR_ParseType (false,
   hadmodifier, ...)`, whose `silentfail` returns no type instead of "not a type", and then
@@ -3003,7 +3003,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `if (flag_qccx && QCC_PR_CheckToken ("@"))`, `QCC_PR_RefExpression (retbuf,
   UNARY_PRIORITY, EXPR_DISALLOW_COMMA)`), a reference that may be assigned; that it applies only
   to a float or an integer, "'@' operator only functions on floats and ints. go figure.", is the
-  type checker's (FTEF-19.46). Without `qccx`, `@` is no term. `^^` is a token of
+  type checker's (FTEF-19.63). Without `qccx`, `@` is no term. `^^` is a token of
   `pr_punctuation` that no operator of `pr_opcodes` names, so `a ^^ b` ends the expression
   after `a`.
 - **FTEF-19.27** A module's source in source form, the `progs.src` FTEQCC compiles as code
@@ -3057,7 +3057,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
 - **FTEF-19.32** **Withdrawn** (P2-136, #587): it said an initialiser of a global that is an
   expression is checked for no type, and that a function returning a large type is not warned
   of; the check stage reads such an initialiser (FTEF-34.9) and warns of a large return
-  (FTEF-34.8). Replaced by FTEF-19.46.
+  (FTEF-34.8). Replaced by FTEF-19.63.
 
 - **FTEF-19.33** Under `-Fcaseinsens`, which only the command line sets (FTEF-14.72), FTEQCC's
   name tables are searched in any case (`pHash_Get = &Hash_GetInsensitive;`), and
@@ -3170,8 +3170,9 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `QCC_PR_ParseError (ERR_UNKNOWNVALUE, "Unknown value \"%s::%s\"", ...)` with none. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseRefValue`.
-- **FTEF-19.46** These parts of the path are not modelled by this profile, each for its reason:
-  the values of default values, array sizes and enum values that are expressions other than a
+- **FTEF-19.46** **Withdrawn** 2026-10-28: it counted array sizes among the parts not modelled, which FTEF-19.62 now folds; replaced by FTEF-19.63.
+- **FTEF-19.63** These parts of the path are not modelled by this profile, each for its reason:
+  the values of default values and enum values that are expressions other than a
   literal, a name or `_()`, which FTEQCC folds as it compiles them, the compiler's work (P2-06,
   constant folding P2-08); an initialiser of a global that is such an expression is compared by
   its text (FTEF-17.10), and typed by the check stage (FTEF-34.9); the warnings FTEQCC gives as
@@ -3255,8 +3256,9 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
 - **FTEF-19.59** A `static` local whose function already has a local of the name that is not
   `static` is the fatal error `E0364` "static redefinition of NAME follows non-static definition."
   (`QCC_PR_GetDef`: `else if (allocate && (flags & GDF_STATIC) && !def->isstatic)`): `void() f = {
-  local float x; static float x; };`. A second `static` is the same definition, and a `static`
-  local of a global's name hides the global (FTEF-19.1). Source:
+  local float x; static float x; };`. A second `static` is the same definition, an `extern
+  static` one a lookup of it and no error, and a `static` local of a global's name hides the
+  global (FTEF-19.1). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GetDef`.
 - **FTEF-19.60** A lookup that passes over a `static` global of another unit (`if
@@ -3274,6 +3276,19 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   is), and `const` with `var` "Conflicting constness.". `auto` itself is a keyword only once
   enabled; `__auto` always is. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`.
+- **FTEF-19.62** An array's size that is an expression other than a number literal is folded as
+  it is read (`QCC_PR_ParseDefArray`: `QCC_SRef_EvalConst` of `QCC_PR_Expression`, an integer by
+  `QCC_Eval_Int`), a global's at global scope before its definition is made, a local's where it
+  is declared; one that is no constant is the error `E0366` "Array length is not a constant", and
+  the definition's size is the one it folds to, for its bounds (FTEF-31.6), its initialiser and a
+  redeclaration's size (FTEF-19.8). So `const float N = 3; float c[N];` makes `c[3]` "(constant)
+  array index out of bounds (0 <= 3 < 3)" and `float d[N] = {1,2,3,4};` reads the fourth value as
+  the next definition, and `float n; float a[n];`, `float a[n2];` and `float a[n+1];` (with
+  "Unable to generate statements at global scope (ADD_F).") are the error. A local's first
+  dimension is left for the function to allocate (`dynlength`) only on a target with `OP_PUSH`
+  under `qcfuncs` off, when the local is not `static` and has no initialiser. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefArray`.
 
 ## FTEF-20 Keywords
 
@@ -3366,13 +3381,13 @@ and compares the outcome with the pinned FTEQCC's.
   name after it, from its name until the statement `s` ends; `using a, b = c;` makes them to
   the end of the function. `asm` takes an instruction, or several in `{ }`: `local` and a definition, or a
   token that is an `opname` of `pr_opcodes[]` exactly and its operands up to a `;`, which are
-  code generation's (FTEF-19.46); any other token is `E0511` "Bad op code name NAME"
+  code generation's (FTEF-19.63); any other token is `E0511` "Bad op code name NAME"
   (`ERR_BADOPCODE`). `thinktime e : t;` looks up `nextthink` and `time` by name when the target
   has no `OP_THINKTIME` (`QCC_PR_GetSRef(NULL, "nextthink", ...)`), "Unknown value
   \"nextthink\"" when there is none: on the standard target, and on every target but
   `QCF_HEXEN2` and `QCF_UHEXEN2` in this profile, which takes the other targets' opcode sets for
   code generation's (L-01); that `e` must be an entity and `t` a float ("thinktime type
-  mismatch") is the type checker's (FTEF-19.46). By default `loop`, `until`, `state`,
+  mismatch") is the type checker's (FTEF-19.63). By default `loop`, `until`, `state`,
   `thinktime` and `using` are off, so only their `__` spellings start these statements.
 - **FTEF-20.6** **Withdrawn** (P2-131, #568): it found a type by its exact name only, and left
   the types the program defines and a `for` initialiser's types out. Replaced by FTEF-20.14.
@@ -3418,7 +3433,7 @@ and compares the outcome with the pinned FTEQCC's.
 - **FTEF-20.13** The reacc keywords `CodeSys`, `function`, `objdata`, `object`, `pfunc`,
   `system`, `real`, `external` and `exit` are `#define`d as `flag_acc` (`#define keyword_codesys
   flag_acc //reacc needs this`), which only `-Facc` and `-std=reacc` set. Their syntax is
-  reacc's, which this profile does not read (FTEF-19.46): it reads the reacc keywords as off,
+  reacc's, which this profile does not read (FTEF-19.63): it reads the reacc keywords as off,
   so after a type at file level `__function` and in a function's initialiser `__external`,
   which `QCC_PR_CheckKeyword` would take, are names, where the pinned FTEQCC reads reacc's
   function and builtin syntax; `__exit` is FTEF-20.5's.
@@ -3680,7 +3695,7 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   `debugmacros` and `verbose`, which change only what FTEQCC prints; the target's
   `flag_pointerrelocs`, which `#pragma TARGET` sets with `QCC_OPCodeSetTarget` and only an
   initialiser that takes an address reads ("preinitialised pointer variables is disabled for
-  this target", `QCC_PR_GenerateInitializerType`), an expression FTEF-19.46 leaves untyped; the
+  this target", `QCC_PR_GenerateInitializerType`), an expression FTEF-19.63 leaves untyped; the
   dereference of a function `*f`, which `qcfuncs` makes "attempt to dereference function type."
   in `QCC_PR_RefTerm`, `vargtodouble`, and the `__int32` that `&&` and `||` of constants fold to
   under `assumeint`, the expression typing's and the compiler's; under `qccx` the field access

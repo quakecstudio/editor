@@ -307,7 +307,7 @@ impl Resolver<'_> {
     /// The first name in `ty` that names no type: none of the C type words FTEF-2.8 reads, a
     /// name FTEQCC registers, a type declared before, or one of `typedefs` before `at`. A name
     /// of more than one word that is no run of C words (`struct tag`, an inline enum or
-    /// struct) is not checked (FTEF-19.46).
+    /// struct) is not checked (FTEF-19.63).
     pub(in crate::resolve) fn unknown_type_name<'t>(
         &self,
         ty: &'t Type,

@@ -39,7 +39,7 @@ use crate::check::constant::Constant;
 use crate::expand::{OriginMap, ProtoPlan};
 use crate::lower::{
     ArrayDim, BuiltinFunction, FileDecls, LiteralValue, RawBody, RawDecl, RawParam, RawParamInfo,
-    StructMember,
+    RawUse, StructMember,
 };
 use crate::symbol::{DefId, Definition, FileId, Location, Reference};
 use crate::ty::{SimpleType, Type};
@@ -302,6 +302,7 @@ pub(crate) fn resolve_mapped(
         typedefs: HashMap::new(),
         structs: HashSet::new(),
         strict_enums: HashMap::new(),
+        folded_sizes: HashMap::new(),
         enum_types: HashMap::new(),
         enum_values: HashMap::new(),
         enum_redeclared: false,
@@ -545,6 +546,9 @@ struct Resolver<'a> {
     typedef_params: HashMap<String, Vec<RawParam>>,
     /// The base type of each `enum class`, whose values are of its own type (FTEF-19.10).
     strict_enums: HashMap<String, Type>,
+    /// The size each global array whose size is an expression folds to, by where its
+    /// declaration's name starts (FTEF-19.62).
+    folded_sizes: HashMap<usize, u32>,
     /// The definitions whose last initialiser was `weak` or that are `accumulate`, which the
     /// next may replace (FTEF-15.5): FTEQCC's `def->weak`, which gives the next initialiser
     /// `PIF_STRONGER`, and `def->accumulate`.
@@ -719,6 +723,15 @@ impl<'a> Resolver<'a> {
                 {
                     self.unused.insert(def);
                 }
+                // FTEF-19.62: the size is read, and folded, before the definition is made.
+                let (size, uses) = if last {
+                    self.fold_array_length(file_id, decl)
+                } else {
+                    (None, decl.uses.iter().collect())
+                };
+                if let Some(size) = size {
+                    self.folded_sizes.insert(decl.span.start, size);
+                }
                 let pending = self.declare_top_level(file_id, decl);
                 // FTEF-12.6: `#pragma noref` holds from where it stands to the next one,
                 // across files, as the definition's flags hold it.
@@ -728,7 +741,8 @@ impl<'a> Resolver<'a> {
                     self.unused.insert(def);
                 }
                 if decl.enum_item.is_none() {
-                    self.resolve_uses(file_id, None, &decl.uses);
+                    let uses: Vec<RawUse> = uses.into_iter().cloned().collect();
+                    self.resolve_uses(file_id, None, &uses);
                     if last {
                         self.check_global_initialiser(file_id, decl);
                     }
@@ -801,6 +815,8 @@ struct ScopedFacts {
     array: Option<ArrayDim>,
     /// `static` (FTEF-19.12).
     statics: bool,
+    /// `extern`, a lookup of a definition made elsewhere rather than a new one (FTEF-19.59).
+    external: bool,
     /// Whether `subscope` is on where it is declared, so a local of the name found again is
     /// a new one (FTEF-21.12).
     subscope: bool,

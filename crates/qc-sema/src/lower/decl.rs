@@ -68,6 +68,9 @@ pub struct RawDecl {
     pub array: Option<ArrayDim>,
     /// How many array suffixes the declarator has (FTEF-19.8).
     pub array_dims: usize,
+    /// The first dimension's size when it is an expression the lowering does not read, which
+    /// the check stage folds (FTEF-19.62).
+    pub size_expr: Option<ast::Expr>,
     /// For an aggregate initialiser, the first token inside its braces and its span: a
     /// two-dimensional array needs a `{` there (FTEF-19.8).
     pub aggregate_first: Option<(String, Span)>,
@@ -221,7 +224,7 @@ pub enum ValueKind {
     Indexed(String),
     /// A literal cast to a type, `(T)0`, a value of that type (FTEF-19.43).
     Cast(Type),
-    /// Any other expression, whose type the model does not compute (FTEF-19.46).
+    /// Any other expression, whose type the model does not compute (FTEF-19.63).
     Other,
 }
 
@@ -234,7 +237,7 @@ pub enum ArrayDim {
     /// `[]` with nothing to size it, which FTEQCC's `QCC_PR_GetDef` compares with no other
     /// size.
     Unsized,
-    /// A size given by an expression the model does not evaluate (FTEF-19.46).
+    /// A size given by an expression, which the check stage folds (FTEF-19.62).
     Unknown,
 }
 
@@ -280,6 +283,7 @@ impl RawDecl {
             value: None,
             array: None,
             array_dims: 0,
+            size_expr: None,
             aggregate_first: None,
             aggregate: None,
             params: Vec::new(),
@@ -592,6 +596,16 @@ pub(super) fn raw_aggregate(
         init: raw_braces(syntax, cx),
         sizes,
     })
+}
+
+/// FTEF-19.62: the first dimension's size, when it is an expression other than a number
+/// literal.
+pub(super) fn size_expr(declarator: &ast::Declarator) -> Option<ast::Expr> {
+    let suffix = declarator.array_suffixes().next()?;
+    match suffix.children().find_map(ast::Expr::cast)? {
+        ast::Expr::Literal(_) => None,
+        expr => Some(expr),
+    }
 }
 
 pub(super) fn array_dim(
@@ -1063,6 +1077,7 @@ pub(super) fn lower_declarators(
         raw.builtin = matches!(init, Some(ast::Initializer::Builtin(_)));
         raw.array = array_dim(&declarator, init.as_ref());
         raw.array_dims = declarator.array_suffixes().count();
+        raw.size_expr = size_expr(&declarator);
         raw.aggregate = raw_aggregate(&declarator, init.as_ref(), cx);
         if let Some(ast::Initializer::Aggregate(agg)) = &init {
             raw.aggregate_first = agg

@@ -379,6 +379,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   `static` local redefining a local that is not (FTEF-19.59); a fatal error.
 - **QCD-4.66** `E0365` "memalloc not yet defined, cannot define __auto NAME at global scope": a
   global or `static` `__auto` with no `memalloc` or `malloc` (FTEF-19.61); a fatal error.
+- **QCD-4.67** `E0366` "Array length is not a constant": an array's size that folds to no
+  constant (FTEF-19.62); the declaration goes on.
 
 ## QCD-5 Project, limit and fatal errors
 

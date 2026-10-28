@@ -18,7 +18,8 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::lower::{
-    ArrayDim, ExternBase, LiteralValue, Qualifier, RawDecl, RawParamInfo, top_level_kind,
+    ArrayDim, ExternBase, LiteralValue, Qualifier, RawAggregate, RawDecl, RawParamInfo,
+    top_level_kind,
 };
 use crate::resolve::aggregate::{AggregateSite, Initialised};
 use crate::resolve::init::string_of_chars;
@@ -413,7 +414,7 @@ impl<'a> Resolver<'a> {
     ) -> bool {
         if self.profile.definition_checks()
             && (self.check_initialisation(decl, existing, location)
-                || self.check_array_value(file, decl.array, &decl.ty, decl.value.as_ref())
+                || self.check_array_value(file, self.array_of(decl), &decl.ty, decl.value.as_ref())
                 || self.check_array_declaration(file, decl, location))
         {
             return true;
@@ -428,6 +429,20 @@ impl<'a> Resolver<'a> {
         let def = Initialised {
             name: &decl.name,
             holder: Holder::Global,
+        };
+        // FTEF-19.62: a folded size bounds the initialiser as a written one does.
+        let sized;
+        let aggregate = match (self.array_of(decl), aggregate.sizes.split_first()) {
+            (Some(ArrayDim::Sized(size)), Some((None, rest))) => {
+                let mut sizes = vec![Some(size)];
+                sizes.extend_from_slice(rest);
+                sized = RawAggregate {
+                    sizes,
+                    ..aggregate.clone()
+                };
+                &sized
+            }
+            _ => aggregate,
         };
         self.check_aggregate(file, aggregate, &decl.ty, def, AggregateSite::Global)
             .is_err()
@@ -769,7 +784,7 @@ impl<'a> Resolver<'a> {
             let value = decl
                 .value
                 .as_ref()
-                .filter(|value| !string_of_chars(decl.array, &decl.ty, value));
+                .filter(|value| !string_of_chars(self.array_of(decl), &decl.ty, value));
             self.check_value(file, &decl.name, &decl.ty, value, Holder::Global)
         };
         // FTE-22.6: a value FTEQCC found no constant is not compared with the first.
@@ -822,7 +837,7 @@ impl<'a> Resolver<'a> {
             component: false,
             checked: true,
             constant: Self::constant_at_file_level(decl),
-            array: decl.array,
+            array: self.array_of(decl),
             params: &decl.params,
             statics,
             deprecated: decl.deprecated(),
@@ -878,7 +893,7 @@ impl<'a> Resolver<'a> {
             location,
             init: None,
             params: &decl.params,
-            array: decl.array,
+            array: self.array_of(decl),
         };
         match self.check_redeclared_type(&redeclaration, false) {
             TypeCheck::Mismatch => Err(found),
@@ -895,6 +910,15 @@ impl<'a> Resolver<'a> {
                     Ok(Some(found))
                 }
             }
+        }
+    }
+
+    /// The first array dimension of `decl`, its size folded when it is an expression
+    /// (FTEF-19.62).
+    pub(in crate::resolve) fn array_of(&self, decl: &RawDecl) -> Option<ArrayDim> {
+        match (decl.array, self.folded_sizes.get(&decl.span.start)) {
+            (Some(ArrayDim::Unknown), Some(&size)) => Some(ArrayDim::Sized(size)),
+            (array, _) => array,
         }
     }
 

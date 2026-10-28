@@ -911,7 +911,7 @@ pub(super) fn expected_after(node: &qc_syntax::SyntaxNode) -> &'static str {
 /// FTEF-31.8: `QCC_Eval_Int` of a constant: C's `(int)` of a float or double, an integer as it
 /// is, a 64-bit one's low word; `None` for a vector or a string, "Unable to evaluate to numeric
 /// constant".
-fn eval_int(c: Constant) -> Option<i32> {
+pub(super) fn eval_int(c: Constant) -> Option<i32> {
     match c.ty {
         ConstType::Float => Some(f32_index(c.f())),
         ConstType::Double => Some(f64_index(c.d())),

@@ -9,12 +9,13 @@
 //! finished function is checked for a missing return and for code no path reaches.
 
 use qc_diag::{Code, Span};
-use qc_preproc::{Op, TargetFormat};
+use qc_preproc::{FteFlag, Op, TargetFormat};
 use qc_syntax::ast::{self, AstNode as _, Negation};
 
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
 use crate::check::flow::{Finding, Step};
+use crate::check::reference::eval_int;
 use crate::check::truth::{Jump, Test};
 use crate::check::{Constness, Reference, Value};
 use crate::ty::{SimpleType, Type};
@@ -674,6 +675,48 @@ impl Checker<'_> {
         {
             self.env.report(Code::E0204, span, message);
         }
+    }
+
+    /// FTEF-19.62: `QCC_PR_ParseDefArray`'s size: `QCC_SRef_EvalConst` of the expression, an
+    /// integer by `QCC_Eval_Int`, else "Array length is not a constant".
+    pub(super) fn array_length(&mut self, expr: &ast::Expr) -> Result<Option<u32>, Fatal> {
+        let value = self.value(Some(expr.clone()))?;
+        let size = value.known().and_then(eval_int);
+        if size.is_none() {
+            let message = "Array length is not a constant".to_owned();
+            self.env.report(Code::E0366, expr.syntax().span(), message);
+        }
+        Ok(size.and_then(|n| u32::try_from(n).ok()))
+    }
+
+    /// FTEF-19.62: a local array's size that is an expression, folded where the local is
+    /// declared; a first dimension a target with `OP_PUSH` allocates as the function runs
+    /// (`dynlength`, under `qcfuncs` off, not `static` and with no initialiser) is not.
+    pub(super) fn local_size(&mut self, declarator: &ast::Declarator) -> Result<(), Fatal> {
+        let Some(name) = declarator.name() else {
+            return Ok(());
+        };
+        let Some(suffix) = declarator.array_suffixes().next() else {
+            return Ok(());
+        };
+        let Some(expr) = suffix.children().find_map(ast::Expr::cast) else {
+            return Ok(());
+        };
+        if matches!(expr, ast::Expr::Literal(_)) {
+            return Ok(());
+        }
+        let at = name.span().start;
+        let dynamic = self.env.target_at(at).valid(Op::Push)
+            && !self.env.flags_at(at).has(FteFlag::Qcfuncs)
+            && !self.env.local_static(at)
+            && declarator.initializer().is_none();
+        if dynamic {
+            return Ok(());
+        }
+        if let Some(size) = self.array_length(&expr)? {
+            self.env.size_local(at, size);
+        }
+        Ok(())
     }
 
     fn initialiser_value(&mut self, expr: &ast::Expr, ty: &Type, name: &str) -> Result<(), Fatal> {

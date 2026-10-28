@@ -2307,7 +2307,7 @@ impl<'a> Parser<'a> {
             self.return_stmt();
         } else if self.checks(0, Enabled::Never, "exit") {
             // `keyword_exit` is `flag_acc`, reacc's, which this profile does not read
-            // (FTEF-19.46): only `__exit` is the keyword.
+            // (FTEF-19.63): only `__exit` is the keyword.
             self.exit_stmt();
         } else if self.kw(0, Keyword::Loop, "loop") {
             self.loop_stmt();

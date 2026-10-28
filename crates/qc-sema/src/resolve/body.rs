@@ -11,13 +11,14 @@
 
 use qc_diag::{Code, Span};
 use qc_preproc::FteFlag;
+use qc_syntax::ast::AstNode as _;
 use std::rc::Rc;
 
 use crate::cast::{Kind, Source, Supply};
-use crate::check::{check_body, check_initialiser};
+use crate::check::{array_length, check_body, check_initialiser};
 use crate::lower::{
-    Qualifier, RawAlias, RawBody, RawDecl, RawLocal, RawUse, StatePart, UseKind, ValueKind,
-    top_level_kind,
+    ArrayDim, Qualifier, RawAlias, RawBody, RawDecl, RawLocal, RawUse, StatePart, UseKind,
+    ValueKind, top_level_kind,
 };
 use crate::resolve::aggregate::{AggregateSite, Initialised};
 use crate::resolve::check_env::BodyEnv;
@@ -273,7 +274,7 @@ impl<'a> Resolver<'a> {
             let mut env = BodyEnv {
                 resolver: self,
                 file,
-                owner,
+                owner: Some(owner),
                 reported,
                 in_class: class.is_some(),
                 inline_member: scope.inline_member,
@@ -286,6 +287,47 @@ impl<'a> Resolver<'a> {
             let typed = check_body(&mut env, syntax);
             self.index.bodies.insert(owner, typed);
         }
+    }
+
+    /// FTEF-19.62: `QCC_PR_ParseDefArray`'s size of a global array that is an expression, read
+    /// at global scope before the definition is made, its names resolved first: the size it
+    /// folds to, or "Array length is not a constant". The uses left to resolve with the rest.
+    pub(in crate::resolve) fn fold_array_length<'u>(
+        &mut self,
+        file: FileId,
+        decl: &'u RawDecl,
+    ) -> (Option<u32>, Vec<&'u RawUse>) {
+        let all = decl.uses.iter().collect();
+        if !self.profile.fteqcc_diagnostics() || decl.array != Some(ArrayDim::Unknown) {
+            return (None, all);
+        }
+        let Some(expr) = decl.size_expr.clone() else {
+            return (None, all);
+        };
+        let within = expr.syntax().span();
+        let (size_uses, rest): (Vec<&RawUse>, Vec<&RawUse>) = decl
+            .uses
+            .iter()
+            .partition(|u| u.span.start >= within.start && u.span.end <= within.end);
+        let size_uses: Vec<RawUse> = size_uses.into_iter().cloned().collect();
+        self.resolve_uses(file, None, &size_uses);
+        let uses = self.use_defs.clone();
+        let flags = [(0, decl.flags)];
+        let reported = self.index.diagnostics.len();
+        let mut env = BodyEnv {
+            resolver: self,
+            file,
+            owner: None,
+            reported,
+            in_class: false,
+            inline_member: false,
+            uses: &uses,
+            flags: &flags,
+            lex: &[],
+            written: &[],
+            locals: &[],
+        };
+        (array_length(&mut env, &expr), rest)
     }
 
     /// FTEF-34.9: an initialiser of a global that is an expression, read at global scope,
@@ -312,7 +354,7 @@ impl<'a> Resolver<'a> {
         let mut env = BodyEnv {
             resolver: self,
             file,
-            owner,
+            owner: Some(owner),
             reported,
             in_class: false,
             inline_member: false,
@@ -709,6 +751,7 @@ impl<'a> Resolver<'a> {
                 component: false,
                 array: local.array,
                 statics,
+                external: local.has(&Qualifier::Extern),
                 subscope: self.profile.body_checks() && local.flags.has(FteFlag::PrSubscopedlocals),
             },
         );
@@ -867,7 +910,7 @@ impl<'a> Resolver<'a> {
                         format!("{name} duplicate definition ignored")
                     };
                     self.report(Code::W0207, location, message);
-                } else if !was_static && !global {
+                } else if !was_static && !global && !facts.external {
                     // FTEF-19.59: `QCC_PR_GetDef`'s `(flags & GDF_STATIC) && !def->isstatic`.
                     let message =
                         format!("static redefinition of {name} follows non-static definition.");

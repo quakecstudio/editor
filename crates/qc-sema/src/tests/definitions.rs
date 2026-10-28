@@ -1283,7 +1283,7 @@ fn extern_and_static_on_a_variable() {
     );
 }
 
-// spec FTEF-19.46: an initialiser that is an expression is compared by its text, and an
+// spec FTEF-19.63: an initialiser that is an expression is compared by its text, and an
 // attribute before the type is refused, as the pinned FTEQCC refuses it
 // spec FTEF-22.5: a module resolved without its preprocessing has no target, and its `extern`
 // functions are not checked
@@ -1433,6 +1433,10 @@ fn a_static_local_after_a_plain_one() {
         )]
     );
     assert_eq!(fte("void() f = { static float x; static float x; };\n"), []);
+    assert_eq!(
+        fte("void() f = { local float y;\nextern static float y; };\n"),
+        []
+    );
 }
 
 // spec FTEF-19.61: a global or static __auto needs memalloc; a local's qualifiers are checked
@@ -1459,4 +1463,35 @@ fn auto_definitions_need_memalloc() {
         fte_messages("void() f = { const var float x = 1; };\n"),
         [(Code::W0214, "Conflicting constness.".to_owned())]
     );
+}
+
+// spec FTEF-19.62: an array's size expression is folded; one that is no constant is an error
+// spec QCD-4.67: E0366 "Array length is not a constant"
+#[test]
+fn array_sizes_are_folded() {
+    let length = || (Code::E0366, "Array length is not a constant".to_owned());
+    let bounds = |i: u32, n: u32| {
+        (
+            Code::W0249,
+            format!("(constant) array index out of bounds (0 <= {i} < {n})"),
+        )
+    };
+    assert_eq!(fte_messages("float n; float a[n];\n"), [length()]);
+    assert_eq!(
+        fte_messages("const float N = 3; float c[N];\nvoid() f = { c[3] = 1; c[2] = 1; };\n"),
+        [bounds(3, 3)]
+    );
+    assert_eq!(
+        fte_messages("const float N = 3; float c[N+1];\nvoid() f = { c[4] = 1; };\n"),
+        [bounds(4, 4)]
+    );
+    assert_eq!(
+        fte_messages("float n; void() f = { local float a[n]; };\n"),
+        [length()]
+    );
+    assert_eq!(
+        fte_messages("const float N = 2; void() f = { local float a[N]; a[2] = 1; };\n"),
+        [bounds(2, 2)]
+    );
+    assert!(fte("const float N = 3; float c[N];\nfloat c[3];\n").is_empty());
 }
