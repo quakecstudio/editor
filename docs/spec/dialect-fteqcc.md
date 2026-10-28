@@ -4490,6 +4490,13 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   &pc[i]` `MUL_I`'s and then `ADD_I`'s, and `&pc[0]` none. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateAddressOf`.
+- **FTEF-31.13** Under `qccx`, `&` of a float "casts it to a (pre-dereferenced) pointer"
+  (`QCC_PR_BuildRef(retbuf, REF_POINTER, QCC_RefToDef(r, true), nullsref, type_float, false,
+  0)`): a float read through the value as an address, by `OP_LOADP_F`, and stored to likewise,
+  so on the standard target `float f; string s; s = &f;` is `OP_LOADP_F`'s "memgetval function not
+  defined" and "not valid for target" errors and then "Implicit cast from float to string".
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_RefTerm`.
 ## FTEF-32 Calls
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`,
