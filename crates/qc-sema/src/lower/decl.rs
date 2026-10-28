@@ -11,6 +11,7 @@ use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{CompilerFlags, Dialect, SyntaxKind, SyntaxNode};
 
 use crate::cast::{ConstType, Literal};
+use crate::check::constant::unquoted;
 use crate::ty::{SimpleType, Type};
 
 use super::body::{RawBody, RawParam, lower_body, next_think_of, omitted_type};
@@ -943,7 +944,17 @@ impl LiteralValue {
                     _ => None,
                 }
             }
-            ast::LiteralKind::String => Some(Self::String(text)),
+            // Adjacent string literals are one string (QC-6), kept as one quoted text so that
+            // two spellings of one value are the same constant.
+            ast::LiteralKind::String => {
+                let parts: String = literal
+                    .syntax()
+                    .child_tokens()
+                    .filter(|t| !t.kind().is_trivia())
+                    .map(|t| t.text_lossless())
+                    .collect();
+                Some(Self::String(format!("\"{}\"", unquoted(&parts))))
+            }
             ast::LiteralKind::FrameRef => None,
         }
     }

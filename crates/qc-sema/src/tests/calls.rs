@@ -630,3 +630,28 @@ fn addstat_type_numbers_match_their_fields() {
         ["Cannot cast from .float to .void"]
     );
 }
+
+// spec FTEF-33.1: a format is a constant string's whole text, its adjacent literals joined, as
+// FreeCS builds its shader formats across line continuations
+#[test]
+fn a_format_constant_is_every_literal_it_joins() {
+    let found = |defs: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nstring(string fmt, ...) sprintf = #627;\n{defs}\n\
+             void() f = {{ local string q = sprintf(F, \"a\", 1); }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    assert!(found("const string F = \"{\\n\" \\\n \"%s %f\\n\" \\\n \"}\";").is_empty());
+    assert_eq!(
+        found("const string F = \"a\" \"%s\";"),
+        ["sprintf: surplus trailing float argument(s) for format \"a%s\""]
+    );
+    // Two spellings of one value redeclare the constant with no error.
+    assert_eq!(
+        found("const string F = \"a\" \"%s\"; const string F = \"a%s\";"),
+        ["sprintf: surplus trailing float argument(s) for format \"a%s\""]
+    );
+}
