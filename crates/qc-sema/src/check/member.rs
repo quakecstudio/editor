@@ -17,7 +17,7 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::reference::expected_after;
-use crate::check::{Bitfield, Constness, Reference, Value};
+use crate::check::{Bitfield, Constness, MemberArray, Reference, Value};
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -92,7 +92,7 @@ impl Checker<'_> {
                     && !indexed
                 {
                     let head = Value {
-                        reference: Reference::ArrayHead,
+                        reference: Reference::ArrayHead(None),
                         ..value.clone()
                     };
                     self.address_of(head, field.syntax().span())?;
@@ -107,6 +107,10 @@ impl Checker<'_> {
             Etype::String => self.string_method(&base, &selector)?,
             Etype::Struct | Etype::Union => {
                 let (member, offset) = self.struct_member(&base.ty, &selector);
+                let word = member.bitfield.map_or_else(
+                    || offset.map_or(0, |(units, align)| units.saturating_mul(align) >> 5),
+                    |bitfield| bitfield.word,
+                );
                 match &base.reference {
                     // `(*p).a` and `p[i].a` are members through the pointer.
                     Reference::Pointer(pointer) => {
@@ -117,7 +121,19 @@ impl Checker<'_> {
                             ..member
                         }
                     }
-                    _ => member,
+                    // `st.f` is the struct's own definition at the member's offset
+                    // (`QCC_PR_BuildRef` of its sym), no temporary.
+                    _ if member.is_array_head() => Value {
+                        sym: base.sym.at(word),
+                        name: base.name.clone(),
+                        ..member
+                    },
+                    _ => Value {
+                        sym: base.sym.at(word),
+                        name: base.name.clone(),
+                        reference: base.reference.clone(),
+                        ..member
+                    },
                 }
             }
             Etype::Field if matches!(shape.holds, Some(Etype::Struct | Etype::Union)) => {
@@ -247,7 +263,10 @@ impl Checker<'_> {
     /// statement; the member is a `variant` field of the entity, which may be assigned to.
     fn unknown_field(&mut self, base: &Value, name: &str, span: Span) -> Value {
         let class = match &base.ty {
-            Type::Named(class) => class.to_string(),
+            Type::Named(class) => self
+                .env
+                .class_name(&base.ty)
+                .unwrap_or_else(|| class.to_string()),
             _ => "entity".to_owned(),
         };
         let message = format!("Unknown field \"{name}\" in class \"{class}\"");
@@ -302,14 +321,25 @@ impl Checker<'_> {
         let Some((name, _)) = selector_name(selector) else {
             return (Value::unknown(), None);
         };
-        let Some(member) = self.env.struct_member(ty, &name).filter(|m| !m.array) else {
+        let Some(member) = self.env.struct_member(ty, &name) else {
             return (Value::unknown(), None);
         };
-        // FTEF-6.15: a bitfield of fewer than 32 bits is read and stored by its bits.
-        let bitfield = match (member.bits, member.position) {
+        // FTEF-6.15: a bitfield of fewer than 32 bits is read and stored by its bits, and so is
+        // an 8- or 16-bit integer, `ev_bitfld` (FTEF-2.12).
+        let narrow = match member.ty.fteqcc_scalar() {
+            Some(CScalar::Int8 | CScalar::Uint8) => Some(8),
+            Some(CScalar::Int16 | CScalar::Uint16) => Some(16),
+            _ => None,
+        };
+        // FTEQCC reads and stores an 8- or 16-bit member at bit 0 of the word that holds it.
+        let bitfield = match (member.bits.or(narrow), member.position) {
             (Some(bits), Some(position)) if bits != 32 => Some(Bitfield {
                 bits,
-                offset: position & 31,
+                offset: if member.bits.is_some() {
+                    position & 31
+                } else {
+                    0
+                },
                 word: position >> 5,
                 signed: self.etype_of(&member.ty) != Some(Etype::Uint),
             }),
@@ -318,7 +348,7 @@ impl Checker<'_> {
         // A bitfield's `bitofs / bits` more than its word; a narrow integer's in its own units,
         // `ofs*(32/align) + (mbitofs>>3)`.
         let align = alignment(&member.ty);
-        let offset = match bitfield {
+        let offset = match bitfield.filter(|_| member.bits.is_some()) {
             Some(bitfield) => {
                 let element = bitfield.offset.checked_div(bitfield.bits).unwrap_or(0);
                 Some((bitfield.word.saturating_add(element), align))
@@ -328,9 +358,20 @@ impl Checker<'_> {
                 .and_then(|position| position.checked_div(align))
                 .map(|units| (units, align)),
         };
+        // An array member is its head, its elements' type (FTEF-6.24).
+        let reference = if member.array {
+            Reference::ArrayHead(Some(MemberArray {
+                length: member.length,
+                word: member.position.map_or(0, |position| position >> 5),
+                pointer: false,
+            }))
+        } else {
+            Reference::Global
+        };
         let value = Value {
             readonly: false,
             bitfield,
+            reference,
             ..Value::of(member.ty)
         };
         (value, offset)
@@ -413,6 +454,17 @@ impl Checker<'_> {
             // `bitofs / bits` more (FTEF-6.15).
             Some(Etype::Struct | Etype::Union) => {
                 let (member, offset) = self.struct_member(pointee, selector);
+                // A member array through the pointer is indexed through it (FTEF-6.24).
+                if let Reference::ArrayHead(Some(array)) = member.reference {
+                    return Ok(Value {
+                        name: Some(base.label()),
+                        reference: Reference::ArrayHead(Some(MemberArray {
+                            pointer: true,
+                            ..array
+                        })),
+                        ..member
+                    });
+                }
                 let index = self.member_index(None, offset, span)?;
                 Ok(Value {
                     reference: Reference::pointer(base.label(), Some(index)),

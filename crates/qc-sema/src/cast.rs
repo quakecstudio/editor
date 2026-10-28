@@ -525,10 +525,7 @@ impl Source<'_> {
         }
         // A field of a `variant` casts to and from any field, silently.
         if let (Type::Field(to_inner), Some(Type::Field(from_inner))) = (to, from_ty)
-            && (Kind::of(to_inner) == Kind::Opaque
-                || Kind::of(from_inner) == Kind::Opaque
-                || to_inner.fteqcc_name() == "__variant"
-                || from_inner.fteqcc_name() == "__variant")
+            && (Kind::of(to_inner) == Kind::Opaque || Kind::of(from_inner) == Kind::Opaque)
         {
             return Some(Cast::Silent);
         }

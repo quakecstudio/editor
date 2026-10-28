@@ -452,6 +452,45 @@ inheritance, bitfields and nested members.
   offset as a float (times `32/align`). On the id target `pt[i].v = w;` for a `struct { float f;
   vector v; } *pt` is `OP_MUL_I` of `i` by 4 (FTEF-31.7), the index made a float for `OP_ADD_F`
   ("itof emulation") and made an integer again for the store ("ftoi emulation").
+- **FTEF-6.20** A member of a struct or union that is a value, not reached through a pointer
+  (`st.f`, `sarr[1].f`), is the struct's own definition at the member's word (`QCC_PR_BuildRef`
+  of its `sym` with the member's `ofs`), no temporary: its address is the struct's, refused on
+  the id target with "Address-of operator is not supported in this form without extensions"
+  and on the FTE target a pointer to the member, and `st.n == st.n` of an `int` member is the
+  same operand twice, "Result of comparison is constant" on the id target (FTEF-28.1), where
+  `st.n == st.m` is not.
+- **FTEF-6.21** An 8- or 16-bit integer read through its address (`OP_LOADP_I8`, `OP_LOADP_U8`,
+  `OP_LOADP_I16`, `OP_LOADP_U16`) is a value of the opcode's type, `int` or `uint`, as its
+  extension at a constant index is (FTEF-2.12): `x_s = carr[i];`, `x_s = *pc;` and `x_s =
+  ps->c;` of `__int8`s warn "Implicit cast from __int32 to string", of `__uint16`s "from
+  __uint32"; a bitfield read so keeps its type.
+- **FTEF-6.23** An 8- or 16-bit integer member of a struct is `ev_bitfld` (FTEF-2.12), read and
+  stored as a bitfield of its width at bit 0 of the word that holds it (the member's `bitofs` is
+  0): on the id target `st.h = 1;` of a `__uint16 h` is the `OP_BITAND_I` and `OP_BITOR_I` of
+  `QCC_PR_Statement_BitCopy`, with no shift, a read is `OP_BITEXTEND_U` by `(0<<8)|16`, and its
+  address and a pointer's index to it count its bytes (FTEF-6.19).
+- **FTEF-6.24** A struct's member array named bare is its head (`REF_ARRAYHEAD`), with the
+  member's first size as its length: `s.a[4]` of a `float a[3]` is "(constant) array index out of
+  bounds (0 <= 4 < 3)". Its index is added to the member's word in the struct
+  (`QCC_PR_ParseRefArrayPointer`'s `idx`, an `int` on a target with `OP_ADD_I` and else a float):
+  `OP_ADD_F` when both are floats, else `OP_ADD_I` of both made integers, so on the FTE target
+  `s.a[3.5]` warns "Numerical overflow. 3.500000 will be rounded to 3" and on the id target
+  `s.a[i]` is `OP_ADD_I`'s refusal. An element at an index that is no constant is read by the
+  struct's `ArrayGet` into its return, which for a struct of more than three words is returned
+  through storage `OP_PUSH` makes, refused on a target without it. Through a pointer the element
+  is read and stored through the pointer at that index (`ps->a[i]`), and the head is the pointer
+  plus the member's offset in bytes by `OP_ADD_I`.
+- **FTEF-6.25** A call through a struct's function member reads the parameters of the member's
+  type (`QCC_typeparam_s`): a parameter with a default may be left out, and a call that leaves
+  out one with none warns "too few parameters on call to NAME, PARAM will be UNDEFINED", NAME the
+  struct's definition, the member's `sym`: `w.get()` of a `float(entity e = __NULL__) get` is no
+  warning, `w.two()` of a `float(float a) two` names `w`.
+- **FTEF-6.22** A struct or union with no tag (`struct { ... } x;`, `typedef struct { ... } T;`)
+  is a type of its own, with its members and its layout, named `<struct>` or `<union>`: `t.zz` of
+  one is "zz is not a member of <struct>", `sizeof(T)` of `typedef struct { float a; vector v; }
+  T;` is 16, and since `typecmp` compares a struct by its size and name, two of them with the
+  same size cast to each other (`A a; B b; a = b;` for two `typedef struct { float a; }`), and of
+  different sizes are "Cannot cast from struct <struct> to struct <struct>".
 - **FTEF-6.14** A struct or union read through a pointer is read word by word
   (`QCC_LoadFromPointer`, `case ev_struct: case ev_union:`): `OP_LOADP_V` for each three of its
   words and `OP_LOADP_I` for each word after them, each a `QCC_PR_SimpleStatement`, which
@@ -3142,6 +3181,10 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   cast from A to B": `.S fs; .float fa; fs = fa;` is "Cannot cast from .float to .S", and a field
   of a class to a field of a class it derives from "Cannot cast from class Other to class
   Player".
+- **FTEF-19.51** An attribute list is a modifier too: `QCC_PR_ParseDefs` sets `hadmodifier = true;`
+  at the end of each pass of its modifier loop, the `[[...]]` branch included, so after an
+  attribute list alone the type may be left out and is `__int32` (FTEF-19.21): with `attributes`
+  on, `[[eraseable]] x = 5; string s = x;` warns "Implicit cast from __int32 to string".
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and
@@ -3792,6 +3835,11 @@ statement's checks (FTEF-23.6).
   union with no tag is `struct <struct>` or `union <union>` (`QCC_PR_NewType(structtype==ev_union?
   "<union>":"<struct>", structtype, false)`); and a field of a struct or union prints its own name,
   `.NAME`.
+- **FTEF-24.13** A typedef of a class is the class (`QCC_TypeForName` gives the typedef's real
+  type), so a value of it has the class's members, and a member it lacks is "Unknown field
+  \"NAME\" in class \"CLASS\"", CLASS the class's own name: `class C { float f; }; typedef C T;
+  T t;` reads `t.f`, and `t.zz` names `C`. A class a typedef writes, `typedef class C2 { float
+  f; } T;`, is declared with it.
 ## FTEF-25 The opcodes the target has
 
 **Source:** `qcc_pr_comp.c`, `QCC_OPCodeValidForTarget`, `QCC_OPCodeSetTarget` and
@@ -3877,6 +3925,29 @@ saturates, as on the arm64 build the differential is recorded on.
   which is not folded (FTEF-26.2), is emulated as `a - b * (a / b)` in that order (FTEF-27.4), its
   steps folding in turn, so `13i % 0i` is 13 (`13 / 0` is 0 with "Division by constant 0", ignored
   by default) and `13.5 % 0.0` is 13 with the truncation warnings of `inf | inf`.
+- **FTEF-26.7** A folded `OP_CONV_FTOI` is `QCC_MakeIntConst(eval_a->_float)`, the float made a
+  `long long` (saturating on arm64) and then an `int`: when the two differ, after the overflow
+  warning, it is `W0234` "Constant int operand %llu will be truncated to %i", the `long long`
+  printed unsigned and the value its low 32 bits. So `i = 1i / 0;` folds `1 / 0.0` to `inf`, warns
+  "Numerical overflow. inf will be rounded to 2147483647" and then "Constant int operand
+  9223372036854775807 will be truncated to -1", and stores -1.
+- **FTEF-26.8** A folded `OP_CONV_I64I` keeps the low 32 bits (`pint_t d = eval_a->i64;`) and,
+  when they are not the value, warns `W0234` "Numerical truncation of %llx to %#x.", the 64-bit
+  value in hex with no prefix and the 32 bits with C's `%#x` (`0` for 0): `i = 5000000000l;` is
+  "Numerical truncation of 12a05f200 to 0x2a05f200.". Under `ILP32` the `l` literal is 32 bits
+  (FTEF-12.12) and there is nothing to convert.
+- **FTEF-26.9** Two constant doubles fold as C computes them: `OP_ADD_D`, `OP_SUB_D`, `OP_MUL_D`
+  and `OP_DIV_D` to a double with no check of a 0 divisor; `OP_LE_D`, `OP_LT_D`, `OP_EQ_D` and
+  `OP_NE_D` to an `int`; `OP_LSHIFT_DI` and `OP_RSHIFT_DI` shift the double made a `long long`
+  (`(pint64_t)eval_a->_double << eval_b->_int`), and `OP_BITAND_D`, `OP_BITOR_D` and
+  `OP_BITXOR_D` combine both made `long long`s, each result made a double again. `OP_RSHIFT_U64I`
+  shifts the unsigned 64-bit value. `OP_BITEXTEND_I` and `OP_BITEXTEND_U` of two constants are
+  `(a << (32 - bits - ofs)) >> (32 - bits)`, signed and unsigned, `bits` and `ofs` the low byte
+  and the rest of the second. So `arr[(__double)2.5 * 2]` is index 5.
+- **FTEF-26.10** A constant operand that an opcode's row converts is the constant its conversion
+  folds to (`QCC_SupplyConversion` emits the conversion opcode, folded as FTEF-26.3 says), so the
+  opcode then folds too: in `(__double)2.5 * 2` the float 2 is converted by `OP_CONV_FD` to the
+  double 2, and `OP_MUL_D` folds.
 ## FTEF-27 Opcodes the target lacks
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (its `if (!QCC_OPCodeValid(op))` switch and
@@ -4108,6 +4179,13 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
 - **FTEF-29.9** A constant that is null (`QCC_SRef_IsNull`, an integer, float or pointer 0) casts
   as a null whatever its definition's type, a `typedef` or `int` one included: `const int zi = 0;
   string s = zi;` is no cast warning.
+- **FTEF-29.10** An array named bare, its head, is the pointer to its first element to a
+  prefix or postfix `++` and `--` (`REF_ARRAYHEAD`): read by its address, which the id target
+  refuses (FTEF-31.4), stepped by `OP_ADD_PIW` of its element's size, `--` warning of the
+  truncated negation (FTEF-27.14), and stored as `QCC_StoreSRefToRef` stores to the head, "left
+  operand must be an l-value (did you mean NAME[0]?)" (`E0325`): on the FTE target `--varr;` of a
+  `vector varr[2]` is "Constant int operand 4294967293 will be truncated to -3" then the l-value
+  error, and the value of `farr++` is a `float*`.
 
 ## FTEF-30 Terms
 
@@ -4281,6 +4359,13 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   string "Implicit type mismatch. Needed integer, got string.".
 - **FTEF-31.9** A constant vector's component at a constant index is a constant, the component's
   value: `('13 5 2' + '1 2 3')[1]` is 7, and `vc[1]` of a `const vector vc = '4 9 2'` is 9.
+- **FTEF-31.10** An element of an array, or a vector's component, at a constant index is the
+  array's definition at that word (`ret.ofs += index`), so `iarr[1] == iarr[1]` of `int`s is
+  the same operand twice ("Result of comparison is constant" on the id target) and `iarr[1] ==
+  iarr[2]` is not; at an index that is no constant it is loaded into a temporary.
+- **FTEF-31.11** The address of a string's character is no address `QCC_PR_GenerateAddressOf`
+  makes: on any target it is the fatal error `E0361` "Cannot use addressof operator ('&') on a
+  global. Please use the FTE target." (`pw = &s[0];`).
 ## FTEF-32 Calls
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`,

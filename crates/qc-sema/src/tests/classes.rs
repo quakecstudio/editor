@@ -398,3 +398,28 @@ fn a_field_array_with_no_index_is_its_head() {
         []
     );
 }
+
+// spec FTEF-24.13: a typedef of a class is the class, and its unknown members name the class
+#[test]
+fn a_typedef_of_a_class_is_the_class() {
+    let unknown = |member: &str, class: &str| {
+        one(
+            Code::E0319,
+            &format!("Unknown field \"{member}\" in class \"{class}\""),
+        )
+    };
+    assert_eq!(
+        messages(
+            "#pragma target fte\nclass C4 { float f; };\ntypedef C4 T4;\nT4 t;\nvoid() g = { t.f = 1; \
+             t.zz = 2; };\n"
+        ),
+        unknown("zz", "C4")
+    );
+    assert_eq!(
+        messages(
+            "#pragma target fte\ntypedef class C2 { float f; } T;\nT t;\nvoid() g = { t.f = 1; \
+             t.q = 1; };\n"
+        ),
+        unknown("q", "C2")
+    );
+}

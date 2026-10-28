@@ -92,7 +92,10 @@ impl<'a> Resolver<'a> {
             parent_key = Some(key);
         }
         let name = st.name.as_deref();
-        let key = name.map(|n| self.type_key(n));
+        // A struct with no tag is keyed by where its keyword stands (FTEF-6.12).
+        let key = name
+            .map(|n| self.type_key(n))
+            .or_else(|| st.body.then(|| self.type_key(&format!("{{}}{}", st.at))));
         let known = key.as_ref().and_then(|k| self.struct_defs.get(k)).cloned();
         let sized = name.is_some_and(|n| self.sized_type_named(n));
         if let Some(def) = &known
@@ -337,7 +340,7 @@ impl<'a> Resolver<'a> {
             .or_else(|| name.strip_prefix("union "))
             .map(str::trim);
         let bare = tagged.unwrap_or(name);
-        if bare == "{}" {
+        if bare.starts_with("{}") {
             // A body with no tag, `struct { ... }`, has its size.
             return false;
         }
@@ -465,7 +468,13 @@ impl<'a> Resolver<'a> {
             // body has no members to miss.
             return StructMatch::One;
         }
-        StructMatch::None(bare.to_owned())
+        // A struct or union with no tag prints as `<struct>` or `<union>` (FTEF-6.12).
+        let owner = match (bare.starts_with("{}"), type_name.starts_with("union ")) {
+            (true, true) => "<union>",
+            (true, false) => "<struct>",
+            (false, _) => bare,
+        };
+        StructMatch::None(owner.to_owned())
     }
 }
 
@@ -493,6 +502,10 @@ impl Resolver<'_> {
                 return Some(StructMemberFacts {
                     ty: member.ty.clone(),
                     array: !member.array.is_empty(),
+                    length: member.sizes.first().and_then(|size| match size {
+                        IntConst::Integer(length) => u32::try_from(*length).ok(),
+                        IntConst::NotInteger | IntConst::Name(_) | IntConst::Unfolded => None,
+                    }),
                     bits,
                     position: self.member_position(ty, name),
                 });

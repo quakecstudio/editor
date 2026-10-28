@@ -193,28 +193,6 @@ pub(super) fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, cx: Cx<'_>) 
         lower_block(&block, cx, &mut body, Flow::default());
     }
     body.written_types = written_types(fn_body.syntax(), cx);
-    // FTEF-32.7: the type `va_arg(index, TYPE)` reads.
-    for call in fn_body
-        .syntax()
-        .descendants()
-        .filter_map(ast::CallExpr::cast)
-    {
-        let Some(ast::Expr::Name(callee)) = call.callee() else {
-            continue;
-        };
-        if !cx.fte || callee.name().is_none_or(|t| t.text_lossless() != "va_arg") {
-            continue;
-        }
-        if let Some(ast::Expr::Name(ty)) = call.args().and_then(|a| a.args().nth(1))
-            && let Some(token) = ty.name()
-        {
-            let start = token.span().start;
-            body.written_types.push((
-                start,
-                Type::named(&token.text_lossless(), cx.c_context(start)),
-            ));
-        }
-    }
     body
 }
 
@@ -595,22 +573,16 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
     }
 }
 
-/// The type of a declaration that writes none: under FTEQCC after a qualifier `int`,
-/// `type_integer`, as `QCC_PR_ParseDefs` assumes when `hadmodifier` is set (FTEF-19.21); else
-/// unknown.
-pub(super) fn omitted_type(node: &SyntaxNode, fte: bool) -> Type {
-    if fte && node.children().any(|n| n.kind() == SyntaxKind::Qualifier) {
-        Type::Named(std::rc::Rc::from(CScalar::Integer.name()))
-    } else {
-        Type::Unknown
-    }
+/// The type of a declaration that writes none, which the parser leaves out only under FTEQCC
+/// after a qualifier or an attribute list (FTEF-19.21): `int`, `type_integer`, as
+/// `QCC_PR_ParseDefs` assumes.
+pub(super) fn omitted_type() -> Type {
+    Type::Named(std::rc::Rc::from(CScalar::Integer.name()))
 }
 
 fn lower_local(local: &ast::LocalDecl, cx: Cx<'_>, body: &mut RawBody) {
     let fte = cx.fte;
-    let base = local
-        .ty()
-        .map_or_else(|| omitted_type(local.syntax(), fte), |t| cx.ty(&t));
+    let base = local.ty().map_or_else(omitted_type, |t| cx.ty(&t));
     // QC-11.9 holds only in vanilla: FTEQCC allows a field or function local (FTE-21.2).
     let bad = !fte && (base.is_field() || base.is_function());
     if fte

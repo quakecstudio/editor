@@ -36,6 +36,32 @@ fn analysed(source: &str, args: &[&str]) -> Vec<(Code, String)> {
 /// The one file these tests read.
 const FILE: FileId = FileId(0);
 
+/// The codes of the errors of the FTEQCC files `sources`, one module in that order.
+fn module_errors(sources: &[&str]) -> Vec<(FileId, Code)> {
+    let mut db = Db::new();
+    db.set_dialect(Dialect::Fteqcc);
+    let mut compiled = Vec::new();
+    for (at, source) in sources.iter().enumerate() {
+        let id = FileId(at);
+        db.set_file(
+            id,
+            PathBuf::from(format!("f{at}.qc")),
+            source.as_bytes().to_vec(),
+        );
+        compiled.push(id);
+    }
+    let analysis = db.analyze_module(&ModuleInput {
+        compiled,
+        command_line: CommandLine::new::<&str>(&[]),
+        ..ModuleInput::default()
+    });
+    analysis
+        .diagnostics()
+        .filter(|d| d.diagnostic.code.is_error())
+        .map(|d| (d.file, d.diagnostic.code))
+        .collect()
+}
+
 /// The codes of [`analysed`] with no option.
 fn codes(source: &str) -> Vec<Code> {
     analysed(source, &[]).into_iter().map(|(c, _)| c).collect()
@@ -361,6 +387,21 @@ fn a_blocks_lexical_diagnostics() {
     );
     assert_eq!(errors("extern \"QC\" { string s = \"\\9\"; }\n"), []);
     assert_eq!(errors("string s = \"\\9\";\n"), []);
+    let off = "#pragma flag disable qcfuncs\n";
+    assert_eq!(
+        errors(&format!("{off}extern \"QC\" {{ string s = \"\\9\"; }}\n")),
+        []
+    );
+    assert_eq!(
+        errors(&format!("{off}string s = \"\\9\";\n")),
+        [Code::E0103]
+    );
+    let block = format!("{off}extern \"QC\" {{ string s = \"\\9\"; }}\n");
+    let after = format!("{block}string t = \"\\9\";\n");
+    assert_eq!(module_errors(&[&after]), [(FileId(0), Code::E0103)]);
+    let at = block.find("\"\\9").unwrap();
+    let other = format!("{}string u = \"\\9\";\n", " ".repeat(at - 11));
+    assert_eq!(module_errors(&[&block, &other]), [(FileId(1), Code::E0103)]);
 }
 
 // spec FTEF-21.17: `QCC_PR_LexString` joins the parts of a string written in one text, so a
@@ -457,4 +498,25 @@ fn c_declarators_with_qcfuncs_off() {
     }
     assert_eq!(off("void() g = { void h(); };"), [Code::E0211]);
     assert_eq!(off("const float (*x)(float);"), [Code::W0214, Code::E0211]);
+}
+
+// spec FTEF-19.51: after an attribute list alone the type may be left out, and is `int`
+#[test]
+fn an_omitted_type_after_attributes_is_int() {
+    let cast = (
+        Code::W0220,
+        "Implicit cast from __int32 to string".to_owned(),
+    );
+    let on = "#pragma flag enable attributes\n";
+    assert_eq!(
+        analysed(&format!("{on}[[eraseable]] x = 5; string s = x;\n"), &[]),
+        std::slice::from_ref(&cast)
+    );
+    assert_eq!(
+        analysed(
+            &format!("{on}void() g = {{ static [[eraseable]] y = 2; local string t = y; }};\n"),
+            &[]
+        ),
+        [cast]
+    );
 }

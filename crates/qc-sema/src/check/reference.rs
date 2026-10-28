@@ -20,7 +20,7 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::pointer::Pointee;
-use crate::check::{Bitfield, ElementRef, Reference, Sym, Value};
+use crate::check::{Bitfield, ElementRef, MemberArray, Reference, Sym, Value};
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -49,6 +49,7 @@ impl Checker<'_> {
         {
             let word = self.read(
                 Value {
+                    ty: word_type(&value.ty),
                     bitfield: None,
                     ..value
                 },
@@ -101,7 +102,7 @@ impl Checker<'_> {
                 self.emit(load, &Value::unknown(), &Value::unknown(), span)?;
                 Ok(value)
             }
-            Reference::ArrayHead => {
+            Reference::ArrayHead(_) => {
                 let address = self.address_of(value, span)?;
                 Ok(address)
             }
@@ -109,12 +110,23 @@ impl Checker<'_> {
                 if let Some(bits) = narrow_bits(&value.ty) {
                     return self.narrow_element(value, &element.index, bits, span);
                 }
-                if element.index.known().is_none() {
-                    self.load_from_array(&value, &element.index, element.vector, span)?;
-                }
+                let called = element.index.known().is_none()
+                    && self.load_from_array(&value, &element.index, element.vector, span)?;
+                // A constant index is the array's own definition at that word; any other is
+                // loaded into a temporary, and by the `ArrayGet` function into its return.
+                let sym = match element.index.known().and_then(eval_int) {
+                    Some(words) => value.sym.at(u32::from_le_bytes(words.to_le_bytes())),
+                    None => Sym::Temp,
+                };
+                let name = if called {
+                    Some("return".to_owned())
+                } else {
+                    value.name.clone()
+                };
                 Ok(Value {
                     reference: Reference::Global,
-                    sym: Sym::Temp,
+                    sym,
+                    name,
                     ..value
                 })
             }
@@ -133,7 +145,7 @@ impl Checker<'_> {
                 let float_index = self.etype_of(&index.ty) == Some(Etype::Float);
                 let op = if float_index { Op::LoadpC } else { Op::LoadpU8 };
                 let string = Value::of(Type::Simple(SimpleType::String));
-                let loaded = self.emit(op, &string, &Value::unknown(), span)?;
+                let loaded = self.emit(op, &string, &index, span)?;
                 Ok(Value {
                     ty: value.ty,
                     ..loaded
@@ -259,7 +271,7 @@ impl Checker<'_> {
         index: &Value,
         vector: bool,
         span: Span,
-    ) -> Result<(), Fatal> {
+    ) -> Result<bool, Fatal> {
         let target = self.env.target_at(span.start);
         let index_etype = self.etype_of(&index.ty);
         let length_prefix = !vector
@@ -270,18 +282,34 @@ impl Checker<'_> {
             if index_etype != Some(Etype::Integer) {
                 self.converted(index, Etype::Integer, span)?;
             }
-        } else if length_prefix {
+            return Ok(false);
+        }
+        if length_prefix {
             if index_etype != Some(Etype::Float) {
                 self.converted(index, Etype::Float, span)?;
             }
-        } else {
-            let float = self.converted(index, Etype::Float, span)?;
-            if vector {
-                let three = Value::constant(Constant::float(3.0));
-                self.emit(Op::DivF, &float, &three, span)?;
-            }
+            return Ok(false);
         }
-        Ok(())
+        let float = self.converted(index, Etype::Float, span)?;
+        if vector {
+            let three = Value::constant(Constant::float(3.0));
+            self.emit(Op::DivF, &float, &three, span)?;
+            return Ok(false);
+        }
+        // FTEF-6.24: a struct's member array is read by the struct's `ArrayGet`, which returns
+        // the struct: one of more than three words is returned through storage `OP_PUSH`
+        // makes.
+        let big_struct = element
+            .sym
+            .def()
+            .filter(|&def| !self.env.is_array(def))
+            .and_then(|def| self.env.definition(def).map(|d| d.ty.clone()))
+            .and_then(|ty| self.env.layout(&ty))
+            .is_some_and(|layout| layout.words > 3);
+        if big_struct {
+            self.simple_statement(Op::Push, span)?;
+        }
+        Ok(true)
     }
 
     /// FTEF-31.3: `QCC_LoadFromPointer`: the index made an integer, then the load of the
@@ -313,8 +341,14 @@ impl Checker<'_> {
             let pointer = Value::of(Type::Pointer(value.ty.clone().into()));
             let zero = Value::constant(Constant::uint(0));
             let loaded = self.emit(op, &pointer, index.unwrap_or(&zero), span)?;
+            // The narrow loads give an `int` or a `uint` (`type_c`), a bitfield its own type.
+            let ty = match (value.bitfield, narrow.1) {
+                (Some(_), _) => word_type(&value.ty),
+                (None, true) => Type::Named("__int32".into()),
+                (None, false) => Type::Named("__uint32".into()),
+            };
             return Ok(Value {
-                ty: value.ty,
+                ty,
                 bitfield: None,
                 ..loaded
             });
@@ -443,7 +477,7 @@ impl Checker<'_> {
             self.bounds(constant, length, span);
             if at.known().is_none() {
                 let field = Value {
-                    sym: Sym::Def(def, false),
+                    sym: Sym::Def(def, false, 0),
                     ..Value::of(base.ty.clone())
                 };
                 self.load_from_array(&field, &at, false, span)?;
@@ -451,9 +485,23 @@ impl Checker<'_> {
             return Ok(base);
         }
         if base.is_array_head() {
-            let length = base.sym.def().and_then(|def| self.env.array_length(def));
+            let length = match base.reference {
+                Reference::ArrayHead(Some(member)) => member.length,
+                _ => base.sym.def().and_then(|def| self.env.array_length(def)),
+            };
             self.bounds(constant, length, span);
             let at = self.scaled_index(&base.ty, at, span)?;
+            let at = match base.reference {
+                Reference::ArrayHead(Some(member)) => self.member_array_index(member, at, span)?,
+                _ => at,
+            };
+            if let Reference::ArrayHead(Some(MemberArray { pointer: true, .. })) = base.reference {
+                return Ok(Value {
+                    readonly: false,
+                    reference: Reference::pointer(label, Some(at)),
+                    ..Value::of(base.ty)
+                });
+            }
             return Ok(Value {
                 reference: Reference::element(label, at, false),
                 ..base
@@ -550,6 +598,25 @@ impl Checker<'_> {
         }
     }
 
+    /// FTEF-6.24: a member array's index added to the member's word, `idx` an `int` on a target
+    /// with `OP_ADD_I` and else a float: `OP_ADD_F` of two floats, else `OP_ADD_I` of both made
+    /// integers.
+    fn member_array_index(&mut self, member: MemberArray, at: Value, span: Span) -> Checked {
+        let word = i32::try_from(member.word).unwrap_or(i32::MAX);
+        let int_target = self.env.target_at(span.start).valid(Op::AddI);
+        let offset = if int_target {
+            Value::constant(Constant::int(word))
+        } else {
+            Value::constant(Constant::float(int_f32(word)))
+        };
+        if !int_target && self.etype_of(&at.ty) == Some(Etype::Float) {
+            return self.emit(Op::AddF, &offset, &at, span);
+        }
+        let offset = self.converted(&offset, Etype::Integer, span)?;
+        let at = self.converted(&at, Etype::Integer, span)?;
+        self.emit(Op::AddI, &offset, &at, span)
+    }
+
     /// FTEF-31.7: an array's or a pointer's index scaled to words by the size of what it
     /// selects (`t->size`) when that is more than one word, `OP_MUL_F` for a float index, else
     /// the index made an integer and `OP_MUL_I`; an index of a narrow type (`t->bits`) is made an
@@ -610,7 +677,21 @@ impl Checker<'_> {
         let pointer_to = |ty: &Type| Value::of(Type::Pointer(ty.clone().into()));
         match value.reference.clone() {
             Reference::Field(_) | Reference::Accessor(_) => Ok(pointer_to(&value.ty)),
-            Reference::Global | Reference::ArrayHead | Reference::Element(_) => {
+            // FTEF-6.24: a member array through a pointer is the pointer plus its offset.
+            Reference::ArrayHead(Some(MemberArray {
+                pointer: true,
+                word,
+                ..
+            })) => {
+                let pointer = pointer_to(&value.ty);
+                if word != 0 {
+                    let bytes = word.saturating_mul(4);
+                    let offset = Value::constant(Constant::int(i32::try_from(bytes).unwrap_or(0)));
+                    self.emit(Op::AddI, &pointer, &offset, span)?;
+                }
+                Ok(pointer)
+            }
+            Reference::Global | Reference::ArrayHead(_) | Reference::Element(_) => {
                 if !self.env.target_at(span.start).valid(Op::Globaladdress) {
                     let suggestion = if value.is_array_head() {
                         "either '#pragma target fte' or '#pragma flag enable brokenarray'"
@@ -654,7 +735,11 @@ impl Checker<'_> {
                 }
                 Ok(pointer_to(&value.ty))
             }
-            Reference::Character(_) => Ok(Value::unknown()),
+            Reference::Character(_) => {
+                let message =
+                    "Cannot use addressof operator ('&') on a global. Please use the FTE target.";
+                self.fatal(Code::E0361, span, message.to_owned())
+            }
         }
     }
 
@@ -738,7 +823,7 @@ impl Checker<'_> {
                 Some(_) => self.small_store(Op::StorepI8, stored, None, span),
                 None => Ok(()),
             },
-            Reference::Global | Reference::ArrayHead | Reference::Element(_) => Ok(()),
+            Reference::Global | Reference::ArrayHead(_) | Reference::Element(_) => Ok(()),
             Reference::Pointer(pointer) => {
                 // FTEF-6.15: a bitfield through a pointer stores no bit offset.
                 if lhs.bitfield.is_some_and(|bitfield| bitfield.offset != 0) {
@@ -813,6 +898,16 @@ fn eval_int(c: Constant) -> Option<i32> {
         ConstType::Integer | ConstType::Uint => Some(c.i()),
         ConstType::Int64 | ConstType::Uint64 => Some(low_word(c.i64())),
         ConstType::Vector | ConstType::String => None,
+    }
+}
+
+/// The type a bitfield's word is read as: an 8- or 16-bit integer's `parentclass`, `int` or
+/// `uint` (FTEF-2.12), else the bitfield's own type.
+pub(super) fn word_type(ty: &Type) -> Type {
+    match ty.fteqcc_scalar() {
+        Some(CScalar::Int8 | CScalar::Int16) => Type::Named("__int32".into()),
+        Some(CScalar::Uint8 | CScalar::Uint16) => Type::Named("__uint32".into()),
+        _ => ty.clone(),
     }
 }
 

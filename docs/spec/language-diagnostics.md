@@ -369,6 +369,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   16-bit integer (FTEF-2.12); not a fatal error.
 - **QCD-4.61** `E0360` "Unable to evaluate to numeric constant": a vector or string constant read
   as an index (FTEF-31.8); not a fatal error.
+- **QCD-4.62** `E0361` "Cannot use addressof operator ('&') on a global. Please use the FTE
+  target.": the address of a string's character (FTEF-31.11); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 

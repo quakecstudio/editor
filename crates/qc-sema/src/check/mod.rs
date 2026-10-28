@@ -111,6 +111,9 @@ pub(crate) trait Env {
     /// FTEF-24.6), as the body sees it at offset `at` (FTEF-17.16); `None` when `ty` is no
     /// class or none has the member.
     fn class_member(&self, ty: &Type, name: &str, at: usize) -> Option<DefId>;
+    /// The name of the class `ty` names, its typedefs followed (`QCC_TypeForName`); `None`
+    /// when it names none.
+    fn class_name(&self, ty: &Type) -> Option<String>;
     /// Whether `a` and `b` are the same type by FTEQCC's `typecmp_lax`, or one is a truth value of
     /// the other (FTEF-28.2).
     fn lax_same(&self, a: &Type, b: &Type) -> bool;
@@ -199,8 +202,9 @@ pub(crate) struct Value {
 pub(crate) enum Sym {
     /// A temporary the compiler made.
     Temp,
-    /// A definition, and whether it is constant (`sym->constant`).
-    Def(DefId, bool),
+    /// A definition, whether it is constant (`sym->constant`), and the word in it the value is
+    /// at (`ofs`), which the comparison warnings compare too.
+    Def(DefId, bool, u32),
     /// An immediate constant, which FTEQCC shares among equal values.
     Immediate(Constant),
 }
@@ -209,8 +213,17 @@ impl Sym {
     /// The definition it is, if any.
     pub(crate) const fn def(self) -> Option<DefId> {
         match self {
-            Self::Def(def, _) => Some(def),
+            Self::Def(def, _, _) => Some(def),
             Self::Temp | Self::Immediate(_) => None,
+        }
+    }
+
+    /// The same definition `words` further on (`ofs + words`); a temporary or an immediate at
+    /// another word is none the comparison warnings know.
+    pub(crate) const fn at(self, words: u32) -> Self {
+        match self {
+            Self::Def(def, constant, ofs) => Self::Def(def, constant, ofs.saturating_add(words)),
+            Self::Temp | Self::Immediate(_) => Self::Temp,
         }
     }
 
@@ -218,7 +231,7 @@ impl Sym {
     pub(crate) const fn constant(self) -> bool {
         match self {
             Self::Temp => false,
-            Self::Def(_, constant) => constant,
+            Self::Def(_, constant, _) => constant,
             Self::Immediate(_) => true,
         }
     }
@@ -306,7 +319,7 @@ impl Value {
                 format!("{}->{}", pointer.base, index_name(pointer.index.as_ref()))
             }
             // The accessor branch writes its name and then `break`s, so the base's is returned.
-            Reference::Accessor(_) | Reference::Global | Reference::ArrayHead => self.label(),
+            Reference::Accessor(_) | Reference::Global | Reference::ArrayHead(_) => self.label(),
         }
     }
 
@@ -321,7 +334,7 @@ impl Value {
             }
             Reference::Element(element) => element.base.clone(),
             Reference::Global
-            | Reference::ArrayHead
+            | Reference::ArrayHead(_)
             | Reference::Pointer(_)
             | Reference::Character(_)
             | Reference::Accessor(_) => self.label(),
@@ -330,7 +343,7 @@ impl Value {
 
     /// Whether it is an array named bare (`REF_ARRAYHEAD`).
     pub(crate) const fn is_array_head(&self) -> bool {
-        matches!(self.reference, Reference::ArrayHead)
+        matches!(self.reference, Reference::ArrayHead(_))
     }
 
     /// The field `field` of the entity `base`, holding a `ty`, which may be assigned to; `def`
@@ -364,10 +377,25 @@ pub(crate) struct StructMemberFacts {
     pub(crate) ty: Type,
     /// Whether it is an array.
     pub(crate) array: bool,
+    /// An array's first size, when it is an integer literal (FTEF-6.24).
+    pub(crate) length: Option<u32>,
     /// A bitfield's width in bits, when the model knows it.
     pub(crate) bits: Option<u32>,
     /// The bit it starts at from the struct's start, when the model lays the struct out.
     pub(crate) position: Option<u32>,
+}
+
+/// An array a struct's member is (FTEF-6.24): its first size, when the model knows it, and the
+/// word of the struct it starts at, which its index is added to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct MemberArray {
+    /// Its first size.
+    pub(crate) length: Option<u32>,
+    /// The word of the struct it starts at.
+    pub(crate) word: u32,
+    /// Whether the struct is reached through a pointer, the value's name, whose elements are
+    /// read and stored through it.
+    pub(crate) pointer: bool,
 }
 
 /// A bitfield a value is (`ev_bitfld`, FTEF-6.15): its width and whether its base is signed.
@@ -392,8 +420,9 @@ pub(crate) enum Reference {
     /// An entity's field (`REF_FIELD`).
     Field(Box<FieldRef>),
     /// An array named bare, whose type is its elements' (`REF_ARRAYHEAD`): reading it takes its
-    /// address (FTEF-31.4).
-    ArrayHead,
+    /// address (FTEF-31.4). A struct's member array carries its length and its word in the
+    /// struct, which no definition holds (FTEF-6.24).
+    ArrayHead(Option<MemberArray>),
     /// A word of a definition at an index (`REF_ARRAY`, `REF_GLOBAL` with an index).
     Element(Box<ElementRef>),
     /// What a pointer points at (`REF_POINTER`), at an index or not (FTEF-31.3).

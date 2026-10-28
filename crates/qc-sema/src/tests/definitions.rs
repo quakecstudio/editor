@@ -1033,6 +1033,10 @@ fn type_names_must_be_types() {
     assert_eq!(fte("class C;\nC c;\n"), []);
     assert_eq!(fte("enum E { A };\nE e;\n"), []);
     assert_eq!(fte("struct S { float a; };\nS s;\n"), []);
+    // A tag named where a type stands, with no body, is a type from there.
+    assert_eq!(fte("struct T *p; T *q;\n"), []);
+    assert_eq!(fte("union U *p; U *q;\n"), []);
+    assert_eq!(fte("T *q; struct T *p;\n"), [Code::E0203]);
     // A struct's tag written in another's members is a type too.
     assert_eq!(
         fte("typedef struct { struct inner_s { float a; } *list; } outer_t;\ninner_s *p;\n"),

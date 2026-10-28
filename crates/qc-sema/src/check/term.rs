@@ -123,8 +123,21 @@ impl Checker<'_> {
             let message = format!("{spelling} operator on read-only value");
             return self.fatal(Code::E0329, span, message);
         }
-        let Some(etype) = self.etype_of(&operand.ty) else {
+        // An array named bare is its head, a pointer to its first element.
+        let (etype, ty) = if operand.is_array_head() {
+            (
+                Some(Etype::Pointer),
+                Type::Pointer(operand.ty.clone().into()),
+            )
+        } else {
+            (self.etype_of(&operand.ty), operand.ty.clone())
+        };
+        let Some(etype) = etype else {
             return Ok(Value::unknown());
+        };
+        let variable = Value {
+            constness: Constness::Variable,
+            ..self.read(operand.clone(), span)?
         };
         let step = if increment { 1 } else { -1 };
         let constant = |c: Constant| Value::constant(c);
@@ -134,7 +147,7 @@ impl Checker<'_> {
             // `QCC_MakeIntConst(preinc * aux_type->size)`, the size unsigned, so `--p` is "will
             // be truncated" as a subtraction's (FTEF-27.10).
             Etype::Pointer => {
-                let words = match self.pointee(&operand.ty) {
+                let words = match self.pointee(&ty) {
                     Pointee::Words(words) => words,
                     Pointee::Void | Pointee::Bits(_) => Some(1),
                 };
@@ -157,12 +170,10 @@ impl Checker<'_> {
                 return self.fatal(Code::E0329, span, message);
             }
         };
-        let variable = Value {
-            constness: Constness::Variable,
-            ..self.read(operand.clone(), span)?
-        };
         let updated = self.emit(op, &variable, &by, span)?;
+        let updated = self.bit_copy(&updated, operand, span)?;
         self.store_reference(operand, &updated, span)?;
+        self.not_an_lvalue(operand, span);
         // `QCC_StoreSRefToRef` folds the store into the operand, which is the value, read-only.
         Ok(Value {
             readonly: true,

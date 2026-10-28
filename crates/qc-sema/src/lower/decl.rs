@@ -944,9 +944,7 @@ pub(super) fn lower_declaration(decl: &ast::Declaration, cx: Cx<'_>, out: &mut V
     for en in decl.syntax().descendants().filter_map(ast::EnumDecl::cast) {
         lower_enum(&en, cx, out);
     }
-    let base = decl
-        .ty()
-        .map_or_else(|| omitted_type(decl.syntax(), fte), |t| cx.ty(&t));
+    let base = decl.ty().map_or_else(omitted_type, |t| cx.ty(&t));
     let first = out.len();
     lower_declarators(decl.declarators(), &base, decl.ty(), cx, out);
     if decl.declarators().next().is_none()

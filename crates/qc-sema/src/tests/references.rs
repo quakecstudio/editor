@@ -322,3 +322,3341 @@ fn a_constant_index_is_evaluated_as_an_integer() {
         ["Implicit type mismatch. Needed integer, got string."]
     );
 }
+
+// spec FTEF-6.22: a struct or union with no tag has its members, its layout and its name
+#[test]
+fn a_struct_with_no_tag_is_a_type_of_its_own() {
+    let fte = |source: &str| -> Vec<String> {
+        diags(&format!("#pragma target fte\n{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    assert_eq!(
+        fte("typedef struct { float a; vector v; } T; T t; void() g = { t.a = \"s\"; };"),
+        ["Cannot cast from string to float"]
+    );
+    assert_eq!(
+        fte("typedef struct { float a; vector v; } T; T t; void() g = { t.zz = 1; };"),
+        ["zz is not a member of <struct>"]
+    );
+    assert_eq!(
+        fte("union { float a; vector v; } u; void() g = { u.q = 1; };"),
+        ["q is not a member of <union>"]
+    );
+    assert_eq!(
+        fte(
+            "struct { float a; vector v; } anon; float arr[1]; void() g = { arr[sizeof(anon)] = \
+             1; anon.a = \"s\"; };"
+        ),
+        [
+            "(constant) array index out of bounds (0 <= 16 < 1)",
+            "Cannot cast from string to float"
+        ]
+    );
+    assert_eq!(
+        fte(
+            "typedef union { float a; vector v; } U; float arr[1]; void() g = { arr[sizeof(U)] = 1; };"
+        ),
+        ["(constant) array index out of bounds (0 <= 12 < 1)"]
+    );
+    let two = |a: &str, b: &str| {
+        fte(&format!(
+            "typedef {a} A; typedef {b} B; A a; B b; void() g = {{ a = b; }};"
+        ))
+    };
+    assert_eq!(
+        two("struct { float a; }", "struct { float a; }"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        two("struct { float a; }", "struct { vector a; }"),
+        ["Cannot cast from struct <struct> to struct <struct>"]
+    );
+    assert_eq!(
+        two("union { float a; }", "struct { float a; }"),
+        ["Cannot cast from struct <struct> to union <union>"]
+    );
+}
+
+// spec FTEF-6.23: an 8- or 16-bit struct member is a bitfield at bit 0 of its word
+#[test]
+fn a_narrow_member_is_a_bitfield_at_bit_zero() {
+    let defs = "struct S { int a : 3; int b : 5; __int8 c; __uint16 h; float f; }; S st; S *ps;";
+    let messages = |statement: &str| -> Vec<String> {
+        diags(&format!("{defs}\nvoid() g = {{ {statement} }};\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    let bitcopy = [
+        "BitandInt function not defined: cannot emulate int&int",
+        "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        "BitorInt function not defined: cannot emulate int|int",
+        "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+    ];
+    assert_eq!(messages("st.h = 1;"), bitcopy);
+    assert_eq!(messages("st.c = 1;"), bitcopy);
+    let mut pointer = vec![
+        "memgetval function not defined: cannot emulate OP_LOADP_*",
+        "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+    ];
+    pointer.extend(bitcopy);
+    assert_eq!(messages("ps->h = 2;"), pointer);
+}
+
+// spec FTEF-6.25: a call through a struct's function member reads the member type's parameters
+#[test]
+fn a_struct_function_member_is_called_by_its_type() {
+    let found: Vec<String> = diags(
+        "#pragma target fte\ntypedef struct { float(entity e = __NULL__) get; float(float a) two; } \
+         api_t; api_t w; float x; void() g = { x = w.get(); x = w.two(); };\n",
+    )
+    .into_iter()
+    .map(|(_, message)| message)
+    .collect();
+    assert_eq!(
+        found,
+        ["too few parameters on call to w, a will be UNDEFINED"]
+    );
+}
+
+/// The definitions every case of [`REFERENCES`] reads.
+const REFERENCE_DEFS: &str = "struct S { int a : 3; int b : 5; __int8 c; __uint16 h; float f; vector v; }; S st; S *ps; S sarr[3]; S **pps; struct S4 { float b; float a[3]; vector av[2]; }; S4 s4; S4 *ps4; typedef struct { float q; int r[2]; } T; T t; float f; int i; __uint u; __int64 l; vector v; string s; entity e; float b; float farr[4]; vector varr[3]; int iarr[4]; __int8 carr[4]; __uint8 ucarr[4]; __int16 harr[2]; float *p; int *pi; vector *pv; __int8 *pc; __uint16 *ph; void *pw; .float fl; .vector fv; .int fi; float x_f; int x_i; vector x_v; string x_s;";
+
+/// Reads, comparisons, stores, steps and addresses of each kind of reference, on the standard
+/// target and the FTE target: the pinned FTEQCC's diagnostics for each (2026-10-27).
+const REFERENCES: &[(&str, &str, &[&str])] = &[
+    (
+        "id",
+        "pw = &st.a;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    ("id", "st.b++;", &["post increment operator on bitfield"]),
+    (
+        "id",
+        "pw = &st.b;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &st.c;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &st.h;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    ("id", "x_f = st.f;", &[]),
+    (
+        "id",
+        "x_i = st.f;",
+        &["ftoi emulation: denormals are unsafe"],
+    ),
+    ("id", "b = (st.f == st.f);", &[]),
+    ("id", "st.f = st.f;", &[]),
+    ("id", "st.f += 1;", &[]),
+    ("id", "st.f++;", &[]),
+    ("id", "--st.f;", &[]),
+    (
+        "id",
+        "pw = &st.f;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    ("id", "x_s = st.f;", &["Cannot cast from float to string"]),
+    ("id", "x_f = st.v;", &["Cannot cast from vector to float"]),
+    ("id", "x_i = st.v;", &["Cannot cast from vector to __int32"]),
+    ("id", "b = (st.v == st.v);", &[]),
+    ("id", "st.v = st.v;", &[]),
+    ("id", "st.v += 1;", &["Implicit cast from float to vector"]),
+    (
+        "id",
+        "st.v++;",
+        &["post increment operator not supported with this type"],
+    ),
+    ("id", "--st.v;", &["++ operator on unsupported type"]),
+    (
+        "id",
+        "pw = &st.v;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    ("id", "x_s = st.v;", &["Cannot cast from vector to string"]),
+    (
+        "id",
+        "x_f = ps->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "id",
+        "x_i = ps->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "id",
+        "b = (ps->a == ps->a);",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "id",
+        "ps->a = ps->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "id",
+        "ps->a += 1;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "id",
+        "ps->a++;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "id",
+        "--ps->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    ("id", "pw = &ps->a;", &[]),
+    (
+        "id",
+        "x_s = ps->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "id",
+        "pw = &ps->c;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &ps->h;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_f = ps->f;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_i = ps->f;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "b = (ps->f == ps->f);",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "ps->f = ps->f;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "ps->f += 1;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "ps->f++;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "--ps->f;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &ps->f;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = ps->f;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float to string",
+        ],
+    ),
+    (
+        "id",
+        "x_f = ps->v;",
+        &[
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        "id",
+        "x_i = ps->v;",
+        &[
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from vector to __int32",
+        ],
+    ),
+    (
+        "id",
+        "b = (ps->v == ps->v);",
+        &[
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "ps->v = ps->v;",
+        &["Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        "id",
+        "ps->v += 1;",
+        &[
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit cast from float to vector",
+        ],
+    ),
+    (
+        "id",
+        "ps->v++;",
+        &[
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+            "post increment operator not supported with this type",
+        ],
+    ),
+    (
+        "id",
+        "--ps->v;",
+        &[
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+            "++ operator on unsupported type",
+        ],
+    ),
+    (
+        "id",
+        "pw = &ps->v;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = ps->v;",
+        &[
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from vector to string",
+        ],
+    ),
+    (
+        "id",
+        "pw = &sarr[1].a;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_f = sarr[1].v;",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        "id",
+        "x_i = sarr[1].v;",
+        &["Cannot cast from vector to __int32"],
+    ),
+    ("id", "b = (sarr[1].v == sarr[1].v);", &[]),
+    ("id", "sarr[1].v = sarr[1].v;", &[]),
+    (
+        "id",
+        "sarr[1].v += 1;",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        "id",
+        "sarr[1].v++;",
+        &["post increment operator not supported with this type"],
+    ),
+    ("id", "--sarr[1].v;", &["++ operator on unsupported type"]),
+    (
+        "id",
+        "pw = &sarr[1].v;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = sarr[1].v;",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        "id",
+        "x_f = (*pps)->a;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "ptr-to-bitfld has unsupported bit depth",
+        ],
+    ),
+    (
+        "id",
+        "x_i = (*pps)->a;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "ptr-to-bitfld has unsupported bit depth",
+        ],
+    ),
+    (
+        "id",
+        "b = ((*pps)->a == (*pps)->a);",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "ptr-to-bitfld has unsupported bit depth",
+        ],
+    ),
+    (
+        "id",
+        "(*pps)->a = (*pps)->a;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "ptr-to-bitfld has unsupported bit depth",
+        ],
+    ),
+    (
+        "id",
+        "(*pps)->a += 1;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "ptr-to-bitfld has unsupported bit depth",
+        ],
+    ),
+    (
+        "id",
+        "(*pps)->a++;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "ptr-to-bitfld has unsupported bit depth",
+        ],
+    ),
+    (
+        "id",
+        "--(*pps)->a;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "ptr-to-bitfld has unsupported bit depth",
+        ],
+    ),
+    (
+        "id",
+        "pw = &(*pps)->a;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = (*pps)->a;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "ptr-to-bitfld has unsupported bit depth",
+        ],
+    ),
+    ("id", "x_f = farr[2];", &[]),
+    (
+        "id",
+        "x_i = farr[2];",
+        &["ftoi emulation: denormals are unsafe"],
+    ),
+    ("id", "b = (farr[2] == farr[2]);", &[]),
+    ("id", "farr[2] = farr[2];", &[]),
+    ("id", "farr[2] += 1;", &[]),
+    ("id", "farr[2]++;", &[]),
+    ("id", "--farr[2];", &[]),
+    (
+        "id",
+        "pw = &farr[2];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = farr[2];",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        "id",
+        "x_f = farr[i];",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        "id",
+        "x_i = farr[i];",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "b = (farr[i] == farr[i]);",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        "id",
+        "farr[i] = farr[i];",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        "id",
+        "farr[i] += 1;",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        "id",
+        "farr[i]++;",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        "id",
+        "--farr[i];",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        "id",
+        "pw = &farr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = farr[i];",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Cannot cast from float to string",
+        ],
+    ),
+    ("id", "x_f = farr[f];", &[]),
+    (
+        "id",
+        "x_i = farr[f];",
+        &["ftoi emulation: denormals are unsafe"],
+    ),
+    ("id", "b = (farr[f] == farr[f]);", &[]),
+    ("id", "farr[f] = farr[f];", &[]),
+    ("id", "farr[f] += 1;", &[]),
+    ("id", "farr[f]++;", &[]),
+    ("id", "--farr[f];", &[]),
+    (
+        "id",
+        "pw = &farr[f];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = farr[f];",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        "id",
+        "x_f = varr[1];",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        "id",
+        "x_i = varr[1];",
+        &["Cannot cast from vector to __int32"],
+    ),
+    ("id", "b = (varr[1] == varr[1]);", &[]),
+    ("id", "varr[1] = varr[1];", &[]),
+    (
+        "id",
+        "varr[1] += 1;",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        "id",
+        "varr[1]++;",
+        &["post increment operator not supported with this type"],
+    ),
+    ("id", "--varr[1];", &["++ operator on unsupported type"]),
+    (
+        "id",
+        "pw = &varr[1];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = varr[1];",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        "id",
+        "pw = &varr[i];",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_f = iarr[i];",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe return",
+        ],
+    ),
+    (
+        "id",
+        "x_i = iarr[i];",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        "id",
+        "b = (iarr[i] == iarr[i]);",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        "id",
+        "iarr[i] = iarr[i];",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        "id",
+        "iarr[i]++;",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        "id",
+        "--iarr[i];",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        "id",
+        "pw = &iarr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = iarr[i];",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Implicit cast from __int32 to string",
+        ],
+    ),
+    (
+        "id",
+        "x_f = iarr[1];",
+        &["itof emulation: denormals are unsafe iarr"],
+    ),
+    ("id", "x_i = iarr[1];", &[]),
+    (
+        "id",
+        "b = (iarr[1] == iarr[1]);",
+        &["Result of comparison is constant"],
+    ),
+    ("id", "iarr[1] = iarr[1];", &[]),
+    (
+        "id",
+        "iarr[1] += 1;",
+        &[
+            "itof emulation: denormals are unsafe iarr",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "iarr[1]++;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "--iarr[1];",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &iarr[1];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = iarr[1];",
+        &["Implicit cast from __int32 to string"],
+    ),
+    (
+        "id",
+        "pw = &carr[1];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_f = carr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_i = carr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "b = (carr[i] == carr[i]);",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "carr[i] = carr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "carr[i] += 1;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "carr[i]++;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "--carr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &carr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = carr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_f = ucarr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_i = ucarr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "b = (ucarr[i] == ucarr[i]);",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "ucarr[i] = ucarr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "ucarr[i] += 1;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "ucarr[i]++;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "--ucarr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &ucarr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = ucarr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_f = harr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_i = harr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "b = (harr[i] == harr[i]);",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "harr[i] = harr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "harr[i] += 1;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "harr[i]++;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "--harr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &harr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = harr[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &harr[1];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_f = p[0];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_i = p[0];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "b = (p[0] == p[0]);",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "p[0] = p[0];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "p[0] += 1;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "p[0]++;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "--p[0];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    ("id", "pw = &p[0];", &[]),
+    (
+        "id",
+        "x_s = p[0];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float to string",
+        ],
+    ),
+    (
+        "id",
+        "x_f = p[i];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_i = p[i];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "b = (p[i] == p[i]);",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "p[i] = p[i];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "p[i] += 1;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "p[i]++;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "--p[i];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &p[i];",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = p[i];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float to string",
+        ],
+    ),
+    (
+        "id",
+        "x_f = p[f];",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_i = p[f];",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "b = (p[f] == p[f]);",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "p[f] = p[f];",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "p[f] += 1;",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "p[f]++;",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "--p[f];",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "pw = &p[f];",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = p[f];",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float to string",
+        ],
+    ),
+    (
+        "id",
+        "x_f = *p;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_i = *p;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "b = (*p == *p);",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "*p = *p;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "*p += 1;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "--*p;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    ("id", "pw = &*p;", &[]),
+    (
+        "id",
+        "x_s = *p;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float to string",
+        ],
+    ),
+    (
+        "id",
+        "x_i = pi[i];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "b = (pi[i] == pi[i]);",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pi[i] = pi[i];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pi[i]++;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "--pi[i];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &pi[i];",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = pi[i];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit cast from __int32 to string",
+        ],
+    ),
+    (
+        "id",
+        "x_f = pv[i];",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        "id",
+        "x_i = pv[i];",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from vector to __int32",
+        ],
+    ),
+    (
+        "id",
+        "b = (pv[i] == pv[i]);",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pv[i] = pv[i];",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pv[i] += 1;",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit cast from float to vector",
+        ],
+    ),
+    (
+        "id",
+        "pv[i]++;",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+            "post increment operator not supported with this type",
+        ],
+    ),
+    (
+        "id",
+        "--pv[i];",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+            "++ operator on unsupported type",
+        ],
+    ),
+    (
+        "id",
+        "pw = &pv[i];",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = pv[i];",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|LOADP_V\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from vector to string",
+        ],
+    ),
+    (
+        "id",
+        "pw = &pc[1];",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    ("id", "pw = &*pc;", &[]),
+    (
+        "id",
+        "pw = &ph[1];",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    ("id", "pw = &*ph;", &[]),
+    (
+        "id",
+        "x_f = s[0];",
+        &[
+            "Opcode \"<LOADP_C>|LOADP_C\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_i = s[0];",
+        &[
+            "Opcode \"<LOADP_C>|LOADP_C\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "b = (s[0] == s[0]);",
+        &[
+            "Opcode \"<LOADP_C>|LOADP_C\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"<LOADP_C>|LOADP_C\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "s[0] = s[0];",
+        &[
+            "Opcode \"<LOADP_C>|LOADP_C\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "s[0] += 1;",
+        &[
+            "Opcode \"<LOADP_C>|LOADP_C\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "s[0]++;",
+        &[
+            "Opcode \"<LOADP_C>|LOADP_C\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "--s[0];",
+        &[
+            "Opcode \"<LOADP_C>|LOADP_C\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &s[0];",
+        &["Cannot use addressof operator ('&') on a global. Please use the FTE target."],
+    ),
+    (
+        "id",
+        "x_s = s[0];",
+        &[
+            "Opcode \"<LOADP_C>|LOADP_C\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float to string",
+        ],
+    ),
+    (
+        "id",
+        "pw = &s[i];",
+        &["Cannot use addressof operator ('&') on a global. Please use the FTE target."],
+    ),
+    ("id", "x_f = e.fl;", &[]),
+    (
+        "id",
+        "x_i = e.fl;",
+        &["ftoi emulation: denormals are unsafe"],
+    ),
+    ("id", "b = (e.fl == e.fl);", &[]),
+    ("id", "e.fl = e.fl;", &[]),
+    ("id", "e.fl += 1;", &[]),
+    ("id", "e.fl++;", &[]),
+    ("id", "--e.fl;", &[]),
+    ("id", "pw = &e.fl;", &[]),
+    ("id", "x_s = e.fl;", &["Cannot cast from float to string"]),
+    ("id", "x_f = e.fv;", &["Cannot cast from vector to float"]),
+    ("id", "x_i = e.fv;", &["Cannot cast from vector to __int32"]),
+    ("id", "b = (e.fv == e.fv);", &[]),
+    ("id", "e.fv = e.fv;", &[]),
+    ("id", "e.fv += 1;", &["Implicit cast from float to vector"]),
+    (
+        "id",
+        "e.fv++;",
+        &["post increment operator not supported with this type"],
+    ),
+    ("id", "--e.fv;", &["++ operator on unsupported type"]),
+    ("id", "pw = &e.fv;", &[]),
+    ("id", "x_s = e.fv;", &["Cannot cast from vector to string"]),
+    ("id", "x_i = e.fi;", &[]),
+    ("id", "b = (e.fi == e.fi);", &[]),
+    ("id", "e.fi = e.fi;", &[]),
+    (
+        "id",
+        "e.fi++;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "--e.fi;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    ("id", "pw = &e.fi;", &[]),
+    (
+        "id",
+        "x_s = e.fi;",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("id", "x_f = v[1];", &[]),
+    (
+        "id",
+        "x_i = v[1];",
+        &["ftoi emulation: denormals are unsafe"],
+    ),
+    ("id", "b = (v[1] == v[1]);", &[]),
+    ("id", "v[1] = v[1];", &[]),
+    ("id", "v[1] += 1;", &[]),
+    ("id", "v[1]++;", &[]),
+    ("id", "--v[1];", &[]),
+    (
+        "id",
+        "pw = &v[1];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    ("id", "x_s = v[1];", &["Cannot cast from float to string"]),
+    (
+        "id",
+        "x_f = v[i];",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        "id",
+        "x_i = v[i];",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "b = (v[i] == v[i]);",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        "id",
+        "pw = &v[i];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = v[i];",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Cannot cast from float to string",
+        ],
+    ),
+    ("id", "x_f = v_y;", &[]),
+    (
+        "id",
+        "x_i = v_y;",
+        &["ftoi emulation: denormals are unsafe"],
+    ),
+    ("id", "b = (v_y == v_y);", &[]),
+    ("id", "v_y = v_y;", &[]),
+    ("id", "v_y += 1;", &[]),
+    ("id", "v_y++;", &[]),
+    ("id", "--v_y;", &[]),
+    (
+        "id",
+        "pw = &v_y;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    ("id", "x_s = v_y;", &["Cannot cast from float to string"]),
+    (
+        "id",
+        "x_f = farr;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "x_i = farr;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "b = (farr == farr);",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "farr = farr;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "farr += 1;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "farr++;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "--farr;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "pw = &farr;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "x_s = farr;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    ("id", "x_f = st;", &["Cannot cast from struct S to float"]),
+    ("id", "x_i = st;", &["Cannot cast from struct S to __int32"]),
+    ("id", "st = st;", &[]),
+    ("id", "st += 1;", &["Cannot cast from float to struct S"]),
+    (
+        "id",
+        "st++;",
+        &["post increment operator not supported with this type"],
+    ),
+    ("id", "--st;", &["++ operator on unsupported type"]),
+    (
+        "id",
+        "pw = &st;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    ("id", "x_s = st;", &["Cannot cast from struct S to string"]),
+    ("id", "x_f = s4.a[1];", &[]),
+    (
+        "id",
+        "x_i = s4.a[1];",
+        &["ftoi emulation: denormals are unsafe"],
+    ),
+    ("id", "b = (s4.a[1] == s4.a[1]);", &[]),
+    ("id", "s4.a[1] = s4.a[1];", &[]),
+    ("id", "s4.a[1] += 1;", &[]),
+    ("id", "s4.a[1]++;", &[]),
+    ("id", "--s4.a[1];", &[]),
+    (
+        "id",
+        "pw = &s4.a[1];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = s4.a[1];",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        "id",
+        "pw = &s4.a[i];",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_f = s4.a[4];",
+        &["(constant) array index out of bounds (0 <= 4 < 3)"],
+    ),
+    (
+        "id",
+        "x_i = s4.a[4];",
+        &[
+            "(constant) array index out of bounds (0 <= 4 < 3)",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "b = (s4.a[4] == s4.a[4]);",
+        &[
+            "(constant) array index out of bounds (0 <= 4 < 3)",
+            "(constant) array index out of bounds (0 <= 4 < 3)",
+        ],
+    ),
+    (
+        "id",
+        "s4.a[4] = s4.a[4];",
+        &[
+            "(constant) array index out of bounds (0 <= 4 < 3)",
+            "(constant) array index out of bounds (0 <= 4 < 3)",
+        ],
+    ),
+    (
+        "id",
+        "s4.a[4] += 1;",
+        &["(constant) array index out of bounds (0 <= 4 < 3)"],
+    ),
+    (
+        "id",
+        "s4.a[4]++;",
+        &["(constant) array index out of bounds (0 <= 4 < 3)"],
+    ),
+    (
+        "id",
+        "--s4.a[4];",
+        &["(constant) array index out of bounds (0 <= 4 < 3)"],
+    ),
+    (
+        "id",
+        "pw = &s4.a[4];",
+        &[
+            "(constant) array index out of bounds (0 <= 4 < 3)",
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = s4.a[4];",
+        &[
+            "(constant) array index out of bounds (0 <= 4 < 3)",
+            "Cannot cast from float to string",
+        ],
+    ),
+    (
+        "id",
+        "x_f = s4.a[3.5];",
+        &["(constant) array index out of bounds (0 <= 3 < 3)"],
+    ),
+    (
+        "id",
+        "x_i = s4.a[3.5];",
+        &[
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "b = (s4.a[3.5] == s4.a[3.5]);",
+        &[
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+        ],
+    ),
+    (
+        "id",
+        "s4.a[3.5] = s4.a[3.5];",
+        &[
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+        ],
+    ),
+    (
+        "id",
+        "s4.a[3.5] += 1;",
+        &["(constant) array index out of bounds (0 <= 3 < 3)"],
+    ),
+    (
+        "id",
+        "s4.a[3.5]++;",
+        &["(constant) array index out of bounds (0 <= 3 < 3)"],
+    ),
+    (
+        "id",
+        "--s4.a[3.5];",
+        &["(constant) array index out of bounds (0 <= 3 < 3)"],
+    ),
+    (
+        "id",
+        "pw = &s4.a[3.5];",
+        &[
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = s4.a[3.5];",
+        &[
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "Cannot cast from float to string",
+        ],
+    ),
+    (
+        "id",
+        "pw = &s4.av[i];",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_f = ps4->a[i];",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_i = ps4->a[i];",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "b = (ps4->a[i] == ps4->a[i]);",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "ps4->a[i] = ps4->a[i];",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "ps4->a[i] += 1;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "ps4->a[i]++;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "--ps4->a[i];",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &ps4->a[i];",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = ps4->a[i];",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float to string",
+        ],
+    ),
+    (
+        "id",
+        "x_f = ps4->a[1];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_i = ps4->a[1];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "b = (ps4->a[1] == ps4->a[1]);",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "ps4->a[1] = ps4->a[1];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "ps4->a[1] += 1;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "ps4->a[1]++;",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "--ps4->a[1];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &ps4->a[1];",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = ps4->a[1];",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float to string",
+        ],
+    ),
+    (
+        "id",
+        "x_f = s4.a;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "x_i = s4.a;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "b = (s4.a == s4.a);",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "s4.a = s4.a;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "s4.a += 1;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "s4.a++;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "--s4.a;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "pw = &s4.a;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "x_s = s4.a;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of either '#pragma target fte' or '#pragma flag enable brokenarray'",
+        ],
+    ),
+    (
+        "id",
+        "x_f = ps4->a;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        "id",
+        "x_i = ps4->a;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit cast from float* to __int32",
+        ],
+    ),
+    (
+        "id",
+        "b = (ps4->a == ps4->a);",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "ps4->a = ps4->a;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "left operand must be an l-value (did you mean ps4[0]?)",
+        ],
+    ),
+    (
+        "id",
+        "pw = &ps4->a;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = ps4->a;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit cast from float* to string",
+        ],
+    ),
+    ("id", "x_f = t.q;", &[]),
+    (
+        "id",
+        "x_i = t.q;",
+        &["ftoi emulation: denormals are unsafe"],
+    ),
+    ("id", "b = (t.q == t.q);", &[]),
+    ("id", "t.q = t.q;", &[]),
+    ("id", "t.q += 1;", &[]),
+    ("id", "t.q++;", &[]),
+    ("id", "--t.q;", &[]),
+    (
+        "id",
+        "pw = &t.q;",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    ("id", "x_s = t.q;", &["Cannot cast from float to string"]),
+    (
+        "id",
+        "pw = &t.r[i];",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_f = t.r[1];",
+        &["itof emulation: denormals are unsafe t"],
+    ),
+    ("id", "x_i = t.r[1];", &[]),
+    (
+        "id",
+        "b = (t.r[1] == t.r[1]);",
+        &["Result of comparison is constant"],
+    ),
+    ("id", "t.r[1] = t.r[1];", &[]),
+    (
+        "id",
+        "t.r[1] += 1;",
+        &[
+            "itof emulation: denormals are unsafe t",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "id",
+        "t.r[1]++;",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "--t.r[1];",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "pw = &t.r[1];",
+        &[
+            "Address-of operator is not supported in this form without extensions. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "id",
+        "x_s = t.r[1];",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = st.a;", &[]),
+    ("fte", "x_i = st.a;", &[]),
+    ("fte", "b = (st.a == st.a);", &[]),
+    ("fte", "st.a = st.a;", &[]),
+    ("fte", "st.a += 1;", &[]),
+    ("fte", "st.a++;", &[]),
+    ("fte", "--st.a;", &[]),
+    ("fte", "pw = &st.a;", &[]),
+    (
+        "fte",
+        "x_s = st.a;",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = st.b;", &[]),
+    ("fte", "x_i = st.b;", &[]),
+    ("fte", "b = (st.b == st.b);", &[]),
+    ("fte", "st.b = st.b;", &[]),
+    ("fte", "st.b += 1;", &[]),
+    ("fte", "st.b++;", &["post increment operator on bitfield"]),
+    ("fte", "--st.b;", &[]),
+    ("fte", "pw = &st.b;", &[]),
+    (
+        "fte",
+        "x_s = st.b;",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = st.c;", &[]),
+    ("fte", "x_i = st.c;", &[]),
+    ("fte", "b = (st.c == st.c);", &[]),
+    ("fte", "st.c = st.c;", &[]),
+    ("fte", "st.c += 1;", &[]),
+    ("fte", "st.c++;", &[]),
+    ("fte", "--st.c;", &[]),
+    ("fte", "pw = &st.c;", &[]),
+    (
+        "fte",
+        "x_s = st.c;",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_i = st.h;", &[]),
+    ("fte", "st.h = st.h;", &[]),
+    ("fte", "st.h += 1;", &[]),
+    ("fte", "st.h++;", &[]),
+    ("fte", "--st.h;", &[]),
+    ("fte", "pw = &st.h;", &[]),
+    (
+        "fte",
+        "x_s = st.h;",
+        &["Implicit cast from __uint32 to string"],
+    ),
+    ("fte", "x_f = st.f;", &[]),
+    ("fte", "x_i = st.f;", &[]),
+    ("fte", "b = (st.f == st.f);", &[]),
+    ("fte", "st.f = st.f;", &[]),
+    ("fte", "st.f += 1;", &[]),
+    ("fte", "st.f++;", &[]),
+    ("fte", "--st.f;", &[]),
+    ("fte", "pw = &st.f;", &[]),
+    ("fte", "x_s = st.f;", &["Cannot cast from float to string"]),
+    ("fte", "x_f = st.v;", &["Cannot cast from vector to float"]),
+    (
+        "fte",
+        "x_i = st.v;",
+        &["Cannot cast from vector to __int32"],
+    ),
+    ("fte", "b = (st.v == st.v);", &[]),
+    ("fte", "st.v = st.v;", &[]),
+    ("fte", "st.v += 1;", &["Implicit cast from float to vector"]),
+    (
+        "fte",
+        "st.v++;",
+        &["post increment operator not supported with this type"],
+    ),
+    ("fte", "--st.v;", &["++ operator on unsupported type"]),
+    ("fte", "pw = &st.v;", &[]),
+    ("fte", "x_s = st.v;", &["Cannot cast from vector to string"]),
+    (
+        "fte",
+        "x_f = ps->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "fte",
+        "x_i = ps->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "fte",
+        "b = (ps->a == ps->a);",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "fte",
+        "ps->a = ps->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "fte",
+        "ps->a += 1;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "fte",
+        "ps->a++;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "fte",
+        "--ps->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    ("fte", "pw = &ps->a;", &[]),
+    (
+        "fte",
+        "x_s = ps->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    ("fte", "x_f = ps->c;", &[]),
+    ("fte", "x_i = ps->c;", &[]),
+    ("fte", "b = (ps->c == ps->c);", &[]),
+    ("fte", "ps->c = ps->c;", &[]),
+    ("fte", "ps->c += 1;", &[]),
+    ("fte", "ps->c++;", &[]),
+    ("fte", "--ps->c;", &[]),
+    ("fte", "pw = &ps->c;", &[]),
+    (
+        "fte",
+        "x_s = ps->c;",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_i = ps->h;", &[]),
+    ("fte", "ps->h = ps->h;", &[]),
+    ("fte", "ps->h += 1;", &[]),
+    ("fte", "ps->h++;", &[]),
+    ("fte", "--ps->h;", &[]),
+    ("fte", "pw = &ps->h;", &[]),
+    (
+        "fte",
+        "x_s = ps->h;",
+        &["Implicit cast from __uint32 to string"],
+    ),
+    ("fte", "x_f = ps->f;", &[]),
+    ("fte", "x_i = ps->f;", &[]),
+    ("fte", "b = (ps->f == ps->f);", &[]),
+    ("fte", "ps->f = ps->f;", &[]),
+    ("fte", "ps->f += 1;", &[]),
+    ("fte", "ps->f++;", &[]),
+    ("fte", "--ps->f;", &[]),
+    ("fte", "pw = &ps->f;", &[]),
+    ("fte", "x_s = ps->f;", &["Cannot cast from float to string"]),
+    ("fte", "x_f = ps->v;", &["Cannot cast from vector to float"]),
+    (
+        "fte",
+        "x_i = ps->v;",
+        &["Cannot cast from vector to __int32"],
+    ),
+    ("fte", "b = (ps->v == ps->v);", &[]),
+    ("fte", "ps->v = ps->v;", &[]),
+    (
+        "fte",
+        "ps->v += 1;",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        "fte",
+        "ps->v++;",
+        &["post increment operator not supported with this type"],
+    ),
+    ("fte", "--ps->v;", &["++ operator on unsupported type"]),
+    ("fte", "pw = &ps->v;", &[]),
+    (
+        "fte",
+        "x_s = ps->v;",
+        &["Cannot cast from vector to string"],
+    ),
+    ("fte", "x_f = sarr[1].a;", &[]),
+    ("fte", "x_i = sarr[1].a;", &[]),
+    ("fte", "b = (sarr[1].a == sarr[1].a);", &[]),
+    ("fte", "sarr[1].a = sarr[1].a;", &[]),
+    ("fte", "sarr[1].a += 1;", &[]),
+    ("fte", "sarr[1].a++;", &[]),
+    ("fte", "--sarr[1].a;", &[]),
+    ("fte", "pw = &sarr[1].a;", &[]),
+    (
+        "fte",
+        "x_s = sarr[1].a;",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = sarr[i].c;", &[]),
+    ("fte", "x_i = sarr[i].c;", &[]),
+    ("fte", "b = (sarr[i].c == sarr[i].c);", &[]),
+    ("fte", "sarr[i].c = sarr[i].c;", &[]),
+    ("fte", "sarr[i].c += 1;", &[]),
+    ("fte", "sarr[i].c++;", &[]),
+    ("fte", "--sarr[i].c;", &[]),
+    ("fte", "pw = &sarr[i].c;", &[]),
+    (
+        "fte",
+        "x_s = sarr[i].c;",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = sarr[i].f;", &[]),
+    ("fte", "x_i = sarr[i].f;", &[]),
+    ("fte", "b = (sarr[i].f == sarr[i].f);", &[]),
+    ("fte", "sarr[i].f = sarr[i].f;", &[]),
+    ("fte", "sarr[i].f += 1;", &[]),
+    ("fte", "sarr[i].f++;", &[]),
+    ("fte", "--sarr[i].f;", &[]),
+    ("fte", "pw = &sarr[i].f;", &[]),
+    (
+        "fte",
+        "x_s = sarr[i].f;",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        "fte",
+        "x_f = sarr[1].v;",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        "fte",
+        "x_i = sarr[1].v;",
+        &["Cannot cast from vector to __int32"],
+    ),
+    ("fte", "b = (sarr[1].v == sarr[1].v);", &[]),
+    ("fte", "sarr[1].v = sarr[1].v;", &[]),
+    (
+        "fte",
+        "sarr[1].v += 1;",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        "fte",
+        "sarr[1].v++;",
+        &["post increment operator not supported with this type"],
+    ),
+    ("fte", "--sarr[1].v;", &["++ operator on unsupported type"]),
+    ("fte", "pw = &sarr[1].v;", &[]),
+    (
+        "fte",
+        "x_s = sarr[1].v;",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        "fte",
+        "x_f = (*pps)->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "fte",
+        "x_i = (*pps)->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "fte",
+        "b = ((*pps)->a == (*pps)->a);",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "fte",
+        "(*pps)->a = (*pps)->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "fte",
+        "(*pps)->a += 1;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "fte",
+        "(*pps)->a++;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    (
+        "fte",
+        "--(*pps)->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    ("fte", "pw = &(*pps)->a;", &[]),
+    (
+        "fte",
+        "x_s = (*pps)->a;",
+        &["ptr-to-bitfld has unsupported bit depth"],
+    ),
+    ("fte", "x_f = farr[2];", &[]),
+    ("fte", "x_i = farr[2];", &[]),
+    ("fte", "b = (farr[2] == farr[2]);", &[]),
+    ("fte", "farr[2] = farr[2];", &[]),
+    ("fte", "farr[2] += 1;", &[]),
+    ("fte", "farr[2]++;", &[]),
+    ("fte", "--farr[2];", &[]),
+    ("fte", "pw = &farr[2];", &[]),
+    (
+        "fte",
+        "x_s = farr[2];",
+        &["Cannot cast from float to string"],
+    ),
+    ("fte", "x_f = farr[i];", &[]),
+    ("fte", "x_i = farr[i];", &[]),
+    ("fte", "b = (farr[i] == farr[i]);", &[]),
+    ("fte", "farr[i] = farr[i];", &[]),
+    ("fte", "farr[i] += 1;", &[]),
+    ("fte", "farr[i]++;", &[]),
+    ("fte", "--farr[i];", &[]),
+    ("fte", "pw = &farr[i];", &[]),
+    (
+        "fte",
+        "x_s = farr[i];",
+        &["Cannot cast from float to string"],
+    ),
+    ("fte", "x_f = farr[f];", &[]),
+    ("fte", "x_i = farr[f];", &[]),
+    ("fte", "b = (farr[f] == farr[f]);", &[]),
+    ("fte", "farr[f] = farr[f];", &[]),
+    ("fte", "farr[f] += 1;", &[]),
+    ("fte", "farr[f]++;", &[]),
+    ("fte", "--farr[f];", &[]),
+    ("fte", "pw = &farr[f];", &[]),
+    (
+        "fte",
+        "x_s = farr[f];",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        "fte",
+        "x_f = varr[1];",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        "fte",
+        "x_i = varr[1];",
+        &["Cannot cast from vector to __int32"],
+    ),
+    ("fte", "b = (varr[1] == varr[1]);", &[]),
+    ("fte", "varr[1] = varr[1];", &[]),
+    (
+        "fte",
+        "varr[1] += 1;",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        "fte",
+        "varr[1]++;",
+        &["post increment operator not supported with this type"],
+    ),
+    ("fte", "--varr[1];", &["++ operator on unsupported type"]),
+    ("fte", "pw = &varr[1];", &[]),
+    (
+        "fte",
+        "x_s = varr[1];",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        "fte",
+        "x_f = varr[i];",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        "fte",
+        "x_i = varr[i];",
+        &["Cannot cast from vector to __int32"],
+    ),
+    ("fte", "b = (varr[i] == varr[i]);", &[]),
+    ("fte", "varr[i] = varr[i];", &[]),
+    (
+        "fte",
+        "varr[i] += 1;",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        "fte",
+        "varr[i]++;",
+        &["post increment operator not supported with this type"],
+    ),
+    ("fte", "--varr[i];", &["++ operator on unsupported type"]),
+    ("fte", "pw = &varr[i];", &[]),
+    (
+        "fte",
+        "x_s = varr[i];",
+        &["Cannot cast from vector to string"],
+    ),
+    ("fte", "x_f = iarr[i];", &[]),
+    ("fte", "x_i = iarr[i];", &[]),
+    ("fte", "b = (iarr[i] == iarr[i]);", &[]),
+    ("fte", "iarr[i] = iarr[i];", &[]),
+    ("fte", "iarr[i] += 1;", &[]),
+    ("fte", "iarr[i]++;", &[]),
+    ("fte", "--iarr[i];", &[]),
+    ("fte", "pw = &iarr[i];", &[]),
+    (
+        "fte",
+        "x_s = iarr[i];",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = iarr[1];", &[]),
+    ("fte", "x_i = iarr[1];", &[]),
+    ("fte", "b = (iarr[1] == iarr[1]);", &[]),
+    ("fte", "iarr[1] = iarr[1];", &[]),
+    ("fte", "iarr[1] += 1;", &[]),
+    ("fte", "iarr[1]++;", &[]),
+    ("fte", "--iarr[1];", &[]),
+    ("fte", "pw = &iarr[1];", &[]),
+    (
+        "fte",
+        "x_s = iarr[1];",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = carr[1];", &[]),
+    ("fte", "x_i = carr[1];", &[]),
+    ("fte", "b = (carr[1] == carr[1]);", &[]),
+    ("fte", "carr[1] = carr[1];", &[]),
+    ("fte", "carr[1] += 1;", &[]),
+    ("fte", "carr[1]++;", &[]),
+    ("fte", "--carr[1];", &[]),
+    ("fte", "pw = &carr[1];", &[]),
+    (
+        "fte",
+        "x_s = carr[1];",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = carr[i];", &[]),
+    ("fte", "x_i = carr[i];", &[]),
+    ("fte", "b = (carr[i] == carr[i]);", &[]),
+    ("fte", "carr[i] = carr[i];", &[]),
+    ("fte", "carr[i] += 1;", &[]),
+    ("fte", "carr[i]++;", &[]),
+    ("fte", "--carr[i];", &[]),
+    ("fte", "pw = &carr[i];", &[]),
+    (
+        "fte",
+        "x_s = carr[i];",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_i = ucarr[i];", &[]),
+    ("fte", "ucarr[i] = ucarr[i];", &[]),
+    ("fte", "ucarr[i] += 1;", &[]),
+    ("fte", "ucarr[i]++;", &[]),
+    ("fte", "--ucarr[i];", &[]),
+    ("fte", "pw = &ucarr[i];", &[]),
+    (
+        "fte",
+        "x_s = ucarr[i];",
+        &["Implicit cast from __uint32 to string"],
+    ),
+    ("fte", "x_f = harr[i];", &[]),
+    ("fte", "x_i = harr[i];", &[]),
+    ("fte", "b = (harr[i] == harr[i]);", &[]),
+    ("fte", "harr[i] = harr[i];", &[]),
+    ("fte", "pw = &harr[i];", &[]),
+    (
+        "fte",
+        "x_s = harr[i];",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = harr[1];", &[]),
+    ("fte", "x_i = harr[1];", &[]),
+    ("fte", "b = (harr[1] == harr[1]);", &[]),
+    ("fte", "harr[1] = harr[1];", &[]),
+    ("fte", "harr[1] += 1;", &[]),
+    ("fte", "harr[1]++;", &[]),
+    ("fte", "--harr[1];", &[]),
+    ("fte", "pw = &harr[1];", &[]),
+    (
+        "fte",
+        "x_s = harr[1];",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = p[0];", &[]),
+    ("fte", "x_i = p[0];", &[]),
+    ("fte", "b = (p[0] == p[0]);", &[]),
+    ("fte", "p[0] = p[0];", &[]),
+    ("fte", "p[0] += 1;", &[]),
+    ("fte", "p[0]++;", &[]),
+    ("fte", "--p[0];", &[]),
+    ("fte", "pw = &p[0];", &[]),
+    ("fte", "x_s = p[0];", &["Cannot cast from float to string"]),
+    ("fte", "x_f = p[i];", &[]),
+    ("fte", "x_i = p[i];", &[]),
+    ("fte", "b = (p[i] == p[i]);", &[]),
+    ("fte", "p[i] = p[i];", &[]),
+    ("fte", "p[i] += 1;", &[]),
+    ("fte", "p[i]++;", &[]),
+    ("fte", "--p[i];", &[]),
+    ("fte", "pw = &p[i];", &[]),
+    ("fte", "x_s = p[i];", &["Cannot cast from float to string"]),
+    ("fte", "x_f = p[f];", &[]),
+    ("fte", "x_i = p[f];", &[]),
+    ("fte", "b = (p[f] == p[f]);", &[]),
+    ("fte", "p[f] = p[f];", &[]),
+    ("fte", "p[f] += 1;", &[]),
+    ("fte", "p[f]++;", &[]),
+    ("fte", "--p[f];", &[]),
+    ("fte", "pw = &p[f];", &[]),
+    ("fte", "x_s = p[f];", &["Cannot cast from float to string"]),
+    ("fte", "x_f = *p;", &[]),
+    ("fte", "x_i = *p;", &[]),
+    ("fte", "b = (*p == *p);", &[]),
+    ("fte", "*p = *p;", &[]),
+    ("fte", "*p += 1;", &[]),
+    ("fte", "*p++;", &["Statement does not do anything"]),
+    ("fte", "--*p;", &[]),
+    ("fte", "pw = &*p;", &[]),
+    ("fte", "x_s = *p;", &["Cannot cast from float to string"]),
+    ("fte", "x_f = pi[i];", &[]),
+    ("fte", "x_i = pi[i];", &[]),
+    ("fte", "b = (pi[i] == pi[i]);", &[]),
+    ("fte", "pi[i] = pi[i];", &[]),
+    ("fte", "pi[i] += 1;", &[]),
+    ("fte", "pi[i]++;", &[]),
+    ("fte", "--pi[i];", &[]),
+    ("fte", "pw = &pi[i];", &[]),
+    (
+        "fte",
+        "x_s = pi[i];",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = pv[i];", &["Cannot cast from vector to float"]),
+    (
+        "fte",
+        "x_i = pv[i];",
+        &["Cannot cast from vector to __int32"],
+    ),
+    ("fte", "b = (pv[i] == pv[i]);", &[]),
+    ("fte", "pv[i] = pv[i];", &[]),
+    (
+        "fte",
+        "pv[i] += 1;",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        "fte",
+        "pv[i]++;",
+        &["post increment operator not supported with this type"],
+    ),
+    ("fte", "--pv[i];", &["++ operator on unsupported type"]),
+    ("fte", "pw = &pv[i];", &[]),
+    (
+        "fte",
+        "x_s = pv[i];",
+        &["Cannot cast from vector to string"],
+    ),
+    ("fte", "x_f = pc[i];", &[]),
+    ("fte", "x_i = pc[i];", &[]),
+    ("fte", "b = (pc[i] == pc[i]);", &[]),
+    ("fte", "pc[i] = pc[i];", &[]),
+    ("fte", "pc[i] += 1;", &[]),
+    ("fte", "pc[i]++;", &[]),
+    ("fte", "--pc[i];", &[]),
+    ("fte", "pw = &pc[i];", &[]),
+    (
+        "fte",
+        "x_s = pc[i];",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = pc[1];", &[]),
+    ("fte", "x_i = pc[1];", &[]),
+    ("fte", "b = (pc[1] == pc[1]);", &[]),
+    ("fte", "pc[1] = pc[1];", &[]),
+    ("fte", "pc[1] += 1;", &[]),
+    ("fte", "pc[1]++;", &[]),
+    ("fte", "--pc[1];", &[]),
+    ("fte", "pw = &pc[1];", &[]),
+    (
+        "fte",
+        "x_s = pc[1];",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = *pc;", &[]),
+    ("fte", "x_i = *pc;", &[]),
+    ("fte", "b = (*pc == *pc);", &[]),
+    ("fte", "*pc = *pc;", &[]),
+    ("fte", "*pc += 1;", &[]),
+    ("fte", "*pc++;", &["Statement does not do anything"]),
+    ("fte", "--*pc;", &[]),
+    ("fte", "pw = &*pc;", &[]),
+    (
+        "fte",
+        "x_s = *pc;",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_i = ph[1];", &[]),
+    ("fte", "ph[1] = ph[1];", &[]),
+    ("fte", "ph[1] += 1;", &[]),
+    ("fte", "ph[1]++;", &[]),
+    ("fte", "--ph[1];", &[]),
+    ("fte", "pw = &ph[1];", &[]),
+    (
+        "fte",
+        "x_s = ph[1];",
+        &["Implicit cast from __uint32 to string"],
+    ),
+    ("fte", "x_i = *ph;", &[]),
+    ("fte", "*ph = *ph;", &[]),
+    ("fte", "*ph += 1;", &[]),
+    ("fte", "*ph++;", &["Statement does not do anything"]),
+    ("fte", "--*ph;", &[]),
+    ("fte", "pw = &*ph;", &[]),
+    (
+        "fte",
+        "x_s = *ph;",
+        &["Implicit cast from __uint32 to string"],
+    ),
+    ("fte", "x_f = s[0];", &[]),
+    ("fte", "x_i = s[0];", &[]),
+    ("fte", "b = (s[0] == s[0]);", &[]),
+    ("fte", "s[0] = s[0];", &[]),
+    ("fte", "s[0] += 1;", &[]),
+    ("fte", "s[0]++;", &[]),
+    ("fte", "--s[0];", &[]),
+    (
+        "fte",
+        "pw = &s[0];",
+        &["Cannot use addressof operator ('&') on a global. Please use the FTE target."],
+    ),
+    ("fte", "x_s = s[0];", &["Cannot cast from float to string"]),
+    ("fte", "x_f = s[i];", &[]),
+    ("fte", "x_i = s[i];", &[]),
+    ("fte", "b = (s[i] == s[i]);", &[]),
+    ("fte", "s[i] = s[i];", &[]),
+    ("fte", "s[i] += 1;", &[]),
+    ("fte", "s[i]++;", &[]),
+    ("fte", "--s[i];", &[]),
+    (
+        "fte",
+        "pw = &s[i];",
+        &["Cannot use addressof operator ('&') on a global. Please use the FTE target."],
+    ),
+    (
+        "fte",
+        "x_s = s[i];",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = e.fl;", &[]),
+    ("fte", "x_i = e.fl;", &[]),
+    ("fte", "b = (e.fl == e.fl);", &[]),
+    ("fte", "e.fl = e.fl;", &[]),
+    ("fte", "e.fl += 1;", &[]),
+    ("fte", "e.fl++;", &[]),
+    ("fte", "--e.fl;", &[]),
+    ("fte", "pw = &e.fl;", &[]),
+    ("fte", "x_s = e.fl;", &["Cannot cast from float to string"]),
+    ("fte", "x_f = e.fv;", &["Cannot cast from vector to float"]),
+    (
+        "fte",
+        "x_i = e.fv;",
+        &["Cannot cast from vector to __int32"],
+    ),
+    ("fte", "b = (e.fv == e.fv);", &[]),
+    ("fte", "e.fv = e.fv;", &[]),
+    ("fte", "e.fv += 1;", &["Implicit cast from float to vector"]),
+    (
+        "fte",
+        "e.fv++;",
+        &["post increment operator not supported with this type"],
+    ),
+    ("fte", "--e.fv;", &["++ operator on unsupported type"]),
+    ("fte", "pw = &e.fv;", &[]),
+    ("fte", "x_s = e.fv;", &["Cannot cast from vector to string"]),
+    ("fte", "x_f = e.fi;", &[]),
+    ("fte", "x_i = e.fi;", &[]),
+    ("fte", "b = (e.fi == e.fi);", &[]),
+    ("fte", "e.fi = e.fi;", &[]),
+    ("fte", "e.fi += 1;", &[]),
+    ("fte", "e.fi++;", &[]),
+    ("fte", "--e.fi;", &[]),
+    ("fte", "pw = &e.fi;", &[]),
+    (
+        "fte",
+        "x_s = e.fi;",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = v[1];", &[]),
+    ("fte", "x_i = v[1];", &[]),
+    ("fte", "b = (v[1] == v[1]);", &[]),
+    ("fte", "v[1] = v[1];", &[]),
+    ("fte", "v[1] += 1;", &[]),
+    ("fte", "v[1]++;", &[]),
+    ("fte", "--v[1];", &[]),
+    ("fte", "pw = &v[1];", &[]),
+    ("fte", "x_s = v[1];", &["Cannot cast from float to string"]),
+    ("fte", "x_f = v[i];", &[]),
+    ("fte", "x_i = v[i];", &[]),
+    ("fte", "b = (v[i] == v[i]);", &[]),
+    ("fte", "v[i] = v[i];", &[]),
+    ("fte", "v[i] += 1;", &[]),
+    ("fte", "v[i]++;", &[]),
+    ("fte", "--v[i];", &[]),
+    ("fte", "pw = &v[i];", &[]),
+    ("fte", "x_s = v[i];", &["Cannot cast from float to string"]),
+    ("fte", "x_f = v_y;", &[]),
+    ("fte", "x_i = v_y;", &[]),
+    ("fte", "b = (v_y == v_y);", &[]),
+    ("fte", "v_y = v_y;", &[]),
+    ("fte", "v_y += 1;", &[]),
+    ("fte", "v_y++;", &[]),
+    ("fte", "--v_y;", &[]),
+    ("fte", "pw = &v_y;", &[]),
+    ("fte", "x_s = v_y;", &["Cannot cast from float to string"]),
+    ("fte", "x_f = farr;", &["Cannot cast from float* to float"]),
+    (
+        "fte",
+        "x_i = farr;",
+        &["Implicit cast from float* to __int32"],
+    ),
+    ("fte", "b = (farr == farr);", &[]),
+    (
+        "fte",
+        "farr = farr;",
+        &["left operand must be an l-value (did you mean farr[0]?)"],
+    ),
+    ("fte", "pw = &farr;", &[]),
+    (
+        "fte",
+        "x_s = farr;",
+        &["Implicit cast from float* to string"],
+    ),
+    ("fte", "x_f = st;", &["Cannot cast from struct S to float"]),
+    (
+        "fte",
+        "x_i = st;",
+        &["Cannot cast from struct S to __int32"],
+    ),
+    ("fte", "st = st;", &[]),
+    ("fte", "st += 1;", &["Cannot cast from float to struct S"]),
+    (
+        "fte",
+        "st++;",
+        &["post increment operator not supported with this type"],
+    ),
+    ("fte", "--st;", &["++ operator on unsupported type"]),
+    ("fte", "pw = &st;", &[]),
+    ("fte", "x_s = st;", &["Cannot cast from struct S to string"]),
+    ("fte", "x_f = s4.a[1];", &[]),
+    ("fte", "x_i = s4.a[1];", &[]),
+    ("fte", "b = (s4.a[1] == s4.a[1]);", &[]),
+    ("fte", "s4.a[1] = s4.a[1];", &[]),
+    ("fte", "s4.a[1] += 1;", &[]),
+    ("fte", "s4.a[1]++;", &[]),
+    ("fte", "--s4.a[1];", &[]),
+    ("fte", "pw = &s4.a[1];", &[]),
+    (
+        "fte",
+        "x_s = s4.a[1];",
+        &["Cannot cast from float to string"],
+    ),
+    ("fte", "x_f = s4.a[i];", &[]),
+    ("fte", "x_i = s4.a[i];", &[]),
+    ("fte", "b = (s4.a[i] == s4.a[i]);", &[]),
+    ("fte", "s4.a[i] = s4.a[i];", &[]),
+    ("fte", "s4.a[i] += 1;", &[]),
+    ("fte", "s4.a[i]++;", &[]),
+    ("fte", "--s4.a[i];", &[]),
+    ("fte", "pw = &s4.a[i];", &[]),
+    (
+        "fte",
+        "x_s = s4.a[i];",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        "fte",
+        "x_f = s4.a[4];",
+        &["(constant) array index out of bounds (0 <= 4 < 3)"],
+    ),
+    (
+        "fte",
+        "x_i = s4.a[4];",
+        &["(constant) array index out of bounds (0 <= 4 < 3)"],
+    ),
+    (
+        "fte",
+        "b = (s4.a[4] == s4.a[4]);",
+        &[
+            "(constant) array index out of bounds (0 <= 4 < 3)",
+            "(constant) array index out of bounds (0 <= 4 < 3)",
+        ],
+    ),
+    (
+        "fte",
+        "s4.a[4] = s4.a[4];",
+        &[
+            "(constant) array index out of bounds (0 <= 4 < 3)",
+            "(constant) array index out of bounds (0 <= 4 < 3)",
+        ],
+    ),
+    (
+        "fte",
+        "s4.a[4] += 1;",
+        &["(constant) array index out of bounds (0 <= 4 < 3)"],
+    ),
+    (
+        "fte",
+        "s4.a[4]++;",
+        &["(constant) array index out of bounds (0 <= 4 < 3)"],
+    ),
+    (
+        "fte",
+        "--s4.a[4];",
+        &["(constant) array index out of bounds (0 <= 4 < 3)"],
+    ),
+    (
+        "fte",
+        "pw = &s4.a[4];",
+        &["(constant) array index out of bounds (0 <= 4 < 3)"],
+    ),
+    (
+        "fte",
+        "x_s = s4.a[4];",
+        &[
+            "(constant) array index out of bounds (0 <= 4 < 3)",
+            "Cannot cast from float to string",
+        ],
+    ),
+    (
+        "fte",
+        "x_f = s4.a[3.5];",
+        &[
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "Numerical overflow. 3.500000 will be rounded to 3",
+        ],
+    ),
+    (
+        "fte",
+        "x_i = s4.a[3.5];",
+        &[
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "Numerical overflow. 3.500000 will be rounded to 3",
+        ],
+    ),
+    (
+        "fte",
+        "b = (s4.a[3.5] == s4.a[3.5]);",
+        &[
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "Numerical overflow. 3.500000 will be rounded to 3",
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "Numerical overflow. 3.500000 will be rounded to 3",
+        ],
+    ),
+    (
+        "fte",
+        "s4.a[3.5] = s4.a[3.5];",
+        &[
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "Numerical overflow. 3.500000 will be rounded to 3",
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "Numerical overflow. 3.500000 will be rounded to 3",
+        ],
+    ),
+    (
+        "fte",
+        "s4.a[3.5] += 1;",
+        &[
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "Numerical overflow. 3.500000 will be rounded to 3",
+        ],
+    ),
+    (
+        "fte",
+        "s4.a[3.5]++;",
+        &[
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "Numerical overflow. 3.500000 will be rounded to 3",
+        ],
+    ),
+    (
+        "fte",
+        "--s4.a[3.5];",
+        &[
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "Numerical overflow. 3.500000 will be rounded to 3",
+        ],
+    ),
+    (
+        "fte",
+        "pw = &s4.a[3.5];",
+        &[
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "Numerical overflow. 3.500000 will be rounded to 3",
+        ],
+    ),
+    (
+        "fte",
+        "x_s = s4.a[3.5];",
+        &[
+            "(constant) array index out of bounds (0 <= 3 < 3)",
+            "Numerical overflow. 3.500000 will be rounded to 3",
+            "Cannot cast from float to string",
+        ],
+    ),
+    (
+        "fte",
+        "x_f = s4.av[i];",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        "fte",
+        "x_i = s4.av[i];",
+        &["Cannot cast from vector to __int32"],
+    ),
+    ("fte", "b = (s4.av[i] == s4.av[i]);", &[]),
+    ("fte", "s4.av[i] = s4.av[i];", &[]),
+    (
+        "fte",
+        "s4.av[i] += 1;",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        "fte",
+        "s4.av[i]++;",
+        &["post increment operator not supported with this type"],
+    ),
+    ("fte", "--s4.av[i];", &["++ operator on unsupported type"]),
+    ("fte", "pw = &s4.av[i];", &[]),
+    (
+        "fte",
+        "x_s = s4.av[i];",
+        &["Cannot cast from vector to string"],
+    ),
+    ("fte", "x_f = ps4->a[i];", &[]),
+    ("fte", "x_i = ps4->a[i];", &[]),
+    ("fte", "b = (ps4->a[i] == ps4->a[i]);", &[]),
+    ("fte", "ps4->a[i] = ps4->a[i];", &[]),
+    ("fte", "ps4->a[i] += 1;", &[]),
+    ("fte", "ps4->a[i]++;", &[]),
+    ("fte", "--ps4->a[i];", &[]),
+    ("fte", "pw = &ps4->a[i];", &[]),
+    (
+        "fte",
+        "x_s = ps4->a[i];",
+        &["Cannot cast from float to string"],
+    ),
+    ("fte", "x_f = ps4->a[1];", &[]),
+    ("fte", "x_i = ps4->a[1];", &[]),
+    ("fte", "b = (ps4->a[1] == ps4->a[1]);", &[]),
+    ("fte", "ps4->a[1] = ps4->a[1];", &[]),
+    ("fte", "ps4->a[1] += 1;", &[]),
+    ("fte", "ps4->a[1]++;", &[]),
+    ("fte", "--ps4->a[1];", &[]),
+    ("fte", "pw = &ps4->a[1];", &[]),
+    (
+        "fte",
+        "x_s = ps4->a[1];",
+        &["Cannot cast from float to string"],
+    ),
+    ("fte", "x_f = s4.a;", &["Cannot cast from float* to float"]),
+    (
+        "fte",
+        "x_i = s4.a;",
+        &["Implicit cast from float* to __int32"],
+    ),
+    ("fte", "b = (s4.a == s4.a);", &[]),
+    (
+        "fte",
+        "s4.a = s4.a;",
+        &["left operand must be an l-value (did you mean s4[0]?)"],
+    ),
+    ("fte", "pw = &s4.a;", &[]),
+    (
+        "fte",
+        "x_s = s4.a;",
+        &["Implicit cast from float* to string"],
+    ),
+    (
+        "fte",
+        "x_f = ps4->a;",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        "fte",
+        "x_i = ps4->a;",
+        &["Implicit cast from float* to __int32"],
+    ),
+    ("fte", "b = (ps4->a == ps4->a);", &[]),
+    (
+        "fte",
+        "ps4->a = ps4->a;",
+        &["left operand must be an l-value (did you mean ps4[0]?)"],
+    ),
+    ("fte", "pw = &ps4->a;", &[]),
+    (
+        "fte",
+        "x_s = ps4->a;",
+        &["Implicit cast from float* to string"],
+    ),
+    ("fte", "x_f = t.q;", &[]),
+    ("fte", "x_i = t.q;", &[]),
+    ("fte", "b = (t.q == t.q);", &[]),
+    ("fte", "t.q = t.q;", &[]),
+    ("fte", "t.q += 1;", &[]),
+    ("fte", "t.q++;", &[]),
+    ("fte", "--t.q;", &[]),
+    ("fte", "pw = &t.q;", &[]),
+    ("fte", "x_s = t.q;", &["Cannot cast from float to string"]),
+    ("fte", "x_f = t.r[i];", &[]),
+    ("fte", "x_i = t.r[i];", &[]),
+    ("fte", "b = (t.r[i] == t.r[i]);", &[]),
+    ("fte", "t.r[i] = t.r[i];", &[]),
+    ("fte", "t.r[i] += 1;", &[]),
+    ("fte", "t.r[i]++;", &[]),
+    ("fte", "--t.r[i];", &[]),
+    ("fte", "pw = &t.r[i];", &[]),
+    (
+        "fte",
+        "x_s = t.r[i];",
+        &["Implicit cast from __int32 to string"],
+    ),
+    ("fte", "x_f = t.r[1];", &[]),
+    ("fte", "x_i = t.r[1];", &[]),
+    ("fte", "b = (t.r[1] == t.r[1]);", &[]),
+    ("fte", "t.r[1] = t.r[1];", &[]),
+    ("fte", "t.r[1] += 1;", &[]),
+    ("fte", "t.r[1]++;", &[]),
+    ("fte", "--t.r[1];", &[]),
+    ("fte", "pw = &t.r[1];", &[]),
+    (
+        "fte",
+        "x_s = t.r[1];",
+        &["Implicit cast from __int32 to string"],
+    ),
+];
+
+// spec FTEF-31.1: each reference read, compared, stored to, stepped and addressed as FTEQCC does
+// spec FTEF-6.20: a struct value's member is its struct's definition at the member's word
+// spec FTEF-6.21: an 8- or 16-bit integer loaded through its address is an `int` or `uint`
+// spec FTEF-31.10: a constant index is the array's definition at that word
+// spec FTEF-31.11: the address of a string's character is the fatal error E0361
+// spec QCD-4.62: E0361 for the address of a string's character
+// spec FTEF-29.10: an array's head steps as a pointer and is no l-value
+// spec FTEF-6.24: a struct's member array is indexed at the member's word
+#[test]
+fn every_reference_is_read_as_fteqcc_reads_it() {
+    for &(target, statement, expected) in REFERENCES {
+        let pragma = if target == "fte" {
+            "#pragma target fte\n"
+        } else {
+            ""
+        };
+        let found: Vec<String> = diags(&format!(
+            "{pragma}{REFERENCE_DEFS}\nvoid() g = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect();
+        assert_eq!(found, expected, "{target} {statement}");
+    }
+}
