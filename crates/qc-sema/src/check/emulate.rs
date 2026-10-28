@@ -222,7 +222,19 @@ impl Checker<'_> {
                 let ty = match op {
                     Op::EqU | Op::NeU => Type::Named("__uint32".into()),
                     Op::EqU64 | Op::NeU64 => Type::Named("__uint64".into()),
-                    _ => value.ty.clone(),
+                    Op::EqFld
+                    | Op::EqI
+                    | Op::NeFld
+                    | Op::NeI
+                    | Op::AndI
+                    | Op::AndFi
+                    | Op::AndIf
+                    | Op::AndAny
+                    | Op::OrI
+                    | Op::OrFi
+                    | Op::OrIf
+                    | Op::OrAny => value.ty.clone(),
+                    _ => result.ty,
                 };
                 Ok(Value { ty, ..value })
             }

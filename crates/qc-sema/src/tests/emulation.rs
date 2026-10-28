@@ -918,3 +918,12 @@ fn u64f() -> (Code, String) {
         "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
     )
 }
+
+// spec FTEF-27.12: an unsigned operator emulated by its signed one stays unsigned, so a folded
+// `1u << 0u` masks a `__uint64` with no conversion (FreeCS `XRInput.qc`)
+#[test]
+fn an_emulated_unsigned_operator_stays_unsigned() {
+    let source = "#pragma target fte_5768\n__uint64 ul; float f; void() g = { if (ul & (1u << \
+                  0u)) f = 1; f = ul & (2u - 1u) ? 1 : 0; };\n";
+    assert_eq!(diags(source), []);
+}
