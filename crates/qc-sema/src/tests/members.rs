@@ -611,3 +611,42 @@ fn accessor_members_declare_the_functions_they_name() {
         Some("Type mismatch on redeclaration of g. float(), should be float(class C this)")
     );
 }
+
+// spec FTEF-24.1: `e.(expr)` selects the field the expression's value is, of the type it holds;
+// a value that is no field is "NAME is not a field", NAME the value's (`QCC_GetSRefName`)
+#[test]
+fn fields_selected_by_an_expression() {
+    let messages = |statement: &str| -> Vec<String> {
+        fte_index_of(&format!(
+            "#pragma target fte\n.float fa, fb; .string fs; var .float fv = fa; entity e; \
+             float x; float c; float farr[3]; __variant va; class C : entity {{ float m; }}; \
+             C cc;\nvoid() f = {{ {statement} }};\n"
+        ))
+        .diagnostics
+        .iter()
+        .map(|d| d.diagnostic.message.clone())
+        .collect()
+    };
+    for fine in [
+        "x = e.(fa);",
+        "x = e.(fv);",
+        "e.(fv) = 1;",
+        "x = e.(va);",
+        "x = e.(c ? fa : fb);",
+    ] {
+        assert!(messages(fine).is_empty(), "{fine}: {:?}", messages(fine));
+    }
+    assert_eq!(
+        messages("local string q = e.(fv);"),
+        ["Cannot cast from float to string"]
+    );
+    assert_eq!(
+        messages("x = e.(fs);"),
+        ["Cannot cast from string to float"]
+    );
+    assert_eq!(messages("x = e.(x);"), ["x is not a field"]);
+    assert_eq!(messages("x = e.(x + 1);"), ["float is not a field"]);
+    assert_eq!(messages("x = e.(3);"), ["IMMEDIATE is not a field"]);
+    assert_eq!(messages("x = e.(farr[1]);"), ["farr is not a field"]);
+    assert_eq!(messages("x = cc.(x);"), ["x is not a field of class C"]);
+}

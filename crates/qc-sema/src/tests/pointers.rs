@@ -493,3 +493,54 @@ fn array_reads_by_target() {
         );
     }
 }
+
+// spec FTEF-6.15: a bitfield is read as its own type, `__uint` for an unsigned one
+// spec FTEF-2.12: an 8- or 16-bit integer, an element of an array of them included, is read as
+// its word and stored as its own type
+// spec FTEF-31.1: a string's character is a float at a float index, else an `__int32`
+#[test]
+fn reads_and_stores_of_bitfields_characters_and_narrow_integers() {
+    let defs = "#pragma target fte\nstruct B { __uint b:4; int a:4; }; B bf; string txt; \
+                __uint8 narr[4]; __uint8 un8;";
+    let found = |statement: &str| -> Vec<String> {
+        diags(defs, statement).into_iter().map(|(_, m)| m).collect()
+    };
+    for (statement, message) in [
+        (
+            "local string q = bf.b;",
+            "Implicit cast from __uint to string",
+        ),
+        (
+            "local entity q = bf.a;",
+            "Implicit cast from __int32 to entity",
+        ),
+        (
+            "local string q = txt[1];",
+            "Cannot cast from float to string",
+        ),
+        (
+            "local string q = txt[1.5];",
+            "Cannot cast from float to string",
+        ),
+        (
+            "local string q = txt[i];",
+            "Implicit cast from __int32 to string",
+        ),
+        (
+            "local string q = narr[1];",
+            "Implicit cast from __uint32 to string",
+        ),
+        (
+            "local string q = un8;",
+            "Implicit cast from __uint32 to string",
+        ),
+        ("narr[1] = \"a\";", "Implicit cast from string to __uint8"),
+        ("narr[i] = \"a\";", "Implicit cast from string to __uint8"),
+        (
+            "narr[1] = 1.5;",
+            "Numerical overflow. 1.500000 will be rounded to 1",
+        ),
+    ] {
+        assert_eq!(found(statement), [message], "{statement}");
+    }
+}

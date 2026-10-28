@@ -215,26 +215,22 @@ impl Checker<'_> {
                     }
                     return Ok(self.unknown_field(base, &name, token.span()));
                 };
-                (ty, name.clone(), name, token.span(), Some(id))
+                (ty, name, token.span(), Some(id))
             }
             ast::Expr::Paren(paren) => {
+                // `QCC_GetSRefName` of the value: a definition's name, `IMMEDIATE`, or a
+                // temporary's type.
                 let value = self.expr_of(paren.expr())?;
                 let span = selector.syntax().span();
                 let label = value.label();
-                (
-                    value.ty,
-                    String::from_utf8_lossy(&selector.syntax().text()).into_owned(),
-                    label,
-                    span,
-                    value.sym.def(),
-                )
+                (value.ty, label, span, value.sym.def())
             }
             other => {
                 self.expr(other)?;
                 return Ok(Value::unknown());
             }
         };
-        let (ty, name, label, span, def) = field;
+        let (ty, label, span, def) = field;
         match self.env.shape(&ty).map(|s| s.etype) {
             Some(Etype::Field) => {
                 let held = match ty {
@@ -252,8 +248,8 @@ impl Checker<'_> {
             None => Ok(Value::unknown()),
             Some(_) => {
                 let message = match &base.ty {
-                    Type::Named(class) => format!("{name} is not a field of class {class}"),
-                    _ => format!("{name} is not a field"),
+                    Type::Named(class) => format!("{label} is not a field of class {class}"),
+                    _ => format!("{label} is not a field"),
                 };
                 self.fatal(Code::E0318, span, message)
             }
