@@ -280,9 +280,9 @@ impl Checker<'_> {
     ) -> Result<bool, Fatal> {
         let target = self.env.target_at(span.start);
         let index_etype = self.etype_of(&index.ty);
-        let length_prefix = !vector
-            && element.sym.def().is_some_and(|def| !self.env.is_local(def))
-            && target.valid(Op::FetchGblF);
+        // `def->arraylengthprefix = !rootsymbol && !def->localscope && ...` reads `localscope`
+        // before `QCC_PR_GetDef` sets it, so a local array has the prefix too (FTEF-31.15).
+        let length_prefix = !vector && element.sym.def().is_some() && target.valid(Op::FetchGblF);
         let as_integer = target.valid(Op::LoadaF) || target.valid(Op::GloadF);
         if as_integer {
             if index_etype != Some(Etype::Integer) {
@@ -292,7 +292,15 @@ impl Checker<'_> {
         }
         if length_prefix {
             if index_etype != Some(Etype::Float) {
+                // FTEF-31.15: the conversion's result is not kept, so `OP_FETCH_GBL_*` takes
+                // the index as it is and frees it a second time.
                 self.converted(index, Etype::Float, span)?;
+                if index.sym.def().is_some()
+                    && let Some(name) = &index.name
+                {
+                    let message = format!("INTERNAL: over-freed refcount to {name}");
+                    self.env.report(Code::W0319, span, message);
+                }
             }
             return Ok(false);
         }

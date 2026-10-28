@@ -4683,6 +4683,16 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   = 1` and `s[1] = "b"`, "Cannot cast from string to float". Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_RefToDef`, `QCC_StoreSRefToRef`, `QCC_SupplyConversion`.
+- **FTEF-31.15** An array head has a length prefix for `OP_FETCH_GBL_*` when the target has it,
+  unless it is embedded in another symbol: `def->arraylengthprefix = !rootsymbol &&
+  !def->localscope && ...` reads `localscope` before `QCC_PR_GetDef` sets it, so a local array
+  has the prefix too. Read there with an index that is no float (`QCC_LoadFromArray`, `accel ==
+  1`), the index is converted with `QCC_SupplyConversion(index, ev_float, true)`, whose result is
+  not kept: the fetch takes the index as it is and frees it a second time, which for an index
+  that is a named definition warns `W0319` "INTERNAL: over-freed refcount to NAME", as under
+  `#pragma target hexen2` `farr[i]` does for an `int i`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_LoadFromArray`, `QCC_PR_GetDef`, `QCC_FreeTemp`.
 ## FTEF-32 Calls
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`,

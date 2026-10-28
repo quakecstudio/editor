@@ -400,7 +400,10 @@ fn characters_vector_fields_and_two_word_structs() {
     assert_eq!(found("local float q = txt[\"a\"];"), [mismatch("string")]);
     assert_eq!(found("local float q = txt[v];"), [mismatch("vector")]);
     assert_eq!(found("txt[e] = 1;"), [mismatch("entity")]);
-    assert_eq!(found("txt[1] = \"b\";"), ["Cannot cast from string to float"]);
+    assert_eq!(
+        found("txt[1] = \"b\";"),
+        ["Cannot cast from string to float"]
+    );
     assert!(found("txt[1] = 1; local float q = txt[1];").is_empty());
     assert!(found("local .float q = fv[1];").is_empty());
     assert_eq!(
@@ -430,4 +433,63 @@ fn characters_vector_fields_and_two_word_structs() {
                 .to_owned()
         )]
     );
+}
+
+// spec FTEF-31.15: an array's element read through `OP_FETCH_GBL_*` with an index that is no
+// float frees the index twice; a local array has the length prefix too
+// spec FTEF-31.2: an element at an index that is no constant is read as the target allows, the
+// index converted for it
+#[test]
+fn array_reads_by_target() {
+    let defs = "float farr[4]; vector varr[3]; vector v; float qf; vector wv; float fi; int ii; \
+                __int8 narr[4]; int n;";
+    let found = |target: &str, statement: &str| -> Vec<String> {
+        diags(&format!("#pragma target {target}\n{defs}"), statement)
+            .into_iter()
+            .map(|(_, m)| m)
+            .collect()
+    };
+    let itof = |name: &str| format!("itof emulation: denormals are unsafe {name}");
+    let freed = |name: &str| format!("INTERNAL: over-freed refcount to {name}");
+    let address = "Address-of operator is not supported in this form without extensions. \
+                   Consider the use of: #pragma target fte";
+    assert_eq!(found("hexen2", "qf = farr[ii];"), [itof("ii"), freed("ii")]);
+    assert_eq!(
+        found("hexen2", "local float la[3]; qf = la[ii];"),
+        [itof("ii"), freed("ii")]
+    );
+    assert_eq!(
+        found("hexen2", "local int li = 1; qf = farr[li];"),
+        [itof("li"), freed("li")]
+    );
+    assert_eq!(found("id", "qf = farr[ii];"), [itof("ii")]);
+    assert_eq!(found("id", "qf = v[ii];"), [itof("ii")]);
+    assert_eq!(found("hexen2", "qf = v[ii];"), [itof("ii")]);
+    assert_eq!(
+        found("id", "n = narr[fi];"),
+        ["ftoi emulation: denormals are unsafe", address]
+    );
+    assert_eq!(found("dp", "n = narr[ii];"), [address]);
+    for target in ["id", "hexen2", "dp", "fte"] {
+        for statement in [
+            "qf = farr[fi];",
+            "wv = varr[fi];",
+            "local float la[3]; qf = la[fi];",
+            "qf = v[fi];",
+        ] {
+            assert!(found(target, statement).is_empty(), "{target}: {statement}");
+        }
+    }
+    for statement in [
+        "qf = farr[ii];",
+        "wv = varr[ii];",
+        "qf = v[ii];",
+        "n = narr[ii];",
+    ] {
+        assert!(found("fte", statement).is_empty(), "fte: {statement}");
+        assert!(
+            found("dp", statement).iter().all(|m| m == address),
+            "dp: {statement}"
+        );
+    }
 }
