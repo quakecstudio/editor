@@ -262,14 +262,17 @@ impl Value {
         self.known().is_some_and(Constant::null)
     }
 
-    /// What a cast reads of it: a constant of its own type as a literal, whose nullness the cast
-    /// reads (FTEF-19.31), anything else by its type.
+    /// What a cast reads of it: a constant of its own type, or a null constant of any type
+    /// (`QCC_SRef_IsNull`), as a literal, whose nullness the cast reads (FTEF-19.31), anything
+    /// else by its type.
     pub(crate) fn source(&self) -> Source<'_> {
         match self.known() {
-            Some(constant) if constant.ty.value_type() == self.ty => Source::Literal(Literal {
-                ty: constant.ty,
-                null: constant.null(),
-            }),
+            Some(constant) if constant.ty.value_type() == self.ty || constant.null() => {
+                Source::Literal(Literal {
+                    ty: constant.ty,
+                    null: constant.null(),
+                })
+            }
             Some(_) | None => Source::Typed(&self.ty),
         }
     }
@@ -289,8 +292,26 @@ impl Value {
         Self::of(Type::Unknown)
     }
 
-    /// How FTEQCC names it as the target of a store (`QCC_GetRefName`): `base.field` for a
-    /// field, `base[index]` for an element at an index that is no immediate, else its label.
+    /// `QCC_GetRefName`: `base.field` for a field, `base[index]` for an element or a string's
+    /// character, `base->index` through a pointer (`TEMP` for no index), else its label, an
+    /// accessor's member included (FTEF-29.8).
+    pub(crate) fn ref_name(&self) -> String {
+        let index_name =
+            |index: Option<&Value>| index.map_or_else(|| "TEMP".to_owned(), Value::label);
+        match &self.reference {
+            Reference::Field(field) => format!("{}.{}", field.base, field.field),
+            Reference::Element(element) => format!("{}[{}]", element.base, element.index.label()),
+            Reference::Character(index) => format!("{}[{}]", self.label(), index.label()),
+            Reference::Pointer(pointer) => {
+                format!("{}->{}", pointer.base, index_name(pointer.index.as_ref()))
+            }
+            // The accessor branch writes its name and then `break`s, so the base's is returned.
+            Reference::Accessor(_) | Reference::Global | Reference::ArrayHead => self.label(),
+        }
+    }
+
+    /// How FTEQCC's store names its target (`QCC_StoreSRefToRef`): `base.field` for a field,
+    /// `base[index]` for an element at an index that is no immediate, else its label.
     pub(crate) fn place(&self) -> String {
         match &self.reference {
             Reference::Field(field) => format!("{}.{}", field.base, field.field),

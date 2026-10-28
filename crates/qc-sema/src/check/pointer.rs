@@ -251,7 +251,7 @@ impl Checker<'_> {
         if !self.env.defines("memgetval") {
             let message = "memgetval function not defined: cannot emulate OP_LOADP_*";
             self.env.report(Code::W0235, span, message.to_owned());
-            self.refuse(op, span);
+            self.refuse_emitted(op, span);
             return Ok(result);
         }
         self.emit(Op::ConvItof, rhs, &Value::unknown(), span)?;
@@ -285,7 +285,7 @@ impl Checker<'_> {
 
     /// `QCC_MakeIntConst(-aux_type->size)`: the size is unsigned, so its negation is
     /// `2^32 - size`, which "will be truncated" to `-size`.
-    fn negated_size(&mut self, words: Option<i32>, span: Span) -> Value {
+    pub(super) fn negated_size(&mut self, words: Option<i32>, span: Span) -> Value {
         let Some(words) = words else {
             return opaque_int();
         };
@@ -509,7 +509,7 @@ impl Checker<'_> {
 }
 
 /// `QCC_MakeIntConst(value)`.
-fn int(value: i32) -> Value {
+pub(super) fn int(value: i32) -> Value {
     Value::constant(Constant::int(value))
 }
 
@@ -524,7 +524,7 @@ fn bytes(bits: i32) -> Value {
 }
 
 /// An integer constant whose value the model does not know.
-fn opaque_int() -> Value {
+pub(super) fn opaque_int() -> Value {
     Value {
         constness: Constness::Opaque,
         ..int(0)

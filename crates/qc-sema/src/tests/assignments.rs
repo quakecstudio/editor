@@ -419,3 +419,60 @@ fn a_field_is_updated_in_place_by_its_types_opcode() {
         ])
     );
 }
+
+// spec FTEF-29.8: a compound assignment's and an extra argument's names are `QCC_GetRefName`'s,
+// the store's `QCC_StoreSRefToRef`'s
+#[test]
+fn targets_are_named_as_getrefname_names_them() {
+    let lax = |statement: &str| {
+        diags(&format!(
+            "#pragma target fte\n#pragma flag enable lax\n.float f; entity e; float *p; \
+             float arr[3]; vector w;\naccessor A : float {{ get float y = {{ return 1; }}; }}; \
+             A acc; void(float a) h = {{}};\nvoid() g = {{ {statement} }};\n"
+        ))
+    };
+    let mismatch = |name: &str| {
+        (
+            Code::W0243,
+            format!("Implicit type mismatch on assignment to {name}. Needed float, got vector."),
+        )
+    };
+    assert_eq!(
+        lax("arr[1] *= w;"),
+        [
+            mismatch("arr[IMMEDIATE]"),
+            (
+                Code::W0240,
+                "type mismatch: vector vector to float arr".to_owned()
+            ),
+        ]
+    );
+    let ignored = |name: &str| {
+        (
+            Code::W0252,
+            format!("too many parameters on call to h, argument {name} will be ignored"),
+        )
+    };
+    for (call, name) in [
+        ("h(1, arr[1]);", "arr[IMMEDIATE]"),
+        ("h(1, e.f);", "e.f"),
+        ("h(1, *p);", "p->TEMP"),
+        ("h(1, acc.y);", "acc"),
+    ] {
+        let found: Vec<_> = lax(call)
+            .into_iter()
+            .filter(|(c, _)| *c == Code::W0252)
+            .collect();
+        assert_eq!(found, [ignored(name)], "{call}");
+    }
+}
+
+// spec FTEF-29.9: a null constant casts as a null whatever its definition's type
+#[test]
+fn a_null_constant_of_any_type_casts_as_null() {
+    let found = diags(
+        "#pragma target fte\ntypedef float myf; const myf z = 0; const int zi = 0; string s; \
+         entity e;\nvoid() g = { s = z; s = zi; e = zi; };\n",
+    );
+    assert_eq!(found, []);
+}

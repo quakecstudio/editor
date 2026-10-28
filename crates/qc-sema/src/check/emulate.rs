@@ -19,6 +19,7 @@ use crate::check::expr::{Checker, Fatal};
 use crate::check::fold::{Folded, fold};
 use crate::check::opcodes::row;
 use crate::check::{Constness, Value};
+use crate::ty::Type;
 
 /// `QCTARGVER_FTE_DEF` and `QCTARGVER_FTE_MAX`: the FTE revisions `badopcode` suggests.
 const FTE_DEFAULT: u32 = 5768;
@@ -38,6 +39,13 @@ enum Emulation {
     /// Emit these opcodes on the operands in turn, the last giving the value; each is emitted
     /// or emulated in turn. For `%` when no `mod` function is defined (FTEF-27.4).
     Expand(&'static [Op]),
+    /// A 64-bit `==` or `!=` word by word: the first opcode on the operands' low words, then
+    /// on their high words, each cast to `int`, joined by the second (FTEF-27.13).
+    Words(Op, Op),
+    /// `a % b` as `a - b * (a / b)`: the division, the floor (`d | d`) for a float one, the
+    /// product of `b` and the quotient and the difference from `a`, each emitted in turn
+    /// (FTEF-27.4).
+    Remainder(&'static [Op]),
     /// `return QCC_PR_StatementFlags(OTHER, a, b, ...)`: this opcode instead, folded, emitted or
     /// emulated in turn.
     Instead(Op),
@@ -62,6 +70,13 @@ enum Emulation {
     Special,
     /// Emitted as statements of another opcode with no check of the target.
     Emitted,
+    /// Emitted as these plain statements (`QCC_PR_SimpleStatement`, `force` off), each refused
+    /// with the fatal error when the target lacks it: a 64-bit `&`, `|` and `^` word by word,
+    /// and a 64-bit field load by two `OP_LOAD_FLD`s.
+    Simple(&'static [Op]),
+    /// Emitted as three plain statements of the float opcode with `force` on, no check of the
+    /// target: a vector's `&` and `|` component by component.
+    Forced,
     /// No emulation: "Opcode ... not valid for target" (FTEF-27.5).
     Refuse,
 }
@@ -162,7 +177,7 @@ impl Checker<'_> {
                 let name = names.first().copied().unwrap_or_default();
                 let message = format!("{name} function not defined: cannot emulate {what}");
                 self.env.report(Code::W0235, span, message);
-                self.refuse(op, span);
+                self.refuse_emitted(op, span);
                 Ok(result)
             }
             Emulation::Expand(steps) => {
@@ -175,10 +190,54 @@ impl Checker<'_> {
                     ..result
                 })
             }
-            Emulation::Instead(other) => Ok(Value {
-                ty: result.ty,
-                ..self.emit(other, lhs, rhs, span)?
-            }),
+            Emulation::Words(compare, join) => {
+                let int = Type::Named("__int32".into());
+                let lhs = Value {
+                    ty: int.clone(),
+                    ..lhs.clone()
+                };
+                let rhs = Value {
+                    ty: int,
+                    ..rhs.clone()
+                };
+                let low = self.emit(compare, &lhs, &rhs, span)?;
+                let high = self.emit(compare, &lhs, &rhs, span)?;
+                self.emit(join, &low, &high, span)
+            }
+            Emulation::Remainder(steps) => {
+                let &[div, ref rest @ .., mul, sub] = steps else {
+                    return Ok(result);
+                };
+                let mut quotient = self.emit(div, lhs, rhs, span)?;
+                if let [floor] = rest {
+                    quotient = self.emit(*floor, &quotient, &quotient, span)?;
+                }
+                let product = self.emit(mul, rhs, &quotient, span)?;
+                self.emit(sub, lhs, &product, span)
+            }
+            Emulation::Instead(other) => {
+                // `var_c.cast = type_uint;` (or `type_uint64`) after an unsigned operator's
+                // signed one, a comparison's truth value included (FTEF-27.12).
+                let value = self.emit(other, lhs, rhs, span)?;
+                let ty = match op {
+                    Op::EqU | Op::NeU => Type::Named("__uint32".into()),
+                    Op::EqU64 | Op::NeU64 => Type::Named("__uint64".into()),
+                    Op::EqFld
+                    | Op::EqI
+                    | Op::NeFld
+                    | Op::NeI
+                    | Op::AndI
+                    | Op::AndFi
+                    | Op::AndIf
+                    | Op::AndAny
+                    | Op::OrI
+                    | Op::OrFi
+                    | Op::OrIf
+                    | Op::OrAny => value.ty.clone(),
+                    _ => result.ty,
+                };
+                Ok(Value { ty, ..value })
+            }
             Emulation::Swapped(other) => Ok(Value {
                 ty: result.ty,
                 ..self.emit(other, rhs, lhs, span)?
@@ -203,8 +262,17 @@ impl Checker<'_> {
                 self.generate(op, span);
                 Ok(result)
             }
+            // A plain statement is no `QCC_PR_StatementFlags`, which alone reports one at global
+            // scope.
+            Emulation::Simple(ops) => {
+                for &plain in ops {
+                    self.simple_statement(plain, span)?;
+                }
+                Ok(result)
+            }
+            Emulation::Forced => Ok(result),
             Emulation::Refuse => {
-                self.refuse(op, span);
+                self.refuse_emitted(op, span);
                 Ok(result)
             }
         }
@@ -316,7 +384,7 @@ impl Checker<'_> {
                 } else if !self.env.defines("nextent") {
                     let message = "the nextent builtin is not defined".to_owned();
                     self.env.report(Code::W0235, span, message);
-                    self.refuse(op, span);
+                    self.refuse_emitted(op, span);
                     return Ok(result);
                 } else {
                     self.emit(Op::MulI, &Value::unknown(), rhs, span)?;
@@ -385,7 +453,7 @@ impl Checker<'_> {
                 }
                 let message = format!("bitshift function not defined: cannot emulate {what}");
                 self.env.report(Code::W0235, span, message);
-                self.refuse(op, span);
+                self.refuse_emitted(op, span);
                 Ok(result)
             }
             Op::SpaceshipS => {
@@ -421,7 +489,7 @@ impl Checker<'_> {
             }
             Op::IfF | Op::IfnotF | Op::IfS | Op::IfnotS | Op::NotI => self.truth(op, lhs, span),
             _ => {
-                self.refuse(op, span);
+                self.refuse_emitted(op, span);
                 Ok(result)
             }
         }
@@ -464,7 +532,7 @@ impl Checker<'_> {
             Op::BitextendI | Op::BitextendU => {
                 // FTEF-27.7: by shifts, when the width and offset are a constant.
                 let Some(field) = rhs.known() else {
-                    self.refuse(op, span);
+                    self.refuse_emitted(op, span);
                     return Ok(result);
                 };
                 let bits = field.u() & 0xff;
@@ -504,7 +572,7 @@ impl Checker<'_> {
                 if !self.env.defines("SubInt") {
                     let message = "SubInt function not defined: cannot emulate ~int";
                     self.env.report(Code::W0235, span, message.to_owned());
-                    self.refuse(Op::SubI, span);
+                    self.refuse_emitted(Op::SubI, span);
                 }
                 Ok(result)
             }
@@ -574,6 +642,14 @@ impl Checker<'_> {
         Err(Fatal)
     }
 
+    /// `badopcode` in `QCC_PR_StatementFlags`: [`Self::refuse`], an error that is no fatal
+    /// one, after which the statement is emitted as any is, at global scope "Unable to generate
+    /// statements at global scope" (FTEF-34.9).
+    pub(super) fn refuse_emitted(&mut self, op: Op, span: Span) {
+        self.refuse(op, span);
+        self.generate(op, span);
+    }
+
     pub(super) fn refuse(&mut self, op: Op, span: Span) {
         let name = row(op).map_or("", |r| r.name);
         let opname = op.name();
@@ -601,7 +677,8 @@ impl Checker<'_> {
 )]
 const fn emulation(op: Op) -> Emulation {
     use Emulation::{
-        Conversion, ConvertLeft, ConvertRight, Emitted, Expand, Helper, Instead, Refuse, Special,
+        Conversion, ConvertLeft, ConvertRight, Emitted, Expand, Forced, Helper, Instead, Refuse,
+        Remainder, Simple, Special, Words,
     };
     if let Some(substitution) = substitution(op) {
         return substitution;
@@ -626,11 +703,11 @@ const fn emulation(op: Op) -> Emulation {
         Op::PowI => Helper(&["pow", "powf"], "int*^int"),
         Op::PowFi => Helper(&["pow", "powf"], "float*^int"),
         Op::PowIf => Helper(&["pow", "powf"], "int*^float"),
-        Op::ModF => Expand(&[Op::DivF, Op::BitorF, Op::MulF, Op::SubF]),
-        Op::ModI => Expand(&[Op::DivI, Op::MulI, Op::SubI]),
-        Op::ModU => Expand(&[Op::DivU, Op::MulU, Op::SubU]),
-        Op::ModFi => Expand(&[Op::DivFi, Op::BitorF, Op::MulIf, Op::SubF]),
-        Op::ModIf => Expand(&[Op::DivIf, Op::BitorF, Op::MulF, Op::SubIf]),
+        Op::ModF => Remainder(&[Op::DivF, Op::BitorF, Op::MulF, Op::SubF]),
+        Op::ModI => Remainder(&[Op::DivI, Op::MulI, Op::SubI]),
+        Op::ModU => Remainder(&[Op::DivU, Op::MulU, Op::SubU]),
+        Op::ModFi => Remainder(&[Op::DivFi, Op::BitorF, Op::MulIf, Op::SubF]),
+        Op::ModIf => Remainder(&[Op::DivIf, Op::BitorF, Op::MulF, Op::SubIf]),
         // `(a & ~b) | (b & ~a)`.
         Op::BitxorF => Expand(&[
             Op::BitnotF,
@@ -752,18 +829,19 @@ const fn emulation(op: Op) -> Emulation {
         Op::LshiftU64i => Instead(Op::LshiftI64i),
         Op::EqU64 => Instead(Op::EqI64),
         Op::NeU64 => Instead(Op::NeI64),
-        Op::EqI64 => Expand(&[Op::EqI, Op::AndI]),
-        Op::NeI64 => Expand(&[Op::NeI, Op::OrI]),
+        Op::EqI64 => Words(Op::EqI, Op::AndI),
+        Op::NeI64 => Words(Op::NeI, Op::OrI),
         // `case OP_STORE_I64:` its two words by `OP_STORE_FLD`.
         Op::StoreI64 => Expand(&[Op::StoreFld, Op::StoreFld]),
-        // `QCC_PR_SimpleStatement`, which emits with no check of the target.
-        Op::LoadI64
-        | Op::BitandI64
-        | Op::BitorI64
-        | Op::BitxorI64
-        | Op::BitandV
-        | Op::BitorV
-        | Op::LoadaStruct => Emitted,
+        // `QCC_PR_SimpleStatement` of the word opcodes, which the target must have.
+        Op::LoadI64 => Simple(&[Op::LoadFld, Op::LoadFld]),
+        Op::BitandI64 => Simple(&[Op::BitandI, Op::BitandI]),
+        Op::BitorI64 => Simple(&[Op::BitorI, Op::BitorI]),
+        Op::BitxorI64 => Simple(&[Op::BitxorI, Op::BitxorI]),
+        // `QCC_PR_SimpleStatement(op, ..., true)`, forced, per component.
+        Op::BitandV | Op::BitorV => Forced,
+        // "emit this anyway. if it reaches runtime then you messed up."
+        Op::LoadaStruct => Emitted,
         _ => Refuse,
     }
 }

@@ -228,9 +228,47 @@ impl Resolver<'_> {
         let Some(name) = self.unknown_type_name(ty, typedefs, at) else {
             return false;
         };
+        // FTEF-21.22: a first parameter of a name that is no type makes
+        // `QCC_PR_ParseFunctionType` return none, "expected function arg list".
+        if self.unknown_first_param(ty, typedefs, at) {
+            let message = "expected function arg list".to_owned();
+            self.report(Code::E0204, location, message);
+            return true;
+        }
         let message = format!("\"{name}\" is not a type");
         self.report(Code::E0203, location, message);
         true
+    }
+
+    /// Whether the first name in `ty` that is no type is a function type's first parameter.
+    fn unknown_first_param(&self, ty: &Type, typedefs: &[(String, Span)], at: usize) -> bool {
+        match ty {
+            Type::Field(inner) | Type::Pointer(inner) => {
+                self.unknown_first_param(inner, typedefs, at)
+            }
+            Type::Function(func) => {
+                if self.unknown_type_name(&func.ret, typedefs, at).is_some() {
+                    return self.unknown_first_param(&func.ret, typedefs, at);
+                }
+                let Some(first) = func.params.first() else {
+                    return false;
+                };
+                let mut base = first;
+                while let Type::Pointer(inner) = base {
+                    base = inner;
+                }
+                if matches!(base, Type::Named(_))
+                    && self.unknown_type_name(base, typedefs, at).is_some()
+                {
+                    return true;
+                }
+                func.params
+                    .iter()
+                    .find(|p| self.unknown_type_name(p, typedefs, at).is_some())
+                    .is_some_and(|p| self.unknown_first_param(p, typedefs, at))
+            }
+            Type::Named(_) | Type::Simple(_) | Type::Unknown => false,
+        }
     }
 
     /// Whether `name` is a name FTEQCC registers, a type declared before, or one of a body's
@@ -390,7 +428,14 @@ impl Resolver<'_> {
             // `*ret++ = '.'`, which the class branch then overwrites with `class NAME`.
             Type::Field(inner) => match self.class_type_name(inner) {
                 Some(class) => class,
-                None => format!(".{}", self.type_name(inner)),
+                // The field type's own name, `.NAME`, for a struct or union.
+                None => match self.resolved(inner) {
+                    Type::Named(name) => match self.struct_type_name(&name) {
+                        Some(bare) => format!(".{bare}"),
+                        None => format!(".{}", self.type_name(inner)),
+                    },
+                    _ => format!(".{}", self.type_name(inner)),
+                },
             },
             Type::Named(name) => {
                 if let Some(class) = self.class_type_name(ty) {
@@ -399,13 +444,18 @@ impl Resolver<'_> {
                 if let Some(base) = self.named(&self.strict_enums, name) {
                     return format!("enum {name}:{}", self.type_name(base));
                 }
+                // FTEF-24.7: a named union is made `ev_struct` (`QCC_PR_NewType(tname, ev_struct,
+                // ...)`) and prints as a struct; one with no tag is `<struct>` or `<union>`.
                 if let Some(bare) = self.struct_type_name(name) {
-                    let union = self
-                        .struct_defs
-                        .get(&self.type_key(bare))
-                        .is_some_and(|st| st.union);
-                    let kind = if union { "union" } else { "struct" };
-                    return format!("{kind} {bare}");
+                    if bare == "{}" {
+                        let kind = if name.starts_with("union ") {
+                            "union"
+                        } else {
+                            "struct"
+                        };
+                        return format!("{kind} <{kind}>");
+                    }
+                    return format!("struct {bare}");
                 }
                 let resolved = self.resolved(ty);
                 if &resolved == ty {

@@ -407,10 +407,24 @@ fn default_text(value: &ast::Expr, ty: &Type) -> String {
                 _ => written,
             }
         }
-        Type::Named(name) if name.as_ref() == "__int32" => written
-            .trim_end_matches('i')
-            .parse::<i64>()
-            .map_or(written.clone(), |v| format!("{v:#x}i")),
+        Type::Named(name) if name.as_ref() == "__int32" => {
+            let negative = written.trim_start().starts_with('-');
+            let digits = written
+                .trim()
+                .trim_start_matches('-')
+                .trim()
+                .trim_end_matches('i');
+            // `%#x` of the 32-bit integer the constant is, which C writes `0` for zero.
+            digits
+                .parse::<i64>()
+                .ok()
+                .map(|v| if negative { v.wrapping_neg() } else { v })
+                .and_then(|v| u32::try_from(v.rem_euclid(1_i64 << 32)).ok())
+                .map_or(written.clone(), |v| match v {
+                    0 => "0i".to_owned(),
+                    v => format!("{v:#x}i"),
+                })
+        }
         _ => written,
     }
 }

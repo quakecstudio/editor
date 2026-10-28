@@ -1024,7 +1024,9 @@ fn type_names_must_be_types() {
     );
     assert_eq!(fte(".foo x;\n"), [Code::E0203]);
     assert_eq!(fte("foo *p;\n"), [Code::E0203]);
-    assert_eq!(fte("void(foo a) g = #6;\n"), [Code::E0203]);
+    // FTEF-21.22: a first parameter of no type is "expected function arg list".
+    assert_eq!(fte("void(foo a) g = #6;\n"), [Code::E0204]);
+    assert_eq!(fte("void(float b, foo a) g = #6;\n"), [Code::E0203]);
     assert_eq!(fte("foo(float a) g = #6;\n"), [Code::E0203]);
     assert_eq!(fte("t x;\ntypedef float t;\n"), [Code::E0203]);
     assert_eq!(fte("typedef float t;\nt x;\n"), []);
@@ -1376,4 +1378,38 @@ fn a_refused_default_ends_the_declaration() {
         ),
         [cast.clone(), cast]
     );
+}
+
+// spec FTEF-24.7: a default prints as `QCC_VarAtOffset` prints its constant: a float `%gf`, an
+// integer `%#xi` of its 32 bits (`0i` for zero), a vector `'%g %g %g'`, a name as written
+#[test]
+fn defaults_print_as_their_constants() {
+    let printed = |param: &str| -> String {
+        let found = fte_messages(&format!(
+            "const float k = 1;\nvoid(float a, optional {param}) g;\n\
+             void(float a, optional {param}, float c) g;\n"
+        ));
+        let message = &found[0].1;
+        let (_, rest) = message.split_once(" = ").unwrap();
+        let (text, _) = rest.split_once(", float c").unwrap();
+        text.to_owned()
+    };
+    for (param, text) in [
+        ("float b = 0.5", "0.5f"),
+        ("float b = - 2", "-2f"),
+        ("float b = 1234567", "1.23457e+06f"),
+        ("float b = 0.00001", "1e-05f"),
+        ("float b = 1000000", "1e+06f"),
+        ("float b = 100000", "100000f"),
+        ("float b = 0.0001", "0.0001f"),
+        ("float b = 3.0", "3f"),
+        ("float b = k", "k"),
+        ("vector b = '1 -2 0.00001'", "'1 -2 1e-05'"),
+        ("int b = 3", "0x3i"),
+        ("int b = -4", "0xfffffffci"),
+        ("int b = - 4", "0xfffffffci"),
+        ("int b = 0", "0i"),
+    ] {
+        assert_eq!(printed(param), text, "{param}");
+    }
 }

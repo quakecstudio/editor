@@ -305,3 +305,28 @@ fn a_narrow_field() {
         .concat()
     );
 }
+
+// spec FTEF-27.14: a pointer's prefix step is its pointee's size, `--` negated with the warning
+#[test]
+fn a_pointers_prefix_step_is_its_size() {
+    let truncated = |unsigned: &str, negated: &str| {
+        d(
+            Code::W0234,
+            &format!("Constant int operand {unsigned} will be truncated to {negated}"),
+        )
+    };
+    let defs = "vector *pv; void *pw;";
+    assert_eq!(fte(&format!("{defs} ++pv; ++p; ++pw;")), []);
+    assert_eq!(fte("--p;"), [truncated("4294967295", "-1")]);
+    assert_eq!(
+        fte(&format!("{defs} --pv;")),
+        [truncated("4294967293", "-3")]
+    );
+    assert_eq!(
+        fte(&format!("{defs} --pw;")),
+        [truncated("4294967295", "-1")]
+    );
+    assert_eq!(id("++p;"), add());
+    let [helper, refusal] = add();
+    assert_eq!(id("--p;"), [truncated("4294967295", "-1"), helper, refusal]);
+}

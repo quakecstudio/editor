@@ -773,3 +773,157 @@ fn a_narrow_pointers_step_under_undefwordsize() {
     );
     assert_eq!(postfix(flag, "v++;").first(), Some(&blocked));
 }
+
+fn unable(op: &str) -> (Code, String) {
+    d(
+        Code::E0345,
+        &format!("Unable to generate statements at global scope ({op})."),
+    )
+}
+
+// spec FTEF-27.11: 64-bit bitwise opcodes and field loads are plain statements, refused fatally
+// and never reported at global scope; a vector's `&` and `|` are forced
+// spec FTEF-34.11: a refused opcode is still emitted, at global scope reported as such
+#[test]
+fn plain_statements_and_refused_opcodes() {
+    let refused = |name: &str, op: &str| {
+        d(
+            Code::E0320,
+            &format!(
+                "Opcode \"{name}|{op}\" not valid for target. Consider the use of: #pragma target fte"
+            ),
+        )
+    };
+    assert_eq!(
+        diags("__double d, e; __double z; void() h = { z = d & e; };\n"),
+        [
+            refused("=", "CONV_DI64"),
+            refused("=", "CONV_DI64"),
+            refused("&", "BITAND_I")
+        ]
+    );
+    assert_eq!(
+        diags("__int64 a, b, c; void() h = { c = a | b; };\n"),
+        [refused("|", "BITOR_I")]
+    );
+    assert_eq!(
+        diags("vector v, w; vector x = v & w;\n"),
+        [d(Code::E0214, "initializer for 'x' is not constant")]
+    );
+    assert_eq!(
+        diags("entity e; .__int64 fl; __int64 l = e.fl;\n"),
+        [d(Code::E0214, "initializer for 'l' is not constant")]
+    );
+    assert_eq!(
+        diags("string s; string t = s + 1;\n"),
+        [
+            d(Code::W0236, "OP_ADD_SF: string+float may be unsafe"),
+            helper("AddInt", "int+int"),
+            d(Code::E0320, ADD_I),
+            unable("ADD_I"),
+            d(Code::E0214, "initializer for 't' is not constant"),
+        ]
+    );
+}
+
+// spec FTEF-30.9: the arms' types are compared before the last arm is stored
+#[test]
+fn a_ternary_compares_before_its_last_store() {
+    assert_eq!(
+        diags("#pragma target fte\nfloat *p, *q; int i; float *r = i ? p : q;\n"),
+        [
+            unable("IFNOT"),
+            unable("STORE_F"),
+            unable("GOTO"),
+            d(
+                Code::W0244,
+                "Type mismatch on ternary operator: float* vs float**"
+            ),
+            unable("STORE_P"),
+            d(Code::E0214, "initializer for 'r' is not constant"),
+        ]
+    );
+}
+
+// spec FTEF-34.9: at global scope a field is read by the load of its type, which the id target
+// replaces for an integer or a pointer by `OP_LOAD_F` and makes plain statements for a 64-bit one
+// spec FTEF-27.9: `OP_LOAD_I` and `OP_LOAD_P` are `OP_LOAD_F` on a target without them
+#[test]
+fn a_field_read_at_global_scope_is_its_load() {
+    let load = |target: &str, ty: &str| -> Vec<(Code, String)> {
+        diags(&format!("{target}\nentity e; .{ty} ff; {ty} x = e.ff;\n"))
+            .into_iter()
+            .filter(|(code, _)| *code == Code::E0345)
+            .collect()
+    };
+    let fte = "#pragma target fte";
+    for (ty, id, on_fte) in [
+        ("float", Some("LOADF_F"), Some("LOADF_F")),
+        ("vector", Some("LOADF_V"), Some("LOADF_V")),
+        ("string", Some("LOADF_S"), Some("LOADF_S")),
+        ("entity", Some("LOADF_ENT"), Some("LOADF_ENT")),
+        (".float", Some("LOADF_FLD"), Some("LOADF_FLD")),
+        ("void()", Some("LOADF_FNC"), Some("LOADF_FNC")),
+        ("int", Some("LOADF_F"), Some("LOADF_I")),
+        ("__uint", Some("LOADF_F"), Some("LOADF_I")),
+        ("float*", Some("LOADF_F"), Some("LOADF_P")),
+        ("__int64", None, Some("LOADF_I64")),
+        ("__double", None, Some("LOADF_I64")),
+    ] {
+        assert_eq!(
+            load("", ty),
+            id.map(unable).into_iter().collect::<Vec<_>>(),
+            "{ty}"
+        );
+        assert_eq!(
+            load(fte, ty),
+            on_fte.map(unable).into_iter().collect::<Vec<_>>(),
+            "fte {ty}"
+        );
+    }
+}
+
+// spec FTEF-27.12: an int comparison emulated as `OP_EQ_FNC` gives a float, stored with no
+// conversion; an unsigned one is cast back, so a `__uint64`'s truth value needs `OP_CONV_U64F`
+#[test]
+fn an_emulated_comparison_has_the_type_of_its_opcode() {
+    let int = "void() g = { local int i; local int j; local float b; b = (i == j); b = (i && j); \
+               b = (i || j); };\n";
+    assert_eq!(diags(int), []);
+    let unsigned = "__uint64 ul; float b; void() g = { b = !ul; };\n";
+    assert_eq!(diags(unsigned), [u64f()],);
+}
+
+// spec FTEF-27.13: a 64-bit `==` or `!=` compares each word, each with its comparison warnings
+#[test]
+fn a_64_bit_comparison_compares_each_word() {
+    let constant = d(Code::W0239, "Result of comparison is constant");
+    assert_eq!(
+        diags("__int64 l; float b; void() g = { b = (l != l); };\n"),
+        [constant.clone(), constant.clone()],
+    );
+    assert_eq!(
+        diags("__int64 l; __int64 m; float b; void() g = { b = (l == m); b = !l; };\n"),
+        [],
+    );
+    assert_eq!(
+        diags("__uint64 ul; float b; void() g = { b = (ul == ul); };\n"),
+        [constant.clone(), constant, u64f()],
+    );
+}
+
+fn u64f() -> (Code, String) {
+    d(
+        Code::E0320,
+        "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+    )
+}
+
+// spec FTEF-27.12: an unsigned operator emulated by its signed one stays unsigned, so a folded
+// `1u << 0u` masks a `__uint64` with no conversion (FreeCS `XRInput.qc`)
+#[test]
+fn an_emulated_unsigned_operator_stays_unsigned() {
+    let source = "#pragma target fte_5768\n__uint64 ul; float f; void() g = { if (ul & (1u << \
+                  0u)) f = 1; f = ul & (2u - 1u) ? 1 : 0; };\n";
+    assert_eq!(diags(source), []);
+}

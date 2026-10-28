@@ -17,6 +17,7 @@ use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::member;
+use crate::check::pointer::{Pointee, int, opaque_int};
 use crate::check::truth::Test;
 use crate::check::{Constness, Reference, Value};
 use crate::ty::{SimpleType, Type};
@@ -126,14 +127,31 @@ impl Checker<'_> {
             return Ok(Value::unknown());
         };
         let step = if increment { 1 } else { -1 };
+        let constant = |c: Constant| Value::constant(c);
         let (op, by) = match etype {
-            Etype::Integer => (Op::AddI, Constant::int(step)),
-            Etype::Uint => (Op::AddU, Constant::int(step)),
-            Etype::Pointer => (Op::AddPiw, Constant::int(step)),
-            Etype::Float => (Op::AddF, Constant::float(step_f32(increment))),
-            Etype::Double => (Op::AddD, Constant::double(step_f32(increment).into())),
-            Etype::Int64 => (Op::AddI64, Constant::int64(step.into())),
-            Etype::Uint64 => (Op::AddU64, Constant::int64(step.into())),
+            Etype::Integer => (Op::AddI, constant(Constant::int(step))),
+            Etype::Uint => (Op::AddU, constant(Constant::int(step))),
+            // `QCC_MakeIntConst(preinc * aux_type->size)`, the size unsigned, so `--p` is "will
+            // be truncated" as a subtraction's (FTEF-27.10).
+            Etype::Pointer => {
+                let words = match self.pointee(&operand.ty) {
+                    Pointee::Words(words) => words,
+                    Pointee::Void | Pointee::Bits(_) => Some(1),
+                };
+                let by = if increment {
+                    words.map_or_else(opaque_int, int)
+                } else {
+                    self.negated_size(words, span)
+                };
+                (Op::AddPiw, by)
+            }
+            Etype::Float => (Op::AddF, constant(Constant::float(step_f32(increment)))),
+            Etype::Double => (
+                Op::AddD,
+                constant(Constant::double(step_f32(increment).into())),
+            ),
+            Etype::Int64 => (Op::AddI64, constant(Constant::int64(step.into()))),
+            Etype::Uint64 => (Op::AddU64, constant(Constant::int64(step.into()))),
             _ => {
                 let message = "++ operator on unsupported type".to_owned();
                 return self.fatal(Code::E0329, span, message);
@@ -143,7 +161,7 @@ impl Checker<'_> {
             constness: Constness::Variable,
             ..self.read(operand.clone(), span)?
         };
-        let updated = self.emit(op, &variable, &Value::constant(by), span)?;
+        let updated = self.emit(op, &variable, &by, span)?;
         self.store_reference(operand, &updated, span)?;
         // `QCC_StoreSRefToRef` folds the store into the operand, which is the value, read-only.
         Ok(Value {
