@@ -3219,6 +3219,11 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   by its own name: `__int a; string s = a;` is "Implicit cast from __int to string", `__vector
   cv; float f = cv;` "Cannot cast from __vector to float", and an argument of `__uint` is named
   `__uint` in the builtin checks' messages (FTEF-33).
+- **FTEF-19.55** A float or an integer cast to a vector (`QCC_EvaluateCast`, `totype == ev_vector`)
+  is multiplied by `'1 1 1'`, `OP_MUL_FV` or `OP_MUL_IV`, folded, emitted or emulated in turn: on
+  the id target `int i; vector v; v = i;` is "Implicit cast from __int32 to vector" and then
+  `OP_MUL_IV`'s "itof emulation: denormals are unsafe i", in a store, a compound assignment and
+  a local's initialiser alike.
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and
@@ -3800,6 +3805,11 @@ opcodes.rs`, the rows of `pr_opcodes[]` in order) and picks as FTEQCC picks
   next `;` at file level and reads on from there as declarations. The semantic model, which
   recovers on its own (QCD-1.4), stops checking the statement and checks the next one; the
   module fails to compile either way.
+- **FTEF-23.7** A comparison's and a logical operator's value is of the opcode's result type,
+  `type_bfloat` or `type_bint` (`EQ_F`, `NOT_F`, `AND_F`: `&type_bfloat`; `EQ_I`, `NOT_I`:
+  `&type_bint`): a float of the name `__bfloat`, printed so (`string s = (f == 1);` is "Cannot
+  cast from __bfloat to string"), and an `int` printed `__int32`; `_Bool` is `type_bint`, an
+  `int` (`_Bool b; string s = b;` is "Implicit cast from __int32 to string").
 
 ## FTEF-24 Member access as FTEQCC types it
 
@@ -3987,6 +3997,11 @@ saturates, as on the arm64 build the differential is recorded on.
   shifts the unsigned 64-bit value. `OP_BITEXTEND_I` and `OP_BITEXTEND_U` of two constants are
   `(a << (32 - bits - ofs)) >> (32 - bits)`, signed and unsigned, `bits` and `ofs` the low byte
   and the rest of the second. So `arr[(__double)2.5 * 2]` is index 5.
+- **FTEF-26.11** A logical not of a constant folds (`QCC_PR_StatementFlags`, `a is const, b is
+  not`): `OP_NOT_F` and `OP_NOT_V` to the float 1 when the value, or every component, is 0,
+  `OP_NOT_ENT` and `OP_NOT_FNC` of the word, and `OP_NOT_I` to the `int` 1 or 0, before any
+  emulation: on the id target `!1i` is 0 with no "Result of comparison is constant" of an
+  emulated `OP_EQ_FNC`.
 - **FTEF-26.10** A constant operand that an opcode's row converts is the constant its conversion
   folds to (`QCC_SupplyConversion` emits the conversion opcode, folded as FTEF-26.3 says), so the
   opcode then folds too: in `(__double)2.5 * 2` the float 2 is converted by `OP_CONV_FD` to the

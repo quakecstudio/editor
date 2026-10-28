@@ -314,6 +314,10 @@ fn left(op: Op, a: Constant, notices: &mut Vec<Notice>) -> Option<Folded> {
 fn unary(op: Op, a: Constant, notices: &mut Vec<Notice>) -> Option<Folded> {
     let (fa, ia, ua) = (a.f(), a.i(), a.u());
     let c = match op {
+        Op::NotF => float_bool(fa == 0.0),
+        Op::NotV => float_bool(a.v().iter().all(|x| *x == 0.0)),
+        Op::NotEnt | Op::NotFnc => float_bool(ia == 0),
+        Op::NotI => int_bool(ia == 0),
         Op::BitnotF => Constant::float(int_to_f32(!round(a, notices))),
         Op::BitnotI => Constant::int(!ia),
         Op::BitnotV => Constant::vector(a.v().map(|x| int_to_f32(!f_to_i(x)))),

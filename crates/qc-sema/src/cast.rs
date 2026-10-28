@@ -240,7 +240,8 @@ impl Kind {
             // FTEF-2.12: `ev_bitfld`, cast as its `parentclass` (`QCC_TryEvaluateCast`).
             CScalar::Int16 | CScalar::Int8 => Self::Integer,
             CScalar::Uint16 | CScalar::Uint8 => Self::Uint,
-            CScalar::Bool | CScalar::BFloat => Self::Opaque,
+            CScalar::Bool => Self::Integer,
+            CScalar::BFloat => Self::Float,
         }
     }
 
@@ -682,7 +683,7 @@ impl Type {
                 // FTEF-19.54: a type `QCC_main` makes again under its own name prints it.
                 _ if matches!(
                     name.as_ref(),
-                    "__int" | "__uint" | "__string" | "__vector" | "__entity"
+                    "__int" | "__uint" | "__string" | "__vector" | "__entity" | "__bfloat"
                 ) =>
                 {
                     name.to_string()

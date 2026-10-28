@@ -580,3 +580,52 @@ fn a_parameter_writes_its_type() {
         ["Cannot cast from string to float"]
     );
 }
+
+// spec FTEF-23.7: a comparison's value is a `__bfloat`, `_Bool` an `int`
+// spec FTEF-19.55: a float or an integer cast to a vector is multiplied by `'1 1 1'`
+// spec FTEF-26.11: a logical not of a constant folds before any emulation
+#[test]
+fn truth_values_and_vector_casts() {
+    let messages = |pragma: &str, statement: &str| -> Vec<String> {
+        diags(&format!(
+            "{pragma}\n_Bool b; string s; vector v; float f; int i; float arr[1]; float x; \
+             entity world;\nvoid() g = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let fte = "#pragma target fte";
+    assert_eq!(
+        messages(fte, "s = (f == 1);"),
+        ["Cannot cast from __bfloat to string"]
+    );
+    assert_eq!(
+        messages(fte, "s = b;"),
+        ["Implicit cast from __int32 to string"]
+    );
+    assert_eq!(
+        messages("", "v = i;"),
+        [
+            "Implicit cast from __int32 to vector",
+            "itof emulation: denormals are unsafe i"
+        ]
+    );
+    assert_eq!(
+        messages("", "local vector lv = i;"),
+        [
+            "Implicit cast from __int32 to vector",
+            "itof emulation: denormals are unsafe i"
+        ]
+    );
+    assert_eq!(messages("", "if (!1i) f = 1;"), Vec::<String>::new());
+    for (statement, index) in [
+        ("x = arr[(!0i) + 3i];", 4),
+        ("x = arr[(!'0 1 0') + 3];", 3),
+        ("x = arr[(!0.0) + 3];", 4),
+    ] {
+        let found = messages(fte, statement);
+        let bounds = format!("(constant) array index out of bounds (0 <= {index} < 1)");
+        assert!(found.contains(&bounds), "{statement}: {found:?}");
+    }
+}

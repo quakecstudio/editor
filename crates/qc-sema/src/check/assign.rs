@@ -435,6 +435,19 @@ impl Checker<'_> {
     /// `value` converted to a `to` by the conversion opcodes for their basic types, each folded,
     /// emitted or emulated (FTEF-27.8).
     fn convert_to(&mut self, value: &Value, to: &Type, span: Span) -> Checked {
+        // FTEF-19.55: a float or an integer cast to a vector is multiplied by `'1 1 1'`
+        // (`OP_MUL_FV`, `OP_MUL_IV`).
+        if self.etype(to) == Some(Etype::Vector) {
+            let op = match self.etype(&value.ty) {
+                Some(Etype::Float) => Some(Op::MulFv),
+                Some(Etype::Integer) => Some(Op::MulIv),
+                _ => None,
+            };
+            if let Some(op) = op {
+                let ones = Value::constant(Constant::vector([1.0; 3]));
+                return self.emit(op, value, &ones, span);
+            }
+        }
         let mut converted = value.clone();
         if let (Some(from), Some(to)) = (self.etype(&value.ty), self.etype(to)) {
             for &conv in conversion_opcodes(from, to) {
