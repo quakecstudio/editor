@@ -137,4 +137,8 @@ fn right_operand_divisions() {
         Some(Folded::Left)
     );
     assert_eq!(folded(Op::DivF, None, Some(Constant::float(2.0))).0, None);
+    let (_, by_zero) = folded(Op::DivI, None, Some(Constant::int(0)));
+    assert_eq!(by_zero, ["Division by 0"]);
+    let (_, fine) = folded(Op::DivI, None, Some(Constant::int(2)));
+    assert!(fine.is_empty());
 }
