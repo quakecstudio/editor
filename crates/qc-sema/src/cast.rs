@@ -220,6 +220,13 @@ impl Kind {
     /// The kind the registered type name `name` names (FTEF-2.8), or `Opaque` when it names
     /// none.
     fn of_c_words(name: &str) -> Self {
+        // FTEF-19.54: `QCC_main`'s own names for the core types.
+        match name {
+            "__string" => return Self::String,
+            "__vector" => return Self::Vector,
+            "__entity" => return Self::Entity,
+            _ => {}
+        }
         let Some(scalar) = c_scalar(name) else {
             return Self::Opaque;
         };
@@ -672,6 +679,14 @@ impl Type {
                         @ (CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16),
                     ),
                 ) => narrow.name().to_owned(),
+                // FTEF-19.54: a type `QCC_main` makes again under its own name prints it.
+                _ if matches!(
+                    name.as_ref(),
+                    "__int" | "__uint" | "__string" | "__vector" | "__entity"
+                ) =>
+                {
+                    name.to_string()
+                }
                 (Kind::Opaque, _) => name.to_string(),
                 (kind, _) => kind.name().to_owned(),
             },

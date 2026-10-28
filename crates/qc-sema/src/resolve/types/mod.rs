@@ -376,14 +376,10 @@ impl Resolver<'_> {
             Kind::Uint64 => return plain(Etype::Uint64),
             Kind::Double => return plain(Etype::Double),
             Kind::Float => return plain(Etype::Float),
-            Kind::Void
-            | Kind::String
-            | Kind::Vector
-            | Kind::Entity
-            | Kind::Field
-            | Kind::Function
-            | Kind::Pointer
-            | Kind::Opaque => {}
+            Kind::String => return plain(Etype::String),
+            Kind::Vector => return plain(Etype::Vector),
+            Kind::Entity => return plain(Etype::Entity),
+            Kind::Void | Kind::Field | Kind::Function | Kind::Pointer | Kind::Opaque => {}
         }
         if matches!(name, "__variant" | "variant") {
             return plain(Etype::Variant);

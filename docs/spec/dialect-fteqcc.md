@@ -3213,6 +3213,12 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   global, local or an array's element, is the error `E0201` "\"{\" - not a name" at the `{`:
   `QCC_PR_ParseInitializerType` reads the scalar's value as an expression, which `{` cannot
   start (`float x = { 1 };`, `float a[2] = { {1}, 2 };`); a vector takes braces as three floats.
+- **FTEF-19.54** `QCC_main` makes the core types again under names of their own:
+  `QCC_PR_NewType("__int", ev_integer, ...)`, `"__uint"`, and `"__string"`, `"__vector"` and
+  `"__entity"` when the core type's name has no `_`. Each is the basic type it names and prints
+  by its own name: `__int a; string s = a;` is "Implicit cast from __int to string", `__vector
+  cv; float f = cv;` "Cannot cast from __vector to float", and an argument of `__uint` is named
+  `__uint` in the builtin checks' messages (FTEF-33).
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and

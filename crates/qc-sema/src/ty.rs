@@ -269,6 +269,11 @@ impl Type {
     /// and any other by the name FTEQCC registers it with, else the type named as written.
     #[must_use]
     pub fn named(words: &str, context: CContext) -> Self {
+        // FTEF-19.54: `QCC_PR_NewType("__int", ev_integer, ...)` and `__uint` are types of
+        // their own names.
+        if matches!(words, "__int" | "__uint") {
+            return Self::Named(Rc::from(words));
+        }
         let split = || words.split(' ');
         match CWords::read(split(), context) {
             (taken, Some(c_type)) if taken == split().count() => match c_type.scalar {
