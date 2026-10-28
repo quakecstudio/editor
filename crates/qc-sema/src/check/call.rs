@@ -28,6 +28,10 @@ const MAX_ARGUMENTS: usize = 136;
 
 impl Checker<'_> {
     /// FTEF-32: the call `call`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one pass over QCC_PR_ParseFunctionCall's steps, read in its order"
+    )]
     pub(super) fn call(&mut self, call: &ast::CallExpr) -> Checked {
         let span = call.syntax().span();
         let args: Vec<ast::Expr> = call.args().map(|a| a.args().collect()).unwrap_or_default();
@@ -180,19 +184,8 @@ impl Checker<'_> {
         }
         self.verify_arguments(&name, &values, span);
         self.generate_call(&values, span);
-        self.store_out_arguments(&passed, &params, span)?;
-        Ok(Value::of(function.ret.clone()))
-    }
-
-    /// The arguments `passed` of `out` parameters, stored back after the call
-    /// (`QCC_PR_GenerateFunctionCallRef`); `None` for one left empty.
-    fn store_out_arguments(
-        &mut self,
-        passed: &[Option<Value>],
-        params: &[ParamFacts],
-        span: Span,
-    ) -> Result<(), Fatal> {
-        for (reference, param) in passed.iter().zip(params) {
+        // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
+        for (reference, param) in passed.iter().zip(&params) {
             let Some(reference) = reference.as_ref().filter(|_| param.out) else {
                 continue;
             };
@@ -204,7 +197,7 @@ impl Checker<'_> {
             let returned = Value::of(reference.ty.clone());
             self.store_reference(reference, &returned, span)?;
         }
-        Ok(())
+        Ok(Value::of(function.ret.clone()))
     }
 
     /// FTEF-32.9: an argument left empty where no parameter takes it: the expression read
