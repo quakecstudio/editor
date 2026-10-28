@@ -317,3 +317,118 @@ fn ternary_arms_take_every_operator() {
         assert_eq!(sexpr(&fte_expr(body)), tree, "{body}");
     }
 }
+
+// spec FTEF-17.20: an argument of `spawn` after its first that is a name and `:` or `=` names a
+// field; elsewhere, and as `spawn`'s first argument, `name = value` is an assignment
+#[test]
+fn spawn_named_fields() {
+    let ast::Expr::Call(call) = fte_expr("spawn(e, C, x: 1, y = 2);") else {
+        panic!("not a call");
+    };
+    let list = call.args().unwrap();
+    assert_eq!(
+        list.args().map(|a| sexpr(&a)).collect::<Vec<_>>(),
+        ["e", "C"]
+    );
+    let named: Vec<_> = list
+        .named()
+        .map(|n| {
+            let value = n.value().map(|v| sexpr(&v)).unwrap_or_default();
+            (n.name().unwrap().text_lossless(), n.equals(), value)
+        })
+        .collect();
+    assert_eq!(
+        named,
+        [
+            ("x".to_owned(), false, "1".to_owned()),
+            ("y".to_owned(), true, "2".to_owned()),
+        ]
+    );
+    for source in ["spawn(y = 2);", "f(e, y = 2);"] {
+        let ast::Expr::Call(call) = fte_expr(source) else {
+            panic!("not a call");
+        };
+        assert_eq!(call.args().unwrap().named().count(), 0, "{source}");
+    }
+    assert!(fte_errors(&in_body("f(e, x: 1);")).contains(&Code::E0204));
+}
+
+// spec FTEF-32.9: under FTEQCC an argument may be left empty, a `,` or the `)` where it starts;
+// under the vanilla dialect it is a missing expression
+#[test]
+fn empty_argument_slots() {
+    let slots = |body: &str| -> Vec<Option<String>> {
+        let ast::Expr::Call(call) = fte_expr(body) else {
+            panic!("not a call");
+        };
+        call.args()
+            .unwrap()
+            .slots()
+            .iter()
+            .map(|slot| slot.as_ref().map(sexpr))
+            .collect()
+    };
+    let some = |text: &str| Some(text.to_owned());
+    assert!(slots("f();").is_empty());
+    assert_eq!(slots("f(1);"), [some("1")]);
+    assert_eq!(slots("f(1, , 3);"), [some("1"), None, some("3")]);
+    assert_eq!(slots("f(, 2);"), [None, some("2")]);
+    assert_eq!(slots("f(1, );"), [some("1"), None]);
+    assert_eq!(slots("f(,);"), [None, None]);
+    let vanilla = parse_with(in_body("f(1, , 3);").as_bytes(), Dialect::Vanilla);
+    assert!(vanilla.errors().next().is_some());
+}
+
+// spec FTEF-19.66: `CLASS::NAME` at the start of a definition writes no type
+// spec FTEF-19.67: a `(` after the name of a function type's definition is a parameter list
+#[test]
+fn untyped_scoped_definitions_and_returned_functions() {
+    let class = "class C : entity { void() m; };\n";
+    let source = format!("{class}C::m() = {{}};\n");
+    let decl = fte(&source)
+        .syntax()
+        .descendants()
+        .filter_map(ast::Declaration::cast)
+        .find(|d| d.ty().is_none())
+        .unwrap();
+    let declarator = decl.declarators().next().unwrap();
+    assert_eq!(declarator.scope().unwrap().text_lossless(), "C");
+    assert_eq!(declarator.name().unwrap().text_lossless(), "m");
+    assert!(declarator.params().is_some());
+    assert!(fte_errors(&source).is_empty());
+    let decl: ast::Declaration = first("float() g() = { return 0; };\n");
+    assert!(matches!(decl.ty(), Some(ast::Type::Function(_))));
+    assert!(decl.declarators().next().unwrap().params().is_some());
+    assert!(fte_errors("float() g() = { return 0; };\n").is_empty());
+}
+
+// spec FTEF-10.10: a class member with `get` or `set` among its qualifiers, in any order, is an
+// accessor's, a `set` one when `set` is among them
+#[test]
+fn class_accessor_qualifiers() {
+    let member = |words: &str| -> ast::AccessorMember {
+        first(&format!(
+            "class C : entity {{ {words} float x = {{ }}; }};\n"
+        ))
+    };
+    for words in [
+        "virtual get",
+        "get virtual",
+        "static get",
+        "inline virtual set",
+        "const get",
+    ] {
+        let accessor = member(words);
+        assert_eq!(accessor.name().unwrap().text_lossless(), "x", "{words}");
+        assert_eq!(accessor.is_set(), words.ends_with("set"), "{words}");
+        assert!(
+            accessor.word(words.split(' ').next().unwrap()).is_some(),
+            "{words}"
+        );
+        let source = format!("class C : entity {{ {words} float x = {{ }}; }};\n");
+        assert!(fte_errors(&source).is_empty(), "{words}");
+    }
+    let named_set: ast::AccessorMember = first("class C : entity { get float set = { }; };\n");
+    assert_eq!(named_set.name().unwrap().text_lossless(), "set");
+    assert!(!named_set.is_set());
+}

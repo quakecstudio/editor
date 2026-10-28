@@ -216,7 +216,8 @@ fn type_names_may_be_declared_again() {
 #[test]
 fn intrinsics_resolve() {
     let index = fte_index_of(
-        "float() f = { local float n = sizeof(int) + autocvar(cl_speed, 3) + randomv(); \
+        "float() f = { local float n = sizeof(int) + autocvar(cl_speed, 3); \
+         local vector v = randomv(); \
          _(\"text\"); return 0; };\n\
          class C { float() m; };\nfloat() C::m = { return this ? 0 : 1; };\n",
     );
@@ -291,7 +292,7 @@ fn other_initialisers_compare_token_for_token() {
     assert_eq!(errors(&other), [Code::E0363]);
 }
 
-// spec FTEF-17.13: a redeclaration whose type involves a type name or an unknown type is no
+// spec FTEF-17.21: a redeclaration whose type involves a type name or an unknown type is no
 // mismatch; one between two simple types still is, and so is a pointer against a non-pointer.
 // spec FTEF-11.2: `__variant` mixes with a concrete type without a type error.
 #[test]

@@ -77,7 +77,7 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   FTEF-9.2, FTEF-9.3, FTEF-9.4 and FTEF-9.5, the accessor
   members FTEF-10.2 and FTEF-10.3, the scoped names of FTEF-16.4, the redeclarations of
   FTEF-17.12, the C scalar types FTEF-2.8 names, the definitions of FTEF-19.1 to FTEF-19.16
-  and FTEF-19.19 to FTEF-19.46: the warning settings, the command line's flags, the lexer's
+  and FTEF-19.19 to FTEF-19.63: the warning settings, the command line's flags, the lexer's
   flags in literals and engine names, case insensitivity and a module's source; the flags
   that change in the middle of a file, FTEF-21.7 to FTEF-21.14: the types and definitions with
   `qcfuncs` off, the attributes and the definitions `alias` makes (QCD-3.34, QCD-3.35),

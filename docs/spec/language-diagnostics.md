@@ -375,6 +375,39 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (FTEF-6.28); a fatal error.
 - **QCD-4.64** `E0363` "incompatible redeclaration": a definition initialised again with a
   constant of another value (FTE-22.6); a fatal error.
+- **QCD-4.65** `E0364` "static redefinition of NAME follows non-static definition.": a
+  `static` local redefining a local that is not (FTEF-19.59); a fatal error.
+- **QCD-4.66** `E0365` "memalloc not yet defined, cannot define __auto NAME at global scope": a
+  global or `static` `__auto` with no `memalloc` or `malloc` (FTEF-19.61); a fatal error.
+- **QCD-4.67** `E0366` "Array length is not a constant": an array's size that folds to no
+  constant (FTEF-19.62); the declaration goes on.
+- **QCD-4.68** `E0367` "autocvar default value is not constant": an `autocvar` call whose
+  default is no constant (FTEF-17.17).
+- **QCD-4.69** `E0368` "autocvar NAME was already initialised with another value": an
+  `autocvar` call whose default differs from the cvar's earlier value (FTEF-17.17); a fatal error.
+- **QCD-4.70** `E0369` "[non]virtual members must be functions": a `virtual` struct member that
+  is no function (FTEF-6.29); the declaration goes on.
+- **QCD-4.71** `E0370` "oversized ternary result": a conditional whose first arm is larger than a
+  vector (FTEF-30.10); a fatal error.
+- **QCD-4.72** `E0371` "Class \"CLASS\" is not defined, cannot access member \"NAME\"": a member
+  of a class declared but never defined (FTEF-24.15); the statement goes on.
+- **QCD-4.73** `E0372` "designated initialisers require all members to be initialised the same
+  way": designated braces with an element that names no member (FTEF-19.64); a fatal error.
+- **QCD-4.74** `E0373` "Spawn operator with undefined class: NAME": `spawn`'s class that is
+  no type (FTEF-17.20).
+- **QCD-4.75** `E0374` "Named field is not a field.": an argument of `spawn` after the class
+  that is no field (FTEF-17.20).
+- **QCD-4.76** `E0375` "Default value not specified for implicit argument N": an argument left
+  empty whose parameter has no default (FTEF-32.9).
+- **QCD-4.77** `E0376` "no type specified for CLASS::NAME. this is only allowed for
+  constructors": a `CLASS::NAME` definition with no type that is no constructor (FTEF-19.66).
+- **QCD-4.78** `E0377` "virtual accessors are not supported at this time": a class's accessor
+  member marked `virtual` (FTEF-10.10).
+- **QCD-4.79** `E0378` "static accessors are not supported": a class's accessor member marked
+  `static` or `const` (FTEF-10.10).
+- **QCD-4.80** `E0379` "virtual keyword on member that is not a function", "inline keyword on
+  member that is not a function" and "inline keyword on function prototype or virtual function":
+  a class member's word that only a member function takes (FTEF-9.20).
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -736,6 +769,19 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.107** `W0265` "CLASS::NAME was not qualified. Assuming non-virtual." and a
   constructor's "should not be static.", "does not return void." and "Constructor arguments are
   not supported at this time" (FTEF-9.16). `WARN_MISSINGMEMBERQUALIFIER`, F334.
+- **QCD-7.108** `W0315` "NAME defined static": a name found only as a `static` global of another
+  unit (FTEF-19.60), the warning `WARN_SAMENAMEASGLOBAL`.
+- **QCD-7.109** `W0316` "'self' used inside OO function, use 'this'.": `self` in a member
+  function (FTEF-17.18), the warning `WARN_SELFNOTTHIS`.
+- **QCD-7.110** `W0317` "backslashes in path names are non-portable - PATH": a path new to the
+  program's list of sounds, models, textures or files (FTEF-17.19), `WARN_NONPORTABLEFILENAME`.
+- **QCD-7.111** `W0318` "That = should be a :": a named field of `spawn` followed by `=`
+  (FTEF-17.20).
+- **QCD-7.112** `W0319` "INTERNAL: over-freed refcount to NAME": an argument left empty, which
+  passes its parameter's default (FTEF-32.9), the warning `WARN_DEBUGGING`.
+- **QCD-7.113** `W0320` "Function returning function. Is this what you meant? (suggestion: use
+  typedefs)": a parameter list after the name of a definition of an inline function type
+  (FTEF-19.67).
 
 ## QCD-8 Preprocessor errors
 

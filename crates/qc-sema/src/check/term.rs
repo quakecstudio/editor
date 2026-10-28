@@ -356,7 +356,7 @@ impl Checker<'_> {
         Ok(Value::of(Type::Simple(SimpleType::Vector)))
     }
 
-    /// FTEF-30.8: `sizeof(TYPE)` and `sizeof e`: an unsigned constant, a string immediate's
+    /// FTEF-30.11: `sizeof(TYPE)` and `sizeof e`: an unsigned constant, a string immediate's
     /// length with its NUL, else the bytes of the type, an array's times its length; under
     /// `undefwordsize` the error "sizeof was disabled, use array.length instead." for a type and
     /// "sizeof was disabled." for an expression, whose statements are discarded.
@@ -380,9 +380,17 @@ impl Checker<'_> {
             self.env
                 .report(Code::E0326, span, "sizeof was disabled.".to_owned());
         }
-        // An array's length the model does not keep, so its size is no known constant.
-        if value.ty == Type::Unknown || value.is_array_head() {
+        if value.ty == Type::Unknown {
             return Ok(opaque_uint());
+        }
+        // FTEF-30.11: an array's size is its length times its element's.
+        if value.is_array_head() {
+            let element = self.size_of(&value.ty).known();
+            let bytes = self
+                .head_length(&value)
+                .zip(element)
+                .and_then(|(length, element)| length.checked_mul(element.u()));
+            return Ok(bytes.map_or_else(opaque_uint, |b| Value::constant(Constant::uint(b))));
         }
         Ok(self.size_of(&value.ty))
     }
@@ -401,7 +409,7 @@ impl Checker<'_> {
         bytes.map_or_else(opaque_uint, |bytes| Value::constant(Constant::uint(bytes)))
     }
 
-    /// FTEF-30.8: `_length(e)`: an array's length, a constant string's length without its NUL, a
+    /// FTEF-30.11: `_length(e)`: an array's length, a constant string's length without its NUL, a
     /// vector's 3; a string that is no constant is the fatal error "_length(string) requires an
     /// initialised constant", any other type "_length() unsupported argument type for
     /// intrinsic".
@@ -412,8 +420,12 @@ impl Checker<'_> {
             return Ok(Value::unknown());
         }
         let length = |n: usize| Value::constant(Constant::int(i32::try_from(n).unwrap_or(0)));
+        // FTEF-30.11: a definition's array is its constant length; a member array's is not.
         if value.is_array_head() {
-            return Ok(member::length());
+            return Ok(match (&value.reference, self.head_length(&value)) {
+                (Reference::ArrayHead(None), Some(n)) => length(usize::try_from(n).unwrap_or(0)),
+                _ => member::length(),
+            });
         }
         match self.etype_of(&value.ty) {
             Some(Etype::String) => match (text, value.constness) {
@@ -462,7 +474,7 @@ const fn int_f32(value: i32) -> f32 {
 }
 
 /// The text of a string literal `expr` is, without its quotes, with adjacent parts joined.
-fn string_immediate(expr: &ast::Expr) -> Option<String> {
+pub(super) fn string_immediate(expr: &ast::Expr) -> Option<String> {
     let ast::Expr::Literal(literal) = expr else {
         return None;
     };

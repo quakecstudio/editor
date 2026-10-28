@@ -11,13 +11,14 @@
 
 use qc_diag::{Code, Span};
 use qc_preproc::FteFlag;
+use qc_syntax::ast::AstNode as _;
 use std::rc::Rc;
 
 use crate::cast::{Kind, Source, Supply};
-use crate::check::{check_body, check_initialiser};
+use crate::check::{array_length, check_body, check_initialiser};
 use crate::lower::{
-    Qualifier, RawAlias, RawBody, RawDecl, RawLocal, RawUse, StatePart, UseKind, ValueKind,
-    top_level_kind,
+    ArrayDim, Qualifier, RawAlias, RawBody, RawDecl, RawLocal, RawUse, StatePart, UseKind,
+    ValueKind, top_level_kind,
 };
 use crate::resolve::aggregate::{AggregateSite, Initialised};
 use crate::resolve::check_env::BodyEnv;
@@ -149,6 +150,7 @@ impl<'a> Resolver<'a> {
         // Record where this function's locals start, so lookups in it see only its own.
         let scope = Scope {
             owner,
+            file,
             locals_start: self.index.defs.len(),
             class,
             at: 0,
@@ -273,7 +275,7 @@ impl<'a> Resolver<'a> {
             let mut env = BodyEnv {
                 resolver: self,
                 file,
-                owner,
+                owner: Some(owner),
                 reported,
                 in_class: class.is_some(),
                 inline_member: scope.inline_member,
@@ -286,6 +288,47 @@ impl<'a> Resolver<'a> {
             let typed = check_body(&mut env, syntax);
             self.index.bodies.insert(owner, typed);
         }
+    }
+
+    /// FTEF-19.62: `QCC_PR_ParseDefArray`'s size of a global array that is an expression, read
+    /// at global scope before the definition is made, its names resolved first: the size it
+    /// folds to, or "Array length is not a constant". The uses left to resolve with the rest.
+    pub(in crate::resolve) fn fold_array_length<'u>(
+        &mut self,
+        file: FileId,
+        decl: &'u RawDecl,
+    ) -> (Option<u32>, Vec<&'u RawUse>) {
+        let all = decl.uses.iter().collect();
+        if !self.profile.fteqcc_diagnostics() || decl.array != Some(ArrayDim::Unknown) {
+            return (None, all);
+        }
+        let Some(expr) = decl.size_expr.clone() else {
+            return (None, all);
+        };
+        let within = expr.syntax().span();
+        let (size_uses, rest): (Vec<&RawUse>, Vec<&RawUse>) = decl
+            .uses
+            .iter()
+            .partition(|u| u.span.start >= within.start && u.span.end <= within.end);
+        let size_uses: Vec<RawUse> = size_uses.into_iter().cloned().collect();
+        self.resolve_uses(file, None, &size_uses);
+        let uses = self.use_defs.clone();
+        let flags = [(0, decl.flags)];
+        let reported = self.index.diagnostics.len();
+        let mut env = BodyEnv {
+            resolver: self,
+            file,
+            owner: None,
+            reported,
+            in_class: false,
+            inline_member: false,
+            uses: &uses,
+            flags: &flags,
+            lex: &[],
+            written: &[],
+            locals: &[],
+        };
+        (array_length(&mut env, &expr), rest)
     }
 
     /// FTEF-34.9: an initialiser of a global that is an expression, read at global scope,
@@ -312,7 +355,7 @@ impl<'a> Resolver<'a> {
         let mut env = BodyEnv {
             resolver: self,
             file,
-            owner,
+            owner: Some(owner),
             reported,
             in_class: false,
             inline_member: false,
@@ -513,6 +556,13 @@ impl<'a> Resolver<'a> {
                     Found::Nothing
                 }
                 (_, UseKind::Member) => self.resolve_member(scope, use_),
+                (_, UseKind::NamedField) => {
+                    let def = match scope {
+                        Some(scope) => self.lookup_in_scope(scope, &use_.name),
+                        None => self.lookup_used_global(&use_.name),
+                    };
+                    def.map_or(Found::Nothing, Found::Def)
+                }
             };
             // FTEF-24.1: in a body, what a member names when it is no field is the check
             // stage's to judge from the base's type, as is a member no definition has
@@ -557,6 +607,12 @@ impl<'a> Resolver<'a> {
                     let message = match &use_.scope {
                         Some(prefix) => format!("Unknown value \"{prefix}::{}\"", use_.name),
                         None if self.profile.fteqcc_diagnostics() => {
+                            // FTEF-19.60: the lookup passed over another unit's `static` of
+                            // the name (`foundstatic && !allocate`).
+                            if self.static_elsewhere(&use_.name) {
+                                let message = format!("{} defined static", use_.name);
+                                self.report(Code::W0315, location, message);
+                            }
                             // The `variant` is made by `QCC_PR_GetDef`, which warns of an
                             // `autocvar_` name in a body (FTEF-19.16) and of a keyword's name
                             // (FTEF-20.4) first.
@@ -587,9 +643,69 @@ impl<'a> Resolver<'a> {
                         None => format!("Unknown value \"{}\"", use_.name),
                     };
                     self.report(Code::E0301, location, message);
+                    // FTEF-19.69: `QCC_PR_GetSRef(type_variant, name, pr_scope, true, ...)`
+                    // defines the name in the function, which its later uses find and the
+                    // check stage reads as a `variant`.
+                    if let Some(scope) = scope
+                        && use_.scope.is_none()
+                        && self.profile.fteqcc_diagnostics()
+                    {
+                        let id = self.push_def(Definition {
+                            name: use_.name.clone(),
+                            ty: Type::Named("__variant".into()),
+                            kind: DefKind::Local,
+                            location,
+                            owner: Some(scope.owner),
+                            initialized: false,
+                            member_of: None,
+                            generated: true,
+                        });
+                        if let Some(f) = self.fact_mut(id) {
+                            f.referenced = true;
+                            f.scope_start = Some(use_.span.start);
+                        }
+                        self.use_defs.insert(use_.span.start, id);
+                    }
                 }
             }
         }
+    }
+
+    /// FTEF-19.61: `QCC_PR_ParseDefs`'s checks of a local's qualifiers, as of a global's:
+    /// "Conflicting storage classes." and "Conflicting constness.", and a `static` `__auto`
+    /// allocated by `memalloc` or `malloc`, the fatal error without either. Whether that error
+    /// ended the declaration.
+    fn warn_local_qualifiers(&mut self, local: &RawLocal, location: Location) -> bool {
+        let alias = local
+            .qualifiers
+            .iter()
+            .any(|q| matches!(q, Qualifier::Alias(_)));
+        let storage = [Qualifier::Auto, Qualifier::Shared]
+            .iter()
+            .filter(|q| local.has(q))
+            .count()
+            .saturating_add(usize::from(local.is_static()))
+            .saturating_add(usize::from(alias));
+        if storage > 1 {
+            let message = "Conflicting storage classes.".to_owned();
+            self.report(Code::W0214, location, message);
+        }
+        if local.has(&Qualifier::Const) && local.has(&Qualifier::Var) {
+            self.report(Code::W0214, location, "Conflicting constness.".to_owned());
+        }
+        if local.has(&Qualifier::Auto)
+            && local.is_static()
+            && self.lookup_global("memalloc").is_none()
+            && self.lookup_global("malloc").is_none()
+        {
+            let message = format!(
+                "memalloc not yet defined, cannot define __auto {} at global scope",
+                local.name
+            );
+            self.report(Code::E0365, location, message);
+            return true;
+        }
+        false
     }
 
     /// Declares a local of a function body (QC-11.10, FTEF-19.1), with its initialiser's
@@ -602,6 +718,9 @@ impl<'a> Resolver<'a> {
         local: &RawLocal,
         location: Location,
     ) {
+        if self.profile.qualifiers() && self.warn_local_qualifiers(local, location) {
+            return;
+        }
         if self.profile.qualifiers() && local.name.starts_with("autocvar_") {
             self.report(
                 Code::W0213,
@@ -663,6 +782,7 @@ impl<'a> Resolver<'a> {
                 component: false,
                 array: local.array,
                 statics,
+                external: local.has(&Qualifier::Extern),
                 subscope: self.profile.body_checks() && local.flags.has(FteFlag::PrSubscopedlocals),
             },
         );
@@ -821,6 +941,12 @@ impl<'a> Resolver<'a> {
                         format!("{name} duplicate definition ignored")
                     };
                     self.report(Code::W0207, location, message);
+                } else if !was_static && !global && !facts.external {
+                    // FTEF-19.59: `QCC_PR_GetDef`'s `(flags & GDF_STATIC) && !def->isstatic`.
+                    let message =
+                        format!("static redefinition of {name} follows non-static definition.");
+                    self.report(Code::E0364, location, message);
+                    return None;
                 }
             } else if self.profile.components_initialised() && kind == DefKind::Param {
                 // A parameter's vector components are made with no lookup (FTEF-19.1).

@@ -10727,3 +10727,130 @@ fn every_reference_is_read_as_fteqcc_reads_it_7() {
 fn every_reference_is_read_as_fteqcc_reads_it_8() {
     check_references(&REFERENCES[2100..2118]);
 }
+
+// spec FTEF-31.2: an element keeps what its base is: a variable's component and an entity's
+// `.vector` component store, a constant's and a field's are constants, and a field's components
+// are the same symbol
+#[test]
+fn elements_keep_their_bases() {
+    let found = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\n.vector fv; .float ff; vector v; const vector cv = [1, 2, 3]; \
+             float *p; float q; float *pp; string s; float i;\nvoid() g = {{ local entity e; \
+             local .vector lf; {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    for quiet in [
+        "e.fv[1] = 2;",
+        "e.fv[1]++;",
+        "v[1] = 2;",
+        "p[1] = 2;",
+        "q = v[0] < v[1];",
+        "lf[1] = ff;",
+        "local .float lq = lf[1];",
+        "pp = &cv[1];",
+        "pp = &v[1];",
+        "q = e.(fv[1]);",
+        "q = e.(lf[1]);",
+        "q = s[1] < s[1];",
+        "s[1] = 3;",
+        "q = lf[i] == lf[i];",
+        "q = fv[i] == fv[i];",
+    ] {
+        assert!(found(quiet).is_empty(), "{quiet}");
+    }
+    assert_eq!(
+        found("cv[1] = 2;"),
+        ["Assignment to const", "Assignment to constant cv"]
+    );
+    assert_eq!(
+        found("fv[1] = ff;"),
+        ["Assignment to const", "Assignment to constant fv"]
+    );
+    assert_eq!(found("p[1]();"), ["not a function"]);
+    for same in [
+        "q = fv[1] == fv[1];",
+        "q = v[1] < v[1];",
+        "q = v[0] < v[0];",
+    ] {
+        assert_eq!(found(same), ["Result of comparison is constant"], "{same}");
+    }
+    assert_eq!(found("cv[1]++;"), ["postincrement: lhs is readonly"]);
+    assert_eq!(
+        found("lf[1]++;"),
+        ["post increment operator not supported with this type"]
+    );
+    assert_eq!(
+        found("pp = &fv[1];"),
+        ["Implicit cast from .float* to float*"]
+    );
+    // An entity's array of fields is read as the array's own definition, with its length
+    // before it on hexen2 (FTEF-31.15).
+    let fields = diags(
+        "#pragma target hexen2\n.float fa[4]; float q; int ii;\n\
+         void() g = { local entity e; q = e.fa[ii]; };\n",
+    );
+    assert_eq!(
+        fields,
+        [
+            itof("ii"),
+            d(Code::W0319, "INTERNAL: over-freed refcount to ii")
+        ]
+    );
+    // Under `qccx` a string's index is the string offset, a string.
+    let offset = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\n#pragma flag enable qccx\nstring s, s2; float q, i;\n\
+             void() g = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let denormals = "string offsetting emulation: denormals are unsafe";
+    assert_eq!(offset("s2 = s[i];"), [denormals]);
+    assert_eq!(
+        offset("q = s[i];"),
+        [denormals, "Implicit cast from string to float"]
+    );
+}
+
+// spec FTEF-31.16: an array of fields is indexed in elements of the field's type, and a class's
+// member array has no length prefix
+#[test]
+fn arrays_of_fields_count_their_elements() {
+    let found = |target: &str, statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target {target}\nentity self; float q; int ii; vector v; .float fa[4]; \
+             .vector gv[2];\nclass C : entity {{ float arr[4]; vector varr[2]; \
+             nonvirtual void() m = {{ local entity e; {statement} }}; }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let itof = "itof emulation: denormals are unsafe ii";
+    let over_freed = "INTERNAL: over-freed refcount to ii";
+    assert_eq!(found("hexen2", "q = this.arr[ii];"), [itof]);
+    assert_eq!(found("hexen2", "this.arr[ii] = 1;"), [itof]);
+    assert_eq!(found("hexen2", "q = e.fa[ii];"), [itof, over_freed]);
+    let scaled = [
+        "MulInt function not defined: cannot emulate int*int",
+        "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+    ];
+    for statement in ["v = this.varr[ii];", "v = e.gv[ii];"] {
+        for target in ["standard", "hexen2"] {
+            let messages = found(target, statement);
+            assert_eq!(
+                messages.get(..2),
+                Some(&scaled.map(String::from)[..]),
+                "{target} {statement}"
+            );
+            assert_eq!(messages.len(), 3, "{target} {statement}");
+        }
+    }
+    assert!(found("fte", "v = this.varr[ii]; v = e.gv[ii];").is_empty());
+}

@@ -256,7 +256,7 @@ fn a_vector_condition() {
     );
 }
 
-// spec FTEF-30.8: `sizeof` of a type or value is a constant; `_length` of a non-constant string
+// spec FTEF-30.11: `sizeof` of a type or value is a constant; `_length` of a non-constant string
 // or a float is a fatal error
 // spec QCD-4.38: E0334 for `_length` refused
 #[test]
@@ -284,7 +284,7 @@ fn sizes_and_lengths() {
     );
 }
 
-// spec FTEF-30.8: under `undefwordsize` `sizeof` is an error
+// spec FTEF-30.11: under `undefwordsize` `sizeof` is an error
 // spec QCD-4.32: E0326 for `sizeof` under undefwordsize
 #[test]
 fn sizeof_under_undefwordsize() {
@@ -409,5 +409,245 @@ fn a_qccx_address_of_a_float_is_read_through() {
             "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
             "Implicit cast from float to string",
         ]
+    );
+}
+
+// spec FTEF-30.3: arms of function types compare by their return types, parameters, counts and
+// variadic marks, parameters of a class or entity by their names; two structs `typecmp`
+// tells apart and `typecmp_lax` does not end FTEQCC, and two classes of the same members too
+// spec QCD-7.86: W0244 for a type mismatch on `?:`
+#[test]
+fn ternaries_of_functions_structs_and_classes() {
+    let defs = "class C : entity { float m; }; class D : entity { float m; }; struct S { float a; };\n\
+                struct T { float a; }; float(float a) f1; float(string a) f2;\n\
+                float(float a, float b) f3; float(float b) f4; float(...) f5; string(float a) f6;\n\
+                void(entity e) g1; void(C e) g2; void(D e) g3; S s1; T t1; float c; entity e;\n\
+                C cc; D dd;\n";
+    let found = |statement: &str| -> Vec<(Code, String)> {
+        diags(&format!("{defs}void() f = {{ {statement} }};\n"))
+            .into_iter()
+            .filter(|(_, m)| !m.ends_with("has no body"))
+            .collect()
+    };
+    let mismatch = |a: &str, b: &str| {
+        vec![d(
+            Code::W0244,
+            &format!("Type mismatch on ternary operator: {a} vs {b}"),
+        )]
+    };
+    assert_eq!(
+        found("local float(float) r = c ? f1 : f2;"),
+        mismatch("float(float a)", "float(string a)")
+    );
+    assert_eq!(
+        found("local float(float) r = c ? f1 : f3;"),
+        mismatch("float(float a)", "float(float a, float b)")
+    );
+    assert!(found("local float(float) r = c ? f1 : f4;").is_empty());
+    assert_eq!(
+        found("local float(float) r = c ? f1 : f5;"),
+        mismatch("float(float a)", "float(...)")
+    );
+    assert_eq!(
+        found("local float(float) r = c ? f1 : f6;"),
+        mismatch("float(float a)", "string(float a)")
+    );
+    assert_eq!(
+        found("local void(entity) r = c ? g1 : g2;"),
+        mismatch("void(entity e)", "void(class C e)")
+    );
+    assert_eq!(
+        found("local void(C) r = c ? g2 : g3;"),
+        mismatch("void(class C e)", "void(class D e)")
+    );
+    let fatal = vec![d(Code::E0332, "Ternary operator with mismatching types")];
+    assert_eq!(found("local S r = c ? s1 : t1;"), fatal);
+    assert_eq!(found("local C r = c ? cc : dd;"), fatal);
+    assert_eq!(
+        found("local entity r = c ? cc : e;"),
+        mismatch("class C", "entity")
+    );
+}
+
+// spec FTEF-30.11: an array's `sizeof` is its element's times its length and a defined array's
+// `_length` its length, constants; a struct's member array's `_length` is none
+// spec FTEF-30.7: a vector constructor of constants is a constant, an integer component made a
+// float
+#[test]
+fn array_sizes_and_constant_vectors() {
+    let defs = "#pragma target fte\nfloat farr[4]; vector varr[2]; float q; struct S { float m[3]; };\nS s;\n";
+    let found = |statement: &str| -> Vec<String> {
+        diags(&format!("{defs}void() f = {{ {statement} }};\n"))
+            .into_iter()
+            .map(|(_, m)| m)
+            .collect()
+    };
+    let past = |i: u32| format!("(constant) array index out of bounds (0 <= {i} < 4)");
+    assert_eq!(found("q = farr[sizeof(farr)];"), [past(16)]);
+    assert_eq!(found("q = farr[sizeof(farr) / 4];"), [past(4)]);
+    assert_eq!(found("q = farr[sizeof(varr)];"), [past(24)]);
+    assert_eq!(found("q = farr[sizeof(s.m)];"), [past(12)]);
+    assert_eq!(found("q = farr[_length(farr)];"), [past(4)]);
+    assert_eq!(
+        found("local float la[2]; q = farr[sizeof(la) + _length(la)];"),
+        [past(10)]
+    );
+    assert!(found("q = farr[_length(s.m)];").is_empty());
+    assert_eq!(found("q = farr[[5, 0, 0][0]];"), [past(5)]);
+    assert_eq!(found("q = farr[[5i, 0i, 0i][0]];"), [past(5)]);
+    assert_eq!(found("q = farr[[0, 6i, 0][1]];"), [past(6)]);
+}
+
+// spec FTEF-18.37: a statement that indexes or selects from a value that takes neither is that
+// value alone, which does nothing unless it calls or stores
+#[test]
+fn a_statement_that_stops_at_its_first_value() {
+    let found = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nfloat x; float() g = {{ return 1; }}; struct S {{ float a; }}; \
+             S s2;\nvoid() f = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let nothing = "Statement does not do anything";
+    for (statement, found_at) in [
+        ("x[1] = 2;", "["),
+        ("x.y = 2;", "."),
+        ("s2.a[1] = 2;", "["),
+        ("3[1] = 2;", "["),
+        ("x[1];", "["),
+        ("x[1] + 1;", "["),
+        ("x[1]++;", "["),
+    ] {
+        assert_eq!(
+            found(statement),
+            [nothing.to_owned(), format!("expected ;, found {found_at}")],
+            "{statement}"
+        );
+    }
+    for statement in ["g()[1] = 2;", "x = x[1];"] {
+        assert_eq!(found(statement), ["expected ;, found ["], "{statement}");
+    }
+}
+
+// spec FTEF-18.38: a definition's value ends before a `[` its value does not take, the
+// definition is checked with it, then wants its `;` there
+#[test]
+fn a_definition_that_stops_at_a_stray_index() {
+    let found = |source: &str| -> Vec<String> {
+        diags(&format!(
+            "float x; .float ff; entity e; const float c = 3;\n{source}\nvoid() main = {{}};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let semicolon = "Missing semicolon at end of definition";
+    let not_a_type = "\"[\" is not a type";
+    assert_eq!(
+        found("float q = x[1];"),
+        ["initializer for 'q' is not constant", semicolon, not_a_type]
+    );
+    assert_eq!(found(".float q = ff[1];"), [semicolon, not_a_type]);
+    assert_eq!(found("float q = c[1];"), [semicolon, not_a_type]);
+    assert_eq!(
+        found("float q = e[1];"),
+        ["Cannot cast from entity to float"]
+    );
+    assert_eq!(
+        found("void() f = { local float q = x[1]; };"),
+        [semicolon, "Statement does not do anything"]
+    );
+    assert_eq!(
+        found("void() f = { local float q = e[1]; };"),
+        ["Cannot cast from entity to float"]
+    );
+}
+
+// spec FTEF-19.70: a `static` local's value is a constant whatever expression gives it
+#[test]
+fn a_static_local_takes_only_a_constant() {
+    let found = |local: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nfloat x; const float k = 2; float(float a) h = {{ return a; }};\n\
+             void() g = {{ {local} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    for value in ["x + 1", "-x", "[x, 0, 0]", "h(1)"] {
+        let ty = if value.starts_with('[') {
+            "vector"
+        } else {
+            "float"
+        };
+        assert_eq!(
+            found(&format!("static {ty} y = {value};")),
+            ["initializer for 'y' is not constant"],
+            "{value}"
+        );
+        assert!(
+            found(&format!("local {ty} y = {value};")).is_empty(),
+            "{value}"
+        );
+        assert!(
+            found(&format!("const {ty} y = {value};")).is_empty(),
+            "{value}"
+        );
+    }
+    assert!(found("static float y = 1 + 2;").is_empty());
+    assert!(found("static float y = k * 2;").is_empty());
+}
+
+// spec FTEF-19.69: an unknown name is a `variant` defined in its function, which its later uses
+// there find, and which the checks after it read
+#[test]
+fn an_unknown_name_is_a_variant_of_its_function() {
+    let found = |source: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nfloat x; float farr[2];\n{source}\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let unknown = "Unknown value \"nope\".";
+    assert_eq!(found("void() f = { x = nope; x = nope; };"), [unknown]);
+    assert_eq!(
+        found("void() f = { x = nope; };\nvoid() g = { x = nope; };"),
+        [unknown, unknown]
+    );
+    assert_eq!(found("void() f = { x = nope; };\nfloat nope;"), [unknown]);
+    assert_eq!(
+        found("void() f = { x = nope[1]; };"),
+        [unknown, "expected ;, found ["]
+    );
+    assert_eq!(
+        found("void() f = { x = nope.y; };"),
+        [unknown, "expected ;, found ."]
+    );
+    assert_eq!(
+        found("void() f = { nope[1] = 2; };"),
+        [
+            unknown,
+            "Statement does not do anything",
+            "expected ;, found ["
+        ]
+    );
+    assert_eq!(
+        found("void() f = { if (nope) x = 1; };"),
+        [unknown, "conditional type mismatch: variant"]
+    );
+    assert_eq!(found("void() f = { x = farr[nope]; };"), [unknown]);
+    assert_eq!(
+        found("struct S { float a; }; S s1;\nvoid() f = { s1 = nope(1); };"),
+        [unknown]
+    );
+    assert!(
+        found("struct S { float a; }; S s1; __variant va;\nvoid() f = { s1 = va; va = s1; };")
+            .is_empty()
     );
 }

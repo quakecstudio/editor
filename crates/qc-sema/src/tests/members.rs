@@ -225,12 +225,12 @@ fn a_class_accessor_member_is_a_function_and_a_member_name() {
     assert_eq!(params, ["this", "value"]);
 }
 
-// spec FTEF-10.2: an accessor member bound to a function, `get float size = GetSize;`, is a
-// use of that function, and a member with neither a function nor a body defines nothing.
+// spec FTEF-10.2: an accessor member bound to a function, `get float size = GetSize;`, refers to
+// that function, and a `set` member with a body defines the write function.
 #[test]
 fn an_accessor_member_may_name_its_function() {
-    let source = "float(float h) GetSize = #1;\n\
-                  accessor box : float { get float size = GetSize; set float size; };\n";
+    let source = "accessor box : float { get float size = GetSize; set float size = { }; };\n\
+                  float(box this) GetSize = #1;\n";
     let index = fte_index_of(source);
     assert_eq!(messages(&index), Vec::<String>::new());
     let get_size = index
@@ -248,8 +248,9 @@ fn an_accessor_member_may_name_its_function() {
             .unwrap()
             .initialized
     };
-    assert!(initialized("box::get_size"));
-    assert!(!initialized("box::set_size"));
+    assert!(initialized("GetSize"));
+    assert!(initialized("box::set_size"));
+    assert!(index.defs.iter().all(|d| d.name != "box::get_size"));
 }
 
 // spec FTEF-17.14: `Class::member` declares a member the class does not, of the kind its type
@@ -449,4 +450,270 @@ fn accessor_values_in_expressions() {
         );
     }
     assert_eq!(body("a.z[1] = f; f = a.z[1];"), []);
+}
+
+// spec FTEF-24.15: a member of a class declared but never defined
+// spec QCD-4.72: E0371 "Class \"CLASS\" is not defined, cannot access member \"NAME\""
+// spec FTEF-30.10: a conditional of more than three words is "oversized ternary result"
+// spec QCD-4.71: E0370 "oversized ternary result"
+#[test]
+fn undefined_classes_and_oversized_conditionals() {
+    let messages = |source: &str| -> Vec<(Code, String)> {
+        fte_index_of(source)
+            .diagnostics
+            .iter()
+            .map(|d| (d.diagnostic.code, d.diagnostic.message.clone()))
+            .collect()
+    };
+    assert_eq!(
+        messages("class C; C c; float x;\nvoid() g = { x = c.y; };\n"),
+        [(
+            Code::E0371,
+            "Class \"C\" is not defined, cannot access member \"y\"".to_owned()
+        )]
+    );
+    assert_eq!(
+        messages("class C : entity { float m; }; C c; float x;\nvoid() g = { x = c.y; };\n"),
+        [(Code::E0319, "Unknown field \"y\" in class \"C\"".to_owned())]
+    );
+    assert_eq!(
+        messages(
+            "struct S { float a, b, c, d; }; S s1, s2; float c;\n\
+             void() g = { local S r = c ? s1 : s2; };\n"
+        ),
+        [(Code::E0370, "oversized ternary result".to_owned())]
+    );
+}
+
+// spec FTEF-17.18: `self` in a member function is `this`, with F331's warning when it is on
+// spec QCD-7.109: W0316 "'self' used inside OO function, use 'this'."
+// spec FTEF-17.16: an inline member function sees the members declared before it, where a
+// warning pragma ahead of the class moves the text the parser read
+#[test]
+fn self_in_member_functions_is_this() {
+    let messages = |pragma: &str| -> Vec<String> {
+        let source = format!(
+            "{pragma}\nentity self; .float y;\nclass C : entity {{ float x;\n\
+             void() m = {{ this.x = 1; self.x = 2; self.y = 3; z = 1; }}; float z; }};\n"
+        );
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        let file = FileId(0);
+        db.set_file(file, PathBuf::from("t.qc"), source.into_bytes());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![file],
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .filter(|d| !d.diagnostic.message.ends_with("Assuming non-virtual."))
+        .map(|d| format!("{}: {}", d.diagnostic.code.as_str(), d.diagnostic.message))
+        .collect()
+    };
+    let this = "W0316: 'self' used inside OO function, use 'this'.";
+    let unknown = "E0301: Unknown value \"z\".";
+    assert_eq!(
+        messages("#pragma warning enable F331"),
+        [unknown, this, this]
+    );
+    assert_eq!(messages("#pragma warning disable F331"), [unknown]);
+}
+
+// spec FTEF-10.10: a class's accessor member may not be virtual or static
+// spec QCD-4.78: E0377 "virtual accessors are not supported at this time"
+// spec QCD-4.79: E0378 "static accessors are not supported"
+#[test]
+fn class_accessors_are_neither_virtual_nor_static() {
+    let messages = |words: &str| -> Vec<(Code, String)> {
+        fte_index_of(&format!(
+            "class C : entity {{ {words} float x = {{ return 1; }}; }};\n"
+        ))
+        .diagnostics
+        .iter()
+        .map(|d| (d.diagnostic.code, d.diagnostic.message.clone()))
+        .collect()
+    };
+    let virtual_ = (
+        Code::E0377,
+        "virtual accessors are not supported at this time".to_owned(),
+    );
+    let static_ = (Code::E0378, "static accessors are not supported".to_owned());
+    assert!(messages("get").is_empty());
+    assert_eq!(messages("virtual get"), std::slice::from_ref(&virtual_));
+    assert_eq!(messages("get virtual"), std::slice::from_ref(&virtual_));
+    assert_eq!(messages("static get"), std::slice::from_ref(&static_));
+    assert_eq!(messages("const get"), std::slice::from_ref(&static_));
+    assert_eq!(messages("virtual static get"), [virtual_, static_]);
+}
+
+// spec FTEF-9.20: `virtual`, `nonvirtual` and `inline` written on a member that is no function,
+// and `inline` on a prototype or a virtual function, end FTEQCC
+// spec QCD-4.80: E0379 for each
+#[test]
+fn words_only_a_member_function_takes() {
+    let messages = |member: &str| -> Vec<(Code, String)> {
+        fte_index_of(&format!("class C : entity {{ {member} }};\n"))
+            .diagnostics
+            .iter()
+            .map(|d| (d.diagnostic.code, d.diagnostic.message.clone()))
+            .filter(|(_, m)| !m.ends_with("Assuming non-virtual.") && !m.ends_with("has no body"))
+            .collect()
+    };
+    let e = |message: &str| vec![(Code::E0379, message.to_owned())];
+    let virtuality = e("virtual keyword on member that is not a function");
+    assert_eq!(messages("virtual float m;"), virtuality);
+    assert_eq!(messages("nonvirtual float m;"), virtuality);
+    assert_eq!(
+        messages("inline float m;"),
+        e("inline keyword on member that is not a function")
+    );
+    let prototype = e("inline keyword on function prototype or virtual function");
+    assert_eq!(messages("inline void() m;"), prototype);
+    assert_eq!(messages("virtual inline void() m = { };"), prototype);
+    assert!(messages("inline void() m = { };").is_empty());
+    assert!(messages("virtual: float x;").is_empty());
+    assert_eq!(messages("virtual: inline void() m = { };"), prototype);
+}
+
+// spec FTEF-10.11: an accessor member whose value is a name declares that function with the
+// member's function type
+#[test]
+fn accessor_members_declare_the_functions_they_name() {
+    let messages = |source: &str| -> Vec<String> {
+        fte_index_of(source)
+            .diagnostics
+            .iter()
+            .map(|d| d.diagnostic.message.clone())
+            .collect()
+    };
+    assert_eq!(
+        messages("float() g = { return 1; };\naccessor A : float { get float x = g; };\n"),
+        ["Type mismatch on redeclaration of g. float(A this), should be float()"]
+    );
+    assert_eq!(
+        messages("accessor A : float { get float x = nope; };\n"),
+        ["function nope has no body"]
+    );
+    assert!(
+        messages(
+            "accessor A : float { get float x[float i] = g; };\n\
+             float(A this, float i) g = { return 1; };\n"
+        )
+        .is_empty()
+    );
+    assert!(
+        messages("class C : entity { set float x = s; };\nvoid(C this, float value) s = {};\n")
+            .is_empty()
+    );
+    assert_eq!(
+        messages("class C : entity { get float x = g; };\nfloat() g = { return 1; };\n")
+            .first()
+            .map(String::as_str),
+        Some("Type mismatch on redeclaration of g. float(), should be float(class C this)")
+    );
+}
+
+// spec FTEF-24.1: `e.(expr)` selects the field the expression's value is, of the type it holds;
+// a value that is no field is "NAME is not a field", NAME the value's (`QCC_GetSRefName`)
+#[test]
+fn fields_selected_by_an_expression() {
+    let messages = |statement: &str| -> Vec<String> {
+        fte_index_of(&format!(
+            "#pragma target fte\n.float fa, fb; .string fs; var .float fv = fa; entity e; \
+             float x; float c; float farr[3]; __variant va; class C : entity {{ float m; }}; \
+             C cc;\nvoid() f = {{ {statement} }};\n"
+        ))
+        .diagnostics
+        .iter()
+        .map(|d| d.diagnostic.message.clone())
+        .collect()
+    };
+    for fine in [
+        "x = e.(fa);",
+        "x = e.(fv);",
+        "e.(fv) = 1;",
+        "x = e.(va);",
+        "x = e.(c ? fa : fb);",
+    ] {
+        assert!(messages(fine).is_empty(), "{fine}: {:?}", messages(fine));
+    }
+    assert_eq!(
+        messages("local string q = e.(fv);"),
+        ["Cannot cast from float to string"]
+    );
+    assert_eq!(
+        messages("x = e.(fs);"),
+        ["Cannot cast from string to float"]
+    );
+    assert_eq!(messages("x = e.(x);"), ["x is not a field"]);
+    assert_eq!(messages("x = e.(x + 1);"), ["float is not a field"]);
+    assert_eq!(messages("x = e.(3);"), ["IMMEDIATE is not a field"]);
+    assert_eq!(messages("x = e.(farr[1]);"), ["farr is not a field"]);
+    assert_eq!(messages("x = cc.(x);"), ["x is not a field of class C"]);
+}
+
+// spec FTEF-10.7: an accessor's unnamed indexer, `get T[I]`, is what `base[index]` reads and
+// stores, the index cast to its type and the value to the member's
+#[test]
+fn an_accessor_indexer_reads_and_stores() {
+    let defs = "string(float b, float i) bufstr_get = #0; \
+                void(float b, float i, string s) bufstr_set = #0;\n\
+                accessor strbuf : float { inline get string[float idx] = \
+                { return bufstr_get(this, idx); }; inline set string[float idx] = \
+                { bufstr_set(this, idx, value); }; };\nstrbuf h; float x; string s;\n";
+    let found = |statement: &str| -> Vec<String> {
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        let file = FileId(0);
+        let source = format!("#pragma target fte\n{defs}void() f = {{ {statement} }};\n");
+        db.set_file(file, PathBuf::from("t.qc"), source.into_bytes());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![file],
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .map(|d| d.diagnostic.message.clone())
+        .filter(|m| m != "Implicit cast from strbuf to float")
+        .collect()
+    };
+    assert!(found("s = h[1];").is_empty());
+    assert!(found("h[2] = \"a\";").is_empty());
+    assert_eq!(found("x = h[1];"), ["Cannot cast from string to float"]);
+    assert_eq!(found("h[1] = 5;"), ["Cannot cast from float to string"]);
+    assert_eq!(
+        found("s = h[\"a\"];"),
+        ["Implicit type mismatch. Needed float, got string."]
+    );
+}
+
+// spec FTEF-10.12: a second accessor member of one name defines its function again with no
+// error, in an accessor or a class
+#[test]
+fn accessor_members_may_be_defined_again() {
+    let messages = |source: &str| -> Vec<String> {
+        fte_index_of(source)
+            .diagnostics
+            .iter()
+            .map(|d| d.diagnostic.message.clone())
+            .collect()
+    };
+    assert!(
+        messages(
+            "accessor A : float { get float x = { return 1; }; get float x = { return 2; }; };\n"
+        )
+        .is_empty()
+    );
+    assert!(messages("accessor A : float { set float x = { }; set float x = { }; };\n").is_empty());
+    assert!(
+        messages(
+            "class C : entity { get float x = { return 1; }; get float x = { return 2; }; };\n"
+        )
+        .is_empty()
+    );
+    assert_eq!(
+        messages("float() g = { return 1; };\nfloat() g = { return 2; };\n"),
+        [
+            "redeclaration of function body",
+            "incompatible redeclaration"
+        ]
+    );
 }

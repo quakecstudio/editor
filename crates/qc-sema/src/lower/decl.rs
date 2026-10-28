@@ -11,7 +11,8 @@ use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{CompilerFlags, Dialect, SyntaxKind, SyntaxNode};
 
 use crate::cast::{ConstType, Literal};
-use crate::ty::Type;
+use crate::check::constant::unquoted;
+use crate::ty::{SimpleType, Type};
 
 use super::body::{RawBody, RawParam, lower_body, next_think_of, omitted_type};
 use super::expr::{RawUse, lower_expr};
@@ -57,6 +58,14 @@ pub struct RawDecl {
     /// Whether this stands for a type written with no declarator, `float (x);`, which only has
     /// its type names checked (FTEF-20.12).
     pub type_only: bool,
+    /// Whether it is a `CLASS::NAME` definition written with no type, a `void` (FTEF-19.66).
+    pub untyped: bool,
+    /// Whether it is an accessor member's function, which another member of the name defines
+    /// again with no check (FTEF-10.12).
+    pub accessor_body: bool,
+    /// Whether its function type was written inline and a parameter list follows its name, a
+    /// function returning a function (FTEF-19.67).
+    pub returns_function: bool,
     /// For an accessor, its base type after `:`, `None` inside `Some` when it has none
     /// (FTEF-10.6).
     pub accessor: Option<Option<Type>>,
@@ -68,6 +77,9 @@ pub struct RawDecl {
     pub array: Option<ArrayDim>,
     /// How many array suffixes the declarator has (FTEF-19.8).
     pub array_dims: usize,
+    /// The first dimension's size when it is an expression the lowering does not read, which
+    /// the check stage folds (FTEF-19.62).
+    pub size_expr: Option<ast::Expr>,
     /// For an aggregate initialiser, the first token inside its braces and its span: a
     /// two-dimensional array needs a `{` there (FTEF-19.8).
     pub aggregate_first: Option<(String, Span)>,
@@ -146,7 +158,7 @@ pub enum Qualifier {
     Accumulate,
     /// `deprecated`, with its reason if it gives one (FTEF-19.13).
     Deprecated(Option<String>),
-    /// `auto` or `register`.
+    /// `auto`, which a later `register` undoes (FTEF-19.61).
     Auto,
     /// The attribute `alias(NAME)` or `alias("NAME")`: the definition names the one `NAME`
     /// names (FTEF-21.9).
@@ -174,7 +186,7 @@ impl Qualifier {
             "wrap" => Self::Wrap,
             "weak" => Self::Weak,
             "accumulate" => Self::Accumulate,
-            "auto" | "register" => Self::Auto,
+            "auto" => Self::Auto,
             "deprecated" => Self::Deprecated(
                 text.split_once('"')
                     .and_then(|(_, rest)| rest.rsplit_once('"'))
@@ -221,7 +233,7 @@ pub enum ValueKind {
     Indexed(String),
     /// A literal cast to a type, `(T)0`, a value of that type (FTEF-19.43).
     Cast(Type),
-    /// Any other expression, whose type the model does not compute (FTEF-19.46).
+    /// Any other expression, whose type the model does not compute (FTEF-19.63).
     Other,
 }
 
@@ -234,7 +246,7 @@ pub enum ArrayDim {
     /// `[]` with nothing to size it, which FTEQCC's `QCC_PR_GetDef` compares with no other
     /// size.
     Unsized,
-    /// A size given by an expression the model does not evaluate (FTEF-19.46).
+    /// A size given by an expression, which the check stage folds (FTEF-19.62).
     Unknown,
 }
 
@@ -275,11 +287,15 @@ impl RawDecl {
             class: None,
             type_kind: None,
             type_only: false,
+            untyped: false,
+            accessor_body: false,
+            returns_function: false,
             accessor: None,
             qualifiers: Vec::new(),
             value: None,
             array: None,
             array_dims: 0,
+            size_expr: None,
             aggregate_first: None,
             aggregate: None,
             params: Vec::new(),
@@ -367,7 +383,10 @@ impl RawDecl {
     /// again (FTEF-15.5).
     #[must_use]
     pub fn redefinable(&self) -> bool {
-        self.has(&Qualifier::Wrap) || self.has(&Qualifier::Weak) || self.has(&Qualifier::Accumulate)
+        self.accessor_body
+            || self.has(&Qualifier::Wrap)
+            || self.has(&Qualifier::Weak)
+            || self.has(&Qualifier::Accumulate)
     }
 
     /// The reason a `deprecated` qualifier gives, `Some("")` for none; `None` when the
@@ -458,7 +477,7 @@ pub(super) fn raw_value(expr: &ast::Expr, cx: Cx<'_>) -> RawValue {
         ast::Expr::Literal(literal) => string_len(literal),
         _ => None,
     };
-    let syntax = matches!(kind, ValueKind::Other).then(|| expr.clone());
+    let syntax = matches!(kind, ValueKind::Other | ValueKind::Indexed(_)).then(|| expr.clone());
     let written_types = match &syntax {
         Some(expr) => super::body::written_types(expr.syntax(), cx),
         None => Vec::new(),
@@ -518,8 +537,14 @@ pub struct RawAggregate {
 pub struct RawBraces {
     /// Whether it names its members, `{ .a = 1 }`.
     pub designated: bool,
+    /// In designated braces, the first element that names no member, which FTEQCC refuses
+    /// (FTEF-19.64).
+    pub plain: Option<Span>,
     /// The span of its `{`, where an error about it as an element stands.
     pub open: Span,
+    /// The span of its `}` when a `,` comes before it, which a struct whose members all have
+    /// values leaves to what reads on (FTEF-19.65).
+    pub trailing: Option<Span>,
     /// Its elements, in order.
     pub elements: Vec<RawElement>,
 }
@@ -563,9 +588,43 @@ fn raw_braces(agg: &ast::AggregateInit, cx: Cx<'_>) -> RawBraces {
             None => ast::Expr::cast(node).map(|expr| RawElement::Value(raw_value(&expr, cx))),
         })
         .collect();
+    // The first significant element after `{` and after each `,`, the braces' own children:
+    // a designated one starts with its `.`.
+    // `}` straight after `{` is empty braces; after a `,` it stands where a `.` is expected.
+    let mut starts = Vec::new();
+    let mut after = None;
+    let mut trailing = None;
+    for element in agg.syntax().children_with_tokens() {
+        let (text, span) = match &element {
+            qc_syntax::SyntaxElement::Token(t) if t.kind().is_trivia() => continue,
+            qc_syntax::SyntaxElement::Token(t) => (t.text_lossless(), t.span()),
+            qc_syntax::SyntaxElement::Node(n) => (String::new(), n.span()),
+        };
+        if matches!(text.as_str(), "{" | ",") {
+            after = Some(text);
+            continue;
+        }
+        if after.as_deref() == Some(",") && text == "}" {
+            trailing = Some(span);
+        }
+        if after.as_deref() == Some(",") || (after.is_some() && text != "}") {
+            starts.push((text, span));
+        }
+        after = None;
+    }
+    let plain = designated
+        .then(|| {
+            starts
+                .iter()
+                .find(|(text, _)| text != ".")
+                .map(|(_, span)| *span)
+        })
+        .flatten();
     RawBraces {
         designated,
+        plain,
         open,
+        trailing,
         elements,
     }
 }
@@ -592,6 +651,16 @@ pub(super) fn raw_aggregate(
         init: raw_braces(syntax, cx),
         sizes,
     })
+}
+
+/// FTEF-19.62: the first dimension's size, when it is an expression other than a number
+/// literal.
+pub(super) fn size_expr(declarator: &ast::Declarator) -> Option<ast::Expr> {
+    let suffix = declarator.array_suffixes().next()?;
+    match suffix.children().find_map(ast::Expr::cast)? {
+        ast::Expr::Literal(_) => None,
+        expr => Some(expr),
+    }
 }
 
 pub(super) fn array_dim(
@@ -644,7 +713,17 @@ pub(super) fn qualifiers_of(node: &SyntaxNode) -> Vec<Qualifier> {
     for child in node.children() {
         match child.kind() {
             SyntaxKind::Qualifier => {
-                out.extend(Qualifier::of(&first_word(&child), &token_text(&child)))
+                let word = first_word(&child);
+                // FTEF-19.61: `register` sets `isauto=false`.
+                if word
+                    .strip_prefix("__")
+                    .unwrap_or(&word)
+                    .eq_ignore_ascii_case("register")
+                {
+                    out.retain(|q| *q != Qualifier::Auto);
+                    continue;
+                }
+                out.extend(Qualifier::of(&word, &token_text(&child)));
             }
             SyntaxKind::AttributeList => {
                 let Some(list) = ast::AttributeList::cast(child) else {
@@ -872,7 +951,17 @@ impl LiteralValue {
                     _ => None,
                 }
             }
-            ast::LiteralKind::String => Some(Self::String(text)),
+            // Adjacent string literals are one string (QC-6), kept as one quoted text so that
+            // two spellings of one value are the same constant.
+            ast::LiteralKind::String => {
+                let parts: String = literal
+                    .syntax()
+                    .child_tokens()
+                    .filter(|t| !t.kind().is_trivia())
+                    .map(|t| t.text_lossless())
+                    .collect();
+                Some(Self::String(format!("\"{}\"", unquoted(&parts))))
+            }
             ast::LiteralKind::FrameRef => None,
         }
     }
@@ -942,9 +1031,26 @@ pub(super) fn lower_declaration(decl: &ast::Declaration, cx: Cx<'_>, out: &mut V
     for en in decl.syntax().descendants().filter_map(ast::EnumDecl::cast) {
         lower_enum(&en, cx, out);
     }
-    let base = decl.ty().map_or_else(omitted_type, |t| cx.ty(&t));
+    // FTEF-19.66: `CLASS::NAME` with no type is a `void`.
+    let untyped = fte
+        && decl.ty().is_none()
+        && decl
+            .declarators()
+            .next()
+            .is_some_and(|d| d.scope().is_some());
+    let base = match decl.ty() {
+        Some(ty) => cx.ty(&ty),
+        None if untyped => Type::Simple(SimpleType::Void),
+        None => omitted_type(),
+    };
     let first = out.len();
     lower_declarators(decl.declarators(), &base, decl.ty(), cx, out);
+    let inline_function = matches!(decl.ty(), Some(ast::Type::Function(_)));
+    let named = decl.declarators().filter(|d| d.name().is_some());
+    for (raw, declarator) in out.iter_mut().skip(first).zip(named) {
+        raw.untyped = untyped;
+        raw.returns_function = inline_function && declarator.params().is_some();
+    }
     if decl.declarators().next().is_none()
         && fte
         && let Some(node) = decl.ty()
@@ -1053,6 +1159,7 @@ pub(super) fn lower_declarators(
         raw.builtin = matches!(init, Some(ast::Initializer::Builtin(_)));
         raw.array = array_dim(&declarator, init.as_ref());
         raw.array_dims = declarator.array_suffixes().count();
+        raw.size_expr = size_expr(&declarator);
         raw.aggregate = raw_aggregate(&declarator, init.as_ref(), cx);
         if let Some(ast::Initializer::Aggregate(agg)) = &init {
             raw.aggregate_first = agg

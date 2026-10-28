@@ -1131,9 +1131,16 @@ impl Parser<'_> {
             self.error(Code::E0203, message);
             return;
         }
+        // FTEF-10.10: `get` and `set` are among the qualifiers `QCC_PR_ParseClass` reads in any
+        // order, and either makes the member an accessor's.
         let get_set =
             |n| self.checks(n, Enabled::Always, "get") || self.checks(n, Enabled::Always, "set");
-        let accessor = get_set(0) || (self.checks(0, Enabled::Always, "inline") && get_set(1));
+        let mut ahead = 0_usize;
+        let mut accessor = false;
+        while self.member_qualifier(ahead) || get_set(ahead) {
+            accessor |= get_set(ahead);
+            ahead = ahead.saturating_add(1);
+        }
         if accessor {
             self.accessor_member(Member::Class);
             return;
@@ -1249,12 +1256,26 @@ impl Parser<'_> {
             Member::Class => parser.checks(0, Enabled::Always, word),
             Member::Accessor => parser.names(0, word),
         };
-        if word(self, "inline") {
-            self.bump();
+        let get_set = |parser: &Self| word(parser, "get") || word(parser, "set");
+        let mut accessor = false;
+        match member {
+            Member::Class => {
+                while self.member_qualifier(0) || get_set(self) {
+                    accessor |= get_set(self);
+                    self.bump();
+                }
+            }
+            Member::Accessor => {
+                if word(self, "inline") {
+                    self.bump();
+                }
+                if get_set(self) {
+                    accessor = true;
+                    self.bump();
+                }
+            }
         }
-        if word(self, "get") || word(self, "set") {
-            self.bump();
-        } else {
+        if !accessor {
             self.expected("get or set");
             self.recover(true);
             self.finish_node();
@@ -1284,8 +1305,8 @@ impl Parser<'_> {
                 self.expect(K::RBracket, "]");
                 self.finish_node();
             }
-            if self.at(K::Eq) {
-                self.bump();
+            // FTEF-10.11: `QCC_PR_Expect("=")`, then a body or a function's name.
+            if self.expect(K::Eq, "=") {
                 if self.at(K::LBrace) {
                     self.start_node(K::FunctionBody);
                     self.block(true);

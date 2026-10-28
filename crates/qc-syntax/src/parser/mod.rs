@@ -1171,6 +1171,17 @@ impl<'a> Parser<'a> {
             self.finish_node();
             return;
         }
+        // FTEF-19.66: `CLASS::NAME` writes no type, the class's name read as the type and
+        // then taken as the definition's scope.
+        if self.fteqcc()
+            && self.at(K::Name)
+            && self.nth(1).is_some_and(|t| t.kind == K::ColonColon)
+            && self.nth(2).is_some_and(|t| t.kind == K::Name)
+        {
+            self.declarators(TypeShape::default(), Site::File);
+            self.finish_node();
+            return;
+        }
         match self.type_or_user_type() {
             Some(ty) => self.declarators(ty, Site::File),
             None => self.recover(false),
@@ -1672,9 +1683,9 @@ impl<'a> Parser<'a> {
         // FTE-17.1: the C-style function declarator `rettype name(params)`, which the
         // rerelease uses beside the vanilla `rettype(params) name`, and FTEF-5.3: `T
         // name[N](params)`, an array of functions. A `(` after the name or its array
-        // suffixes, on a non-function type, is the parameter list, and the declarator is then
-        // a function.
-        if self.fteqcc() && !ty.function && self.at(K::LParen) {
+        // suffixes is the parameter list, and the declarator is then a function, one returning
+        // a function on a function type (FTEF-19.67).
+        if self.fteqcc() && self.at(K::LParen) {
             self.fte_param_list();
             ty.function = true;
         }
@@ -2307,7 +2318,7 @@ impl<'a> Parser<'a> {
             self.return_stmt();
         } else if self.checks(0, Enabled::Never, "exit") {
             // `keyword_exit` is `flag_acc`, reacc's, which this profile does not read
-            // (FTEF-19.46): only `__exit` is the keyword.
+            // (FTEF-19.63): only `__exit` is the keyword.
             self.exit_stmt();
         } else if self.kw(0, Keyword::Loop, "loop") {
             self.loop_stmt();
@@ -3023,14 +3034,17 @@ impl<'a> Parser<'a> {
     }
 
     /// `( args )` (QC-18.8). Under FTEQCC `va_arg(index, TYPE)` and `...(index, TYPE)` read an
-    /// expression, a `,` and a type (`QCC_PR_ParseFunctionCall`, FTEF-32.7).
+    /// expression, a `,` and a type (`QCC_PR_ParseFunctionCall`, FTEF-32.7), an argument of
+    /// `spawn` after its first that is a name and `:` or `=` names a field (FTEF-17.20), and an
+    /// argument may be left empty, before a `,` or the `)` (FTEF-32.9).
     fn arg_list(&mut self) {
-        let va_arg = self.fteqcc()
-            && self
-                .pos
-                .checked_sub(1)
-                .and_then(|at| self.input.tokens.get(at))
-                .is_some_and(|t| matches!(t.text.as_str(), "va_arg" | "..."));
+        let callee = self
+            .pos
+            .checked_sub(1)
+            .and_then(|at| self.input.tokens.get(at))
+            .map(|t| t.text.clone());
+        let va_arg = self.fteqcc() && matches!(callee.as_deref(), Some("va_arg" | "..."));
+        let spawn = self.fteqcc() && callee.as_deref() == Some("spawn");
         self.start_node(K::ArgList);
         self.bump();
         if va_arg {
@@ -3044,8 +3058,25 @@ impl<'a> Parser<'a> {
         } else if self.at(K::RParen) {
             self.bump();
         } else {
+            let mut first = true;
             loop {
-                self.expression();
+                let named = spawn
+                    && !first
+                    && self.at(K::Name)
+                    && self
+                        .nth(1)
+                        .is_some_and(|t| matches!(t.kind, K::Colon | K::Eq));
+                let empty = self.fteqcc() && (self.at(K::Comma) || self.at(K::RParen));
+                if named {
+                    self.start_node(K::NamedArg);
+                    self.bump();
+                    self.bump();
+                    self.expression();
+                    self.finish_node();
+                } else if !empty {
+                    self.expression();
+                }
+                first = false;
                 if !self.at(K::Comma) {
                     break;
                 }

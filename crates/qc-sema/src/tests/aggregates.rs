@@ -357,3 +357,41 @@ fn braced_pointer_initialisers() {
         ]
     );
 }
+
+// spec FTEF-19.64: designated braces name a member in every element
+// spec QCD-4.73: E0372 for an element that names none
+#[test]
+fn designated_initialisers_name_every_member() {
+    let mixed = d(
+        Code::E0372,
+        "designated initialisers require all members to be initialised the same way",
+    );
+    let defs = "#pragma target fte\nstruct S { float a; vector b; };\n";
+    assert_eq!(
+        messages(&format!("{defs}S st = {{ .a = 1, 2 }};")),
+        std::slice::from_ref(&mixed)
+    );
+    assert_eq!(
+        messages(&format!("{defs}S st = {{ .a = 1, .b = '1 2 3', }};")),
+        [mixed]
+    );
+    assert!(messages(&format!("{defs}S st = {{ .a = 1, .b = {{1, 2, 3}} }};")).is_empty());
+}
+
+// spec FTEF-19.65: a trailing comma after every member's value leaves the struct's `}` to the
+// definition, which is missing its semicolon
+#[test]
+fn a_trailing_comma_after_every_member() {
+    let defs = "struct S { float a; float b; };\n";
+    let left = [missing_semicolon(), d(Code::E0203, "\"}\" is not a type")];
+    assert_eq!(messages(&format!("{defs}S st = {{ 1, 2, }};")), left);
+    assert_eq!(
+        messages(&format!(
+            "{defs}void() f = {{ local S st = {{ 1, 2, }}; }};"
+        )),
+        left
+    );
+    assert!(messages(&format!("{defs}S st = {{ 1, }};")).is_empty());
+    assert!(messages(&format!("{defs}S st = {{ 1, 2 }};")).is_empty());
+    assert!(messages("union U { float a; float b; };\nU u = { 1, };").is_empty());
+}

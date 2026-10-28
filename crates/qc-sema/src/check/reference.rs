@@ -11,7 +11,7 @@
 use qc_diag::{Code, Span};
 use qc_preproc::{FteFlag, Op};
 use qc_syntax::SyntaxKind;
-use qc_syntax::ast::{self, AstNode as _};
+use qc_syntax::ast::{self, AstNode as _, BinaryOp, UnaryOp};
 
 use crate::cast::ConstType;
 use qc_syntax::c_scalar::CScalar;
@@ -143,6 +143,12 @@ impl Checker<'_> {
             }
             Reference::Character(index) => {
                 let float_index = self.etype_of(&index.ty) == Some(Etype::Float);
+                // `QCC_SupplyConversion(ref->index, ev_integer, true)` for `OP_LOADP_U8`.
+                let index = if float_index {
+                    *index
+                } else {
+                    self.supplied(&index, &Type::Named("__int32".into()), span)?
+                };
                 let op = if float_index { Op::LoadpC } else { Op::LoadpU8 };
                 let string = Value::of(Type::Simple(SimpleType::String));
                 let loaded = self.emit(op, &string, &index, span)?;
@@ -274,8 +280,15 @@ impl Checker<'_> {
     ) -> Result<bool, Fatal> {
         let target = self.env.target_at(span.start);
         let index_etype = self.etype_of(&index.ty);
+        // `def->arraylengthprefix = !rootsymbol && !def->localscope && ...` reads `localscope`
+        // before `QCC_PR_GetDef` sets it, so a local array has the prefix too (FTEF-31.15); a
+        // class's member field is a `QCC_PR_DummyDef` with a root symbol, so it has none.
         let length_prefix = !vector
-            && element.sym.def().is_some_and(|def| !self.env.is_local(def))
+            && element.sym.def().is_some_and(|def| {
+                self.env
+                    .definition(def)
+                    .is_none_or(|d| d.member_of.is_none())
+            })
             && target.valid(Op::FetchGblF);
         let as_integer = target.valid(Op::LoadaF) || target.valid(Op::GloadF);
         if as_integer {
@@ -286,7 +299,15 @@ impl Checker<'_> {
         }
         if length_prefix {
             if index_etype != Some(Etype::Float) {
+                // FTEF-31.15: the conversion's result is not kept, so `OP_FETCH_GBL_*` takes
+                // the index as it is and frees it a second time.
                 self.converted(index, Etype::Float, span)?;
+                if index.sym.def().is_some()
+                    && let Some(name) = &index.name
+                {
+                    let message = format!("INTERNAL: over-freed refcount to {name}");
+                    self.env.report(Code::W0319, span, message);
+                }
             }
             return Ok(false);
         }
@@ -475,6 +496,8 @@ impl Checker<'_> {
         {
             let length = self.env.array_length(def);
             self.bounds(constant, length, span);
+            // The index counts elements of the field's type, a vector's three words each.
+            let at = self.scaled_index(&base.ty, at, span)?;
             if at.known().is_none() {
                 let field = Value {
                     sym: Sym::Def(def, false, 0),
@@ -485,10 +508,7 @@ impl Checker<'_> {
             return Ok(base);
         }
         if base.is_array_head() {
-            let length = match base.reference {
-                Reference::ArrayHead(Some(member)) => member.length,
-                _ => base.sym.def().and_then(|def| self.env.array_length(def)),
-            };
+            let length = self.head_length(&base);
             self.bounds(constant, length, span);
             let at = self.scaled_index(&base.ty, at, span)?;
             let at = match base.reference {
@@ -510,10 +530,9 @@ impl Checker<'_> {
         match (self.etype_of(&base.ty), &base.ty) {
             (Some(Etype::Pointer), Type::Pointer(pointee)) => {
                 let at = self.scaled_index(pointee, at, span)?;
-                let pointer = self.read(base.clone(), span)?;
+                self.read(base.clone(), span)?;
                 Ok(Value {
                     readonly: false,
-                    name: pointer.name.or(Some(label.clone())),
                     reference: Reference::pointer(label, Some(at)),
                     ..Value::of(pointee.as_ref().clone())
                 })
@@ -546,11 +565,7 @@ impl Checker<'_> {
                         .and_then(|i| vector.v().get(i).copied())
                 });
                 if let Some(component) = component {
-                    return Ok(Value {
-                        reference: Reference::element(label, at, true),
-                        readonly: base.readonly,
-                        ..Value::constant(Constant::float(component))
-                    });
+                    return Ok(Value::constant(Constant::float(component)));
                 }
                 Ok(Value {
                     reference: Reference::element(label, at, true),
@@ -580,10 +595,27 @@ impl Checker<'_> {
                 })
             }
             _ => {
+                // FTEF-18.38: in a definition's value the value ends before the `[`.
+                if expected_after(index.syntax()) == ";" && in_definition(index.syntax()) {
+                    if self.stray.is_none() {
+                        self.stray = Some(span);
+                    }
+                    return Ok(base);
+                }
+                self.statement_before(index.syntax(), index.base());
                 let expected = expected_after(index.syntax());
                 let message = format!("expected {expected}, found [");
                 self.fatal(Code::E0204, span, message)
             }
+        }
+    }
+
+    /// The length of the array `head` names bare: a member array's as its struct declares it,
+    /// else its definition's.
+    pub(super) fn head_length(&self, head: &Value) -> Option<u32> {
+        match head.reference {
+            Reference::ArrayHead(Some(member)) => member.length,
+            _ => head.sym.def().and_then(|def| self.env.array_length(def)),
         }
     }
 
@@ -651,7 +683,6 @@ impl Checker<'_> {
             };
             return Ok(Value {
                 ty: Type::Simple(SimpleType::String),
-                readonly: true,
                 ..offset
             });
         }
@@ -878,13 +909,16 @@ impl Checker<'_> {
         } else {
             Op::StorepI8
         };
+        // `QCC_SupplyConversion(source, ...)`, then the index's, each refusing a type that does
+        // not convert.
+        let int = Type::Named("__int32".into());
         let to = if op == Op::StorepC {
-            Etype::Float
+            Type::Simple(SimpleType::Float)
         } else {
-            Etype::Integer
+            int.clone()
         };
-        let value = self.converted(stored, to, span)?;
-        let index = self.converted(index, Etype::Integer, span)?;
+        let value = self.supplied(stored, &to, span)?;
+        let index = self.supplied(index, &int, span)?;
         if target.stores_at_offset() {
             return self.small_store(op, &value, Some(&index), span);
         }
@@ -892,6 +926,81 @@ impl Checker<'_> {
         self.emit(Op::AddI, &string, &index, span)?;
         self.small_store(op, &value, None, span)
     }
+}
+
+impl Checker<'_> {
+    /// FTEF-18.37: where FTEQCC's expression ends at the `[` or `.` after `base`, its statement
+    /// is `base` alone when `base` starts it, which "does not do anything" unless it calls or
+    /// stores. The parser, which reads the whole statement, warns of it only when the whole does
+    /// nothing; here it is warned of when the whole does something.
+    pub(super) fn statement_before(
+        &mut self,
+        node: &qc_syntax::SyntaxNode,
+        base: Option<ast::Expr>,
+    ) {
+        let Some(base) = base else {
+            return;
+        };
+        let Some(statement) = node.ancestors().find(|n| n.kind() == SyntaxKind::ExprStmt) else {
+            return;
+        };
+        let start = |n: &qc_syntax::SyntaxNode| first_token_start(n);
+        if start(&statement) != start(base.syntax()) || does_something(base.syntax()) {
+            return;
+        }
+        if does_something(&statement) {
+            let message = "Statement does not do anything".to_owned();
+            self.env.report(Code::W0313, base.syntax().span(), message);
+        }
+    }
+}
+
+/// Whether `node` is in the value of a definition, local or global, with no statement between.
+fn in_definition(node: &qc_syntax::SyntaxNode) -> bool {
+    node.ancestors()
+        .map(|ancestor| ancestor.kind())
+        .find(|&k| {
+            matches!(k, SyntaxKind::LocalDecl | SyntaxKind::Declaration) || ast::Stmt::can_cast(k)
+        })
+        .is_some_and(|k| matches!(k, SyntaxKind::LocalDecl | SyntaxKind::Declaration))
+}
+
+/// Where the first token of `node` that is no trivia starts.
+fn first_token_start(node: &qc_syntax::SyntaxNode) -> Option<usize> {
+    node.descendants_with_tokens().find_map(|e| match e {
+        qc_syntax::SyntaxElement::Token(t) if !t.kind().is_trivia() => Some(t.span().start),
+        qc_syntax::SyntaxElement::Token(_) | qc_syntax::SyntaxElement::Node(_) => None,
+    })
+}
+
+/// Whether `node` calls a function or stores, which makes a statement of it do something
+/// (`qcc_usefulstatement`).
+fn does_something(node: &qc_syntax::SyntaxNode) -> bool {
+    node.descendants().any(|n| match n.kind() {
+        SyntaxKind::CallExpr | SyntaxKind::PostfixExpr => true,
+        SyntaxKind::BinaryExpr => ast::BinaryExpr::cast(n)
+            .and_then(|b| b.op())
+            .is_some_and(|op| {
+                matches!(
+                    op,
+                    BinaryOp::Assign
+                        | BinaryOp::AddAssign
+                        | BinaryOp::SubAssign
+                        | BinaryOp::MulAssign
+                        | BinaryOp::DivAssign
+                        | BinaryOp::BitAndAssign
+                        | BinaryOp::BitOrAssign
+                        | BinaryOp::BitClearAssign
+                        | BinaryOp::BitXorAssign
+                        | BinaryOp::ShlAssign
+                        | BinaryOp::ShrAssign
+                )
+            }),
+        SyntaxKind::UnaryExpr => ast::UnaryExpr::cast(n)
+            .and_then(|u| u.op())
+            .is_some_and(|op| matches!(op, UnaryOp::PreIncrement | UnaryOp::PreDecrement)),
+        _ => false,
+    })
 }
 
 /// The token FTEQCC's parser expects where a `[` stands after what is no array: `)` inside
@@ -911,7 +1020,7 @@ pub(super) fn expected_after(node: &qc_syntax::SyntaxNode) -> &'static str {
 /// FTEF-31.8: `QCC_Eval_Int` of a constant: C's `(int)` of a float or double, an integer as it
 /// is, a 64-bit one's low word; `None` for a vector or a string, "Unable to evaluate to numeric
 /// constant".
-fn eval_int(c: Constant) -> Option<i32> {
+pub(super) fn eval_int(c: Constant) -> Option<i32> {
     match c.ty {
         ConstType::Float => Some(f32_index(c.f())),
         ConstType::Double => Some(f64_index(c.d())),
@@ -923,7 +1032,7 @@ fn eval_int(c: Constant) -> Option<i32> {
 
 /// The type a bitfield's word is read as: an 8- or 16-bit integer's `parentclass`, `int` or
 /// `uint` (FTEF-2.12), else the bitfield's own type.
-pub(super) fn word_type(ty: &Type) -> Type {
+pub(crate) fn word_type(ty: &Type) -> Type {
     match ty.fteqcc_scalar() {
         Some(CScalar::Int8 | CScalar::Int16) => Type::Named("__int32".into()),
         Some(CScalar::Uint8 | CScalar::Uint16) => Type::Named("__uint32".into()),

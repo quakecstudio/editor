@@ -148,12 +148,17 @@ fn class_body_members() {
     assert_eq!(fte_errors("class C { ; .float f; };\n"), [Code::E0203]);
 }
 
-// spec FTEF-10.2: an accessor member may leave out its function, and its index its name
+// spec FTEF-10.2: an accessor member's index may leave out its name
+// spec FTEF-10.11: an accessor member must give its function, `QCC_PR_Expect("=")`
 #[test]
 fn accessor_member_forms() {
     assert_eq!(
-        fte_errors("accessor A : float { get float v; set float[float] = g; };\n"),
+        fte_errors("accessor A : float { get float v = f; set float[float] = g; };\n"),
         []
+    );
+    assert_eq!(
+        fte_errors("accessor A : float { get float v; };\n"),
+        [Code::E0204]
     );
     assert!(!fte_errors("accessor A : float { get float v[1] = g; };\n").is_empty());
 }

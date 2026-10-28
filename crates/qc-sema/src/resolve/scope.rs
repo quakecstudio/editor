@@ -34,6 +34,19 @@ impl Resolver<'_> {
         })
     }
 
+    /// Whether a global named `name` is a `static` of another unit, which [`Self::lookup_global`]
+    /// passes over (FTEF-19.60).
+    pub(in crate::resolve) fn static_elsewhere(&self, name: &str) -> bool {
+        self.globals.get(name).is_some_and(|defs| {
+            defs.iter().any(|def| {
+                self.facts
+                    .get(def.0)
+                    .and_then(|f| f.statics)
+                    .is_some_and(|unit| unit != self.unit)
+            })
+        })
+    }
+
     /// What `table` holds for `name`: the entry written so, else under `-Fcaseinsens` the one
     /// whose name differs only in case, as `Hash_GetInsensitive` finds it (FTEF-19.33).
     pub(in crate::resolve) fn named<'t, V>(

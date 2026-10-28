@@ -15,6 +15,15 @@ fn unknown(source: &str) -> Vec<String> {
         .collect()
 }
 
+/// The names `source` reports unknown, in order: what the recovery resolved. An unknown name is
+/// a `variant` (FTEF-19.69), which the checks after it may report too.
+fn unknown_names(source: &str) -> Vec<String> {
+    unknown(source)
+        .into_iter()
+        .filter(|m| m.starts_with("Unknown value"))
+        .collect()
+}
+
 // spec QCD-1.4: a statement missing its condition, its body or a clause is still lowered, and
 // the names it has are resolved.
 #[test]
@@ -37,7 +46,7 @@ fn partial_statements_resolve_what_they_have() {
             .iter()
             .map(|name| format!("Unknown value \"{name}\"."))
             .collect();
-        assert_eq!(unknown(source), expected, "{source:?}");
+        assert_eq!(unknown_names(source), expected, "{source:?}");
     }
 }
 
@@ -62,7 +71,7 @@ fn partial_expressions_resolve_what_they_have() {
             .iter()
             .map(|name| format!("Unknown value \"{name}\"."))
             .collect();
-        assert_eq!(unknown(source), expected, "{source:?}");
+        assert_eq!(unknown_names(source), expected, "{source:?}");
     }
     // A field of a type no program defines is a type error, not a value (FTEF-20.12).
     assert_eq!(unknown("void() f = { .x; };\n"), ["\"x\" is not a type"]);

@@ -1229,3 +1229,43 @@ fn stripped_arms_leave_no_illegal_jumps() {
         ["C::m: not all control paths return a value"]
     );
 }
+
+// spec FTEF-6.29: a member with no name declares nothing; a virtual member must be a function
+// spec QCD-4.70: E0369 "[non]virtual members must be functions"
+#[test]
+fn struct_members_that_declare_nothing() {
+    let messages = |source: &str| -> Vec<(Code, String)> {
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![FileId(0)],
+            command_line: CommandLine::new::<&str>(&[]),
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .map(|d| (d.diagnostic.code, d.diagnostic.message.clone()))
+        .collect()
+    };
+    assert_eq!(
+        messages("struct S { vector; float a; };\n"),
+        [(
+            Code::W0204,
+            "declaration does not declare anything (vector)".to_owned()
+        )]
+    );
+    assert!(messages("struct S { struct { float a; }; };\n").is_empty());
+    assert_eq!(
+        messages("struct S { virtual float x; };\n"),
+        [(
+            Code::E0369,
+            "[non]virtual members must be functions".to_owned()
+        )]
+    );
+    // A typedef of a function type is a function.
+    assert!(messages("typedef void() fn; struct S { virtual fn m = { return; }; };\n").is_empty());
+    assert_eq!(
+        messages("typedef void() fn; struct S { virtual fn m; };\n"),
+        [(Code::E0211, "function S::m has no body".to_owned())]
+    );
+}

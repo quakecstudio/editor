@@ -24,7 +24,7 @@ mod format;
 mod member;
 pub(crate) mod opcodes;
 mod pointer;
-mod reference;
+pub(crate) mod reference;
 mod statement;
 mod term;
 mod truth;
@@ -42,11 +42,12 @@ use qc_preproc::OpcodeTarget;
 use qc_syntax::CompilerFlags;
 use qc_syntax::ast::{self, AstNode as _};
 
-use crate::cast::{Literal, Source};
+use crate::cast::{ConstType, Literal, Source};
+use crate::lower::LiteralValue;
 use crate::resolve::{AccessorFacts, Layout};
 use crate::symbol::{DefId, Definition};
 use crate::ty::Type;
-use constant::Constant;
+use constant::{Constant, unquoted};
 
 use etype::Etype;
 
@@ -66,6 +67,17 @@ pub(crate) trait Env {
     fn is_accessor(&self, ty: &Type) -> bool;
     /// The type of the local whose name starts at offset `at`, through typedefs.
     fn local_type(&self, at: usize) -> Option<Type>;
+    /// FTEF-17.17: the global `autocvar_name` of type `ty`, which an `autocvar` call makes and
+    /// gives the default `value`: whether a value it was given before differs, which ends the
+    /// call.
+    fn autocvar(&mut self, name: &str, ty: &Type, value: CvarValue, span: Span) -> bool;
+    /// FTEF-17.19: `path` named for the program's `list` of sounds, models, textures or files,
+    /// which warns of a backslash the first time the list has it.
+    fn record_path(&mut self, list: PathList, path: &str, span: Span);
+    /// Whether the local whose name starts at offset `at` is `static` (FTEF-21.14).
+    fn local_static(&self, at: usize) -> bool;
+    /// FTEF-19.62: the local whose name starts at offset `at` is an array of `size` elements.
+    fn size_local(&mut self, at: usize, size: u32);
     /// The type a cast or `sizeof` writes starting at offset `at`, through typedefs.
     fn written_type(&self, at: usize) -> Option<Type>;
     /// A definition of the module.
@@ -114,6 +126,11 @@ pub(crate) trait Env {
     /// The name of the class `ty` names, its typedefs followed (`QCC_TypeForName`); `None`
     /// when it names none.
     fn class_name(&self, ty: &Type) -> Option<String>;
+    /// Whether `ty` names a class declared but never defined, which has no parent class
+    /// (FTEF-24.15).
+    fn class_undefined(&self, ty: &Type) -> bool;
+    /// The type the definition `def` names, when it stands for a type's name (FTEF-17.1).
+    fn type_named(&self, def: DefId) -> Option<Type>;
     /// Whether `ty` is a struct or union of size 0, named with no body yet or laid out to no
     /// word (FTEF-6.28).
     fn struct_of_no_size(&self, ty: &Type) -> bool;
@@ -518,6 +535,56 @@ pub(crate) enum Constness {
     Opaque,
 }
 
+/// The lists of files FTEQCC keeps as it reads the program's calls (FTEF-17.19).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum PathList {
+    /// `precache_sound`, `sound`, `localsound` and `used_sound`.
+    Sound,
+    /// `precache_model`, `setmodel` and `used_model`.
+    Model,
+    /// `precache_texture`.
+    Texture,
+    /// `precache_file`.
+    File,
+}
+
+/// The default an `autocvar` call gives its cvar, as the call compares it with the cvar's
+/// earlier value (FTEF-17.17).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum CvarValue {
+    /// A number or vector constant.
+    Number(Constant),
+    /// A string immediate's text.
+    Text(String),
+    /// A value the model keeps no words of.
+    Unknown,
+}
+
+impl CvarValue {
+    /// The value a global's initialiser `literal` gives it.
+    pub(crate) fn of_literal(literal: &LiteralValue) -> Self {
+        match literal {
+            LiteralValue::Float(bits) => Self::Number(Constant::float(f32::from_bits(*bits))),
+            LiteralValue::Vector(bits) => Self::Number(Constant::vector(bits.map(f32::from_bits))),
+            LiteralValue::String(text) => Self::Text(unquoted(text)),
+            LiteralValue::Builtin { .. } | LiteralValue::Text(_) => Self::Unknown,
+        }
+    }
+
+    /// The initialiser that gives a global this value, which a later definition of it is
+    /// compared with; `None` for one of a type the model keeps no literal of.
+    pub(crate) fn literal(&self) -> Option<LiteralValue> {
+        match self {
+            Self::Number(c) if c.ty == ConstType::Float => Some(LiteralValue::Float(c.u())),
+            Self::Number(c) if c.ty == ConstType::Vector => {
+                Some(LiteralValue::Vector(c.v().map(f32::to_bits)))
+            }
+            Self::Text(text) => Some(LiteralValue::String(format!("\"{text}\""))),
+            Self::Number(_) | Self::Unknown => None,
+        }
+    }
+}
+
 /// A checked function body: the type of each expression, by where it starts and ends in the
 /// body's text.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -539,6 +606,14 @@ pub(crate) fn check_initialiser(env: &mut dyn Env, expr: &ast::Expr, ty: &Type, 
     let mut checker = expr::Checker::new(env);
     checker.global = true;
     checker.initialiser(expr, ty, name);
+}
+
+/// FTEF-19.62: the size `expr` of a global array, read at global scope and folded; one that is
+/// no constant is "Array length is not a constant". The size, when it is one.
+pub(crate) fn array_length(env: &mut dyn Env, expr: &ast::Expr) -> Option<u32> {
+    let mut checker = expr::Checker::new(env);
+    checker.global = true;
+    checker.array_length(expr).ok().flatten()
 }
 
 /// Checks `body`, reporting through `env`, and returns its types.

@@ -59,9 +59,14 @@ fn compound_assignment_operands_are_uses() {
         .iter()
         .map(|d| d.diagnostic.message.as_str())
         .collect();
+    // `missing` is then a `variant` (FTEF-19.69), which `|=` does not take.
     assert_eq!(
         messages,
-        ["Unknown value \"nope\".", "Unknown value \"missing\"."]
+        [
+            "Unknown value \"nope\".",
+            "Unknown value \"missing\".",
+            "Type mismatch on assignment. __variant |= __variant is not supported"
+        ]
     );
     assert_eq!(index.refs.len(), 2);
 }
@@ -162,9 +167,14 @@ fn prefix_and_cast_operands_are_uses() {
         .iter()
         .map(|d| d.diagnostic.message.as_str())
         .collect();
+    // `nope` is then a `variant` (FTEF-19.69), which `-` does not take.
     assert_eq!(
         messages,
-        ["Unknown value \"nope\".", "Unknown value \"gone\"."]
+        [
+            "Unknown value \"nope\".",
+            "Unknown value \"gone\".",
+            "type mismatch for -"
+        ]
     );
 }
 

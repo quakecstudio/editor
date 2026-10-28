@@ -17,7 +17,7 @@ mod structs;
 pub(crate) use layout::Layout;
 
 use qc_diag::{Code, Span};
-use qc_syntax::c_scalar::{CScalar, REGISTERED_TYPES};
+use qc_syntax::c_scalar::{CContext, CScalar, REGISTERED_TYPES};
 
 use crate::cast::Kind;
 use crate::check::Shape;
@@ -62,6 +62,20 @@ impl Resolver<'_> {
                         .unwrap_or(n);
                     self.type_key(bare) == self.type_key(&decl.name)
                 });
+                // FTEF-19.68: and a type FTEQCC defines itself, which the typedef must name.
+                if let Some(builtin) = builtin_type(&decl.name)
+                    && ty != Type::Unknown
+                    && !ty.fteqcc_same(&builtin)
+                {
+                    let message = format!(
+                        "Cannot redeclare typedef {} from {} to {}",
+                        decl.name,
+                        builtin.fteqcc_name(),
+                        ty.fteqcc_name()
+                    );
+                    self.report(Code::E0219, location, message);
+                    return;
+                }
                 if !itself
                     && ty != Type::Unknown
                     && let Some(other) = self.other_type_named(&decl.name)
@@ -307,7 +321,7 @@ impl Resolver<'_> {
     /// The first name in `ty` that names no type: none of the C type words FTEF-2.8 reads, a
     /// name FTEQCC registers, a type declared before, or one of `typedefs` before `at`. A name
     /// of more than one word that is no run of C words (`struct tag`, an inline enum or
-    /// struct) is not checked (FTEF-19.46).
+    /// struct) is not checked (FTEF-19.63).
     pub(in crate::resolve) fn unknown_type_name<'t>(
         &self,
         ty: &'t Type,
@@ -557,13 +571,42 @@ impl Resolver<'_> {
         }
     }
 
+    /// Whether `ty` names an accessor, `ev_accessor` (FTEF-10.8).
+    pub(in crate::resolve) fn is_accessor_type(&self, ty: &Type) -> bool {
+        match self.resolved(ty) {
+            Type::Named(name) => self
+                .named(&self.accessor_bases, &self.type_key(&name))
+                .is_some(),
+            _ => false,
+        }
+    }
+
+    /// `ty` with its typedefs resolved, and a named enum that is no `enum class` its base type,
+    /// the type `QCC_PR_ParseEnum` gives its name (FTEF-19.10).
+    fn plain_enum_base(&self, ty: &Type) -> Type {
+        let ty = self.resolved(ty);
+        match &ty {
+            Type::Named(name) if self.named(&self.strict_enums, name).is_none() => self
+                .named(&self.enum_types, name)
+                .map_or(ty.clone(), |base| self.resolved(base)),
+            _ => ty,
+        }
+    }
+
     /// `typecmp` of two values' types (FTEF-30.3): the same type object, so one C type word or
     /// typedef of it, two classes or structs by name, and what fields, pointers and functions
     /// hold in turn. A type the model does not follow is any.
     pub(in crate::resolve) fn typecmp(&self, a: &Type, b: &Type) -> bool {
-        let (a, b) = (self.resolved(a), self.resolved(b));
+        let (a, b) = (self.plain_enum_base(a), self.plain_enum_base(b));
         if a == b {
             return true;
+        }
+        // FTEF-23.8: `__bint` and `__bfloat` are both `ev_boolean`, one type to `typecmp`, and
+        // no other type is.
+        let boolean =
+            |ty: &Type| matches!(ty.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat));
+        if boolean(&a) || boolean(&b) {
+            return boolean(&a) && boolean(&b);
         }
         match (&a, &b) {
             (Type::Field(x), Type::Field(y)) | (Type::Pointer(x), Type::Pointer(y)) => {
@@ -603,8 +646,13 @@ impl Resolver<'_> {
 
     /// `typecmp_lax`'s test of a pair of parameters: one basic type, and an entity, struct or
     /// union by its name, anything else as [`Self::typecmp_lax`] says.
-    fn same_param(&self, p: &Type, q: &Type, depth: usize) -> bool {
+    pub(in crate::resolve) fn same_param(&self, p: &Type, q: &Type, depth: usize) -> bool {
         let (p, q) = (self.resolved(p), self.resolved(q));
+        // `a->params[t].type->type != b->params[t].type->type`: an accessor is `ev_accessor`,
+        // no other type's kind.
+        if self.is_accessor_type(&p) != self.is_accessor_type(&q) {
+            return false;
+        }
         let (Some(sp), Some(sq)) = (self.shape(&p), self.shape(&q)) else {
             return true;
         };
@@ -616,4 +664,18 @@ impl Resolver<'_> {
             _ => self.typecmp_lax_within(&p, &q, depth),
         }
     }
+}
+
+/// The type FTEQCC defines itself by the name `name`, which `QCC_TypeForName` finds as any
+/// other (FTEF-19.68): the simple types and the C scalars.
+fn builtin_type(name: &str) -> Option<Type> {
+    let simple = match name {
+        "void" => SimpleType::Void,
+        "float" => SimpleType::Float,
+        "vector" => SimpleType::Vector,
+        "string" => SimpleType::String,
+        "entity" => SimpleType::Entity,
+        _ => return CScalar::named(name).map(|_| Type::named(name, CContext::default())),
+    };
+    Some(Type::Simple(simple))
 }

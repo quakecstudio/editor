@@ -217,6 +217,10 @@ ast_node!(
     /// The arguments of a call.
     ArgList
 );
+ast_node!(
+    /// `field: value` or `field = value` among `spawn`'s arguments (FTEF-17.20).
+    NamedArg
+);
 
 ast_node!(
     /// `for (init; cond; step) body` (FTE-2).
@@ -1237,33 +1241,50 @@ impl AccessorDecl {
     }
 }
 
+/// Whether `token` is the accessor word `word`, in any case and with a `__` (FTEF-20.11).
+fn is_word(token: &SyntaxToken, word: &str) -> bool {
+    let text = token.text_lossless();
+    text.strip_prefix("__")
+        .unwrap_or(&text)
+        .eq_ignore_ascii_case(word)
+}
+
 impl AccessorMember {
-    /// The words before the type, `inline` and `get` or `set`, as the parser took them, in
-    /// any case and in a class with a `__` (FTEF-20.11), and the names after them.
+    /// The words before the type, the qualifiers and `get` or `set`, as the parser took them, in
+    /// any case and in a class with a `__` (FTEF-20.11, FTEF-10.10), and the names after them.
     fn words(&self) -> (Vec<SyntaxToken>, Vec<SyntaxToken>) {
+        const WORDS: [&str; 10] = [
+            "nonvirtual",
+            "virtual",
+            "static",
+            "const",
+            "var",
+            "ignore",
+            "strip",
+            "inline",
+            "get",
+            "set",
+        ];
         let names: Vec<SyntaxToken> = self
             .0
             .child_tokens()
             .filter(|t| t.kind() == K::Name)
             .collect();
-        let is = |token: &SyntaxToken, word: &str| {
-            let text = token.text_lossless();
-            text.strip_prefix("__")
-                .unwrap_or(&text)
-                .eq_ignore_ascii_case(word)
-        };
-        let mut lead = 0_usize;
-        if names.first().is_some_and(|t| is(t, "inline")) {
-            lead = 1;
-        }
-        if names
-            .get(lead)
-            .is_some_and(|t| is(t, "get") || is(t, "set"))
-        {
-            lead = lead.saturating_add(1);
-        }
-        let (words, rest) = names.split_at(lead.min(names.len()));
+        let before_type = self.ty().map_or(usize::MAX, |t| t.syntax().span().start);
+        let lead = names
+            .iter()
+            .take_while(|t| {
+                t.span().start < before_type && WORDS.iter().any(|word| is_word(t, word))
+            })
+            .count();
+        let (words, rest) = names.split_at(lead);
         (words.to_vec(), rest.to_vec())
+    }
+
+    /// The word `word` among those before the type, such as `virtual` or `static` (FTEF-10.10).
+    #[must_use]
+    pub fn word(&self, word: &str) -> Option<SyntaxToken> {
+        self.words().0.into_iter().find(|t| is_word(t, word))
     }
 
     /// The member's name, if it has one: the name after `inline`, `get` or `set` and the
@@ -1279,15 +1300,10 @@ impl AccessorMember {
         child(&self.0)
     }
 
-    /// Whether it is a `set` member.
+    /// Whether it is a `set` member: `set` is among its words (`isset`).
     #[must_use]
     pub fn is_set(&self) -> bool {
-        self.words().0.last().is_some_and(|t| {
-            let text = t.text_lossless();
-            text.strip_prefix("__")
-                .unwrap_or(&text)
-                .eq_ignore_ascii_case("set")
-        })
+        self.word("set").is_some()
     }
 
     /// The index parameter's type in `[Type name]`, if any.
@@ -1521,9 +1537,72 @@ impl CallExpr {
 }
 
 impl ArgList {
-    /// The arguments, in order.
+    /// The arguments, in order; a named field's are [`ArgList::named`].
     pub fn args(&self) -> impl Iterator<Item = Expr> {
         children(&self.0)
+    }
+
+    /// Each argument's place, in order, `None` for one left empty (FTEF-32.9) and for a named
+    /// field of `spawn`, which [`ArgList::named`] reads.
+    #[must_use]
+    pub fn slots(&self) -> Vec<Option<Expr>> {
+        let mut slots = Vec::new();
+        // The place being read, once a `(` or `,` opens it.
+        let mut open: Option<Option<Expr>> = None;
+        for element in self.0.children_with_tokens() {
+            match element {
+                SyntaxElement::Node(node) => {
+                    if let (Some(slot), Some(expr)) = (open.as_mut(), Expr::cast(node)) {
+                        *slot = Some(expr);
+                    }
+                }
+                SyntaxElement::Token(token) => match token.kind() {
+                    K::LParen => open = Some(None),
+                    K::Comma => {
+                        slots.push(open.take().flatten());
+                        open = Some(None);
+                    }
+                    // `()` has no argument.
+                    K::RParen => {
+                        if let Some(slot) = open.take()
+                            && (slot.is_some() || !slots.is_empty())
+                        {
+                            slots.push(slot);
+                        }
+                    }
+                    _ => {}
+                },
+            }
+        }
+        if let Some(Some(expr)) = open {
+            slots.push(Some(expr));
+        }
+        slots
+    }
+
+    /// The named fields of a `spawn` call, in order (FTEF-17.20).
+    pub fn named(&self) -> impl Iterator<Item = NamedArg> {
+        children(&self.0)
+    }
+}
+
+impl NamedArg {
+    /// The field's name.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        self.0.child_tokens().find(|t| !t.kind().is_trivia())
+    }
+
+    /// Whether `=` separates the name and the value, where `:` is expected.
+    #[must_use]
+    pub fn equals(&self) -> bool {
+        self.0.child_tokens().any(|t| t.kind() == K::Eq)
+    }
+
+    /// The value the field is given.
+    #[must_use]
+    pub fn value(&self) -> Option<Expr> {
+        child(&self.0)
     }
 }
 

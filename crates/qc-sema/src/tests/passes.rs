@@ -528,7 +528,7 @@ fn a_struct_scope_is_exact_without_the_option() {
     );
 }
 
-// spec FTEF-17.13: a pointer is compared with a pointer by what it points to, and is never the
+// spec FTEF-17.21: a pointer is compared with a pointer by what it points to, and is never the
 // type of a non-pointer
 #[test]
 fn pointers_are_compared_by_what_they_point_to() {
@@ -631,4 +631,33 @@ fn a_first_pass_lexical_error_is_kept() {
         ),
         []
     );
+}
+
+// spec FTEF-19.20: a body's typedef is a type from its name to the end of its block, which a
+// declaration straight after the block's `}` does not see; under `-Fcaseinsens` in any case
+// spec FTEF-19.33: `-Fno-qcfuncs` leaves `string`, `vector` and `entity` no type in any case
+#[test]
+fn body_typedef_scopes_in_any_case() {
+    let insens = ["-Fcaseinsens"];
+    assert_eq!(errors("void() f = { typedef float t; t x; };\n"), []);
+    assert_eq!(
+        errors("void() f = { { typedef float t; }t x; };\n"),
+        [Code::E0203]
+    );
+    assert_eq!(
+        errors_with("void() f = { typedef float T; t x; };\n", &insens),
+        []
+    );
+    assert_eq!(
+        errors_with("void() f = { { typedef float T; }t x; };\n", &insens),
+        [Code::E0203]
+    );
+    assert_eq!(
+        errors_with("void() f = { t x; typedef float T; };\n", &insens),
+        [Code::E0203]
+    );
+    let no_qcfuncs = ["-Fcaseinsens", "-Fno-qcfuncs"];
+    assert_eq!(errors_with("String s;\n", &no_qcfuncs), [Code::E0203]);
+    assert_eq!(errors_with("Vector v;\n", &no_qcfuncs), [Code::E0203]);
+    assert_eq!(errors_with("VOID() h = #6;\n", &no_qcfuncs), []);
 }

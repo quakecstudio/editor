@@ -7,7 +7,7 @@
 //! Classes and accessors: their members, parents, member functions and the
 //! member lookup of an access (FTEF-9, FTEF-10, FTEF-17.1 to FTEF-17.3).
 
-use qc_diag::Code;
+use qc_diag::{Code, Span};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -403,6 +403,21 @@ impl<'a> Resolver<'a> {
             (true, false) => MemberKind::Method,
             (false, _) => member.kind,
         };
+        // FTEF-9.20: the words only a function takes, each `QCC_Error`, which ends FTEQCC.
+        let words = member.function_words;
+        let misused = if member_kind == MemberKind::Field && words.virtuality {
+            Some("virtual keyword on member that is not a function")
+        } else if member_kind == MemberKind::Field && words.inline {
+            Some("inline keyword on member that is not a function")
+        } else if words.inline && (!member.initialized || member_kind == MemberKind::Virtual) {
+            Some("inline keyword on function prototype or virtual function")
+        } else {
+            None
+        };
+        if let Some(message) = misused {
+            self.report(Code::E0379, location, message.to_owned());
+            return None;
+        }
         if member.bad_init && !typedef_function {
             self.report(
                 Code::E0257,
@@ -639,12 +654,17 @@ impl<'a> Resolver<'a> {
         name: &str,
         scope: Scope,
     ) -> Option<DefId> {
-        let file = self.index.def(scope.owner).map(|d| d.location.file);
-        self.member_in(class, name).filter(|id| {
-            !scope.inline_member
-                || self.index.def(*id).is_some_and(|d| {
-                    Some(d.location.file) != file || d.location.span.start <= scope.at
-                })
+        self.member_in(class, name)
+            .filter(|id| !scope.inline_member || self.declared_by(*id, scope.file, scope.at))
+    }
+
+    /// Whether `def` is declared by offset `at` of the compiled file `file`'s text, or in
+    /// another file: what an inline member function sees of its class (FTEF-17.16). The
+    /// definition's location is in the source, so `at` is located there first.
+    pub(in crate::resolve) fn declared_by(&self, def: DefId, file: FileId, at: usize) -> bool {
+        let here = self.at(file, Span::new(at, at));
+        self.index.def(def).is_some_and(|d| {
+            d.location.file != here.file || d.location.span.start <= here.span.start
         })
     }
 
@@ -782,7 +802,12 @@ impl<'a> Resolver<'a> {
             return None;
         }
         match base {
-            MemberBase::Name(name) if name == "this" => scope.and_then(|s| s.class),
+            // FTEF-17.18: `self` in a member function is `this`.
+            MemberBase::Name(name)
+                if name == "this" || name == "self" && scope.is_some_and(|s| s.class.is_some()) =>
+            {
+                scope.and_then(|s| s.class)
+            }
             MemberBase::Name(name) => {
                 let def = match scope {
                     Some(scope) => self.lookup_in_scope(scope, name),

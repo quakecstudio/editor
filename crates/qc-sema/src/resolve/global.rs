@@ -18,7 +18,8 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::lower::{
-    ArrayDim, ExternBase, LiteralValue, Qualifier, RawDecl, RawParamInfo, top_level_kind,
+    ArrayDim, ExternBase, LiteralValue, Qualifier, RawAggregate, RawDecl, RawParamInfo,
+    top_level_kind,
 };
 use crate::resolve::aggregate::{AggregateSite, Initialised};
 use crate::resolve::init::string_of_chars;
@@ -39,9 +40,14 @@ impl<'a> Resolver<'a> {
     pub(in crate::resolve) fn push_def(&mut self, def: Definition) -> DefId {
         // FTEF-20.4: `QCC_PR_DummyDef` warns of a definition named as a keyword that is on,
         // which keeps its meaning beside it with `kce` on and is turned off with it off.
-        // A class's members are made by `QCC_PR_ParseEntClass`, not as definitions named so.
+        // A class's members are made by `QCC_PR_ParseEntClass`, not as definitions named so,
+        // and a type's name, which `declare_special` defines with no type, as a type.
+        // An unknown name's `variant` (FTEF-19.69) is warned of where the name is reported.
+        let type_name = (def.ty == Type::Unknown && self.type_names.contains(&def.name))
+            || def.generated && def.kind == DefKind::Local;
         if self.profile.warns_keyword_names()
             && def.member_of.is_none()
+            && !type_name
             && self
                 .keywords
                 .named_definition(&def.name, def.ty.is_function())
@@ -106,29 +112,32 @@ impl<'a> Resolver<'a> {
     }
 
     /// Whether a redeclaration's type `ty` matches the earlier `old` (QC-11.5): equal, or
-    /// either unknown; under FTEQCC also when the model does not follow either (FTEF-17.13).
+    /// either unknown; under FTEQCC also when the model does not follow either (FTEF-17.21).
     pub(in crate::resolve) fn same_type(&self, old: &Type, ty: &Type) -> bool {
         if self.profile.redeclaration_by_typecmp() {
-            self.resolved(old).fteqcc_same(&self.resolved(ty))
+            self.typecmp(old, ty)
         } else {
             // QC-10.10: a variadic type is never the same as another.
             (old == ty && !old.holds_variadic()) || *old == Type::Unknown || *ty == Type::Unknown
         }
     }
 
-    /// FTEQCC's `typecmp_lax` of a function redeclaration (FTEF-19.7): the return types and
-    /// the parameters both lists have the same, and every parameter one list has beyond the
-    /// other `optional`; whether either is variadic does not matter.
+    /// FTEQCC's `typecmp_lax` of a redeclaration (FTEF-19.7, FTEF-19.70): of a function, the
+    /// return types and the parameters both lists have the same, a class's or struct's by its
+    /// name, and every parameter one list has beyond the other `optional`, whether either is
+    /// variadic not mattering; of any other type, `typecmp_lax`, which takes an accessor for its
+    /// base.
     pub(in crate::resolve) fn lax_same(
+        &self,
         old: &Type,
         old_params: &[RawParamInfo],
         ty: &Type,
         params: &[RawParamInfo],
     ) -> bool {
         let (Type::Function(a), Type::Function(b)) = (old, ty) else {
-            return false;
+            return self.typecmp_lax(old, ty);
         };
-        if !a.ret.fteqcc_same(&b.ret) {
+        if !self.typecmp_lax(&a.ret, &b.ret) {
             return false;
         }
         let shared = a.params.len().min(b.params.len());
@@ -136,7 +145,7 @@ impl<'a> Resolver<'a> {
             .params
             .iter()
             .zip(&b.params)
-            .all(|(x, y)| x.fteqcc_same(y));
+            .all(|(x, y)| self.same_param(x, y, MAX_TYPEDEF_DEPTH));
         let outs_agree = old_params.iter().zip(params).all(|(x, y)| x.out == y.out);
         let optional_beyond = |list: &[Type], info: &[RawParamInfo]| {
             (shared..list.len()).all(|i| info.get(i).is_some_and(|p| p.optional))
@@ -302,7 +311,7 @@ impl<'a> Resolver<'a> {
         let defaults_ok = defaults_agree(params, r.params);
         let resolved_old = self.resolved(&old);
         let resolved_ty = self.resolved(r.ty);
-        let lax = Self::lax_same(&resolved_old, params, &resolved_ty, r.params);
+        let lax = self.lax_same(&resolved_old, params, &resolved_ty, r.params);
         // QC-11.12: a vector field's component has `qcc`'s `type_floatfield`, which no `.float`
         // written in the source is, and only another component's lookup has.
         if self.profile.field_components_typed_apart()
@@ -325,10 +334,12 @@ impl<'a> Resolver<'a> {
         // FTEF-19.7: at file level a difference only in optional arguments is a warning, and
         // a declaration with more parameters gives the definition its type.
         if lax {
-            let (Type::Function(a), Type::Function(b)) = (&old, &ty) else {
-                return TypeCheck::Same;
+            let silent = match (&old, &ty) {
+                (Type::Function(a), Type::Function(b)) => {
+                    a.params.len() == b.params.len() && a.variadic && !b.variadic
+                }
+                _ => false,
             };
-            let silent = a.params.len() == b.params.len() && a.variadic && !b.variadic;
             if !silent {
                 self.report(
                     Code::W0209,
@@ -336,12 +347,14 @@ impl<'a> Resolver<'a> {
                     format!(
                         "Optional arguments differ on redeclaration of {}. {}, should be {}",
                         r.name,
-                        ty.fteqcc_name(),
-                        old.fteqcc_name()
+                        self.type_name(&ty),
+                        self.type_name(&old)
                     ),
                 );
             }
-            if b.params.len() > a.params.len() {
+            if let (Type::Function(a), Type::Function(b)) = (&old, &ty)
+                && b.params.len() > a.params.len()
+            {
                 let new_ty = r.ty.clone();
                 if let Some(def) = self.index.defs.get_mut(r.existing.0) {
                     def.ty = new_ty;
@@ -413,7 +426,7 @@ impl<'a> Resolver<'a> {
     ) -> bool {
         if self.profile.definition_checks()
             && (self.check_initialisation(decl, existing, location)
-                || self.check_array_value(file, decl.array, &decl.ty, decl.value.as_ref())
+                || self.check_array_value(file, self.array_of(decl), &decl.ty, decl.value.as_ref())
                 || self.check_array_declaration(file, decl, location))
         {
             return true;
@@ -428,6 +441,20 @@ impl<'a> Resolver<'a> {
         let def = Initialised {
             name: &decl.name,
             holder: Holder::Global,
+        };
+        // FTEF-19.62: a folded size bounds the initialiser as a written one does.
+        let sized;
+        let aggregate = match (self.array_of(decl), aggregate.sizes.split_first()) {
+            (Some(ArrayDim::Sized(size)), Some((None, rest))) => {
+                let mut sizes = vec![Some(size)];
+                sizes.extend_from_slice(rest);
+                sized = RawAggregate {
+                    sizes,
+                    ..aggregate.clone()
+                };
+                &sized
+            }
+            _ => aggregate,
         };
         self.check_aggregate(file, aggregate, &decl.ty, def, AggregateSite::Global)
             .is_err()
@@ -687,12 +714,33 @@ impl<'a> Resolver<'a> {
 
     /// Declares one top-level declaration, and returns the function bodies it brings, to
     /// resolve now or, with autoprototyping, after every declaration (FTE-22.3).
+    #[expect(
+        clippy::too_many_lines,
+        reason = "QCC_PR_ParseDefs' checks of one global definition, in its order"
+    )]
     pub(in crate::resolve) fn declare_top_level(
         &mut self,
         file: FileId,
         decl: &'a RawDecl,
     ) -> Vec<Pending<'a>> {
         let location = self.at(file, decl.span);
+        // FTEF-19.66: `if (!strcmp(classname, name)) ; else QCC_PR_ParseWarning(ERR_NOTATYPE,
+        // ...)`, an error that does not end the definition.
+        if decl.untyped && decl.scope.as_deref() != Some(decl.name.as_str()) {
+            let class = decl.scope.as_deref().unwrap_or_default();
+            let message = format!(
+                "no type specified for {class}::{}. this is only allowed for constructors",
+                decl.name
+            );
+            self.report(Code::E0376, location, message);
+        }
+        // FTEF-19.67: `if (inlinefunction) QCC_PR_ParseWarning(WARN_UNSAFEFUNCTIONRETURNTYPE,
+        // ...)`, for a typedef too.
+        if decl.returns_function {
+            let message =
+                "Function returning function. Is this what you meant? (suggestion: use typedefs)";
+            self.report(Code::W0320, location, message.to_owned());
+        }
         let qualifier_fatal = match self.declare_special(file, decl, location) {
             Special::Declared(pending) => return pending,
             Special::Plain { qualifier_fatal } => qualifier_fatal,
@@ -769,7 +817,7 @@ impl<'a> Resolver<'a> {
             let value = decl
                 .value
                 .as_ref()
-                .filter(|value| !string_of_chars(decl.array, &decl.ty, value));
+                .filter(|value| !string_of_chars(self.array_of(decl), &decl.ty, value));
             self.check_value(file, &decl.name, &decl.ty, value, Holder::Global)
         };
         // FTE-22.6: a value FTEQCC found no constant is not compared with the first.
@@ -822,7 +870,7 @@ impl<'a> Resolver<'a> {
             component: false,
             checked: true,
             constant: Self::constant_at_file_level(decl),
-            array: decl.array,
+            array: self.array_of(decl),
             params: &decl.params,
             statics,
             deprecated: decl.deprecated(),
@@ -852,7 +900,7 @@ impl<'a> Resolver<'a> {
         {
             d.initialized = true;
         }
-        if decl.has(&Qualifier::Weak) || decl.has(&Qualifier::Accumulate) {
+        if decl.has(&Qualifier::Weak) || decl.has(&Qualifier::Accumulate) || decl.accessor_body {
             self.redefinable.insert(def);
         } else if decl.initialized && !self.facts.get(def.0).is_some_and(|f| f.accumulate) {
             self.redefinable.remove(&def);
@@ -878,7 +926,7 @@ impl<'a> Resolver<'a> {
             location,
             init: None,
             params: &decl.params,
-            array: decl.array,
+            array: self.array_of(decl),
         };
         match self.check_redeclared_type(&redeclaration, false) {
             TypeCheck::Mismatch => Err(found),
@@ -895,6 +943,15 @@ impl<'a> Resolver<'a> {
                     Ok(Some(found))
                 }
             }
+        }
+    }
+
+    /// The first array dimension of `decl`, its size folded when it is an expression
+    /// (FTEF-19.62).
+    pub(in crate::resolve) fn array_of(&self, decl: &RawDecl) -> Option<ArrayDim> {
+        match (decl.array, self.folded_sizes.get(&decl.span.start)) {
+            (Some(ArrayDim::Unknown), Some(&size)) => Some(ArrayDim::Sized(size)),
+            (array, _) => array,
         }
     }
 
@@ -1003,6 +1060,19 @@ impl<'a> Resolver<'a> {
                 location,
                 format!("accumulate applies only to functions, not {}", decl.name),
             );
+            return true;
+        }
+        // FTEF-19.61: a global `__auto` is allocated by `memalloc`, or `malloc`, which
+        // `QCC_PR_EmulationFunc` finds by name.
+        if decl.has(&Qualifier::Auto)
+            && self.lookup_global("memalloc").is_none()
+            && self.lookup_global("malloc").is_none()
+        {
+            let message = format!(
+                "memalloc not yet defined, cannot define __auto {} at global scope",
+                decl.name
+            );
+            self.report(Code::E0365, location, message);
             return true;
         }
         false

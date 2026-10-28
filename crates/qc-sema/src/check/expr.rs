@@ -48,6 +48,9 @@ pub(super) struct Checker<'e> {
     /// A token the statement does not take, found where an expression ended early, reported
     /// once the statement has read the expression it has (FTEF-24.10).
     pub(super) pending: Option<(String, qc_diag::Span)>,
+    /// The `[` a definition's value ended before, reported once the definition has read the
+    /// value it has (FTEF-18.38).
+    pub(super) stray: Option<qc_diag::Span>,
 }
 
 /// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which nothing more of the
@@ -71,6 +74,7 @@ impl<'e> Checker<'e> {
             emitted: 0,
             global: false,
             pending: None,
+            stray: None,
         }
     }
 
@@ -148,7 +152,7 @@ impl<'e> Checker<'e> {
     }
 
     /// Whether `call` is the intrinsic `_length(e)`: its callee the name `_length` with no
-    /// definition (FTEF-30.8).
+    /// definition (FTEF-30.11).
     fn is_length(&self, call: &ast::CallExpr) -> bool {
         let Some(ast::Expr::Name(name)) = call.callee() else {
             return false;
@@ -202,6 +206,19 @@ impl<'e> Checker<'e> {
         let Some(token) = name.name() else {
             return Value::unknown();
         };
+        // FTEF-17.18: in a member function `self` is `this` ("class code uses self as though
+        // it was 'this'"), with the warning `WARN_SELFNOTTHIS`.
+        if !scoped
+            && token.text() == b"self"
+            && let Some(class) = self.env.this_type()
+        {
+            let message = "'self' used inside OO function, use 'this'.".to_owned();
+            self.env.report(Code::W0316, token.span(), message);
+            return Value {
+                name: Some("this".to_owned()),
+                ..Value::of(class)
+            };
+        }
         let Some(def) = self.env.reference(token.span().start) else {
             // FTEF-17.14: `this` is the entity `self` as the function's class.
             if !scoped
@@ -334,15 +351,21 @@ impl<'e> Checker<'e> {
                 Constness::Opaque
             }
         };
-        // A converted operand is a temporary the conversion made.
-        let converted = |value: &Value, operand: Operand, row: OpType| Value {
-            constness: constness(value, operand, row),
-            sym: if row.etype() == operand.etype || row == OpType::Variant {
-                value.sym
-            } else {
-                Sym::Temp
-            },
-            ..value.clone()
+        // A converted operand is what `QCC_EvaluateCast(lhsd, *op->type_a, true)` gives, of the
+        // row's type, a temporary the conversion made (FTEF-23.9); a null constant is cast so
+        // too, and the opcode's warnings then read the row's type.
+        let converted = |value: &Value, operand: Operand, row: OpType| {
+            let kept = row.etype() == operand.etype || row == OpType::Variant;
+            Value {
+                constness: constness(value, operand, row),
+                sym: if kept { value.sym } else { Sym::Temp },
+                ty: if kept {
+                    value.ty.clone()
+                } else {
+                    row.value_type()
+                },
+                ..value.clone()
+            }
         };
         // A constant whose conversion folded is the constant it folded to (FTEF-26.3).
         let [folded_lhs, folded_rhs] = folded;

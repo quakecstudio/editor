@@ -95,7 +95,7 @@ impl Profile {
     }
 
     /// A redeclaration's type is compared by FTEQCC's `typecmp` and its exceptions
-    /// (FTEF-17.12, FTEF-17.13) and its parameters' defaults must agree (FTEF-19.6); under
+    /// (FTEF-17.12, FTEF-17.21) and its parameters' defaults must agree (FTEF-19.6); under
     /// `qcc` the types must be equal (QC-11.5).
     pub(in crate::resolve) const fn redeclaration_by_typecmp(self) -> bool {
         self.fteqcc()

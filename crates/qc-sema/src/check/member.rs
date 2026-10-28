@@ -168,6 +168,7 @@ impl Checker<'_> {
             | Etype::Enum
             | Etype::Boolean
             | Etype::Variant => {
+                self.statement_before(field.syntax(), field.base());
                 let expected = expected_after(field.syntax());
                 let message = format!("expected {expected}, found .");
                 let span = field.syntax().span();
@@ -215,26 +216,22 @@ impl Checker<'_> {
                     }
                     return Ok(self.unknown_field(base, &name, token.span()));
                 };
-                (ty, name.clone(), name, token.span(), Some(id))
+                (ty, name, token.span(), Some(id))
             }
             ast::Expr::Paren(paren) => {
+                // `QCC_GetSRefName` of the value: a definition's name, `IMMEDIATE`, or a
+                // temporary's type.
                 let value = self.expr_of(paren.expr())?;
                 let span = selector.syntax().span();
                 let label = value.label();
-                (
-                    value.ty,
-                    String::from_utf8_lossy(&selector.syntax().text()).into_owned(),
-                    label,
-                    span,
-                    value.sym.def(),
-                )
+                (value.ty, label, span, value.sym.def())
             }
             other => {
                 self.expr(other)?;
                 return Ok(Value::unknown());
             }
         };
-        let (ty, name, label, span, def) = field;
+        let (ty, label, span, def) = field;
         match self.env.shape(&ty).map(|s| s.etype) {
             Some(Etype::Field) => {
                 let held = match ty {
@@ -252,8 +249,8 @@ impl Checker<'_> {
             None => Ok(Value::unknown()),
             Some(_) => {
                 let message = match &base.ty {
-                    Type::Named(class) => format!("{name} is not a field of class {class}"),
-                    _ => format!("{name} is not a field"),
+                    Type::Named(class) => format!("{label} is not a field of class {class}"),
+                    _ => format!("{label} is not a field"),
                 };
                 self.fatal(Code::E0318, span, message)
             }
@@ -264,7 +261,7 @@ impl Checker<'_> {
     /// `QCC_PR_GetSRef(type_variant, ..., true)` and is the error "Unknown field \"NAME\" in class
     /// \"CLASS\"" (`QCC_PR_ParseWarning(ERR_UNKNOWNVALUE, ...)`), which does not end the
     /// statement; the member is a `variant` field of the entity, which may be assigned to.
-    fn unknown_field(&mut self, base: &Value, name: &str, span: Span) -> Value {
+    pub(super) fn unknown_field(&mut self, base: &Value, name: &str, span: Span) -> Value {
         let class = match &base.ty {
             Type::Named(class) => self
                 .env
@@ -272,8 +269,15 @@ impl Checker<'_> {
                 .unwrap_or_else(|| class.to_string()),
             _ => "entity".to_owned(),
         };
-        let message = format!("Unknown field \"{name}\" in class \"{class}\"");
-        self.env.report(Code::E0319, span, message);
+        // FTEF-24.15: `else if (!assumeclass->parentclass && assumeclass != type_entity)`.
+        if self.env.class_undefined(&base.ty) {
+            let message =
+                format!("Class \"{class}\" is not defined, cannot access member \"{name}\"");
+            self.env.report(Code::E0371, span, message);
+        } else {
+            let message = format!("Unknown field \"{name}\" in class \"{class}\"");
+            self.env.report(Code::E0319, span, message);
+        }
         Value::field_of(base, name.to_owned(), Type::Named("__variant".into()), None)
     }
 

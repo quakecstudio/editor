@@ -345,6 +345,42 @@ pub enum Code {
     /// "incompatible redeclaration": a definition initialised again with another value
     /// (QCD-4.64).
     E0363,
+    /// "static redefinition of NAME follows non-static definition.": a `static` local
+    /// redefining a local that is not (QCD-4.65).
+    E0364,
+    /// "memalloc not yet defined, cannot define __auto NAME at global scope" (QCD-4.66).
+    E0365,
+    /// "Array length is not a constant": an array's size that folds to no constant (QCD-4.67).
+    E0366,
+    /// "autocvar default value is not constant" (QCD-4.68).
+    E0367,
+    /// "autocvar NAME was already initialised with another value" (QCD-4.69).
+    E0368,
+    /// "[non]virtual members must be functions": a `virtual` struct member that is no function
+    /// (QCD-4.70).
+    E0369,
+    /// "oversized ternary result": a conditional whose first arm is larger than a vector
+    /// (QCD-4.71).
+    E0370,
+    /// "Class \"CLASS\" is not defined, cannot access member \"NAME\"" (QCD-4.72).
+    E0371,
+    /// "designated initialisers require all members to be initialised the same way" (QCD-4.73).
+    E0372,
+    /// "Spawn operator with undefined class: NAME" (QCD-4.74).
+    E0373,
+    /// "Named field is not a field." (QCD-4.75).
+    E0374,
+    /// "Default value not specified for implicit argument N" (QCD-4.76).
+    E0375,
+    /// "no type specified for CLASS::NAME. this is only allowed for constructors" (QCD-4.77).
+    E0376,
+    /// "virtual accessors are not supported at this time" (QCD-4.78).
+    E0377,
+    /// "static accessors are not supported" (QCD-4.79).
+    E0378,
+    /// "virtual keyword on member that is not a function" and the other words only a member
+    /// function takes (QCD-4.80).
+    E0379,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -585,13 +621,26 @@ pub enum Code {
     W0313,
     /// "Variable \"NAME\" is deprecated" (QCD-7.44).
     W0314,
+    /// "NAME defined static": a name found only as a `static` of another unit (QCD-7.108).
+    W0315,
+    /// "'self' used inside OO function, use 'this'." (QCD-7.109).
+    W0316,
+    /// "backslashes in path names are non-portable - PATH" (QCD-7.110).
+    W0317,
+    /// "That = should be a :" (QCD-7.111).
+    W0318,
+    /// "INTERNAL: over-freed refcount to NAME" (QCD-7.112).
+    W0319,
+    /// "Function returning function. Is this what you meant? (suggestion: use typedefs)"
+    /// (QCD-7.113).
+    W0320,
     /// "NAME differs in case from the file it opens, STORED" (QCD-7.16).
     W0402,
 }
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 259] = [
+    pub const ALL: [Self; 281] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -742,6 +791,22 @@ impl Code {
         Self::E0361,
         Self::E0362,
         Self::E0363,
+        Self::E0364,
+        Self::E0365,
+        Self::E0366,
+        Self::E0367,
+        Self::E0368,
+        Self::E0369,
+        Self::E0370,
+        Self::E0371,
+        Self::E0372,
+        Self::E0373,
+        Self::E0374,
+        Self::E0375,
+        Self::E0376,
+        Self::E0377,
+        Self::E0378,
+        Self::E0379,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -850,6 +915,12 @@ impl Code {
         Self::W0312,
         Self::W0313,
         Self::W0314,
+        Self::W0315,
+        Self::W0316,
+        Self::W0317,
+        Self::W0318,
+        Self::W0319,
+        Self::W0320,
         Self::W0402,
     ];
 
@@ -1029,6 +1100,12 @@ impl Code {
             Self::W0313 => "W0313",
             Self::W0402 => "W0402",
             Self::W0314 => "W0314",
+            Self::W0315 => "W0315",
+            Self::W0316 => "W0316",
+            Self::W0317 => "W0317",
+            Self::W0318 => "W0318",
+            Self::W0319 => "W0319",
+            Self::W0320 => "W0320",
             Self::W0218 => "W0218",
             Self::W0217 => "W0217",
             Self::W0216 => "W0216",
@@ -1093,6 +1170,22 @@ impl Code {
             Self::E0361 => "E0361",
             Self::E0362 => "E0362",
             Self::E0363 => "E0363",
+            Self::E0364 => "E0364",
+            Self::E0365 => "E0365",
+            Self::E0366 => "E0366",
+            Self::E0367 => "E0367",
+            Self::E0368 => "E0368",
+            Self::E0369 => "E0369",
+            Self::E0370 => "E0370",
+            Self::E0371 => "E0371",
+            Self::E0372 => "E0372",
+            Self::E0373 => "E0373",
+            Self::E0374 => "E0374",
+            Self::E0375 => "E0375",
+            Self::E0376 => "E0376",
+            Self::E0377 => "E0377",
+            Self::E0378 => "E0378",
+            Self::E0379 => "E0379",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1181,6 +1274,12 @@ impl Code {
             | Self::W0217
             | Self::W0218
             | Self::W0314
+            | Self::W0315
+            | Self::W0316
+            | Self::W0317
+            | Self::W0318
+            | Self::W0319
+            | Self::W0320
             | Self::W0231
             | Self::W0232
             | Self::W0233
@@ -1383,6 +1482,22 @@ impl Code {
             | Self::E0361
             | Self::E0362
             | Self::E0363
+            | Self::E0364
+            | Self::E0365
+            | Self::E0366
+            | Self::E0367
+            | Self::E0368
+            | Self::E0369
+            | Self::E0370
+            | Self::E0371
+            | Self::E0372
+            | Self::E0373
+            | Self::E0374
+            | Self::E0375
+            | Self::E0376
+            | Self::E0377
+            | Self::E0378
+            | Self::E0379
             | Self::E0408 => true,
         }
     }

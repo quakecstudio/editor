@@ -15,6 +15,7 @@ use qc_preproc::{CompilerFlags, FteFlag};
 use qc_syntax::c_scalar::CScalar;
 
 use crate::cast::{Cast, ConstType, Kind, Source, Supply};
+use crate::check::reference::word_type;
 use crate::lower::{ArrayDim, LiteralValue, Qualifier, RawDecl, RawValue, ValueKind};
 use crate::resolve::{Facts, Fatal, Holder, MAX_TYPEDEF_DEPTH, REPLACEABLE_BUILTINS, Resolver};
 use crate::symbol::{DefId, DefKind, FileId, Location};
@@ -322,8 +323,10 @@ impl Resolver<'_> {
                 Ok(None)
             }
             ValueKind::Indexed(array) => {
-                // FTEF-19.39: an element of a variable is no constant.
-                if matches!(holder, Holder::Global | Holder::Static(_)) {
+                // FTEF-19.39: an element of a variable is no constant; a global's value is
+                // checked whole at global scope under FTEQCC's diagnostics (FTEF-34.9).
+                let checked = matches!(holder, Holder::Global) && self.profile.fteqcc_diagnostics();
+                if matches!(holder, Holder::Global | Holder::Static(_)) && !checked {
                     let found = match holder {
                         Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) => {
                             self.lookup_in_scope(scope, array)
@@ -432,7 +435,8 @@ impl Resolver<'_> {
             | Type::Named(_)
             | Type::Pointer(_) => source_ty,
         };
-        let source_ty = self.resolved(&source_ty);
+        // FTEF-2.12: an 8- or 16-bit integer is read as its word, `__int32` or `__uint32`.
+        let source_ty = word_type(&self.resolved(&source_ty));
         // FTEF-29.11: a constant whose word is 0 is null (`QCC_SRef_IsNull`), which casts to
         // any type but a struct or union with no warning.
         let null = self.facts.get(source.0).is_some_and(|f| f.constant)

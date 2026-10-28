@@ -250,6 +250,16 @@ impl<'a> Resolver<'a> {
             if self.check_type_names(&member.ty, &[], st.at, location) {
                 return;
             }
+            // FTEF-6.29: a type with no name after it, but a struct's or union's, which nests
+            // its members.
+            if member.name.is_empty() && !self.is_struct_type(&member.ty) {
+                let message = format!(
+                    "declaration does not declare anything ({})",
+                    self.type_name(&member.ty)
+                );
+                self.report(Code::W0204, location, message);
+                continue;
+            }
             // FTEF-6.9: the width is `QCC_PR_IntConstExpr()`'s, whose names are values and
             // whose literal is an integer ("Value is not an integer constant").
             self.resolve_uses(file, None, &member.width_uses);
@@ -271,7 +281,9 @@ impl<'a> Resolver<'a> {
             }
             // FTEF-19.41: a `virtual` function member is `Struct::member`, a function with no
             // body unless one follows.
-            if member.is_virtual && member.ty.is_function() && !member.initialized {
+            // `type->type` is the type a typedef names.
+            let function = self.resolved(&member.ty).is_function();
+            if member.is_virtual && function && !member.initialized {
                 let owner = st.name.as_deref().unwrap_or("<struct>");
                 let message = format!("function {owner}::{} has no body", member.name);
                 self.report(Code::E0211, location, message);
@@ -287,6 +299,11 @@ impl<'a> Resolver<'a> {
                 let message = format!("type {} not fully defined yet", member.ty.fteqcc_name());
                 self.report(Code::E0255, location, message);
                 return;
+            }
+            // FTEF-6.29: `isvirt && type->type != ev_function`, which goes on.
+            if member.is_virtual && !function {
+                let message = "[non]virtual members must be functions".to_owned();
+                self.report(Code::E0369, location, message);
             }
             if member.bits.is_some() && !self.bitfield_type(&member.ty) {
                 self.report(

@@ -12,11 +12,13 @@ use qc_diag::{Code, Span};
 use qc_preproc::Op;
 use qc_syntax::ast::{self, AstNode as _};
 
+use crate::check::assign::{lexed_string, string_bytes};
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::reference::expected_after;
-use crate::check::{ParamFacts, Reference, Value};
+use crate::check::term::string_immediate;
+use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Value};
 use crate::ty::{FunctionType, SimpleType, Type};
 
 /// `MAX_PARMS`: the parameters a call passes in the parameter globals.
@@ -26,6 +28,10 @@ const MAX_ARGUMENTS: usize = 136;
 
 impl Checker<'_> {
     /// FTEF-32: the call `call`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one pass over QCC_PR_ParseFunctionCall's steps, read in its order"
+    )]
     pub(super) fn call(&mut self, call: &ast::CallExpr) -> Checked {
         let span = call.syntax().span();
         let args: Vec<ast::Expr> = call.args().map(|a| a.args().collect()).unwrap_or_default();
@@ -90,22 +96,41 @@ impl Checker<'_> {
             .and_then(|def| self.env.params(def))
             .unwrap_or_else(|| function.as_ref().map_or_else(Vec::new, type_params));
         let Some(function) = function else {
-            // A `variant` takes any arguments.
-            for arg in &args {
+            // A `variant` takes any arguments, and no argument left empty (FTEF-32.9).
+            let slots = call.args().map(|list| list.slots()).unwrap_or_default();
+            for (at, slot) in slots.iter().enumerate() {
+                let Some(arg) = slot else {
+                    return self.missing_argument(at, &slots, span);
+                };
                 self.value(Some(arg.clone()))?;
             }
             return Ok(Value::of(Type::Named("__variant".into())));
         };
-        if !method
-            && function.params.is_empty()
-            && !function.variadic
-            && let Some(value) = self.intrinsic(&name, &args, written, span)?
-        {
-            return Ok(value);
+        if !method && function.params.is_empty() && !function.variadic {
+            if name == "spawn"
+                && let Some(list) = call.args()
+                && let Some(value) = self.spawn(&list, &args)?
+            {
+                return Ok(value);
+            }
+            if let Some(value) = self.intrinsic(&name, &args, written, span)? {
+                return Ok(value);
+            }
         }
+        let slots = call.args().map(|list| list.slots()).unwrap_or_default();
         let mut passed = Vec::new();
         let mut values = Vec::new();
-        for (at, arg) in args.iter().enumerate() {
+        for (at, slot) in slots.iter().enumerate() {
+            let Some(arg) = slot else {
+                if at >= MAX_ARGUMENTS {
+                    let message = format!("More than {MAX_ARGUMENTS} parameters");
+                    return self.fatal(Code::E0338, span, message);
+                }
+                let value = self.implicit_argument(&function, &params, at, &slots, span)?;
+                passed.push(None);
+                values.push(value);
+                continue;
+            };
             let arg_span = arg.syntax().span();
             if at >= MAX_ARGUMENTS {
                 let message = format!("More than {MAX_ARGUMENTS} parameters");
@@ -130,11 +155,12 @@ impl Checker<'_> {
             {
                 value = self.cast_to(&value, param, arg_span)?;
             }
-            passed.push(reference);
+            passed.push(Some(reference));
+            self.record_call_path(&name, at, arg);
             values.push(value);
             self.end_of_construct()?;
         }
-        let mut count = args.len();
+        let mut count = slots.len();
         while count < params.len()
             && params
                 .get(count)
@@ -160,9 +186,9 @@ impl Checker<'_> {
         self.generate_call(&values, span);
         // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
         for (reference, param) in passed.iter().zip(&params) {
-            if !param.out {
+            let Some(reference) = reference.as_ref().filter(|_| param.out) else {
                 continue;
-            }
+            };
             if reference.readonly {
                 let message = "Unable to write to read-only out argument".to_owned();
                 self.env.report(Code::E0339, span, message);
@@ -172,6 +198,47 @@ impl Checker<'_> {
             self.store_reference(reference, &returned, span)?;
         }
         Ok(Value::of(function.ret.clone()))
+    }
+
+    /// FTEF-32.9: an argument left empty where no parameter takes it: the expression read
+    /// there is missing, before the `,` or the `)` after the place `at` of `slots`.
+    fn missing_argument(&mut self, at: usize, slots: &[Option<ast::Expr>], span: Span) -> Checked {
+        let found = if at.saturating_add(1) < slots.len() {
+            ","
+        } else {
+            ")"
+        };
+        self.fatal(Code::E0201, span, format!("\"{found}\" - not a name"))
+    }
+
+    /// FTEF-32.9: the argument `at` left empty, which takes its parameter's default: the fatal
+    /// error "Default value not specified for implicit argument N" for one with none, and, past
+    /// the parameters, an expression that is not there (`QCC_PR_RefExpression`). The default's
+    /// reference is freed twice, so FTEQCC warns "INTERNAL: over-freed refcount to NAME", the
+    /// default as `QCC_VarAtOffset` prints it.
+    fn implicit_argument(
+        &mut self,
+        function: &FunctionType,
+        params: &[ParamFacts],
+        at: usize,
+        slots: &[Option<ast::Expr>],
+        span: Span,
+    ) -> Checked {
+        let Some(param) = function.params.get(at) else {
+            return self.missing_argument(at, slots, span);
+        };
+        if !params.get(at).is_some_and(|p| p.has_default) {
+            let message = format!(
+                "Default value not specified for implicit argument {}",
+                at.saturating_add(1)
+            );
+            return self.fatal(Code::E0375, span, message);
+        }
+        if let Some(default) = function.labels.0.get(at).and_then(|l| l.default.as_ref()) {
+            let message = format!("INTERNAL: over-freed refcount to {default}");
+            self.env.report(Code::W0319, span, message);
+        }
+        Ok(Value::of(param.clone()))
     }
 
     /// FTEF-34.9: the statements a call generates, each argument stored to its parameter by its
@@ -365,7 +432,41 @@ impl Checker<'_> {
                 }
                 Ok(Some(Value::of(ty)))
             }
+            // FTEF-17.17: `autocvar(name, default[, "description"])` is the global
+            // `autocvar_name`, of the default's type and given its value.
+            "autocvar" if args.len() >= 2 => {
+                let Some(ast::Expr::Name(name)) = args.first() else {
+                    return Ok(None);
+                };
+                let Some(name) = name.name().map(|t| t.text_lossless()) else {
+                    return Ok(None);
+                };
+                let default = args.get(1).cloned();
+                let value = self.value(default.clone())?;
+                let cvar = match (value.known(), default.as_ref().and_then(string_immediate)) {
+                    (_, Some(text)) => CvarValue::Text(text),
+                    (Some(constant), None) => CvarValue::Number(constant),
+                    (None, None) => CvarValue::Unknown,
+                };
+                if value.constness == Constness::Variable {
+                    let message = "autocvar default value is not constant".to_owned();
+                    self.env.report(Code::E0367, span, message);
+                }
+                if self.env.autocvar(&name, &value.ty, cvar, span) {
+                    return Err(Fatal);
+                }
+                Ok(Some(Value::of(value.ty)))
+            }
             "used_sound" | "used_model" => {
+                let list = if name == "used_sound" {
+                    PathList::Sound
+                } else {
+                    PathList::Model
+                };
+                if let Some(bytes) = args.first().and_then(string_bytes) {
+                    self.env
+                        .record_path(list, &String::from_utf8_lossy(&bytes), span);
+                }
                 if !args.first().is_some_and(is_string_literal) {
                     let message =
                         format!("Argument to {name} intrinsic was not a string immediate.");
@@ -374,6 +475,143 @@ impl Checker<'_> {
                 Ok(Some(string()))
             }
             _ => Ok(None),
+        }
+    }
+
+    /// FTEF-17.20: `spawn(CLASS, field: value, ...)` and `spawn(e, CLASS, ...)`, the class's
+    /// value. `QCC_PR_ParseType` reads the class, else an expression, a `,` and the class; a type
+    /// that is no entity's ends at the token after it (`QCC_PR_ParseName`), as does a class that
+    /// is no type ("Spawn operator with undefined class: NAME"). Each argument after the class is
+    /// a field of it, its members first (`QCC_PR_ParseValue(rettype, ...)`), named before `:` or
+    /// `=`. `None` for `spawn()`, which is a call as any other.
+    fn spawn(&mut self, list: &ast::ArgList, args: &[ast::Expr]) -> Result<Option<Value>, Fatal> {
+        let named: Vec<ast::NamedArg> = list.named().collect();
+        let Some(first) = args.first() else {
+            return Ok(None);
+        };
+        let type_of = |checker: &Self, arg: &ast::Expr| match arg {
+            ast::Expr::Name(name) => name
+                .name()
+                .and_then(|t| checker.env.reference(t.span().start))
+                .and_then(|def| checker.env.type_named(def)),
+            _ => None,
+        };
+        let (class, at): (Type, usize) = match type_of(self, first) {
+            Some(class) => (class, 1),
+            None => {
+                self.value(Some(first.clone()))?;
+                match args.get(1).map(|arg| (type_of(self, arg), arg)) {
+                    Some((Some(class), _)) => (class, 2),
+                    Some((None, arg)) => {
+                        // `QCC_PR_ParseName` reads the argument's first token.
+                        let token = arg
+                            .syntax()
+                            .descendants_with_tokens()
+                            .find_map(|e| match e {
+                                qc_syntax::SyntaxElement::Token(t) if !t.kind().is_trivia() => {
+                                    Some(t)
+                                }
+                                qc_syntax::SyntaxElement::Token(_)
+                                | qc_syntax::SyntaxElement::Node(_) => None,
+                            });
+                        let span = token.as_ref().map_or(arg.syntax().span(), |t| t.span());
+                        let shown = token.map_or_else(String::new, |t| t.text_lossless());
+                        let message = format!("Spawn operator with undefined class: {shown}");
+                        return self.fatal(Code::E0373, span, message).map(Some);
+                    }
+                    None => match named.first().and_then(ast::NamedArg::name) {
+                        Some(token) => {
+                            let message = format!(
+                                "Spawn operator with undefined class: {}",
+                                token.text_lossless()
+                            );
+                            return self.fatal(Code::E0373, token.span(), message).map(Some);
+                        }
+                        None => {
+                            let message = "expected ,, found )".to_owned();
+                            return self
+                                .fatal(Code::E0204, list.syntax().span(), message)
+                                .map(Some);
+                        }
+                    },
+                }
+            }
+        };
+        let class_arg = args
+            .get(at.saturating_sub(1))
+            .map_or(list.syntax().span(), |a| a.syntax().span());
+        if self.env.shape(&class).map(|s| s.etype) != Some(Etype::Entity) {
+            let found = if args.len() > at || !named.is_empty() {
+                ","
+            } else {
+                ")"
+            };
+            let message = format!("\"{found}\" - not a name");
+            return self.fatal(Code::E0201, class_arg, message).map(Some);
+        }
+        let base = Value::of(class.clone());
+        if let Some(extra) = args.get(at) {
+            self.value(Some(extra.clone()))?;
+            let message = "Named field is not a field.".to_owned();
+            return self
+                .fatal(Code::E0374, extra.syntax().span(), message)
+                .map(Some);
+        }
+        for arg in &named {
+            let Some(token) = arg.name() else {
+                continue;
+            };
+            let name = token.text_lossless();
+            let span = token.span();
+            // A class's member is a field of its type (`QCC_PR_ParseEntClass`).
+            let field = self.env.class_member(&class, &name, span.start).is_some()
+                || match self.env.reference(span.start) {
+                    Some(def) => self.env.definition(def).is_some_and(|d| {
+                        let ty = d.ty.clone();
+                        self.env.shape(&ty).is_some_and(|s| s.etype == Etype::Field)
+                    }),
+                    None => {
+                        self.unknown_field(&base, &name, span);
+                        false
+                    }
+                };
+            if !field {
+                let message = "Named field is not a field.".to_owned();
+                return self.fatal(Code::E0374, span, message).map(Some);
+            }
+            if arg.equals() {
+                self.env
+                    .report(Code::W0318, span, "That = should be a :".to_owned());
+            }
+            self.value(arg.value())?;
+        }
+        Ok(Some(base))
+    }
+
+    /// FTEF-17.19: the path a call names by a constant string: a `precache_` function's first
+    /// argument, `setmodel`'s and `localsound`'s second and `sound`'s third.
+    fn record_call_path(&mut self, name: &str, at: usize, arg: &ast::Expr) {
+        let list = match (at, name) {
+            (0, _) if name.starts_with("precache_sound") => PathList::Sound,
+            (0, _) if name.starts_with("precache_model") => PathList::Model,
+            (0, _) if name.starts_with("precache_texture") => PathList::Texture,
+            (0, _) if name.starts_with("precache_file") => PathList::File,
+            (1, "setmodel") => PathList::Model,
+            (1, "localsound") | (2, "sound") => PathList::Sound,
+            _ => return,
+        };
+        let bytes = match arg {
+            ast::Expr::Literal(_) => string_bytes(arg),
+            ast::Expr::Name(name) => name
+                .name()
+                .and_then(|t| self.env.reference(t.span().start))
+                .and_then(|def| self.env.string_text(def))
+                .and_then(|text| lexed_string(&format!("\"{text}\""))),
+            _ => None,
+        };
+        if let Some(bytes) = bytes {
+            self.env
+                .record_path(list, &String::from_utf8_lossy(&bytes), arg.syntax().span());
         }
     }
 

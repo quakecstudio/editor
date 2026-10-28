@@ -14,8 +14,10 @@ use qc_syntax::c_scalar::CScalar;
 use crate::cast::{Cast, Kind, Source, Supply};
 use crate::check::constant::{Constant, unquoted};
 use crate::check::etype::Etype;
-use crate::check::{Constness, Env, FunctionFacts, ParamFacts, Shape, StructMemberFacts};
-use crate::lower::{ArrayDim, LiteralValue, RawLocal};
+use crate::check::{
+    Constness, CvarValue, Env, FunctionFacts, ParamFacts, PathList, Shape, StructMemberFacts,
+};
+use crate::lower::{ArrayDim, LiteralValue, RawLocal, top_level_kind};
 use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, DefKind, Definition, FileId};
 use crate::ty::Type;
@@ -25,8 +27,9 @@ pub(in crate::resolve) struct BodyEnv<'r, 'a> {
     pub(in crate::resolve) resolver: &'r mut Resolver<'a>,
     /// The file the body is in.
     pub(in crate::resolve) file: FileId,
-    /// The function whose body it is.
-    pub(in crate::resolve) owner: DefId,
+    /// The function whose body it is, or the definition whose initialiser or size it is; none
+    /// for a size read before its definition is made (FTEF-19.62).
+    pub(in crate::resolve) owner: Option<DefId>,
     /// The diagnostics reported before the body's own.
     pub(in crate::resolve) reported: usize,
     /// Whether it is a member function's.
@@ -67,7 +70,9 @@ impl BodyEnv<'_, '_> {
     }
 
     /// FTEF-6.12: a struct or union is cast to and from nothing but its own type, "Cannot cast
-    /// from X to Y" reported at `span`; whether the cast is so refused.
+    /// from X to Y" reported at `span`, and a `variant` either way, which
+    /// `QCC_SupplyConversionForAssignment` never refuses (FTEF-19.69); whether the cast is so
+    /// refused.
     fn struct_cast_refused(&mut self, source: Source<'_>, to: &Type, span: Span) -> bool {
         if !self.resolver.profile.type_declarations() {
             return false;
@@ -78,7 +83,12 @@ impl BodyEnv<'_, '_> {
                 let ty = self.resolver.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
                 let structs =
                     self.resolver.is_struct_type(&ty) || self.resolver.is_struct_type(&to);
-                if !structs || self.resolver.typecmp(&ty, &to) {
+                let variant = |t: &Type| {
+                    self.resolver
+                        .shape(t)
+                        .is_some_and(|s| s.etype == Etype::Variant)
+                };
+                if !structs || self.resolver.typecmp(&ty, &to) || variant(&ty) || variant(&to) {
                     return false;
                 }
                 self.resolver.type_name(&ty)
@@ -107,6 +117,67 @@ impl Env for BodyEnv<'_, '_> {
             .iter()
             .find(|local| local.span.start == at)
             .map(|local| self.resolver.resolved_deep(&local.ty, MAX_TYPEDEF_DEPTH))
+    }
+
+    fn autocvar(&mut self, name: &str, ty: &Type, value: CvarValue, span: Span) -> bool {
+        self.resolver.settle(span.start);
+        let location = self.resolver.at(self.file, span);
+        // `QCC_PR_GetSRef(e.cast, autocvarname, NULL, true, 0, GDF_USED)`.
+        let global = format!("autocvar_{name}");
+        let def = self
+            .resolver
+            .declare_global(&global, ty, top_level_kind(ty), location, None);
+        let Some(facts) = self.resolver.index.defs.get_mut(def.0) else {
+            return false;
+        };
+        if !facts.initialized {
+            facts.initialized = true;
+            if let Some(literal) = value.literal() {
+                self.resolver.literals.insert(def, literal);
+            }
+            return false;
+        }
+        let before = self
+            .resolver
+            .literals
+            .get(&def)
+            .map_or(CvarValue::Unknown, CvarValue::of_literal);
+        if before == CvarValue::Unknown || value == CvarValue::Unknown || before == value {
+            return false;
+        }
+        let message = format!("autocvar {name} was already initialised with another value");
+        self.resolver.report(Code::E0368, location, message);
+        true
+    }
+
+    fn record_path(&mut self, list: PathList, path: &str, span: Span) {
+        if path.is_empty() || !self.resolver.paths.insert((list, path.to_owned())) {
+            return;
+        }
+        if path.contains('\\') {
+            self.resolver.settle(span.start);
+            let location = self.resolver.at(self.file, span);
+            let message = format!("backslashes in path names are non-portable - {path}");
+            self.resolver.report(Code::W0317, location, message);
+        }
+    }
+
+    fn local_static(&self, at: usize) -> bool {
+        self.locals
+            .iter()
+            .any(|local| local.span.start == at && local.is_static())
+    }
+
+    fn size_local(&mut self, at: usize, size: u32) {
+        let place = self.resolver.at(self.file, Span::new(at, at));
+        let found = self.resolver.index.defs.iter().position(|d| {
+            d.kind == DefKind::Local
+                && d.location.file == place.file
+                && d.location.span.start == place.span.start
+        });
+        if let Some(facts) = found.and_then(|at| self.resolver.facts.get_mut(at)) {
+            facts.array = Some(ArrayDim::Sized(size));
+        }
     }
 
     fn written_type(&self, at: usize) -> Option<Type> {
@@ -177,7 +248,7 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn function(&self) -> FunctionFacts {
-        let def = self.resolver.index.def(self.owner);
+        let def = self.owner.and_then(|owner| self.resolver.index.def(owner));
         let (ret, variadic) = match def.map(|d| self.resolver.resolved(&d.ty)) {
             Some(Type::Function(function)) => (function.ret.clone(), function.variadic),
             Some(_) | None => (Type::Unknown, false),
@@ -192,9 +263,8 @@ impl Env for BodyEnv<'_, '_> {
             }),
             ret,
             accumulate: self
-                .resolver
-                .facts
-                .get(self.owner.0)
+                .owner
+                .and_then(|owner| self.resolver.facts.get(owner.0))
                 .is_some_and(|f| f.accumulate),
             variadic,
         }
@@ -362,16 +432,7 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn is_accessor(&self, ty: &Type) -> bool {
-        match self.resolver.resolved(ty) {
-            Type::Named(name) => self
-                .resolver
-                .named(
-                    &self.resolver.accessor_bases,
-                    &self.resolver.type_key(&name),
-                )
-                .is_some(),
-            _ => false,
-        }
+        self.resolver.is_accessor_type(ty)
     }
 
     fn has_accessors(&self, ty: &Type) -> bool {
@@ -405,7 +466,7 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn this_type(&self) -> Option<Type> {
-        let class = self.resolver.index.def(self.owner)?.member_of?;
+        let class = self.resolver.index.def(self.owner?)?.member_of?;
         let name = &self.resolver.index.def(class)?.name;
         Some(Type::Named(name.as_str().into()))
     }
@@ -422,14 +483,30 @@ impl Env for BodyEnv<'_, '_> {
 
     fn class_member(&self, ty: &Type, name: &str, at: usize) -> Option<DefId> {
         let member = self.resolver.class_member(ty, name)?;
-        let def = self.resolver.index.def(member)?;
-        (!self.inline_member || def.location.file != self.file || def.location.span.start <= at)
-            .then_some(member)
+        (!self.inline_member || self.resolver.declared_by(member, self.file, at)).then_some(member)
     }
 
     fn class_name(&self, ty: &Type) -> Option<String> {
         let class = self.resolver.class_of(ty)?;
         self.resolver.index.def(class).map(|def| def.name.clone())
+    }
+
+    fn class_undefined(&self, ty: &Type) -> bool {
+        // `parentclass` is set where the class is defined, its parent the entity by default.
+        self.resolver.class_of(ty).is_some_and(|class| {
+            self.resolver
+                .classes
+                .get(&class)
+                .is_none_or(|c| c.shape.is_none() && c.parent.is_none())
+        })
+    }
+
+    fn type_named(&self, def: DefId) -> Option<Type> {
+        if !self.resolver.type_defs.contains(&def) {
+            return None;
+        }
+        let def = self.resolver.index.def(def)?;
+        Some(Type::Named(def.name.as_str().into()))
     }
 
     fn struct_of_no_size(&self, ty: &Type) -> bool {

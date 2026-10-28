@@ -381,3 +381,358 @@ fn a_call_of_a_call_ends_the_expression() {
         [d(Code::E0204, "expected ), found (")]
     );
 }
+
+// spec FTEF-17.17: autocvar() is the global of its default's type and value
+// spec QCD-4.68: E0367 "autocvar default value is not constant"
+// spec QCD-4.69: E0368 "autocvar NAME was already initialised with another value"
+#[test]
+fn autocvar_calls_give_their_cvar_a_value() {
+    let messages = |body: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nfloat x;\nvoid() f = {{ {body} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    assert_eq!(
+        messages("local string s = autocvar(sv_x, 1);"),
+        ["Cannot cast from float to string"]
+    );
+    assert_eq!(
+        messages("local float a = autocvar(sv_x, x);"),
+        ["autocvar default value is not constant"]
+    );
+    assert_eq!(
+        messages("local float a = autocvar(sv_x, 1); local float b = autocvar(sv_x, 2);"),
+        ["autocvar sv_x was already initialised with another value"]
+    );
+    assert!(
+        messages("local float a = autocvar(sv_x, 1); local float b = autocvar(sv_x, 1);")
+            .is_empty()
+    );
+    assert_eq!(
+        messages(
+            "local string a = autocvar(sv_s, \"a\"); local string b = autocvar(sv_s, \"b\", \"d\");"
+        ),
+        ["autocvar sv_s was already initialised with another value"]
+    );
+    // The call defines the global, which the rest of the module refers to and redeclares.
+    let module = |source: &str| -> Vec<String> {
+        diags(&format!("#pragma target fte\n{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    let call = "void() f = { local float a = autocvar(sv_x, 1); };";
+    assert_eq!(
+        module(&format!(
+            "{call} void() g = {{ local string b = autocvar_sv_x; }};"
+        )),
+        ["Cannot cast from float to string"]
+    );
+    assert_eq!(
+        module(&format!("{call} string autocvar_sv_x;")),
+        ["Type mismatch on redeclaration of autocvar_sv_x. string, should be float"]
+    );
+    assert_eq!(
+        module(&format!("string autocvar_sv_x; {call}")),
+        ["Type mismatch on redeclaration of autocvar_sv_x. float, should be string"]
+    );
+    assert!(module(&format!("{call} float autocvar_sv_x;")).is_empty());
+    let changed = |value: &str| module(&format!("{call} float autocvar_sv_x = {value};"));
+    assert_eq!(changed("1").len(), 2);
+    assert_eq!(
+        changed("2").last().map(String::as_str),
+        Some("incompatible redeclaration")
+    );
+}
+
+// spec FTEF-17.19: a path new to its list warns of a backslash, once per list
+// spec QCD-7.110: W0317 "backslashes in path names are non-portable - PATH"
+#[test]
+fn backslashes_in_paths_warn_once_per_list() {
+    let messages = |body: &str| -> Vec<String> {
+        diags(&format!(
+            "entity world;\nvoid(string s) precache_sound = #19;\n\
+             void(string s) precache_model = #20;\nvoid(entity e, string m) setmodel = #3;\n\
+             void(entity e, float c, string s, float v, float a) sound = #8;\n\
+             void(entity e, string s) localsound = #9;\n\
+             string P = \"m\\\\p.mdl\";\nvoid() f = {{ {body} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let warn = |path: &str| format!("backslashes in path names are non-portable - {path}");
+    assert_eq!(
+        messages(r#"precache_sound("a\\b.wav"); precache_sound("a\\b.wav");"#),
+        [warn(r"a\b.wav")]
+    );
+    assert_eq!(
+        messages(r#"precache_sound("a\\b.wav"); precache_model("a\\b.wav");"#),
+        [warn(r"a\b.wav"), warn(r"a\b.wav")]
+    );
+    assert_eq!(
+        messages("setmodel(world, P); precache_model(P);"),
+        [warn(r"m\p.mdl")]
+    );
+    assert_eq!(
+        messages(r#"sound(world, 0, "c\\d.wav", 1, 1); localsound(world, "c\\d.wav");"#),
+        [warn(r"c\d.wav")]
+    );
+    assert_eq!(messages(r#"used_model("e\\f.mdl");"#)[0], warn(r"e\f.mdl"));
+    assert!(messages(r#"precache_sound("a/b.wav"); setmodel(world, "");"#).is_empty());
+    assert!(
+        messages(r#"setmodel("x\\y.mdl", world);"#)
+            .iter()
+            .all(|m| !m.starts_with("backslashes"))
+    );
+}
+
+// spec FTEF-17.20: `spawn(CLASS, field: value)` is a value of the class, its fields the class's
+// members or field definitions
+// spec QCD-4.74: E0373 "Spawn operator with undefined class: NAME"
+// spec QCD-4.75: E0374 "Named field is not a field."
+// spec QCD-7.111: W0318 "That = should be a :"
+#[test]
+fn spawn_takes_a_class_and_its_fields() {
+    let messages = |body: &str| -> Vec<(Code, String)> {
+        diags(&format!(
+            "entity() spawn = #14;\nclass B : entity {{ float b; }};\nclass C : B {{ float x; }};\n\
+             class D : entity {{ float w; }};\nstruct S {{ float a; }};\n.float y; entity e; \
+             float n;\nvoid() f = {{ {body} }};\n"
+        ))
+        .into_iter()
+        .filter(|(_, message)| !message.contains("spawnfunc"))
+        .collect()
+    };
+    let d = |code: Code, message: &str| (code, message.to_owned());
+    let not_field = d(Code::E0374, "Named field is not a field.");
+    for fine in [
+        "local C c = spawn(C);",
+        "local C c = spawn(e, C, x: 1, y: \"s\", b: 3);",
+        "e = spawn();",
+    ] {
+        assert!(messages(fine).is_empty(), "{fine}: {:?}", messages(fine));
+    }
+    assert_eq!(
+        messages("local float v = spawn(C);"),
+        [d(Code::E0213, "Cannot cast from class C to float")]
+    );
+    assert_eq!(
+        messages("e = spawn(C, y = 2);"),
+        [d(Code::W0318, "That = should be a :")]
+    );
+    assert_eq!(
+        messages("e = spawn(C, n: 2);"),
+        std::slice::from_ref(&not_field)
+    );
+    assert_eq!(
+        messages("e = spawn(C, 5);"),
+        std::slice::from_ref(&not_field)
+    );
+    assert_eq!(
+        messages("e = spawn(C, w: 1);"),
+        [
+            d(Code::E0319, "Unknown field \"w\" in class \"C\""),
+            not_field
+        ]
+    );
+    assert_eq!(
+        messages("e = spawn(n);"),
+        [d(Code::E0204, "expected ,, found )")]
+    );
+    assert_eq!(
+        messages("e = spawn(e, n);"),
+        [d(Code::E0373, "Spawn operator with undefined class: n")]
+    );
+    assert_eq!(
+        messages("e = spawn(e, x: 1);"),
+        [d(Code::E0373, "Spawn operator with undefined class: x")]
+    );
+    assert_eq!(
+        messages("local S s = spawn(S);"),
+        [d(Code::E0201, "\")\" - not a name")]
+    );
+}
+
+// spec FTEF-32.9: an argument left empty passes its parameter's default, freeing its reference
+// once too often
+// spec QCD-4.76: E0375 "Default value not specified for implicit argument N"
+// spec QCD-7.112: W0319 "INTERNAL: over-freed refcount to NAME"
+#[test]
+fn empty_arguments_take_their_defaults() {
+    let messages = |body: &str| -> Vec<(Code, String)> {
+        diags(&format!(
+            "void(float a, float b = 2, float c = 3) g = {{}};\nvoid(float a, float b) h = {{}};\n\
+             void(...) v = #1;\nfloat K = 4;\nvoid(float a, float b = K) k = {{}};\n\
+             void(float a, optional float b) o = {{}};\nvoid() f = {{ {body} }};\n"
+        ))
+    };
+    let d = |code: Code, message: &str| (code, message.to_owned());
+    let freed = |name: &str| {
+        d(
+            Code::W0319,
+            &format!("INTERNAL: over-freed refcount to {name}"),
+        )
+    };
+    assert_eq!(messages("g(1, , 3);"), [freed("2f")]);
+    assert_eq!(messages("g(1, 2, );"), [freed("3f")]);
+    assert_eq!(messages("g(1, , );"), [freed("2f"), freed("3f")]);
+    assert_eq!(messages("k(1, );"), [freed("K")]);
+    let undefined = |n: usize| {
+        d(
+            Code::E0375,
+            &format!("Default value not specified for implicit argument {n}"),
+        )
+    };
+    assert_eq!(messages("g(, 2);"), [undefined(1)]);
+    assert_eq!(messages("h(1, );"), [undefined(2)]);
+    assert_eq!(messages("o(1, );"), [undefined(2)]);
+    let missing = |found: &str| d(Code::E0201, &format!("\"{found}\" - not a name"));
+    assert_eq!(messages("g(1, 2, 3, );"), [missing(")")]);
+    assert_eq!(messages("v(1, );"), [missing(")")]);
+    assert_eq!(messages("v(1, , 2);"), [missing(",")]);
+}
+
+// spec FTEF-33.2: `addstat`'s constant type number must be the field's basic type
+// (`QCC_VerifyArgs_MatchingFieldType`), read from the argument as passed, so a field converted to
+// a `.void` parameter is refused first and a variadic one is checked
+#[test]
+fn addstat_type_numbers_match_their_fields() {
+    let found = |decl: &str, call: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\n{decl}\n.float fh; .string fs; float x;\nvoid() f = {{ {call} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let variadic = "void(float num, float type, ...) addstat = #232;";
+    assert_eq!(
+        found(variadic, "addstat(32, 1, fh);"),
+        ["addstat: indicated type ev_string does not match passed field type .float"]
+    );
+    assert_eq!(
+        found(variadic, "addstat(32, 2i, fs);"),
+        ["addstat: indicated type ev_float does not match passed field type .string"]
+    );
+    assert_eq!(
+        found(variadic, "addstat(32, 99, fs);"),
+        ["addstat: indicated type 99 is not a basic type"]
+    );
+    assert!(found(variadic, "addstat(32, 2, fh);").is_empty());
+    assert!(found(variadic, "addstat(32, x, fs);").is_empty());
+    let typed = "void(float num, float type, .void fld) addstat = #232;";
+    assert_eq!(
+        found(typed, "addstat(32, 1, fh);"),
+        ["Cannot cast from .float to .void"]
+    );
+}
+
+// spec FTEF-33.1: a format is a constant string's whole text, its adjacent literals joined, as
+// FreeCS builds its shader formats across line continuations
+#[test]
+fn a_format_constant_is_every_literal_it_joins() {
+    let found = |defs: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nstring(string fmt, ...) sprintf = #627;\n{defs}\n\
+             void() f = {{ local string q = sprintf(F, \"a\", 1); }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    assert!(found("const string F = \"{\\n\" \\\n \"%s %f\\n\" \\\n \"}\";").is_empty());
+    assert_eq!(
+        found("const string F = \"a\" \"%s\";"),
+        ["sprintf: surplus trailing float argument(s) for format \"a%s\""]
+    );
+    // Two spellings of one value redeclare the constant with no error.
+    assert_eq!(
+        found("const string F = \"a\" \"%s\"; const string F = \"a%s\";"),
+        ["sprintf: surplus trailing float argument(s) for format \"a%s\""]
+    );
+}
+
+// spec FTEF-32.2: `random`'s arguments are supplied as floats, a type that does not convert
+// refused
+// spec FTEF-27.7: a conversion the target lacks is emulated with its warning, unless the program
+// defines a helper of the emulation's name
+// spec FTEF-33.1: a format that is no constant is not read
+// spec FTEF-31.3: a pointer's string, vector, entity or function is loaded by its own opcode,
+// which the id target refuses
+// spec FTEF-31.9: a constant vector's component is a constant, by index or by `_z`
+#[test]
+fn behaviours_real_programs_reach() {
+    let found = |target: &str, source: &str| -> Vec<String> {
+        diags(&format!("#pragma target {target}\n{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .filter(|m| !m.ends_with("has no body"))
+            .collect()
+    };
+    let defs = "float x; __int i; __uint u; string s; vector v; float() random = #7;\n";
+    let body = |statement: &str| format!("{defs}void() f = {{ {statement} }};");
+    let mismatch = |got: &str| format!("Implicit type mismatch. Needed float, got {got}.");
+    assert_eq!(found("fte", &body("x = random(s);")), [mismatch("string")]);
+    assert_eq!(
+        found("fte", &body("x = random(1, v);")),
+        [mismatch("vector")]
+    );
+    assert!(found("fte", &body("x = random(i, 2);")).is_empty());
+    assert_eq!(
+        found("id", &body("x = i;")),
+        ["itof emulation: denormals are unsafe i"]
+    );
+    assert_eq!(
+        found("id", &body("x = u;")),
+        [
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big"
+        ]
+    );
+    let helper = "float(__int a) itof = #0;\n";
+    assert!(found("id", &format!("{helper}{}", body("x = i;"))).is_empty());
+    assert!(found("id", &format!("{helper}{}", body("x = u;"))).is_empty());
+    assert!(
+        found(
+            "fte",
+            &format!(
+                "string(string f, ...) sprintf = #627;\n{}",
+                body("s = sprintf(s, x);")
+            )
+        )
+        .is_empty()
+    );
+    let refused = |op: &str| {
+        format!("Opcode \"=|{op}\" not valid for target. Consider the use of: #pragma target fte")
+    };
+    let memgetval = "memgetval function not defined: cannot emulate OP_LOADP_*".to_owned();
+    assert_eq!(
+        found("id", "string *ps; string t;\nvoid() f = { t = *ps; };"),
+        [memgetval.clone(), refused("LOADP_S")]
+    );
+    assert_eq!(
+        found("id", "vector *pv; vector w;\nvoid() f = { w = *pv; };"),
+        [refused("LOADP_V")]
+    );
+    assert_eq!(
+        found("id", "entity *pe; entity e;\nvoid() f = { e = *pe; };"),
+        [memgetval.clone(), refused("LOADP_ENT")]
+    );
+    let past = "(constant) array index out of bounds (0 <= 3 < 2)";
+    let vector = "const vector cv = '1 2 3'; float farr[2]; float y;\n";
+    assert_eq!(
+        found(
+            "fte",
+            &format!("{vector}void() f = {{ y = farr[cv[2]]; }};")
+        ),
+        [past]
+    );
+    assert_eq!(
+        found("fte", &format!("{vector}void() f = {{ y = farr[cv_z]; }};")),
+        [past]
+    );
+}
