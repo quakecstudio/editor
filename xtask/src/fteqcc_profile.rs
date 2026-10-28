@@ -35,17 +35,32 @@ use qc_syntax::parse_with;
 
 use crate::oracles::rerelease::autoprototypes;
 
-const USAGE: &str = "usage: cargo xtask fteqcc-profile <dir>...";
+const USAGE: &str = "usage: cargo xtask fteqcc-profile [--warnings] <dir>...";
 
-/// Runs the check on the rerelease codebase directories in `args`.
+/// Which diagnostics the check prints: errors, which fail it, and with `--warnings` each
+/// warning too, which never fails it, to compare a program's messages with FTEQCC's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Report {
+    /// Errors only.
+    Errors,
+    /// Errors and warnings.
+    Warnings,
+}
+
+/// Runs the check on the rerelease codebase directories in `args`, after `--warnings` if it
+/// is given.
 pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
-    let dirs: Vec<PathBuf> = args.iter().map(PathBuf::from).collect();
+    let (report, dirs) = match args.split_first() {
+        Some((first, rest)) if first == "--warnings" => (Report::Warnings, rest),
+        _ => (Report::Errors, args),
+    };
+    let dirs: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
     if dirs.is_empty() {
         return Err(USAGE.to_owned());
     }
     let mut ok = true;
     for dir in &dirs {
-        ok &= profile_one(dir)?;
+        ok &= profile_one(dir, report)?;
     }
     // The vanilla profile must reject every extension with a diagnostic, so the profiles
     // differ (the second half of the acceptance criterion).
@@ -75,7 +90,7 @@ pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
 /// A codebase FTEQCC compiles with `-Fautoproto` (`rerelease-mg3`, FTE-1.2) is preprocessed
 /// twice, as FTEQCC reads it twice (FTE-22.4), and resolved with every top-level name visible
 /// to every function body (FTE-22.3).
-fn profile_one(dir: &Path) -> Result<bool, String> {
+fn profile_one(dir: &Path, report: Report) -> Result<bool, String> {
     let project = open(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let autoproto = dir
         .file_name()
@@ -92,7 +107,7 @@ fn profile_one(dir: &Path) -> Result<bool, String> {
                 module.name
             ));
         }
-        ok &= analyze(module, autoproto)?;
+        ok &= analyze(module, autoproto, report)?;
     }
     println!(
         "fteqcc-profile: {}: {modules} modules checked",
@@ -101,10 +116,10 @@ fn profile_one(dir: &Path) -> Result<bool, String> {
     Ok(ok)
 }
 
-/// Opens one module through the semantic model and prints every error at the file and line
-/// it is in; fails on an error, or on a definition, reference or diagnostic outside the
-/// bytes of its source file.
-fn analyze(module: &Module, autoproto: bool) -> Result<bool, String> {
+/// Opens one module through the semantic model and prints every error, and under
+/// [`Report::Warnings`] every warning, at the file and line it is in; fails on an error, or on
+/// a definition, reference or diagnostic outside the bytes of its source file.
+fn analyze(module: &Module, autoproto: bool, report: Report) -> Result<bool, String> {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc.into());
     db.set_autoproto(autoproto);
@@ -125,6 +140,14 @@ fn analyze(module: &Module, autoproto: bool) -> Result<bool, String> {
                 "FAIL  module {}: {} outside its source file",
                 module.name,
                 d.diagnostic.code.as_str()
+            );
+        }
+        if report == Report::Warnings && !d.diagnostic.code.is_error() {
+            println!(
+                "WARN  {}: {} {}",
+                place(&db, at),
+                d.diagnostic.code.as_str(),
+                d.diagnostic.message
             );
         }
         if d.diagnostic.code.is_error() {
@@ -249,6 +272,30 @@ mod tests {
             fs::write(dir.join(file), text).unwrap();
         }
         dir
+    }
+
+    // `--warnings` comes before the directories, and with none after it the check is the
+    // usage error, as with no arguments.
+    #[test]
+    fn warnings_is_an_option_before_the_directories() {
+        let usage = main(Path::new("."), &[]).unwrap_err();
+        assert_eq!(
+            main(Path::new("."), &["--warnings".to_owned()]).unwrap_err(),
+            usage
+        );
+        assert!(usage.contains("[--warnings]"), "{usage}");
+        let dir = codebase(
+            "warnings-option",
+            &[
+                ("progs.src", "../progs.dat\nt.qc\n"),
+                (
+                    "t.qc",
+                    "float x; string s;\nvoid() f = { x = x ? x : s; };\n",
+                ),
+            ],
+        );
+        let arg = dir.to_string_lossy().into_owned();
+        assert!(main(Path::new("."), &["--warnings".to_owned(), arg]).unwrap());
     }
 
     // spec FTEF-1.1: a codebase in the full dialect, a class with members defined outside it, a
