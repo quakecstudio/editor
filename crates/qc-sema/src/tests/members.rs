@@ -516,3 +516,30 @@ fn self_in_member_functions_is_this() {
     );
     assert_eq!(messages("#pragma warning disable F331"), [unknown]);
 }
+
+// spec FTEF-10.10: a class's accessor member may not be virtual or static
+// spec QCD-4.78: E0377 "virtual accessors are not supported at this time"
+// spec QCD-4.79: E0378 "static accessors are not supported"
+#[test]
+fn class_accessors_are_neither_virtual_nor_static() {
+    let messages = |words: &str| -> Vec<(Code, String)> {
+        fte_index_of(&format!(
+            "class C : entity {{ {words} float x = {{ return 1; }}; }};\n"
+        ))
+        .diagnostics
+        .iter()
+        .map(|d| (d.diagnostic.code, d.diagnostic.message.clone()))
+        .collect()
+    };
+    let virtual_ = (
+        Code::E0377,
+        "virtual accessors are not supported at this time".to_owned(),
+    );
+    let static_ = (Code::E0378, "static accessors are not supported".to_owned());
+    assert!(messages("get").is_empty());
+    assert_eq!(messages("virtual get"), std::slice::from_ref(&virtual_));
+    assert_eq!(messages("get virtual"), std::slice::from_ref(&virtual_));
+    assert_eq!(messages("static get"), std::slice::from_ref(&static_));
+    assert_eq!(messages("const get"), std::slice::from_ref(&static_));
+    assert_eq!(messages("virtual static get"), [virtual_, static_]);
+}

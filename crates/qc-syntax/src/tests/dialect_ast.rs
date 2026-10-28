@@ -401,3 +401,34 @@ fn untyped_scoped_definitions_and_returned_functions() {
     assert!(decl.declarators().next().unwrap().params().is_some());
     assert!(fte_errors("float() g() = { return 0; };\n").is_empty());
 }
+
+// spec FTEF-10.10: a class member with `get` or `set` among its qualifiers, in any order, is an
+// accessor's, a `set` one when `set` is among them
+#[test]
+fn class_accessor_qualifiers() {
+    let member = |words: &str| -> ast::AccessorMember {
+        first(&format!(
+            "class C : entity {{ {words} float x = {{ }}; }};\n"
+        ))
+    };
+    for words in [
+        "virtual get",
+        "get virtual",
+        "static get",
+        "inline virtual set",
+        "const get",
+    ] {
+        let accessor = member(words);
+        assert_eq!(accessor.name().unwrap().text_lossless(), "x", "{words}");
+        assert_eq!(accessor.is_set(), words.ends_with("set"), "{words}");
+        assert!(
+            accessor.word(words.split(' ').next().unwrap()).is_some(),
+            "{words}"
+        );
+        let source = format!("class C : entity {{ {words} float x = {{ }}; }};\n");
+        assert!(fte_errors(&source).is_empty(), "{words}");
+    }
+    let named_set: ast::AccessorMember = first("class C : entity { get float set = { }; };\n");
+    assert_eq!(named_set.name().unwrap().text_lossless(), "set");
+    assert!(!named_set.is_set());
+}

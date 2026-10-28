@@ -870,6 +870,15 @@ others).
 - **FTEF-10.9** `QCC_PR_ParseAccessorMember` reads a member's type as a type's name and its `*`s,
   so a parameter list after it stands where the `=` is expected: `get float() x = {};` and `set
   void(float v) y = {};` are the fatal error `E0204` "expected =, found (".
+- **FTEF-10.10** In a class, `get` and `set` are among the qualifiers `QCC_PR_ParseClass` reads
+  before a member's type, in any order with `nonvirtual`, `virtual`, `static`, `const`, `var`,
+  `ignore`, `strip` and `inline`, and either makes the member an accessor's, a `set` one when
+  `set` is among them: `virtual get float x = { ... };` and `get virtual float x`. `virtual` among
+  them is the error `E0377` "virtual accessors are not supported at this time", which reads on,
+  and `static` or `const` the fatal error `E0378` "static accessors are not supported". A name
+  after the type is the member's, `get` and `set` included. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseClass`.
 
 ## FTEF-11 The `__variant` type
 

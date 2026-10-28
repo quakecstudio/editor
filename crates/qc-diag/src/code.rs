@@ -374,6 +374,10 @@ pub enum Code {
     E0375,
     /// "no type specified for CLASS::NAME. this is only allowed for constructors" (QCD-4.77).
     E0376,
+    /// "virtual accessors are not supported at this time" (QCD-4.78).
+    E0377,
+    /// "static accessors are not supported" (QCD-4.79).
+    E0378,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -633,7 +637,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 278] = [
+    pub const ALL: [Self; 280] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -797,6 +801,8 @@ impl Code {
         Self::E0374,
         Self::E0375,
         Self::E0376,
+        Self::E0377,
+        Self::E0378,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -1173,6 +1179,8 @@ impl Code {
             Self::E0374 => "E0374",
             Self::E0375 => "E0375",
             Self::E0376 => "E0376",
+            Self::E0377 => "E0377",
+            Self::E0378 => "E0378",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1482,6 +1490,8 @@ impl Code {
             | Self::E0374
             | Self::E0375
             | Self::E0376
+            | Self::E0377
+            | Self::E0378
             | Self::E0408 => true,
         }
     }

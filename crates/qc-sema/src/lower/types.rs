@@ -826,6 +826,22 @@ pub(super) fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecl
             }
             SyntaxKind::AccessorMember => {
                 if let Some(member) = ast::AccessorMember::cast(node) {
+                    // FTEF-10.10: `if (wasvirt) QCC_PR_ParseWarning(ERR_INTERNAL, ...)`, an
+                    // error that reads on, then `if (wasstatic) QCC_PR_ParseError(...)`.
+                    if let Some(word) = member.word("virtual") {
+                        out.diagnostics.push(Diagnostic {
+                            code: Code::E0377,
+                            message: "virtual accessors are not supported at this time".to_owned(),
+                            span: word.span(),
+                        });
+                    }
+                    if let Some(word) = member.word("static").or_else(|| member.word("const")) {
+                        out.diagnostics.push(Diagnostic {
+                            code: Code::E0378,
+                            message: "static accessors are not supported".to_owned(),
+                            span: word.span(),
+                        });
+                    }
                     out.members.extend(member.name().map(|t| t.text_lossless()));
                     out.accessors.push(raw_accessor(&member, &class_name, cx));
                     lower_accessor_body(&member, &class_name, cx, &mut out.decls);

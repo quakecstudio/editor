@@ -401,6 +401,10 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   empty whose parameter has no default (FTEF-32.9).
 - **QCD-4.77** `E0376` "no type specified for CLASS::NAME. this is only allowed for
   constructors": a `CLASS::NAME` definition with no type that is no constructor (FTEF-19.66).
+- **QCD-4.78** `E0377` "virtual accessors are not supported at this time": a class's accessor
+  member marked `virtual` (FTEF-10.10).
+- **QCD-4.79** `E0378` "static accessors are not supported": a class's accessor member marked
+  `static` or `const` (FTEF-10.10).
 
 ## QCD-5 Project, limit and fatal errors
 
