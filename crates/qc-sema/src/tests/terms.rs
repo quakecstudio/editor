@@ -566,6 +566,42 @@ fn a_definition_that_stops_at_a_stray_index() {
     );
 }
 
+// spec FTEF-19.70: a `static` local's value is a constant whatever expression gives it
+#[test]
+fn a_static_local_takes_only_a_constant() {
+    let found = |local: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nfloat x; const float k = 2; float(float a) h = {{ return a; }};\n\
+             void() g = {{ {local} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    for value in ["x + 1", "-x", "[x, 0, 0]", "h(1)"] {
+        let ty = if value.starts_with('[') {
+            "vector"
+        } else {
+            "float"
+        };
+        assert_eq!(
+            found(&format!("static {ty} y = {value};")),
+            ["initializer for 'y' is not constant"],
+            "{value}"
+        );
+        assert!(
+            found(&format!("local {ty} y = {value};")).is_empty(),
+            "{value}"
+        );
+        assert!(
+            found(&format!("const {ty} y = {value};")).is_empty(),
+            "{value}"
+        );
+    }
+    assert!(found("static float y = 1 + 2;").is_empty());
+    assert!(found("static float y = k * 2;").is_empty());
+}
+
 // spec FTEF-19.69: an unknown name is a `variant` defined in its function, which its later uses
 // there find, and which the checks after it read
 #[test]

@@ -3453,6 +3453,14 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `QCC_SupplyConversionForAssignment` refuses no conversion to or from one. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseValue`, `QCC_PR_GetSRef`, `QCC_SupplyConversionForAssignment`.
+- **FTEF-19.70** A `static` local's value is a constant, as a global's is
+  (`QCC_PR_GenerateInitializerType`: `basedef->isstatic` and `!tmp.sym->constant`), whatever
+  expression gives it: `static float y = x + 1;`, `-x`, `[x, 0, 0]` and `h(1)` of a variable `x`
+  and a function `h` are "initializer for 'y' is not constant"; `1 + 2` and `k * 2` of a
+  constant `k` fold and are accepted. A plain or `const` local is never refused (`basedef->scope
+  && !basedef->isstatic && !basedef->initialized`). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateInitializerType`.
 
 ## FTEF-20 Keywords
 

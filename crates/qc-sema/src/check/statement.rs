@@ -735,13 +735,19 @@ impl Checker<'_> {
         }
         let span = expr.syntax().span();
         let value = self.cast_to(&value, ty, span)?;
-        // `tmp.sym->constant`: a field's offset is a constant definition (FTEF-18.38).
+        self.constant_initialiser(&value, name, span);
+        Ok(())
+    }
+
+    /// "initializer for 'NAME' is not constant" when `value` is no constant: neither one the
+    /// model folds nor a constant definition (`tmp.sym->constant`, which a field's offset is,
+    /// FTEF-18.38).
+    pub(super) fn constant_initialiser(&mut self, value: &Value, name: &str, span: Span) {
         let constant_def = value.sym.def().is_some_and(|def| self.env.constant(def));
         if value.constness == Constness::Variable && !constant_def {
             let message = format!("initializer for '{name}' is not constant");
             self.env.report(Code::E0214, span, message);
         }
-        Ok(())
     }
 
     /// Whether the function returns a type larger than a vector, through a pointer its caller

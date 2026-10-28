@@ -721,6 +721,20 @@ impl Checker<'_> {
         } else {
             self.cast_to(&value, &ty, span)?
         };
+        // FTEF-19.70: a `static` local's value is a constant, which the resolver checks of a
+        // name and an element of one.
+        let element = matches!(
+            &init,
+            ast::Expr::Index(index)
+                if matches!(index.base(), Some(ast::Expr::Name(base)) if base.scope().is_none())
+        );
+        if let Some(name) = declarator.name()
+            && !resolver_casts
+            && !element
+            && self.env.local_static(name.span().start)
+        {
+            self.constant_initialiser(&value, &name.text_lossless(), span);
+        }
         // FTEF-2.12: an 8- or 16-bit local is initialised as a bitfield at bit 0
         // (`QCC_PR_GenerateInitializerType`), packed into its word; an array of 8-bit ones
         // by a string, a character, then zeros, to each element.
