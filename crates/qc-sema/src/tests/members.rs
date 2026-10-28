@@ -650,3 +650,37 @@ fn fields_selected_by_an_expression() {
     assert_eq!(messages("x = e.(farr[1]);"), ["farr is not a field"]);
     assert_eq!(messages("x = cc.(x);"), ["x is not a field of class C"]);
 }
+
+// spec FTEF-10.7: an accessor's unnamed indexer, `get T[I]`, is what `base[index]` reads and
+// stores, the index cast to its type and the value to the member's
+#[test]
+fn an_accessor_indexer_reads_and_stores() {
+    let defs = "string(float b, float i) bufstr_get = #0; \
+                void(float b, float i, string s) bufstr_set = #0;\n\
+                accessor strbuf : float { inline get string[float idx] = \
+                { return bufstr_get(this, idx); }; inline set string[float idx] = \
+                { bufstr_set(this, idx, value); }; };\nstrbuf h; float x; string s;\n";
+    let found = |statement: &str| -> Vec<String> {
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        let file = FileId(0);
+        let source = format!("#pragma target fte\n{defs}void() f = {{ {statement} }};\n");
+        db.set_file(file, PathBuf::from("t.qc"), source.into_bytes());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![file],
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .map(|d| d.diagnostic.message.clone())
+        .filter(|m| m != "Implicit cast from strbuf to float")
+        .collect()
+    };
+    assert!(found("s = h[1];").is_empty());
+    assert!(found("h[2] = \"a\";").is_empty());
+    assert_eq!(found("x = h[1];"), ["Cannot cast from string to float"]);
+    assert_eq!(found("h[1] = 5;"), ["Cannot cast from float to string"]);
+    assert_eq!(
+        found("s = h[\"a\"];"),
+        ["Implicit type mismatch. Needed float, got string."]
+    );
+}

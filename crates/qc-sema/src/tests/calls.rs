@@ -655,3 +655,84 @@ fn a_format_constant_is_every_literal_it_joins() {
         ["sprintf: surplus trailing float argument(s) for format \"a%s\""]
     );
 }
+
+// spec FTEF-32.2: `random`'s arguments are supplied as floats, a type that does not convert
+// refused
+// spec FTEF-27.7: a conversion the target lacks is emulated with its warning, unless the program
+// defines a helper of the emulation's name
+// spec FTEF-33.1: a format that is no constant is not read
+// spec FTEF-31.3: a pointer's string, vector, entity or function is loaded by its own opcode,
+// which the id target refuses
+// spec FTEF-31.9: a constant vector's component is a constant, by index or by `_z`
+#[test]
+fn behaviours_real_programs_reach() {
+    let found = |target: &str, source: &str| -> Vec<String> {
+        diags(&format!("#pragma target {target}\n{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .filter(|m| !m.ends_with("has no body"))
+            .collect()
+    };
+    let defs = "float x; __int i; __uint u; string s; vector v; float() random = #7;\n";
+    let body = |statement: &str| format!("{defs}void() f = {{ {statement} }};");
+    let mismatch = |got: &str| format!("Implicit type mismatch. Needed float, got {got}.");
+    assert_eq!(found("fte", &body("x = random(s);")), [mismatch("string")]);
+    assert_eq!(
+        found("fte", &body("x = random(1, v);")),
+        [mismatch("vector")]
+    );
+    assert!(found("fte", &body("x = random(i, 2);")).is_empty());
+    assert_eq!(
+        found("id", &body("x = i;")),
+        ["itof emulation: denormals are unsafe i"]
+    );
+    assert_eq!(
+        found("id", &body("x = u;")),
+        [
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big"
+        ]
+    );
+    let helper = "float(__int a) itof = #0;\n";
+    assert!(found("id", &format!("{helper}{}", body("x = i;"))).is_empty());
+    assert!(found("id", &format!("{helper}{}", body("x = u;"))).is_empty());
+    assert!(
+        found(
+            "fte",
+            &format!(
+                "string(string f, ...) sprintf = #627;\n{}",
+                body("s = sprintf(s, x);")
+            )
+        )
+        .is_empty()
+    );
+    let refused = |op: &str| {
+        format!("Opcode \"=|{op}\" not valid for target. Consider the use of: #pragma target fte")
+    };
+    let memgetval = "memgetval function not defined: cannot emulate OP_LOADP_*".to_owned();
+    assert_eq!(
+        found("id", "string *ps; string t;\nvoid() f = { t = *ps; };"),
+        [memgetval.clone(), refused("LOADP_S")]
+    );
+    assert_eq!(
+        found("id", "vector *pv; vector w;\nvoid() f = { w = *pv; };"),
+        [refused("LOADP_V")]
+    );
+    assert_eq!(
+        found("id", "entity *pe; entity e;\nvoid() f = { e = *pe; };"),
+        [memgetval.clone(), refused("LOADP_ENT")]
+    );
+    let past = "(constant) array index out of bounds (0 <= 3 < 2)";
+    let vector = "const vector cv = '1 2 3'; float farr[2]; float y;\n";
+    assert_eq!(
+        found(
+            "fte",
+            &format!("{vector}void() f = {{ y = farr[cv[2]]; }};")
+        ),
+        [past]
+    );
+    assert_eq!(
+        found("fte", &format!("{vector}void() f = {{ y = farr[cv_z]; }};")),
+        [past]
+    );
+}
