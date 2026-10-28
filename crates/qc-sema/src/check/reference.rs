@@ -95,13 +95,10 @@ impl Checker<'_> {
                     Some(Etype::Int64 | Etype::Uint64 | Etype::Double) => Op::LoadI64,
                     _ => Op::LoadF,
                 };
-                // `case OP_LOAD_I64:` two plain `OP_LOAD_FLD`s on a target without it.
-                if load == Op::LoadI64 && !self.env.target_at(span.start).valid(load) {
-                    self.simple_statement(Op::LoadFld, span)?;
-                    self.simple_statement(Op::LoadFld, span)?;
-                    return Ok(value);
-                }
-                self.generate(load, span);
+                // Emitted, or on a target without it as `QCC_PR_StatementFlags` replaces it:
+                // `OP_LOAD_I` and `OP_LOAD_P` as `OP_LOAD_F`, `OP_LOAD_I64` as two plain
+                // `OP_LOAD_FLD`s (FTEF-27.9, FTEF-27.11).
+                self.emit(load, &Value::unknown(), &Value::unknown(), span)?;
                 Ok(value)
             }
             Reference::ArrayHead => {

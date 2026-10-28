@@ -844,3 +844,41 @@ fn a_ternary_compares_before_its_last_store() {
         ]
     );
 }
+
+// spec FTEF-34.9: at global scope a field is read by the load of its type, which the id target
+// replaces for an integer or a pointer by `OP_LOAD_F` and makes plain statements for a 64-bit one
+// spec FTEF-27.9: `OP_LOAD_I` and `OP_LOAD_P` are `OP_LOAD_F` on a target without them
+#[test]
+fn a_field_read_at_global_scope_is_its_load() {
+    let load = |target: &str, ty: &str| -> Vec<(Code, String)> {
+        diags(&format!("{target}\nentity e; .{ty} ff; {ty} x = e.ff;\n"))
+            .into_iter()
+            .filter(|(code, _)| *code == Code::E0345)
+            .collect()
+    };
+    let fte = "#pragma target fte";
+    for (ty, id, on_fte) in [
+        ("float", Some("LOADF_F"), Some("LOADF_F")),
+        ("vector", Some("LOADF_V"), Some("LOADF_V")),
+        ("string", Some("LOADF_S"), Some("LOADF_S")),
+        ("entity", Some("LOADF_ENT"), Some("LOADF_ENT")),
+        (".float", Some("LOADF_FLD"), Some("LOADF_FLD")),
+        ("void()", Some("LOADF_FNC"), Some("LOADF_FNC")),
+        ("int", Some("LOADF_F"), Some("LOADF_I")),
+        ("__uint", Some("LOADF_F"), Some("LOADF_I")),
+        ("float*", Some("LOADF_F"), Some("LOADF_P")),
+        ("__int64", None, Some("LOADF_I64")),
+        ("__double", None, Some("LOADF_I64")),
+    ] {
+        assert_eq!(
+            load("", ty),
+            id.map(unable).into_iter().collect::<Vec<_>>(),
+            "{ty}"
+        );
+        assert_eq!(
+            load(fte, ty),
+            on_fte.map(unable).into_iter().collect::<Vec<_>>(),
+            "fte {ty}"
+        );
+    }
+}
