@@ -528,7 +528,7 @@ fn a_struct_scope_is_exact_without_the_option() {
     );
 }
 
-// spec FTEF-17.13: a pointer is compared with a pointer by what it points to, and is never the
+// spec FTEF-17.21: a pointer is compared with a pointer by what it points to, and is never the
 // type of a non-pointer
 #[test]
 fn pointers_are_compared_by_what_they_point_to() {

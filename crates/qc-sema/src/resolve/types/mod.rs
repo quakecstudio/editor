@@ -571,13 +571,42 @@ impl Resolver<'_> {
         }
     }
 
+    /// Whether `ty` names an accessor, `ev_accessor` (FTEF-10.8).
+    pub(in crate::resolve) fn is_accessor_type(&self, ty: &Type) -> bool {
+        match self.resolved(ty) {
+            Type::Named(name) => self
+                .named(&self.accessor_bases, &self.type_key(&name))
+                .is_some(),
+            _ => false,
+        }
+    }
+
+    /// `ty` with its typedefs resolved, and a named enum that is no `enum class` its base type,
+    /// the type `QCC_PR_ParseEnum` gives its name (FTEF-19.10).
+    fn plain_enum_base(&self, ty: &Type) -> Type {
+        let ty = self.resolved(ty);
+        match &ty {
+            Type::Named(name) if self.named(&self.strict_enums, name).is_none() => self
+                .named(&self.enum_types, name)
+                .map_or(ty.clone(), |base| self.resolved(base)),
+            _ => ty,
+        }
+    }
+
     /// `typecmp` of two values' types (FTEF-30.3): the same type object, so one C type word or
     /// typedef of it, two classes or structs by name, and what fields, pointers and functions
     /// hold in turn. A type the model does not follow is any.
     pub(in crate::resolve) fn typecmp(&self, a: &Type, b: &Type) -> bool {
-        let (a, b) = (self.resolved(a), self.resolved(b));
+        let (a, b) = (self.plain_enum_base(a), self.plain_enum_base(b));
         if a == b {
             return true;
+        }
+        // FTEF-23.8: `__bint` and `__bfloat` are both `ev_boolean`, one type to `typecmp`, and
+        // no other type is.
+        let boolean =
+            |ty: &Type| matches!(ty.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat));
+        if boolean(&a) || boolean(&b) {
+            return boolean(&a) && boolean(&b);
         }
         match (&a, &b) {
             (Type::Field(x), Type::Field(y)) | (Type::Pointer(x), Type::Pointer(y)) => {
@@ -617,8 +646,13 @@ impl Resolver<'_> {
 
     /// `typecmp_lax`'s test of a pair of parameters: one basic type, and an entity, struct or
     /// union by its name, anything else as [`Self::typecmp_lax`] says.
-    fn same_param(&self, p: &Type, q: &Type, depth: usize) -> bool {
+    pub(in crate::resolve) fn same_param(&self, p: &Type, q: &Type, depth: usize) -> bool {
         let (p, q) = (self.resolved(p), self.resolved(q));
+        // `a->params[t].type->type != b->params[t].type->type`: an accessor is `ev_accessor`,
+        // no other type's kind.
+        if self.is_accessor_type(&p) != self.is_accessor_type(&q) {
+            return false;
+        }
         let (Some(sp), Some(sq)) = (self.shape(&p), self.shape(&q)) else {
             return true;
         };

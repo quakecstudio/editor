@@ -112,29 +112,32 @@ impl<'a> Resolver<'a> {
     }
 
     /// Whether a redeclaration's type `ty` matches the earlier `old` (QC-11.5): equal, or
-    /// either unknown; under FTEQCC also when the model does not follow either (FTEF-17.13).
+    /// either unknown; under FTEQCC also when the model does not follow either (FTEF-17.21).
     pub(in crate::resolve) fn same_type(&self, old: &Type, ty: &Type) -> bool {
         if self.profile.redeclaration_by_typecmp() {
-            self.resolved(old).fteqcc_same(&self.resolved(ty))
+            self.typecmp(old, ty)
         } else {
             // QC-10.10: a variadic type is never the same as another.
             (old == ty && !old.holds_variadic()) || *old == Type::Unknown || *ty == Type::Unknown
         }
     }
 
-    /// FTEQCC's `typecmp_lax` of a function redeclaration (FTEF-19.7): the return types and
-    /// the parameters both lists have the same, and every parameter one list has beyond the
-    /// other `optional`; whether either is variadic does not matter.
+    /// FTEQCC's `typecmp_lax` of a redeclaration (FTEF-19.7, FTEF-19.70): of a function, the
+    /// return types and the parameters both lists have the same, a class's or struct's by its
+    /// name, and every parameter one list has beyond the other `optional`, whether either is
+    /// variadic not mattering; of any other type, `typecmp_lax`, which takes an accessor for its
+    /// base.
     pub(in crate::resolve) fn lax_same(
+        &self,
         old: &Type,
         old_params: &[RawParamInfo],
         ty: &Type,
         params: &[RawParamInfo],
     ) -> bool {
         let (Type::Function(a), Type::Function(b)) = (old, ty) else {
-            return false;
+            return self.typecmp_lax(old, ty);
         };
-        if !a.ret.fteqcc_same(&b.ret) {
+        if !self.typecmp_lax(&a.ret, &b.ret) {
             return false;
         }
         let shared = a.params.len().min(b.params.len());
@@ -142,7 +145,7 @@ impl<'a> Resolver<'a> {
             .params
             .iter()
             .zip(&b.params)
-            .all(|(x, y)| x.fteqcc_same(y));
+            .all(|(x, y)| self.same_param(x, y, MAX_TYPEDEF_DEPTH));
         let outs_agree = old_params.iter().zip(params).all(|(x, y)| x.out == y.out);
         let optional_beyond = |list: &[Type], info: &[RawParamInfo]| {
             (shared..list.len()).all(|i| info.get(i).is_some_and(|p| p.optional))
@@ -308,7 +311,7 @@ impl<'a> Resolver<'a> {
         let defaults_ok = defaults_agree(params, r.params);
         let resolved_old = self.resolved(&old);
         let resolved_ty = self.resolved(r.ty);
-        let lax = Self::lax_same(&resolved_old, params, &resolved_ty, r.params);
+        let lax = self.lax_same(&resolved_old, params, &resolved_ty, r.params);
         // QC-11.12: a vector field's component has `qcc`'s `type_floatfield`, which no `.float`
         // written in the source is, and only another component's lookup has.
         if self.profile.field_components_typed_apart()
@@ -331,10 +334,12 @@ impl<'a> Resolver<'a> {
         // FTEF-19.7: at file level a difference only in optional arguments is a warning, and
         // a declaration with more parameters gives the definition its type.
         if lax {
-            let (Type::Function(a), Type::Function(b)) = (&old, &ty) else {
-                return TypeCheck::Same;
+            let silent = match (&old, &ty) {
+                (Type::Function(a), Type::Function(b)) => {
+                    a.params.len() == b.params.len() && a.variadic && !b.variadic
+                }
+                _ => false,
             };
-            let silent = a.params.len() == b.params.len() && a.variadic && !b.variadic;
             if !silent {
                 self.report(
                     Code::W0209,
@@ -342,12 +347,14 @@ impl<'a> Resolver<'a> {
                     format!(
                         "Optional arguments differ on redeclaration of {}. {}, should be {}",
                         r.name,
-                        ty.fteqcc_name(),
-                        old.fteqcc_name()
+                        self.type_name(&ty),
+                        self.type_name(&old)
                     ),
                 );
             }
-            if b.params.len() > a.params.len() {
+            if let (Type::Function(a), Type::Function(b)) = (&old, &ty)
+                && b.params.len() > a.params.len()
+            {
                 let new_ty = r.ty.clone();
                 if let Some(def) = self.index.defs.get_mut(r.existing.0) {
                     def.ty = new_ty;

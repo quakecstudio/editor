@@ -158,7 +158,7 @@ impl Literal {
 }
 
 /// The kind of a type, FTEQCC's `etype_t`, as its cast rule and redeclaration checks read it;
-/// `Opaque` for a type the semantic model does not follow (FTEF-17.13), on which no check is
+/// `Opaque` for a type the semantic model does not follow (FTEF-17.21), on which no check is
 /// made.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -771,7 +771,7 @@ impl Type {
     }
 
     /// Whether a redeclaration with type `other` declares the same type as this one under
-    /// FTEQCC's `typecmp` (FTEF-17.13): equal, a C type word compared by the kind it names, a
+    /// FTEQCC's `typecmp` (FTEF-17.21): equal, a C type word compared by the kind it names, a
     /// field, function or pointer compared part by part, and any type the model does not follow
     /// agreeing with any other.
     #[must_use]
@@ -790,7 +790,7 @@ impl Type {
                         .zip(&b.params)
                         .all(|(x, y)| x.fteqcc_same(y))
             }
-            // FTEF-17.13: two pointers are the same when what they point to is.
+            // FTEF-17.21: two pointers are the same when what they point to is.
             (Self::Pointer(a), Self::Pointer(b)) => a.fteqcc_same(b),
             _ => {
                 // A type a program names is not followed, so it agrees with anything, a pointer

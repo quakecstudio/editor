@@ -277,7 +277,7 @@ fn pointers_and_warnings() {
     ));
 }
 
-// spec FTEF-17.13: two types are FTEQCC's same type part by part, a C word by its kind
+// spec FTEF-17.21: two types are FTEQCC's same type part by part, a C word by its kind
 #[test]
 fn types_are_the_same_part_by_part() {
     let f = |ret: Type, params: Vec<Type>, variadic: bool| {
@@ -292,7 +292,7 @@ fn types_are_the_same_part_by_part() {
     assert!(named("int").fteqcc_same(&named("integer")));
     assert!(!named("int").fteqcc_same(&float));
     assert!(named("Player").fteqcc_same(&float));
-    // FTEF-17.13: a pointer is the same as a pointer to the same, and as no other type.
+    // FTEF-17.21: a pointer is the same as a pointer to the same, and as no other type.
     let pointer = |inner: &Type| Type::Pointer(Rc::new(inner.clone()));
     assert!(!pointer(&float).fteqcc_same(&simple(SimpleType::Vector)));
     assert!(!pointer(&float).fteqcc_same(&float));

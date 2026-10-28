@@ -292,7 +292,7 @@ fn other_initialisers_compare_token_for_token() {
     assert_eq!(errors(&other), [Code::E0363]);
 }
 
-// spec FTEF-17.13: a redeclaration whose type involves a type name or an unknown type is no
+// spec FTEF-17.21: a redeclaration whose type involves a type name or an unknown type is no
 // mismatch; one between two simple types still is, and so is a pointer against a non-pointer.
 // spec FTEF-11.2: `__variant` mixes with a concrete type without a type error.
 #[test]

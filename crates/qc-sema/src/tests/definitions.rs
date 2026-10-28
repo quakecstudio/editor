@@ -703,7 +703,7 @@ fn array_sizes_of_redeclarations() {
 
 // spec FTEF-19.9: a typedef names its type again, a typedef's name is its type, a storage
 // qualifier is an error and a typedef with no name a warning
-// spec FTEF-17.13: a redeclaration reads a typedef's name as the type it names
+// spec FTEF-17.21: a redeclaration reads a typedef's name as the type it names
 // spec QCD-3.19: E0219 "Cannot redeclare typedef NAME from TYPE to TYPE"
 // spec QCD-3.24: E0224 "bad combination of modifiers with typedef (defining NAME)"
 // spec QCD-7.40: W0215 "typedef defines no types"
@@ -1573,4 +1573,40 @@ fn typedefs_named_as_builtin_types() {
         [redeclared("__int", "float")]
     );
     assert!(messages("typedef float float;\ntypedef __int __int;\n").is_empty());
+}
+
+// spec FTEF-17.21: a class, struct or accessor type is its own type to a redeclaration, an
+// `enum` its base, and an accessor its base only to `typecmp_lax`
+#[test]
+fn named_types_in_redeclarations() {
+    let messages = |source: &str| -> Vec<String> {
+        diagnostics(&fte_index_of(source))
+            .into_iter()
+            .map(|(_, message)| message)
+            .filter(|m| !m.ends_with("has no body"))
+            .collect()
+    };
+    let class = "class C : entity { float m; }; class D : entity { float m; };\n";
+    assert_eq!(
+        messages(&format!("{class}C c; entity c;\n")),
+        ["Type mismatch on redeclaration of c. entity, should be class C"]
+    );
+    assert_eq!(
+        messages(&format!("{class}void(entity e) f; void(C e) f = {{}};\n")),
+        ["Type mismatch on redeclaration of f. void(class C e), should be void(entity e)"]
+    );
+    assert_eq!(
+        messages(&format!("{class}void(C e) f; void(D e) f = {{}};\n")),
+        ["Type mismatch on redeclaration of f. void(class D e), should be void(class C e)"]
+    );
+    assert!(messages("enum E { A };\nvoid(E e) f; void(float e) f = {};\n").is_empty());
+    assert!(messages("struct S { float a; };\nvoid(S s) f; void(S s) f = {};\n").is_empty());
+    assert_eq!(
+        messages("accessor box : float;\nbox b; float b;\n"),
+        ["Optional arguments differ on redeclaration of b. float, should be box"]
+    );
+    assert_eq!(
+        messages("float(float h) g = #1;\naccessor box : float { get float x = g; };\n"),
+        ["Type mismatch on redeclaration of g. float(box this), should be float(float h)"]
+    );
 }

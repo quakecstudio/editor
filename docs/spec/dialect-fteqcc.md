@@ -2439,15 +2439,9 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
 - **FTEF-17.12** **Withdrawn** (P2-132, #569): it said a pointer is a type the model does not
   follow, but FTEQCC compares pointers by what they point to, and `float *a; float a;` is a
   mismatch. Replaced by FTEF-17.13.
-- **FTEF-17.13** Under this profile a redeclaration is a type mismatch only when neither type,
-  with each typedef's name read as the type it names (`QCC_TypeForName`: `if (t && t->type ==
-  ev_typedef) return t->aux_type;`, FTEF-19.9), involves another type name (a class, struct,
-  union, accessor or enum) or an unknown type, whose meaning the model does not follow;
-  otherwise QC-11.5 holds, with the differences FTEF-19.6 and FTEF-19.7 accept. A pointer is
-  compared with a pointer by what each points to and is never the type of a non-pointer, so
-  `float *a; float a;` is the error "Type mismatch on redeclaration of a. float, should
-  be float*" (`E0205`), `float *a; float *a;` none, and `float *a; string *a;` one. So
-  `typedef float t; t x; float x;` is no mismatch and `typedef float t; t x; vector x;` is one.
+- **FTEF-17.13** **Withdrawn** (#84): it said a redeclaration involving a class, struct, union,
+  accessor or enum type was never a mismatch; FTEQCC's `typecmp` compares those types too, and
+  FTEF-17.21 replaces it.
 
 - **FTEF-17.14** A class's members are found through the class and its parents
   (`QCC_PR_ParseEntClass` keeps each class's members, with `newt->parentclass`). `Class::member`
@@ -2513,6 +2507,21 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   `spawn`'s first argument, as a `NamedArg` node. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseFunctionCall`.
+- **FTEF-17.21** A redeclaration's type is the earlier one's by `typecmp`, with each typedef's
+  name read as the type it names (`QCC_TypeForName`, FTEF-19.9) and a named enum that is no
+  `enum class` as its base type: a class, struct, union or accessor is its own type, the same as
+  another only by name, so `C c; entity c;`, `void(entity e) f; void(C e) f;` and two classes'
+  parameters are "Type mismatch on redeclaration", and an `enum E` and a `float` are one type.
+  `__bint` and `__bfloat` are one type, and no other (FTEF-23.8). Failing that, `typecmp_lax`
+  decides between a warning and the error (FTEF-19.7): an accessor is its base there, so
+  `accessor box : float; box b; float b;` is "Optional arguments differ on redeclaration of b.
+  float, should be box", but a parameter's kind is compared before its contents, `ev_accessor`
+  being no other kind, so `float(float h) g` redeclared as `float(box this)` is a mismatch. A
+  pointer is compared with a pointer by what each points to and is never the type of a
+  non-pointer: `float *a; float a;` is "Type mismatch on redeclaration of a. float, should be
+  float*" (`E0205`), `float *a; float *a;` none, and `float *a; string *a;` one. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `typecmp`, `typecmp_lax`; `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GetDef`.
 
 ## FTEF-18 Further statements, terms and frame macros
 
