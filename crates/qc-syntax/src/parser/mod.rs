@@ -3023,14 +3023,16 @@ impl<'a> Parser<'a> {
     }
 
     /// `( args )` (QC-18.8). Under FTEQCC `va_arg(index, TYPE)` and `...(index, TYPE)` read an
-    /// expression, a `,` and a type (`QCC_PR_ParseFunctionCall`, FTEF-32.7).
+    /// expression, a `,` and a type (`QCC_PR_ParseFunctionCall`, FTEF-32.7), and an argument of
+    /// `spawn` after its first that is a name and `:` or `=` names a field (FTEF-17.20).
     fn arg_list(&mut self) {
-        let va_arg = self.fteqcc()
-            && self
-                .pos
-                .checked_sub(1)
-                .and_then(|at| self.input.tokens.get(at))
-                .is_some_and(|t| matches!(t.text.as_str(), "va_arg" | "..."));
+        let callee = self
+            .pos
+            .checked_sub(1)
+            .and_then(|at| self.input.tokens.get(at))
+            .map(|t| t.text.clone());
+        let va_arg = self.fteqcc() && matches!(callee.as_deref(), Some("va_arg" | "..."));
+        let spawn = self.fteqcc() && callee.as_deref() == Some("spawn");
         self.start_node(K::ArgList);
         self.bump();
         if va_arg {
@@ -3044,8 +3046,24 @@ impl<'a> Parser<'a> {
         } else if self.at(K::RParen) {
             self.bump();
         } else {
+            let mut first = true;
             loop {
-                self.expression();
+                let named = spawn
+                    && !first
+                    && self.at(K::Name)
+                    && self
+                        .nth(1)
+                        .is_some_and(|t| matches!(t.kind, K::Colon | K::Eq));
+                if named {
+                    self.start_node(K::NamedArg);
+                    self.bump();
+                    self.bump();
+                    self.expression();
+                    self.finish_node();
+                } else {
+                    self.expression();
+                }
+                first = false;
                 if !self.at(K::Comma) {
                     break;
                 }

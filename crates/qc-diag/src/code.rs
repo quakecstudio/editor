@@ -366,6 +366,10 @@ pub enum Code {
     E0371,
     /// "designated initialisers require all members to be initialised the same way" (QCD-4.73).
     E0372,
+    /// "Spawn operator with undefined class: NAME" (QCD-4.74).
+    E0373,
+    /// "Named field is not a field." (QCD-4.75).
+    E0374,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -612,13 +616,15 @@ pub enum Code {
     W0316,
     /// "backslashes in path names are non-portable - PATH" (QCD-7.110).
     W0317,
+    /// "That = should be a :" (QCD-7.111).
+    W0318,
     /// "NAME differs in case from the file it opens, STORED" (QCD-7.16).
     W0402,
 }
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 271] = [
+    pub const ALL: [Self; 274] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -778,6 +784,8 @@ impl Code {
         Self::E0370,
         Self::E0371,
         Self::E0372,
+        Self::E0373,
+        Self::E0374,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -889,6 +897,7 @@ impl Code {
         Self::W0315,
         Self::W0316,
         Self::W0317,
+        Self::W0318,
         Self::W0402,
     ];
 
@@ -1071,6 +1080,7 @@ impl Code {
             Self::W0315 => "W0315",
             Self::W0316 => "W0316",
             Self::W0317 => "W0317",
+            Self::W0318 => "W0318",
             Self::W0218 => "W0218",
             Self::W0217 => "W0217",
             Self::W0216 => "W0216",
@@ -1144,6 +1154,8 @@ impl Code {
             Self::E0370 => "E0370",
             Self::E0371 => "E0371",
             Self::E0372 => "E0372",
+            Self::E0373 => "E0373",
+            Self::E0374 => "E0374",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1235,6 +1247,7 @@ impl Code {
             | Self::W0315
             | Self::W0316
             | Self::W0317
+            | Self::W0318
             | Self::W0231
             | Self::W0232
             | Self::W0233
@@ -1446,6 +1459,8 @@ impl Code {
             | Self::E0370
             | Self::E0371
             | Self::E0372
+            | Self::E0373
+            | Self::E0374
             | Self::E0408 => true,
         }
     }

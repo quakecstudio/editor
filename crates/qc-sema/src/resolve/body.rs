@@ -556,6 +556,13 @@ impl<'a> Resolver<'a> {
                     Found::Nothing
                 }
                 (_, UseKind::Member) => self.resolve_member(scope, use_),
+                (_, UseKind::NamedField) => {
+                    let def = match scope {
+                        Some(scope) => self.lookup_in_scope(scope, &use_.name),
+                        None => self.lookup_used_global(&use_.name),
+                    };
+                    def.map_or(Found::Nothing, Found::Def)
+                }
             };
             // FTEF-24.1: in a body, what a member names when it is no field is the check
             // stage's to judge from the base's type, as is a member no definition has

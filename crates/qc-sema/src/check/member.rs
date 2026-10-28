@@ -264,7 +264,7 @@ impl Checker<'_> {
     /// `QCC_PR_GetSRef(type_variant, ..., true)` and is the error "Unknown field \"NAME\" in class
     /// \"CLASS\"" (`QCC_PR_ParseWarning(ERR_UNKNOWNVALUE, ...)`), which does not end the
     /// statement; the member is a `variant` field of the entity, which may be assigned to.
-    fn unknown_field(&mut self, base: &Value, name: &str, span: Span) -> Value {
+    pub(super) fn unknown_field(&mut self, base: &Value, name: &str, span: Span) -> Value {
         let class = match &base.ty {
             Type::Named(class) => self
                 .env

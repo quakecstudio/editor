@@ -489,3 +489,70 @@ fn backslashes_in_paths_warn_once_per_list() {
             .all(|m| !m.starts_with("backslashes"))
     );
 }
+
+// spec FTEF-17.20: `spawn(CLASS, field: value)` is a value of the class, its fields the class's
+// members or field definitions
+// spec QCD-4.74: E0373 "Spawn operator with undefined class: NAME"
+// spec QCD-4.75: E0374 "Named field is not a field."
+// spec QCD-7.111: W0318 "That = should be a :"
+#[test]
+fn spawn_takes_a_class_and_its_fields() {
+    let messages = |body: &str| -> Vec<(Code, String)> {
+        diags(&format!(
+            "entity() spawn = #14;\nclass B : entity {{ float b; }};\nclass C : B {{ float x; }};\n\
+             class D : entity {{ float w; }};\nstruct S {{ float a; }};\n.float y; entity e; \
+             float n;\nvoid() f = {{ {body} }};\n"
+        ))
+        .into_iter()
+        .filter(|(_, message)| !message.contains("spawnfunc"))
+        .collect()
+    };
+    let d = |code: Code, message: &str| (code, message.to_owned());
+    let not_field = d(Code::E0374, "Named field is not a field.");
+    for fine in [
+        "local C c = spawn(C);",
+        "local C c = spawn(e, C, x: 1, y: \"s\", b: 3);",
+        "e = spawn();",
+    ] {
+        assert!(messages(fine).is_empty(), "{fine}: {:?}", messages(fine));
+    }
+    assert_eq!(
+        messages("local float v = spawn(C);"),
+        [d(Code::E0213, "Cannot cast from class C to float")]
+    );
+    assert_eq!(
+        messages("e = spawn(C, y = 2);"),
+        [d(Code::W0318, "That = should be a :")]
+    );
+    assert_eq!(
+        messages("e = spawn(C, n: 2);"),
+        std::slice::from_ref(&not_field)
+    );
+    assert_eq!(
+        messages("e = spawn(C, 5);"),
+        std::slice::from_ref(&not_field)
+    );
+    assert_eq!(
+        messages("e = spawn(C, w: 1);"),
+        [
+            d(Code::E0319, "Unknown field \"w\" in class \"C\""),
+            not_field
+        ]
+    );
+    assert_eq!(
+        messages("e = spawn(n);"),
+        [d(Code::E0204, "expected ,, found )")]
+    );
+    assert_eq!(
+        messages("e = spawn(e, n);"),
+        [d(Code::E0373, "Spawn operator with undefined class: n")]
+    );
+    assert_eq!(
+        messages("e = spawn(e, x: 1);"),
+        [d(Code::E0373, "Spawn operator with undefined class: x")]
+    );
+    assert_eq!(
+        messages("local S s = spawn(S);"),
+        [d(Code::E0201, "\")\" - not a name")]
+    );
+}

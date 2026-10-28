@@ -393,6 +393,10 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   of a class declared but never defined (FTEF-24.15); the statement goes on.
 - **QCD-4.73** `E0372` "designated initialisers require all members to be initialised the same
   way": designated braces with an element that names no member (FTEF-19.64); a fatal error.
+- **QCD-4.74** `E0373` "Spawn operator with undefined class: NAME": `spawn`'s class that is
+  no type (FTEF-17.20).
+- **QCD-4.75** `E0374` "Named field is not a field.": an argument of `spawn` after the class
+  that is no field (FTEF-17.20).
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -760,6 +764,8 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   function (FTEF-17.18), the warning `WARN_SELFNOTTHIS`.
 - **QCD-7.110** `W0317` "backslashes in path names are non-portable - PATH": a path new to the
   program's list of sounds, models, textures or files (FTEF-17.19), `WARN_NONPORTABLEFILENAME`.
+- **QCD-7.111** `W0318` "That = should be a :": a named field of `spawn` followed by `=`
+  (FTEF-17.20).
 
 ## QCD-8 Preprocessor errors
 

@@ -129,6 +129,8 @@ pub(crate) trait Env {
     /// Whether `ty` names a class declared but never defined, which has no parent class
     /// (FTEF-24.15).
     fn class_undefined(&self, ty: &Type) -> bool;
+    /// The type the definition `def` names, when it stands for a type's name (FTEF-17.1).
+    fn type_named(&self, def: DefId) -> Option<Type>;
     /// Whether `ty` is a struct or union of size 0, named with no body yet or laid out to no
     /// word (FTEF-6.28).
     fn struct_of_no_size(&self, ty: &Type) -> bool;

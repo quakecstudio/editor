@@ -317,3 +317,38 @@ fn ternary_arms_take_every_operator() {
         assert_eq!(sexpr(&fte_expr(body)), tree, "{body}");
     }
 }
+
+// spec FTEF-17.20: an argument of `spawn` after its first that is a name and `:` or `=` names a
+// field; elsewhere, and as `spawn`'s first argument, `name = value` is an assignment
+#[test]
+fn spawn_named_fields() {
+    let ast::Expr::Call(call) = fte_expr("spawn(e, C, x: 1, y = 2);") else {
+        panic!("not a call");
+    };
+    let list = call.args().unwrap();
+    assert_eq!(
+        list.args().map(|a| sexpr(&a)).collect::<Vec<_>>(),
+        ["e", "C"]
+    );
+    let named: Vec<_> = list
+        .named()
+        .map(|n| {
+            let value = n.value().map(|v| sexpr(&v)).unwrap_or_default();
+            (n.name().unwrap().text_lossless(), n.equals(), value)
+        })
+        .collect();
+    assert_eq!(
+        named,
+        [
+            ("x".to_owned(), false, "1".to_owned()),
+            ("y".to_owned(), true, "2".to_owned()),
+        ]
+    );
+    for source in ["spawn(y = 2);", "f(e, y = 2);"] {
+        let ast::Expr::Call(call) = fte_expr(source) else {
+            panic!("not a call");
+        };
+        assert_eq!(call.args().unwrap().named().count(), 0, "{source}");
+    }
+    assert!(fte_errors(&in_body("f(e, x: 1);")).contains(&Code::E0204));
+}

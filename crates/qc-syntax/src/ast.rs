@@ -217,6 +217,10 @@ ast_node!(
     /// The arguments of a call.
     ArgList
 );
+ast_node!(
+    /// `field: value` or `field = value` among `spawn`'s arguments (FTEF-17.20).
+    NamedArg
+);
 
 ast_node!(
     /// `for (init; cond; step) body` (FTE-2).
@@ -1521,9 +1525,34 @@ impl CallExpr {
 }
 
 impl ArgList {
-    /// The arguments, in order.
+    /// The arguments, in order; a named field's are [`ArgList::named`].
     pub fn args(&self) -> impl Iterator<Item = Expr> {
         children(&self.0)
+    }
+
+    /// The named fields of a `spawn` call, in order (FTEF-17.20).
+    pub fn named(&self) -> impl Iterator<Item = NamedArg> {
+        children(&self.0)
+    }
+}
+
+impl NamedArg {
+    /// The field's name.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        self.0.child_tokens().find(|t| !t.kind().is_trivia())
+    }
+
+    /// Whether `=` separates the name and the value, where `:` is expected.
+    #[must_use]
+    pub fn equals(&self) -> bool {
+        self.0.child_tokens().any(|t| t.kind() == K::Eq)
+    }
+
+    /// The value the field is given.
+    #[must_use]
+    pub fn value(&self) -> Option<Expr> {
+        child(&self.0)
     }
 }
 

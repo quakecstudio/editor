@@ -503,6 +503,14 @@ impl Env for BodyEnv<'_, '_> {
         })
     }
 
+    fn type_named(&self, def: DefId) -> Option<Type> {
+        if !self.resolver.type_defs.contains(&def) {
+            return None;
+        }
+        let def = self.resolver.index.def(def)?;
+        Some(Type::Named(def.name.as_str().into()))
+    }
+
     fn struct_of_no_size(&self, ty: &Type) -> bool {
         self.resolver.struct_of_no_size(ty)
     }

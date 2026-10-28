@@ -2462,6 +2462,21 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PrecacheSound`, `QCC_PrecacheModel`, `QCC_SetModel`, `QCC_SoundUsed`,
   `QCC_PrecacheTexture`, `QCC_PrecacheFile`, `QCC_PR_ParseFunctionCall`.
+- **FTEF-17.20** A call of a function named `spawn` that takes no parameters is
+  `spawn(CLASS, field: value, ...)` or `spawn(e, CLASS, ...)`, which is a value of the class
+  (`result.cast = rettype`); `spawn()` is a call as any other. `QCC_PR_ParseType` reads the class,
+  else an expression, then a `,` ("expected ,, found )" when the call ends) and the class; a name
+  there that is no type is the fatal error `E0373` "Spawn operator with undefined class: NAME",
+  and a type that is no entity's ends at the token after it, `")" - not a name`. Each argument
+  after the class is a field, `QCC_PR_ParseValue(rettype, ...)`: a member of the class or its
+  parents, else a definition of the name; a name the class has no member of and nothing defines is
+  "Unknown field NAME in class CLASS", and anything that is no field is the fatal error `E0374`
+  "Named field is not a field.", a positional value among them. The field's name is followed by
+  `:`, or by `=` with the warning `W0318` "That = should be a :", and then its value, an
+  expression of any type. The parser reads such an argument, a name and `:` or `=` after
+  `spawn`'s first argument, as a `NamedArg` node. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseFunctionCall`.
 
 ## FTEF-18 Further statements, terms and frame macros
 

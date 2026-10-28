@@ -98,12 +98,16 @@ impl Checker<'_> {
             }
             return Ok(Value::of(Type::Named("__variant".into())));
         };
-        if !method
-            && function.params.is_empty()
-            && !function.variadic
-            && let Some(value) = self.intrinsic(&name, &args, written, span)?
-        {
-            return Ok(value);
+        if !method && function.params.is_empty() && !function.variadic {
+            if name == "spawn"
+                && let Some(list) = call.args()
+                && let Some(value) = self.spawn(&list, &args)?
+            {
+                return Ok(value);
+            }
+            if let Some(value) = self.intrinsic(&name, &args, written, span)? {
+                return Ok(value);
+            }
         }
         let mut passed = Vec::new();
         let mut values = Vec::new();
@@ -412,6 +416,116 @@ impl Checker<'_> {
             }
             _ => Ok(None),
         }
+    }
+
+    /// FTEF-17.20: `spawn(CLASS, field: value, ...)` and `spawn(e, CLASS, ...)`, the class's
+    /// value. `QCC_PR_ParseType` reads the class, else an expression, a `,` and the class; a type
+    /// that is no entity's ends at the token after it (`QCC_PR_ParseName`), as does a class that
+    /// is no type ("Spawn operator with undefined class: NAME"). Each argument after the class is
+    /// a field of it, its members first (`QCC_PR_ParseValue(rettype, ...)`), named before `:` or
+    /// `=`. `None` for `spawn()`, which is a call as any other.
+    fn spawn(&mut self, list: &ast::ArgList, args: &[ast::Expr]) -> Result<Option<Value>, Fatal> {
+        let named: Vec<ast::NamedArg> = list.named().collect();
+        let Some(first) = args.first() else {
+            return Ok(None);
+        };
+        let type_of = |checker: &Self, arg: &ast::Expr| match arg {
+            ast::Expr::Name(name) => name
+                .name()
+                .and_then(|t| checker.env.reference(t.span().start))
+                .and_then(|def| checker.env.type_named(def)),
+            _ => None,
+        };
+        let (class, at): (Type, usize) = match type_of(self, first) {
+            Some(class) => (class, 1),
+            None => {
+                self.value(Some(first.clone()))?;
+                match args.get(1).map(|arg| (type_of(self, arg), arg)) {
+                    Some((Some(class), _)) => (class, 2),
+                    Some((None, arg)) => {
+                        // `QCC_PR_ParseName` reads the argument's first token.
+                        let token = arg
+                            .syntax()
+                            .descendants_with_tokens()
+                            .find_map(|e| match e {
+                                qc_syntax::SyntaxElement::Token(t) if !t.kind().is_trivia() => {
+                                    Some(t)
+                                }
+                                qc_syntax::SyntaxElement::Token(_)
+                                | qc_syntax::SyntaxElement::Node(_) => None,
+                            });
+                        let span = token.as_ref().map_or(arg.syntax().span(), |t| t.span());
+                        let shown = token.map_or_else(String::new, |t| t.text_lossless());
+                        let message = format!("Spawn operator with undefined class: {shown}");
+                        return self.fatal(Code::E0373, span, message).map(Some);
+                    }
+                    None => match named.first().and_then(ast::NamedArg::name) {
+                        Some(token) => {
+                            let message = format!(
+                                "Spawn operator with undefined class: {}",
+                                token.text_lossless()
+                            );
+                            return self.fatal(Code::E0373, token.span(), message).map(Some);
+                        }
+                        None => {
+                            let message = "expected ,, found )".to_owned();
+                            return self
+                                .fatal(Code::E0204, list.syntax().span(), message)
+                                .map(Some);
+                        }
+                    },
+                }
+            }
+        };
+        let class_arg = args
+            .get(at.saturating_sub(1))
+            .map_or(list.syntax().span(), |a| a.syntax().span());
+        if self.env.shape(&class).map(|s| s.etype) != Some(Etype::Entity) {
+            let found = if args.len() > at || !named.is_empty() {
+                ","
+            } else {
+                ")"
+            };
+            let message = format!("\"{found}\" - not a name");
+            return self.fatal(Code::E0201, class_arg, message).map(Some);
+        }
+        let base = Value::of(class.clone());
+        if let Some(extra) = args.get(at) {
+            self.value(Some(extra.clone()))?;
+            let message = "Named field is not a field.".to_owned();
+            return self
+                .fatal(Code::E0374, extra.syntax().span(), message)
+                .map(Some);
+        }
+        for arg in &named {
+            let Some(token) = arg.name() else {
+                continue;
+            };
+            let name = token.text_lossless();
+            let span = token.span();
+            // A class's member is a field of its type (`QCC_PR_ParseEntClass`).
+            let field = self.env.class_member(&class, &name, span.start).is_some()
+                || match self.env.reference(span.start) {
+                    Some(def) => self.env.definition(def).is_some_and(|d| {
+                        let ty = d.ty.clone();
+                        self.env.shape(&ty).is_some_and(|s| s.etype == Etype::Field)
+                    }),
+                    None => {
+                        self.unknown_field(&base, &name, span);
+                        false
+                    }
+                };
+            if !field {
+                let message = "Named field is not a field.".to_owned();
+                return self.fatal(Code::E0374, span, message).map(Some);
+            }
+            if arg.equals() {
+                self.env
+                    .report(Code::W0318, span, "That = should be a :".to_owned());
+            }
+            self.value(arg.value())?;
+        }
+        Ok(Some(base))
     }
 
     /// FTEF-17.19: the path a call names by a constant string: a `precache_` function's first

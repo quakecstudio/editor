@@ -57,6 +57,9 @@ pub enum UseKind {
     /// A name that may be a type's, in a `sizeof` (FTEF-18.12): the operand FTEQCC tries as a
     /// type first (FTEF-19.38).
     TypeOrValue,
+    /// A field named among `spawn`'s arguments (FTEF-17.20), which the check stage looks up in
+    /// the class first: the definition of the name, if any, and no error when there is none.
+    NamedField,
 }
 
 /// What a member access is made on, as far as the syntax tells (FTEF-17.3).
@@ -251,6 +254,19 @@ fn lower_call(call: &ast::CallExpr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
                 && let Some(use_) = uses.last_mut()
             {
                 use_.kind = UseKind::TypeOrValue;
+            }
+        }
+        // FTEF-17.20: `spawn`'s named fields.
+        for named in args.named() {
+            if let Some(token) = named.name() {
+                uses.push(RawUse::new(
+                    token.text_lossless(),
+                    token.span(),
+                    UseKind::NamedField,
+                ));
+            }
+            if let Some(value) = named.value() {
+                lower_expr(&value, cx, uses);
             }
         }
     }
