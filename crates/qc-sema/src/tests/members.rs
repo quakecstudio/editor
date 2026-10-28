@@ -543,3 +543,32 @@ fn class_accessors_are_neither_virtual_nor_static() {
     assert_eq!(messages("const get"), std::slice::from_ref(&static_));
     assert_eq!(messages("virtual static get"), [virtual_, static_]);
 }
+
+// spec FTEF-9.20: `virtual`, `nonvirtual` and `inline` written on a member that is no function,
+// and `inline` on a prototype or a virtual function, end FTEQCC
+// spec QCD-4.80: E0379 for each
+#[test]
+fn words_only_a_member_function_takes() {
+    let messages = |member: &str| -> Vec<(Code, String)> {
+        fte_index_of(&format!("class C : entity {{ {member} }};\n"))
+            .diagnostics
+            .iter()
+            .map(|d| (d.diagnostic.code, d.diagnostic.message.clone()))
+            .filter(|(_, m)| !m.ends_with("Assuming non-virtual.") && !m.ends_with("has no body"))
+            .collect()
+    };
+    let e = |message: &str| vec![(Code::E0379, message.to_owned())];
+    let virtuality = e("virtual keyword on member that is not a function");
+    assert_eq!(messages("virtual float m;"), virtuality);
+    assert_eq!(messages("nonvirtual float m;"), virtuality);
+    assert_eq!(
+        messages("inline float m;"),
+        e("inline keyword on member that is not a function")
+    );
+    let prototype = e("inline keyword on function prototype or virtual function");
+    assert_eq!(messages("inline void() m;"), prototype);
+    assert_eq!(messages("virtual inline void() m = { };"), prototype);
+    assert!(messages("inline void() m = { };").is_empty());
+    assert!(messages("virtual: float x;").is_empty());
+    assert_eq!(messages("virtual: inline void() m = { };"), prototype);
+}

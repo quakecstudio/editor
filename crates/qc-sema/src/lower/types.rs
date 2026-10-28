@@ -134,6 +134,18 @@ pub struct RawMember {
     /// The token after its name and array suffixes, which a constructor's warnings name as
     /// the member, `pr_token` (FTEF-9.16).
     pub follow: String,
+    /// The words written on it that only a function takes (FTEF-9.20).
+    pub function_words: FunctionWords,
+}
+
+/// The words of a class member that only a member function takes (FTEF-9.20): `virtual` or
+/// `nonvirtual` as written, not by the class's default, and `inline`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FunctionWords {
+    /// Whether `virtual` or `nonvirtual` is written.
+    pub virtuality: bool,
+    /// Whether `inline` is written.
+    pub inline: bool,
 }
 
 /// What a class member is (FTEF-9.2, FTEF-9.3).
@@ -975,6 +987,10 @@ fn lower_member(
                 MemberStorage::Instance
             },
             follow,
+            function_words: FunctionWords {
+                virtuality: has("virtual") || has("nonvirtual"),
+                inline: has("inline"),
+            },
             array: declarator
                 .array_suffixes()
                 .next()
@@ -1014,6 +1030,7 @@ fn lower_member(
             qualification: Qualification::Qualified,
             storage: MemberStorage::Instance,
             follow: String::new(),
+            function_words: FunctionWords::default(),
         });
     }
 }

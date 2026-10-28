@@ -405,6 +405,9 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   member marked `virtual` (FTEF-10.10).
 - **QCD-4.79** `E0378` "static accessors are not supported": a class's accessor member marked
   `static` or `const` (FTEF-10.10).
+- **QCD-4.80** `E0379` "virtual keyword on member that is not a function", "inline keyword on
+  member that is not a function" and "inline keyword on function prototype or virtual function":
+  a class member's word that only a member function takes (FTEF-9.20).
 
 ## QCD-5 Project, limit and fatal errors
 

@@ -403,6 +403,21 @@ impl<'a> Resolver<'a> {
             (true, false) => MemberKind::Method,
             (false, _) => member.kind,
         };
+        // FTEF-9.20: the words only a function takes, each `QCC_Error`, which ends FTEQCC.
+        let words = member.function_words;
+        let misused = if member_kind == MemberKind::Field && words.virtuality {
+            Some("virtual keyword on member that is not a function")
+        } else if member_kind == MemberKind::Field && words.inline {
+            Some("inline keyword on member that is not a function")
+        } else if words.inline && (!member.initialized || member_kind == MemberKind::Virtual) {
+            Some("inline keyword on function prototype or virtual function")
+        } else {
+            None
+        };
+        if let Some(message) = misused {
+            self.report(Code::E0379, location, message.to_owned());
+            return None;
+        }
         if member.bad_init && !typedef_function {
             self.report(
                 Code::E0257,

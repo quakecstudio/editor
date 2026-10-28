@@ -777,6 +777,14 @@ heavily class-based (547 `class` declarations across the three mods).
   components' fields too, `NAME_x`, `NAME_y` and `NAME_z` (`QCC_PR_GetDef` of a vector field
   makes them), so `c.v_x = 1;` stores one and `c.v_w` is "Unknown field \"v_w\" in class \"C\"";
   a `vector v[2]` member has none.
+- **FTEF-9.20** A class member that is no function written `virtual` or `nonvirtual` is "virtual
+  keyword on member that is not a function", and one written `inline` "inline keyword on member
+  that is not a function"; an `inline` member function with no body, or a virtual one, the class's
+  default included, is "inline keyword on function prototype or virtual function". Each is a
+  `QCC_Error`, which ends FTEQCC, the fatal error `E0379`, and a typedef of a function type makes
+  a function. The words are those written, not the class's `virtual:` or `nonvirtual:` default.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseClass`.
 - **FTEF-9.18** A `static` or `const` data member is the global `CLASS::NAME` of its type, no
   field, a `const` one a constant (`GDF_CONST`), and `CLASS::NAME` names a member through the
   class (`QCC_PR_GetDef` of `CLASS::NAME`): a data member that is no global is the field, of
