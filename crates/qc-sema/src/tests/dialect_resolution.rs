@@ -61,7 +61,7 @@ fn compound_assignment_operands_are_uses() {
         .collect();
     assert_eq!(
         messages,
-        ["Unknown value \"nope\"", "Unknown value \"missing\""]
+        ["Unknown value \"nope\".", "Unknown value \"missing\"."]
     );
     assert_eq!(index.refs.len(), 2);
 }
@@ -164,7 +164,7 @@ fn prefix_and_cast_operands_are_uses() {
         .collect();
     assert_eq!(
         messages,
-        ["Unknown value \"nope\"", "Unknown value \"gone\""]
+        ["Unknown value \"nope\".", "Unknown value \"gone\"."]
     );
 }
 
@@ -177,7 +177,7 @@ fn negative_number_subtraction_resolves_its_operand() {
         .iter()
         .map(|d| d.diagnostic.message.as_str())
         .collect();
-    assert_eq!(messages, ["Unknown value \"nope\""]);
+    assert_eq!(messages, ["Unknown value \"nope\"."]);
 }
 
 // spec FTE-21.1: a local declared without `local`, mid-body, resolves.
@@ -204,8 +204,7 @@ fn bare_and_function_locals_resolve() {
 #[test]
 fn locals_shadow_globals() {
     let source = "void() light = { };\n\
-                  void(vector org, float light) launch = { if (light) org_x = 0; };\n\
-                  .string target;\nvoid(entity target) use = { target.target = \"\"; };\n";
+                  void(vector org, float light) launch = { if (light) org_x = 0; };\n";
     let index = fte_index_of(source);
     assert_eq!(all_codes(&index), Vec::<Code>::new());
     let param = index
@@ -220,7 +219,7 @@ fn locals_shadow_globals() {
         .unwrap();
     assert_eq!(use_of_light.def.0, param);
     // Vanilla reuses the global, so another type is a type mismatch (QC-12.3).
-    assert_eq!(error_codes(&index_of(source)), [Code::E0205, Code::E0205]);
+    assert_eq!(error_codes(&index_of(source)), [Code::E0205]);
     // A second declaration in one function is still that definition, or a mismatch.
     let twice = fte_index_of("void() f = { local float x; local string x; };\n");
     assert_eq!(error_codes(&twice), [Code::E0205]);
@@ -323,7 +322,7 @@ fn local_initialisers_are_uses() {
         .collect();
     assert_eq!(
         messages,
-        ["Unknown value \"nope\"", "Unknown value \"gone\""]
+        ["Unknown value \"nope\".", "Unknown value \"gone\"."]
     );
 }
 
@@ -357,4 +356,30 @@ fn shadowing_vectors_have_components() {
         .find(|r| index.defs[r.def.0].name == "org_x")
         .unwrap();
     assert_eq!(index.defs[used.def.0].kind, DefKind::Param);
+}
+
+// spec FTEF-24.1: the selector is looked up as a value, so a local of its name hides the field:
+// `target.target` with a parameter `entity target` is "target is not a field" (the pinned
+// FTEQCC, 2026-10-27)
+#[test]
+fn a_local_hides_a_field_of_its_name_after_a_dot() {
+    let index =
+        fte_index_of(".string target;\nvoid(entity target) use = { target.target = \"\"; };\n");
+    assert_eq!(all_codes(&index), [Code::E0318]);
+}
+
+// spec FTEF-19.45: FTEQCC reports an unknown name "Unknown value \"NAME\"." with a full stop, a
+// scoped one with none; vanilla's has none
+#[test]
+fn unknown_values_end_with_a_full_stop_under_fteqcc() {
+    let messages = |index: &ModuleIndex| -> Vec<String> {
+        index
+            .diagnostics
+            .iter()
+            .map(|d| d.diagnostic.message.clone())
+            .collect()
+    };
+    let source = "float a;\nvoid() f = { a = nope; };\n";
+    assert_eq!(messages(&fte_index_of(source)), ["Unknown value \"nope\"."]);
+    assert_eq!(messages(&index_of(source)), ["Unknown value \"nope\""]);
 }

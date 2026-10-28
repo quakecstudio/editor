@@ -7,11 +7,11 @@
 use std::path::Path;
 
 use super::{codes, one_fte, tokens};
+use crate::Op;
 use crate::fte_directive::FteState;
-use crate::fte_tables::{OPCODES, REAL_OPCODES};
 use crate::{
-    Code, FileOutput, FteFlag, FteWarning, MemoryLoader, Preprocessor, WarningAction,
-    WarningSettings,
+    Code, FileOutput, FteFlag, FteWarning, MemoryLoader, OpcodeTarget, Preprocessor, TargetFormat,
+    WarningAction, WarningSettings,
 };
 
 /// The codes and messages `text` gives under FTEQCC.
@@ -93,7 +93,7 @@ fn build_pragmas_warn_against_fteqcc_s_tables() {
         one(Code::W0113, "opcode foo not recognised")
     );
     // `OP_NUMREALOPS` and the rows after it are internal.
-    let internal = OPCODES[REAL_OPCODES];
+    let internal = Op::Numrealops.name();
     // An `asm` instruction's name is a row's `opname`, compared exactly (FTEF-20.5).
     assert!(crate::is_opcode_name("STORE_F"));
     assert!(!crate::is_opcode_name("store_f"));
@@ -445,4 +445,134 @@ fn each_warning_code_stands_for_its_fteqcc_warning() {
     }
     assert_eq!(FteWarning::of_code(Code::W0101), None);
     assert_eq!(FteWarning::of_code(Code::E0125), None);
+}
+
+// spec FTEF-14.63: each diagnostic FTEQCC reports as a warning is that warning's, which its
+// `qccwarningaction` setting acts on
+#[test]
+fn every_warning_code_maps_to_its_fteqcc_warning() {
+    let table = [
+        (Code::W0103, FteWarning::PrecompilerMessage),
+        (Code::W0104, FteWarning::CaseInsensitiveFrameMacro),
+        (Code::W0105, FteWarning::StaleMacro),
+        (Code::W0106, FteWarning::DuplicateMacro),
+        (Code::W0107, FteWarning::StringTooLong),
+        (Code::W0117, FteWarning::StringTooLong),
+        (Code::W0108, FteWarning::BadPragma),
+        (Code::W0113, FteWarning::BadPragma),
+        (Code::W0109, FteWarning::EvilPreprocessor),
+        (Code::W0110, FteWarning::Octal),
+        (Code::W0111, FteWarning::Overflow),
+        (Code::W0234, FteWarning::Overflow),
+        (Code::W0112, FteWarning::NestedComment),
+        (Code::W0114, FteWarning::UndefNotDefined),
+        (Code::W0115, FteWarning::DuplicatePrecompiler),
+        (Code::W0116, FteWarning::IdenticalPrecompiler),
+        (Code::W0118, FteWarning::GmqccSpecific),
+        (Code::W0119, FteWarning::NotUtf8),
+        (Code::W0120, FteWarning::FteSpecific),
+        (Code::W0121, FteWarning::Denormal),
+        (Code::W0237, FteWarning::Denormal),
+        (Code::W0122, FteWarning::MacroInString),
+        (Code::W0123, FteWarning::HangingSlashR),
+        (Code::W0203, FteWarning::UndesirableConvention),
+        (Code::W0204, FteWarning::PointlessStatement),
+        (Code::W0313, FteWarning::PointlessStatement),
+        (Code::W0205, FteWarning::UnexpectedPunct),
+        (Code::W0215, FteWarning::UnexpectedPunct),
+        (Code::W0206, FteWarning::CompatibilityHack),
+        (Code::W0210, FteWarning::CompatibilityHack),
+        (Code::W0211, FteWarning::CompatibilityHack),
+        (Code::W0223, FteWarning::CompatibilityHack),
+        (Code::W0207, FteWarning::DuplicateDefinition),
+        (Code::W0208, FteWarning::SameNameAsGlobal),
+        (Code::W0209, FteWarning::TypeMismatchRedecOptional),
+        (Code::W0212, FteWarning::RedeclarationMismatch),
+        (Code::W0213, FteWarning::MisusedAutocvar),
+        (Code::W0214, FteWarning::IgnoredKeyword),
+        (Code::W0226, FteWarning::IgnoredKeyword),
+        (Code::W0216, FteWarning::MemberNotDefined),
+        (Code::W0217, FteWarning::NotStandardBehaviour),
+        (Code::W0238, FteWarning::NotStandardBehaviour),
+        (Code::W0218, FteWarning::GmqccSpecific),
+        (Code::W0219, FteWarning::NotConstant),
+        (Code::W0220, FteWarning::LaxCast),
+        (Code::W0231, FteWarning::LaxCast),
+        (Code::W0243, FteWarning::LaxCast),
+        (Code::W0248, FteWarning::LaxCast),
+        (Code::W0233, FteWarning::DivisionBy0),
+        (Code::W0239, FteWarning::ConstantComparison),
+        (Code::W0241, FteWarning::AssignmentToConstant),
+        (Code::W0242, FteWarning::AssignmentInConditional),
+        (Code::W0245, FteWarning::IfstringUsed),
+        (Code::W0249, FteWarning::Bounds),
+        (Code::W0251, FteWarning::TooManyParametersVarargs),
+        (Code::W0252, FteWarning::TooManyParametersForFunc),
+        (Code::W0253, FteWarning::TooFewParams),
+        (Code::W0254, FteWarning::FormatString),
+        (Code::W0255, FteWarning::ArgumentCheck),
+        (Code::W0250, FteWarning::UnsafeLocalPointer),
+        (Code::W0246, FteWarning::IfvectorDisabled),
+        (Code::W0247, FteWarning::ConditionalTypeMismatch),
+        (Code::W0256, FteWarning::MissingReturnValue),
+        (Code::W0257, FteWarning::WrongReturnType),
+        (Code::W0258, FteWarning::MissingReturn),
+        (Code::W0259, FteWarning::UnreachableCode),
+        (Code::W0260, FteWarning::SwitchTypeMismatch),
+        (Code::W0261, FteWarning::FteSpecific),
+        (Code::W0262, FteWarning::SlowLargeReturn),
+        (Code::W0265, FteWarning::MissingMemberQualifier),
+        (Code::W0240, FteWarning::StrictTypeMismatch),
+        (Code::W0221, FteWarning::KeywordDisabled),
+        (Code::W0222, FteWarning::ParamWithNoName),
+        (Code::W0224, FteWarning::DeprecatedSyntax),
+        (Code::W0225, FteWarning::EnumflagsNotInteger),
+        (Code::W0227, FteWarning::UnaryNotScope),
+        (Code::W0228, FteWarning::GmqccSpecific),
+        (Code::W0229, FteWarning::Debugging),
+        (Code::W0263, FteWarning::Debugging),
+        (Code::W0264, FteWarning::Debugging),
+        (Code::W0230, FteWarning::LaxCast),
+        (Code::W0312, FteWarning::DuplicateLabel),
+        (Code::W0314, FteWarning::DeprecatedVariable),
+    ];
+    for (code, warning) in table {
+        assert_eq!(
+            FteWarning::of_code(code),
+            Some(warning),
+            "{}",
+            code.as_str()
+        );
+    }
+    assert_eq!(FteWarning::of_code(Code::E0201), None);
+}
+
+// spec FTEF-25.2: an opcode is valid for a target from the revision that added it, the id
+// formats' up to `OP_MULSTORE_F` and QuakeSpasm's and DarkPlaces' beyond it only as listed
+#[test]
+fn opcode_revisions_start_at_their_bound() {
+    let fte = |revision: u32, op: Op| OpcodeTarget::new(TargetFormat::Fte, revision).valid(op);
+    for (op, from) in [
+        (Op::StorepI8, 5744),
+        (Op::StorefV, 5698),
+        (Op::LtU, 5768),
+        (Op::IfF, 3349),
+    ] {
+        assert!(fte(from, op), "{op:?} at {from}");
+        assert!(!fte(from - 1, op), "{op:?} before {from}");
+    }
+    let at = Op::ALL.iter().position(|&op| op == Op::MulstoreF).unwrap();
+    let before = Op::ALL[at - 1];
+    for format in [
+        TargetFormat::Standard,
+        TargetFormat::Qss,
+        TargetFormat::Darkplaces,
+    ] {
+        let target = OpcodeTarget::new(format, 0);
+        assert!(target.valid(before), "{format:?}");
+        assert!(!target.valid(Op::MulstoreF), "{format:?}");
+    }
+    let dp = |revision: u32| OpcodeTarget::new(TargetFormat::Darkplaces, revision).valid(Op::AddIf);
+    assert!(dp(12_901));
+    assert!(!dp(12_900));
 }

@@ -64,7 +64,7 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   (the full dialect's name resolution) in
   [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md).
 - **Spec statements:** of [`language.md`](../../docs/spec/language.md), the semantic parts of
-  types, QC-10.1, QC-10.2, QC-10.3, QC-10.4, QC-10.6 and QC-10.7; of declarations, QC-11.1,
+  types, QC-10.1, QC-10.2, QC-10.3, QC-10.4, QC-10.10 and QC-10.7; of declarations, QC-11.1,
   QC-11.3, QC-11.5, QC-11.7, QC-11.8, QC-11.9 and QC-11.11 to QC-11.13; the parameter order of
   QC-13.5; the state-header name, QC-13.6; and the spacing of an expansion as the parser reads
   it, QC-9.16. Of
@@ -77,7 +77,7 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   FTEF-9.2, FTEF-9.3, FTEF-9.4 and FTEF-9.5, the accessor
   members FTEF-10.2 and FTEF-10.3, the scoped names of FTEF-16.4, the redeclarations of
   FTEF-17.12, the C scalar types FTEF-2.8 names, the definitions of FTEF-19.1 to FTEF-19.16
-  and FTEF-19.19 to FTEF-19.32: the warning settings, the command line's flags, the lexer's
+  and FTEF-19.19 to FTEF-19.46: the warning settings, the command line's flags, the lexer's
   flags in literals and engine names, case insensitivity and a module's source; the flags
   that change in the middle of a file, FTEF-21.7 to FTEF-21.14: the types and definitions with
   `qcfuncs` off, the attributes and the definitions `alias` makes (QCD-3.34, QCD-3.35),
@@ -87,12 +87,14 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   target, QCD-3.36 to QCD-3.39, QCD-7.70 and QCD-7.71); and the
   keywords' parts that are the semantic model's, FTEF-20.4 (the warning for a definition named
   as a keyword), FTEF-20.5 (the names of `using`, `thinktime` and `state`), FTEF-20.9 (the
-  registered type C type words name) and FTEF-20.11 (`this` and `super`). The
-  other statements of those
-  sections are the parser's (`qc-syntax`) or the compiler's (L4): the type rules of
-  expressions, operator checks and code generation. The definitions are ported from id's
+  registered type C type words name) and FTEF-20.11 (`this` and `super`). The check stage
+  (`src/check/`) types every body's expressions and checks its statements as the compilers
+  do: under FTEQCC FTEF-6.13, FTEF-10.7, FTEF-10.8 and FTEF-23 to FTEF-34, under the vanilla
+  profile QC-16, QC-18.2, QC-18.8 and QC-10.10. The other statements of those sections are the
+  parser's (`qc-syntax`) or the compiler's (L4): code generation. The definitions are ported
+  from id's
   `qcc/pr_comp.c` and FTEQCC's `engine/qclib/qcc_pr_comp.c` and `qcc_pr_lex.c`, each function
-  cited in the headers of `src/resolve.rs` and `src/cast.rs`
+  cited in the headers of the `src/resolve/` modules and `src/cast.rs`
   ([`inventory-l3.md`](../../docs/spec/inventory-l3.md)).
 - **Shipped:** yes.
 
@@ -121,7 +123,7 @@ The definitions themselves follow id's `PR_ParseDefs` and `PR_GetDef` and FTEQCC
 profile a literal initialiser has the definition's type (QC-11.3), parameters keep their order
 in the global area (QC-13.5), a vector's components are not initialised with it (QC-11.11), a
 field's components are of a type of their own (QC-11.12) and a local is initialised once
-(QC-11.13). Under FTEQCC (FTEF-19, in `src/cast.rs` and `src/resolve.rs`) an initialiser or a
+(QC-11.13). Under FTEQCC (FTEF-19, in `src/cast.rs` and `src/resolve/`) an initialiser or a
 default value is cast to its definition's type as `QCC_TryEvaluateCast` casts it, a name that
 initialises a global must be a constant, whose value the redeclaration comparison then reads,
 a parameter given twice is an error, a duplicate local or a local hiding a global a warning,
@@ -134,12 +136,12 @@ where each is given (`#pragma warning` and the command line, `ModuleInput::comma
 
 ## What it is not, yet
 
-This crate resolves names and types and answers navigation and the resolution diagnostics. It
-does not yet type-check expressions and operators (QC-16 to QC-19), fold constants or lay out
-globals and fields (QC-20, QC-21), or emit progs statements (QC-22): those are the compiler's,
-built on this model. Rename builds on it in a later issue. Under FTEQCC it does not type
-expressions, so a member access whose base is not a name, `this`, a cast or a call resolves by
-the member's name, and the values of `enumflags` and other constants are not computed.
+This crate resolves names and types, types and checks expressions and statements, and answers
+navigation and the diagnostics. It does not lay out globals and fields (QC-20, QC-21) or emit
+progs statements (QC-22): those are the compiler's, built on this model. Rename builds on it in
+a later issue. Resolution runs before the check stage, so a member access whose base is not a
+name, `this`, a cast or a call resolves by the member's name, and the values of `enumflags` are
+computed only for literals.
 
 ## Public shape
 
@@ -148,7 +150,7 @@ the member's name, and the values of `enumflags` and other constants are not com
 - `ModuleInput` and `OriginMap` (`expand`): which files a module preprocesses and compiles,
   and where each span of an expansion came from.
 - `Type`, `SimpleType`, `FunctionType` (`ty`): QC-10 types with the structural equality
-  `qcc` gives them (QC-10.6).
+  `qcc` gives them (QC-10.10).
 - `Definition`, `Reference`, `DefId`, `DefKind`, `Location`, `FileId` (`symbol`): the symbols
   a module declares and the uses of them.
 - `ModuleIndex`, `FileDiagnostic` and `resolve_module` (`resolve`): a module's resolved

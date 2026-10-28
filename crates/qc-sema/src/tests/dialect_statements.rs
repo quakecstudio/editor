@@ -156,6 +156,11 @@ fn builtin_after_body_is_a_warning() {
         ["W0206 incompatible redeclaration. Ignoring replacement of qc function with builtin."]
     );
     assert!(!Code::W0206.is_error());
+    // A builtin marked `noref` marks the body's definition unused first, so the two are not
+    // compared (copper's client module, under `#pragma noref 1`).
+    let index =
+        fte_index_of("float(float a) sin = { return a; };\nnoref float(float angle) sin = #60;\n");
+    assert_eq!(messages(&index), Vec::<String>::new());
     // A builtin and then a body, or a body twice, is a "redeclaration of function body" and
     // still "NAME redeclared" (QCD-3.6, FTEF-19.4).
     let index = fte_index_of("float(float a) cos = #61;\nfloat(float a) cos = { return a; };\n");

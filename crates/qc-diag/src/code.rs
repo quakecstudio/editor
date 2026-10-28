@@ -200,6 +200,18 @@ pub enum Code {
     E0262,
     /// "Unknown value \"NAME\"" (QCD-4.1).
     E0301,
+    /// "type mismatch for OP", under an FTEQCC profile "type mismatch for OP (A and B)" (QCD-4.2).
+    E0302,
+    /// "not a function": a call of something that is not a function (QCD-4.3).
+    E0303,
+    /// "too many parameters": more arguments than a fixed parameter list (QCD-4.4).
+    E0304,
+    /// "too few parameters": fewer arguments than a fixed parameter list (QCD-4.5).
+    E0305,
+    /// "type mismatch on parm N": an argument of another type than its parameter's (QCD-4.6).
+    E0306,
+    /// "More than eight parameters": nine or more arguments (QCD-4.7).
+    E0307,
     /// "Goto statement with no matching label \"NAME\"" (QCD-4.8).
     E0308,
     /// "Type mismatch: TYPE, should be void()" (QCD-4.9).
@@ -212,6 +224,116 @@ pub enum Code {
     E0312,
     /// "NAME is not defined" (QCD-4.13).
     E0313,
+    /// "unsupported vector swizzle '.NAME'" (QCD-4.20).
+    E0314,
+    /// "unsupported string method NAME" (QCD-4.21).
+    E0315,
+    /// "not a constant": the `length` of a string that is no constant (QCD-4.22).
+    E0316,
+    /// "indirection in TYPE - not a struct or union" (QCD-4.23).
+    E0317,
+    /// "NAME is not a field", "NAME is not a field of class CLASS" (QCD-4.24).
+    E0318,
+    /// "Unknown field \"NAME\" in class \"CLASS\"" (QCD-4.25).
+    E0319,
+    /// "Opcode \"OP|NAME\" not valid for target. Consider the use of: #pragma target fte" and its
+    /// two variants (QCD-4.26).
+    E0320,
+    /// "strcmp function not defined: cannot emulate string<=>string" (QCD-4.27).
+    E0321,
+    /// "Assignment to post-inc result", "postincrement: lhs is readonly", "postdecrement: lhs is
+    /// readonly" and the postfix's other refusals (QCD-4.28).
+    E0322,
+    /// "Type mismatch on assignment. A OP B is not supported" (QCD-4.29).
+    E0323,
+    /// "Implicit type mismatch on assignment to NAME. Needed A, got B." (QCD-4.30).
+    E0324,
+    /// "left operand must be an l-value (did you mean NAME[0]?)" (QCD-4.31).
+    E0325,
+    /// "void* maths was disabled.", "pointer* maths was disabled on this type.", "pointer sizes
+    /// were marked as undefined." and "Making assumptions about pointer sizes was blocked."
+    /// (QCD-4.32).
+    E0326,
+    /// "incompatible pointer types" (QCD-4.33).
+    E0327,
+    /// "Type mismatch: !TYPE" and "Type mismatch: ~TYPE" (QCD-4.34).
+    E0328,
+    /// "++ operator on read-only value", "-- operator on read-only value" and "++ operator on
+    /// unsupported type" (QCD-4.35).
+    E0329,
+    /// "Unable to dereference non-pointer type.", "attempt to dereference function type." and "'@'
+    /// operator only functions on floats and ints. go figure." (QCD-4.36).
+    E0330,
+    /// "Address-of operator is not supported in this form without extensions. Consider the use of:
+    /// #pragma target fte" and the variant naming brokenarray (QCD-4.39).
+    E0331,
+    /// "Ternary operator with mismatching types" (QCD-4.37).
+    E0332,
+    /// "(vector) array index out of bounds" and "(.vector) array index out of bounds" (QCD-4.40).
+    E0333,
+    /// "_length(string) requires an initialised constant" and "_length() unsupported argument type
+    /// for intrinsic" (QCD-4.38).
+    E0334,
+    /// "Address-of temp on line FILE:LINE" (QCD-4.41).
+    E0335,
+    /// "ptr-to-variants must be cast to a different type before being read" (QCD-4.42).
+    E0336,
+    /// "Type mismatch on indexed assignment of NAME: A VALUE, needed B." (QCD-4.43).
+    E0337,
+    /// "More than N parameters": a call of more arguments than any function takes (QCD-4.44).
+    E0338,
+    /// "Unable to write to read-only out argument" (QCD-4.45).
+    E0339,
+    /// "_() intrinsic accepts only a string immediate", "type mismatch on parm N" of an intrinsic
+    /// and "Argument to used_sound intrinsic was not a string immediate." (QCD-4.46).
+    E0340,
+    /// FTEQCC: "'NAME' returned nothing, expected TYPE" and "'NAME' not supported when returning
+    /// TYPE", a bare `return;` or `return =` in a function returning a type larger than a vector
+    /// (`ERR_BADEXTENSION`).
+    E0341,
+    /// FTEQCC: "Case statements may not use formulas", a `case` value that generates code.
+    E0342,
+    /// FTEQCC: "Bad switch type", a `switch` on a value no comparison takes.
+    E0343,
+    /// FTEQCC: "thinktime type mismatch", a `thinktime` of no entity or no float.
+    E0344,
+    /// FTEQCC: "Unable to generate statements at global scope (OPNAME).", an initialiser of a
+    /// global that needs code (`ERR_BADEXTENSION`).
+    E0345,
+    /// FTEQCC: "va_arg() intrinsic only works inside varadic functions", `va_arg` in a function
+    /// with no `...`.
+    E0346,
+    /// FTEQCC: "the nextent builtin is not defined", `entnum` with no `nextent` to emulate it with.
+    E0347,
+    /// FTEQCC: "Accessor NAME has no get function", an accessor member read with no `get`.
+    E0348,
+    /// FTEQCC: "Accessor has no set function", an accessor member stored with no `set`.
+    E0349,
+    /// FTEQCC: "NAME defined as virtual in CLASS, but nonvirtual in PARENT", a virtual member a
+    /// parent has as a nonvirtual one.
+    E0350,
+    /// Multiple conflicting qualifiers on a class member function (FTEF-9.16).
+    E0351,
+    /// A `switch` with a second `default` (FTEF-34.10).
+    E0352,
+    /// A bitfield read through a pointer that is not 8 or 16 bits wide (FTEF-6.15).
+    E0353,
+    /// A struct with a parent initialised by position, not by designated members (FTEF-19.47).
+    E0354,
+    /// A union initialised with more than one member, each starting where the first does
+    /// (FTEF-19.47).
+    E0355,
+    /// A struct member array of size 0 (FTEF-6.17).
+    E0356,
+    /// "left operand (NAME) has a bit offset": a store through a pointer to a bitfield that does
+    /// not start its word (QCD-4.58).
+    E0357,
+    /// "QCC_PR_ExpandField: invalid field type TYPE": a field of an 8- or 16-bit integer read
+    /// (QCD-4.59).
+    E0358,
+    /// "Unable to evaluate to numeric constant": a store to a field of an 8- or 16-bit integer
+    /// (QCD-4.60).
+    E0359,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -355,6 +477,95 @@ pub enum Code {
     W0229,
     /// "Implicit type mismatch. Needed TYPE, got TYPE." as a warning (QCD-7.71).
     W0230,
+    /// "type mismatch for OP (A and B)" with `lax` on (QCD-7.73).
+    W0231,
+    /// "Implicit conversion from A to B" (QCD-7.74).
+    W0232,
+    /// "Division of N by 0", "Division by constant 0", "Signed overflow on division by -1" and
+    /// "Division by 0" (QCD-7.75).
+    W0233,
+    /// "Numerical overflow. F will be rounded to N", "Numerical truncation of A to B." and
+    /// "Constant float operand F will be truncated to N" (QCD-7.76).
+    W0234,
+    /// "NAME function not defined: cannot emulate OP" and the other notes of an emulation
+    /// (QCD-7.77).
+    W0235,
+    /// "OP_ADD_SF: string+float may be unsafe" and "OP_ADD_SI: string+int may be unsafe"
+    /// (QCD-7.78).
+    W0236,
+    /// "itof emulation: denormals are unsafe NAME", "ftoi emulation: denormals are unsafe" and the
+    /// other denormal warnings of an emulation (QCD-7.79).
+    W0237,
+    /// "utof emulation: will break if NAME is big" (QCD-7.80).
+    W0238,
+    /// "Result of comparison is constant", "Parameter offsets for && are the same" and "Parameters
+    /// for || are the same" (QCD-7.81).
+    W0239,
+    /// "'OP' type mismatch: A with B" (QCD-7.82).
+    W0240,
+    /// "Assignment to const" and "Assignment to constant NAME" (QCD-7.83).
+    W0241,
+    /// "suggest parenthesis for assignment used as truth value" (QCD-7.84).
+    W0242,
+    /// "Implicit type mismatch on assignment to NAME. Needed A, got B." with `lax` on (QCD-7.85).
+    W0243,
+    /// "Type mismatch on ternary operator: A vs B" (QCD-7.86).
+    W0244,
+    /// "if (string) tests for null, not empty" (QCD-7.87).
+    W0245,
+    /// "if (vector) tests only the first element with the current compiler flags" (QCD-7.88).
+    W0246,
+    /// "conditional type mismatch: TYPE" (QCD-7.89).
+    W0247,
+    /// "Type mismatch: !void", "Type mismatch: ~void" and the other tests of a void value under lax
+    /// (QCD-7.90).
+    W0248,
+    /// "(constant) array index out of bounds (0 <= I < N)" (QCD-7.91).
+    W0249,
+    /// "Address-of operator on local TYPE NAME is unsafe if recursing (and still bloated when not).
+    /// Consider use of 'static' or 'auto'." (QCD-7.92).
+    W0250,
+    /// "More than 8 parameters on varargs function" (QCD-7.93).
+    W0251,
+    /// "too many parameters on call to NAME, argument ARG will be ignored" (QCD-7.94).
+    W0252,
+    /// "too few parameters on call to NAME, PARAM will be UNDEFINED" and "too few parameters on
+    /// call to NAME" (QCD-7.95).
+    W0253,
+    /// "NAME: surplus trailing TYPE argument(s) for format ...", "NAME: invalid format string:
+    /// ...", "NAME: DIRECTIVE requires TYPE at arg N (got TYPE)" and the other format string
+    /// warnings (QCD-7.96).
+    W0254,
+    /// "NAME: arg type list longer than args", "NAME(PROPERTY, ...): expected TYPE, got TYPE", the
+    /// deprecated cvar warning and the other builtin argument checks (QCD-7.97).
+    W0255,
+    /// FTEQCC: "'NAME' returned nothing, expected TYPE", a bare `return;` in a function that
+    /// returns a value (`WARN_MISSINGRETURNVALUE`, Q203).
+    W0256,
+    /// FTEQCC: "'NAME' returned TYPE, expected void", a value returned from a `void` function
+    /// (`WARN_WRONGRETURNTYPE`, Q204).
+    W0257,
+    /// FTEQCC: "NAME: not all control paths return a value" (`WARN_MISSINGRETURN`, Q206).
+    W0258,
+    /// FTEQCC: "NAME: contains unreachable code (line N)" (`WARN_UNREACHABLECODE`, F323).
+    W0259,
+    /// FTEQCC: "switch caserange MUST be a float or integer" (`WARN_SWITCHTYPEMISMATCH`).
+    W0260,
+    /// FTEQCC: "if !() is specific to fteqcc" and "if not() is specific to fteqcc or hexen2"
+    /// (`WARN_FTE_SPECIFIC`).
+    W0261,
+    /// FTEQCC: "Function NAME returns (large) TYPE. This is inefficient.", a function with a body
+    /// returning a type larger than a vector (`WARN_SLOW_LARGERETURN`, largereturn).
+    W0262,
+    /// FTEQCC: "ENUM::ITEM not part of switch", a `switch` on a strict enum with no case for one of
+    /// its items (the warning of code 0).
+    W0263,
+    /// FTEQCC: "Implicit cast from A to B" between an accessor type and its base (the warning of
+    /// code 0).
+    W0264,
+    /// A class member function with no `virtual`, `nonvirtual` or `static`, assumed nonvirtual, or
+    /// a constructor that is static, returns a value or takes arguments (FTEF-9.16).
+    W0265,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -369,7 +580,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 168] = [
+    pub const ALL: [Self; 255] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -458,12 +669,64 @@ impl Code {
         Self::E0261,
         Self::E0262,
         Self::E0301,
+        Self::E0302,
+        Self::E0303,
+        Self::E0304,
+        Self::E0305,
+        Self::E0306,
+        Self::E0307,
         Self::E0308,
         Self::E0309,
         Self::E0310,
         Self::E0311,
         Self::E0312,
         Self::E0313,
+        Self::E0314,
+        Self::E0315,
+        Self::E0316,
+        Self::E0317,
+        Self::E0318,
+        Self::E0319,
+        Self::E0320,
+        Self::E0321,
+        Self::E0322,
+        Self::E0323,
+        Self::E0324,
+        Self::E0325,
+        Self::E0326,
+        Self::E0327,
+        Self::E0328,
+        Self::E0329,
+        Self::E0330,
+        Self::E0331,
+        Self::E0332,
+        Self::E0333,
+        Self::E0334,
+        Self::E0335,
+        Self::E0336,
+        Self::E0337,
+        Self::E0338,
+        Self::E0339,
+        Self::E0340,
+        Self::E0341,
+        Self::E0342,
+        Self::E0343,
+        Self::E0344,
+        Self::E0345,
+        Self::E0346,
+        Self::E0347,
+        Self::E0348,
+        Self::E0349,
+        Self::E0350,
+        Self::E0351,
+        Self::E0352,
+        Self::E0353,
+        Self::E0354,
+        Self::E0355,
+        Self::E0356,
+        Self::E0357,
+        Self::E0358,
+        Self::E0359,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -533,6 +796,41 @@ impl Code {
         Self::W0228,
         Self::W0229,
         Self::W0230,
+        Self::W0231,
+        Self::W0232,
+        Self::W0233,
+        Self::W0234,
+        Self::W0235,
+        Self::W0236,
+        Self::W0237,
+        Self::W0238,
+        Self::W0239,
+        Self::W0240,
+        Self::W0241,
+        Self::W0242,
+        Self::W0243,
+        Self::W0244,
+        Self::W0245,
+        Self::W0246,
+        Self::W0247,
+        Self::W0248,
+        Self::W0249,
+        Self::W0250,
+        Self::W0251,
+        Self::W0252,
+        Self::W0253,
+        Self::W0254,
+        Self::W0255,
+        Self::W0256,
+        Self::W0257,
+        Self::W0258,
+        Self::W0259,
+        Self::W0260,
+        Self::W0261,
+        Self::W0262,
+        Self::W0263,
+        Self::W0264,
+        Self::W0265,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -614,6 +912,12 @@ impl Code {
             Self::E0261 => "E0261",
             Self::E0262 => "E0262",
             Self::E0301 => "E0301",
+            Self::E0302 => "E0302",
+            Self::E0303 => "E0303",
+            Self::E0304 => "E0304",
+            Self::E0305 => "E0305",
+            Self::E0306 => "E0306",
+            Self::E0307 => "E0307",
             Self::E0308 => "E0308",
             Self::E0501 => "E0501",
             Self::E0502 => "E0502",
@@ -670,6 +974,41 @@ impl Code {
             Self::W0228 => "W0228",
             Self::W0229 => "W0229",
             Self::W0230 => "W0230",
+            Self::W0231 => "W0231",
+            Self::W0232 => "W0232",
+            Self::W0233 => "W0233",
+            Self::W0234 => "W0234",
+            Self::W0235 => "W0235",
+            Self::W0236 => "W0236",
+            Self::W0237 => "W0237",
+            Self::W0238 => "W0238",
+            Self::W0239 => "W0239",
+            Self::W0240 => "W0240",
+            Self::W0241 => "W0241",
+            Self::W0242 => "W0242",
+            Self::W0243 => "W0243",
+            Self::W0244 => "W0244",
+            Self::W0245 => "W0245",
+            Self::W0246 => "W0246",
+            Self::W0247 => "W0247",
+            Self::W0248 => "W0248",
+            Self::W0249 => "W0249",
+            Self::W0250 => "W0250",
+            Self::W0251 => "W0251",
+            Self::W0252 => "W0252",
+            Self::W0253 => "W0253",
+            Self::W0254 => "W0254",
+            Self::W0255 => "W0255",
+            Self::W0256 => "W0256",
+            Self::W0257 => "W0257",
+            Self::W0258 => "W0258",
+            Self::W0259 => "W0259",
+            Self::W0260 => "W0260",
+            Self::W0261 => "W0261",
+            Self::W0262 => "W0262",
+            Self::W0263 => "W0263",
+            Self::W0264 => "W0264",
+            Self::W0265 => "W0265",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -689,6 +1028,52 @@ impl Code {
             Self::W0207 => "W0207",
             Self::E0404 => "E0404",
             Self::E0313 => "E0313",
+            Self::E0314 => "E0314",
+            Self::E0315 => "E0315",
+            Self::E0316 => "E0316",
+            Self::E0317 => "E0317",
+            Self::E0318 => "E0318",
+            Self::E0319 => "E0319",
+            Self::E0320 => "E0320",
+            Self::E0321 => "E0321",
+            Self::E0322 => "E0322",
+            Self::E0323 => "E0323",
+            Self::E0324 => "E0324",
+            Self::E0325 => "E0325",
+            Self::E0326 => "E0326",
+            Self::E0327 => "E0327",
+            Self::E0328 => "E0328",
+            Self::E0329 => "E0329",
+            Self::E0330 => "E0330",
+            Self::E0331 => "E0331",
+            Self::E0332 => "E0332",
+            Self::E0333 => "E0333",
+            Self::E0334 => "E0334",
+            Self::E0335 => "E0335",
+            Self::E0336 => "E0336",
+            Self::E0337 => "E0337",
+            Self::E0338 => "E0338",
+            Self::E0339 => "E0339",
+            Self::E0340 => "E0340",
+            Self::E0341 => "E0341",
+            Self::E0342 => "E0342",
+            Self::E0343 => "E0343",
+            Self::E0344 => "E0344",
+            Self::E0345 => "E0345",
+            Self::E0346 => "E0346",
+            Self::E0347 => "E0347",
+            Self::E0348 => "E0348",
+            Self::E0349 => "E0349",
+            Self::E0350 => "E0350",
+            Self::E0351 => "E0351",
+            Self::E0352 => "E0352",
+            Self::E0353 => "E0353",
+            Self::E0354 => "E0354",
+            Self::E0355 => "E0355",
+            Self::E0356 => "E0356",
+            Self::E0357 => "E0357",
+            Self::E0358 => "E0358",
+            Self::E0359 => "E0359",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -777,6 +1162,41 @@ impl Code {
             | Self::W0217
             | Self::W0218
             | Self::W0314
+            | Self::W0231
+            | Self::W0232
+            | Self::W0233
+            | Self::W0234
+            | Self::W0235
+            | Self::W0236
+            | Self::W0237
+            | Self::W0238
+            | Self::W0239
+            | Self::W0240
+            | Self::W0241
+            | Self::W0242
+            | Self::W0243
+            | Self::W0244
+            | Self::W0245
+            | Self::W0246
+            | Self::W0247
+            | Self::W0248
+            | Self::W0249
+            | Self::W0250
+            | Self::W0251
+            | Self::W0252
+            | Self::W0253
+            | Self::W0254
+            | Self::W0255
+            | Self::W0256
+            | Self::W0257
+            | Self::W0258
+            | Self::W0259
+            | Self::W0260
+            | Self::W0261
+            | Self::W0262
+            | Self::W0263
+            | Self::W0264
+            | Self::W0265
             | Self::W0402 => false,
             Self::E0101
             | Self::E0102
@@ -888,6 +1308,58 @@ impl Code {
             | Self::E0313
             | Self::E0511
             | Self::E0404
+            | Self::E0302
+            | Self::E0314
+            | Self::E0315
+            | Self::E0316
+            | Self::E0317
+            | Self::E0318
+            | Self::E0319
+            | Self::E0320
+            | Self::E0321
+            | Self::E0322
+            | Self::E0323
+            | Self::E0324
+            | Self::E0325
+            | Self::E0326
+            | Self::E0327
+            | Self::E0328
+            | Self::E0329
+            | Self::E0330
+            | Self::E0332
+            | Self::E0334
+            | Self::E0331
+            | Self::E0333
+            | Self::E0335
+            | Self::E0336
+            | Self::E0337
+            | Self::E0338
+            | Self::E0339
+            | Self::E0340
+            | Self::E0342
+            | Self::E0343
+            | Self::E0344
+            | Self::E0341
+            | Self::E0345
+            | Self::E0346
+            | Self::E0347
+            | Self::E0348
+            | Self::E0349
+            | Self::E0303
+            | Self::E0304
+            | Self::E0305
+            | Self::E0306
+            | Self::E0307
+            | Self::E0350
+            | Self::E0351
+            | Self::E0352
+            | Self::E0353
+            | Self::E0354
+            | Self::E0355
+            | Self::E0356
+            | Self::E0357
+            | Self::E0358
+            | Self::E0359
             | Self::E0408 => true,
         }
     }

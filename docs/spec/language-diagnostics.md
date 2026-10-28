@@ -78,7 +78,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (QC-3.3).
 - **QCD-3.3** `E0203` "\"TOKEN\" is not a type": a type was required (QC-10, QC-10.4).
 - **QCD-3.4** `E0204` "expected X, found Y": the parser required the token X (QC-11.2,
-  QC-14.6, QC-14.7, QC-4.2).
+  QC-14.6, QC-14.7, QC-4.2); under an FTEQCC profile also "expected ;, found [" (or `)` or `]`)
+  for an index of what is no array, where FTEQCC's parser stops (FTEF-31.2).
 - **QCD-3.5** `E0205` "Type mismatch on redeclaration of NAME": a name redeclared with
   another type (QC-11.5, QC-12.3, QC-13.6).
 - **QCD-3.6** `E0206` "NAME redeclared": a definition initialised twice (QC-11.5).
@@ -199,6 +200,23 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   at the class's name (`dialect-fteqcc.md`, FTEF-9.13).
 - **QCD-3.56** `E0262` "Value is not an integer constant": under an FTEQCC profile, a bitfield
   whose width is a literal with a fraction, a vector or a string (FTEF-6.9).
+- **QCD-3.57** `E0350` "NAME defined as virtual in CLASS, but nonvirtual in PARENT": under an
+  FTEQCC profile, a virtual member function a parent class has as a nonvirtual one (FTEF-9.15).
+- **QCD-3.59** `E0354` "inherited structs must use designated initialisers": under an FTEQCC
+  profile, a struct with a parent initialised by position (FTEF-19.47).
+- **QCD-3.60** `E0355` "member U.M was already ininitialised": under an FTEQCC profile, a union
+  given a second element (FTEF-19.47).
+- **QCD-3.61** `E0356` "cannot cope with 0-sized arrays": under an FTEQCC profile, a struct
+  member array of size 0 (FTEF-6.17).
+- **QCD-3.62** Under an FTEQCC profile `E0201` is FTEQCC's text, "\"TOKEN\" - not a name" for the
+  token found, or "unexpected EOF" at the end of the file (`qcc_pr_lex.c`, `QCC_PR_ParseName`:
+  `if (pr_token_type == tt_eof) QCC_PR_ParseError (ERR_EOF, "unexpected EOF");` and `else if
+  (strcmp(pr_token, "...")) QCC_PR_ParseError (ERR_NOTANAME, "\"%s%s%s\" - not a name",
+  col_name, pr_token, col_none);`, the colours empty in the oracle's output): `x = ;` is
+  "\";\" - not a name", `struct *p;` "\"*\" - not a name".
+- **QCD-3.58** `E0351` "Multiple conflicting qualifiers on CLASS::TOKEN.": under an FTEQCC
+  profile, a member function with more than one of `virtual`, `nonvirtual` and `static`
+  (FTEF-9.16).
 
 ## QCD-4 Expression and statement errors
 
@@ -209,15 +227,18 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 
 - **QCD-4.1** `E0301` "Unknown value \"NAME\"": a name with no definition in scope (QC-12.5).
 - **QCD-4.2** `E0302` "type mismatch for OP": no row of the operator table matches the
-  operand types (QC-16.2, QC-16.4); `OP` is the operator's spelling.
+  operand types (QC-16.2, QC-16.4); `OP` is the operator's spelling. Under an FTEQCC profile
+  "type mismatch for OP (A and B)", the operands' type names, when no opcode of the spelling
+  takes them (FTEF-23.4), and "type mismatch for -" or "+" for a prefix `-` or `+` of a type it
+  does not take (FTEF-30.4).
 - **QCD-4.3** `E0303` "not a function": a call of something that is not a function
-  (QC-18.1).
+  (QC-18.8).
 - **QCD-4.4** `E0304` "too many parameters": more arguments than a fixed parameter list
-  (QC-18.1).
+  (QC-18.8).
 - **QCD-4.5** `E0305` "too few parameters": fewer arguments than a fixed parameter list
-  (QC-18.1).
+  (QC-18.8).
 - **QCD-4.6** `E0306` "type mismatch on parm N": argument N, counting from 0, has the wrong
-  type (QC-18.1).
+  type (QC-18.8).
 - **QCD-4.8** `E0308` "Goto statement with no matching label "NAME"": under an FTEQCC
   profile, a `goto` whose label is not among those read since the last function's end by the
   end of its function, at the label name, FTEQCC's error of the same text
@@ -247,6 +268,105 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   `default` label that no `switch` holds (FTEF-21.19).
 - **QCD-4.19** `E0261` "NAME is not a member of STRUCT": under an FTEQCC profile, a member access
   on a struct value that names no member of the struct or its parents (FTEF-6.11).
+- **QCD-4.20** `E0314` "unsupported vector swizzle '.NAME'": under an FTEQCC profile, a member of
+  a vector or a `.vector` field other than `x`, `y`, `z`, `r`, `g` and `b`, at the name
+  (FTEF-24.2).
+- **QCD-4.21** `E0315` "unsupported string method NAME": a member of a string other than
+  `length`, at the name (FTEF-24.3).
+- **QCD-4.22** `E0316` "not a constant": the `length` of a string that is no constant, at
+  `length` (FTEF-24.3).
+- **QCD-4.23** `E0317` "indirection in TYPE - not a struct or union": a member through a pointer
+  to a type that is neither, at the member (FTEF-24.5).
+- **QCD-4.24** `E0318` "NAME is not a field", on a class's value "NAME is not a field of class
+  CLASS": an entity's member that names a definition that is no field, at the member
+  (FTEF-24.1).
+- **QCD-4.25** `E0319` "Unknown field \"NAME\" in class \"CLASS\"": under an FTEQCC profile, an
+  entity's member in a body that no definition has, CLASS `entity` or the class of the base, at
+  the member; not a fatal error (FTEF-24.6).
+- **QCD-4.26** `E0320` "Opcode \"OP|NAME\" not valid for target. Consider the use of: #pragma
+  target fte", "... #pragma target fte_6614" when only the newest FTE revision has it, and
+  "Opcode \"OP|NAME\" is not supported." otherwise: under an FTEQCC profile, an opcode the target
+  lacks and FTEQCC cannot emulate (FTEF-27.5), at the operator; not a fatal error.
+- **QCD-4.27** `E0321` "strcmp function not defined: cannot emulate string<=>string": `<=>` of
+  strings when the target lacks it and no `strcmp` is defined (FTEF-27.3); a fatal error.
+- **QCD-4.28** `E0322` "Assignment to post-inc result", "postincrement: lhs is readonly",
+  "postdecrement: lhs is readonly", "post increment operator not supported with this type", "post
+  increment operator on bitfield" and "not allowed to make assumptions about pointer sizes.
+  sorry.": under an FTEQCC profile, an assignment to a postfix `++` or `--`, or one of those of a
+  read-only value, a value of a type it does not step or a bitfield, or a narrow pointer's under
+  `undefwordsize` (FTEF-29.1, FTEF-29.5); a fatal error.
+- **QCD-4.29** `E0323` "Type mismatch on assignment. A OP B is not supported": a compound
+  assignment with no opcode for its types (FTEF-29.2); a fatal error.
+- **QCD-4.30** `E0324` "Implicit type mismatch on assignment to NAME. Needed A, got B.": a
+  compound assignment's result the target cannot hold, not under `lax` (FTEF-29.4); a fatal
+  error.
+- **QCD-4.31** `E0325` "left operand must be an l-value (did you mean NAME[0]?)": a store to an
+  array named bare (FTEF-29.3); not a fatal error.
+- **QCD-4.32** `E0326` "void* maths was disabled.", "pointer* maths was disabled on this type.",
+  "pointer sizes were marked as undefined." and "Making assumptions about pointer sizes was
+  blocked.": pointer arithmetic under `undefwordsize` (FTEF-27.10); and "sizeof was disabled, use
+  array.length instead." and "sizeof was disabled." (FTEF-30.8); not a fatal error.
+- **QCD-4.33** `E0327` "incompatible pointer types": the difference of pointers of different
+  types (FTEF-27.10); a fatal error.
+- **QCD-4.34** `E0328` "Type mismatch: !TYPE" and "Type mismatch: ~TYPE": `!` or `~` of a type
+  with no opcode for it (FTEF-30.1); a fatal error.
+- **QCD-4.35** `E0329` "++ operator on read-only value", "-- operator on read-only value" and "++
+  operator on unsupported type": a prefix `++` or `--` refused (FTEF-30.4); a fatal error.
+- **QCD-4.36** `E0330` "Unable to dereference non-pointer type.", "attempt to dereference
+  function type." and "'@' operator only functions on floats and ints. go figure.": `*` or `@` of
+  a value it does not take (FTEF-30.5); a fatal error.
+- **QCD-4.37** `E0332` "Ternary operator with mismatching types": arms of `?:` that `typecmp` tells
+  apart and `typecmp_lax` does not (FTEF-30.3); a fatal error.
+- **QCD-4.38** `E0334` "_length(string) requires an initialised constant" and "_length()
+  unsupported argument type for intrinsic": `_length` of a value it does not measure
+  (FTEF-30.8); a fatal error.
+- **QCD-4.39** `E0331` "Address-of operator is not supported in this form without extensions.
+  Consider the use of: #pragma target fte", and "... Consider the use of either '#pragma target
+  fte' or '#pragma flag enable brokenarray'" for an array: the address of a definition, element
+  or array on a target without `OP_GLOBALADDRESS` (FTEF-31.4); a fatal error.
+- **QCD-4.40** `E0333` "(vector) array index out of bounds" and "(.vector) array index out of
+  bounds": a constant index past a vector's or a `.vector` field's third component (FTEF-31.2);
+  a fatal error.
+- **QCD-4.41** `E0335` "Address-of temp on line FILE:LINE": `&` of a temporary (FTEF-31.4); not
+  a fatal error.
+- **QCD-4.42** `E0336` "ptr-to-variants must be cast to a different type before being read": a
+  read through a pointer to `void` or `variant` (FTEF-31.3); a fatal error.
+- **QCD-4.43** `E0337` "Type mismatch on indexed assignment of NAME: A VALUE, needed B.": a value
+  of another type stored by `ArraySet` (FTEF-31.5); a fatal error.
+- **QCD-4.44** `E0338` "More than 136 parameters": a call of more arguments than FTEQCC passes
+  (FTEF-32.3); a fatal error.
+- **QCD-4.45** `E0339` "Unable to write to read-only out argument": a read-only `out` argument
+  (FTEF-32.6); not a fatal error.
+- **QCD-4.46** `E0340` "_() intrinsic accepts only a string immediate", "type mismatch on parm N"
+  and "Argument to used_sound intrinsic was not a string immediate.": an intrinsic's argument
+  refused (FTEF-32.2); fatal but for the last.
+- **QCD-4.47** `E0342` "Case statements may not use formulas": a `case` value that generates
+  code (FTEF-34.5); a fatal error.
+- **QCD-4.48** `E0343` "Bad switch type": a `switch` of a type no comparison takes, without
+  `OP_SWITCH_*` (FTEF-34.5); a fatal error.
+- **QCD-4.49** `E0344` "thinktime type mismatch": a `thinktime` of no entity or no float
+  (FTEF-34.7); a fatal error.
+- **QCD-4.50** `E0341` "'NAME' returned nothing, expected TYPE" and "'NAME' not supported when
+  returning TYPE": `return;` and `return =` in a function returning a type larger than a vector
+  (FTEF-34.8); a fatal error.
+- **QCD-4.51** `E0345` "Unable to generate statements at global scope (OPNAME).": an initialiser
+  of a global that needs code (FTEF-34.9); not a fatal error.
+- **QCD-4.52** `E0346` "va_arg() intrinsic only works inside varadic functions" (FTEF-32.7); a
+  fatal error.
+- **QCD-4.53** `E0347` "the nextent builtin is not defined": `entnum` with no `nextent`
+  (FTEF-32.2); a fatal error.
+- **QCD-4.54** `E0348` "Accessor NAME has no get function" (FTEF-10.7); a fatal error.
+- **QCD-4.55** `E0349` "Accessor has no set function" (FTEF-10.7); a fatal error.
+- **QCD-4.56** `E0352` "Duplicated default case": a `switch` with a second `default`
+  (FTEF-34.10); a fatal error.
+- **QCD-4.57** `E0353` "ptr-to-bitfld has unsupported bit depth": a bitfield neither 8 nor 16
+  bits wide read or stored through a pointer (FTEF-6.15, FTEF-6.18); a fatal error.
+- **QCD-4.58** `E0357` "left operand (NAME) has a bit offset": a store through the pointer NAME
+  to a bitfield that does not start its word (FTEF-6.18); not a fatal error.
+- **QCD-4.59** `E0358` "QCC_PR_ExpandField: invalid field type TYPE": a field of an 8- or 16-bit
+  integer read (FTEF-2.12); a fatal error.
+- **QCD-4.60** `E0359` "Unable to evaluate to numeric constant": a store to a field of an 8- or
+  16-bit integer (FTEF-2.12); not a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -512,6 +632,102 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   profile, never reported, since FTEQCC gives it only when `numpr_globals` is not `RESERVED_OFS`,
   which no definition makes while it parses (FTEF-12.18); the code is the warning class a
   `#pragma warning` names (FTEF-14.63).
+- **QCD-7.73** `W0231` "type mismatch for OP (A and B)": under an FTEQCC profile with `lax` on,
+  an operator no opcode of whose spelling takes its operands, at the operator (FTEF-23.4).
+  `WARN_LAXCAST`, so F314 names it and `-Fqccx` ignores it (FTEF-22.2).
+- **QCD-7.74** `W0232` "Implicit conversion from A to B": under an FTEQCC profile, an operand of
+  an operator converted to the opcode's type at a cost of 100 or more, a vector to a float or a
+  number down the ranking, at the operator, first the left operand's then the right's
+  (FTEF-23.5). `WARN_IMPLICITCONVERSION`, which `warningnames[]` does not name, so no
+  `#pragma warning` sets it.
+- **QCD-7.75** `W0233` "Division of N by 0", "Division by constant 0", "Signed overflow on division
+  by -1" and "Division by 0": under an FTEQCC profile, a constant division folding meets
+  (FTEF-26.2, FTEF-26.4), at the operator. `WARN_DIVISIONBY0`, F332, ignored unless a `#pragma
+  warning` or the command line turns it on.
+- **QCD-7.76** `W0234` "Numerical overflow. F will be rounded to N", "Denormalized float F will be
+  rounded to N. This is probably not what you want.", "Numerical truncation of A to B." and
+  "Constant float operand F will be truncated to N": under an FTEQCC profile, a constant folding
+  converts with a loss (FTEF-26.2, FTEF-26.3), at the operator; and "Constant int operand N will
+  be truncated to M", a pointer subtraction's negated size (FTEF-27.10). `WARN_OVERFLOW`, F312.
+- **QCD-7.77** `W0235` "NAME function not defined: cannot emulate WHAT", "bitshift function not
+  defined: cannot emulate OP_LSHIFT_F*" (and `RSHIFT`), "the nextent builtin is not defined" and
+  "qccx entity offsets are unsafe": under an FTEQCC profile, an opcode the target lacks whose
+  emulation needs a helper the program does not define (FTEF-27.2, FTEF-27.3, FTEF-27.10), at the
+  operator; and "OP_DIV_U emulation: assuming the high bit is not set..." (FTEF-27.7).
+  Warning 0, which no name sets.
+- **QCD-7.78** `W0236` "OP_ADD_SF: string+float may be unsafe" and "OP_ADD_SI: string+int may be
+  unsafe": a string offset the target lacks (FTEF-27.3). `WARN_STRINGOFFSET`, which no name sets.
+- **QCD-7.79** `W0237` "itof emulation: denormals are unsafe NAME", "ftoi emulation: denormals are
+  unsafe" and "OP_ADD_EF: qccx entity offsets are unsafe, and denormals are unsafe": a conversion
+  the target lacks with no helper (FTEF-27.4); and under `qccx` "string offsetting emulation:
+  denormals are unsafe" for a string's float index (FTEF-31.2). `WARN_DENORMAL`, F313, an error
+  by default.
+- **QCD-7.80** `W0238` "utof emulation: will break if NAME is big": an unsigned to float conversion
+  the target lacks with no helper (FTEF-27.4). `WARN_NOTSTANDARDBEHAVIOUR`, F317.
+- **QCD-7.81** `W0239` "Result of comparison is constant", "Parameter offsets for && are the same"
+  and "Parameters for || are the same": under an FTEQCC profile, a comparison or logic opcode
+  emitted on constants or on one operand twice (FTEF-28.1), at the operator.
+  `WARN_CONSTANTCOMPARISON`, F319.
+- **QCD-7.82** `W0240` "'OP' type mismatch: A with B": a comparison emitted on operands of
+  different basic types (FTEF-28.2); and "type mismatch: A NAME to B TARGET", a value stored that
+  keeps a type the target's is not (FTEF-29.7). `WARN_STRICTTYPEMISMATCH`, F307.
+- **QCD-7.83** `W0241` "Assignment to const" and "Assignment to constant NAME": under an FTEQCC
+  profile, an assignment to a read-only reference (FTEF-29.1, FTEF-29.3), at the operator.
+  `WARN_ASSIGNMENTTOCONSTANT`, Q106.
+- **QCD-7.84** `W0242` "suggest parenthesis for assignment used as truth value": an assignment
+  that is a condition, not parenthesised (FTEF-29.6). `WARN_ASSIGNMENTINCONDITIONAL`, Q201.
+- **QCD-7.85** `W0243` "Implicit type mismatch on assignment to NAME. Needed A, got B." under
+  `lax`: a compound assignment's result the target cannot hold (FTEF-29.4). `WARN_LAXCAST`,
+  F314.
+- **QCD-7.86** `W0244` "Type mismatch on ternary operator: A vs B": arms of `?:` that
+  `typecmp_lax` tells apart (FTEF-30.3). Warning 0, which no name sets.
+- **QCD-7.87** `W0245` "if (string) tests for null, not empty": a string condition (FTEF-30.2).
+  `WARN_IFSTRING_USED`, F322, off by default.
+- **QCD-7.88** `W0246` "if (vector) tests only the first element with the current compiler
+  flags": a vector condition with `ifvector` off (FTEF-30.2). `WARN_IFVECTOR_DISABLED`, which
+  has no name.
+- **QCD-7.89** `W0247` "conditional type mismatch: TYPE": a condition of a type with no test
+  (FTEF-30.2). `WARN_CONDITIONALTYPEMISMATCH`, which has no name.
+- **QCD-7.90** `W0248` "Type mismatch: !void" and the other tests of a `void` value, under `lax`
+  (FTEF-30.1). `WARN_LAXCAST`, F314.
+- **QCD-7.91** `W0249` "(constant) array index out of bounds (0 <= I < N)": a constant index past
+  an array's end (FTEF-31.2). `WARN_BOUNDS`, `bounds`.
+- **QCD-7.92** `W0250` "Address-of operator on local TYPE NAME is unsafe if recursing (and still
+  bloated when not). Consider use of 'static' or 'auto'.": the address of a local, once per
+  local (FTEF-31.4). `WARN_UNSAFELOCALPOINTER`, `localptr`, off by default.
+- **QCD-7.93** `W0251` "More than 8 parameters on varargs function" (FTEF-32.3).
+  `WARN_TOOMANYPARAMETERSVARARGS`, which has no name.
+- **QCD-7.94** `W0252` "too many parameters on call to NAME, argument ARG will be ignored"
+  (FTEF-32.3). `WARN_TOOMANYPARAMETERSFORFUNC`, which has no name.
+- **QCD-7.95** `W0253` "too few parameters on call to NAME, PARAM will be UNDEFINED" and "too few
+  parameters on call to NAME" (FTEF-32.3). `WARN_TOOFEWPARAMS`, Q105.
+- **QCD-7.96** `W0254` "NAME: DIRECTIVE requires TYPE at arg N (got TYPE)", "NAME: surplus
+  trailing TYPE argument(s) for format ...", "NAME: invalid format string: ..." and the other
+  format string warnings: `sprintf` with a constant format (FTEF-33.1). `WARN_FORMATSTRING`,
+  F324.
+- **QCD-7.97** `W0255` the builtin argument checks of `cvar`, `setviewprop`, `addstat` and
+  `sendevent` (FTEF-33.2). `WARN_ARGUMENTCHECK`, F333.
+- **QCD-7.98** `W0256` "'NAME' returned nothing, expected TYPE" (FTEF-34.1).
+  `WARN_MISSINGRETURNVALUE`, Q203.
+- **QCD-7.99** `W0257` "'NAME' returned TYPE, expected void" (FTEF-34.1). `WARN_WRONGRETURNTYPE`,
+  Q204.
+- **QCD-7.100** `W0258` "NAME: not all control paths return a value" (FTEF-34.6).
+  `WARN_MISSINGRETURN`, Q206.
+- **QCD-7.101** `W0259` "NAME: contains unreachable code (line N)" (FTEF-34.6).
+  `WARN_UNREACHABLECODE`, F323.
+- **QCD-7.102** `W0260` "switch caserange MUST be a float or integer" (FTEF-34.5).
+  `WARN_SWITCHTYPEMISMATCH`, which has no name.
+- **QCD-7.103** `W0261` "if !() is specific to fteqcc" and "if not() is specific to fteqcc or
+  hexen2" (FTEF-34.2). `WARN_FTE_SPECIFIC`, F311, off by default.
+- **QCD-7.104** `W0262` "Function NAME returns (large) TYPE. This is inefficient." (FTEF-34.8).
+  `WARN_SLOW_LARGERETURN`, largereturn.
+- **QCD-7.105** `W0263` "ENUM::ITEM not part of switch": an item of a strict enum no case of its
+  `switch` covers (FTEF-34.5). The warning of code 0.
+- **QCD-7.106** `W0264` "Implicit cast from A to B" between an accessor type and its base
+  (FTEF-10.8). The warning of code 0.
+- **QCD-7.107** `W0265` "CLASS::NAME was not qualified. Assuming non-virtual." and a
+  constructor's "should not be static.", "does not return void." and "Constructor arguments are
+  not supported at this time" (FTEF-9.16). `WARN_MISSINGMEMBERQUALIFIER`, F334.
 
 ## QCD-8 Preprocessor errors
 

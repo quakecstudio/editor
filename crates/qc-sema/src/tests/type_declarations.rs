@@ -684,7 +684,10 @@ fn a_missing_member_and_an_arrays_member_are_refused() {
 // spec FTEF-6.9, QCD-3.56: a width's names are values and its literal is an integer
 #[test]
 fn a_bitfields_width_is_an_integer_constant() {
-    assert_eq!(errors("struct S { int a : b; };", &[]), [Code::E0301]);
+    assert_eq!(
+        errors("struct S { int a : b; };", &[]),
+        [Code::E0301, Code::E0262]
+    );
     assert_eq!(errors("struct S { int a : 1.5; };", &[]), [Code::E0262]);
     assert_eq!(errors("float b = 2; struct S { int a : b; };", &[]), []);
     assert_eq!(errors("struct S { int a : (1 + 2); };", &[]), []);
@@ -893,19 +896,21 @@ fn a_bodys_struct_ends_with_the_body() {
     );
 }
 
-// spec FTEF-9.10: the value that makes no "Can only initialise member functions" is the
-// constant 0 however it is written
+// spec FTEF-9.10: the value that makes no "Can only initialise member functions" is `0` or
+// `0i`, as written (FTEF-9.17)
 #[test]
 fn a_null_member_value_is_the_constant_zero() {
+    for source in ["class C { float a = 0; };", "class C { float a = 0i; };"] {
+        assert_eq!(errors(source, &[]), [], "{source}");
+    }
     for source in [
         "class C { float a = 0.0; };",
         "class C { float a = 00; };",
         "class C { float a = 0x0; };",
-        "class C { float a = 0i; };",
+        "class C { float a = 0.5; };",
     ] {
-        assert_eq!(errors(source, &[]), [], "{source}");
+        assert_eq!(errors(source, &[]), [Code::E0257], "{source}");
     }
-    assert_eq!(errors("class C { float a = 0.5; };", &[]), [Code::E0257]);
 }
 
 // spec FTEF-21.7: a struct member written as C's `(*name)(params)` with `qcfuncs` off is a
@@ -1030,4 +1035,75 @@ fn arrays_of_functions_are_checked() {
         [Code::E0309]
     );
     assert_eq!(errors("void() g = [1, g] {};", &[]), []);
+}
+
+// spec FTEF-15.9: with `qcfuncs` off `(name)` after a function type is a QC parameter list, which
+// leaves the typedef no name
+#[test]
+fn a_parenthesised_name_needs_qcfuncs() {
+    assert_eq!(errors("typedef void() (fn); fn g;", &[]), [Code::E0211]);
+    assert!(!errors("#pragma flag disable qcfuncs\ntypedef void() (fn);", &[]).is_empty());
+}
+
+// spec FTEF-20.15: a body's typedefs and struct tags last to their block's end and are no type
+// after the body; its enum is declared as one at file level, divergently
+#[test]
+fn a_bodys_types_last_to_their_block() {
+    for source in [
+        "void() g = { { typedef float t; t x; } };",
+        "void() g = { struct S { float a; }; S x; };",
+        "void() g = { typedef struct S { float a; } T; T x; S y; };",
+        "void() g = { enum E { A }; E e = A; };",
+    ] {
+        assert_eq!(errors(source, &[]), [], "{source}");
+    }
+    assert!(!errors("void() g = { { typedef float t; } t x; };", &[]).is_empty());
+    assert_eq!(
+        errors("void() g = { { struct S { float a; }; } S x; };", &[]),
+        [Code::E0203]
+    );
+    for source in [
+        "void() g = { typedef struct S { float a; } T; }; S y;",
+        "void() g = { struct S { float a; }; }; S y;",
+    ] {
+        assert_eq!(errors(source, &[]), [Code::E0203], "{source}");
+    }
+    assert_eq!(errors("void() g = { enum { A }; }; float x = A;", &[]), []);
+}
+
+// spec FTEF-19.48: a global initialised with an unknown name is no constant, but for a scoped one
+#[test]
+fn an_unknown_initialiser_is_no_constant() {
+    assert_eq!(errors("float y = B;", &[]), [Code::E0214, Code::E0301]);
+    assert_eq!(
+        errors("void() g = { static float x = B; };", &[]),
+        [Code::E0214, Code::E0301]
+    );
+    assert_eq!(
+        errors("void() g = { local float x = B; };", &[]),
+        [Code::E0301]
+    );
+}
+
+// spec FTEF-6.11: an anonymous member's members are searched, in any case under `-Fcaseinsens`
+#[test]
+fn an_anonymous_members_members_are_matched() {
+    let program = "struct S { union { float a; vector v; }; float A; }; S x; \
+                   void() g = { x.a = 1; };";
+    assert_eq!(errors(program, &["-Fcaseinsens"]), [Code::E0252]);
+    assert_eq!(errors(program, &[]), []);
+}
+
+// spec FTEF-9.7: under `-Fcaseinsens` a basic type's word is no parent either
+#[test]
+fn a_basic_type_is_no_parent_in_any_case() {
+    for parent in ["vector", "string", "void"] {
+        let source = format!("class C : {parent} {{ float a; }};");
+        assert_eq!(
+            errors(&source, &["-Fcaseinsens"]),
+            [Code::E0241],
+            "{parent}"
+        );
+        assert_eq!(errors(&source, &[]), [Code::E0241], "{parent}");
+    }
 }

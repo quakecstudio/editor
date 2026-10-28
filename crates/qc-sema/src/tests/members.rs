@@ -9,7 +9,13 @@ use qc_diag::Code;
 
 use super::fte_index_of;
 use crate::resolve::ModuleIndex;
-use crate::symbol::{DefId, DefKind};
+use std::path::PathBuf;
+
+use qc_syntax::Dialect;
+
+use crate::db::Db;
+use crate::expand::ModuleInput;
+use crate::symbol::{DefId, DefKind, FileId};
 
 /// The messages of an index's errors.
 fn messages(index: &ModuleIndex) -> Vec<String> {
@@ -87,7 +93,13 @@ void() user = {
 #[test]
 fn a_member_access_resolves_in_the_class_of_its_base() {
     let index = fte_index_of(TWO_CLASSES);
-    assert_eq!(messages(&index), Vec::<String>::new());
+    // spec FTEF-24.5: a member through a pointer to a class is no struct's (the pinned FTEQCC,
+    // 2026-10-27: line 15, `pb->m`)
+    // spec FTEF-24.7: the class prints as `class B`
+    assert_eq!(
+        messages(&index),
+        ["indirection in class B - not a struct or union"]
+    );
     let b_m = member(&index, "B", "m");
     for needle in ["this.m", "b.m", "self).m", "make_b().m", "pb->m"] {
         assert_eq!(
@@ -189,7 +201,7 @@ fn an_inline_member_body_resolves_in_its_class() {
     let source = "class M { float count; nonvirtual void Bump(void) = { this.count = this.count + 1; \
                   nope = 2; }; };\n";
     let index = fte_index_of(source);
-    assert_eq!(messages(&index), ["Unknown value \"nope\""]);
+    assert_eq!(messages(&index), ["Unknown value \"nope\"."]);
     let count = member(&index, "M", "count");
     assert_eq!(index.refs.iter().filter(|r| r.def == count).count(), 2);
 }
@@ -202,7 +214,7 @@ fn a_class_accessor_member_is_a_function_and_a_member_name() {
     let source = "class H { float v; get float twice = { return nope; }; };\nH h;\n\
                   void() f = { local float n = h.twice; };\n";
     let index = fte_index_of(source);
-    assert_eq!(messages(&index), ["Unknown value \"nope\""]);
+    assert_eq!(messages(&index), ["Unknown value \"nope\"."]);
     assert!(index.defs.iter().any(|d| d.name == "H::get_twice"));
     let params: Vec<_> = index
         .defs
@@ -308,4 +320,133 @@ fn a_scope_that_is_no_class_names_a_global() {
         .map(DefId)
         .unwrap();
     assert_eq!(target_of(&index, source, "E::GREEN", 0), Some(green));
+}
+
+// spec FTEF-10.7: an accessor member is read by its `get` and stored by its `set`, its index
+// made the indexer's type and the stored value the `set` member's
+// spec QCD-4.54: E0348 for a read with no `get`
+// spec QCD-4.55: E0349 for a store with no `set`
+// spec FTEF-10.8: an accessor type and its base cast with a warning, and a member's body is
+// checked with `this` of the accessor's type
+// spec QCD-7.106: W0264 for a cast between an accessor type and its base
+#[test]
+fn accessor_reads_and_stores() {
+    let defs = "string(float b, float i) bufstr_get = #0; \
+                void(float b, float i, string s) bufstr_set = #0;\n\
+                accessor strbuf : float { inline get string at[float idx] = \
+                { return bufstr_get(this, idx); }; inline set string at[float idx] = \
+                { bufstr_set(this, idx, value); }; get float size = { return 1; }; \
+                set float only = { }; };\n\
+                strbuf h; float a; string s;\n";
+    let fte_messages = |source: &str| -> Vec<String> {
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        let file = FileId(0);
+        db.set_file(file, PathBuf::from("t.qc"), source.as_bytes().to_vec());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![file],
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .map(|d| d.diagnostic.message.clone())
+        .collect()
+    };
+    let body = |statement: &str| {
+        let messages = fte_messages(&format!("{defs}void() g = {{ {statement} }};\n"));
+        // The accessor's own bodies warn of `this` passed as its base.
+        messages
+            .into_iter()
+            .filter(|m| m != "Implicit cast from strbuf to float")
+            .collect::<Vec<_>>()
+    };
+    for quiet in ["s = h.at[1];", "h.at[1] = s;", "a = h.size;"] {
+        assert_eq!(body(quiet), Vec::<String>::new(), "{quiet}");
+    }
+    let cases = [
+        ("h.at[1] = a;", vec!["Cannot cast from float to string"]),
+        ("a = h.at[1];", vec!["Cannot cast from string to float"]),
+        ("h.size = 2;", vec!["Accessor has no set function"]),
+        ("a = h.only;", vec!["Accessor only has no get function"]),
+        (
+            "a = h.nope;",
+            vec![
+                "nope is not a member of strbuf",
+                "Cannot cast from void to float",
+            ],
+        ),
+        (
+            "s = h.at[\"x\"];",
+            vec!["Implicit type mismatch. Needed float, got string."],
+        ),
+        (
+            "h.at[1] += \"x\";",
+            vec!["Type mismatch on assignment. string += string is not supported"],
+        ),
+    ];
+    for (statement, expected) in cases {
+        assert_eq!(body(statement), expected, "{statement}");
+    }
+    assert_eq!(
+        fte_messages(&format!("{defs}void() g = {{}};\n"))
+            .iter()
+            .filter(|m| *m == "Implicit cast from strbuf to float")
+            .count(),
+        2
+    );
+    let casts = "accessor H : float; H h; float b;\nvoid() g = { b = h; h = b; };\n";
+    assert_eq!(
+        fte_messages(casts),
+        [
+            "Implicit cast from H to float",
+            "Implicit cast from float to H"
+        ]
+    );
+    assert_eq!(
+        fte_messages("accessor H : string; H h; float b;\nvoid() g = { b = h; };\n"),
+        ["Cannot cast from string to float"]
+    );
+}
+
+// spec FTEF-10.8: a literal of an accessor's base type casts to it with a warning, an operator
+// casts an accessor operand to its opcode's type, negation refuses one, and a member that takes
+// an index needs its `[`
+// spec QCD-7.106: W0264 "Implicit cast from A to B"
+#[test]
+fn accessor_values_in_expressions() {
+    let body = |statement: &str| -> Vec<(Code, String)> {
+        let source = format!(
+            "#pragma target fte\naccessor A : float {{ get float y = {{ return 1; }}; \
+             get float z[__int32 i] = {{ return 1; }}; set float z[__int32 i] = {{}}; }};\n\
+             A a; float f;\nvoid() g = {{ {statement} }};\n"
+        );
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        let file = FileId(0);
+        db.set_file(file, PathBuf::from("t.qc"), source.into_bytes());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![file],
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .map(|d| (d.diagnostic.code, d.diagnostic.message.clone()))
+        .collect()
+    };
+    let cast = |from: &str, to: &str| (Code::W0264, format!("Implicit cast from {from} to {to}"));
+    assert_eq!(body("a = 1;"), [cast("float", "A")]);
+    assert_eq!(body("local A l = 0;"), [cast("float", "A")]);
+    assert_eq!(body("a = 1i;"), []);
+    assert_eq!(body("f = a * f;"), [cast("A", "float")]);
+    assert_eq!(body("f = f + a;"), [cast("A", "float")]);
+    assert_eq!(
+        body("f = -a;"),
+        [(Code::E0302, "type mismatch for -".to_owned())]
+    );
+    for (statement, found) in [("a.z = f;", "="), ("f = a.z + 1;", "+"), ("f = a.z;", ";")] {
+        assert_eq!(
+            body(statement),
+            [(Code::E0204, format!("expected [, found {found}"))],
+            "{statement}"
+        );
+    }
+    assert_eq!(body("a.z[1] = f; f = a.z[1];"), []);
 }

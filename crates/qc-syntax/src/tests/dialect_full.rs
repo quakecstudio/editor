@@ -278,10 +278,10 @@ fn pointer_types_parse() {
 #[test]
 fn pointer_operators_parse() {
     assert_eq!(first_expr("a = (__variant *)b;"), "(= a (cast b))");
-    assert_eq!(first_expr("a = &b;"), "(= a (unary None b))");
-    assert_eq!(first_expr("a = *b;"), "(= a (unary None b))");
-    assert_eq!(first_expr("++a;"), "(unary None a)");
-    assert_eq!(first_expr("--a;"), "(unary None a)");
+    assert_eq!(first_expr("a = &b;"), "(= a (unary Some(AddressOf) b))");
+    assert_eq!(first_expr("a = *b;"), "(= a (unary Some(Deref) b))");
+    assert_eq!(first_expr("++a;"), "(unary Some(PreIncrement) a)");
+    assert_eq!(first_expr("--a;"), "(unary Some(PreDecrement) a)");
 }
 
 // spec FTEF-4.3: `p->m` selects a member through a pointer.
@@ -686,9 +686,12 @@ fn for_clause_lists_parse() {
 }
 
 // spec FTEF-16.10: a call's result may be assigned to under FTEQCC, not in vanilla.
+// spec QC-27.10: vanilla's left side of `=` must be a name or a field access
 #[test]
 fn assignment_to_a_call_parses() {
     fte_ok(&in_body("a = f() = b;"));
+    fte_ok(&in_body("1 = a;"));
+    fte_ok(&in_body("(a = 2) = 3;"));
     assert_eq!(
         parse(in_body("a = f() = b;").as_bytes())
             .errors()

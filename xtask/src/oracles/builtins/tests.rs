@@ -41,8 +41,8 @@ fn bound_as(number: i32, name: &str) -> Outcome {
 }
 
 // spec FTE-23.15: every case of the cross product is recorded, and the profile's outcome is the
-// pinned FTEQCC's or id's qcc's, or differs only as QC-27.8, QC-27.9, FTEF-13.8 and
-// FTEF-14.47 say
+// pinned FTEQCC's or id's qcc's, or differs only as QC-27.8, QC-27.9, FTEF-13.8, FTEF-14.47
+// and FTEF-20.15 say
 // spec FTEF-19.18: the definitions family is recorded and agrees but for QC-27.8
 // spec FTEF-21.16: the flag family is recorded and agrees on every case
 // spec FTEF-22.7: the cast family is recorded and agrees on every case
@@ -59,7 +59,13 @@ fn the_profile_agrees_with_the_recorded_oracles() {
     assert_eq!(tally.differ, 0, "{tally}");
     assert_eq!(
         tally.expected.keys().copied().collect::<Vec<_>>(),
-        ["FTEF-13.8", "FTEF-14.47", "QC-27.8", "QC-27.9"]
+        [
+            "FTEF-13.8",
+            "FTEF-14.47",
+            "FTEF-20.15",
+            "QC-27.8",
+            "QC-27.9"
+        ]
     );
     assert!(tally.agree > 6000, "{tally}");
 }

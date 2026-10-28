@@ -49,6 +49,7 @@ mod casts;
 mod declarations;
 mod defs;
 mod directives;
+mod expressions;
 mod flags;
 mod keywords;
 mod lexical;
@@ -1221,6 +1222,7 @@ pub(crate) fn cases() -> Vec<Case> {
     cases.extend(casts::cases());
     cases.extend(defs::cases());
     cases.extend(types::cases());
+    cases.extend(expressions::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));
@@ -1513,6 +1515,16 @@ pub(crate) fn expected_difference(
         // FTEF-13.8: FTEQCC never finishes writing a code of 0x80000000 or more.
         if *oracle == Outcome::Hangs && HANGING.iter().any(|value| case.source.contains(value)) {
             return Some("FTEF-13.8");
+        }
+        // FTEF-20.15: a body's enum is declared at file level here, so its names are seen
+        // after the body, where FTEQCC's are the function's.
+        if *oracle == Outcome::Rejected
+            && *ours != Outcome::Rejected
+            && case
+                .texts()
+                .any(|t| t.contains("= { enum") || t.contains("= { typedef enum"))
+        {
+            return Some("FTEF-20.15");
         }
         // FTEF-14.47: an `#eof` that is not a file's first line ends the text here, where the
         // pinned FTEQCC crashes, reading on from the end it made; and `#merge` and `#datafile`

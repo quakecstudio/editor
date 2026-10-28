@@ -333,7 +333,9 @@ fn named_initialisers_are_cast() {
     assert_eq!(fte(".float fl;\nfloat x = fl;\n"), [Code::E0213]);
     assert_eq!(fte(".float fl;\n.float g = fl;\n"), []);
     assert_eq!(
-        fte("class C { void() m; };\n.vector origin;\nvoid() C::m = { vector v = origin; };\n"),
+        fte(
+            "class C { nonvirtual void() m; };\n.vector origin;\nvoid() C::m = { vector v = origin; };\n"
+        ),
         []
     );
     assert_eq!(fte("string s = _(\"a\");\n"), []);
@@ -367,10 +369,7 @@ fn a_macro_number_for_a_function_cannot_be_cast() {
     // The function it would have been is left with no body.
     assert_eq!(
         found,
-        [
-            "Cannot cast from float to void()",
-            "function f was not defined"
-        ]
+        ["Cannot cast from float to void()", "function f has no body"]
     );
 }
 
@@ -522,10 +521,7 @@ fn default_values() {
         (Code::E0218, "Default value not initialized yet".to_owned())
     );
     assert_eq!(fte("float y = 1;\nvoid(float a = y) g = #6;\n"), []);
-    assert_eq!(
-        fte("void(float a = \"s\") g = #6;\n"),
-        [Code::E0213, Code::E0211]
-    );
+    assert_eq!(fte("void(float a = \"s\") g = #6;\n"), [Code::E0213]);
     assert_eq!(
         fte("void(float a = 1) g;\nvoid(float a = 2) g = #6;\n"),
         [Code::E0205, Code::E0211]
@@ -571,8 +567,8 @@ fn redeclarations_of_another_type() {
         fte_only("float(float a, optional float b) g;\nfloat(float a) g = #6;\n"),
         (
             Code::W0209,
-            "Optional arguments differ on redeclaration of g. float(float), should be \
-             float(float, float)"
+            "Optional arguments differ on redeclaration of g. float(float a), should be \
+             float(float a, optional float b)"
                 .to_owned()
         )
     );
@@ -594,7 +590,7 @@ fn redeclarations_of_another_type() {
         fte_only("void() droptofloor = #6;\nfloat(float a) droptofloor;\n"),
         (
             Code::W0210,
-            "droptofloor builtin was wrongly redefined as float(float). ignoring later \
+            "droptofloor builtin was wrongly redefined as float(float a). ignoring later \
              definition"
                 .to_owned()
         )
@@ -606,7 +602,7 @@ fn redeclarations_of_another_type() {
         )[1],
         (
             Code::W0211,
-            "Type redeclaration of float(float) anglemod replaces existing variable".to_owned()
+            "Type redeclaration of float(float a) anglemod replaces existing variable".to_owned()
         )
     );
     // A `noref` mark is a reference too (`def->referenced = true;`).
@@ -652,7 +648,7 @@ fn an_extensions_file_keeps_the_first_declaration() {
         found,
         [(
             Code::W0210,
-            "spin builtin was redefined as float(float). ignoring alternative definition"
+            "spin builtin was redefined as float(float a). ignoring alternative definition"
                 .to_owned()
         )]
     );
@@ -834,7 +830,7 @@ fn enum_values() {
     );
     assert_eq!(
         fte("enum class E : float { A };\nfloat x = A;\n"),
-        [Code::E0301]
+        [Code::E0214, Code::E0301]
     );
 }
 
@@ -957,7 +953,10 @@ fn scoped_definitions() {
         fte_only("class C { float a; };\nvoid() C::b = {};\n"),
         (Code::W0216, "C::b is not part of class C".to_owned())
     );
-    assert_eq!(fte("class C { void() a; };\nvoid() C::a = {};\n"), []);
+    assert_eq!(
+        fte("class C { nonvirtual void() a; };\nvoid() C::a = {};\n"),
+        []
+    );
     assert_eq!(
         fte_only("struct S { float a; };\nfloat S::a;\n"),
         (Code::E0226, "S::a is not part of class S".to_owned())
@@ -1081,7 +1080,9 @@ fn type_names_must_be_types() {
 #[test]
 fn a_for_statements_locals_leave_scope() {
     assert_eq!(
-        fte("void() g = { for (float i = 0;;) {} for (string i = \"\";;) { i = \"a\"; } };\n"),
+        fte(
+            "void() g = { for (float i = 0; i < 1;) {} for (string i = \"\";;) { i = \"a\"; } };\n"
+        ),
         []
     );
     let index = fte_index_of(
@@ -1168,7 +1169,11 @@ fn qualifiers_are_read() {
 fn character_constants_and_calls() {
     assert_eq!(fte("float f = 'a';\n"), []);
     assert_eq!(fte("string s = 'a';\n"), [Code::E0213]);
-    assert_eq!(fte("string(float a) t = #6;\nstring s = t(5);\n"), []);
+    // A call at global scope generates statements (FTEF-34.9).
+    assert_eq!(
+        fte("string(float a) t = #6;\nstring s = t(5);\n"),
+        [Code::E0345, Code::E0345, Code::E0214]
+    );
 }
 
 // spec FTEF-19.7: the type with more parameters becomes the definition's, and an out parameter
@@ -1269,15 +1274,16 @@ fn extern_and_static_on_a_variable() {
     );
 }
 
-// spec FTEF-19.32: an initialiser that is an expression is compared by its text and not typed,
-// and an attribute before the type is refused, as the pinned FTEQCC refuses it
+// spec FTEF-19.46: an initialiser that is an expression is compared by its text, and an
+// attribute before the type is refused, as the pinned FTEQCC refuses it
 // spec FTEF-22.5: a module resolved without its preprocessing has no target, and its `extern`
 // functions are not checked
 #[test]
 fn what_the_profile_does_not_model() {
     assert_eq!(fte("float x = 1 + 1;\nfloat x = 2;\n"), [Code::E0206]);
     assert_eq!(fte("float x = 1 + 1;\nfloat x = 1 + 1;\n"), []);
-    assert_eq!(fte("string s = 1 + 1;\n"), []);
+    // The check stage types it (FTEF-34.9).
+    assert_eq!(fte("string s = 1 + 1;\n"), [Code::E0213]);
     assert_eq!(fte("extern void() g;\n"), []);
     let parse = qc_syntax::parse_with(b"[[alias(\"y\")]] float x;\n", Dialect::Fteqcc);
     let parsed: Vec<Code> = parse.diagnostics().iter().map(|d| d.code).collect();
@@ -1348,5 +1354,26 @@ fn intrinsics_autocvars_keywords_and_qualifiers() {
     assert_eq!(
         messages("extern static void() g;\n"),
         ["Conflicting storage classes."]
+    );
+}
+
+// spec FTEF-19.49: a refused default value ends the declaration before its name, which is then
+// neither defined nor compared with an earlier definition
+#[test]
+fn a_refused_default_ends_the_declaration() {
+    let cast = (Code::E0213, "Cannot cast from vector to float".to_owned());
+    assert_eq!(
+        fte_messages("void(float a, optional float b = '1 2 3') g;\nvoid() h = { g(1); };\n"),
+        [
+            cast.clone(),
+            (Code::E0301, "Unknown value \"g\".".to_owned())
+        ]
+    );
+    assert_eq!(
+        fte_messages(
+            "void(float a, optional float b = '1 2') g;\n\
+             void(float a, optional float b = '1 2', float c) g;\n"
+        ),
+        [cast.clone(), cast]
     );
 }

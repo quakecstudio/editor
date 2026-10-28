@@ -11,7 +11,7 @@ use qc_lexer::{LexFlag, LexFlags};
 use qc_preproc::{CompilerFlags, FteFlag};
 
 use super::{Cast, ConstType, Kind, Literal, Source, Supply};
-use crate::ty::{FunctionType, SimpleType, Type};
+use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
 
 fn simple(ty: SimpleType) -> Type {
     Type::Simple(ty)
@@ -113,6 +113,7 @@ fn a_float_casts_to_numbers_and_vectors() {
             ret: simple(SimpleType::Void),
             params: Vec::new(),
             variadic: false,
+            labels: ParamLabels::default(),
         })),
     ] {
         assert!(refused(literal("1"), &to), "{to:?}");
@@ -184,7 +185,7 @@ fn named_definitions_cast_by_their_type() {
 }
 
 // spec FTEF-19.31: C type words and registered type names are the type FTEF-2.8 makes, an 8-
-// or 16-bit integer none the model follows
+// or 16-bit integer cast as its parent, `int` or `uint`, and named by its own name
 #[test]
 fn c_words_name_their_kinds() {
     for (words, kind) in [
@@ -205,8 +206,8 @@ fn c_words_name_their_kinds() {
         ("__uint", Kind::Uint),
         ("__int64", Kind::Int64),
         ("__uint64", Kind::Uint64),
-        ("__char", Kind::Opaque),
-        ("__short", Kind::Opaque),
+        ("__char", Kind::Integer),
+        ("__short", Kind::Integer),
         ("_Bool", Kind::Opaque),
         ("int int", Kind::Opaque),
         ("long", Kind::Opaque),
@@ -217,6 +218,9 @@ fn c_words_name_their_kinds() {
     assert_eq!(named("unsigned __long").fteqcc_name(), "__uint64");
     assert_eq!(named("__long __double").fteqcc_name(), "__double");
     assert_eq!(named("Player").fteqcc_name(), "Player");
+    assert_eq!(named("__uint8").fteqcc_kind(), Kind::Uint);
+    assert_eq!(named("__char").fteqcc_name(), "__int8");
+    assert_eq!(named("unsigned __short").fteqcc_name(), "__uint16");
     assert!(Kind::Double.is_numeric());
     assert!(!Kind::Vector.is_numeric());
 }
@@ -260,6 +264,7 @@ fn pointers_and_warnings() {
             ret: simple(SimpleType::Void),
             params: vec![simple(param)],
             variadic: false,
+            labels: ParamLabels::default(),
         }))
     };
     assert!(warns(
@@ -280,6 +285,7 @@ fn types_are_the_same_part_by_part() {
             ret,
             params,
             variadic,
+            labels: ParamLabels::default(),
         }))
     };
     let float = simple(SimpleType::Float);
@@ -319,6 +325,7 @@ fn type_names_are_fteqcc_spellings() {
         ret: simple(SimpleType::Void),
         params: vec![simple(SimpleType::Float)],
         variadic: true,
+        labels: ParamLabels::default(),
     }));
     assert_eq!(func.fteqcc_name(), "void(float, ...)");
     assert_eq!(

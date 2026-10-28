@@ -42,7 +42,7 @@ fn reviewer_goto_definition_is_per_file() {
     assert!(index.references_at(FileId(1), offset, true).is_empty());
 }
 
-// spec QC-10.6: function types compare structurally with parameter names excluded, also
+// spec QC-10.10: function types compare structurally with parameter names excluded, also
 // when a parameter is itself a function, so a prototype and a body naming them differently
 // declare one function
 #[test]
@@ -103,7 +103,7 @@ fn reviewer_file_paths_are_kept() {
 // members before a global of the same name
 #[test]
 fn reviewer_member_before_global() {
-    let source = "float hp;\nclass c { float hp; void() hurt = { this.hp = 1; }; };";
+    let source = "float hp;\nclass c { float hp; nonvirtual void() hurt = { this.hp = 1; }; };";
     let index = fte_index_of(source);
     assert!(index.diagnostics.is_empty(), "{:?}", index.diagnostics);
     let use_at = nth_offset(source, "hp", 2);
@@ -121,7 +121,7 @@ fn nested_prototype(depth: usize, prefix: &str, inner: &str) -> String {
     format!("{ty} run")
 }
 
-// spec QC-10.6: function types nested 200 deep compare by their parameter types at every
+// spec QC-10.10: function types nested 200 deep compare by their parameter types at every
 // level, names excluded: a prototype and a body naming every parameter differently are one
 // function, and a body whose innermost parameter has another type is a mismatch
 #[test]

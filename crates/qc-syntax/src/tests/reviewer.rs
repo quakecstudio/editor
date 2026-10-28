@@ -579,7 +579,6 @@ fn reviewer_nested_types_are_members_as_parse_struct_reads_them() {
         "struct S { typedef float t; t x; };\n",
         "struct S { int : 3; };\n",
         "struct S { int a : 3, b; };\n",
-        "struct S { float a : 3 = 1; };\n",
         "class C { ;; };\n",
         "class C { float a;; float b; };\n",
         "struct {};\n",

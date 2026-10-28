@@ -613,7 +613,18 @@ impl Parser<'_> {
         let function = (qcfuncs && self.at_function_params()) || self.type_function;
         // FTEF-18.15: `QCC_PR_ParseDefs` loops `while(QCC_PR_CheckToken ("("))`, so each
         // further parameter list makes a function returning the type so far.
-        while function && self.at_function_params() {
+        // A first list of a name that is no type is "expected function arg list", which the
+        // semantic model reports as the name's ("is not a type"); no list after it is counted.
+        let named_first = self.at(K::LParen)
+            && self.nth(1).is_some_and(|t| t.kind == K::Name)
+            && self.nth(2).is_some_and(|t| t.kind == K::RParen)
+            && self.type_word(1).is_none()
+            && !self.c_type_word(1)
+            && !self.declared_type(1);
+        let mut lists = 0_usize;
+        while function && self.at_function_params() && !(levels > 0 && self.at_parenthesised_name())
+        {
+            lists = lists.saturating_add(1);
             levels = levels.saturating_add(1);
             if !self.enter() {
                 break;
@@ -624,6 +635,7 @@ impl Parser<'_> {
         }
         self.leave(levels);
         self.type_derived = levels > 0;
+        self.type_lists = if named_first { lists.min(1) } else { lists };
         Some(TypeShape {
             function,
             field: false,
@@ -657,6 +669,24 @@ impl Parser<'_> {
             field: false,
             qcfuncs,
         }
+    }
+
+    /// FTEF-15.9: whether `(name)` starts here with `qcfuncs` on, `name` no type, and what ends a
+    /// declarator after it, `;`, `=`, `,` or `[`: after a function type no parameter list, which
+    /// would leave the declarator no name, but C's parenthesised name
+    /// (`QCC_PR_ParseFunctionType` finds no type, and the C-style branch reads the name with no
+    /// `*`). With `qcfuncs` off the list is read as a QC one and the name is missing.
+    pub(super) fn at_parenthesised_name(&self) -> bool {
+        self.at(K::LParen)
+            && self.flag_ahead(0, FteFlag::Qcfuncs)
+            && self.nth(1).is_some_and(|t| t.kind == K::Name)
+            && self.type_word(1).is_none()
+            && !self.c_type_word(1)
+            && !self.declared_type(1)
+            && self.nth(2).is_some_and(|t| t.kind == K::RParen)
+            && self
+                .nth(3)
+                .is_some_and(|t| matches!(t.kind, K::Semicolon | K::Eq | K::Comma | K::LBracket))
     }
 
     /// Whether a type's parameter list starts here: a `(` that opens no `(*name)` (FTEF-15.3).
@@ -1230,7 +1260,18 @@ impl Parser<'_> {
             self.finish_node();
             return;
         }
-        if self.fte_type().is_some() {
+        // FTEF-10.9: `QCC_PR_ParseAccessorMember` reads a type's name and its `*`s, so a
+        // parameter list after it is where the `=` should be.
+        let paren = self.nth(1).filter(|t| t.kind == K::LParen).map(|t| t.span);
+        if let Some(shape) = self.fte_type() {
+            if shape.function
+                && let Some(span) = paren
+            {
+                self.error_at(Code::E0204, "expected =, found (", span);
+                self.recover(true);
+                self.finish_node();
+                return;
+            }
             if self.at(K::Name) {
                 self.name();
             }
@@ -1669,30 +1710,33 @@ impl Parser<'_> {
     }
 
     /// `name:` or `:name` (FTEF-18.23). A label read since the end of the last function is
-    /// "Duplicate label NAME", a warning, and is not added again.
+    /// "Duplicate label NAME", a warning, and is not added again; a duplicate `name:` leaves its
+    /// `:` (`QCC_PR_Lex(); return;`), which starts a `:name` label. A `:` before no name is
+    /// `invalid label name "TOKEN"`.
     pub(super) fn label_stmt(&mut self) {
         self.start_node(K::LabelStmt);
         let frikqcc = self.at(K::Colon);
         if frikqcc {
             self.bump();
         }
-        let label = self
+        let Some((name, span)) = self
             .current()
             .filter(|t| t.kind == K::Name)
-            .map(|t| (t.text.clone(), t.span));
-        if !self.name() {
-            // `invalid label name`: the statement is abandoned.
+            .map(|t| (t.text.clone(), t.span))
+        else {
+            let token = self.current().map(|t| t.text.clone()).unwrap_or_default();
+            self.error(Code::E0201, format!("invalid label name \"{token}\""));
             self.recover(true);
+            self.finish_node();
+            return;
+        };
+        self.name();
+        if self.labels.contains(&name) {
+            self.warning_at(Code::W0312, format!("Duplicate label {name}"), span);
         } else {
+            self.labels.push(name);
             if !frikqcc {
                 self.bump();
-            }
-            if let Some((name, span)) = label {
-                if self.labels.contains(&name) {
-                    self.warning_at(Code::W0312, format!("Duplicate label {name}"), span);
-                } else {
-                    self.labels.push(name);
-                }
             }
         }
         self.finish_node();

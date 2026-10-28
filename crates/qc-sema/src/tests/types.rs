@@ -10,7 +10,7 @@ use qc_syntax::{Dialect, QC_MAX_NESTING};
 
 use crate::db::Db;
 use crate::symbol::FileId;
-use crate::ty::{FROM_AST_CALLS, FunctionType, SimpleType, Type, TypeContext};
+use crate::ty::{FROM_AST_CALLS, FunctionType, ParamLabels, SimpleType, Type, TypeContext};
 
 /// Lowers the type of the first file-level declaration in `source`.
 fn first_decl_type(source: &str) -> Type {
@@ -84,11 +84,12 @@ fn function_type_lowers() {
                 Type::Simple(SimpleType::Vector),
             ],
             variadic: false,
+            labels: ParamLabels::default(),
         }))
     );
 }
 
-// spec QC-10.6: two function types are equal when return type, parameter count and
+// spec QC-10.10: two function types are equal when return type, parameter count and
 // parameter types match; parameter names do not matter.
 #[test]
 fn function_types_equal_ignoring_param_names() {
@@ -97,7 +98,7 @@ fn function_types_equal_ignoring_param_names() {
     assert_eq!(a, b);
 }
 
-// spec QC-10.6: a different parameter type makes a different type.
+// spec QC-10.10: a different parameter type makes a different type.
 #[test]
 fn function_types_differ_by_param_type() {
     let a = first_decl_type("void(float p) f;");

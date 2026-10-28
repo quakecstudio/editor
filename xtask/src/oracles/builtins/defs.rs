@@ -465,7 +465,7 @@ const TYPE_SITES: &[&str] = &[
     "extern \"C\" T x;\n",
 ];
 
-/// Places a name that is no type is not diagnosed, which FTEF-19.32 lists: a `typedef`'s target,
+/// Places a name that is no type is not diagnosed, which FTEF-19.46 lists: a `typedef`'s target,
 /// a struct's or class's member, a cast's and a `sizeof` operand's `*`. The programs read them
 /// where the name is a type, so a spelling is read here only when the option finds it.
 const DECLARED_SITES: &[&str] = &[

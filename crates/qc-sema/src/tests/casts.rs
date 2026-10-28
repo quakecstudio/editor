@@ -81,10 +81,7 @@ fn lax_makes_refused_casts_warnings() {
         codes(&format!("{lax}float(float a = \"a\") g = #2;\n")),
         [Code::W0229]
     );
-    assert_eq!(
-        codes("float(float a = \"a\") g = #2;\n"),
-        [Code::E0213, Code::E0211]
-    );
+    assert_eq!(codes("float(float a = \"a\") g = #2;\n"), [Code::E0213]);
     assert_eq!(
         diags(&format!(
             "{lax}enum class E : float {{ A }};\nfloat x = E::A;\n"
@@ -426,7 +423,7 @@ fn casts_compare_types_through_typedefs_and_pointers() {
         diags("void() g = { void(float x) a; void(vector x) b = a; };\n"),
         one(
             Code::W0220,
-            "Implicit cast from void(float) to void(vector)"
+            "Implicit cast from void(float x) to void(vector x)"
         )
     );
     assert_eq!(
@@ -457,4 +454,31 @@ fn state_headers_and_typedef_enum_values() {
         codes("typedef string str;\nconst str s = \"a\";\nenum { A = s };\n"),
         [Code::E0227]
     );
+}
+
+// spec FTEF-24.7: a function type prints its parameters' marks, names and defaults
+#[test]
+fn function_types_print_their_parameters() {
+    for (ty, shown) in [
+        ("void(float x, string y)", "void(float x, string y)"),
+        ("void(float x, ...)", "void(float x, ...)"),
+        (
+            "void(float x, optional float y = 2)",
+            "void(float x, optional float y = 2f)",
+        ),
+        (
+            "void(float x = 0.5, vector v = '1 2 3', string s = \"a\")",
+            "void(float x = 0.5f, vector v = '1 2 3', string s = \"a\")",
+        ),
+        ("void(__inout float x)", "void(inout float x)"),
+        ("void(int x = 3)", "void(__int32 x = 0x3i)"),
+    ] {
+        assert_eq!(
+            diags(&format!(
+                "{ty} h = {{}}; float b; void() g = {{ b = h; }};\n"
+            )),
+            [(Code::E0213, format!("Cannot cast from {shown} to float"))],
+            "{ty}"
+        );
+    }
 }

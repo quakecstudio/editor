@@ -1,0 +1,789 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (c) 2004-2025 FTE's team and its contributors
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73: qcc/pr_comp.c, PR_ParseDefs
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_ParseDefs, QCC_PR_GenerateInitializerType, QCC_PR_ParseInitializerType_Internal, QCC_PR_ParseDefaultInitialiser
+
+//! Initialisers: a definition's value, its constness, array initialisers and parameter
+//! defaults, cast to the definition's type as FTEQCC casts them (QC-11.3, FTEF-19.2 to
+//! FTEF-19.6, FTEF-19.31).
+
+use qc_diag::Code;
+use qc_preproc::{CompilerFlags, FteFlag};
+use qc_syntax::c_scalar::CScalar;
+
+use crate::cast::{Cast, ConstType, Kind, Source, Supply};
+use crate::lower::{ArrayDim, LiteralValue, Qualifier, RawDecl, RawValue, ValueKind};
+use crate::resolve::{Facts, Fatal, Holder, MAX_TYPEDEF_DEPTH, REPLACEABLE_BUILTINS, Resolver};
+use crate::symbol::{DefId, DefKind, FileId, Location};
+use crate::ty::{SimpleType, Type};
+
+impl Resolver<'_> {
+    /// FTEF-19.4, FTEF-19.11: what `QCC_PR_ParseDefs` reports of an initialiser before it reads
+    /// it: a `shared` definition given a value; a body for a definition already initialised,
+    /// "redeclaration of function body", but for `anglemod` and `crossproduct`, whose builtin
+    /// a body replaces with a warning; and a `wrap` that has nothing to wrap.
+    pub(in crate::resolve) fn check_initialisation(
+        &mut self,
+        decl: &RawDecl,
+        existing: Option<DefId>,
+        location: Location,
+    ) -> bool {
+        // FTEF-12.19: autoprototyping skips the initialiser before any of this is read.
+        if decl.skipped_init {
+            return false;
+        }
+        if !decl.initialized {
+            if decl.has(&Qualifier::Accumulate)
+                && let Some(existing) = existing
+                && self.index.def(existing).is_some_and(|d| d.initialized)
+                && !self.facts.get(existing.0).is_some_and(|f| f.accumulate)
+            {
+                self.report(
+                    Code::W0218,
+                    location,
+                    format!(
+                        "{} redeclared to accumulate after initial declaration",
+                        decl.name
+                    ),
+                );
+            }
+            self.warn_constness_change(decl, existing, location, false);
+            return false;
+        }
+        let flag = |read: fn(&Facts) -> bool| {
+            existing.is_some_and(|d| self.facts.get(d.0).is_some_and(read))
+        };
+        let (shared, accumulating, builtin) = (
+            flag(|f| f.shared),
+            flag(|f| f.accumulate),
+            flag(|f| f.builtin),
+        );
+        if decl.has(&Qualifier::Shared) || shared {
+            self.report(
+                Code::E0221,
+                location,
+                "shared values may not be assigned an initial value".to_owned(),
+            );
+            return true;
+        }
+        let initialized =
+            existing.is_some_and(|d| self.index.def(d).is_some_and(|d| d.initialized));
+        let weak = decl.has(&Qualifier::Weak);
+        let wrap = decl.has(&Qualifier::Wrap);
+        // FTEF-15.5: a weak definition of an initialised one, or a weak wrap, is skipped.
+        if (initialized && weak) || (!initialized && weak && wrap) {
+            return false;
+        }
+        self.warn_constness_change(decl, existing, location, true);
+        if decl.has(&Qualifier::Accumulate) || accumulating {
+            if initialized && !accumulating && !wrap {
+                self.report(
+                    Code::W0218,
+                    location,
+                    format!(
+                        "{} redeclared to accumulate after initial declaration",
+                        decl.name
+                    ),
+                );
+            }
+            return false;
+        }
+        if decl.body.is_none() {
+            return false;
+        }
+        if wrap {
+            if !initialized {
+                self.report(
+                    Code::E0222,
+                    location,
+                    "wrapper function does not wrap anything".to_owned(),
+                );
+                return true;
+            } else if decl.body.as_ref().is_some_and(|b| {
+                !b.uses
+                    .iter()
+                    .chain(&b.state_uses)
+                    .any(|u| u.name == "prior")
+            }) {
+                self.report(
+                    Code::E0223,
+                    location,
+                    format!(
+                        "Wrapper function \"{}\" does not refer to its prior function",
+                        decl.name
+                    ),
+                );
+                return true;
+            }
+            return false;
+        }
+        if initialized && existing.is_some_and(|e| !self.redefinable.contains(&e)) {
+            if builtin && REPLACEABLE_BUILTINS.contains(&decl.name.as_str()) {
+                self.report(
+                    Code::W0217,
+                    location,
+                    format!("{} already declared as a builtin", decl.name),
+                );
+                if let Some(existing) = existing {
+                    self.unused.insert(existing);
+                }
+            } else {
+                self.report(
+                    Code::E0216,
+                    location,
+                    "redeclaration of function body".to_owned(),
+                );
+            }
+        }
+        false
+    }
+
+    /// FTEF-19.3: a redeclaration that would make a definition constant, or not, is a warning;
+    /// the definition keeps the constness its first declaration gave it. A new definition is
+    /// compared with the constness it is about to get, which differs only for an initialised
+    /// `autocvar_`, made no constant (FTEF-19.16).
+    pub(in crate::resolve) fn warn_constness_change(
+        &mut self,
+        decl: &RawDecl,
+        existing: Option<DefId>,
+        location: Location,
+        initialised: bool,
+    ) {
+        let was = match existing {
+            Some(existing) => {
+                if self
+                    .index
+                    .def(existing)
+                    .is_some_and(|d| d.member_of.is_some())
+                {
+                    return;
+                }
+                self.facts.get(existing.0).is_some_and(|f| f.constant)
+            }
+            None => Self::constant_at_file_level(decl),
+        };
+        let now = Self::constness(decl, initialised);
+        if was == now {
+            return;
+        }
+        let message = if initialised {
+            format!(
+                "Redeclaration of {} would change to {}const.",
+                decl.name,
+                if now { "" } else { "non-" }
+            )
+        } else {
+            format!("Redeclaration of {} changes const.", decl.name)
+        };
+        self.report(Code::W0212, location, message);
+    }
+
+    /// FTEF-19.31, FTEF-19.3, QC-11.3: the checks of a value initialiser of a definition of
+    /// type `ty` named `name`, held as `holder` says, and the value it gives when it names a
+    /// constant (FTEF-19.5). Under the vanilla profile a literal of another type than the
+    /// definition's is "wrong immediate type" (QCD-3.7); under FTEQCC a value its type
+    /// cannot be cast to is "Cannot cast" (QCD-3.13), and a name that is no constant
+    /// initialising a global or a static is "is not constant" (QCD-3.14). `Err` is a fatal
+    /// error, after which the compilers read nothing more of the declaration.
+    pub(in crate::resolve) fn check_value(
+        &mut self,
+        file: FileId,
+        name: &str,
+        ty: &Type,
+        value: Option<&RawValue>,
+        holder: Holder,
+    ) -> Result<Option<LiteralValue>, Fatal> {
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        let location = self.at(file, value.span);
+        if !self.profile.initialisers_cast() {
+            let ValueKind::Literal(literal) = &value.kind else {
+                return Ok(None);
+            };
+            let expected = match ty {
+                Type::Simple(SimpleType::Float) => Some(ConstType::Float),
+                Type::Simple(SimpleType::Vector) => Some(ConstType::Vector),
+                Type::Simple(SimpleType::String) => Some(ConstType::String),
+                Type::Unknown => return Ok(None),
+                Type::Simple(_)
+                | Type::Field(_)
+                | Type::Function(_)
+                | Type::Named(_)
+                | Type::Pointer(_) => None,
+            };
+            if expected != Some(literal.ty) {
+                self.report(
+                    Code::E0207,
+                    location,
+                    format!("wrong immediate type for {name}"),
+                );
+                return Err(Fatal);
+            }
+            return Ok(None);
+        }
+        let ty = self.resolved(ty);
+        // FTEF-6.12: a struct is initialised by an aggregate only; a struct value is no other
+        // type's, and neither is another type's a struct's: "Cannot cast from X to Y".
+        if self.profile.type_declarations() {
+            let is_struct = |ty: &Type| self.is_struct_type(ty);
+            let target_struct = is_struct(&ty);
+            let from = match &value.kind {
+                ValueKind::Literal(literal) if target_struct => Some(literal.ty.name().to_owned()),
+                ValueKind::Name(source_name) => {
+                    let found = match holder {
+                        Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) => {
+                            self.lookup_in_scope(scope, source_name)
+                        }
+                        Holder::Global => self.lookup_used_global(source_name),
+                    };
+                    found
+                        .and_then(|d| self.index.def(d))
+                        .map(|d| self.resolved(&d.ty))
+                        .filter(|source| source != &ty)
+                        .filter(|source| target_struct || is_struct(source))
+                        .map(|source| self.type_name(&source))
+                }
+                // A cast from a struct is reported as the cast's own use (`UseKind::CastTo`).
+                ValueKind::Cast(cast) => {
+                    let source = self.resolved(cast);
+                    (source != ty
+                        && !matches!(source, Type::Pointer(_))
+                        && target_struct
+                        && !is_struct(&source))
+                    .then(|| self.type_name(&source))
+                }
+                ValueKind::Literal(_)
+                | ValueKind::Translate(_)
+                | ValueKind::Indexed(_)
+                | ValueKind::Other => None,
+            };
+            if let Some(from) = from {
+                self.report(
+                    Code::E0213,
+                    location,
+                    format!("Cannot cast from {from} to {}", self.type_name(&ty)),
+                );
+                return Err(Fatal);
+            }
+        }
+        match &value.kind {
+            ValueKind::Literal(literal) => {
+                let source = Source::Literal(*literal);
+                if self.cast_value(source, &ty, location, value.cast_flags) {
+                    return Err(Fatal);
+                }
+                Ok(None)
+            }
+            ValueKind::Translate(string) => {
+                // FTEF-19.31: `_()` initialising a string takes one string literal.
+                if !*string && ty == Type::Simple(SimpleType::String) {
+                    self.report(
+                        Code::E0232,
+                        location,
+                        "_() intrinsic accepts only a string immediate".to_owned(),
+                    );
+                    return Err(Fatal);
+                }
+                Ok(None)
+            }
+            ValueKind::Name(source_name) => {
+                self.check_named_value(name, &ty, source_name, holder, location, value.cast_flags)
+            }
+            // FTEF-19.43: `(T)0` is a value of `T`, converted to the definition's type as a
+            // name's would be (FTEF-22).
+            ValueKind::Cast(cast) => {
+                let source = match self.resolved(cast) {
+                    // A class is an entity (`QCC_PR_NewType(classname, ev_entity, ...)`).
+                    Type::Named(n) if self.has_name_key(&self.class_names, &n) => {
+                        Type::Simple(SimpleType::Entity)
+                    }
+                    other => other,
+                };
+                // A pointer casts to any type (`QCC_SRef_IsNull`'s 0 keeps the cast's type),
+                // which the model does not follow further; an accessor's base is its type there
+                // (FTEF-10.8).
+                let base = match &source {
+                    Type::Named(n) => self
+                        .named(&self.accessor_bases, &self.type_key(n))
+                        .map(|b| self.resolved(b)),
+                    _ => None,
+                };
+                if source != ty
+                    && !matches!(source, Type::Pointer(_))
+                    && !matches!(base, Some(Type::Pointer(_)))
+                    && self.cast_value(Source::Typed(&source), &ty, location, value.cast_flags)
+                {
+                    return Err(Fatal);
+                }
+                Ok(None)
+            }
+            ValueKind::Indexed(array) => {
+                // FTEF-19.39: an element of a variable is no constant.
+                if matches!(holder, Holder::Global | Holder::Static(_)) {
+                    let found = match holder {
+                        Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) => {
+                            self.lookup_in_scope(scope, array)
+                        }
+                        Holder::Global => self.lookup_used_global(array),
+                    };
+                    if let Some(source) = found
+                        && !self.facts.get(source.0).is_some_and(|f| f.constant)
+                    {
+                        self.report(
+                            Code::E0214,
+                            location,
+                            format!("initializer for '{name}' is not constant"),
+                        );
+                    }
+                }
+                Ok(None)
+            }
+            ValueKind::Other => Ok(None),
+        }
+    }
+
+    /// [`Resolver::check_value`] of a value that is the name `source_name`, cast with the
+    /// flags `flags` at the token after it (FTEF-22.6).
+    pub(in crate::resolve) fn check_named_value(
+        &mut self,
+        name: &str,
+        ty: &Type,
+        source_name: &str,
+        holder: Holder,
+        location: Location,
+        flags: CompilerFlags,
+    ) -> Result<Option<LiteralValue>, Fatal> {
+        let lookup = |name: &str| match holder {
+            Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) => {
+                self.lookup_in_scope(scope, name)
+            }
+            Holder::Global => self.lookup_used_global(name),
+        };
+        // `Scope::name`: the definition of that name, or for a scope that is no class the
+        // plain name, as a named enum's values are (FTEF-19.10).
+        // FTEF-9.18: `Class::name` is the class's member, a field of the entity or a global.
+        let class_member = source_name.split_once("::").and_then(|(prefix, bare)| {
+            let class = self.named(&self.class_names, prefix).copied()?;
+            self.member_in(class, bare)
+        });
+        let found = class_member.or_else(|| lookup(source_name)).or_else(|| {
+            let (prefix, bare) = source_name.split_once("::")?;
+            (!self.has_name_key(&self.class_names, prefix)
+                && !self.struct_defs.contains_key(&self.type_key(prefix)))
+            .then(|| lookup(bare))
+            .flatten()
+        });
+        // FTEF-17.14: `this` in a member function is the entity as its class.
+        if found.is_none()
+            && source_name == "this"
+            && let Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) = holder
+            && let Some(class) = scope.class.and_then(|c| self.index.def(c))
+        {
+            let class = Type::Named(class.name.as_str().into());
+            return if self.cast_value(Source::Typed(&class), ty, location, flags) {
+                Err(Fatal)
+            } else {
+                Ok(None)
+            };
+        }
+        let Some(source) = found else {
+            // FTEF-19.48: the unknown name, reported where it is used, is then no constant; an
+            // unknown `Scope::name` ends the definition.
+            if self.profile.fteqcc_diagnostics()
+                && matches!(holder, Holder::Global | Holder::Static(_))
+                && !source_name.contains("::")
+            {
+                let message = format!("initializer for '{name}' is not constant");
+                self.report(Code::E0214, location, message);
+            }
+            return Ok(None);
+        };
+        let Some(source_ty) = self.index.def(source).map(|d| match d.kind {
+            // A data member named through its class is the field.
+            DefKind::Field if class_member.is_some() && !d.ty.is_function() => {
+                Type::Field(d.ty.clone().into())
+            }
+            DefKind::Global
+            | DefKind::Function
+            | DefKind::Field
+            | DefKind::Param
+            | DefKind::Local => d.ty.clone(),
+        }) else {
+            return Ok(None);
+        };
+        // FTEF-19.31: in a member function a field's name is `this.field`, of the field's type
+        // (`QCC_PR_ParseRefValue`, `expandmemberfields`).
+        let in_class = match holder {
+            Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) => {
+                scope.class.is_some()
+            }
+            Holder::Global => false,
+        };
+        let source_ty = match &source_ty {
+            Type::Field(inner) if in_class => (**inner).clone(),
+            Type::Unknown
+            | Type::Simple(_)
+            | Type::Field(_)
+            | Type::Function(_)
+            | Type::Named(_)
+            | Type::Pointer(_) => source_ty,
+        };
+        let source_ty = self.resolved(&source_ty);
+        // FTEF-19.10: a strict enum's value casts to no other type, but under `lax`
+        // (FTEF-22.1).
+        if let Type::Named(strict) = &source_ty
+            && let Some(base) = self.named(&self.strict_enums, strict.as_ref())
+            && source_ty != *ty
+        {
+            let (code, verb) = if flags.has(FteFlag::Laxcasts) {
+                (Code::W0229, "Implicit lax cast")
+            } else {
+                (Code::E0213, "Cannot cast")
+            };
+            let message = format!(
+                "{verb} from enum {strict}:{} to {}",
+                base.fteqcc_name(),
+                ty.fteqcc_name()
+            );
+            self.report(code, location, message);
+            if code == Code::E0213 {
+                return Err(Fatal);
+            }
+        } else if self.cast_value(Source::Typed(&source_ty), ty, location, flags) {
+            return Err(Fatal);
+        }
+        if matches!(holder, Holder::Local(_)) {
+            return Ok(None);
+        }
+        // FTEF-9.18: `Class::function` is the function `Class::function`, virtual or not.
+        let constant = self.facts.get(source.0).is_some_and(|f| f.constant)
+            || (class_member.is_some() && source_ty.is_function());
+        if !constant {
+            if matches!(holder, Holder::Global | Holder::Static(_)) {
+                self.report(
+                    Code::E0214,
+                    location,
+                    format!("initializer for '{name}' is not constant"),
+                );
+            }
+            return Ok(None);
+        }
+        // FTEF-19.3: a field is initialised behind the scenes, and a function not defined yet
+        // is filled in once it is.
+        let initialized = self
+            .index
+            .def(source)
+            .is_some_and(|d| d.initialized || d.ty.is_field());
+        if !initialized && !ty.is_function() {
+            self.report(
+                Code::W0219,
+                location,
+                format!(
+                    "initializer for {name} is not initialised yet, {source_name} will be treated \
+                     as 0"
+                ),
+            );
+            return Ok(match ty {
+                Type::Simple(SimpleType::Float) => Some(LiteralValue::Float(0)),
+                Type::Simple(SimpleType::Vector) => Some(LiteralValue::Vector([0; 3])),
+                Type::Unknown
+                | Type::Simple(_)
+                | Type::Field(_)
+                | Type::Function(_)
+                | Type::Named(_)
+                | Type::Pointer(_) => None,
+            });
+        }
+        // FTEF-19.5: a name of the same type gives its value, which a later initialiser is
+        // compared with.
+        Ok((source_ty == *ty)
+            .then(|| self.literals.get(&source).cloned())
+            .flatten())
+    }
+
+    /// The checks of an array declaration beyond its value (FTEF-19.8, FTE-17.7): each
+    /// dimension takes its own braces, `{ { 1, 2 }, { 3, 4 } }`
+    /// (`QCC_PR_ParseInitializerType_Internal` recurses with "expected {, found X"), and an
+    /// array of functions with no initialiser holds functions with no body. Returns whether the
+    /// declaration was aborted.
+    pub(in crate::resolve) fn check_array_declaration(
+        &mut self,
+        file: FileId,
+        decl: &RawDecl,
+        location: Location,
+    ) -> bool {
+        if decl.array_dims >= 2
+            && let Some((first, span)) = &decl.aggregate_first
+            && first != "{"
+        {
+            let location = self.at(file, *span);
+            self.report(Code::E0204, location, format!("expected {{, found {first}"));
+            return true;
+        }
+        // C's `float (*x[2])(float);` is an array of pointers to functions, a `var` (FTEF-21.7).
+        if decl.array.is_some()
+            && !decl.initialized
+            && !decl.pointer_var
+            && self.resolved(&decl.ty).is_function()
+        {
+            self.report(
+                Code::E0211,
+                location,
+                format!("function {} has no body", decl.name),
+            );
+        }
+        false
+    }
+
+    /// FTEF-19.8: an array is initialised with `{ ... }`, or an array of `char` with a string;
+    /// `QCC_PR_ParseInitializerType_Internal` takes anything else for "expected {, found X",
+    /// a fatal error. Returns whether it was reported.
+    pub(in crate::resolve) fn check_array_value(
+        &mut self,
+        file: FileId,
+        array: Option<ArrayDim>,
+        ty: &Type,
+        value: Option<&RawValue>,
+    ) -> bool {
+        let (Some(_), Some(value)) = (array, value) else {
+            return false;
+        };
+        if string_of_chars(array, ty, value) {
+            if let (Some(ArrayDim::Sized(size)), Some(len)) = (array, value.string_len)
+                && len > size
+            {
+                let location = self.at(file, value.span);
+                self.report(
+                    Code::E0233,
+                    location,
+                    "initializer-string too long".to_owned(),
+                );
+            }
+            return false;
+        }
+        let location = self.at(file, value.span);
+        self.report(
+            Code::E0204,
+            location,
+            format!("expected {{, found {}", value.first),
+        );
+        true
+    }
+
+    /// FTEQCC's implicit cast of `source` to `to` with the flags `flags` where it stands
+    /// (FTEF-19.31, FTEF-22): "Cannot cast", an error, "Implicit cast" or "Implicit lax cast",
+    /// warnings, "pointer<->string casts were disabled.", a non-fatal error, or none. Returns
+    /// whether the cast is refused.
+    /// Whether one of `a` and `b` is an accessor type whose base is the other.
+    pub(in crate::resolve) fn accessor_of(&self, a: &Type, b: &Type) -> bool {
+        let base_of = |ty: &Type| match self.resolved(ty) {
+            Type::Named(name) => self
+                .named(&self.accessor_bases, &self.type_key(&name))
+                .cloned(),
+            _ => None,
+        };
+        let is_accessor = |ty: &Type| base_of(ty).is_some();
+        let resolved = |ty: &Type| self.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
+        base_of(a).is_some_and(|base| !is_accessor(b) && resolved(&base) == resolved(b))
+            || base_of(b).is_some_and(|base| !is_accessor(a) && resolved(&base) == resolved(a))
+    }
+
+    pub(in crate::resolve) fn cast_value(
+        &mut self,
+        source: Source<'_>,
+        to: &Type,
+        location: Location,
+        flags: CompilerFlags,
+    ) -> bool {
+        // FTEF-10.8: an accessor and its base cast either way with a warning
+        // (`QCC_EvaluateCast`'s `cast->parentclass == src.cast`), a literal of the base's type
+        // to the accessor too.
+        let literal_type = match source {
+            Source::Literal(literal) => Some(literal.ty.value_type()),
+            Source::Typed(_) => None,
+        };
+        let from = match source {
+            Source::Typed(from) => Some(from),
+            Source::Literal(_) => literal_type.as_ref(),
+        };
+        if let Some(from) = from
+            && self.accessor_of(from, to)
+        {
+            let message = format!(
+                "Implicit cast from {} to {}",
+                self.type_name(from),
+                self.type_name(to)
+            );
+            self.report(Code::W0264, location, message);
+            return false;
+        }
+        let to = &self.resolved_deep(to, MAX_TYPEDEF_DEPTH);
+        // FTEF-10.8: a value of an accessor type is cast as its base's, and a cast to one is
+        // checked against its base (`for (tmp = cast; tmp->type == ev_accessor; ...)`).
+        let base_of = |ty: &Type| match ty {
+            Type::Named(name) => self
+                .named(&self.accessor_bases, &self.type_key(name))
+                .map(|base| self.resolved_deep(base, MAX_TYPEDEF_DEPTH)),
+            _ => None,
+        };
+        // FTEF-9.14: a class is cast as an entity, with a warning when neither the value's
+        // class nor any it derives from has the members of the class it is cast to.
+        let class_of =
+            |ty: &Type| matches!(ty, Type::Named(n) if self.has_name_key(&self.class_names, n));
+        let entity = Type::Simple(SimpleType::Entity);
+        if let Source::Typed(from) = source {
+            let from = self.resolved_deep(from, MAX_TYPEDEF_DEPTH);
+            let entity_like = |ty: &Type| *ty == entity || class_of(ty);
+            if entity_like(&from) && entity_like(to) && (class_of(&from) || class_of(to)) {
+                if !self.derives_lax(&from, to) {
+                    let message = format!(
+                        "Implicit cast from {} to {}",
+                        self.type_name(&from),
+                        self.type_name(to)
+                    );
+                    self.report(Code::W0220, location, message);
+                }
+                return false;
+            }
+        }
+        let as_entity = |ty: Type| if class_of(&ty) { entity.clone() } else { ty };
+        let to_checked = as_entity(base_of(to).unwrap_or_else(|| to.clone()));
+        let typed;
+        let shown;
+        let source = match source {
+            Source::Typed(ty) => {
+                let ty = self.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
+                shown = self.type_name(&base_of(&ty).unwrap_or_else(|| ty.clone()));
+                typed = as_entity(base_of(&ty).unwrap_or(ty));
+                Source::Typed(&typed)
+            }
+            Source::Literal(_) => {
+                shown = source.name();
+                source
+            }
+        };
+        let (code, verb) = match source.cast(&to_checked, flags) {
+            Cast::Silent => return false,
+            Cast::Implicit => (Code::W0220, "Implicit cast"),
+            Cast::Lax => (Code::W0229, "Implicit lax cast"),
+            Cast::Refused => (Code::E0213, "Cannot cast"),
+            Cast::StringPointerDisabled => {
+                self.report(
+                    Code::E0237,
+                    location,
+                    "pointer<->string casts were disabled.".to_owned(),
+                );
+                return false;
+            }
+        };
+        self.report(
+            code,
+            location,
+            format!("{verb} from {shown} to {}", self.type_name(to)),
+        );
+        code == Code::E0213
+    }
+
+    /// FTEF-19.6: a parameter's default value must be a constant already initialised, and of
+    /// a type the parameter's casts from: `QCC_PR_ParseDefaultInitialiser`. With
+    /// autoprototyping one not initialised yet is no error.
+    pub(in crate::resolve) fn check_defaults(&mut self, file: FileId, decl: &RawDecl) -> bool {
+        for param in &decl.params {
+            let Some(value) = &param.default else {
+                continue;
+            };
+            let location = self.at(file, value.span);
+            match &value.kind {
+                ValueKind::Literal(literal) => {
+                    let source = Source::Literal(*literal);
+                    let ty = self.resolved(&param.ty);
+                    if self.cast_value(source, &ty, location, value.cast_flags) {
+                        return true;
+                    }
+                }
+                ValueKind::Name(name) => {
+                    let Some(source) = self.lookup_global(name) else {
+                        continue;
+                    };
+                    if !self.facts.get(source.0).is_some_and(|f| f.constant) {
+                        self.report(
+                            Code::E0217,
+                            location,
+                            "Default value not a constant".to_owned(),
+                        );
+                        return true;
+                    }
+                    let initialized = self
+                        .index
+                        .def(source)
+                        .is_some_and(|d| d.initialized || d.ty.is_field());
+                    if !initialized && !self.autoproto {
+                        self.report(
+                            Code::E0218,
+                            location,
+                            "Default value not initialized yet".to_owned(),
+                        );
+                        return true;
+                    }
+                    let source_ty = self
+                        .index
+                        .def(source)
+                        .map_or(Type::Unknown, |d| d.ty.clone());
+                    let ty = self.resolved(&param.ty);
+                    let source = Source::Typed(&source_ty);
+                    if self.cast_value(source, &ty, location, value.cast_flags) {
+                        return true;
+                    }
+                }
+                ValueKind::Translate(_)
+                | ValueKind::Indexed(_)
+                | ValueKind::Cast(_)
+                | ValueKind::Other => {}
+            }
+        }
+        false
+    }
+
+    /// `QCC_SupplyConversion` of `source`, the value `value`, to a `wanted` (FTEF-22.3), with
+    /// the flags at the token after it, and its diagnostic: "Automatic type conversions
+    /// disabled." under `typeexplicit`, and "Implicit type mismatch." when nothing converts it,
+    /// a warning under `lax`; each names the two kinds by `basictypenames`.
+    pub(in crate::resolve) fn supply_value(
+        &mut self,
+        source: Source<'_>,
+        wanted: Kind,
+        value: &RawValue,
+        location: Location,
+    ) -> Supply {
+        let supply = source.supply(wanted, value.cast_flags);
+        let (code, text) = match supply {
+            Supply::Converted => return supply,
+            Supply::Explicit => (Code::E0236, "Automatic type conversions disabled."),
+            Supply::Lax => (Code::W0230, "Implicit type mismatch."),
+            Supply::Mismatch => (Code::E0227, "Implicit type mismatch."),
+        };
+        let message = format!(
+            "{text} Needed {}, got {}.",
+            wanted.basic_name(),
+            source.kind().basic_name()
+        );
+        self.report(code, location, message);
+        supply
+    }
+}
+
+/// FTEF-19.8: whether `value` is a string initialising an array of 8-bit integers, `def.cast->type
+/// == ev_bitfld && def.cast->bits == 8`, its characters each its element, with no cast.
+pub(in crate::resolve) fn string_of_chars(
+    array: Option<ArrayDim>,
+    ty: &Type,
+    value: &RawValue,
+) -> bool {
+    array.is_some()
+        && matches!(value.kind, ValueKind::Literal(literal) if literal.ty == ConstType::String)
+        && matches!(ty.fteqcc_scalar(), Some(CScalar::Int8 | CScalar::Uint8))
+}

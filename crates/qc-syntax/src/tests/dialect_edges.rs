@@ -312,12 +312,18 @@ fn for_clauses_and_the_useful_flag() {
     assert_eq!(pointless("for (; a, a < 1; ) c = 1;"), ["a"]);
 }
 
-// spec FTEF-16.9: the first clause of a `for` may declare locals with `local`, a type word or a
-// C type word
+// spec FTEF-16.14: `local` starts no declaration in a `for` header: it is a name there
+#[test]
+fn local_is_no_for_clause_declaration() {
+    let body = "for (local float i = 0; i < 3; i++) c = 1;";
+    assert!(body_codes(body).contains(&Code::E0204), "{body}");
+}
+
+// spec FTEF-16.9: the first clause of a `for` may declare locals with a type word or a C type
+// word
 #[test]
 fn for_clause_declarations() {
     for body in [
-        "for (local float i = 0; i < 3; i++) c = 1;",
         "for (float i = 0; i < 3; i++) c = 1;",
         "for (int i = 0; i < 3; i++) c = 1;",
     ] {
@@ -355,13 +361,13 @@ fn global_scope_needs_a_name() {
     assert!(body_codes("a = ::1;").contains(&Code::E0201));
 }
 
-// spec FTEF-4.4: `*e` dereferences, and is assigned to; `&e` takes an address, which is not
-// spec QC-27.10: an assignment's left side must be assignable
+// spec FTEF-4.4: `*e` dereferences, and is assigned to
+// spec FTEF-16.13: any left side of an assignment parses; the checker warns of it
 #[test]
 fn dereference_is_assignable() {
     assert_eq!(body_codes("*e = 1;"), []);
-    assert_eq!(body_codes("&e = 1;"), [Code::E0508]);
-    assert_eq!(body_codes("~a = 1;"), [Code::E0508]);
+    assert_eq!(body_codes("&e = 1;"), []);
+    assert_eq!(body_codes("~a = 1;"), []);
 }
 
 // spec FTEF-16.11: `.member = value` in a brace initialiser names a member; any other word
@@ -370,7 +376,7 @@ fn dereference_is_assignable() {
 fn designated_initialisers() {
     assert_eq!(fte_codes("vector v = { .x = 1, .y = 2 };\n"), []);
     assert!(fte_codes("vector v = { a b = 1 };\n").contains(&Code::E0204));
-    assert!(fte_codes("vector v = { ~a = 1 };\n").contains(&Code::E0508));
+    assert!(!fte_codes("vector v = { ~a = 1 };\n").contains(&Code::E0508));
 }
 
 // spec FTEF-9.1: a class with a body has one, a forward declaration has none

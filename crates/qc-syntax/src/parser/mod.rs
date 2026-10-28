@@ -260,8 +260,9 @@ struct TypeShape {
 #[derive(Clone, Debug)]
 struct DeclaredType {
     name: String,
-    /// Whether a function's body declared it, which only that body sees.
-    local: bool,
+    /// The blocks it was declared in, 0 at file level: a body's type is seen to the end of its
+    /// block (FTEF-20.15).
+    depth: usize,
     /// Whether it is a function type: a typedef of one, or of C's function pointer.
     function: bool,
 }
@@ -315,6 +316,8 @@ pub(crate) struct Parser<'a> {
     gotos: Vec<(String, Span)>,
     /// How many function bodies the current token is in, `pr_scope` set when one is.
     bodies: usize,
+    /// How many blocks the current token is in.
+    block_depth: usize,
     /// The names of the parameters of the last parameter list read, each with whether its type
     /// is a function's, which `QCC_PR_ParseImmediateStatements` defines when a body follows
     /// (FTEF-20.4).
@@ -355,6 +358,8 @@ pub(crate) struct Parser<'a> {
     recovering: bool,
     /// Whether the type last read had a `*` or a parameter list after its base.
     type_derived: bool,
+    /// How many parameter lists the declaration's type last read took (FTEF-18.15).
+    type_lists: usize,
     /// Whether the member just read is a bitfield, which a `,` does not go on with.
     after_bitfield: bool,
     /// Whether the struct member being read is `static` or `virtual`, a global of the struct's
@@ -421,6 +426,7 @@ impl<'a> Parser<'a> {
             depth: 0,
             too_deep: false,
             bodies: 0,
+            block_depth: 0,
             params: Vec::new(),
             keywords: Keywords::default(),
             edits: edits.to_vec(),
@@ -435,6 +441,7 @@ impl<'a> Parser<'a> {
             in_typedef: false,
             recovering: false,
             type_derived: false,
+            type_lists: 0,
             after_bitfield: false,
             member_global: false,
             member_function: false,
@@ -787,6 +794,27 @@ impl<'a> Parser<'a> {
     fn error(&mut self, code: Code, message: impl Into<String>) {
         let span = self.current_span();
         self.error_at(code, message, span);
+    }
+
+    /// `PR_ParseName`'s error at the current token: id's "not a name" (QCD-3.1); FTEQCC's
+    /// "\"TOKEN\" - not a name", or "unexpected EOF" at the end of the file (`QCC_PR_ParseName`,
+    /// QCD-3.62).
+    fn not_a_name(&mut self) {
+        let message = if self.fteqcc() && self.current().is_none() {
+            "unexpected EOF".to_owned()
+        } else {
+            self.not_a_name_message(&self.found())
+        };
+        self.error(Code::E0201, message);
+    }
+
+    /// The text of [`Self::not_a_name`] for the token `token`.
+    fn not_a_name_message(&self, token: &str) -> String {
+        if self.fteqcc() {
+            format!("\"{token}\" - not a name")
+        } else {
+            "not a name".to_owned()
+        }
     }
 
     /// `PR_Expect`'s error: "expected X, found Y" (QCD-3.4).
@@ -1397,7 +1425,8 @@ impl<'a> Parser<'a> {
         while self.at(K::LBracket) {
             if self.nth(1).is_some_and(|t| t.kind == K::RBracket) {
                 // `QCC_PR_IntConstExpr()` reads the size, which `]` is none of.
-                self.error(Code::E0201, "not a name");
+                let message = self.not_a_name_message("]");
+                self.error(Code::E0201, message);
             }
             self.array_suffix();
         }
@@ -1555,6 +1584,11 @@ impl<'a> Parser<'a> {
         // so a type may stand alone, an enum's or a struct's in a body among them; a class's
         // member is `QCC_PR_ParseEntClass`'s, which needs a name (FTEF-9.4).
         if self.fteqcc() && site != Site::Member && self.at(K::Semicolon) {
+            // FTEF-18.36: with `qcfuncs` on `QCC_PR_ParseType` takes one parameter list; a
+            // further one is the declarator's, which then needs a name.
+            if self.type_lists > 1 && self.flag_ahead(0, FteFlag::Qcfuncs) {
+                self.error(Code::E0201, "\";\" - not a name");
+            }
             self.bump();
             return;
         }
@@ -1612,7 +1646,9 @@ impl<'a> Parser<'a> {
                 self.array_suffix();
             }
             self.expect(K::RParen, ")");
-            if self.at_function_list() {
+            // `while(QCC_PR_CheckToken ("("))` goes on after the C-style branch, each list a
+            // function returning the type so far (FTEF-18.15).
+            while self.at_function_list() {
                 self.fte_param_list();
                 ty.function = true;
             }
@@ -1704,6 +1740,12 @@ impl<'a> Parser<'a> {
             if !self.enter() {
                 break;
             }
+            // FTEF-15.9: `(name)` after a function type.
+            if ty.function && self.at_parenthesised_name() {
+                self.bump();
+                pointer = true;
+                break;
+            }
             if self.nth(1).is_some_and(|t| t.kind == K::Star) {
                 if first && ty.qcfuncs && !ty.function {
                     break;
@@ -1743,11 +1785,11 @@ impl<'a> Parser<'a> {
     /// `PR_ParseName`: a name, at most `LIMIT_QCC_MAX_NAME - 2` bytes (QC-3.3).
     fn name(&mut self) -> bool {
         let Some(tok) = self.current() else {
-            self.error(Code::E0201, "not a name");
+            self.not_a_name();
             return false;
         };
         if tok.kind != K::Name {
-            self.error(Code::E0201, "not a name");
+            self.not_a_name();
             return false;
         }
         if self.too_long(&tok.text) {
@@ -2101,12 +2143,13 @@ impl<'a> Parser<'a> {
         if function {
             self.bodies = self.bodies.saturating_add(1);
         }
+        self.block_depth = self.block_depth.saturating_add(1);
         self.block_inner(function);
+        self.block_depth = self.block_depth.saturating_sub(1);
+        let depth = self.block_depth;
+        self.types.retain(|t| t.depth <= depth);
         if function {
             self.bodies = self.bodies.saturating_sub(1);
-            if self.bodies == 0 {
-                self.types.retain(|t| !t.local);
-            }
         }
     }
 
@@ -2120,9 +2163,24 @@ impl<'a> Parser<'a> {
     fn declare_type_shaped(&mut self, name: String, function: bool) {
         self.types.push(DeclaredType {
             name,
-            local: self.bodies > 0,
+            depth: self.block_depth,
             function,
         });
+    }
+
+    /// Whether the token `n` ahead names a type the program declared, in any case under
+    /// `caseinsens` (FTEF-19.33).
+    pub(super) fn declared_type(&self, n: usize) -> bool {
+        let any_case = self.any_case(n);
+        self.nth(n).is_some_and(|tok| {
+            self.types.iter().any(|t| {
+                if any_case {
+                    t.name.eq_ignore_ascii_case(&tok.text)
+                } else {
+                    t.name == tok.text
+                }
+            })
+        })
     }
 
     /// Whether the token `n` ahead names a declared type of function type, in any case under
@@ -2151,14 +2209,14 @@ impl<'a> Parser<'a> {
         loop {
             let Some(kind) = self.current().map(|t| t.kind) else {
                 // `PR_ParseStatement` reads the end of the file as an expression.
-                self.error(Code::E0201, "not a name");
+                self.not_a_name();
                 break;
             };
             if kind == K::RBrace {
                 // FTE-21.4: FTEQCC's `QCC_PR_ParseStatement` reads statements until the
                 // `}`, so its blocks may be empty.
                 if !function && count == 0 && !self.fteqcc() {
-                    self.error(Code::E0201, "not a name");
+                    self.not_a_name();
                 }
                 self.bump();
                 break;
@@ -2195,7 +2253,7 @@ impl<'a> Parser<'a> {
 
     fn statement_inner(&mut self) {
         let Some(tok) = self.current() else {
-            self.error(Code::E0201, "not a name");
+            self.not_a_name();
             return;
         };
         match tok.kind {
@@ -2249,7 +2307,7 @@ impl<'a> Parser<'a> {
             self.return_stmt();
         } else if self.checks(0, Enabled::Never, "exit") {
             // `keyword_exit` is `flag_acc`, reacc's, which this profile does not read
-            // (FTEF-19.32): only `__exit` is the keyword.
+            // (FTEF-19.46): only `__exit` is the keyword.
             self.exit_stmt();
         } else if self.kw(0, Keyword::Loop, "loop") {
             self.loop_stmt();
@@ -2346,7 +2404,9 @@ impl<'a> Parser<'a> {
         }
         let init = clause == Clause::Init;
         self.start_node(K::ForClause);
-        let local = self.kw(0, Keyword::Local, "local");
+        // FTEF-16.14: `QCC_PR_ParseType` reads no `local`, so under FTEQCC it starts no
+        // declaration here.
+        let local = !self.fteqcc() && self.kw(0, Keyword::Local, "local");
         let declares =
             local || self.looks_like_declaration(0) || (self.fteqcc() && self.for_init_declares());
         if init && declares {
@@ -2452,7 +2512,7 @@ impl<'a> Parser<'a> {
         }
         loop {
             let Some(kind) = self.current().map(|t| t.kind) else {
-                self.error(Code::E0201, "not a name");
+                self.not_a_name();
                 break;
             };
             if kind == K::RBrace {
@@ -2529,7 +2589,7 @@ impl<'a> Parser<'a> {
             }
         } else if !keyword {
             if self.at(K::Dot) {
-                self.error(Code::E0201, "not a name");
+                self.not_a_name();
             } else if let Some((text, span)) = self.nth(1).map(|t| (t.text.clone(), t.span)) {
                 self.error_at(Code::E0204, format!("expected ;, found {text}"), span);
             }
@@ -2781,10 +2841,9 @@ impl<'a> Parser<'a> {
                 self.bump_error();
                 break;
             }
-            // FTEF-16.10: FTEQCC also assigns to what a call returns, as a chained
-            // `a = f() = b` does.
-            let call = self.fteqcc() && lhs.kind == K::CallExpr;
-            if assign && !lhs.assignable && !call {
+            // FTEF-16.10: FTEQCC's parser takes any left side; its checker warns of a
+            // read-only one (FTEF-29.1).
+            if assign && !lhs.assignable && !self.fteqcc() {
                 self.error_at(Code::E0508, "cannot assign to this expression", lhs.span);
             }
             self.builder.start_node_at(checkpoint, K::BinaryExpr);
@@ -2963,11 +3022,26 @@ impl<'a> Parser<'a> {
         Some(expr)
     }
 
-    /// `( args )` (QC-18.1).
+    /// `( args )` (QC-18.8). Under FTEQCC `va_arg(index, TYPE)` and `...(index, TYPE)` read an
+    /// expression, a `,` and a type (`QCC_PR_ParseFunctionCall`, FTEF-32.7).
     fn arg_list(&mut self) {
+        let va_arg = self.fteqcc()
+            && self
+                .pos
+                .checked_sub(1)
+                .and_then(|at| self.input.tokens.get(at))
+                .is_some_and(|t| matches!(t.text.as_str(), "va_arg" | "..."));
         self.start_node(K::ArgList);
         self.bump();
-        if self.at(K::RParen) {
+        if va_arg {
+            self.expression();
+            if self.expect(K::Comma, ",") {
+                self.fte_type();
+                self.expect(K::RParen, ")");
+            } else if self.at(K::RParen) {
+                self.bump();
+            }
+        } else if self.at(K::RParen) {
             self.bump();
         } else {
             loop {
@@ -2991,7 +3065,7 @@ impl<'a> Parser<'a> {
     /// name (QC-15.7). Anything else is "not a name" (QC-4.5, QC-14.2).
     fn term(&mut self) -> Option<Expr> {
         let Some(tok) = self.current() else {
-            self.error(Code::E0201, "not a name");
+            self.not_a_name();
             return None;
         };
         let (kind, start, long) = (tok.kind, tok.span.start, self.too_long(&tok.text));
@@ -3089,7 +3163,7 @@ impl<'a> Parser<'a> {
                 (K::NameRef, true)
             }
             _ => {
-                self.error(Code::E0201, "not a name");
+                self.not_a_name();
                 let stop = matches!(
                     kind,
                     K::Semicolon | K::RParen | K::RBracket | K::RBrace | K::Comma | K::LBrace
