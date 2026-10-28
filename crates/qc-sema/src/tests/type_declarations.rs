@@ -1109,3 +1109,34 @@ fn a_basic_type_is_no_parent_in_any_case() {
         assert_eq!(errors(&source, &[]), [Code::E0241], "{parent}");
     }
 }
+
+// spec FTEF-21.23: the illegal jump errors name the function, a member as `CLASS::NAME`
+#[test]
+fn illegal_jumps_name_their_function() {
+    let messages = |source: &str| -> Vec<String> {
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![FileId(0)],
+            command_line: CommandLine::new::<&str>(&[]),
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .filter(|d| matches!(d.diagnostic.code, Code::E0244 | Code::E0245 | Code::E0259))
+        .map(|d| d.diagnostic.message.clone())
+        .collect()
+    };
+    assert_eq!(
+        messages("void() g = { break; };\n"),
+        ["g: function contains illegal breaks"]
+    );
+    assert_eq!(
+        messages("void() g = { { case 1: ; } { case 2: ; } };\n"),
+        ["g: function contains illegal cases"]
+    );
+    assert_eq!(
+        messages("class C { void() m = { continue; }; };\n"),
+        ["C::m: function contains illegal continues"]
+    );
+}

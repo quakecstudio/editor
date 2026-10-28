@@ -497,6 +497,18 @@ fn c_declarators_with_qcfuncs_off() {
         assert_eq!(off(source), [], "{source}");
     }
     assert_eq!(off("void() g = { void h(); };"), [Code::E0211]);
+    // FTEF-21.8: only an empty list is variadic with `qcfuncs` off.
+    assert_eq!(
+        off("void(float a) h = {}; void() g = { h(1, 2); };"),
+        [Code::W0252]
+    );
+    assert_eq!(off("void() h0 = {}; void() g = { h0(1, 2); };"), []);
+    // FTEF-21.8: a parameter with no type is an `int` with `qcfuncs` off.
+    assert_eq!(off("void(a) hi = { local string s = a; };"), [Code::W0220]);
+    assert_eq!(
+        off("void(a) hi = {}; void() g = { hi(\"x\"); };"),
+        [Code::W0220]
+    );
     assert_eq!(off("const float (*x)(float);"), [Code::W0214, Code::E0211]);
 }
 

@@ -144,6 +144,10 @@ fn variadic_types_are_never_the_same() {
         analyze("float(...) va;\nfloat(...) va;\n"),
         [d(Code::E0205, "Type mismatch on redeclaration of va")]
     );
+    assert_eq!(
+        analyze("void(void(...) f) vh;\nvoid(void(...) f) vh;\n"),
+        [d(Code::E0205, "Type mismatch on redeclaration of vh")]
+    );
     assert_eq!(analyze("void() vc;\nvoid() vc = {};\n"), []);
     assert_eq!(
         analyze("void(...) va = {};\nvoid(void(...) f) h = {};\nvoid() g = { h(va); };\n"),

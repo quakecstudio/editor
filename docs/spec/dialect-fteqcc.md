@@ -3615,6 +3615,10 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   "expected function arg list" (`if (!type) QCC_PR_ParseError(ERR_BADNOTTYPE, "expected function
   arg list");`): `void(foo a) g;`, `float (x);` and `typedef float (t);`; a later parameter's is
   `E0203` "\"foo\" is not a type", as a return type's is.
+- **FTEF-21.23** The illegal `break`, `continue` and `case` errors of FTEF-21.19 name the
+  function, `QCC_PR_ParseError(ERR_ILLEGALCASES, "%s: function contains illegal cases",
+  f->name)`, a member function's name being `CLASS::NAME`: `void() g = { break; };` is "g:
+  function contains illegal breaks", once for the function however many it holds.
 ## FTEF-22 The flags and the target the casts read
 
 **Source:** `qcc_pr_comp.c`, `QCC_TryEvaluateCast`, `QCC_EvaluateCast`, `QCC_SupplyConversion`,
@@ -3840,6 +3844,11 @@ statement's checks (FTEF-23.6).
   \"NAME\" in class \"CLASS\"", CLASS the class's own name: `class C { float f; }; typedef C T;
   T t;` reads `t.f`, and `t.zz` names `C`. A class a typedef writes, `typedef class C2 { float
   f; } T;`, is declared with it.
+- **FTEF-24.14** A parameter's default prints as `QCC_VarAtOffset` prints a constant of the
+  parameter's type: a float `%gf`, a double `%gd`, an `int` `%#xi`, a `uint` `%#xu`, an
+  `__int64` `%#xill` and an `__uint64` `%#xull` of its bits (C writes `0` for zero, so `0u`), a
+  vector `'%g %g %g'` whatever form it was written in (`[1, 2, 3]` is `'1 2 3'`), a string
+  quoted.
 ## FTEF-25 The opcodes the target has
 
 **Source:** `qcc_pr_comp.c`, `QCC_OPCodeValidForTarget`, `QCC_OPCodeSetTarget` and

@@ -155,10 +155,23 @@ impl<'a> Resolver<'a> {
             inline_member: class.is_some() && decl.is_none(),
         };
         let reported = self.index.diagnostics.len();
+        // `f->name`, a member function's `CLASS::NAME`.
+        let function = self.index.def(owner).map_or_else(String::new, |d| {
+            match d.member_of.and_then(|class| self.index.def(class)) {
+                Some(class) => format!("{}::{}", class.name, d.name),
+                None => d.name.clone(),
+            }
+        });
         for d in &body.diagnostics {
             self.settle(d.span.start);
             let location = self.at(file, d.span);
-            self.report(d.code, location, d.message.clone());
+            // `QCC_PR_ParseError(..., "%s: function contains illegal ...", f->name)`.
+            let message = if matches!(d.code, Code::E0244 | Code::E0245 | Code::E0259) {
+                format!("{function}: {}", d.message)
+            } else {
+                d.message.clone()
+            };
+            self.report(d.code, location, message);
         }
         if self.profile.body_checks() {
             let function = self

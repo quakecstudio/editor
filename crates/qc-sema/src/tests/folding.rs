@@ -4324,6 +4324,38 @@ fn a_64_bit_constant_made_an_int_is_truncated() {
     );
 }
 
+// spec FTEF-18.12: `sizeof` of a name reads it as a type when one has the name
+#[test]
+fn sizeof_a_type_name() {
+    let index = |source: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\n{source} float arr[1]; void() g = {{ arr[sizeof(T)] = 1; }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    assert_eq!(
+        index("typedef vector T;"),
+        ["(constant) array index out of bounds (0 <= 12 < 1)"]
+    );
+    assert_eq!(
+        index("struct T { float a; vector b; };"),
+        ["(constant) array index out of bounds (0 <= 16 < 1)"]
+    );
+    // A type written with its keyword names no value.
+    assert_eq!(
+        diags(
+            "#pragma target fte\nstruct S { float a; }; S *p; void *q; float arr[1]; void() g = { \
+             p = (struct S *)q; arr[sizeof(struct S)] = 1; };\n"
+        )
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect::<Vec<_>>(),
+        ["(constant) array index out of bounds (0 <= 4 < 1)"]
+    );
+}
+
 /// Constant expressions whose value the folding of one opcode feeds to the next, read as an
 /// index: the pinned FTEQCC's diagnostics for each on the FTE target (2026-10-27).
 const CHAINS: &[(&str, &[&str])] = &[

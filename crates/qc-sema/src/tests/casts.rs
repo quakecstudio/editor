@@ -457,6 +457,7 @@ fn state_headers_and_typedef_enum_values() {
 }
 
 // spec FTEF-24.7: a function type prints its parameters' marks, names and defaults
+// spec FTEF-24.14: a default prints as QCC_VarAtOffset prints a constant of its type
 #[test]
 fn function_types_print_their_parameters() {
     for (ty, shown) in [
@@ -472,6 +473,16 @@ fn function_types_print_their_parameters() {
         ),
         ("void(__inout float x)", "void(inout float x)"),
         ("void(int x = 3)", "void(__int32 x = 0x3i)"),
+        ("void(__uint32 x = 5)", "void(__uint32 x = 0x5u)"),
+        ("void(__uint32 x = 0)", "void(__uint32 x = 0u)"),
+        (
+            "void(__int64 x = -1)",
+            "void(__int64 x = 0xffffffffffffffffill)",
+        ),
+        ("void(__uint64 x = 7)", "void(__uint64 x = 0x7ull)"),
+        ("void(__double x = 2.5)", "void(__double x = 2.5d)"),
+        ("void(vector x = [1, 2, 3])", "void(vector x = '1 2 3')"),
+        ("void(int x = 0x10)", "void(__int32 x = 0x10i)"),
     ] {
         assert_eq!(
             diags(&format!(
