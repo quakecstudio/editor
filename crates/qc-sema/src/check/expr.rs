@@ -22,7 +22,7 @@ use crate::check::opcodes::{OpType, candidates, row};
 use crate::check::flow::Layout;
 use crate::check::{Constness, Env, FunctionFacts, Reference, Sym, TypedBody, Value};
 use crate::symbol::{DefId, DefKind};
-use crate::ty::{SimpleType, Type};
+use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
 
 /// The checker of one body.
 pub(super) struct Checker<'e> {
@@ -281,13 +281,8 @@ impl<'e> Checker<'e> {
             },
             constness,
             name: Some(name),
-            // A function's definition is no constant symbol to the comparison warnings: `ff != vf`
-            // of two functions gives none (FTEF-28.1).
-            sym: Sym::Def(
-                def,
-                constness != Constness::Variable && !ty.is_function(),
-                0,
-            ),
+            // `sym->constant`, which a function's and a field's definition are (FTEF-28.4).
+            sym: Sym::Def(def, self.env.constant(def), 0),
             // `QCC_DefToRef`: `!!def.sym->constant || def.sym->temp`.
             readonly: self.env.constant(def),
             text: self.env.string_text(def).map(|t| t.as_str().into()),
@@ -380,11 +375,29 @@ impl<'e> Checker<'e> {
             let kept = row.etype() == operand.etype || row == OpType::Variant;
             Value {
                 constness: constness(value, operand, row),
-                sym: if kept { value.sym } else { Sym::Temp },
-                ty: if kept {
-                    value.ty.clone()
+                // A null constant is cast with no statement, `QCC_MakeIntConst(0)` of the
+                // row's type, still a constant (FTEF-28.4).
+                sym: if kept || value.null() {
+                    value.sym
                 } else {
-                    row.value_type()
+                    Sym::Temp
+                },
+                ty: match row {
+                    _ if kept => value.ty.clone(),
+                    // `type_function`, a `void()`, and `type_field`, a `.void` (FTEF-28.4).
+                    OpType::Function if value.null() => Type::Function(
+                        FunctionType {
+                            ret: Type::Simple(SimpleType::Void),
+                            params: Vec::new(),
+                            variadic: false,
+                            labels: ParamLabels::default(),
+                        }
+                        .into(),
+                    ),
+                    OpType::Field if value.null() => {
+                        Type::Field(Type::Simple(SimpleType::Void).into())
+                    }
+                    _ => row.value_type(),
                 },
                 ..value.clone()
             }

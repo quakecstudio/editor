@@ -464,10 +464,6 @@ impl Checker<'_> {
             _ => None,
         };
         if let Some(parent) = parent
-            && !matches!(
-                value.ty.fteqcc_scalar(),
-                Some(CScalar::Bool | CScalar::BFloat)
-            )
             && let Some((op, zero)) = self.etype(&value.ty).and_then(|e| Test::Truth.opcode(e))
         {
             let zero = Value {

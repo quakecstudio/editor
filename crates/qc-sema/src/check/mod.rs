@@ -216,7 +216,7 @@ pub(crate) struct Value {
     pub(crate) bitfield: Option<Bitfield>,
 }
 
-/// What holds a value, `QCC_sref_t`'s `sym` as the comparison warnings read it (FTEF-28.1).
+/// What holds a value, `QCC_sref_t`'s `sym` as the comparison warnings read it (FTEF-28.4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Sym {
     /// A temporary the compiler made.

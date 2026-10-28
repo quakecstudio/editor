@@ -15,7 +15,7 @@ use crate::check::expr::Checker;
 use crate::check::{Sym, Value};
 
 impl Checker<'_> {
-    /// FTEF-28.1, FTEF-28.3: the warnings of the comparison or logic opcode `op` emitted on
+    /// FTEF-28.3, FTEF-28.4: the warnings of the comparison or logic opcode `op` emitted on
     /// `lhs` and `rhs`.
     pub(super) fn compare(&mut self, op: Op, lhs: &Value, rhs: &Value, span: Span) {
         let same = lhs.sym != Sym::Temp && lhs.sym == rhs.sym;
@@ -33,9 +33,13 @@ impl Checker<'_> {
                 }
                 constant.0 || constant.1
             }
-            Op::EqF | Op::NeF | Op::EqV | Op::NeV | Op::LeF | Op::GeF => constant.0 && constant.1,
+            // A comparison of types `typecmp_lax` tells apart leaves the switch before the
+            // constant check (FTEF-28.3).
+            Op::EqF | Op::NeF | Op::EqV | Op::NeV | Op::LeF | Op::GeF => {
+                self.env.typecmp_lax(&lhs.ty, &rhs.ty) && constant.0 && constant.1
+            }
             Op::EqS | Op::EqE | Op::EqFnc | Op::NeS | Op::NeE | Op::NeFnc | Op::LtF | Op::GtF => {
-                (constant.0 && constant.1) || same
+                self.env.typecmp_lax(&lhs.ty, &rhs.ty) && ((constant.0 && constant.1) || same)
             }
             _ => false,
         };

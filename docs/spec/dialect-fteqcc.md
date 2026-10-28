@@ -4130,6 +4130,13 @@ opcodes.rs`, the rows of `pr_opcodes[]` in order) and picks as FTEQCC picks
   0i` and `fld == 0` warn of nothing. An operand of the row's basic type keeps its own type, a
   class's among them. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefExpression`, `QCC_EvaluateCast`.
+- **FTEF-23.10** A value made a boolean, cast to one or stored to one (`QCC_StoreSRefToRef`'s
+  `dest->cast->type == ev_boolean`), is always `QCC_PR_GenerateLogicalTruth`'s comparison, a
+  boolean value too, which it reads as its parent type: on the id target `b = b;` of a `_Bool b`
+  is `OP_NE_I`'s emulation and two "ftoi emulation: denormals are unsafe", and `b = (_Bool)i;`
+  three. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateLogicalTruth`, `QCC_TryEvaluateCast`,
+  `QCC_StoreSRefToRef`.
 
 ## FTEF-24 Member access as FTEQCC types it
 
@@ -4328,6 +4335,11 @@ saturates, as on the arm64 build the differential is recorded on.
   `OP_NOT_ENT` and `OP_NOT_FNC` of the word, and `OP_NOT_I` to the `int` 1 or 0, before any
   emulation: on the id target `!1i` is 0 with no "Result of comparison is constant" of an
   emulated `OP_EQ_FNC`.
+- **FTEF-26.12** A function's definition is a constant whose value no opcode's folding reads, so
+  an opcode of it is emitted, or emulated where the target lacks it, as a variable's is: on the
+  id target `b = (_Bool)fn;` of a `void() fn` is the `OP_NE_FNC` truth and three "ftoi
+  emulation", as of an entity. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`, `QCC_SRef_EvalConst`.
 - **FTEF-26.10** A constant operand that an opcode's row converts is the constant its conversion
   folds to (`QCC_SupplyConversion` emits the conversion opcode, folded as FTEF-26.3 says), so the
   opcode then folds too: in `(__double)2.5 * 2` the float 2 is converted by `OP_CONV_FD` to the
@@ -4480,14 +4492,9 @@ temporary). The semantic model keeps each value's symbol (`crates/qc-sema/src/ch
 
 ### Behaviour
 
-- **FTEF-28.1** `OP_AND_F` with one symbol on both sides is "Parameter offsets for && are the
-  same", and with both constant "Result of comparison is constant"; `OP_OR_F` with one symbol is
-  "Parameters for || are the same", and with either constant "Result of comparison is constant".
-  A comparison with both operands constant, or, unless it is a float or vector equality, `<=` or
-  `>=`, with one symbol on both sides, is "Result of comparison is constant": `s == s`, `e == e`,
-  `a < a` and `"x" == "y"` are, `a == a` is not, and two constants of a float comparison fold
-  first (FTEF-26.2). A function's definition is no constant symbol (`ff != vf` of two functions
-  gives nothing, `ff == ff` the warning); an operand converted for the opcode is a temporary.
+- **FTEF-28.1** **Withdrawn** (#84): it said a function's definition is no constant symbol to the
+  comparison warnings; it is one, and a comparison of types `typecmp_lax` tells apart gives no
+  warning, which FTEF-28.4 says, replacing it.
 - **FTEF-28.2** **Withdrawn** (#84): it said a comparison of operands of different basic types is
   "'OP' type mismatch: A with B"; the warning is never given, and FTEF-28.3 replaces it.
 - **FTEF-28.3** A comparison never warns "'OP' type mismatch: A with B", even with F307 on. When
@@ -4499,6 +4506,23 @@ temporary). The semantic model keeps each value's symbol (`crates/qc-sema/src/ch
   nothing, nor do `.float == .vector` or `float() != void()`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_StatementFlags` (the `OP_EQ_F` to `OP_GT_F` cases).
+- **FTEF-28.4** `OP_AND_F` with one symbol on both sides is "Parameter offsets for && are the
+  same", and with both constant "Result of comparison is constant"; `OP_OR_F` with one symbol is
+  "Parameters for || are the same", and with either constant "Result of comparison is constant".
+  A comparison whose operands' types `typecmp_lax` tells apart leaves the switch before its
+  constant check (FTEF-28.3) and warns of nothing. Any other with both operands constant symbols
+  (`sym->constant && !sym->temp`), or, unless it is a float or vector equality, `<=` or `>=`,
+  with one symbol on both sides, is "Result of comparison is constant": `s == s`, `e == e`, `a <
+  a` and `"x" == "y"` are, `a == a` is not, and two constants of a float comparison fold first
+  (FTEF-26.2). A function's and a field's definitions are constant symbols, so `fn == fn2` of two
+  `void()` and `fl == fl2` of two `.float` warn, where `ff != fn` of a `float()` and a `void()`
+  and `fl == fv` of a `.float` and a `.vector` do not. A null constant converted for the opcode is
+  a constant of the row's type with no statement, `type_function` a `void()` and `type_field` a
+  `.void`: `fn == 0` warns, `ff == 0` and `fl == 0` do not. A `case` value supplied for a
+  function or pointer switch keeps its `int` type (`QCC_ShouldConvert` gives 0), so `switch (ff)
+  { case 1i: }` warns of nothing; any other operand converted for the opcode is a temporary.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags`, `QCC_TryEvaluateCast`, `QCC_SupplyConversion`.
 
 ## FTEF-29 Assignments
 

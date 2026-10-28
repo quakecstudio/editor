@@ -14,6 +14,7 @@ use qc_syntax::ast::{self, AstNode as _};
 
 use crate::check::assign::{lexed_string, string_bytes};
 use crate::check::constant::Constant;
+use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::reference::expected_after;
@@ -629,8 +630,18 @@ impl Checker<'_> {
             Some(etype) => self.converted(value, etype, span)?,
             None => value.clone(),
         };
+        // `QCC_ShouldConvert` of 0 returns the value with its own type, as an `int` stays for a
+        // function or a pointer (FTEF-28.4).
+        let unconverted = match (self.etype_of(&value.ty), self.etype_of(to)) {
+            (Some(from), Some(to)) => from != to && conversion_opcodes(from, to).is_empty(),
+            _ => false,
+        };
         Ok(Value {
-            ty: to.clone(),
+            ty: if unconverted {
+                value.ty.clone()
+            } else {
+                to.clone()
+            },
             ..converted
         })
     }

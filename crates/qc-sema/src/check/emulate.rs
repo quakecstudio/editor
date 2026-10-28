@@ -93,7 +93,10 @@ impl Checker<'_> {
         span: Span,
     ) -> Result<Value, Fatal> {
         let result = replaced(op);
-        if lhs.constness == Constness::Opaque || rhs.constness == Constness::Opaque {
+        // A function's definition is a constant FTEQCC folds no opcode of (FTEF-26.12).
+        let opaque =
+            |value: &Value| value.constness == Constness::Opaque && !value.ty.is_function();
+        if opaque(lhs) || opaque(rhs) {
             self.emitted = self.emitted.saturating_add(1);
             // Its value decides no folding or emulation; the comparison warnings read no value.
             if self.env.target_at(span.start).valid(op) {

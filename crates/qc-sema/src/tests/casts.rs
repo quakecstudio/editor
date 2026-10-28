@@ -756,3 +756,21 @@ fn pointers_and_functions_cast_by_typecmp_lax() {
         ["Implicit cast from void(__int32) to void(float)"]
     );
 }
+
+// spec FTEF-23.10: a value made a boolean is always its truth, a boolean's too
+// spec FTEF-26.12: a function's definition is emitted and emulated as a variable is
+#[test]
+fn a_boolean_is_always_a_truth() {
+    let found = |statement: &str| -> usize {
+        diags(&format!(
+            "_Bool b; int i; void() fn = {{}};\nvoid() g = {{ {statement} }};\n"
+        ))
+        .iter()
+        .filter(|(_, m)| m.as_str() == "ftoi emulation: denormals are unsafe")
+        .count()
+    };
+    assert_eq!(found("b = b;"), 2);
+    assert_eq!(found("b = i;"), 2);
+    assert_eq!(found("b = (_Bool)i;"), 3);
+    assert_eq!(found("b = (_Bool)fn;"), 3);
+}
