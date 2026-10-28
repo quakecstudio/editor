@@ -34,6 +34,7 @@ use qc_diag::{Code, Diagnostic, Span};
 use qc_preproc::{OpcodeTarget, TargetFormat, WarningSettings};
 use qc_syntax::{Dialect, Keywords};
 
+use crate::check::CvarValue;
 use crate::check::TypedBody;
 use crate::check::constant::Constant;
 use crate::expand::{OriginMap, ProtoPlan};
@@ -303,6 +304,7 @@ pub(crate) fn resolve_mapped(
         structs: HashSet::new(),
         strict_enums: HashMap::new(),
         folded_sizes: HashMap::new(),
+        autocvars: HashMap::new(),
         enum_types: HashMap::new(),
         enum_values: HashMap::new(),
         enum_redeclared: false,
@@ -549,6 +551,8 @@ struct Resolver<'a> {
     /// The size each global array whose size is an expression folds to, by where its
     /// declaration's name starts (FTEF-19.62).
     folded_sizes: HashMap<usize, u32>,
+    /// The default each cvar an `autocvar` call names was given first (FTEF-17.17).
+    autocvars: HashMap<String, CvarValue>,
     /// The definitions whose last initialiser was `weak` or that are `accumulate`, which the
     /// next may replace (FTEF-15.5): FTEQCC's `def->weak`, which gives the next initialiser
     /// `PIF_STRONGER`, and `def->accumulate`.

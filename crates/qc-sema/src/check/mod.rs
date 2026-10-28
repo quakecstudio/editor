@@ -66,6 +66,9 @@ pub(crate) trait Env {
     fn is_accessor(&self, ty: &Type) -> bool;
     /// The type of the local whose name starts at offset `at`, through typedefs.
     fn local_type(&self, at: usize) -> Option<Type>;
+    /// FTEF-17.17: the cvar `name` an `autocvar` call gives the default `value`: whether a value
+    /// the cvar was given before differs from it, which ends the call.
+    fn autocvar(&mut self, name: &str, value: CvarValue, span: Span) -> bool;
     /// Whether the local whose name starts at offset `at` is `static` (FTEF-21.14).
     fn local_static(&self, at: usize) -> bool;
     /// FTEF-19.62: the local whose name starts at offset `at` is an array of `size` elements.
@@ -520,6 +523,18 @@ pub(crate) enum Constness {
     /// A constant whose value the model does not follow; nothing that its value decides, folding
     /// or emulation, is checked.
     Opaque,
+}
+
+/// The default an `autocvar` call gives its cvar, as the call compares it with the cvar's
+/// earlier value (FTEF-17.17).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum CvarValue {
+    /// A number or vector constant.
+    Number(Constant),
+    /// A string immediate's text.
+    Text(String),
+    /// A value the model keeps no words of.
+    Unknown,
 }
 
 /// A checked function body: the type of each expression, by where it starts and ends in the

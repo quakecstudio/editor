@@ -352,6 +352,10 @@ pub enum Code {
     E0365,
     /// "Array length is not a constant": an array's size that folds to no constant (QCD-4.67).
     E0366,
+    /// "autocvar default value is not constant" (QCD-4.68).
+    E0367,
+    /// "autocvar NAME was already initialised with another value" (QCD-4.69).
+    E0368,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -600,7 +604,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 263] = [
+    pub const ALL: [Self; 265] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -754,6 +758,8 @@ impl Code {
         Self::E0364,
         Self::E0365,
         Self::E0366,
+        Self::E0367,
+        Self::E0368,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -1110,6 +1116,8 @@ impl Code {
             Self::E0364 => "E0364",
             Self::E0365 => "E0365",
             Self::E0366 => "E0366",
+            Self::E0367 => "E0367",
+            Self::E0368 => "E0368",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1404,6 +1412,8 @@ impl Code {
             | Self::E0364
             | Self::E0365
             | Self::E0366
+            | Self::E0367
+            | Self::E0368
             | Self::E0408 => true,
         }
     }

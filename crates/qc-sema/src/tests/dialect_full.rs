@@ -216,7 +216,8 @@ fn type_names_may_be_declared_again() {
 #[test]
 fn intrinsics_resolve() {
     let index = fte_index_of(
-        "float() f = { local float n = sizeof(int) + autocvar(cl_speed, 3) + randomv(); \
+        "float() f = { local float n = sizeof(int) + autocvar(cl_speed, 3); \
+         local vector v = randomv(); \
          _(\"text\"); return 0; };\n\
          class C { float() m; };\nfloat() C::m = { return this ? 0 : 1; };\n",
     );

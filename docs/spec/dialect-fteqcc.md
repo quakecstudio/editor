@@ -2427,6 +2427,16 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   so `C() C::C = {};` is "C(), should be void()" and `void() C::C = {};` defines it. The
   types are named as `TypeName` names them, a class as `class NAME`, inside a function's
   parameters too.
+- **FTEF-17.17** `autocvar(name, default[, "description"])` is the global `autocvar_name`,
+  made by the call with the default's type and value (`QCC_PR_GetSRef(e.cast, autocvarname, NULL,
+  true, 0, GDF_USED)`), so the call is a value of that type: `string s = autocvar(sv_x, 1);` is
+  "Cannot cast from float to string". A default that is no constant is the error `E0367`
+  "autocvar default value is not constant", and one that differs from the value the cvar was
+  given before, by an `autocvar_` global or an earlier call, is the fatal error `E0368` "autocvar
+  NAME was already initialised with another value". A global `autocvar_` declared after a call
+  is not compared with the call's value by this profile. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseFunctionCall`.
 
 ## FTEF-18 Further statements, terms and frame macros
 

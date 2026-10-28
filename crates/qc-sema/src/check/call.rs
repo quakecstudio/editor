@@ -16,7 +16,8 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::reference::expected_after;
-use crate::check::{ParamFacts, Reference, Value};
+use crate::check::term::string_immediate;
+use crate::check::{Constness, CvarValue, ParamFacts, Reference, Value};
 use crate::ty::{FunctionType, SimpleType, Type};
 
 /// `MAX_PARMS`: the parameters a call passes in the parameter globals.
@@ -364,6 +365,31 @@ impl Checker<'_> {
                     return self.fatal(Code::E0346, span, message.to_owned()).map(Some);
                 }
                 Ok(Some(Value::of(ty)))
+            }
+            // FTEF-17.17: `autocvar(name, default[, "description"])` is the global
+            // `autocvar_name`, of the default's type and given its value.
+            "autocvar" if args.len() >= 2 => {
+                let Some(ast::Expr::Name(name)) = args.first() else {
+                    return Ok(None);
+                };
+                let Some(name) = name.name().map(|t| t.text_lossless()) else {
+                    return Ok(None);
+                };
+                let default = args.get(1).cloned();
+                let value = self.value(default.clone())?;
+                let cvar = match (value.known(), default.as_ref().and_then(string_immediate)) {
+                    (_, Some(text)) => CvarValue::Text(text),
+                    (Some(constant), None) => CvarValue::Number(constant),
+                    (None, None) => CvarValue::Unknown,
+                };
+                if value.constness == Constness::Variable {
+                    let message = "autocvar default value is not constant".to_owned();
+                    self.env.report(Code::E0367, span, message);
+                }
+                if self.env.autocvar(&name, cvar, span) {
+                    return Err(Fatal);
+                }
+                Ok(Some(Value::of(value.ty)))
             }
             "used_sound" | "used_model" => {
                 if !args.first().is_some_and(is_string_literal) {

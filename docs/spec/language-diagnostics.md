@@ -381,6 +381,10 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   global or `static` `__auto` with no `memalloc` or `malloc` (FTEF-19.61); a fatal error.
 - **QCD-4.67** `E0366` "Array length is not a constant": an array's size that folds to no
   constant (FTEF-19.62); the declaration goes on.
+- **QCD-4.68** `E0367` "autocvar default value is not constant": an `autocvar` call whose
+  default is no constant (FTEF-17.17).
+- **QCD-4.69** `E0368` "autocvar NAME was already initialised with another value": an
+  `autocvar` call whose default differs from the cvar's earlier value (FTEF-17.17); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 

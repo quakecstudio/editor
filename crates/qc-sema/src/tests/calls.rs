@@ -381,3 +381,40 @@ fn a_call_of_a_call_ends_the_expression() {
         [d(Code::E0204, "expected ), found (")]
     );
 }
+
+// spec FTEF-17.17: autocvar() is the global of its default's type and value
+// spec QCD-4.68: E0367 "autocvar default value is not constant"
+// spec QCD-4.69: E0368 "autocvar NAME was already initialised with another value"
+#[test]
+fn autocvar_calls_give_their_cvar_a_value() {
+    let messages = |body: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nfloat x;\nvoid() f = {{ {body} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    assert_eq!(
+        messages("local string s = autocvar(sv_x, 1);"),
+        ["Cannot cast from float to string"]
+    );
+    assert_eq!(
+        messages("local float a = autocvar(sv_x, x);"),
+        ["autocvar default value is not constant"]
+    );
+    assert_eq!(
+        messages("local float a = autocvar(sv_x, 1); local float b = autocvar(sv_x, 2);"),
+        ["autocvar sv_x was already initialised with another value"]
+    );
+    assert!(
+        messages("local float a = autocvar(sv_x, 1); local float b = autocvar(sv_x, 1);")
+            .is_empty()
+    );
+    assert_eq!(
+        messages(
+            "local string a = autocvar(sv_s, \"a\"); local string b = autocvar(sv_s, \"b\", \"d\");"
+        ),
+        ["autocvar sv_s was already initialised with another value"]
+    );
+}

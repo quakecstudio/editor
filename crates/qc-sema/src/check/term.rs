@@ -462,7 +462,7 @@ const fn int_f32(value: i32) -> f32 {
 }
 
 /// The text of a string literal `expr` is, without its quotes, with adjacent parts joined.
-fn string_immediate(expr: &ast::Expr) -> Option<String> {
+pub(super) fn string_immediate(expr: &ast::Expr) -> Option<String> {
     let ast::Expr::Literal(literal) = expr else {
         return None;
     };
