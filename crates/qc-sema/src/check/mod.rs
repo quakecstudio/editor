@@ -319,7 +319,7 @@ impl Value {
                 format!("{}->{}", pointer.base, index_name(pointer.index.as_ref()))
             }
             // The accessor branch writes its name and then `break`s, so the base's is returned.
-            Reference::Accessor(_) | Reference::Global | Reference::ArrayHead => self.label(),
+            Reference::Accessor(_) | Reference::Global | Reference::ArrayHead(_) => self.label(),
         }
     }
 
@@ -334,7 +334,7 @@ impl Value {
             }
             Reference::Element(element) => element.base.clone(),
             Reference::Global
-            | Reference::ArrayHead
+            | Reference::ArrayHead(_)
             | Reference::Pointer(_)
             | Reference::Character(_)
             | Reference::Accessor(_) => self.label(),
@@ -343,7 +343,7 @@ impl Value {
 
     /// Whether it is an array named bare (`REF_ARRAYHEAD`).
     pub(crate) const fn is_array_head(&self) -> bool {
-        matches!(self.reference, Reference::ArrayHead)
+        matches!(self.reference, Reference::ArrayHead(_))
     }
 
     /// The field `field` of the entity `base`, holding a `ty`, which may be assigned to; `def`
@@ -377,10 +377,25 @@ pub(crate) struct StructMemberFacts {
     pub(crate) ty: Type,
     /// Whether it is an array.
     pub(crate) array: bool,
+    /// An array's first size, when it is an integer literal (FTEF-6.24).
+    pub(crate) length: Option<u32>,
     /// A bitfield's width in bits, when the model knows it.
     pub(crate) bits: Option<u32>,
     /// The bit it starts at from the struct's start, when the model lays the struct out.
     pub(crate) position: Option<u32>,
+}
+
+/// An array a struct's member is (FTEF-6.24): its first size, when the model knows it, and the
+/// word of the struct it starts at, which its index is added to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct MemberArray {
+    /// Its first size.
+    pub(crate) length: Option<u32>,
+    /// The word of the struct it starts at.
+    pub(crate) word: u32,
+    /// Whether the struct is reached through a pointer, the value's name, whose elements are
+    /// read and stored through it.
+    pub(crate) pointer: bool,
 }
 
 /// A bitfield a value is (`ev_bitfld`, FTEF-6.15): its width and whether its base is signed.
@@ -405,8 +420,9 @@ pub(crate) enum Reference {
     /// An entity's field (`REF_FIELD`).
     Field(Box<FieldRef>),
     /// An array named bare, whose type is its elements' (`REF_ARRAYHEAD`): reading it takes its
-    /// address (FTEF-31.4).
-    ArrayHead,
+    /// address (FTEF-31.4). A struct's member array carries its length and its word in the
+    /// struct, which no definition holds (FTEF-6.24).
+    ArrayHead(Option<MemberArray>),
     /// A word of a definition at an index (`REF_ARRAY`, `REF_GLOBAL` with an index).
     Element(Box<ElementRef>),
     /// What a pointer points at (`REF_POINTER`), at an index or not (FTEF-31.3).

@@ -469,6 +469,17 @@ inheritance, bitfields and nested members.
   0): on the id target `st.h = 1;` of a `__uint16 h` is the `OP_BITAND_I` and `OP_BITOR_I` of
   `QCC_PR_Statement_BitCopy`, with no shift, a read is `OP_BITEXTEND_U` by `(0<<8)|16`, and its
   address and a pointer's index to it count its bytes (FTEF-6.19).
+- **FTEF-6.24** A struct's member array named bare is its head (`REF_ARRAYHEAD`), with the
+  member's first size as its length: `s.a[4]` of a `float a[3]` is "(constant) array index out of
+  bounds (0 <= 4 < 3)". Its index is added to the member's word in the struct
+  (`QCC_PR_ParseRefArrayPointer`'s `idx`, an `int` on a target with `OP_ADD_I` and else a float):
+  `OP_ADD_F` when both are floats, else `OP_ADD_I` of both made integers, so on the FTE target
+  `s.a[3.5]` warns "Numerical overflow. 3.500000 will be rounded to 3" and on the id target
+  `s.a[i]` is `OP_ADD_I`'s refusal. An element at an index that is no constant is read by the
+  struct's `ArrayGet` into its return, which for a struct of more than three words is returned
+  through storage `OP_PUSH` makes, refused on a target without it. Through a pointer the element
+  is read and stored through the pointer at that index (`ps->a[i]`), and the head is the pointer
+  plus the member's offset in bytes by `OP_ADD_I`.
 - **FTEF-6.22** A struct or union with no tag (`struct { ... } x;`, `typedef struct { ... } T;`)
   is a type of its own, with its members and its layout, named `<struct>` or `<union>`: `t.zz` of
   one is "zz is not a member of <struct>", `sizeof(T)` of `typedef struct { float a; vector v; }

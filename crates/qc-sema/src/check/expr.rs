@@ -248,7 +248,7 @@ impl<'e> Checker<'e> {
         }
         Value {
             reference: if array {
-                Reference::ArrayHead
+                Reference::ArrayHead(None)
             } else {
                 Reference::Global
             },

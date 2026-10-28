@@ -17,7 +17,7 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::reference::expected_after;
-use crate::check::{Bitfield, Constness, Reference, Value};
+use crate::check::{Bitfield, Constness, MemberArray, Reference, Value};
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -92,7 +92,7 @@ impl Checker<'_> {
                     && !indexed
                 {
                     let head = Value {
-                        reference: Reference::ArrayHead,
+                        reference: Reference::ArrayHead(None),
                         ..value.clone()
                     };
                     self.address_of(head, field.syntax().span())?;
@@ -123,6 +123,11 @@ impl Checker<'_> {
                     }
                     // `st.f` is the struct's own definition at the member's offset
                     // (`QCC_PR_BuildRef` of its sym), no temporary.
+                    _ if member.is_array_head() => Value {
+                        sym: base.sym.at(word),
+                        name: base.name.clone(),
+                        ..member
+                    },
                     _ => Value {
                         sym: base.sym.at(word),
                         reference: base.reference.clone(),
@@ -315,7 +320,7 @@ impl Checker<'_> {
         let Some((name, _)) = selector_name(selector) else {
             return (Value::unknown(), None);
         };
-        let Some(member) = self.env.struct_member(ty, &name).filter(|m| !m.array) else {
+        let Some(member) = self.env.struct_member(ty, &name) else {
             return (Value::unknown(), None);
         };
         // FTEF-6.15: a bitfield of fewer than 32 bits is read and stored by its bits, and so is
@@ -352,9 +357,20 @@ impl Checker<'_> {
                 .and_then(|position| position.checked_div(align))
                 .map(|units| (units, align)),
         };
+        // An array member is its head, its elements' type (FTEF-6.24).
+        let reference = if member.array {
+            Reference::ArrayHead(Some(MemberArray {
+                length: member.length,
+                word: member.position.map_or(0, |position| position >> 5),
+                pointer: false,
+            }))
+        } else {
+            Reference::Global
+        };
         let value = Value {
             readonly: false,
             bitfield,
+            reference,
             ..Value::of(member.ty)
         };
         (value, offset)
@@ -437,6 +453,17 @@ impl Checker<'_> {
             // `bitofs / bits` more (FTEF-6.15).
             Some(Etype::Struct | Etype::Union) => {
                 let (member, offset) = self.struct_member(pointee, selector);
+                // A member array through the pointer is indexed through it (FTEF-6.24).
+                if let Reference::ArrayHead(Some(array)) = member.reference {
+                    return Ok(Value {
+                        name: Some(base.label()),
+                        reference: Reference::ArrayHead(Some(MemberArray {
+                            pointer: true,
+                            ..array
+                        })),
+                        ..member
+                    });
+                }
                 let index = self.member_index(None, offset, span)?;
                 Ok(Value {
                     reference: Reference::pointer(base.label(), Some(index)),

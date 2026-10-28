@@ -171,6 +171,7 @@ impl Checker<'_> {
             }
         };
         let updated = self.emit(op, &variable, &by, span)?;
+        let updated = self.bit_copy(&updated, operand, span)?;
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
         // `QCC_StoreSRefToRef` folds the store into the operand, which is the value, read-only.

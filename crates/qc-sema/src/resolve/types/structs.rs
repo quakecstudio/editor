@@ -502,6 +502,10 @@ impl Resolver<'_> {
                 return Some(StructMemberFacts {
                     ty: member.ty.clone(),
                     array: !member.array.is_empty(),
+                    length: member.sizes.first().and_then(|size| match size {
+                        IntConst::Integer(length) => u32::try_from(*length).ok(),
+                        IntConst::NotInteger | IntConst::Name(_) | IntConst::Unfolded => None,
+                    }),
                     bits,
                     position: self.member_position(ty, name),
                 });

@@ -298,7 +298,7 @@ impl Checker<'_> {
     /// packs the value into it (`QCC_PR_Statement_BitCopy`): by `OP_BITCOPY_I` when the target
     /// has it, a plain statement, else the word's bits cleared by `OP_BITAND_I`, the value's
     /// masked by `OP_BITAND_I` and shifted by `OP_LSHIFT_I`, and the two joined by `OP_BITOR_I`.
-    fn bit_copy(&mut self, value: &Value, lhs: &Value, span: Span) -> Checked {
+    pub(super) fn bit_copy(&mut self, value: &Value, lhs: &Value, span: Span) -> Checked {
         let Some(bitfield) = lhs.bitfield else {
             return Ok(value.clone());
         };
