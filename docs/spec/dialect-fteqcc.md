@@ -3978,6 +3978,13 @@ the statements it would emit are code generation's.
 The statements an emulation emits are code generation's; the semantic model follows them only
 as far as they report.
 
+- **FTEF-27.11** Some opcodes the target lacks are emitted as plain statements
+  (`QCC_PR_SimpleStatement`), which `QCC_PR_StatementFlags`'s global-scope check never sees: a
+  64-bit `&`, `|` and `^` as two `OP_BITAND_I`, `OP_BITOR_I` or `OP_BITXOR_I`, a 64-bit field
+  load as two `OP_LOAD_FLD`, each refused on a target without it by the fatal error `E0320`
+  (`force` off); a vector's `&` and `|` as three float ones with `force` on, never refused. So
+  `d & e` of doubles on the id target is the two `OP_CONV_DI64` refusals and then `OP_BITAND_I`'s,
+  which ends the statement before `OP_CONV_I64D`.
 ## FTEF-28 The warnings of an emitted comparison
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (the switch after the emulation),
@@ -4160,6 +4167,8 @@ reference are FTEF-31's.
   argument type for intrinsic". The model does not keep an array's length or a struct's layout,
   so those sizes are no known constants.
 
+- **FTEF-30.9** `?:` compares its arms' types (FTEF-30.3) before it stores the last arm, so
+  "Type mismatch on ternary operator: A vs B" comes before that store's statement.
 ## FTEF-31 References
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`, `QCC_RefToDef`,
@@ -4448,3 +4457,9 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   QCC_PR_ParseError(ERR_MULTIPLEDEFAULTS, "Duplicated default case");`), after the errors of the
   cases before it: `switch (1) { default: case 1: default: ; }` is refused, and `switch (1) {
   case "a": default: default: ; }` reports the string case's mismatch instead.
+
+- **FTEF-34.11** An opcode `QCC_PR_StatementFlags` refuses (FTEF-27.5, `badopcode`, an error but
+  no fatal one) is still emitted, so at global scope it is also "Unable to generate statements at
+  global scope (OPNAME).": `string t = s + 1;` on the id target is "OP_ADD_SF: string+float may
+  be unsafe", `AddInt`'s and `ADD_I`'s refusals, and "Unable to generate statements at global
+  scope (ADD_I).".

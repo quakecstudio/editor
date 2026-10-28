@@ -773,3 +773,74 @@ fn a_narrow_pointers_step_under_undefwordsize() {
     );
     assert_eq!(postfix(flag, "v++;").first(), Some(&blocked));
 }
+
+fn unable(op: &str) -> (Code, String) {
+    d(
+        Code::E0345,
+        &format!("Unable to generate statements at global scope ({op})."),
+    )
+}
+
+// spec FTEF-27.11: 64-bit bitwise opcodes and field loads are plain statements, refused fatally
+// and never reported at global scope; a vector's `&` and `|` are forced
+// spec FTEF-34.11: a refused opcode is still emitted, at global scope reported as such
+#[test]
+fn plain_statements_and_refused_opcodes() {
+    let refused = |name: &str, op: &str| {
+        d(
+            Code::E0320,
+            &format!(
+                "Opcode \"{name}|{op}\" not valid for target. Consider the use of: #pragma target fte"
+            ),
+        )
+    };
+    assert_eq!(
+        diags("__double d, e; __double z; void() h = { z = d & e; };\n"),
+        [
+            refused("=", "CONV_DI64"),
+            refused("=", "CONV_DI64"),
+            refused("&", "BITAND_I")
+        ]
+    );
+    assert_eq!(
+        diags("__int64 a, b, c; void() h = { c = a | b; };\n"),
+        [refused("|", "BITOR_I")]
+    );
+    assert_eq!(
+        diags("vector v, w; vector x = v & w;\n"),
+        [d(Code::E0214, "initializer for 'x' is not constant")]
+    );
+    assert_eq!(
+        diags("entity e; .__int64 fl; __int64 l = e.fl;\n"),
+        [d(Code::E0214, "initializer for 'l' is not constant")]
+    );
+    assert_eq!(
+        diags("string s; string t = s + 1;\n"),
+        [
+            d(Code::W0236, "OP_ADD_SF: string+float may be unsafe"),
+            helper("AddInt", "int+int"),
+            d(Code::E0320, ADD_I),
+            unable("ADD_I"),
+            d(Code::E0214, "initializer for 't' is not constant"),
+        ]
+    );
+}
+
+// spec FTEF-30.9: the arms' types are compared before the last arm is stored
+#[test]
+fn a_ternary_compares_before_its_last_store() {
+    assert_eq!(
+        diags("#pragma target fte\nfloat *p, *q; int i; float *r = i ? p : q;\n"),
+        [
+            unable("IFNOT"),
+            unable("STORE_F"),
+            unable("GOTO"),
+            d(
+                Code::W0244,
+                "Type mismatch on ternary operator: float* vs float**"
+            ),
+            unable("STORE_P"),
+            d(Code::E0214, "initializer for 'r' is not constant"),
+        ]
+    );
+}

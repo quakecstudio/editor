@@ -251,7 +251,7 @@ impl Checker<'_> {
         if !self.env.defines("memgetval") {
             let message = "memgetval function not defined: cannot emulate OP_LOADP_*";
             self.env.report(Code::W0235, span, message.to_owned());
-            self.refuse(op, span);
+            self.refuse_emitted(op, span);
             return Ok(result);
         }
         self.emit(Op::ConvItof, rhs, &Value::unknown(), span)?;

@@ -95,6 +95,12 @@ impl Checker<'_> {
                     Some(Etype::Int64 | Etype::Uint64 | Etype::Double) => Op::LoadI64,
                     _ => Op::LoadF,
                 };
+                // `case OP_LOAD_I64:` two plain `OP_LOAD_FLD`s on a target without it.
+                if load == Op::LoadI64 && !self.env.target_at(span.start).valid(load) {
+                    self.simple_statement(Op::LoadFld, span)?;
+                    self.simple_statement(Op::LoadFld, span)?;
+                    return Ok(value);
+                }
                 self.generate(load, span);
                 Ok(value)
             }

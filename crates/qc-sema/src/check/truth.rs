@@ -201,8 +201,25 @@ impl Checker<'_> {
             Some(Etype::Double | Etype::Struct | Etype::Union | Etype::Enum) => None,
             etype => Some(Self::store_op(etype)),
         };
-        self.arm_store(op, &other, before, span)?;
-        self.arms(kept, kept_null, other, span)
+        self.compare_then_store(kept, kept_null, other, op, before, span)
+    }
+
+    /// The arms' types compared, then the last arm stored (FTEF-30.3); a function of its own so
+    /// that the nested ternary's frame stays small.
+    #[inline(never)]
+    fn compare_then_store(
+        &mut self,
+        kept: Value,
+        kept_null: bool,
+        other: Value,
+        op: Option<Op>,
+        before: usize,
+        span: Span,
+    ) -> Checked {
+        let stored = other.clone();
+        let value = self.arms(kept, kept_null, other, span)?;
+        self.arm_store(op, &stored, before, span)?;
+        Ok(value)
     }
 
     /// FTEF-30.3: an arm's store, `op` through `QCC_PR_StatementFlags`, which folds it into the
