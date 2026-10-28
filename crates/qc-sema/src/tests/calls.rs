@@ -595,3 +595,38 @@ fn empty_arguments_take_their_defaults() {
     assert_eq!(messages("v(1, );"), [missing(")")]);
     assert_eq!(messages("v(1, , 2);"), [missing(",")]);
 }
+
+// spec FTEF-33.2: `addstat`'s constant type number must be the field's basic type
+// (`QCC_VerifyArgs_MatchingFieldType`), read from the argument as passed, so a field converted to
+// a `.void` parameter is refused first and a variadic one is checked
+#[test]
+fn addstat_type_numbers_match_their_fields() {
+    let found = |decl: &str, call: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\n{decl}\n.float fh; .string fs; float x;\nvoid() f = {{ {call} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let variadic = "void(float num, float type, ...) addstat = #232;";
+    assert_eq!(
+        found(variadic, "addstat(32, 1, fh);"),
+        ["addstat: indicated type ev_string does not match passed field type .float"]
+    );
+    assert_eq!(
+        found(variadic, "addstat(32, 2i, fs);"),
+        ["addstat: indicated type ev_float does not match passed field type .string"]
+    );
+    assert_eq!(
+        found(variadic, "addstat(32, 99, fs);"),
+        ["addstat: indicated type 99 is not a basic type"]
+    );
+    assert!(found(variadic, "addstat(32, 2, fh);").is_empty());
+    assert!(found(variadic, "addstat(32, x, fs);").is_empty());
+    let typed = "void(float num, float type, .void fld) addstat = #232;";
+    assert_eq!(
+        found(typed, "addstat(32, 1, fh);"),
+        ["Cannot cast from .float to .void"]
+    );
+}
