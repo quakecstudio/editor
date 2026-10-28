@@ -225,12 +225,12 @@ fn a_class_accessor_member_is_a_function_and_a_member_name() {
     assert_eq!(params, ["this", "value"]);
 }
 
-// spec FTEF-10.2: an accessor member bound to a function, `get float size = GetSize;`, is a
-// use of that function, and a member with neither a function nor a body defines nothing.
+// spec FTEF-10.2: an accessor member bound to a function, `get float size = GetSize;`, refers to
+// that function, and a `set` member with a body defines the write function.
 #[test]
 fn an_accessor_member_may_name_its_function() {
-    let source = "float(float h) GetSize = #1;\n\
-                  accessor box : float { get float size = GetSize; set float size; };\n";
+    let source = "accessor box : float { get float size = GetSize; set float size = { }; };\n\
+                  float(box this) GetSize = #1;\n";
     let index = fte_index_of(source);
     assert_eq!(messages(&index), Vec::<String>::new());
     let get_size = index
@@ -248,8 +248,9 @@ fn an_accessor_member_may_name_its_function() {
             .unwrap()
             .initialized
     };
-    assert!(initialized("box::get_size"));
-    assert!(!initialized("box::set_size"));
+    assert!(initialized("GetSize"));
+    assert!(initialized("box::set_size"));
+    assert!(index.defs.iter().all(|d| d.name != "box::get_size"));
 }
 
 // spec FTEF-17.14: `Class::member` declares a member the class does not, of the kind its type
@@ -571,4 +572,42 @@ fn words_only_a_member_function_takes() {
     assert!(messages("inline void() m = { };").is_empty());
     assert!(messages("virtual: float x;").is_empty());
     assert_eq!(messages("virtual: inline void() m = { };"), prototype);
+}
+
+// spec FTEF-10.11: an accessor member whose value is a name declares that function with the
+// member's function type
+#[test]
+fn accessor_members_declare_the_functions_they_name() {
+    let messages = |source: &str| -> Vec<String> {
+        fte_index_of(source)
+            .diagnostics
+            .iter()
+            .map(|d| d.diagnostic.message.clone())
+            .collect()
+    };
+    assert_eq!(
+        messages("float() g = { return 1; };\naccessor A : float { get float x = g; };\n"),
+        ["Type mismatch on redeclaration of g. float(A this), should be float()"]
+    );
+    assert_eq!(
+        messages("accessor A : float { get float x = nope; };\n"),
+        ["function nope has no body"]
+    );
+    assert!(
+        messages(
+            "accessor A : float { get float x[float i] = g; };\n\
+             float(A this, float i) g = { return 1; };\n"
+        )
+        .is_empty()
+    );
+    assert!(
+        messages("class C : entity { set float x = s; };\nvoid(C this, float value) s = {};\n")
+            .is_empty()
+    );
+    assert_eq!(
+        messages("class C : entity { get float x = g; };\nfloat() g = { return 1; };\n")
+            .first()
+            .map(String::as_str),
+        Some("Type mismatch on redeclaration of g. float(), should be float(class C this)")
+    );
 }

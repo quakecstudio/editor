@@ -887,6 +887,18 @@ others).
   after the type is the member's, `get` and `set` included. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_ParseClass`.
+- **FTEF-10.11** An accessor member whose value is a name, `get float x = g;`, declares that
+  function with the member's function type (`QCC_PR_GetSRef(functype, funcname, NULL, true, 0,
+  GDF_CONST)`): `this` of the accessor's or class's type, then the index and for `set` the value,
+  returning the member's type or for `set` nothing. So a definition of the name with another type,
+  before the member or after it, is "Type mismatch on redeclaration of g. float(A this), should be
+  float()", in the order the two are read, and a name nothing defines is a function with no body.
+  The name stays a reference to the function. The `=` is required (`QCC_PR_Expect("=")`): a
+  member with neither a body nor a function is "expected =, found ;". This profile compares an
+  accessor's or class's type with any other as `fteqcc_same` does, so a function that differs
+  from the member's only in such a parameter is not reported. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseAccessorMember`.
 
 ## FTEF-11 The `__variant` type
 

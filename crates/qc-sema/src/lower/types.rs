@@ -11,14 +11,14 @@ use qc_syntax::{Dialect, Keyword, SyntaxKind, SyntaxNode};
 
 use std::rc::Rc;
 
-use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
+use crate::ty::{FunctionType, ParamLabel, ParamLabels, SimpleType, Type};
 
 use super::body::{RawBody, RawParam, lower_body, next_think_of};
 use super::decl::{
     LiteralValue, Qualifier, RawDecl, RawValue, decl_base, declarator_type, lower_declarators,
     no_function, qualifiers, qualifiers_of, raw_value,
 };
-use super::expr::{RawUse, lower_expr};
+use super::expr::{RawUse, UseKind, lower_expr};
 use super::{Cx, FileDecls, RawAccessor, first_word, token_text};
 
 /// How an enum's name gets its value (FTEF-19.10).
@@ -820,6 +820,8 @@ pub(super) fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecl
     };
     // FTEF-9.2: `virtual:` and `nonvirtual:` set the kind of the member functions after them.
     let mut assume_virtual = None;
+    // FTEF-10.11: the functions accessor members name, declared once the class is a type.
+    let mut functions = Vec::new();
     for node in class.syntax().children() {
         match node.kind() {
             SyntaxKind::AccessLabel => {
@@ -856,7 +858,12 @@ pub(super) fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecl
                     }
                     out.members.extend(member.name().map(|t| t.text_lossless()));
                     out.accessors.push(raw_accessor(&member, &class_name, cx));
-                    lower_accessor_body(&member, &class_name, cx, &mut out.decls);
+                    functions.extend(lower_accessor_body(
+                        &member,
+                        &class_name,
+                        cx,
+                        &mut out.decls,
+                    ));
                 }
             }
             _ => {}
@@ -865,6 +872,7 @@ pub(super) fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecl
     let mut decl = RawDecl::type_name(&name, TypeKind::Class);
     decl.class = Some(raw);
     out.decls.push(decl);
+    out.decls.extend(functions);
     // FTEF-9.8: the variables declared with the class as their type.
     let base = decl_base(
         class.syntax(),
@@ -1056,7 +1064,8 @@ pub(super) fn lower_accessor(acc: &ast::AccessorDecl, cx: Cx<'_>, out: &mut File
     for member in acc.members() {
         out.members.extend(member.name().map(|t| t.text_lossless()));
         out.accessors.push(raw_accessor(&member, &accessor, cx));
-        lower_accessor_body(&member, &accessor, cx, &mut out.decls);
+        let named = lower_accessor_body(&member, &accessor, cx, &mut out.decls);
+        out.decls.extend(named);
     }
     let base = decl_base(
         acc.syntax(),
@@ -1145,13 +1154,14 @@ fn raw_accessor(member: &ast::AccessorMember, owner: &str, cx: Cx<'_>) -> RawAcc
 }
 
 /// The body of an accessor member, as a function whose parameters are `this`, `value` and the
-/// index name (FTEF-10.2); a member whose value is a function is a use of it.
+/// index name (FTEF-10.2). A member whose value names a function declares it, a declaration
+/// returned to be read once the owner is a type (FTEF-10.11).
 fn lower_accessor_body(
     member: &ast::AccessorMember,
     owner: &str,
     cx: Cx<'_>,
     out: &mut Vec<RawDecl>,
-) {
+) -> Option<RawDecl> {
     let set = member.is_set();
     let field = member
         .name()
@@ -1204,9 +1214,53 @@ fn lower_accessor_body(
         decl.ty = fn_ty;
         decl.body = Some(body);
         decl.initialized = true;
+    } else if let Some(ast::Expr::Name(function)) = member.value()
+        && let Some(token) = function.name()
+    {
+        // FTEF-10.11: `QCC_PR_GetSRef(functype, funcname, NULL, true, ...)` declares the named
+        // function with the member's function type, `this` of the accessor's.
+        let member_ty = member.ty().map_or(Type::Unknown, |t| cx.ty(&t));
+        let index_ty = member.index_ty().map(|t| cx.ty(&t));
+        let mut params = vec![Type::Named(owner.into())];
+        let mut labels = vec![ParamLabel {
+            name: Some("this".to_owned()),
+            ..ParamLabel::default()
+        }];
+        if let Some(index) = index_ty {
+            params.push(index);
+            labels.push(ParamLabel {
+                name: member.index_name().map(|t| t.text_lossless()),
+                ..ParamLabel::default()
+            });
+        }
+        let ret = if set {
+            params.push(member_ty);
+            labels.push(ParamLabel {
+                name: Some("value".to_owned()),
+                ..ParamLabel::default()
+            });
+            Type::Simple(SimpleType::Void)
+        } else {
+            member_ty
+        };
+        let fn_ty = Type::Function(Rc::new(FunctionType {
+            ret,
+            params,
+            variadic: false,
+            labels: ParamLabels(labels.into()),
+        }));
+        // The name stays a reference to the function it declares.
+        let mut function_decl = RawDecl::new(token.text_lossless(), token.span(), fn_ty);
+        function_decl.uses.push(RawUse::new(
+            token.text_lossless(),
+            token.span(),
+            UseKind::Value,
+        ));
+        return Some(function_decl);
     } else if let Some(value) = member.value() {
         lower_expr(&value, cx, &mut decl.uses);
         decl.initialized = true;
     }
     out.push(decl);
+    None
 }

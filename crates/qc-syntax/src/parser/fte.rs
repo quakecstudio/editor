@@ -1305,8 +1305,8 @@ impl Parser<'_> {
                 self.expect(K::RBracket, "]");
                 self.finish_node();
             }
-            if self.at(K::Eq) {
-                self.bump();
+            // FTEF-10.11: `QCC_PR_Expect("=")`, then a body or a function's name.
+            if self.expect(K::Eq, "=") {
                 if self.at(K::LBrace) {
                     self.start_node(K::FunctionBody);
                     self.block(true);
