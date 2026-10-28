@@ -39,7 +39,7 @@ impl Checker<'_> {
     /// a `void` or `variant` "ptr-to-variants must be cast to a different type before being
     /// read" (FTEF-31.3); a string's character by `OP_LOADP_C` or `OP_LOADP_U8`.
     pub(super) fn read(&mut self, value: Value, span: Span) -> Checked {
-        if value.ty == Type::Unknown || !self.env.fteqcc() {
+        if value.ty == Type::Unknown {
             return Ok(value);
         }
         // FTEF-6.15: a bitfield's word is read, then its bits by `OP_BITEXTEND_*`
@@ -439,7 +439,7 @@ impl Checker<'_> {
         let base = self.expr_of(index.base())?;
         let at = self.value(index.index())?;
         self.end_of_construct()?;
-        if base.ty == Type::Unknown || at.ty == Type::Unknown || !self.env.fteqcc() {
+        if base.ty == Type::Unknown || at.ty == Type::Unknown {
             return Ok(Value::unknown());
         }
         let constant = match at.known() {
@@ -726,7 +726,8 @@ impl Checker<'_> {
             }
             Reference::Pointer(pointer) => {
                 // FTEF-31.12: `&p[i]` of an 8- or 16-bit pointee is `p + i` in bytes, by
-                // `OP_ADD_I`: a constant index's byte offset, else the index times the width.
+                // `OP_ADD_I`: the index made an integer times the width, a constant's folded, as
+                // `QCC_Eval_Int` of a constant index gives it.
                 if let Some(index) = &pointer.index
                     && let Some(bits) = narrow_bits(&value.ty)
                 {
@@ -735,14 +736,8 @@ impl Checker<'_> {
                         .checked_div(8)
                         .and_then(|w| i32::try_from(w).ok())
                         .unwrap_or(1);
-                    let undefined = self.env.flags_at(span.start).has(FteFlag::Undefwordsize);
-                    let offset = match index.known() {
-                        Some(c) if !undefined => int(c.i().wrapping_mul(width)),
-                        _ => {
-                            let index = self.converted(index, Etype::Integer, span)?;
-                            self.emit(Op::MulI, &int(width), &index, span)?
-                        }
-                    };
+                    let index = self.converted(index, Etype::Integer, span)?;
+                    let offset = self.emit(Op::MulI, &int(width), &index, span)?;
                     self.emit(Op::AddI, &pointer, &offset, span)?;
                     return Ok(pointer_to(&value.ty));
                 }
@@ -771,10 +766,14 @@ impl Checker<'_> {
     pub(super) fn address_term(&mut self, operand: Value, span: Span) -> Checked {
         if self.env.flags_at(span.start).has(FteFlag::Qccx) {
             match self.etype_of(&operand.ty) {
+                // FTEF-31.13: "casts it to a (pre-dereferenced) pointer", a float read through
+                // the value as an address.
                 Some(Etype::Float) => {
-                    return Ok(Value::of(Type::Pointer(
-                        Type::Simple(SimpleType::Float).into(),
-                    )));
+                    return Ok(Value {
+                        readonly: false,
+                        reference: Reference::pointer(operand.label(), None),
+                        ..Value::of(Type::Simple(SimpleType::Float))
+                    });
                 }
                 Some(Etype::String | Etype::Field | Etype::Entity | Etype::Function) => {
                     return Ok(Value::of(Type::Simple(SimpleType::Float)));

@@ -250,7 +250,7 @@ impl Checker<'_> {
             let message = "suggest parenthesis for assignment used as truth value".to_owned();
             self.env.report(Code::W0242, span, message);
         }
-        if !self.env.fteqcc() || lhs.ty == Type::Unknown || rhs.ty == Type::Unknown {
+        if lhs.ty == Type::Unknown || rhs.ty == Type::Unknown {
             return Ok(Value::unknown());
         }
         // An array named bare is a pointer to its elements (`REF_ARRAYHEAD`).
@@ -570,9 +570,7 @@ impl Checker<'_> {
         } else {
             self.etype(&operand.ty)
         };
-        if let Some(etype) = etype
-            && self.env.fteqcc()
-        {
+        if let Some(etype) = etype {
             let step = if increment { 1 } else { -1 };
             self.step(&operand, etype, step, discarded(postfix.syntax()), span)?;
         }
@@ -701,7 +699,7 @@ impl Checker<'_> {
             else {
                 continue;
             };
-            if value.ty == Type::Unknown || !self.env.fteqcc() {
+            if value.ty == Type::Unknown {
                 continue;
             }
             let span = init.syntax().span();

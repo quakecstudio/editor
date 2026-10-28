@@ -243,7 +243,7 @@ impl Checker<'_> {
     /// FTEF-30.3: the type of `?:` from its arms, `kept` the condition or middle arm and
     /// `other` the last.
     fn arms(&mut self, mut kept: Value, kept_null: bool, mut other: Value, span: Span) -> Checked {
-        if kept.ty == Type::Unknown || other.ty == Type::Unknown || !self.env.fteqcc() {
+        if kept.ty == Type::Unknown || other.ty == Type::Unknown {
             return Ok(Value::unknown());
         }
         let (Some(a), Some(b)) = (self.etype_of(&kept.ty), self.etype_of(&other.ty)) else {

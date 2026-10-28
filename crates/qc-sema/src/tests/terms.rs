@@ -393,3 +393,21 @@ fn struct_values_in_bodies() {
         );
     }
 }
+
+// spec FTEF-31.13: under qccx `&` of a float is a float read through it as an address
+#[test]
+fn a_qccx_address_of_a_float_is_read_through() {
+    let found: Vec<String> =
+        diags("#pragma flag enable qccx\nfloat f; string x_s; void() g = { x_s = &f; };\n")
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect();
+    assert_eq!(
+        found,
+        [
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit cast from float to string",
+        ]
+    );
+}

@@ -185,11 +185,10 @@ impl<'e> Checker<'e> {
                 }
             }
             Some(ast::LiteralKind::FrameRef) => Value::of(Type::Simple(SimpleType::Float)),
-            Some(ast::LiteralKind::Float) if self.env.fteqcc() => {
+            Some(ast::LiteralKind::Float) => {
                 let flags = self.env.lex_flags_at(token.span().start);
                 Value::constant(Constant::of_number(&token.text_lossless(), flags))
             }
-            Some(ast::LiteralKind::Float) => Value::of(Type::Simple(SimpleType::Float)),
             None => Value::unknown(),
         }
     }
@@ -293,8 +292,7 @@ impl<'e> Checker<'e> {
             return Ok(None);
         };
         // An array named bare is its head, a pointer (`REF_ARRAYHEAD`), which is not followed.
-        if !self.env.fteqcc()
-            || lhs.ty == Type::Unknown
+        if lhs.ty == Type::Unknown
             || rhs.ty == Type::Unknown
             || lhs.is_array_head()
             || rhs.is_array_head()

@@ -489,6 +489,18 @@ fn a_narrow_elements_address_is_a_byte_offset() {
         [mul, add].concat()
     );
     assert!(messages("__uint16 *pc; void() f = { local __uint16 *q = &pc[0]; };").is_empty());
+    assert_eq!(
+        messages("__int16 *pc; void() f = { local __int16 *q = &pc[3]; };"),
+        add
+    );
+    assert_eq!(
+        messages("__int8 *pc; void() f = { local __int8 *q = &pc[1.5]; };"),
+        [
+            &["Numerical overflow. 1.500000 will be rounded to 1"][..],
+            &add[..]
+        ]
+        .concat()
+    );
     assert!(
         messages(
             "#pragma target fte\n__int16 *pc; int i; void() f = { local __int16 *q = &pc[i]; };"

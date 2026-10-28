@@ -35,7 +35,7 @@ impl Checker<'_> {
             return Ok(Value::unknown());
         };
         let operand = self.expr_of(unary.operand())?;
-        if operand.ty == Type::Unknown || !self.env.fteqcc() {
+        if operand.ty == Type::Unknown {
             return Ok(Value::unknown());
         }
         // `++`, `--`, `&` and `@` take the reference; the rest read it (`QCC_PR_Expression`).
@@ -82,7 +82,7 @@ impl Checker<'_> {
     /// `!e`, which `ast::NotExpr` holds: `QCC_PR_GenerateLogicalNot(e, "Type mismatch: !%s")`.
     pub(super) fn not(&mut self, not: &ast::NotExpr) -> Checked {
         let operand = self.value(not.operand())?;
-        if operand.ty == Type::Unknown || !self.env.fteqcc() {
+        if operand.ty == Type::Unknown {
             return Ok(Value::unknown());
         }
         let span = not.syntax().span();
@@ -247,7 +247,7 @@ impl Checker<'_> {
         let Some(to) = to else {
             return Ok(Value::unknown());
         };
-        if operand.ty == Type::Unknown || !self.env.fteqcc() {
+        if operand.ty == Type::Unknown {
             return Ok(Value::of(to));
         }
         if self.env.explicit_cast(operand.source(), &to, span) {
@@ -286,7 +286,7 @@ impl Checker<'_> {
         let mut components = Vec::new();
         for element in elements {
             let value = self.value(Some(element.clone()))?;
-            if value.ty == Type::Unknown || !self.env.fteqcc() {
+            if value.ty == Type::Unknown {
                 components.push(None);
                 continue;
             }
@@ -408,7 +408,7 @@ impl Checker<'_> {
     pub(super) fn length(&mut self, operand: Option<ast::Expr>, span: Span) -> Checked {
         let text = operand.as_ref().and_then(string_immediate);
         let value = self.expr_of(operand)?;
-        if value.ty == Type::Unknown || !self.env.fteqcc() {
+        if value.ty == Type::Unknown {
             return Ok(Value::unknown());
         }
         let length = |n: usize| Value::constant(Constant::int(i32::try_from(n).unwrap_or(0)));
