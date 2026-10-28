@@ -369,7 +369,7 @@ fn designated_initialisers_name_every_member() {
     let defs = "#pragma target fte\nstruct S { float a; vector b; };\n";
     assert_eq!(
         messages(&format!("{defs}S st = {{ .a = 1, 2 }};")),
-        [mixed.clone()]
+        std::slice::from_ref(&mixed)
     );
     assert_eq!(
         messages(&format!("{defs}S st = {{ .a = 1, .b = '1 2 3', }};")),
