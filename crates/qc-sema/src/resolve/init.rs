@@ -710,7 +710,22 @@ impl Resolver<'_> {
                 source
             }
         };
-        let (code, verb) = match source.cast(&to_checked, flags) {
+        let mut cast = source.cast(&to_checked, flags);
+        // FTEF-22.8: a pointer to a pointer is silent when what it points to, or a class that
+        // derives it, is the target's pointee by `typecmp_lax`, and else implicit.
+        if let (Source::Typed(Type::Pointer(from_inner)), Type::Pointer(to_inner)) =
+            (source, &to_checked)
+            && matches!(cast, Cast::Silent | Cast::Implicit)
+            && !matches!(**from_inner, Type::Simple(SimpleType::Void))
+            && !matches!(**to_inner, Type::Simple(SimpleType::Void))
+        {
+            cast = if self.derives_lax(from_inner, to_inner) {
+                Cast::Silent
+            } else {
+                Cast::Implicit
+            };
+        }
+        let (code, verb) = match cast {
             Cast::Silent => return false,
             Cast::Implicit => (Code::W0220, "Implicit cast"),
             Cast::Lax => (Code::W0229, "Implicit lax cast"),

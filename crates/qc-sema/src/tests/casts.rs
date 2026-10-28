@@ -728,3 +728,31 @@ fn casts_to_booleans_take_the_logical_truth() {
     );
     assert!(messages("float f; void() g = { local __bfloat c; c = f; };").is_empty());
 }
+
+// spec FTEF-22.8: pointers cast by their pointees and functions by `typecmp_lax`
+#[test]
+fn pointers_and_functions_cast_by_typecmp_lax() {
+    let messages = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nstruct S {{ float a; }};\nvoid() g = {{ local float *pf; local S *ps; \
+             local float **ppf; local void(float) f2; local void(float, ...) f4; local void(int) f3; \
+             {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    assert_eq!(
+        messages("pf = ps;"),
+        ["Implicit cast from struct S* to float*"]
+    );
+    assert_eq!(
+        messages("ps = ppf;"),
+        ["Implicit cast from float** to struct S*"]
+    );
+    assert!(messages("f2 = f4; f4 = f2;").is_empty());
+    assert_eq!(
+        messages("f2 = f3;"),
+        ["Implicit cast from void(__int32) to void(float)"]
+    );
+}

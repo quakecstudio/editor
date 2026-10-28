@@ -3776,6 +3776,18 @@ the others (FTEF-21.1) and the target as it reads the files (FTEF-20.4).
   `#pragma flag`, `#pragma target` and the command line, and those a warning decides with
   `-Werror -Wno-Q208`. Its run of 2026-10-22 (macOS arm64) agrees with the pinned FTEQCC on
   every case.
+- **FTEF-22.8** An implicit cast of a pointer to another pointer (`else if (totype ==
+  ev_pointer && src.cast->type == ev_pointer)`), but to or from `void*`, is silent when what the
+  source points to, or a type it derives from (`t = t->parentclass`), is the target's pointee by
+  `typecmp_lax`, and else `W0220` "Implicit cast": a struct is no float, so `S *ps; float *pf;
+  pf = ps;` is "Implicit cast from struct S* to float*", and `float **` to `struct S*` warns too.
+  Two functions are among the casts "acceptable but probably an error", which warn only when
+  `typecmp_lax` tells them apart (`if (implicit && typecmp_lax(src.cast, cast))`): by their return
+  types and the parameters both have, a parameter only one has unless it is `optional`, not
+  by `...` (`typecmp_lax` reads `vargcount`, not `vargs`), so `void(float) f2; void(float, ...) f4; f2 = f4;` is silent and `f2 = f3;` of a
+  `void(int)` is "Implicit cast from void(__int32) to void(float)". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_TryEvaluateCast`.
 
 ## FTEF-23 Operators as FTEQCC types them
 
