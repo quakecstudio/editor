@@ -130,6 +130,7 @@ impl Checker<'_> {
                     },
                     _ => Value {
                         sym: base.sym.at(word),
+                        name: base.name.clone(),
                         reference: base.reference.clone(),
                         ..member
                     },

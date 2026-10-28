@@ -17,7 +17,7 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::reference::expected_after;
 use crate::check::{ParamFacts, Reference, Value};
-use crate::ty::{SimpleType, Type};
+use crate::ty::{FunctionType, SimpleType, Type};
 
 /// `MAX_PARMS`: the parameters a call passes in the parameter globals.
 const MAX_PARMS: usize = 8;
@@ -82,15 +82,14 @@ impl Checker<'_> {
             None => None,
         };
         let name = func.label();
+        // The function's own definition's parameters, else its type's (`QCC_typeparam_s`), a
+        // struct's function member's included.
         let params = func
             .sym
             .def()
+            .filter(|&def| self.env.definition(def).is_some_and(|d| d.ty.is_function()))
             .and_then(|def| self.env.params(def))
-            .unwrap_or_else(|| {
-                function.as_ref().map_or_else(Vec::new, |f| {
-                    f.params.iter().map(|_| ParamFacts::default()).collect()
-                })
-            });
+            .unwrap_or_else(|| function.as_ref().map_or_else(Vec::new, type_params));
         let Some(function) = function else {
             // A `variant` takes any arguments.
             for arg in &args {
@@ -403,4 +402,23 @@ impl Checker<'_> {
 /// Whether `expr` is a string literal.
 fn is_string_literal(expr: &ast::Expr) -> bool {
     matches!(expr, ast::Expr::Literal(l) if l.kind() == Some(ast::LiteralKind::String))
+}
+
+/// The parameters of the function type `function` as a call reads them, from how each is
+/// written (`QCC_typeparam_s`, FTEF-6.25).
+fn type_params(function: &FunctionType) -> Vec<ParamFacts> {
+    (0..function.params.len())
+        .map(|at| {
+            function
+                .labels
+                .0
+                .get(at)
+                .map_or_else(ParamFacts::default, |label| ParamFacts {
+                    name: label.name.clone(),
+                    has_default: label.default.is_some(),
+                    optional: label.optional,
+                    out: label.out,
+                })
+        })
+        .collect()
 }

@@ -480,6 +480,11 @@ inheritance, bitfields and nested members.
   through storage `OP_PUSH` makes, refused on a target without it. Through a pointer the element
   is read and stored through the pointer at that index (`ps->a[i]`), and the head is the pointer
   plus the member's offset in bytes by `OP_ADD_I`.
+- **FTEF-6.25** A call through a struct's function member reads the parameters of the member's
+  type (`QCC_typeparam_s`): a parameter with a default may be left out, and a call that leaves
+  out one with none warns "too few parameters on call to NAME, PARAM will be UNDEFINED", NAME the
+  struct's definition, the member's `sym`: `w.get()` of a `float(entity e = __NULL__) get` is no
+  warning, `w.two()` of a `float(float a) two` names `w`.
 - **FTEF-6.22** A struct or union with no tag (`struct { ... } x;`, `typedef struct { ... } T;`)
   is a type of its own, with its members and its layout, named `<struct>` or `<union>`: `t.zz` of
   one is "zz is not a member of <struct>", `sizeof(T)` of `typedef struct { float a; vector v; }

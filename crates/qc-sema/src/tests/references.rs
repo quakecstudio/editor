@@ -405,6 +405,22 @@ fn a_narrow_member_is_a_bitfield_at_bit_zero() {
     assert_eq!(messages("ps->h = 2;"), pointer);
 }
 
+// spec FTEF-6.25: a call through a struct's function member reads the member type's parameters
+#[test]
+fn a_struct_function_member_is_called_by_its_type() {
+    let found: Vec<String> = diags(
+        "#pragma target fte\ntypedef struct { float(entity e = __NULL__) get; float(float a) two; } \
+         api_t; api_t w; float x; void() g = { x = w.get(); x = w.two(); };\n",
+    )
+    .into_iter()
+    .map(|(_, message)| message)
+    .collect();
+    assert_eq!(
+        found,
+        ["too few parameters on call to w, a will be UNDEFINED"]
+    );
+}
+
 /// The definitions every case of [`REFERENCES`] reads.
 const REFERENCE_DEFS: &str = "struct S { int a : 3; int b : 5; __int8 c; __uint16 h; float f; vector v; }; S st; S *ps; S sarr[3]; S **pps; struct S4 { float b; float a[3]; vector av[2]; }; S4 s4; S4 *ps4; typedef struct { float q; int r[2]; } T; T t; float f; int i; __uint u; __int64 l; vector v; string s; entity e; float b; float farr[4]; vector varr[3]; int iarr[4]; __int8 carr[4]; __uint8 ucarr[4]; __int16 harr[2]; float *p; int *pi; vector *pv; __int8 *pc; __uint16 *ph; void *pw; .float fl; .vector fv; .int fi; float x_f; int x_i; vector x_v; string x_s;";
 
