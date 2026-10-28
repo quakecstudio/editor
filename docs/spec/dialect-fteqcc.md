@@ -523,6 +523,13 @@ inheritance, bitfields and nested members.
   reads no `nonvirtual` in a struct). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_ParseStruct`.
+- **FTEF-6.30** A name as a member's array size or bitfield width (`QCC_PR_IntConstExpr`) is an
+  integer constant only when it names a constant: `float y; struct S { int a : y; };` and `float
+  a[y];` are "Value is not an integer constant", as an unknown name is. An unknown name read there
+  is defined a global `variant` (FTEF-19.71), "Unknown value \"NAME\".", so `float u = A;` after
+  `struct S { float a[A]; };` is only "initializer for 'u' is not constant". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_IntConstExpr`, `QCC_PR_ParseValue`.
 
 ## FTEF-7 `typedef` of any type
 
@@ -3461,6 +3468,23 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   && !basedef->isstatic && !basedef->initialized`). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateInitializerType`.
+- **FTEF-19.71** At global scope an unknown name in a definition's value is a global `variant`,
+  as in a function it is a local one (FTEF-19.69): `QCC_PR_GetSRef(type_variant, name, pr_scope,
+  true, ...)` with `pr_scope` null defines it, and "Unknown value \"NAME\"." is a warning. The
+  value is then no constant, "initializer for 'u' is not constant", and the checks after the
+  name read a `variant`: `float u = -nope;` is "type mismatch for -", `nope + 1` "Unable to
+  generate statements at global scope (ADD_F).", and `float u = nope[1];` ends at the `[`
+  (FTEF-18.38). Later uses find the global with no message, and `float nope;` after it
+  redeclares it. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseValue`, `QCC_PR_GetSRef`.
+- **FTEF-19.72** A global's value that names a global variable whose type converts to the
+  global's by opcodes (FTEF-22) is read at global scope as any expression is (FTEF-34.9): `int
+  x; float q = x;` on the id target is "itof emulation: denormals are unsafe x", "Unable to
+  generate statements at global scope (DIV_F).", then "initializer for 'q' is not constant";
+  `float x; int q = x;` the `ftoi` emulation and `MUL_F`; under `#pragma target fte` `CONV_IF`.
+  A constant converts by folding, with no message. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseInitializerType`, `QCC_SupplyConversionForAssignment`.
 
 ## FTEF-20 Keywords
 
@@ -4417,6 +4441,14 @@ as far as they report.
   is unsigned, so `--` adds its negation and warns as FTEF-27.10's subtraction: `--p` of a `vector
   *` is `W0234` "Constant int operand 4294967293 will be truncated to -3", and on the id target
   both steps are then `OP_ADD_I`'s helper warning and refusal.
+- **FTEF-27.15** The emulated signed right shift tests its value's sign and jumps:
+  `QCC_Generate_OP_IFNOT` of the `OP_LT_I` against 0 skips the negative form, which
+  `QCC_Generate_OP_GOTO` ends before the positive one. At global scope each jump is a statement
+  too, "Unable to generate statements at global scope (IFNOT)." after the comparison's and
+  "(GOTO)." after the negative form's, as `float q = c;` of an `__int8 c` on the id target gives
+  in the extension of its bits (FTEF-2.12). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags` (`OP_RSHIFT_I`).
 ## FTEF-28 The warnings of an emitted comparison
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (the switch after the emulation),
@@ -4437,10 +4469,17 @@ temporary). The semantic model keeps each value's symbol (`crates/qc-sema/src/ch
   `a < a` and `"x" == "y"` are, `a == a` is not, and two constants of a float comparison fold
   first (FTEF-26.2). A function's definition is no constant symbol (`ff != vf` of two functions
   gives nothing, `ff == ff` the warning); an operand converted for the opcode is a temporary.
-- **FTEF-28.2** A comparison whose operands' types differ by `typecmp_lax`, with neither's parent
-  the other's, is "'OP' type mismatch: A with B". `typecmp_lax` compares no names, so two classes
-  are the same, and a truth value is its parent's type. The semantic model compares basic types
-  only: the pinned FTEQCC gives no warning for `.float == .vector` or `float() != void()`.
+- **FTEF-28.2** **Withdrawn** (#84): it said a comparison of operands of different basic types is
+  "'OP' type mismatch: A with B"; the warning is never given, and FTEF-28.3 replaces it.
+- **FTEF-28.3** A comparison never warns "'OP' type mismatch: A with B", even with F307 on. When
+  `typecmp_lax(var_a.cast, var_b.cast)` tells the operands apart, the check walks `var_a`'s
+  parents, `for (t = var_a.cast; t; t = t->parentclass) if (typecmp_lax(t, var_b.cast))
+  break;`, which stops at the first type that differs, `var_a.cast` itself, and `if (t) break;`
+  then leaves before the warning, as the walk of `var_b`'s parents would. So `!u` of a `__uint`
+  and `!p` of a pointer, emulated on the id target as `OP_EQ_FNC` with an `int` 0, warn of
+  nothing, nor do `.float == .vector` or `float() != void()`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags` (the `OP_EQ_F` to `OP_GT_F` cases).
 
 ## FTEF-29 Assignments
 

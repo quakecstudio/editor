@@ -796,7 +796,7 @@ fn enum_values() {
             "enum - y is not a compile-time constant".to_owned()
         )
     );
-    assert_eq!(fte("enum { A = y };\n"), [Code::E0301]);
+    assert_eq!(fte("enum { A = y };\n"), [Code::E0301, Code::E0228]);
     assert_eq!(
         fte_only("enum : vector { A };\n"),
         (

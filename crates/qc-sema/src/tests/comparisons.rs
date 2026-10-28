@@ -87,19 +87,30 @@ fn constant_results() {
     }
 }
 
-// spec FTEF-28.2: the comparison warns of operands of different basic types only
-// spec QCD-7.82: W0240 "'OP' type mismatch: A with B"
+// spec FTEF-28.3: a comparison never warns of a type mismatch, F307 on, whatever its types
 #[test]
-fn type_mismatch_needs_different_basic_types() {
-    let source = "#pragma warning enable F307\n\
-                  void() g = { local float a; local entity e; local entity f; a = (e == f); };\n";
-    assert_eq!(diags(source), []);
+fn a_comparison_warns_of_no_type_mismatch() {
+    let found = |statement: &str| {
+        diags(&format!(
+            "#pragma warning enable F307\n.float fl; .vector fv; void() vf = {{}}; \
+             float() ff = {{ return 1; }}; __uint u; float *p; entity e, f;\n\
+             void() g = {{ local float a; {statement} }};\n"
+        ))
+    };
+    for statement in [
+        "a = (e == f);",
+        "a = !u;",
+        "a = !p;",
+        "a = (fl == fv);",
+        "a = (ff != vf);",
+    ] {
+        assert_eq!(found(statement), [], "{statement}");
+    }
 }
 
 // spec FTEF-23.9: an operand converted to the opcode's type is of that type, so a null constant
 // compared with a string, entity or field is no type mismatch; FreeCS compares its strings and
 // entities with `__NULL__` so, over a thousand times
-// spec FTEF-28.2: a mismatch the converted types still show warns
 #[test]
 fn null_constants_compare_with_any_type() {
     let found = |statement: &str| -> Vec<String> {

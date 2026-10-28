@@ -602,6 +602,93 @@ fn a_static_local_takes_only_a_constant() {
     assert!(found("static float y = k * 2;").is_empty());
 }
 
+// spec FTEF-19.71: at global scope an unknown name in a value is a global `variant`
+#[test]
+fn an_unknown_global_value_is_a_variant() {
+    let check = |source: &str, expected: &[&str]| {
+        let mut found: Vec<String> = diags(&format!("{source}\nvoid() main = {{}};\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect();
+        found.sort();
+        let mut expected: Vec<String> = expected.iter().map(|&m| m.to_owned()).collect();
+        expected.sort();
+        assert_eq!(found, expected, "{source}");
+    };
+    let unknown = "Unknown value \"nope\".";
+    let not_constant = "initializer for 'u' is not constant";
+    check("float u = nope;", &[unknown, not_constant]);
+    check("float u = -nope;", &[unknown, "type mismatch for -"]);
+    check(
+        "float u = nope + 1;",
+        &[
+            unknown,
+            "Unable to generate statements at global scope (ADD_F).",
+            not_constant,
+        ],
+    );
+    check(
+        "float u = nope[1];",
+        &[
+            unknown,
+            not_constant,
+            "Missing semicolon at end of definition",
+            "\"[\" is not a type",
+        ],
+    );
+    check(
+        "float u = nope; float v = nope;",
+        &[unknown, not_constant, "initializer for 'v' is not constant"],
+    );
+}
+
+// spec FTEF-19.72: a global's value naming a variable that converts by opcodes is read at
+// global scope
+// spec FTEF-27.15: the emulated signed right shift's jumps are statements there too
+#[test]
+fn a_converted_variable_is_read_at_global_scope() {
+    let found = |source: &str| -> Vec<String> {
+        diags(&format!("{source}\nvoid() main = {{}};\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    let at_global = |op: &str| format!("Unable to generate statements at global scope ({op}).");
+    let not_constant = "initializer for 'q' is not constant".to_owned();
+    assert_eq!(
+        found("int x; float q = x;"),
+        [
+            "itof emulation: denormals are unsafe x".to_owned(),
+            at_global("DIV_F"),
+            not_constant.clone(),
+        ]
+    );
+    assert_eq!(
+        found("float x; int q = x;"),
+        [
+            "ftoi emulation: denormals are unsafe".to_owned(),
+            at_global("MUL_F"),
+            not_constant.clone(),
+        ]
+    );
+    assert_eq!(
+        found("#pragma target fte\nint x; float q = x;"),
+        [at_global("CONV_IF"), not_constant.clone()]
+    );
+    assert_eq!(found("const int x = 2; float q = x;"), Vec::<String>::new());
+    assert_eq!(found("int x; int q = x;"), [not_constant]);
+    let narrow = found("__int8 c; float q = c;");
+    let at = |op: &str| narrow.iter().position(|m| *m == at_global(op));
+    assert!(
+        at("LT_F") < at("IFNOT") && at("IFNOT").is_some(),
+        "{narrow:?}"
+    );
+    assert!(
+        at("IFNOT") < at("GOTO") && at("GOTO").is_some(),
+        "{narrow:?}"
+    );
+}
+
 // spec FTEF-19.69: an unknown name is a `variant` defined in its function, which its later uses
 // there find, and which the checks after it read
 #[test]

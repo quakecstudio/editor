@@ -709,9 +709,8 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   and "Parameters for || are the same": under an FTEQCC profile, a comparison or logic opcode
   emitted on constants or on one operand twice (FTEF-28.1), at the operator.
   `WARN_CONSTANTCOMPARISON`, F319.
-- **QCD-7.82** `W0240` "'OP' type mismatch: A with B": a comparison emitted on operands of
-  different basic types (FTEF-28.2); and "type mismatch: A NAME to B TARGET", a value stored that
-  keeps a type the target's is not (FTEF-29.7). `WARN_STRICTTYPEMISMATCH`, F307.
+- **QCD-7.82** **Withdrawn** (#84): it gave `W0240` a comparison's "'OP' type mismatch: A with B",
+  which FTEQCC never reports (FTEF-28.3); replaced by QCD-7.114.
 - **QCD-7.83** `W0241` "Assignment to const" and "Assignment to constant NAME": under an FTEQCC
   profile, an assignment to a read-only reference (FTEF-29.1, FTEF-29.3), at the operator.
   `WARN_ASSIGNMENTTOCONSTANT`, Q106.
@@ -782,6 +781,8 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.113** `W0320` "Function returning function. Is this what you meant? (suggestion: use
   typedefs)": a parameter list after the name of a definition of an inline function type
   (FTEF-19.67).
+- **QCD-7.114** `W0240` "type mismatch: A NAME to B TARGET": a value stored that keeps a type the
+  target's is not (FTEF-29.7). `WARN_STRICTTYPEMISMATCH`, F307.
 
 ## QCD-8 Preprocessor errors
 

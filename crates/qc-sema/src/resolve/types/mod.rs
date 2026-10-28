@@ -497,18 +497,6 @@ impl Resolver<'_> {
 }
 
 impl Resolver<'_> {
-    /// Whether two values' types are the same to the comparison warning (FTEF-28.2): the same
-    /// basic type, or either a `variant` or a type the model does not follow. FTEQCC compares
-    /// more (`typecmp_lax` reads what a field, a pointer or a function holds), but the pinned
-    /// FTEQCC gives no warning for a `.float` compared with a `.vector`, nor for a `float()` with
-    /// a `void()`, so the model compares no further.
-    pub(in crate::resolve) fn lax_same_value(&self, a: &Type, b: &Type) -> bool {
-        let (Some(sa), Some(sb)) = (self.shape(a), self.shape(b)) else {
-            return true;
-        };
-        sa.etype == sb.etype || sa.etype == Etype::Variant || sb.etype == Etype::Variant
-    }
-
     /// `typecmp_lax` (`qcc_pr_lex.c`), whether `a` and `b` are one type to a conditional's arms
     /// and a store (FTEF-30.3, FTEF-29.7): of one basic type and size, or one a `variant` with
     /// nothing held, and what a field, a pointer or a function holds the same in turn; a

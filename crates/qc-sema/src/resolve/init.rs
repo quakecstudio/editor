@@ -15,6 +15,7 @@ use qc_preproc::{CompilerFlags, FteFlag};
 use qc_syntax::c_scalar::CScalar;
 
 use crate::cast::{Cast, ConstType, Kind, Source, Supply};
+use crate::check::converts;
 use crate::check::reference::word_type;
 use crate::lower::{ArrayDim, LiteralValue, Qualifier, RawDecl, RawValue, ValueKind};
 use crate::resolve::{Facts, Fatal, Holder, MAX_TYPEDEF_DEPTH, REPLACEABLE_BUILTINS, Resolver};
@@ -292,6 +293,9 @@ impl Resolver<'_> {
                 Ok(None)
             }
             ValueKind::Name(source_name) => {
+                if matches!(holder, Holder::Global) && self.converted_variable(source_name, &ty) {
+                    return Ok(None);
+                }
                 self.check_named_value(name, &ty, source_name, holder, location, value.cast_flags)
             }
             // FTEF-19.43: `(T)0` is a value of `T`, converted to the definition's type as a
@@ -351,6 +355,31 @@ impl Resolver<'_> {
 
     /// [`Resolver::check_value`] of a value that is the name `source_name`, cast with the
     /// flags `flags` at the token after it (FTEF-22.6).
+    /// FTEF-19.72: whether a global's value, the global variable `source_name`, is converted to
+    /// `ty` by opcodes, which the check stage reads at global scope (FTEF-34.9).
+    pub(in crate::resolve) fn converted_variable(&self, source_name: &str, ty: &Type) -> bool {
+        if !self.profile.fteqcc_diagnostics() {
+            return false;
+        }
+        let Some(source) = self.lookup_used_global(source_name) else {
+            return false;
+        };
+        if self.facts.get(source.0).is_some_and(|f| f.constant) {
+            return false;
+        }
+        let Some(source_ty) = self
+            .index
+            .def(source)
+            .map(|d| word_type(&self.resolved(&d.ty)))
+        else {
+            return false;
+        };
+        match (self.shape(&source_ty), self.shape(ty)) {
+            (Some(from), Some(to)) => converts(from.etype, to.etype),
+            _ => false,
+        }
+    }
+
     pub(in crate::resolve) fn check_named_value(
         &mut self,
         name: &str,

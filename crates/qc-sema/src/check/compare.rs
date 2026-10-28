@@ -12,11 +12,10 @@ use qc_diag::{Code, Span};
 use qc_preproc::Op;
 
 use crate::check::expr::Checker;
-use crate::check::opcodes::row;
 use crate::check::{Sym, Value};
 
 impl Checker<'_> {
-    /// FTEF-28.1, FTEF-28.2: the warnings of the comparison or logic opcode `op` emitted on
+    /// FTEF-28.1, FTEF-28.3: the warnings of the comparison or logic opcode `op` emitted on
     /// `lhs` and `rhs`.
     pub(super) fn compare(&mut self, op: Op, lhs: &Value, rhs: &Value, span: Span) {
         let same = lhs.sym != Sym::Temp && lhs.sym == rhs.sym;
@@ -34,12 +33,8 @@ impl Checker<'_> {
                 }
                 constant.0 || constant.1
             }
-            Op::EqF | Op::NeF | Op::EqV | Op::NeV | Op::LeF | Op::GeF => {
-                self.mismatch_types(op, lhs, rhs, span);
-                constant.0 && constant.1
-            }
+            Op::EqF | Op::NeF | Op::EqV | Op::NeV | Op::LeF | Op::GeF => constant.0 && constant.1,
             Op::EqS | Op::EqE | Op::EqFnc | Op::NeS | Op::NeE | Op::NeFnc | Op::LtF | Op::GtF => {
-                self.mismatch_types(op, lhs, rhs, span);
                 (constant.0 && constant.1) || same
             }
             _ => false,
@@ -47,21 +42,6 @@ impl Checker<'_> {
         if warning {
             self.warn(span, "Result of comparison is constant");
         }
-    }
-
-    /// "'OP' type mismatch: A with B", when neither operand's type, or a parent of it, is the
-    /// other's by `typecmp_lax` (FTEF-28.2).
-    fn mismatch_types(&mut self, op: Op, lhs: &Value, rhs: &Value, span: Span) {
-        if self.env.lax_same(&lhs.ty, &rhs.ty) {
-            return;
-        }
-        let name = row(op).map_or("", |r| r.name);
-        let message = format!(
-            "'{name}' type mismatch: {} with {}",
-            self.env.type_name(&lhs.ty),
-            self.env.type_name(&rhs.ty)
-        );
-        self.env.report(Code::W0240, span, message);
     }
 
     /// The warning `W0239` with FTEQCC's text.

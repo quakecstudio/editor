@@ -102,28 +102,28 @@ fn qccx_and_qcfuncs_2_are_reported_as_fteqcc_reports_them() {
 }
 
 // spec FTEF-29.7: a store checks its value's type against the target's by `typecmp_lax`
-// spec FTEF-28.2: a comparison's operands of types `typecmp_lax` tells apart warn
+// spec FTEF-28.3: a comparison of operands of different types warns of no type mismatch
 #[test]
 fn assignments_1_are_reported_as_fteqcc_reports_them() {
     check(&ASSIGNMENTS[0..250]);
 }
 
 // spec FTEF-29.7: a store checks its value's type against the target's by `typecmp_lax`
-// spec FTEF-28.2: a comparison's operands of types `typecmp_lax` tells apart warn
+// spec FTEF-28.3: a comparison of operands of different types warns of no type mismatch
 #[test]
 fn assignments_2_are_reported_as_fteqcc_reports_them() {
     check(&ASSIGNMENTS[250..500]);
 }
 
 // spec FTEF-29.7: a store checks its value's type against the target's by `typecmp_lax`
-// spec FTEF-28.2: a comparison's operands of types `typecmp_lax` tells apart warn
+// spec FTEF-28.3: a comparison of operands of different types warns of no type mismatch
 #[test]
 fn assignments_3_are_reported_as_fteqcc_reports_them() {
     check(&ASSIGNMENTS[500..750]);
 }
 
 // spec FTEF-29.7: a store checks its value's type against the target's by `typecmp_lax`
-// spec FTEF-28.2: a comparison's operands of types `typecmp_lax` tells apart warn
+// spec FTEF-28.3: a comparison of operands of different types warns of no type mismatch
 #[test]
 fn assignments_4_are_reported_as_fteqcc_reports_them() {
     check(&ASSIGNMENTS[750..940]);

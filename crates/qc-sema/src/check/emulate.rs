@@ -330,6 +330,63 @@ impl Checker<'_> {
         Ok(result)
     }
 
+    /// FTEF-27.15: `OP_LSHIFT_I`, `OP_RSHIFT_I` and `OP_RSHIFT_U` on a target without them, by
+    /// their helper functions when the module defines them, else as a product or quotient by a
+    /// power of 2; a signed right shift tests the sign and shifts a negative value flipped.
+    fn shift(
+        &mut self,
+        op: Op,
+        lhs: &Value,
+        rhs: &Value,
+        span: Span,
+        result: Value,
+    ) -> Result<Value, Fatal> {
+        let (helper, divide) = match op {
+            Op::LshiftI => ("LShiftInt", Op::MulI),
+            Op::RshiftI => {
+                let target = self.env.target_at(span.start);
+                (
+                    "RShiftInt",
+                    if target.valid(Op::DivU) {
+                        Op::DivU
+                    } else {
+                        Op::DivI
+                    },
+                )
+            }
+            _ => ("RShiftUInt", Op::DivU),
+        };
+        if self.env.defines(helper) {
+            return Ok(result);
+        }
+        // A shift by a constant is a product or quotient by `QCC_MakeIntConst(1<<n)`; by
+        // a variable, by `2 *^ n`.
+        let factor = match rhs.known() {
+            Some(shift) => {
+                let power = 1_i32.checked_shl(shift.u()).unwrap_or(0);
+                Value::constant(Constant::int(power))
+            }
+            None => self.emit(Op::PowI, &Value::unknown(), rhs, span)?,
+        };
+        if op == Op::RshiftI {
+            // `OP_LT_I` against `QCC_MakeFloatConst(0)`, the negative form by `~`, and
+            // the positive form a plain statement of the division.
+            // `QCC_Generate_OP_IFNOT` jumps past the negative form, which a
+            // `QCC_Generate_OP_GOTO` ends (FTEF-27.15).
+            let zero = Value::constant(Constant::float(0.0));
+            self.emit(Op::LtI, lhs, &zero, span)?;
+            self.generate(Op::IfnotI, span);
+            let flipped = self.emit(Op::BitnotI, lhs, &Value::unknown(), span)?;
+            let shifted = self.emit(divide, &flipped, &factor, span)?;
+            self.emit(Op::BitnotI, &shifted, &Value::unknown(), span)?;
+            self.generate(Op::Goto, span);
+            self.simple_statement(divide, span)?;
+        } else {
+            self.emit(divide, lhs, &factor, span)?;
+        }
+        Ok(result)
+    }
+
     /// FTEF-27.3: a string or entity offset.
     fn special(
         &mut self,
@@ -393,48 +450,7 @@ impl Checker<'_> {
                 self.emit(Op::SubI, lhs, rhs, span)?;
                 Ok(result)
             }
-            Op::LshiftI | Op::RshiftI | Op::RshiftU => {
-                let (helper, divide) = match op {
-                    Op::LshiftI => ("LShiftInt", Op::MulI),
-                    Op::RshiftI => {
-                        let target = self.env.target_at(span.start);
-                        (
-                            "RShiftInt",
-                            if target.valid(Op::DivU) {
-                                Op::DivU
-                            } else {
-                                Op::DivI
-                            },
-                        )
-                    }
-                    _ => ("RShiftUInt", Op::DivU),
-                };
-                if self.env.defines(helper) {
-                    return Ok(result);
-                }
-                // A shift by a constant is a product or quotient by `QCC_MakeIntConst(1<<n)`; by
-                // a variable, by `2 *^ n`.
-                let factor = match rhs.known() {
-                    Some(shift) => {
-                        let power = 1_i32.checked_shl(shift.u()).unwrap_or(0);
-                        Value::constant(Constant::int(power))
-                    }
-                    None => self.emit(Op::PowI, &Value::unknown(), rhs, span)?,
-                };
-                if op == Op::RshiftI {
-                    // `OP_LT_I` against `QCC_MakeFloatConst(0)`, the negative form by `~`, and
-                    // the positive form a plain statement of the division.
-                    let zero = Value::constant(Constant::float(0.0));
-                    self.emit(Op::LtI, lhs, &zero, span)?;
-                    let flipped = self.emit(Op::BitnotI, lhs, &Value::unknown(), span)?;
-                    let shifted = self.emit(divide, &flipped, &factor, span)?;
-                    self.emit(Op::BitnotI, &shifted, &Value::unknown(), span)?;
-                    self.simple_statement(divide, span)?;
-                } else {
-                    self.emit(divide, lhs, &factor, span)?;
-                }
-                Ok(result)
-            }
+            Op::LshiftI | Op::RshiftI | Op::RshiftU => self.shift(op, lhs, rhs, span, result),
             Op::LshiftF | Op::RshiftF => {
                 let (int_op, what) = if op == Op::LshiftF {
                     (Op::LshiftI, "OP_LSHIFT_F*")

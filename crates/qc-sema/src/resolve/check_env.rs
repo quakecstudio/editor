@@ -513,10 +513,6 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.struct_of_no_size(ty)
     }
 
-    fn lax_same(&self, a: &Type, b: &Type) -> bool {
-        self.resolver.lax_same_value(a, b)
-    }
-
     fn typecmp_lax(&self, a: &Type, b: &Type) -> bool {
         self.resolver.typecmp_lax(a, b)
     }

@@ -202,7 +202,7 @@ fn lax(statement: &str) -> Vec<(Code, String)> {
 // type, which the store warns of, naming a field `base.field`
 // spec FTEF-29.7: the store of a value of another type warns "type mismatch"
 // spec QCD-7.85: W0243 for an implicit mismatch under lax
-// spec QCD-7.82: W0240 for the store's type mismatch
+// spec QCD-7.114: W0240 for the store's type mismatch
 #[test]
 fn a_lax_mismatch_is_stored() {
     assert_eq!(

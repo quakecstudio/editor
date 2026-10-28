@@ -134,9 +134,6 @@ pub(crate) trait Env {
     /// Whether `ty` is a struct or union of size 0, named with no body yet or laid out to no
     /// word (FTEF-6.28).
     fn struct_of_no_size(&self, ty: &Type) -> bool;
-    /// Whether `a` and `b` are the same type by FTEQCC's `typecmp_lax`, or one is a truth value of
-    /// the other (FTEF-28.2).
-    fn lax_same(&self, a: &Type, b: &Type) -> bool;
     /// Whether `a` and `b` are one type by FTEQCC's `typecmp_lax`, comparing what fields,
     /// pointers and functions hold (FTEF-30.3).
     fn typecmp_lax(&self, a: &Type, b: &Type) -> bool;
@@ -606,6 +603,11 @@ pub(crate) fn check_initialiser(env: &mut dyn Env, expr: &ast::Expr, ty: &Type, 
     let mut checker = expr::Checker::new(env);
     checker.global = true;
     checker.initialiser(expr, ty, name);
+}
+
+/// Whether a value of basic type `from` stored to `to` is converted by opcodes (FTEF-22).
+pub(crate) fn converts(from: etype::Etype, to: etype::Etype) -> bool {
+    !emulate::conversion_opcodes(from, to).is_empty()
 }
 
 /// FTEF-19.62: the size `expr` of a global array, read at global scope and folded; one that is

@@ -344,6 +344,11 @@ impl<'a> Resolver<'a> {
         let Some(expr) = value.syntax.clone() else {
             return;
         };
+        if let ValueKind::Name(source) = &value.kind
+            && !self.converted_variable(source, &decl.ty)
+        {
+            return;
+        }
         let written = value.written_types.clone();
         let Some(owner) = self.lookup_global(&decl.name) else {
             return;
@@ -644,24 +649,11 @@ impl<'a> Resolver<'a> {
                     };
                     self.report(Code::E0301, location, message);
                     // FTEF-19.69: `QCC_PR_GetSRef(type_variant, name, pr_scope, true, ...)`
-                    // defines the name in the function, which its later uses find and the
-                    // check stage reads as a `variant`.
-                    if let Some(scope) = scope
-                        && use_.scope.is_none()
-                        && self.profile.fteqcc_diagnostics()
-                    {
-                        let id = self.push_def(Definition {
-                            name: use_.name.clone(),
-                            ty: Type::Named("__variant".into()),
-                            kind: DefKind::Local,
-                            location,
-                            owner: Some(scope.owner),
-                            initialized: false,
-                            member_of: None,
-                            generated: true,
-                        });
+                    // defines the name in the function, or at global scope a global (FTEF-19.71),
+                    // which its later uses find and the check stage reads as a `variant`.
+                    if use_.scope.is_none() && self.profile.fteqcc_diagnostics() {
+                        let id = self.define_variant(&use_.name, scope.map(|s| s.owner), location);
                         if let Some(f) = self.fact_mut(id) {
-                            f.referenced = true;
                             f.scope_start = Some(use_.span.start);
                         }
                         self.use_defs.insert(use_.span.start, id);
@@ -669,6 +661,34 @@ impl<'a> Resolver<'a> {
                 }
             }
         }
+    }
+
+    /// FTEF-19.69, FTEF-19.71: the `variant` `QCC_PR_GetSRef(type_variant, name, pr_scope,
+    /// true, ...)` defines for an unknown name, a local of the function `owner` or a global.
+    pub(in crate::resolve) fn define_variant(
+        &mut self,
+        name: &str,
+        owner: Option<DefId>,
+        location: Location,
+    ) -> DefId {
+        let id = self.push_def(Definition {
+            name: name.to_owned(),
+            ty: Type::Named("__variant".into()),
+            kind: if owner.is_some() {
+                DefKind::Local
+            } else {
+                DefKind::Global
+            },
+            location,
+            owner,
+            initialized: false,
+            member_of: None,
+            generated: true,
+        });
+        if let Some(f) = self.fact_mut(id) {
+            f.referenced = true;
+        }
+        id
     }
 
     /// FTEF-19.61: `QCC_PR_ParseDefs`'s checks of a local's qualifiers, as of a global's:
