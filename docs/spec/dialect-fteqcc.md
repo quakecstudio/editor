@@ -4480,6 +4480,19 @@ as far as they report.
   in the extension of its bits (FTEF-2.12). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_StatementFlags` (`OP_RSHIFT_I`).
+- **FTEF-27.16** A statement's result is a temporary, named `temp_N` by its word offset among
+  the temporaries (`QCC_GetTemp`): under `opt_overlaptemps`, on by default, the first one no
+  reference holds of the result's size (1 word, 3 for a vector, 2 for a 64-bit value), else a new
+  one after the last; a statement frees its operands' first (`QCC_FreeTemp`), a refused opcode's
+  too (`badopcode`), and a store, a jump or a `void` opcode takes none. The emulation warnings
+  name an operand by `sym->name`, so a temporary's is `temp_N`, as `QCC_VarAtOffset` prints it;
+  the other messages name it by `QCC_GetSRefName`, its type's name (FTEF-27.4). So on the id
+  target `x = c8;` of an `__int8 c8` is "itof emulation: denormals are unsafe temp_0", the
+  `OP_MUL_I` of its shift's result, and `s[i] += x;` of a string's character `temp_1`. FTEQCC
+  keeps the temporaries across the module and those a statement leaves referenced; this profile
+  frees them all at each statement's end, so in a later function a number can differ. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_GetTemp`, `QCC_FreeTemp`, `QCC_PR_StatementFlags`, `QCC_VarAtOffset`.
 ## FTEF-28 The warnings of an emitted comparison
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (the switch after the emulation),

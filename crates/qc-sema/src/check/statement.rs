@@ -36,6 +36,7 @@ impl Checker<'_> {
     /// Checks `stmt`; a fatal error in one of its expressions ends its checks (FTEF-23.6).
     pub(super) fn statement(&mut self, stmt: &ast::Stmt) {
         let ended = self.statement_parts(stmt);
+        self.env.temps().release_all();
         // FTEF-24.10: a fatal error before the token ends the statement first.
         if let Some((message, span)) = self.pending.take()
             && ended.is_ok()

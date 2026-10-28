@@ -15,7 +15,7 @@ use crate::cast::{Cast, Kind, Source, Supply};
 use crate::check::constant::{Constant, unquoted};
 use crate::check::etype::Etype;
 use crate::check::{
-    Constness, CvarValue, Env, FunctionFacts, ParamFacts, PathList, Shape, StructMemberFacts,
+    Constness, CvarValue, Env, FunctionFacts, ParamFacts, PathList, Shape, StructMemberFacts, Temps,
 };
 use crate::lower::{ArrayDim, LiteralValue, RawLocal, top_level_kind};
 use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
@@ -108,6 +108,10 @@ impl BodyEnv<'_, '_> {
 }
 
 impl Env for BodyEnv<'_, '_> {
+    fn temps(&mut self) -> &mut Temps {
+        &mut self.resolver.temps
+    }
+
     fn reference(&self, at: usize) -> Option<DefId> {
         self.uses.get(&at).copied()
     }

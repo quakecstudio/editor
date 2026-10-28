@@ -185,7 +185,7 @@ fn memgetval_f() -> Vec<(Code, String)> {
 #[test]
 fn a_member_through_a_pointer_is_at_its_offset() {
     // F313 makes the emulation's warnings errors.
-    let itof = d(Code::E0125, "itof emulation: denormals are unsafe __int32");
+    let itof = d(Code::E0125, "itof emulation: denormals are unsafe temp_0");
     let ftoi = d(Code::E0125, "ftoi emulation: denormals are unsafe");
     assert_eq!(id("pt[i].v = w;"), [&mul()[..], &[itof, ftoi][..]].concat());
     let blocked = d(
@@ -224,7 +224,7 @@ fn a_narrow_arrays_element() {
         &mul()[..],
         &[d(
             Code::E0125,
-            "itof emulation: denormals are unsafe __int32",
+            "itof emulation: denormals are unsafe temp_0",
         )][..],
     ]
     .concat();

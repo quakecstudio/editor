@@ -53,6 +53,8 @@ use etype::Etype;
 
 /// What the check stage reads of the module around the body it checks.
 pub(crate) trait Env {
+    /// The module's temporaries (FTEF-27.16).
+    fn temps(&mut self) -> &mut Temps;
     /// The definition the name written at offset `at` of the body's text resolved to.
     fn reference(&self, at: usize) -> Option<DefId>;
     /// The text of a string constant definition, its quotes removed (FTEF-33.1).
@@ -214,6 +216,63 @@ pub(crate) struct Value {
     pub(crate) text: Option<Rc<str>>,
     /// The bitfield it is, read and stored by its bits (FTEF-6.15).
     pub(crate) bitfield: Option<Bitfield>,
+    /// The word offset of the temporary that holds it, `temp_N` (FTEF-27.16).
+    pub(crate) temp: Option<u32>,
+}
+
+/// FTEQCC's temporaries (`tempsinfo`), kept across the module's functions: each one's word
+/// offset, size and references. `opt_overlaptemps` gives a statement's result the first free
+/// one of its size, else a new one after the last (`QCC_GetTemp`), and a statement frees its
+/// operands first (`QCC_FreeTemp`) (FTEF-27.16).
+#[derive(Debug, Default)]
+pub(crate) struct Temps {
+    slots: Vec<TempSlot>,
+}
+
+/// One temporary: its word offset, its size in words and its references.
+#[derive(Debug)]
+struct TempSlot {
+    offset: u32,
+    size: u32,
+    refs: u32,
+}
+
+impl Temps {
+    /// A temporary of `size` words for a statement's result.
+    pub(crate) fn take(&mut self, size: u32) -> u32 {
+        if let Some(slot) = self
+            .slots
+            .iter_mut()
+            .find(|slot| slot.refs == 0 && slot.size == size)
+        {
+            slot.refs = 1;
+            return slot.offset;
+        }
+        let offset = self
+            .slots
+            .last()
+            .map_or(0, |last| last.offset.saturating_add(last.size));
+        self.slots.push(TempSlot {
+            offset,
+            size,
+            refs: 1,
+        });
+        offset
+    }
+
+    /// Frees a reference to the temporary at `offset`.
+    pub(crate) fn free(&mut self, offset: u32) {
+        if let Some(slot) = self.slots.iter_mut().find(|slot| slot.offset == offset) {
+            slot.refs = slot.refs.saturating_sub(1);
+        }
+    }
+
+    /// Frees every temporary, as a statement's end leaves none referenced.
+    pub(crate) fn release_all(&mut self) {
+        for slot in &mut self.slots {
+            slot.refs = 0;
+        }
+    }
 }
 
 /// What holds a value, `QCC_sref_t`'s `sym` as the comparison warnings read it (FTEF-28.4).
@@ -269,6 +328,7 @@ impl Value {
             postinc: false,
             text: None,
             bitfield: None,
+            temp: None,
         }
     }
 
@@ -316,6 +376,17 @@ impl Value {
             (Sym::Immediate(_), _) => "IMMEDIATE".to_owned(),
             (_, Some(name)) => name.to_owned(),
             (_, None) => self.ty.fteqcc_name(),
+        }
+    }
+
+    /// The name `QCC_VarAtOffset` prints for it, the emulation warnings' and the refcount's:
+    /// `temp_N` for a temporary a statement made (FTEF-27.16), else [`Value::label`].
+    pub(crate) fn at_offset(&self) -> String {
+        match (self.name.as_deref(), self.temp) {
+            (None, Some(offset)) if !matches!(self.sym, Sym::Immediate(_)) => {
+                format!("temp_{offset}")
+            }
+            _ => self.label(),
         }
     }
 

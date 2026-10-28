@@ -35,6 +35,7 @@ use qc_preproc::{OpcodeTarget, TargetFormat, WarningSettings};
 use qc_syntax::{Dialect, Keywords};
 
 use crate::check::PathList;
+use crate::check::Temps;
 use crate::check::TypedBody;
 use crate::check::constant::Constant;
 use crate::expand::{OriginMap, ProtoPlan};
@@ -274,6 +275,7 @@ pub(crate) fn resolve_mapped(
     };
     let mut r = Resolver {
         index: ModuleIndex::default(),
+        temps: Temps::default(),
         maps: sources.maps,
         places: &sources.places,
         warnings: sources.warnings,
@@ -466,6 +468,8 @@ struct Facts {
 
 struct Resolver<'a> {
     index: ModuleIndex,
+    /// FTEQCC's temporaries, across the module's functions (FTEF-27.16).
+    temps: Temps,
     /// Where the spans of each file's rendered text came from; empty when the files were
     /// parsed as written.
     maps: &'a [&'a OriginMap],

@@ -400,7 +400,12 @@ impl Checker<'_> {
                 (op, cast)
             }
         };
-        let value = self.emit(op, lhs, &rhs, span)?;
+        // The opcode reads the value read, `lhsd`, and frees its temporary (FTEF-27.16).
+        let read = Value {
+            ty: read_ty.clone(),
+            ..read
+        };
+        let value = self.emit(op, &read, &rhs, span)?;
         let flags = self.env.flags_at(span.start);
         let supply = Source::Typed(&value.ty).supply_for_assignment(&lhs.ty, flags);
         let message = || {
