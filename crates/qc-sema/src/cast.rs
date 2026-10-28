@@ -543,9 +543,17 @@ impl Source<'_> {
         {
             return Some(Cast::Silent);
         }
-        // `typecmp` of two functions: the same type part by part is a cast to itself.
-        if let (Type::Function(_), Some(from @ Type::Function(_))) = (to, from_ty)
-            && from.fteqcc_same(to)
+        // FTEF-22.8: two functions are "acceptable" casts, which warn only when `typecmp_lax`
+        // tells them apart: by their return types and parameters, not by `...`; the model keeps
+        // no `optional` mark, so a parameter one has beyond the other tells them apart.
+        if let (Type::Function(to), Some(Type::Function(from))) = (to, from_ty)
+            && from.params.len() == to.params.len()
+            && from.ret.fteqcc_same(&to.ret)
+            && from
+                .params
+                .iter()
+                .zip(&to.params)
+                .all(|(a, b)| a.fteqcc_same(b))
         {
             return Some(Cast::Silent);
         }
