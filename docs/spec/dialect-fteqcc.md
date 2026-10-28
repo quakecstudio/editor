@@ -4821,7 +4821,26 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   refcount to ii". Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`, `QCC_LoadFromArray`,
   `QCC_PR_DummyDef`; `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseType` (the class's fields).
+- **FTEF-31.17** Under `qccx` the address of a field is the field cast to a float (`r->cast =
+  type_float`), the same symbol, whose word is the field's offset: the module's first field, at
+  offset 0, is then a null constant (`QCC_SRef_IsNull`), which `QCC_TryEvaluateCast` casts to
+  any type with no warning, so `s = &fl;`, `e = &fl;` and `p = &fl;` of the first `.float fl`
+  give nothing, where any later field is "Implicit cast from float to string", "... to entity"
+  and "Cannot cast from float to float*". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_RefTerm`, `QCC_TryEvaluateCast`, `QCC_SRef_IsNull`.
 ## FTEF-32 Calls
+- **FTEF-31.18** A string's character read at an index that is no float is the value
+  `OP_LOADP_U8` gives: an `int` on a target that has it, and on one that does not the
+  `__uint32` of the last shift of its emulation (`OP_RSHIFT_U`), so under `#pragma target dp`
+  `x = s[ii];` of a float `x` adds "utof emulation: will break if ... is big". A compound
+  assignment to the character reads it so, and a float value cast to an unsigned type keeps the
+  type its conversion gives (`QCC_TryEvaluateCast` sets no cast on the float to `uint` branch):
+  `s[ii] += x;` there and `u += x;` of a `__uint u` on any target are "Type mismatch on
+  assignment. __uint32 += __int32 is not supported" and "__uint += __int32". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags` (`OP_LOADP_U8`, `OP_CONV_FU`), `QCC_TryEvaluateCast`,
+  `QCC_PR_RefExpression`.
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`,
 `QCC_PR_ParseDefs` (a local's initialiser), `QCC_PR_ParseRefValue` (`expandmemberfields`),

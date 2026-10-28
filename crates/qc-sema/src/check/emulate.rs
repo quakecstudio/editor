@@ -222,7 +222,9 @@ impl Checker<'_> {
                 let ty = match op {
                     Op::EqU | Op::NeU => Type::Named("__uint32".into()),
                     Op::EqU64 | Op::NeU64 => Type::Named("__uint64".into()),
-                    Op::EqFld
+                    // FTEF-31.18: `OP_CONV_FU` as `OP_CONV_FTOI` is an `int`.
+                    Op::ConvFu
+                    | Op::EqFld
                     | Op::EqI
                     | Op::NeFld
                     | Op::NeI

@@ -359,8 +359,13 @@ impl Checker<'_> {
         if matches!(lhs.reference, Reference::Field(_)) && updates_in_place {
             return Ok(None);
         }
-        // `lhsd = QCC_RefToDef(lhsr, false)`: the left side read.
-        self.read(lhs.clone(), span)?;
+        // `lhsd = QCC_RefToDef(lhsr, false)`: the left side read, which for a string's character
+        // is the load's own type (FTEF-31.18).
+        let read = self.read(lhs.clone(), span)?;
+        let (to, read_ty) = match lhs.reference {
+            Reference::Character(_) => (self.etype(&read.ty).unwrap_or(to), read.ty.clone()),
+            _ => (to, lhs.ty.clone()),
+        };
         let find = |from: Etype| {
             ops.iter().copied().find(|&op| {
                 row(op).is_some_and(|r| r.types[1].etype() == from && r.types[0].etype() == to)
@@ -369,20 +374,23 @@ impl Checker<'_> {
         let (op, rhs) = match find(from) {
             Some(op) => (op, rhs.clone()),
             None => {
-                let cast = self.cast_to(rhs, &lhs.ty, span)?;
+                let cast = self.cast_to(rhs, &read_ty, span)?;
                 let Some(op) = self.etype(&cast.ty).and_then(find) else {
                     // FTEF-24.11: the types' own names. An array's address is `T*`
                     // (`QCC_PR_PointerType`), and a cast to the type the value has already
                     // leaves the value's.
                     let left = if lhs.is_array_head() {
-                        self.env.type_name(&lhs.ty)
+                        self.env.type_name(&read_ty)
                     } else {
-                        self.own_name(&lhs.ty)
+                        self.own_name(&read_ty)
                     };
-                    let right = if rhs.ty == lhs.ty {
+                    // A cast that keeps a type of its own, `OP_CONV_FU`'s, names that one.
+                    let right = if rhs.ty == read_ty {
                         self.own_name(&rhs.ty)
-                    } else {
+                    } else if cast.ty == read_ty {
                         left.clone()
+                    } else {
+                        self.own_name(&cast.ty)
                     };
                     let message = format!(
                         "Type mismatch on assignment. {left} {spelling} {right} is not supported"
@@ -432,6 +440,11 @@ impl Checker<'_> {
         let converted = self.convert_to(value, to, span)?;
         // FTEF-23.8: a value cast to a boolean is of the boolean's parent type.
         if matches!(to.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat)) {
+            return Ok(converted);
+        }
+        // FTEF-31.18: a float cast to an unsigned integer is what `OP_CONV_FU` gives, which
+        // `QCC_TryEvaluateCast` does not recast.
+        if self.etype(&value.ty) == Some(Etype::Float) && self.etype(to) == Some(Etype::Uint) {
             return Ok(converted);
         }
         Ok(Value {

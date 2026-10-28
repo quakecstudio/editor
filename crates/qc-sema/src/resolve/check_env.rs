@@ -191,6 +191,15 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.index.def(def)
     }
 
+    fn first_field(&self, def: DefId) -> bool {
+        self.resolver
+            .index
+            .defs
+            .iter()
+            .position(|d| d.kind == DefKind::Field)
+            .is_some_and(|first| first == def.0)
+    }
+
     fn is_array(&self, def: DefId) -> bool {
         self.resolver
             .facts

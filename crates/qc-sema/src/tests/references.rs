@@ -10854,3 +10854,70 @@ fn arrays_of_fields_count_their_elements() {
     }
     assert!(found("fte", "v = this.varr[ii]; v = e.gv[ii];").is_empty());
 }
+
+// spec FTEF-31.17: under `qccx` the first field's address is null, which casts to any type
+#[test]
+fn the_first_fields_address_is_null_under_qccx() {
+    let found = |fields: &str, statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma flag enable qccx\n{fields} string s; entity e1; float *fp;\n\
+             void() g = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    for statement in ["s = &fl;", "e1 = &fl;", "fp = &fl;"] {
+        assert!(
+            found(".float fl; .float a;", statement).is_empty(),
+            "{statement}"
+        );
+    }
+    let later = ".vector v; .float fl;";
+    assert_eq!(
+        found(later, "s = &fl;"),
+        ["Implicit cast from float to string"]
+    );
+    assert_eq!(
+        found(later, "e1 = &fl;"),
+        ["Implicit cast from float to entity"]
+    );
+    assert_eq!(
+        found(later, "fp = &fl;"),
+        ["Cannot cast from float to float*"]
+    );
+}
+
+// spec FTEF-31.18: a character is the value its load gives, an emulated one's `__uint32`, and a
+// float cast to an unsigned type keeps its conversion's type
+#[test]
+fn a_character_is_what_its_load_gives() {
+    let found = |target: &str, statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target {target}\nstring s; float x; int ii; __uint u;\n\
+             void() g = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let read = found("dp", "x = s[ii];");
+    assert!(
+        read.last()
+            .is_some_and(|m| m.starts_with("utof emulation: will break if")),
+        "{read:?}"
+    );
+    assert!(found("fte", "x = s[ii];").is_empty());
+    let compound = found("dp", "s[ii] += x;");
+    assert_eq!(
+        compound.last().map(String::as_str),
+        Some("Type mismatch on assignment. __uint32 += __int32 is not supported")
+    );
+    for target in ["dp", "fte"] {
+        assert_eq!(
+            found(target, "u += x;"),
+            ["Type mismatch on assignment. __uint += __int32 is not supported"],
+            "{target}"
+        );
+    }
+}

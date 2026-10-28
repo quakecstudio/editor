@@ -151,11 +151,9 @@ impl Checker<'_> {
                 };
                 let op = if float_index { Op::LoadpC } else { Op::LoadpU8 };
                 let string = Value::of(Type::Simple(SimpleType::String));
-                let loaded = self.emit(op, &string, &index, span)?;
-                Ok(Value {
-                    ty: value.ty,
-                    ..loaded
-                })
+                // FTEF-31.18: the load's own type, an emulated `OP_LOADP_U8`'s the `__uint32` of
+                // its last shift.
+                self.emit(op, &string, &index, span)
             }
         }
     }
@@ -804,6 +802,20 @@ impl Checker<'_> {
                         readonly: false,
                         reference: Reference::pointer(operand.label(), None),
                         ..Value::of(Type::Simple(SimpleType::Float))
+                    });
+                }
+                // FTEF-31.17: the cast keeps the symbol, so the first field, at offset 0, is a
+                // null constant (`QCC_SRef_IsNull`), which casts to any type with no warning.
+                Some(Etype::Field)
+                    if operand.reference == Reference::Global
+                        && operand
+                            .sym
+                            .def()
+                            .is_some_and(|def| self.env.first_field(def)) =>
+                {
+                    return Ok(Value {
+                        ty: Type::Simple(SimpleType::Float),
+                        ..Value::constant(Constant::float(0.0))
                     });
                 }
                 Some(Etype::String | Etype::Field | Etype::Entity | Etype::Function) => {

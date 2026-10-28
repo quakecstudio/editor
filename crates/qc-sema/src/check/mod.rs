@@ -84,6 +84,8 @@ pub(crate) trait Env {
     fn definition(&self, def: DefId) -> Option<&Definition>;
     /// Whether a definition is an array (`def->arraysize`, FTEF-19.8).
     fn is_array(&self, def: DefId) -> bool;
+    /// Whether the field `def` is the module's first, at offset 0 (FTEF-31.17).
+    fn first_field(&self, def: DefId) -> bool;
     /// Whether a definition is a constant, and its value (`QCC_SRef_EvalConst`, FTEF-26.5).
     fn constness(&self, def: DefId) -> Constness;
     /// `FILE:LINE` of offset `span.start`, as `s_filen` and `pr_source_line` print it.
