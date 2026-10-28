@@ -397,6 +397,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   no type (FTEF-17.20).
 - **QCD-4.75** `E0374` "Named field is not a field.": an argument of `spawn` after the class
   that is no field (FTEF-17.20).
+- **QCD-4.76** `E0375` "Default value not specified for implicit argument N": an argument left
+  empty whose parameter has no default (FTEF-32.9).
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -766,6 +768,8 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   program's list of sounds, models, textures or files (FTEF-17.19), `WARN_NONPORTABLEFILENAME`.
 - **QCD-7.111** `W0318` "That = should be a :": a named field of `spawn` followed by `=`
   (FTEF-17.20).
+- **QCD-7.112** `W0319` "INTERNAL: over-freed refcount to NAME": an argument left empty, which
+  passes its parameter's default (FTEF-32.9), the warning `WARN_DEBUGGING`.
 
 ## QCD-8 Preprocessor errors
 

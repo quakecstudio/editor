@@ -556,3 +556,42 @@ fn spawn_takes_a_class_and_its_fields() {
         [d(Code::E0201, "\")\" - not a name")]
     );
 }
+
+// spec FTEF-32.9: an argument left empty passes its parameter's default, freeing its reference
+// once too often
+// spec QCD-4.76: E0375 "Default value not specified for implicit argument N"
+// spec QCD-7.112: W0319 "INTERNAL: over-freed refcount to NAME"
+#[test]
+fn empty_arguments_take_their_defaults() {
+    let messages = |body: &str| -> Vec<(Code, String)> {
+        diags(&format!(
+            "void(float a, float b = 2, float c = 3) g = {{}};\nvoid(float a, float b) h = {{}};\n\
+             void(...) v = #1;\nfloat K = 4;\nvoid(float a, float b = K) k = {{}};\n\
+             void(float a, optional float b) o = {{}};\nvoid() f = {{ {body} }};\n"
+        ))
+    };
+    let d = |code: Code, message: &str| (code, message.to_owned());
+    let freed = |name: &str| {
+        d(
+            Code::W0319,
+            &format!("INTERNAL: over-freed refcount to {name}"),
+        )
+    };
+    assert_eq!(messages("g(1, , 3);"), [freed("2f")]);
+    assert_eq!(messages("g(1, 2, );"), [freed("3f")]);
+    assert_eq!(messages("g(1, , );"), [freed("2f"), freed("3f")]);
+    assert_eq!(messages("k(1, );"), [freed("K")]);
+    let undefined = |n: usize| {
+        d(
+            Code::E0375,
+            &format!("Default value not specified for implicit argument {n}"),
+        )
+    };
+    assert_eq!(messages("g(, 2);"), [undefined(1)]);
+    assert_eq!(messages("h(1, );"), [undefined(2)]);
+    assert_eq!(messages("o(1, );"), [undefined(2)]);
+    let missing = |found: &str| d(Code::E0201, &format!("\"{found}\" - not a name"));
+    assert_eq!(messages("g(1, 2, 3, );"), [missing(")")]);
+    assert_eq!(messages("v(1, );"), [missing(")")]);
+    assert_eq!(messages("v(1, , 2);"), [missing(",")]);
+}

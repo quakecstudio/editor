@@ -92,8 +92,12 @@ impl Checker<'_> {
             .and_then(|def| self.env.params(def))
             .unwrap_or_else(|| function.as_ref().map_or_else(Vec::new, type_params));
         let Some(function) = function else {
-            // A `variant` takes any arguments.
-            for arg in &args {
+            // A `variant` takes any arguments, and no argument left empty (FTEF-32.9).
+            let slots = call.args().map(|list| list.slots()).unwrap_or_default();
+            for (at, slot) in slots.iter().enumerate() {
+                let Some(arg) = slot else {
+                    return self.missing_argument(at, &slots, span);
+                };
                 self.value(Some(arg.clone()))?;
             }
             return Ok(Value::of(Type::Named("__variant".into())));
@@ -109,9 +113,20 @@ impl Checker<'_> {
                 return Ok(value);
             }
         }
+        let slots = call.args().map(|list| list.slots()).unwrap_or_default();
         let mut passed = Vec::new();
         let mut values = Vec::new();
-        for (at, arg) in args.iter().enumerate() {
+        for (at, slot) in slots.iter().enumerate() {
+            let Some(arg) = slot else {
+                if at >= MAX_ARGUMENTS {
+                    let message = format!("More than {MAX_ARGUMENTS} parameters");
+                    return self.fatal(Code::E0338, span, message);
+                }
+                let value = self.implicit_argument(&function, &params, at, &slots, span)?;
+                passed.push(None);
+                values.push(value);
+                continue;
+            };
             let arg_span = arg.syntax().span();
             if at >= MAX_ARGUMENTS {
                 let message = format!("More than {MAX_ARGUMENTS} parameters");
@@ -136,12 +151,12 @@ impl Checker<'_> {
             {
                 value = self.cast_to(&value, param, arg_span)?;
             }
-            passed.push(reference);
+            passed.push(Some(reference));
             self.record_call_path(&name, at, arg);
             values.push(value);
             self.end_of_construct()?;
         }
-        let mut count = args.len();
+        let mut count = slots.len();
         while count < params.len()
             && params
                 .get(count)
@@ -165,11 +180,22 @@ impl Checker<'_> {
         }
         self.verify_arguments(&name, &values, span);
         self.generate_call(&values, span);
-        // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
-        for (reference, param) in passed.iter().zip(&params) {
-            if !param.out {
+        self.store_out_arguments(&passed, &params, span)?;
+        Ok(Value::of(function.ret.clone()))
+    }
+
+    /// The arguments `passed` of `out` parameters, stored back after the call
+    /// (`QCC_PR_GenerateFunctionCallRef`); `None` for one left empty.
+    fn store_out_arguments(
+        &mut self,
+        passed: &[Option<Value>],
+        params: &[ParamFacts],
+        span: Span,
+    ) -> Result<(), Fatal> {
+        for (reference, param) in passed.iter().zip(params) {
+            let Some(reference) = reference.as_ref().filter(|_| param.out) else {
                 continue;
-            }
+            };
             if reference.readonly {
                 let message = "Unable to write to read-only out argument".to_owned();
                 self.env.report(Code::E0339, span, message);
@@ -178,7 +204,48 @@ impl Checker<'_> {
             let returned = Value::of(reference.ty.clone());
             self.store_reference(reference, &returned, span)?;
         }
-        Ok(Value::of(function.ret.clone()))
+        Ok(())
+    }
+
+    /// FTEF-32.9: an argument left empty where no parameter takes it: the expression read
+    /// there is missing, before the `,` or the `)` after the place `at` of `slots`.
+    fn missing_argument(&mut self, at: usize, slots: &[Option<ast::Expr>], span: Span) -> Checked {
+        let found = if at.saturating_add(1) < slots.len() {
+            ","
+        } else {
+            ")"
+        };
+        self.fatal(Code::E0201, span, format!("\"{found}\" - not a name"))
+    }
+
+    /// FTEF-32.9: the argument `at` left empty, which takes its parameter's default: the fatal
+    /// error "Default value not specified for implicit argument N" for one with none, and, past
+    /// the parameters, an expression that is not there (`QCC_PR_RefExpression`). The default's
+    /// reference is freed twice, so FTEQCC warns "INTERNAL: over-freed refcount to NAME", the
+    /// default as `QCC_VarAtOffset` prints it.
+    fn implicit_argument(
+        &mut self,
+        function: &FunctionType,
+        params: &[ParamFacts],
+        at: usize,
+        slots: &[Option<ast::Expr>],
+        span: Span,
+    ) -> Checked {
+        let Some(param) = function.params.get(at) else {
+            return self.missing_argument(at, slots, span);
+        };
+        if !params.get(at).is_some_and(|p| p.has_default) {
+            let message = format!(
+                "Default value not specified for implicit argument {}",
+                at.saturating_add(1)
+            );
+            return self.fatal(Code::E0375, span, message);
+        }
+        if let Some(default) = function.labels.0.get(at).and_then(|l| l.default.as_ref()) {
+            let message = format!("INTERNAL: over-freed refcount to {default}");
+            self.env.report(Code::W0319, span, message);
+        }
+        Ok(Value::of(param.clone()))
     }
 
     /// FTEF-34.9: the statements a call generates, each argument stored to its parameter by its

@@ -4688,6 +4688,18 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   fatal error `E0204` (FTEF-24.10). `k(g()());` is "expected ), found (". An initialiser
   `float x = g()();` in a body is FTEQCC's "Missing semicolon at end of definition" and then a
   parse error; this profile reports "expected ;, found (" there, the same refusal.
+- **FTEF-32.9** An argument may be left empty, a `,` or the `)` where it would start (`else if
+  (arg < t->num_parms && (QCC_PR_PeekToken (",") || QCC_PR_PeekToken (")")))`): `f(1, , 3)`,
+  `f(1, )`. It passes its parameter's default value; a parameter with none, an `optional` one
+  among them, is the fatal error `E0375` "Default value not specified for implicit argument N",
+  counted from 1. Past the parameters, and for a `variant`, which has none, the expression read
+  there is missing, `"," - not a name` or `")" - not a name`. Each default passed so frees its
+  reference once more than it holds it, so FTEQCC warns `W0319` "INTERNAL: over-freed refcount
+  to NAME" (`QCC_FreeTemp`, `WARN_DEBUGGING`), the default as `QCC_VarAtOffset` prints it: `2f`
+  for a float immediate, a constant's name for a constant. Under the vanilla dialect an empty
+  argument is a missing expression. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseFunctionCall`, `QCC_FreeTemp`, `QCC_VarAtOffset`.
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,

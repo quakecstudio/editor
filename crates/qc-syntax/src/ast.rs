@@ -1530,6 +1530,44 @@ impl ArgList {
         children(&self.0)
     }
 
+    /// Each argument's place, in order, `None` for one left empty (FTEF-32.9) and for a named
+    /// field of `spawn`, which [`ArgList::named`] reads.
+    #[must_use]
+    pub fn slots(&self) -> Vec<Option<Expr>> {
+        let mut slots = Vec::new();
+        // The place being read, once a `(` or `,` opens it.
+        let mut open: Option<Option<Expr>> = None;
+        for element in self.0.children_with_tokens() {
+            match element {
+                SyntaxElement::Node(node) => {
+                    if let (Some(slot), Some(expr)) = (open.as_mut(), Expr::cast(node)) {
+                        *slot = Some(expr);
+                    }
+                }
+                SyntaxElement::Token(token) => match token.kind() {
+                    K::LParen => open = Some(None),
+                    K::Comma => {
+                        slots.push(open.take().flatten());
+                        open = Some(None);
+                    }
+                    // `()` has no argument.
+                    K::RParen => {
+                        if let Some(slot) = open.take()
+                            && (slot.is_some() || !slots.is_empty())
+                        {
+                            slots.push(slot);
+                        }
+                    }
+                    _ => {}
+                },
+            }
+        }
+        if let Some(Some(expr)) = open {
+            slots.push(Some(expr));
+        }
+        slots
+    }
+
     /// The named fields of a `spawn` call, in order (FTEF-17.20).
     pub fn named(&self) -> impl Iterator<Item = NamedArg> {
         children(&self.0)

@@ -352,3 +352,29 @@ fn spawn_named_fields() {
     }
     assert!(fte_errors(&in_body("f(e, x: 1);")).contains(&Code::E0204));
 }
+
+// spec FTEF-32.9: under FTEQCC an argument may be left empty, a `,` or the `)` where it starts;
+// under the vanilla dialect it is a missing expression
+#[test]
+fn empty_argument_slots() {
+    let slots = |body: &str| -> Vec<Option<String>> {
+        let ast::Expr::Call(call) = fte_expr(body) else {
+            panic!("not a call");
+        };
+        call.args()
+            .unwrap()
+            .slots()
+            .iter()
+            .map(|slot| slot.as_ref().map(sexpr))
+            .collect()
+    };
+    let some = |text: &str| Some(text.to_owned());
+    assert!(slots("f();").is_empty());
+    assert_eq!(slots("f(1);"), [some("1")]);
+    assert_eq!(slots("f(1, , 3);"), [some("1"), None, some("3")]);
+    assert_eq!(slots("f(, 2);"), [None, some("2")]);
+    assert_eq!(slots("f(1, );"), [some("1"), None]);
+    assert_eq!(slots("f(,);"), [None, None]);
+    let vanilla = parse_with(in_body("f(1, , 3);").as_bytes(), Dialect::Vanilla);
+    assert!(vanilla.errors().next().is_some());
+}
