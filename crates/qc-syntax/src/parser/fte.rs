@@ -148,9 +148,10 @@ impl Parser<'_> {
                 .nth(1)
                 .is_some_and(|t| matches!(t.kind, K::Semicolon | K::Comma | K::Eq | K::LBracket)),
             // `QCC_PR_ParseType` with `silentfail` returns no type for a token that is no name,
-            // so `static;` and `const *x;` are an `int`'s definitions (FTEF-19.21).
-            Some(K::Semicolon | K::Star | K::LParen | K::LBracket) => true,
-            _ => false,
+            // so `static;` and `const *x;` are an `int`'s definitions (FTEF-19.21), and `var =
+            // 1;` one whose name `QCC_PR_ParseName` refuses, "\"=\" - not a name" (FTEF-19.73).
+            Some(K::Dot | K::DotDot) | None => false,
+            Some(_) => true,
         }
     }
 

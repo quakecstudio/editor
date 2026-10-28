@@ -3485,6 +3485,13 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   A constant converts by folding, with no message. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseInitializerType`, `QCC_SupplyConversionForAssignment`.
+- **FTEF-19.73** After a qualifier, `hadmodifier`, `QCC_PR_ParseType` with `silentfail` finds
+  no type at any token that is no name and no field's `.` or `..`, and `QCC_PR_ParseDefs` takes
+  `type_integer` (FTEF-19.21); the token is then the definition's name, which
+  `QCC_PR_ParseName` refuses: `var = 1;`, `const 5;` and `static = 2;` in a body are "\"=\" -
+  not a name" and "\"5\" - not a name", never "is not a type". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefs`; `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseName`.
 
 ## FTEF-20 Keywords
 

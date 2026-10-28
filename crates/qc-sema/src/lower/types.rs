@@ -730,6 +730,10 @@ pub(super) fn typedef_diagnostics(
     scope: TypedefScope,
 ) -> Vec<Diagnostic> {
     let Some(token) = td.declarators().find_map(|d| d.name()) else {
+        // A declarator with no name is the parser's fatal "not a name" (FTEF-19.73).
+        if td.declarators().next().is_some() {
+            return Vec::new();
+        }
         return vec![Diagnostic {
             code: Code::W0215,
             message: "typedef defines no types".to_owned(),
