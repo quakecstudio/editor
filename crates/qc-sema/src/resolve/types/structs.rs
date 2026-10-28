@@ -281,7 +281,9 @@ impl<'a> Resolver<'a> {
             }
             // FTEF-19.41: a `virtual` function member is `Struct::member`, a function with no
             // body unless one follows.
-            if member.is_virtual && member.ty.is_function() && !member.initialized {
+            // `type->type` is the type a typedef names.
+            let function = self.resolved(&member.ty).is_function();
+            if member.is_virtual && function && !member.initialized {
                 let owner = st.name.as_deref().unwrap_or("<struct>");
                 let message = format!("function {owner}::{} has no body", member.name);
                 self.report(Code::E0211, location, message);
@@ -299,7 +301,7 @@ impl<'a> Resolver<'a> {
                 return;
             }
             // FTEF-6.29: `isvirt && type->type != ev_function`, which goes on.
-            if member.is_virtual && !member.ty.is_function() {
+            if member.is_virtual && !function {
                 let message = "[non]virtual members must be functions".to_owned();
                 self.report(Code::E0369, location, message);
             }

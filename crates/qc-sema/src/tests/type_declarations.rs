@@ -1262,4 +1262,10 @@ fn struct_members_that_declare_nothing() {
             "[non]virtual members must be functions".to_owned()
         )]
     );
+    // A typedef of a function type is a function.
+    assert!(messages("typedef void() fn; struct S { virtual fn m = { return; }; };\n").is_empty());
+    assert_eq!(
+        messages("typedef void() fn; struct S { virtual fn m; };\n"),
+        [(Code::E0211, "function S::m has no body".to_owned())]
+    );
 }
