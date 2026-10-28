@@ -38,7 +38,6 @@ impl Checker<'_> {
         if let Some(ast::Expr::Name(name)) = call.callee()
             && let Some(token) = name.name()
             && self.env.reference(token.span().start).is_none()
-            && self.env.fteqcc()
             && let Some(value) =
                 self.intrinsic(&token.text_lossless(), &args, written.clone(), span)?
         {
@@ -67,7 +66,7 @@ impl Checker<'_> {
             _ => false,
         };
         let func = self.read(callee, callee_span)?;
-        if func.ty == Type::Unknown || !self.env.fteqcc() {
+        if func.ty == Type::Unknown {
             for arg in &args {
                 self.value(Some(arg.clone()))?;
             }

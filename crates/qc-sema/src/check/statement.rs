@@ -127,7 +127,7 @@ impl Checker<'_> {
             return Ok(());
         }
         let Some(expr) = s.value() else {
-            if !void && ret != Type::Unknown && self.env.fteqcc() {
+            if !void && ret != Type::Unknown {
                 let message = format!("'{name}' returned nothing, expected {ret_name}");
                 if large {
                     return self.fatal(Code::E0341, span, message).map(drop);
@@ -144,7 +144,7 @@ impl Checker<'_> {
         let value = self.value(Some(expr.clone()))?;
         self.generated(&expr, &value, line, before);
         self.layout.push(Step::Return, None, line);
-        if value.ty == Type::Unknown || ret == Type::Unknown || !self.env.fteqcc() || value.null() {
+        if value.ty == Type::Unknown || ret == Type::Unknown || value.null() {
             return Ok(());
         }
         if self.etype_of(&value.ty) == self.etype_of(&ret) {
@@ -651,7 +651,7 @@ impl Checker<'_> {
             .as_ref()
             .map_or(s.syntax().span(), |e| e.syntax().span());
         let time = self.value(time_expr)?;
-        if entity.ty == Type::Unknown || time.ty == Type::Unknown || !self.env.fteqcc() {
+        if entity.ty == Type::Unknown || time.ty == Type::Unknown {
             return Ok(());
         }
         let time = self.supplied(&time, &Type::Simple(SimpleType::Float), time_span)?;
@@ -702,7 +702,7 @@ impl Checker<'_> {
     /// pointer its caller passed with `OP_STORE_P`, which a target without it refuses, a fatal
     /// error that ends the function's checks; whether they go on.
     pub(super) fn start_function(&mut self, span: Span) -> bool {
-        if !self.env.fteqcc() || !self.returns_large() {
+        if !self.returns_large() {
             return true;
         }
         if self.env.target_at(span.start).valid(Op::StoreP) {
@@ -715,11 +715,7 @@ impl Checker<'_> {
     /// FTEF-34.6: the checks of the finished function, at the end of its body `span`: "not all
     /// control paths return a value", and "contains unreachable code".
     pub(super) fn finish_function(&mut self, span: Span) {
-        if !self.env.fteqcc()
-            || self.function.accumulate
-            || self.function.ret == Type::Unknown
-            || self.env.failed()
-        {
+        if self.function.accumulate || self.function.ret == Type::Unknown || self.env.failed() {
             return;
         }
         if self.returns_large() {

@@ -39,7 +39,7 @@ impl Checker<'_> {
     /// a `void` or `variant` "ptr-to-variants must be cast to a different type before being
     /// read" (FTEF-31.3); a string's character by `OP_LOADP_C` or `OP_LOADP_U8`.
     pub(super) fn read(&mut self, value: Value, span: Span) -> Checked {
-        if value.ty == Type::Unknown || !self.env.fteqcc() {
+        if value.ty == Type::Unknown {
             return Ok(value);
         }
         // FTEF-6.15: a bitfield's word is read, then its bits by `OP_BITEXTEND_*`
@@ -439,7 +439,7 @@ impl Checker<'_> {
         let base = self.expr_of(index.base())?;
         let at = self.value(index.index())?;
         self.end_of_construct()?;
-        if base.ty == Type::Unknown || at.ty == Type::Unknown || !self.env.fteqcc() {
+        if base.ty == Type::Unknown || at.ty == Type::Unknown {
             return Ok(Value::unknown());
         }
         let constant = match at.known() {
