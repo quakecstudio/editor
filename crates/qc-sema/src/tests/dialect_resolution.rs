@@ -227,8 +227,9 @@ fn locals_shadow_globals() {
     assert_eq!(error_codes(&same), Vec::<Code>::new());
 }
 
-// spec FTE-22.5: a constant initialised twice with the same literal is accepted; a different
-// literal is still "NAME redeclared".
+// spec FTE-22.6: a constant initialised twice with the same value is accepted; another
+// constant is "incompatible redeclaration", and a value that is no constant is not compared.
+// spec QCD-4.64: "incompatible redeclaration" is `E0363`.
 // spec FTEF-17.10: so is an initialiser written differently, and a body is never equal.
 #[test]
 fn equal_reinitialisation_is_accepted() {
@@ -239,20 +240,24 @@ fn equal_reinitialisation_is_accepted() {
     assert_eq!(all_codes(&index), Vec::<Code>::new());
     assert_eq!(
         error_codes(&fte_index_of("float A = 1;\nfloat A = 2;\n")),
-        [Code::E0206]
+        [Code::E0363]
     );
-    // FTEF-19.5: a constant's name gives its value.
+    // FTEF-19.58: a constant's name gives its value.
     assert_eq!(
         error_codes(&fte_index_of("float A = 1;\nfloat B = 1;\nfloat A = B;\n")),
         Vec::<Code>::new()
     );
     assert_eq!(
         error_codes(&fte_index_of("float A = 1;\nfloat B = 2;\nfloat A = B;\n")),
-        [Code::E0206]
+        [Code::E0363]
+    );
+    assert_eq!(
+        error_codes(&fte_index_of("float x;\nfloat A = 1;\nfloat A = x;\n")),
+        [Code::E0214]
     );
     assert_eq!(
         error_codes(&fte_index_of("void() f = { };\nvoid() f = { };\n")),
-        [Code::E0216, Code::E0206]
+        [Code::E0216, Code::E0363]
     );
     assert_eq!(
         error_codes(&index_of("float A = 1;\nfloat A = 1;")),

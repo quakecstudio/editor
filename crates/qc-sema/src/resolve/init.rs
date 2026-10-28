@@ -21,7 +21,7 @@ use crate::symbol::{DefId, DefKind, FileId, Location};
 use crate::ty::{SimpleType, Type};
 
 impl Resolver<'_> {
-    /// FTEF-19.4, FTEF-19.11: what `QCC_PR_ParseDefs` reports of an initialiser before it reads
+    /// FTEF-19.57, FTEF-19.11: what `QCC_PR_ParseDefs` reports of an initialiser before it reads
     /// it: a `shared` definition given a value; a body for a definition already initialised,
     /// "redeclaration of function body", but for `anglemod` and `crossproduct`, whose builtin
     /// a body replaces with a warning; and a `wrap` that has nothing to wrap.
@@ -183,7 +183,7 @@ impl Resolver<'_> {
 
     /// FTEF-19.31, FTEF-19.3, QC-11.3: the checks of a value initialiser of a definition of
     /// type `ty` named `name`, held as `holder` says, and the value it gives when it names a
-    /// constant (FTEF-19.5). Under the vanilla profile a literal of another type than the
+    /// constant (FTEF-19.58). Under the vanilla profile a literal of another type than the
     /// definition's is "wrong immediate type" (QCD-3.7); under FTEQCC a value its type
     /// cannot be cast to is "Cannot cast" (QCD-3.13), and a name that is no constant
     /// initialising a global or a static is "is not constant" (QCD-3.14). `Err` is a fatal
@@ -503,7 +503,7 @@ impl Resolver<'_> {
                 | Type::Pointer(_) => None,
             });
         }
-        // FTEF-19.5: a name of the same type gives its value, which a later initialiser is
+        // FTEF-19.58: a name of the same type gives its value, which a later initialiser is
         // compared with.
         Ok((source_ty == *ty)
             .then(|| self.literals.get(&source).cloned())

@@ -138,13 +138,13 @@ fn parameters_below_the_one_before_are_bad_parm_order() {
 
 // spec QC-11.11: a vector's initialiser does not initialise its components under the vanilla
 // profile
-// spec FTEF-19.5: under FTEQCC the components have the vector's words
+// spec FTEF-19.58: under FTEQCC the components have the vector's words
 #[test]
 fn a_vectors_components_and_its_initialiser() {
     assert_eq!(vanilla("vector v = '1 2 3';\nfloat v_x = 2;\n"), []);
     assert_eq!(vanilla("vector v = '1 2 3';\nfloat v_x = 1;\n"), []);
     assert_eq!(fte("vector v = '1 2 3';\nfloat v_x = 1;\n"), []);
-    assert_eq!(fte("vector v = '1 2 3';\nfloat v_x = 2;\n"), [Code::E0206]);
+    assert_eq!(fte("vector v = '1 2 3';\nfloat v_x = 2;\n"), [Code::E0363]);
     assert_eq!(fte("float x = 0x10;\nfloat x = 16;\n"), []);
 }
 
@@ -179,11 +179,11 @@ fn locals_are_initialised_once() {
     );
     assert_eq!(
         fte("void() g = { static float x = 1; static float x = 2; };\n"),
-        [Code::E0206]
+        [Code::E0363]
     );
     assert_eq!(
         fte("void() g = { const float x = 1; const float x = 2; };\n"),
-        [Code::W0207, Code::E0206]
+        [Code::W0207, Code::E0363]
     );
 }
 
@@ -427,7 +427,7 @@ fn constants_initialise_constants() {
     );
 }
 
-// spec FTEF-19.4: a body for a definition already initialised is E0216, but for anglemod and
+// spec FTEF-19.57: a body for a definition already initialised is E0216, but for anglemod and
 // crossproduct, and wrap and accumulate their own rules
 // spec QCD-3.16: E0216 "redeclaration of function body"
 // spec QCD-3.22: E0222 "wrapper function does not wrap anything"
@@ -438,15 +438,15 @@ fn constants_initialise_constants() {
 fn bodies_for_initialised_definitions() {
     assert_eq!(
         fte("void() g = {};\nvoid() g = {};\n"),
-        [Code::E0216, Code::E0206]
+        [Code::E0216, Code::E0363]
     );
     assert_eq!(
         fte("void() g = #6;\nvoid() g = {};\n"),
-        [Code::E0216, Code::E0206]
+        [Code::E0216, Code::E0363]
     );
     assert_eq!(
         fte("extern void() g;\nvoid() g = {};\n"),
-        [Code::E0216, Code::E0206]
+        [Code::E0216, Code::E0363]
     );
     assert_eq!(
         fte_only("void() anglemod = #6;\nvoid() anglemod = {};\n"),
@@ -483,14 +483,14 @@ fn bodies_for_initialised_definitions() {
     );
 }
 
-// spec FTEF-19.5: a constant's name gives its value, and parseentitydata may be renumbered
+// spec FTEF-19.58: a constant's name gives its value, and parseentitydata may be renumbered
 // spec QCD-7.49: W0223 for parseentitydata given another builtin after #608 or #613
 #[test]
 fn values_compare_through_names() {
     assert_eq!(fte("float y = 2;\nfloat x = y;\nfloat x = 2;\n"), []);
     assert_eq!(
         fte("float y = 2;\nfloat x = y;\nfloat x = 3;\n"),
-        [Code::E0206]
+        [Code::E0363]
     );
     let (code, message) =
         fte_only("void() parseentitydata = #608;\nvoid() parseentitydata = #613;\n");
@@ -501,7 +501,7 @@ fn values_compare_through_names() {
     );
     assert_eq!(
         fte("void() parseentitydata = #609;\nvoid() parseentitydata = #613;\n"),
-        [Code::E0206]
+        [Code::E0363]
     );
 }
 
@@ -595,7 +595,7 @@ fn redeclarations_of_another_type() {
                 .to_owned()
         )
     );
-    // A builtin a body replaced is unused and unreferenced (FTEF-19.4).
+    // A builtin a body replaced is unused and unreferenced (FTEF-19.57).
     assert_eq!(
         fte_messages(
             "void() anglemod = #6;\nvoid() anglemod = {};\nfloat(float a) anglemod = #7;\n"
@@ -760,10 +760,10 @@ fn enum_values() {
     // After a value the model does not compute, the names that follow have none.
     assert_eq!(
         fte("enum { A = 1+1, B, C };\nfloat C = 0;\n"),
-        [Code::E0206]
+        [Code::E0363]
     );
     assert_eq!(fte("enum { A, B };\nfloat A = 0;\n"), []);
-    assert_eq!(fte("enum { A, B };\nfloat A = 1;\n"), [Code::E0206]);
+    assert_eq!(fte("enum { A, B };\nfloat A = 1;\n"), [Code::E0363]);
     assert_eq!(
         fte("enumflags { A, B, C };\nfloat x = C;\nfloat x = 4;\n"),
         []
@@ -1233,7 +1233,7 @@ fn a_replaced_definition_is_the_one_used() {
     assert_eq!(used, [defs[1]]);
 }
 
-// spec QC-11.7: an array of vectors has no components (FTEF-19.5: `!arraysize`)
+// spec QC-11.7: an array of vectors has no components (FTEF-19.58: `!arraysize`)
 #[test]
 fn vector_arrays_have_no_components() {
     assert_eq!(fte("vector v[2];\nvector v_x;\n"), []);
@@ -1286,7 +1286,7 @@ fn extern_and_static_on_a_variable() {
 // functions are not checked
 #[test]
 fn what_the_profile_does_not_model() {
-    assert_eq!(fte("float x = 1 + 1;\nfloat x = 2;\n"), [Code::E0206]);
+    assert_eq!(fte("float x = 1 + 1;\nfloat x = 2;\n"), [Code::E0363]);
     assert_eq!(fte("float x = 1 + 1;\nfloat x = 1 + 1;\n"), []);
     // The check stage types it (FTEF-34.9).
     assert_eq!(fte("string s = 1 + 1;\n"), [Code::E0213]);

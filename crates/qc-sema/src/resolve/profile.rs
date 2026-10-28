@@ -108,13 +108,13 @@ impl Profile {
     }
 
     /// A vector's components are initialised with it, and made with no lookup of their names
-    /// (FTEF-19.5); under `qcc` they are not initialised (QC-11.11).
+    /// (FTEF-19.58); under `qcc` they are not initialised (QC-11.11).
     pub(in crate::resolve) const fn components_initialised(self) -> bool {
         self.fteqcc()
     }
 
     /// A second initialiser of the same value is accepted, and a `noref` definition's is
-    /// replaced (FTE-22.5, FTEF-17.8); under `qcc` any second initialiser is "redeclared"
+    /// replaced (FTE-22.6, FTEF-17.8); under `qcc` any second initialiser is "redeclared"
     /// (QC-11.5, QC-11.13).
     pub(in crate::resolve) const fn reinitialise_with_same_value(self) -> bool {
         self.fteqcc()

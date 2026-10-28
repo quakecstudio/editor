@@ -236,7 +236,7 @@ fn lax_conversions_and_mismatches() {
         codes(&format!(
             "{lax}enum {{ A = \"a\", B }};\nfloat x = B;\nfloat x = 2;\n"
         )),
-        [Code::W0230, Code::E0206]
+        [Code::W0230, Code::E0363]
     );
     assert_eq!(
         codes(&format!(

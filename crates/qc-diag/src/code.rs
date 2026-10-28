@@ -342,6 +342,9 @@ pub enum Code {
     E0361,
     /// "NAME was not defined yet": a member of a struct or union of size 0 (QCD-4.63).
     E0362,
+    /// "incompatible redeclaration": a definition initialised again with another value
+    /// (QCD-4.64).
+    E0363,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -588,7 +591,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 258] = [
+    pub const ALL: [Self; 259] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -738,6 +741,7 @@ impl Code {
         Self::E0360,
         Self::E0361,
         Self::E0362,
+        Self::E0363,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -1088,6 +1092,7 @@ impl Code {
             Self::E0360 => "E0360",
             Self::E0361 => "E0361",
             Self::E0362 => "E0362",
+            Self::E0363 => "E0363",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1377,6 +1382,7 @@ impl Code {
             | Self::E0360
             | Self::E0361
             | Self::E0362
+            | Self::E0363
             | Self::E0408 => true,
         }
     }

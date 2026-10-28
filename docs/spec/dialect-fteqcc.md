@@ -1063,7 +1063,7 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   pass compiles everything again with every name the first pass made defined: a function with a
   body from the first pass that is given a body again is "redeclaration of function body" and
   "incompatible redeclaration" (a builtin, a prototype or a body the first pass skipped is not),
-  and a value is compared with the first pass's as FTE-22.5 says. When no second pass follows, a
+  and a value is compared with the first pass's as FTE-22.6 says. When no second pass follows, a
   function whose body was skipped is "function NAME has no body" (`ERR_NOFUNC`), which this
   profile reports as QC-11.8's "NAME was not defined" (`E0211`). This profile reads the first
   pass as its own file (its flags, keywords and warning settings, FTEF-12.20), declares what it
@@ -2357,7 +2357,7 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   FTEF-17.10.
 - **FTEF-17.10** A name initialised again is accepted when the "dupe initialisation"
   comparison finds the two values equal word by word: this profile compares two literals by
-  value (FTE-22.5), a builtin by its number and engine name as FTE-23.7 says, any other
+  value (FTE-22.6), a builtin by its number and engine name as FTE-23.17 says, any other
   initialiser, a builtin FTEQCC binds no number for among them, by its text, token for token.
   An enum's names are never redeclared: `QCC_PR_ParseEnum` makes each with
   `QCC_PR_DummyDef`, which looks for no earlier definition. A function body is never equal to
@@ -2788,10 +2788,11 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   will be treated as 0", and the value 0; a field always has its value (fields are "initialised
   behind the scenes") and a function not yet defined is filled in once it is (`$relocf`), so
   neither warns.
-- **FTEF-19.4** A body given to a definition already initialised, by a builtin, a body, `extern`
+- **FTEF-19.4** **Withdrawn** 2026-10-28: it gave the "incompatible redeclaration" after "redeclaration of function body" as `E0206`, which is `E0363` (FTE-22.6); replaced by FTEF-19.57.
+- **FTEF-19.57** A body given to a definition already initialised, by a builtin, a body, `extern`
   or `shared`, is the error `E0216` "redeclaration of function body" (`else if
   (basedef->initialized == 1 && !(flags & PIF_STRONGER))`), reported before the "incompatible
-  redeclaration" the two different functions then give (`E0206`); a body after a `weak` one, or
+  redeclaration" the two different functions then give (`E0363`); a body after a `weak` one, or
   for an `accumulate` function, is none, and a body after a `wrap` one is. A body replacing the
   builtin of `anglemod` or `crossproduct` is the warning `W0217` "NAME already declared as a
   builtin" instead, and the builtin is marked unused. A `wrap` body with nothing initialised to
@@ -2799,12 +2800,13 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `prior` the error `E0223` "Wrapper function \"NAME\" does not refer to its prior function". An
   `accumulate` declaration of a function initialised before without it is the warning `W0218`
   "NAME redeclared to accumulate after initial declaration".
-- **FTEF-19.5** The "dupe initialisation" comparison of FTE-22.5 and FTEF-17.10 compares the
+- **FTEF-19.5** **Withdrawn** 2026-10-28: it gave a differing word `E0206`, which is "incompatible redeclaration", `E0363` (FTE-22.6); replaced by FTEF-19.58.
+- **FTEF-19.58** The "dupe initialisation" comparison of FTE-22.6 and FTEF-17.10 compares the
   words the two initialisers give: a number literal's value as FTEQCC's lexer reads it, so
   `0x10` and `16` are equal; a constant's name, the constant's value (`float y = 2; float x = y;
   float x = 2;` compiles); a vector's components, which `QCC_PR_DummyDef` gives the vector's
   initialised state and words (`d->initialized = def->initialized;`), so `vector v = '1 2 3';
-  float v_x = 1;` compiles and `float v_x = 2;` is `E0206`; and a `const` or `static` local's, as
+  float v_x = 1;` compiles and `float v_x = 2;` is `E0363`; and a `const` or `static` local's, as
   a global's. `parseentitydata` given another builtin after `#608` or `#613` is accepted with the
   warning `W0223` "incompatible redeclaration. Please validate builtin numbers. parseentitydata
   is #613" ("dpextensions is WRONG").
@@ -2828,7 +2830,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   declaration goes on. A global marked unused that nothing refers to, `def->unused &&
   !def->referenced`, is replaced by a declaration of another type, with the warning `W0211`
   "Type redeclaration of TYPE NAME replaces existing variable": a builtin a body replaced
-  (FTEF-19.4) is one. A `noref` mark is a reference too (`if (noref) { def->unused = true;
+  (FTEF-19.57) is one. A `noref` mark is a reference too (`if (noref) { def->unused = true;
   def->referenced = true; }`), so a `noref` global declared again with another type is
   `E0205`.
   A function declared again as `T(...)` with no parameters is no difference ("c89-style dumb
@@ -2874,13 +2876,13 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   the `{` with no `:` is the warning `W0224` "legacy enum base type. Use \"enum [class]
   [name_e]:type\" instead", and so is a named enum declared again, whose name `QCC_PR_ParseType`
   then reads as that base type. A later declaration of an enum's name compares its initialiser with
-  the name's value (FTEF-19.5). The names of an `enum class` are not referable alone
+  the name's value (FTEF-19.58). The names of an `enum class` are not referable alone
   (`QCC_PR_DummyDef(..., !strictenum, ...)`), only as `Name::value`, and are of the enum's own
   type, which casts to no other: `float x = E::A;` is "Cannot cast from enum E:float to float".
 - **FTEF-19.11** A `shared` definition is initialised by its declaration (`if
   (!def->initialized && shared) ... def->initialized = true;`), and giving it a value, then or
   later, is the error `E0221` "shared values may not be assigned an initial value". An `extern`
-  function is initialised by its declaration too (FTEF-19.4); `extern` on what is no function is
+  function is initialised by its declaration too (FTEF-19.57); `extern` on what is no function is
   ignored, with the warning `W0214` "extern keyword may only apply to qc functions.".
 - **FTEF-19.12** A `static` global is visible only in its unit, the compiled file and the files
   it includes (`if ((def->isstatic||(flags&GDF_STATIC)) && strcmp(def->unitn,

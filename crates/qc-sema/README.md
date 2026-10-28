@@ -69,7 +69,7 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   QC-13.5; the state-header name, QC-13.6; and the spacing of an expansion as the parser reads
   it, QC-9.16. Of
   [`dialect-fteqcc-rerelease.md`](../../docs/spec/dialect-fteqcc-rerelease.md), the builtin
-  functions of FTE-23.7 and the cast of FTE-23.16. Of
+  functions of FTE-23.17 and the cast of FTE-23.16. Of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md), the diagnostics
   QCD-3.5 to QCD-3.8, QCD-3.11, QCD-3.13 to QCD-3.35, QCD-4.1, QCD-4.9 to QCD-4.13, QCD-5.4,
   QCD-7.3, QCD-7.23, QCD-7.72, QCD-7.32 to QCD-7.51 and QCD-7.67. Of
@@ -104,7 +104,7 @@ class's members are found through the class and its parents, in a member functio
 before the globals, and after `.` or `->` through the class of what the access is made on;
 `Class::member` defines the member its class declares; `this`, `super`, `prior` and FTEQCC's
 intrinsics are no names to define; equal initialisers, builtins of one number and engine name
-that FTEQCC would bind to one function (FTE-23.7), enums declared again and `noref`
+that FTEQCC would bind to one function (FTE-23.17), enums declared again and `noref`
 definitions are no redeclaration (FTEF-17.10, FTEF-17.8); a redeclaration
 involving a type name that is no typedef's or a pointer is no type mismatch (FTEF-17.12); `wrap`, `weak` and
 `accumulate` functions may be defined again, `extern` ones elsewhere, and a `var` function is a

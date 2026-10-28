@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! A builtin initialised again, compared as FTEQCC compares it
-//! (`docs/spec/dialect-fteqcc-rerelease.md` FTE-23.7, `docs/spec/dialect-fteqcc.md` FTEF-17.10).
+//! (`docs/spec/dialect-fteqcc-rerelease.md` FTE-23.17, `docs/spec/dialect-fteqcc.md` FTEF-17.10).
 
 use std::path::PathBuf;
 
@@ -24,9 +24,9 @@ fn fte_errors(source: &str) -> Vec<Code> {
         .collect()
 }
 
-// spec FTE-23.7: a second builtin initialiser is the same value only when it has the number
+// spec FTE-23.17: a second builtin initialiser is the same value only when it has the number
 // and engine name of the first, the definition's own name standing in for none, so a
-// different engine name is E0206 though the number is the same
+// different engine name is E0363 though the number is the same
 #[test]
 fn builtins_compare_by_number_and_engine_name() {
     for (first, second, redeclared) in [
@@ -57,7 +57,7 @@ fn builtins_compare_by_number_and_engine_name() {
     ] {
         let source = format!("void() f = {first};\nvoid() f = {second};\n");
         let expected = if redeclared {
-            vec![Code::E0206]
+            vec![Code::E0363]
         } else {
             vec![]
         };
@@ -65,9 +65,9 @@ fn builtins_compare_by_number_and_engine_name() {
     }
 }
 
-// spec FTE-23.7: FTEQCC reuses the builtin function it made first with a number and engine
+// spec FTE-23.17: FTEQCC reuses the builtin function it made first with a number and engine
 // name, so after another definition bound by the same ones, initialising `f` again with its own
-// is E0206; a function it made after `f`'s does not matter
+// is E0363; a function it made after `f`'s does not matter
 #[test]
 fn the_first_function_with_a_number_and_name_is_the_one_reused() {
     for (source, redeclared) in [
@@ -91,7 +91,7 @@ fn the_first_function_with_a_number_and_name_is_the_one_reused() {
         ),
     ] {
         let expected = if redeclared {
-            vec![Code::E0206]
+            vec![Code::E0363]
         } else {
             vec![]
         };
@@ -99,12 +99,12 @@ fn the_first_function_with_a_number_and_name_is_the_one_reused() {
     }
 }
 
-// spec FTE-23.7: a redeclaration FTEQCC reuses no function for makes one, which a later
-// redeclaration by the same number and name does not reuse either: each is E0206
+// spec FTE-23.17: a redeclaration FTEQCC reuses no function for makes one, which a later
+// redeclaration by the same number and name does not reuse either: each is E0363
 #[test]
 fn a_mismatched_redeclaration_makes_its_own_function() {
     let source = "void() f = #5;\nvoid() f = #6;\nvoid() g = #6:f;\nvoid() g = #6:f;\n";
-    assert_eq!(fte_errors(source), [Code::E0206, Code::E0206]);
+    assert_eq!(fte_errors(source), [Code::E0363, Code::E0363]);
 }
 
 /// The error codes of the one-file module `source` read through the preprocessor under the
@@ -181,7 +181,7 @@ fn unbound_builtins_and_vanilla_compare_as_before() {
     assert_eq!(fte_errors("void() f = #16d;\nvoid() f = #16d;\n"), []);
     assert_eq!(
         fte_errors("void() f = #16d;\nvoid() f = #17d;\n"),
-        [Code::E0206]
+        [Code::E0363]
     );
     // A `#` before neither a number nor a string binds nothing, and is no builtin 0.
     for (source, literal) in [

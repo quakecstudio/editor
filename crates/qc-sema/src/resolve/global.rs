@@ -153,7 +153,7 @@ impl<'a> Resolver<'a> {
     ///
     /// A name already in scope with the same type refers to the same definition; declaring
     /// it with a different type is QCD-3.5; initialising it a second time is QCD-3.6
-    /// (QC-11.5), unless FTE-22.5 accepts it. Returns the [`DefId`] the name resolves to.
+    /// (QC-11.5), unless FTE-22.6 accepts it. Returns the [`DefId`] the name resolves to.
     pub(in crate::resolve) fn declare_global(
         &mut self,
         name: &str,
@@ -238,7 +238,7 @@ impl<'a> Resolver<'a> {
         // QC-11.7: `PR_GetDef` makes `name_x`, `name_y` and `name_z` for a new vector, and
         // `.float` fields of the same names for a new `.vector` field. QC-11.11: the vector's
         // initialiser does not initialise them under the vanilla profile; FTEQCC gives them
-        // the vector's initialised state and its words (FTEF-19.5).
+        // the vector's initialised state and its words (FTEF-19.58).
         if decl.array.is_none()
             && let Some(component) = component_type(ty)
         {
@@ -266,7 +266,7 @@ impl<'a> Resolver<'a> {
                 if self.profile.components_initialised()
                     && self.lookup_global(&component_name).is_some()
                 {
-                    // FTEF-19.5: FTEQCC makes the components with `QCC_PR_DummyDef`, which
+                    // FTEF-19.58: FTEQCC makes the components with `QCC_PR_DummyDef`, which
                     // looks for no earlier definition, so an earlier one of the name stays.
                     continue;
                 }
@@ -401,7 +401,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// The checks of a global's initialiser before its value is read: what `QCC_PR_ParseDefs`
-    /// reports at the `=` (FTEF-19.4), an array's value and dimensions (FTEF-19.8) and a braced
+    /// reports at the `=` (FTEF-19.57), an array's value and dimensions (FTEF-19.8) and a braced
     /// initialiser read against the type (FTEF-19.47). Returns whether the declaration was
     /// aborted.
     fn check_initialiser_shape(
@@ -509,7 +509,7 @@ impl<'a> Resolver<'a> {
         let existing = r.existing;
         let name = r.name;
         if def.initialized {
-            // FTE-22.5: FTEQCC compares a second initialiser with the first and accepts it
+            // FTE-22.6: FTEQCC compares a second initialiser with the first and accepts it
             // when the two are the same value; FTEF-17.8: it does not compare them when the
             // first is `noref`.
             let same = self.profile.reinitialise_with_same_value()
@@ -529,13 +529,20 @@ impl<'a> Resolver<'a> {
                 return;
             }
             if !same {
-                // FTE-23.7: FTEQCC makes a new builtin function for a builtin it reuses none
+                // FTE-23.17: FTEQCC makes a new builtin function for a builtin it reuses none
                 // for.
                 if let Some(literal) = literal {
                     self.note_builtin_function(existing, name, literal);
                 }
-                // QCD-3.6: initialising a name that is already initialised.
-                self.report(Code::E0206, r.location, format!("{name} redeclared"));
+                if !self.profile.reinitialise_with_same_value() {
+                    // QCD-3.6: initialising a name that is already initialised.
+                    self.report(Code::E0206, r.location, format!("{name} redeclared"));
+                } else if literal.is_some() || matches!(r.ty, Type::Function(_)) {
+                    // FTE-22.6: a constant's other words are "incompatible redeclaration"; a
+                    // value that is no constant was "not constant" and is not compared.
+                    let message = "incompatible redeclaration".to_owned();
+                    self.report(Code::E0363, r.location, message);
+                }
             }
             return;
         }
@@ -548,7 +555,7 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    /// FTEF-19.5: FTEQCC accepts `parseentitydata` given another builtin after `#608` or
+    /// FTEF-19.58: FTEQCC accepts `parseentitydata` given another builtin after `#608` or
     /// `#613`, "dpextensions is WRONG", and makes it `#613`.
     pub(in crate::resolve) fn parseentitydata(&mut self, existing: DefId, name: &str) -> bool {
         if name != "parseentitydata" {
@@ -565,8 +572,8 @@ impl<'a> Resolver<'a> {
     }
 
     /// Whether `literal`, initialising `existing` (named `name`) again, is the value it has
-    /// (FTE-22.5, FTEF-17.10). A builtin is when FTEQCC reuses `existing`'s builtin function
-    /// for it (FTE-23.7): the one it made first with the same number and engine name, the
+    /// (FTE-22.6, FTEF-17.10). A builtin is when FTEQCC reuses `existing`'s builtin function
+    /// for it (FTE-23.17): the one it made first with the same number and engine name, the
     /// definition's own name standing in for none.
     pub(in crate::resolve) fn same_value(
         &self,
@@ -586,7 +593,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// Records the builtin function FTEQCC makes for `def` when `literal` is a builtin, unless
-    /// one with its number and engine name was made before (FTE-23.7).
+    /// one with its number and engine name was made before (FTE-23.17).
     pub(in crate::resolve) fn note_builtin_function(
         &mut self,
         def: DefId,
@@ -752,6 +759,7 @@ impl<'a> Resolver<'a> {
         let was_initialized =
             existing.is_some_and(|d| self.index.def(d).is_some_and(|d| d.initialized));
         aborted = aborted || self.check_initialiser_shape(file, decl, existing, location);
+        let reported = self.index.diagnostics.len();
         // QC-11.5: id's qcc reports "NAME redeclared" at the `=`, before it reads the value.
         let value = if aborted
             || (!self.profile.reinitialise_with_same_value() && was_initialized && decl.initialized)
@@ -764,7 +772,14 @@ impl<'a> Resolver<'a> {
                 .filter(|value| !string_of_chars(decl.array, &decl.ty, value));
             self.check_value(file, &decl.name, &decl.ty, value, Holder::Global)
         };
+        // FTE-22.6: a value FTEQCC found no constant is not compared with the first.
+        let not_constant = self
+            .index
+            .diagnostics
+            .get(reported..)
+            .is_some_and(|new| new.iter().any(|d| d.diagnostic.code == Code::E0214));
         let literal = match value {
+            Ok(_) if not_constant && self.profile.reinitialise_with_same_value() => None,
             Ok(value) => value.or_else(|| decl.literal.clone()),
             Err(Fatal) => {
                 aborted = true;

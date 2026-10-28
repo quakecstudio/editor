@@ -162,11 +162,11 @@ fn builtin_after_body_is_a_warning() {
         fte_index_of("float(float a) sin = { return a; };\nnoref float(float angle) sin = #60;\n");
     assert_eq!(messages(&index), Vec::<String>::new());
     // A builtin and then a body, or a body twice, is a "redeclaration of function body" and
-    // still "NAME redeclared" (QCD-3.6, FTEF-19.4).
+    // still "NAME redeclared" (QCD-3.6, FTEF-19.57).
     let index = fte_index_of("float(float a) cos = #61;\nfloat(float a) cos = { return a; };\n");
-    assert_eq!(errors(&index), [Code::E0216, Code::E0206]);
+    assert_eq!(errors(&index), [Code::E0216, Code::E0363]);
     let index = fte_index_of("float() g = { return 1; };\nfloat() g = { return 2; };\n");
-    assert_eq!(errors(&index), [Code::E0216, Code::E0206]);
+    assert_eq!(errors(&index), [Code::E0216, Code::E0363]);
     // A builtin of another type is the type mismatch of QCD-3.5.
     let index = fte_index_of("float(float a) tan = { return a; };\nvoid() tan = #62;\n");
     assert_eq!(errors(&index), [Code::E0205]);

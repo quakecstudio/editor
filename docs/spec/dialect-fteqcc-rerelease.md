@@ -613,13 +613,22 @@ list starts empty in each file (QC-8.3).
 - **FTE-22.2** **Withdrawn** (P2-26, #82): it made a second initialiser that is not a literal
   always "NAME redeclared", which the full dialect's corpus contradicts. Replaced by FTE-22.5
   for literals and `dialect-fteqcc.md` FTEF-17.5 for the rest.
-- **FTE-22.5** A name initialised twice with the same value is accepted: for a "dupe
-  initialisation" `QCC_PR_ParseInitializerType_Internal` compares the two word by word and
-  reports `"incompatible redeclaration"` only when they differ. The rerelease initialises
-  `float SIGIL_E1 = 1;` in both `rerelease-mg1/defs.qc` and `rerelease-mg1/items_runes.qc`.
-  This profile compares two literal initialisers by value and accepts them when equal, and a
-  differing literal is still "NAME redeclared" (QCD-3.6); other initialisers compare as
-  FTEF-17.10 says.
+- **FTE-22.5** **Withdrawn** 2026-10-28: it kept "NAME redeclared" (QCD-3.6) for a differing
+  literal by this profile's choice, but the pinned FTEQCC reports `"incompatible redeclaration"`
+  there, and compares no value that is not a constant; replaced by FTE-22.6.
+- **FTE-22.6** A name initialised twice with the same value is accepted: for a "dupe
+  initialisation" (`basedef->initialized && !basedef->unused && !(flags & PIF_STRONGER)`)
+  `QCC_PR_GenerateInitializerType` compares the two word by word and, when they differ, reports
+  the fatal error `QCC_PR_ParseErrorPrintSRef (ERR_REDECLARATION, def, "incompatible
+  redeclaration")`, `E0363` (QCD-4.64), but for the `parseentitydata` and builtin-after-body
+  warnings (FTEF-17.9, QCD-7.49). The comparison is in the branch for a constant value only: a
+  value that is not one is "initializer for 'NAME' is not constant" (QCD-3.14) and nothing more.
+  The rerelease initialises `float SIGIL_E1 = 1;` in both `rerelease-mg1/defs.qc` and
+  `rerelease-mg1/items_runes.qc`. So `float A = 1; float A = 2;`, `string A = "a"; string A =
+  "b";` and `float B = 2; float A = 1; float A = B;` are "incompatible redeclaration", and
+  `float x; float A = 1; float A = x;` is only "not constant"; other initialisers compare as
+  FTEF-17.10 says. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateInitializerType`.
 - **FTE-22.3** With `-Fautoproto` every top-level declaration of the program is visible in every
   function body: `qccmain.c` describes the flag as "Causes compilation to take two passes
   instead of one. The first pass, only the definitions are read. The second pass actually
@@ -729,7 +738,8 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   `#"\x00":ex_b` names nothing before the `:` and binds `ex_b`. Names are bytes, compared with
   `strcmp`, so two bronze names (`\b`, bytes of 0x80 and above) differ when their bytes do. A name after `:` is
   `pr_token`, which `QCC_PR_ParseName`'s "name too long" check does not see.
-- **FTE-23.7** A builtin initialiser makes a builtin function, numbered `binum` and named the
+- **FTE-23.7** **Withdrawn** 2026-10-28: it gave the differing builtin reinitialiser `E0206`, but the pinned FTEQCC reports `"incompatible redeclaration"`, `E0363` (FTE-22.6); replaced by FTE-23.17.
+- **FTE-23.17** A builtin initialiser makes a builtin function, numbered `binum` and named the
   engine name or, with none, the definition's name, unless it initialises a definition already
   initialised and FTEQCC finds one to reuse: `if (basedef && basedef->initialized)` it takes
   the first function, in the order they were made, with `functions[i].code == -1 &&
@@ -739,11 +749,11 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   initialisation" comparison then reports `"incompatible redeclaration"` unless the function is
   the one the definition has. So a second builtin initialiser is the same value exactly when
   its number and engine name are those of the first and no function with them was made before
-  the definition's: under this profile it is otherwise `E0206`. `#0:ex_a` then `#0:ex_b`,
-  `#5:ex_a` then `#5:ex_b`, `#5` then `#5:ex_a` and `#0` then `:ex_a` are `E0206`; `:ex_a`
+  the definition's: under this profile it is otherwise `E0363`. `#0:ex_a` then `#0:ex_b`,
+  `#5:ex_a` then `#5:ex_b`, `#5` then `#5:ex_a` and `#0` then `:ex_a` are `E0363`; `:ex_a`
   then `:"ex_a"`, `#0:ex_a` then `:ex_a`, `#"ex_a"` then `:ex_a`, `#5` then `#5.0`, and, for a
   definition `f`, `#5` then `#5:f` and `#0` then `:f` are not. After `void() g = #5:ex_a;`,
-  `void() f = #5:ex_a;` given twice is `E0206`, since FTEQCC reuses `g`'s function; a function
+  `void() f = #5:ex_a;` given twice is `E0363`, since FTEQCC reuses `g`'s function; a function
   made for a redeclaration it reuses none for counts as made then. FTEQCC reports the
   redeclaration only once it has read the initialiser, so a bad literal in it is that error
   instead; id's `qcc` reports `"%s redeclared"` at the `=`, before it (`PR_ParseDefs`).

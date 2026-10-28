@@ -32,7 +32,7 @@ pub struct RawDecl {
     /// Whether the declaration has an initialiser (QC-11.5).
     pub initialized: bool,
     /// Under FTEQCC, the value of its initialiser, which FTEQCC compares when a name is
-    /// initialised twice (FTE-22.5, FTEF-17.10); `None` for none, and under the vanilla
+    /// initialised twice (FTE-22.6, FTEF-17.10); `None` for none, and under the vanilla
     /// profile, which compares no two values (QCD-3.6).
     pub literal: Option<LiteralValue>,
     /// For a function definition, the lowered body; otherwise `None`.
@@ -253,7 +253,7 @@ pub struct RawParamInfo {
     /// Its default value (FTE-18.2), if it has one.
     pub default: Option<RawValue>,
     /// The default value when it is a literal, compared as the "dupe initialisation"
-    /// comparison compares values (FTE-22.5).
+    /// comparison compares values (FTE-22.6).
     pub default_literal: Option<LiteralValue>,
 }
 
@@ -737,7 +737,7 @@ fn param_infos(list: &ast::ParamList, cx: Cx<'_>) -> Vec<RawParamInfo> {
     out
 }
 
-/// The value of a literal initialiser (FTE-22.5). A float is kept as its bits, so two
+/// The value of a literal initialiser (FTE-22.6). A float is kept as its bits, so two
 /// initialisers are the same value exactly when FTEQCC's word-by-word comparison finds them
 /// equal.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -749,7 +749,7 @@ pub enum LiteralValue {
     /// A string literal as written, quotes included (QC-6).
     String(String),
     /// Under FTEQCC, a builtin initialiser: the `binum` FTEQCC binds and the engine name it
-    /// reads, `None` when it reads none and names the builtin after the definition (FTE-23.7).
+    /// reads, `None` when it reads none and names the builtin after the definition (FTE-23.17).
     Builtin {
         /// The builtin number (FTE-17.6), 0 for a builtin bound by name alone (FTE-17.5).
         number: i32,
@@ -761,7 +761,7 @@ pub enum LiteralValue {
     Text(String),
 }
 
-/// The number and engine name of a builtin function FTEQCC makes (FTE-23.7): it reuses a
+/// The number and engine name of a builtin function FTEQCC makes (FTE-23.17): it reuses a
 /// function only for a builtin with both the same.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BuiltinFunction {
@@ -775,7 +775,7 @@ impl LiteralValue {
     /// The builtin function FTEQCC makes for this value initialising a definition named
     /// `definition`, if it is a builtin: `QCC_PR_GenerateBuiltinFunction(def.sym, binum,
     /// *fname?fname:def.sym->name)` names it after the definition when it reads no engine name
-    /// (FTE-23.7).
+    /// (FTE-23.17).
     #[must_use]
     pub fn builtin_function(&self, definition: &str) -> Option<BuiltinFunction> {
         let Self::Builtin { number, name } = self else {
@@ -794,7 +794,7 @@ impl LiteralValue {
             // A body is a definition, never a value two may share.
             ast::Initializer::Body(_) => None,
             ast::Initializer::Builtin(builtin) => {
-                // FTE-23.7: a builtin is the `binum` FTEQCC binds (FTE-17.6), 0 when it reads
+                // FTE-23.17: a builtin is the `binum` FTEQCC binds (FTE-17.6), 0 when it reads
                 // a string or name in place of the number (FTE-17.5), and its engine name. One
                 // FTEQCC binds no number for, or reads neither for, is an error, compared by
                 // its text.

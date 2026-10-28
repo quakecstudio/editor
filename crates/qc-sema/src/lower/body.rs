@@ -116,7 +116,7 @@ pub struct RawLocal {
     pub qualifiers: Vec<Qualifier>,
     /// A value initialiser, as the checks of QC-11.3 and FTEF-19.31 read it.
     pub value: Option<RawValue>,
-    /// The initialiser's value when it is a literal (FTE-22.5).
+    /// The initialiser's value when it is a literal (FTE-22.6).
     pub literal: Option<LiteralValue>,
     /// The first array dimension, when the declarator has one (FTEF-19.8).
     pub array: Option<ArrayDim>,

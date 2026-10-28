@@ -258,7 +258,7 @@ fn equal_initialisers_are_accepted() {
     );
     assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
     let different = fte_index_of("void() b = #12;\nvoid() b = #13;\n");
-    assert_eq!(errors(&different), [Code::E0206]);
+    assert_eq!(errors(&different), [Code::E0363]);
 }
 
 // spec FTEF-17.10: a builtin's number is the `binum` FTEQCC binds (FTE-17.6): `#16777217i` is
@@ -266,7 +266,7 @@ fn equal_initialisers_are_accepted() {
 #[test]
 fn builtins_compare_by_the_number_fteqcc_binds() {
     let int = fte_index_of("void() b = #16777217i;\nvoid() b = #16777216;\n");
-    assert_eq!(errors(&int), [Code::E0206]);
+    assert_eq!(errors(&int), [Code::E0363]);
     let wrapped = fte_index_of("void() b = #4294967313i;\nvoid() b = #17;\n");
     assert_eq!(
         errors(&wrapped),
@@ -288,7 +288,7 @@ fn other_initialisers_compare_token_for_token() {
         messages(&spaced)
     );
     let other = fte_index_of("const float a = 1 + 2;\nconst float a = 1 + 3;\n");
-    assert_eq!(errors(&other), [Code::E0206]);
+    assert_eq!(errors(&other), [Code::E0363]);
 }
 
 // spec FTEF-17.13: a redeclaration whose type involves a type name or an unknown type is no
@@ -348,11 +348,11 @@ fn redefinable_external_and_variable_functions() {
     let v = defs_named(&index, "v")[0];
     assert_eq!(index.defs[v.0].kind, DefKind::Global);
     let twice = fte_index_of("void() a = { };\nvoid() a = { };\n");
-    assert_eq!(errors(&twice), [Code::E0216, Code::E0206]);
-    // FTEF-19.4: a body after a wrap is one more body for the function.
+    assert_eq!(errors(&twice), [Code::E0216, Code::E0363]);
+    // FTEF-19.57: a body after a wrap is one more body for the function.
     let after_wrap =
         fte_index_of("void() a = { };\n__wrap void() a = { prior(); };\nvoid() a = { };\n");
-    assert_eq!(errors(&after_wrap), [Code::E0216, Code::E0206]);
+    assert_eq!(errors(&after_wrap), [Code::E0216, Code::E0363]);
 }
 
 // spec FTEF-10.2: an accessor's members are no globals, and their bodies see `this`, `value`
@@ -392,7 +392,7 @@ fn noref_allows_reinitialisation() {
     };
     let analysis = db.analyze_module(&input);
     let codes: Vec<_> = analysis.diagnostics().map(|d| d.diagnostic.code).collect();
-    assert_eq!(codes, [Code::E0206], "only the plain builtin is redeclared");
+    assert_eq!(codes, [Code::E0363], "only the plain builtin is redeclared");
     let noref = fte_index_of("noref float x = 1;\nfloat x = 2;\n");
     assert_eq!(errors(&noref), Vec::<Code>::new());
 }

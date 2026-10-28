@@ -677,7 +677,7 @@ impl<'a> Resolver<'a> {
         }
         // QC-11.13: under the vanilla profile a local, or the global it reuses (QC-12.3), may
         // be initialised once, which `PR_ParseDefs` checks at the `=`; FTEQCC compares a
-        // constant's or static's second initialiser as a global's (FTE-22.5), and keeps no
+        // constant's or static's second initialiser as a global's (FTE-22.6), and keeps no
         // other local initialised.
         let initialised_before = self.index.def(def).is_some_and(|d| d.initialized);
         if !self.profile.reinitialise_with_same_value() && initialised_before {
@@ -722,8 +722,10 @@ impl<'a> Resolver<'a> {
             let same = literal
                 .as_ref()
                 .is_some_and(|l| self.same_value(def, &local.name, l));
-            if !same {
-                self.report(Code::E0206, location, format!("{} redeclared", local.name));
+            if !same && literal.is_some() {
+                // FTE-22.6: a constant's other words are "incompatible redeclaration".
+                let message = "incompatible redeclaration".to_owned();
+                self.report(Code::E0363, location, message);
             }
             return;
         }

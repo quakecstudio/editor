@@ -104,7 +104,7 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-3.15** `E0215` "Duplicate definition of NAME.": under an FTEQCC profile, a parameter
   given again, at its name (FTEF-19.1).
 - **QCD-3.16** `E0216` "redeclaration of function body": under an FTEQCC profile, a body for a
-  definition already initialised, at the name (FTEF-19.4).
+  definition already initialised, at the name (FTEF-19.57).
 - **QCD-3.17** `E0217` "Default value not a constant": under an FTEQCC profile, a default value
   that names no constant, at the value (FTEF-19.6).
 - **QCD-3.18** `E0218` "Default value not initialized yet": under an FTEQCC profile, a default
@@ -118,9 +118,9 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-3.21** `E0221` "shared values may not be assigned an initial value": under an FTEQCC
   profile, a `shared` definition given a value, at the name (FTEF-19.11).
 - **QCD-3.22** `E0222` "wrapper function does not wrap anything": under an FTEQCC profile, a
-  `wrap` body for a function with none before it, at the name (FTEF-19.4).
+  `wrap` body for a function with none before it, at the name (FTEF-19.57).
 - **QCD-3.23** `E0223` "Wrapper function \"NAME\" does not refer to its prior function": under
-  an FTEQCC profile, a `wrap` body that does not use `prior`, at the name (FTEF-19.4).
+  an FTEQCC profile, a `wrap` body that does not use `prior`, at the name (FTEF-19.57).
 - **QCD-3.24** `E0224` "bad combination of modifiers with typedef (defining NAME)": under an
   FTEQCC profile, a typedef with a storage qualifier, at its name (FTEF-19.9).
 - **QCD-3.25** `E0225` "NAME is not a class": under an FTEQCC profile, `Scope::name` defined
@@ -373,6 +373,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   target.": the address of a string's character (FTEF-31.11); a fatal error.
 - **QCD-4.63** `E0362` "NAME was not defined yet": a member of a struct or union of size 0
   (FTEF-6.28); a fatal error.
+- **QCD-4.64** `E0363` "incompatible redeclaration": a definition initialised again with a
+  constant of another value (FTE-22.6); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -546,9 +548,9 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.41** `W0216` "NAME is not part of class CLASS": under an FTEQCC profile,
   `Class::name` defined for a member the class does not declare, at the name (FTEF-19.15).
 - **QCD-7.42** `W0217` "NAME already declared as a builtin": under an FTEQCC profile, a body
-  replacing `anglemod`'s or `crossproduct`'s builtin, at the name (FTEF-19.4).
+  replacing `anglemod`'s or `crossproduct`'s builtin, at the name (FTEF-19.57).
 - **QCD-7.43** `W0218` "NAME redeclared to accumulate after initial declaration": under an
-  FTEQCC profile, `accumulate` on a function initialised without it, at the name (FTEF-19.4).
+  FTEQCC profile, `accumulate` on a function initialised without it, at the name (FTEF-19.57).
 - **QCD-7.44** `W0314` "Variable \"NAME\" is deprecated", followed by ": REASON" when it gives
   one: under an FTEQCC profile, a use of a `__deprecated` definition, at the use (FTEF-19.13).
 - **QCD-7.45** `W0219` "initializer for NAME is not initialised yet, NAME will be treated as 0":
@@ -562,7 +564,7 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   with no name of a function with a body, at the parameter (FTEF-19.1).
 - **QCD-7.49** `W0223` "incompatible redeclaration. Please validate builtin numbers.
   parseentitydata is #613": under an FTEQCC profile, `parseentitydata` given another builtin
-  after `#608` or `#613`, at the name (FTEF-19.5).
+  after `#608` or `#613`, at the name (FTEF-19.58).
 - **QCD-7.50** `W0224` "legacy enum base type. Use \"enum [class] [name_e]:type\" instead":
   under an FTEQCC profile, an enum's base type written before its `{` with no `:`, at the first
   name (FTEF-19.10).

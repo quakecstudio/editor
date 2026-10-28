@@ -840,7 +840,7 @@ fn a_vanilla_zero_is_read_from_the_source() {
     }
 }
 
-// spec FTE-23.7: under FTEQCC a redeclaration is reported only when it is the only error, since
+// spec FTE-23.17: under FTEQCC a redeclaration is reported only when it is the only error, since
 // FTEQCC reads the initialiser first; under the vanilla dialect when it is the first, since
 // id's qcc stops at the `=`
 #[test]
@@ -849,7 +849,7 @@ fn the_profile_classifies_its_errors_as_each_compiler_stops() {
     assert_eq!(profile(&fte(twice_bad)).0, Outcome::Rejected);
     assert_eq!(
         profile(&fte("void() f = #5;\nvoid() f = #6;\n")),
-        (Outcome::Redeclared, vec![Code::E0206])
+        (Outcome::Redeclared, vec![Code::E0363])
     );
     assert_eq!(
         profile(&vanilla("void() f = #5;\nvoid() f = #5x;\n")).0,

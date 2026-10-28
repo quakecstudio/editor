@@ -126,7 +126,7 @@ fn extern_c_and_assumevar() {
     // FTEF-19.3: the first declaration fixes the constness.
     assert_eq!(
         codes("extern \"C\" { float x = 5; }\nfloat x = 6;\n"),
-        [Code::W0212, Code::E0206]
+        [Code::W0212, Code::E0363]
     );
 }
 
@@ -558,7 +558,7 @@ fn attribute_qualifiers() {
     );
     assert_eq!(
         errors(&format!("{on}float y = 1; float y = 2;\n")),
-        [Code::E0206]
+        [Code::E0363]
     );
     let deprecated = |attribute: &str| -> Vec<String> {
         analysed(
