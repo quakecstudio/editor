@@ -4525,6 +4525,15 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   no error, where a constant 1 is "Cannot cast from float to string"; a struct or union takes no
   null ("Cannot cast from float to struct S"), and a strict enum's value casts to no other type
   whatever it is (FTEF-19.10).
+- **FTEF-29.12** A compound assignment or an increment of an array named bare, after its
+  "left operand must be an l-value (did you mean NAME[0]?)" (FTEF-29.3), frees the head a
+  second time: `QCC_StoreSRefToRef` has discarded the reference it read (`QCC_PR_DiscardRef`),
+  and the operator frees it again, `W0319` "INTERNAL: over-freed refcount to NAME"
+  (`QCC_FreeTemp`). So `farr += 1;`, `farr++`, `++farr` and `farr--` of a `float farr[3]`
+  under `#pragma target fte` give both, a local array's too, and the plain store `farr = p;`
+  only the first. A struct's member array frees its offset constants as well, which this
+  profile does not follow. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_StoreSRefToRef`, `QCC_FreeTemp`.
 - **FTEF-29.10** An array named bare, its head, is the pointer to its first element to a
   prefix or postfix `++` and `--` (`REF_ARRAYHEAD`): read by its address, which the id target
   refuses (FTEF-31.4), stepped by `OP_ADD_PIW` of its element's size, `--` warning of the

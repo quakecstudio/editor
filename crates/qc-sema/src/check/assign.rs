@@ -286,6 +286,9 @@ impl Checker<'_> {
         let stored = self.bit_copy(&stored, &packed, span)?;
         self.store_reference(&lhs, &stored, span)?;
         self.not_an_lvalue(&lhs, span);
+        if matches!(kind, Assign::Compound(..)) {
+            self.freed_again(&lhs, span);
+        }
         Ok(Value {
             ty: lhs.ty,
             readonly: true,
@@ -647,6 +650,7 @@ impl Checker<'_> {
         let updated = self.bit_copy(&updated, operand, span)?;
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
+        self.freed_again(operand, span);
         Ok(())
     }
 
@@ -659,6 +663,17 @@ impl Checker<'_> {
                 lhs.label()
             );
             self.env.report(Code::E0325, span, message);
+        }
+    }
+
+    /// FTEF-29.12: a compound assignment or an increment of an array named bare, after
+    /// [`Checker::not_an_lvalue`]: `QCC_PR_DiscardRef` has freed the head it read, which is then
+    /// freed again, "INTERNAL: over-freed refcount to NAME" (`QCC_FreeTemp`).
+    /// A struct's member array frees its offset constants too, which the model does not follow.
+    pub(super) fn freed_again(&mut self, lhs: &Value, span: Span) {
+        if lhs.reference == Reference::ArrayHead(None) {
+            let message = format!("INTERNAL: over-freed refcount to {}", lhs.label());
+            self.env.report(Code::W0319, span, message);
         }
     }
 
