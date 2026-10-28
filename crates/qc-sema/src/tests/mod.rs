@@ -41,6 +41,7 @@ mod members;
 mod names;
 mod navigation;
 mod operators;
+mod oracle_cases;
 mod passes;
 mod pointers;
 mod properties;

@@ -131,6 +131,10 @@ fn c_g_prints_like_c() {
     assert_eq!(c_g(0.00001), "1e-05");
     assert_eq!(c_g(1_234_567.0), "1.23457e+06");
     assert_eq!(c_g(100_000.0), "100000");
+    assert_eq!(c_g(f64::INFINITY), "inf");
+    assert_eq!(c_g(f64::NEG_INFINITY), "-inf");
+    assert_eq!(c_g(-0.00001), "-1e-05");
+    assert_eq!(c_g(1e20), "1e+20");
 }
 
 // spec FTEF-26.5: an initialised global is a constant whose value folds, unless it is `var`
@@ -4785,6 +4789,193 @@ const CHAINS: &[(&str, &[&str])] = &[
     (
         "(int)(7u + 2l)",
         &["(constant) array index out of bounds (0 <= 9 < 1)"],
+    ),
+    (
+        "(int)((__double)2 + (__double)3)",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        "(int)((__double)2 + (__double)-7)",
+        &["(constant) array index out of bounds (0 <= -5 < 1)"],
+    ),
+    (
+        "(int)(1ul < 2ul)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    ("(int)(3ul < 2ul)", &[]),
+    ("(int)(1ul <= 2ul)", &["Result of comparison is constant"]),
+    ("(int)(3ul <= 2ul)", &["Result of comparison is constant"]),
+    (
+        "(int)(2ul > 1ul)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    ("(int)(18446744073709551615ul < 1ul)", &[]),
+    (
+        "(int)(('3 0 0' ^ '5 0 0') * '1 0 0')",
+        &["(constant) array index out of bounds (0 <= 6 < 1)"],
+    ),
+    (
+        "(int)(('3 6 0' ^ '5 3 0') * '0 1 0')",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        "(int)((__double)3 << 2i)",
+        &["(constant) array index out of bounds (0 <= 12 < 1)"],
+    ),
+    (
+        "(int)((__double)3 << 3i)",
+        &["(constant) array index out of bounds (0 <= 24 < 1)"],
+    ),
+    (
+        "(int)((__double)24 >> 2i)",
+        &["(constant) array index out of bounds (0 <= 6 < 1)"],
+    ),
+    (
+        "(int)((__double)24 >> 3i)",
+        &["(constant) array index out of bounds (0 <= 3 < 1)"],
+    ),
+    (
+        "(int)((__double)12 | (__double)5)",
+        &["(constant) array index out of bounds (0 <= 13 < 1)"],
+    ),
+    (
+        "(int)((__double)8 | (__double)1)",
+        &["(constant) array index out of bounds (0 <= 9 < 1)"],
+    ),
+    (
+        "(int)(5i % 0i)",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        "(int)(5i % 3i)",
+        &["(constant) array index out of bounds (0 <= 2 < 1)"],
+    ),
+    (
+        "(int)(5u % 0u)",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        "(int)(7u % 4u)",
+        &["(constant) array index out of bounds (0 <= 3 < 1)"],
+    ),
+    ("(int)(0 || 0)", &[]),
+    (
+        "(int)(0 || 2)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        "(int)(2 || 0)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        "(int)(2 || 3)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    ("(int)(0.0 || 0.0)", &[]),
+    (
+        "(int)(1.5 || 0.0)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        "(int)(5i / 0.0)",
+        &[
+            "Numerical overflow. inf will be rounded to 2147483647",
+            "Constant int operand 9223372036854775807 will be truncated to -1",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
+    ),
+    (
+        "(int)(5i / 2.0)",
+        &[
+            "Numerical overflow. 2.500000 will be rounded to 2",
+            "(constant) array index out of bounds (0 <= 2 < 1)",
+        ],
+    ),
+    (
+        "(int)(5.0 / 0i)",
+        &[
+            "Numerical overflow. inf will be rounded to 2147483647",
+            "Constant int operand 9223372036854775807 will be truncated to -1",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
+    ),
+    (
+        "(int)(5.0 / 2i)",
+        &[
+            "Numerical overflow. 2.500000 will be rounded to 2",
+            "(constant) array index out of bounds (0 <= 2 < 1)",
+        ],
+    ),
+    (
+        "(int)((-9223372036854775807l - 1l) / -1l)",
+        &[
+            "Numerical truncation of 7fffffffffffffff to 0xffffffff.",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
+    ),
+    (
+        "(int)((-9223372036854775807l - 1l) / 2l)",
+        &["Numerical truncation of c000000000000000 to 0."],
+    ),
+    (
+        "(int)((-9223372036854775807l - 1l) / 1l)",
+        &["Numerical truncation of 8000000000000000 to 0."],
+    ),
+    (
+        "(int)(5l / -1l)",
+        &["(constant) array index out of bounds (0 <= -5 < 1)"],
+    ),
+    (
+        "(int)(5l / 1l)",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        "(int)(!'0 0 0')",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    ("(int)(!'1 0 0')", &[]),
+    ("(int)(!'0 0 2')", &[]),
+    (
+        "(int)(~5i)",
+        &["(constant) array index out of bounds (0 <= -6 < 1)"],
+    ),
+    (
+        "(int)(~0i)",
+        &["(constant) array index out of bounds (0 <= -1 < 1)"],
+    ),
+    ("(int)(~-1i)", &[]),
+    (
+        "(int)(__int64)2.5",
+        &[
+            "Numerical overflow. 2.500000 will be rounded to 2",
+            "(constant) array index out of bounds (0 <= 2 < 1)",
+        ],
+    ),
+    (
+        "(int)(__int64)3.0",
+        &["(constant) array index out of bounds (0 <= 3 < 1)"],
+    ),
+    (
+        "(int)(__int64)-2.5",
+        &[
+            "Numerical overflow. -2.500000 will be rounded to -2",
+            "(constant) array index out of bounds (0 <= -2 < 1)",
+        ],
+    ),
+    (
+        "(int)(-1.0/0.0)",
+        &[
+            "Numerical overflow. -inf will be rounded to -2147483648",
+            "Constant int operand 9223372036854775808 will be truncated to 0",
+        ],
+    ),
+    (
+        "(int)(1.0/0.0)",
+        &[
+            "Numerical overflow. inf will be rounded to 2147483647",
+            "Constant int operand 9223372036854775807 will be truncated to -1",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
     ),
 ];
 
