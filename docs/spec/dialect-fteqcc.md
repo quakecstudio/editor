@@ -452,6 +452,18 @@ inheritance, bitfields and nested members.
   offset as a float (times `32/align`). On the id target `pt[i].v = w;` for a `struct { float f;
   vector v; } *pt` is `OP_MUL_I` of `i` by 4 (FTEF-31.7), the index made a float for `OP_ADD_F`
   ("itof emulation") and made an integer again for the store ("ftoi emulation").
+- **FTEF-6.20** A member of a struct or union that is a value, not reached through a pointer
+  (`st.f`, `sarr[1].f`), is the struct's own definition at the member's word (`QCC_PR_BuildRef`
+  of its `sym` with the member's `ofs`), no temporary: its address is the struct's, refused on
+  the id target with "Address-of operator is not supported in this form without extensions"
+  and on the FTE target a pointer to the member, and `st.n == st.n` of an `int` member is the
+  same operand twice, "Result of comparison is constant" on the id target (FTEF-28.1), where
+  `st.n == st.m` is not.
+- **FTEF-6.21** An 8- or 16-bit integer read through its address (`OP_LOADP_I8`, `OP_LOADP_U8`,
+  `OP_LOADP_I16`, `OP_LOADP_U16`) is a value of the opcode's type, `int` or `uint`, as its
+  extension at a constant index is (FTEF-2.12): `x_s = carr[i];`, `x_s = *pc;` and `x_s =
+  ps->c;` of `__int8`s warn "Implicit cast from __int32 to string", of `__uint16`s "from
+  __uint32"; a bitfield read so keeps its type.
 - **FTEF-6.14** A struct or union read through a pointer is read word by word
   (`QCC_LoadFromPointer`, `case ev_struct: case ev_union:`): `OP_LOADP_V` for each three of its
   words and `OP_LOADP_I` for each word after them, each a `QCC_PR_SimpleStatement`, which
@@ -3892,6 +3904,18 @@ saturates, as on the arm64 build the differential is recorded on.
   value in hex with no prefix and the 32 bits with C's `%#x` (`0` for 0): `i = 5000000000l;` is
   "Numerical truncation of 12a05f200 to 0x2a05f200.". Under `ILP32` the `l` literal is 32 bits
   (FTEF-12.12) and there is nothing to convert.
+- **FTEF-26.9** Two constant doubles fold as C computes them: `OP_ADD_D`, `OP_SUB_D`, `OP_MUL_D`
+  and `OP_DIV_D` to a double with no check of a 0 divisor; `OP_LE_D`, `OP_LT_D`, `OP_EQ_D` and
+  `OP_NE_D` to an `int`; `OP_LSHIFT_DI` and `OP_RSHIFT_DI` shift the double made a `long long`
+  (`(pint64_t)eval_a->_double << eval_b->_int`), and `OP_BITAND_D`, `OP_BITOR_D` and
+  `OP_BITXOR_D` combine both made `long long`s, each result made a double again. `OP_RSHIFT_U64I`
+  shifts the unsigned 64-bit value. `OP_BITEXTEND_I` and `OP_BITEXTEND_U` of two constants are
+  `(a << (32 - bits - ofs)) >> (32 - bits)`, signed and unsigned, `bits` and `ofs` the low byte
+  and the rest of the second. So `arr[(__double)2.5 * 2]` is index 5.
+- **FTEF-26.10** A constant operand that an opcode's row converts is the constant its conversion
+  folds to (`QCC_SupplyConversion` emits the conversion opcode, folded as FTEF-26.3 says), so the
+  opcode then folds too: in `(__double)2.5 * 2` the float 2 is converted by `OP_CONV_FD` to the
+  double 2, and `OP_MUL_D` folds.
 ## FTEF-27 Opcodes the target lacks
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (its `if (!QCC_OPCodeValid(op))` switch and
@@ -4123,6 +4147,13 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
 - **FTEF-29.9** A constant that is null (`QCC_SRef_IsNull`, an integer, float or pointer 0) casts
   as a null whatever its definition's type, a `typedef` or `int` one included: `const int zi = 0;
   string s = zi;` is no cast warning.
+- **FTEF-29.10** An array named bare, its head, is the pointer to its first element to a
+  prefix or postfix `++` and `--` (`REF_ARRAYHEAD`): read by its address, which the id target
+  refuses (FTEF-31.4), stepped by `OP_ADD_PIW` of its element's size, `--` warning of the
+  truncated negation (FTEF-27.14), and stored as `QCC_StoreSRefToRef` stores to the head, "left
+  operand must be an l-value (did you mean NAME[0]?)" (`E0325`): on the FTE target `--varr;` of a
+  `vector varr[2]` is "Constant int operand 4294967293 will be truncated to -3" then the l-value
+  error, and the value of `farr++` is a `float*`.
 
 ## FTEF-30 Terms
 
@@ -4296,6 +4327,13 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   string "Implicit type mismatch. Needed integer, got string.".
 - **FTEF-31.9** A constant vector's component at a constant index is a constant, the component's
   value: `('13 5 2' + '1 2 3')[1]` is 7, and `vc[1]` of a `const vector vc = '4 9 2'` is 9.
+- **FTEF-31.10** An element of an array, or a vector's component, at a constant index is the
+  array's definition at that word (`ret.ofs += index`), so `iarr[1] == iarr[1]` of `int`s is
+  the same operand twice ("Result of comparison is constant" on the id target) and `iarr[1] ==
+  iarr[2]` is not; at an index that is no constant it is loaded into a temporary.
+- **FTEF-31.11** The address of a string's character is no address `QCC_PR_GenerateAddressOf`
+  makes: on any target it is the fatal error `E0361` "Cannot use addressof operator ('&') on a
+  global. Please use the FTE target." (`pw = &s[0];`).
 ## FTEF-32 Calls
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`,

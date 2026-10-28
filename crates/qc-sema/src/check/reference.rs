@@ -112,9 +112,15 @@ impl Checker<'_> {
                 if element.index.known().is_none() {
                     self.load_from_array(&value, &element.index, element.vector, span)?;
                 }
+                // A constant index is the array's own definition at that word; any other is
+                // loaded into a temporary.
+                let sym = match element.index.known().and_then(eval_int) {
+                    Some(words) => value.sym.at(u32::from_le_bytes(words.to_le_bytes())),
+                    None => Sym::Temp,
+                };
                 Ok(Value {
                     reference: Reference::Global,
-                    sym: Sym::Temp,
+                    sym,
                     ..value
                 })
             }
@@ -133,7 +139,7 @@ impl Checker<'_> {
                 let float_index = self.etype_of(&index.ty) == Some(Etype::Float);
                 let op = if float_index { Op::LoadpC } else { Op::LoadpU8 };
                 let string = Value::of(Type::Simple(SimpleType::String));
-                let loaded = self.emit(op, &string, &Value::unknown(), span)?;
+                let loaded = self.emit(op, &string, &index, span)?;
                 Ok(Value {
                     ty: value.ty,
                     ..loaded
@@ -313,8 +319,14 @@ impl Checker<'_> {
             let pointer = Value::of(Type::Pointer(value.ty.clone().into()));
             let zero = Value::constant(Constant::uint(0));
             let loaded = self.emit(op, &pointer, index.unwrap_or(&zero), span)?;
+            // The narrow loads give an `int` or a `uint` (`type_c`); a bitfield keeps its type.
+            let ty = match (value.bitfield, narrow.1) {
+                (Some(_), _) => value.ty,
+                (None, true) => Type::Named("__int32".into()),
+                (None, false) => Type::Named("__uint32".into()),
+            };
             return Ok(Value {
-                ty: value.ty,
+                ty,
                 bitfield: None,
                 ..loaded
             });
@@ -443,7 +455,7 @@ impl Checker<'_> {
             self.bounds(constant, length, span);
             if at.known().is_none() {
                 let field = Value {
-                    sym: Sym::Def(def, false),
+                    sym: Sym::Def(def, false, 0),
                     ..Value::of(base.ty.clone())
                 };
                 self.load_from_array(&field, &at, false, span)?;
@@ -654,7 +666,11 @@ impl Checker<'_> {
                 }
                 Ok(pointer_to(&value.ty))
             }
-            Reference::Character(_) => Ok(Value::unknown()),
+            Reference::Character(_) => {
+                let message =
+                    "Cannot use addressof operator ('&') on a global. Please use the FTE target.";
+                self.fatal(Code::E0361, span, message.to_owned())
+            }
         }
     }
 

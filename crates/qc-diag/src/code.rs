@@ -337,6 +337,9 @@ pub enum Code {
     /// "Unable to evaluate to numeric constant": a vector or string constant read as an index
     /// (QCD-4.61).
     E0360,
+    /// "Cannot use addressof operator ('&') on a global. Please use the FTE target.": the
+    /// address of a string's character (QCD-4.62).
+    E0361,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -583,7 +586,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 256] = [
+    pub const ALL: [Self; 257] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -731,6 +734,7 @@ impl Code {
         Self::E0358,
         Self::E0359,
         Self::E0360,
+        Self::E0361,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -1079,6 +1083,7 @@ impl Code {
             Self::E0358 => "E0358",
             Self::E0359 => "E0359",
             Self::E0360 => "E0360",
+            Self::E0361 => "E0361",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1366,6 +1371,7 @@ impl Code {
             | Self::E0358
             | Self::E0359
             | Self::E0360
+            | Self::E0361
             | Self::E0408 => true,
         }
     }

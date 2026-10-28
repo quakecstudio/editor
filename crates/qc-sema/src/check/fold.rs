@@ -227,6 +227,34 @@ fn both(op: Op, a: Constant, b: Constant, notices: &mut Vec<Notice>) -> Option<C
         Op::NeI64 => int_bool(a.i64() != b.i64()),
         Op::LtU64 => int_bool(a.u64() < b.u64()),
         Op::LeU64 => int_bool(a.u64() <= b.u64()),
+        Op::RshiftU64i => Constant::uint64(a.u64().wrapping_shr(shift(ib))),
+        Op::AddD => Constant::double(a.d() + b.d()),
+        Op::SubD => Constant::double(a.d() - b.d()),
+        Op::MulD => Constant::double(a.d() * b.d()),
+        Op::DivD => Constant::double(a.d() / b.d()),
+        Op::LeD => int_bool(a.d() <= b.d()),
+        Op::LtD => int_bool(a.d() < b.d()),
+        Op::EqD => int_bool(a.d() == b.d()),
+        Op::NeD => int_bool(a.d() != b.d()),
+        Op::LshiftDi => double_of(real_to_i64(a.d()).wrapping_shl(shift(ib))),
+        Op::RshiftDi => double_of(real_to_i64(a.d()).wrapping_shr(shift(ib))),
+        Op::BitandD => double_of(real_to_i64(a.d()) & real_to_i64(b.d())),
+        Op::BitorD => double_of(real_to_i64(a.d()) | real_to_i64(b.d())),
+        Op::BitxorD => double_of(real_to_i64(a.d()) ^ real_to_i64(b.d())),
+        Op::BitextendI => {
+            let (bits, offset) = (b.u() & 0xff, b.u() >> 8);
+            let up = 32_u32.wrapping_sub(bits).wrapping_sub(offset);
+            Constant::int(ia.wrapping_shl(up).wrapping_shr(32_u32.wrapping_sub(bits)))
+        }
+        Op::BitextendU => {
+            let (bits, offset) = (b.u() & 0xff, b.u() >> 8);
+            let up = 32_u32.wrapping_sub(bits).wrapping_sub(offset);
+            Constant::uint(
+                a.u()
+                    .wrapping_shl(up)
+                    .wrapping_shr(32_u32.wrapping_sub(bits)),
+            )
+        }
         Op::DivU64 => {
             if b.u64() == 0 {
                 notice(notices, Code::W0233, "Division by constant 0".to_owned());
@@ -519,6 +547,11 @@ fn round(c: Constant, notices: &mut Vec<Notice>) -> i32 {
 /// The shift count C's `<<` and `>>` use on the builds FTEQCC runs on: the low bits of `count`.
 fn shift(count: i32) -> u32 {
     u32::from_le_bytes(count.to_le_bytes())
+}
+
+/// `QCC_MakeDoubleConst` of a 64-bit integer, C's `(double)` of it.
+fn double_of(value: i64) -> Constant {
+    Constant::double(i64_to_real(value, Op::ConvI64d))
 }
 
 /// The low 32 bits of `value`, C's `(int)` of a 64-bit integer.

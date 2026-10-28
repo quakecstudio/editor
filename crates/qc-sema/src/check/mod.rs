@@ -199,8 +199,9 @@ pub(crate) struct Value {
 pub(crate) enum Sym {
     /// A temporary the compiler made.
     Temp,
-    /// A definition, and whether it is constant (`sym->constant`).
-    Def(DefId, bool),
+    /// A definition, whether it is constant (`sym->constant`), and the word in it the value is
+    /// at (`ofs`), which the comparison warnings compare too.
+    Def(DefId, bool, u32),
     /// An immediate constant, which FTEQCC shares among equal values.
     Immediate(Constant),
 }
@@ -209,8 +210,17 @@ impl Sym {
     /// The definition it is, if any.
     pub(crate) const fn def(self) -> Option<DefId> {
         match self {
-            Self::Def(def, _) => Some(def),
+            Self::Def(def, _, _) => Some(def),
             Self::Temp | Self::Immediate(_) => None,
+        }
+    }
+
+    /// The same definition `words` further on (`ofs + words`); a temporary or an immediate at
+    /// another word is none the comparison warnings know.
+    pub(crate) const fn at(self, words: u32) -> Self {
+        match self {
+            Self::Def(def, constant, ofs) => Self::Def(def, constant, ofs.saturating_add(words)),
+            Self::Temp | Self::Immediate(_) => Self::Temp,
         }
     }
 
@@ -218,7 +228,7 @@ impl Sym {
     pub(crate) const fn constant(self) -> bool {
         match self {
             Self::Temp => false,
-            Self::Def(_, constant) => constant,
+            Self::Def(_, constant, _) => constant,
             Self::Immediate(_) => true,
         }
     }

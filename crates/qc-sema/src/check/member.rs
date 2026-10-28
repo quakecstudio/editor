@@ -107,6 +107,10 @@ impl Checker<'_> {
             Etype::String => self.string_method(&base, &selector)?,
             Etype::Struct | Etype::Union => {
                 let (member, offset) = self.struct_member(&base.ty, &selector);
+                let word = member.bitfield.map_or_else(
+                    || offset.map_or(0, |(units, align)| units.saturating_mul(align) >> 5),
+                    |bitfield| bitfield.word,
+                );
                 match &base.reference {
                     // `(*p).a` and `p[i].a` are members through the pointer.
                     Reference::Pointer(pointer) => {
@@ -117,7 +121,13 @@ impl Checker<'_> {
                             ..member
                         }
                     }
-                    _ => member,
+                    // `st.f` is the struct's own definition at the member's offset
+                    // (`QCC_PR_BuildRef` of its sym), no temporary.
+                    _ => Value {
+                        sym: base.sym.at(word),
+                        reference: base.reference.clone(),
+                        ..member
+                    },
                 }
             }
             Etype::Field if matches!(shape.holds, Some(Etype::Struct | Etype::Union)) => {

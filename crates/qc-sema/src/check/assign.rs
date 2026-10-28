@@ -283,13 +283,7 @@ impl Checker<'_> {
             .unwrap_or_else(|| lhs.clone());
         let stored = self.bit_copy(&stored, &packed, span)?;
         self.store_reference(&lhs, &stored, span)?;
-        if lhs.is_array_head() {
-            let message = format!(
-                "left operand must be an l-value (did you mean {}[0]?)",
-                lhs.label()
-            );
-            self.env.report(Code::E0325, span, message);
-        }
+        self.not_an_lvalue(&lhs, span);
         Ok(Value {
             ty: lhs.ty,
             readonly: true,
@@ -515,14 +509,27 @@ impl Checker<'_> {
             };
             return self.fatal(Code::E0322, span, message.to_owned());
         }
-        if let Some(etype) = self.etype(&operand.ty)
+        // An array named bare is its head, a pointer to its first element.
+        let etype = if operand.is_array_head() {
+            Some(Etype::Pointer)
+        } else {
+            self.etype(&operand.ty)
+        };
+        if let Some(etype) = etype
             && self.env.fteqcc()
         {
             let step = if increment { 1 } else { -1 };
             self.step(&operand, etype, step, discarded(postfix.syntax()), span)?;
         }
-        // The value before the update, a temporary, named by its type (`QCC_GetSRefName`).
+        // The value before the update, a temporary, named by its type (`QCC_GetSRefName`); an
+        // array's head is the pointer it reads as.
+        let ty = if operand.is_array_head() {
+            Type::Pointer(operand.ty.clone().into())
+        } else {
+            operand.ty.clone()
+        };
         Ok(Value {
+            ty,
             postinc: true,
             reference: Reference::Global,
             name: None,
@@ -590,10 +597,30 @@ impl Checker<'_> {
                 return self.fatal(Code::E0322, span, message).map(drop);
             }
         };
-        // `QCC_StoreSRefToRef`: an integer stepping a string warns of the store.
-        self.store_mismatch(&updated, operand, &operand.ty, span)?;
+        // `QCC_StoreSRefToRef`: an integer stepping a string warns of the store; an array's
+        // head is stored as the pointer it reads as.
+        let target = if operand.is_array_head() {
+            Type::Pointer(operand.ty.clone().into())
+        } else {
+            operand.ty.clone()
+        };
+        self.store_mismatch(&updated, operand, &target, span)?;
         let updated = self.bit_copy(&updated, operand, span)?;
-        self.store_reference(operand, &updated, span)
+        self.store_reference(operand, &updated, span)?;
+        self.not_an_lvalue(operand, span);
+        Ok(())
+    }
+
+    /// FTEF-29.3: a store to an array named bare, its head, is "left operand must be an
+    /// l-value (did you mean NAME[0]?)" (`QCC_StoreSRefToRef`, `REF_ARRAYHEAD`).
+    pub(super) fn not_an_lvalue(&mut self, lhs: &Value, span: Span) {
+        if lhs.is_array_head() {
+            let message = format!(
+                "left operand must be an l-value (did you mean {}[0]?)",
+                lhs.label()
+            );
+            self.env.report(Code::E0325, span, message);
+        }
     }
 
     /// The basic type of `ty`, if the model follows it.

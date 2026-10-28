@@ -256,7 +256,11 @@ impl<'e> Checker<'e> {
             name: Some(name),
             // A function's definition is no constant symbol to the comparison warnings: `ff != vf`
             // of two functions gives none (FTEF-28.1).
-            sym: Sym::Def(def, constness != Constness::Variable && !ty.is_function()),
+            sym: Sym::Def(
+                def,
+                constness != Constness::Variable && !ty.is_function(),
+                0,
+            ),
             // `QCC_DefToRef`: `!!def.sym->constant || def.sym->temp`.
             readonly: self.env.constant(def),
             text: self.env.string_text(def).map(|t| t.as_str().into()),
@@ -314,13 +318,19 @@ impl<'e> Checker<'e> {
             self.mismatch(spelling, lhs, rhs, span);
         }
         let [a, b, _] = opcode.types;
-        for (value, operand, row) in [(lhs, left, a), (rhs, right, b)] {
-            self.convert(value, operand, row, span)?;
+        let mut folded = [None, None];
+        for (slot, (value, operand, row)) in
+            folded.iter_mut().zip([(lhs, left, a), (rhs, right, b)])
+        {
+            *slot = self.convert(value, operand, row, span)?;
         }
         // A constant converted to the row's type is folded by FTEQCC's conversion, which the
         // model does not follow: its value no longer decides anything (FTEF-26.5).
         let constness = |value: &Value, operand: Operand, row: OpType| {
-            if row.etype() == operand.etype || value.constness == Constness::Variable {
+            if row.etype() == operand.etype
+                || value.constness == Constness::Variable
+                || conversion_opcodes(operand.etype, row.etype()).is_empty()
+            {
                 value.constness
             } else {
                 Constness::Opaque
@@ -336,28 +346,31 @@ impl<'e> Checker<'e> {
             },
             ..value.clone()
         };
-        let lhs = converted(lhs, left, a);
-        let rhs = converted(rhs, right, b);
+        // A constant whose conversion folded is the constant it folded to (FTEF-26.3).
+        let [folded_lhs, folded_rhs] = folded;
+        let lhs = folded_lhs.unwrap_or_else(|| converted(lhs, left, a));
+        let rhs = folded_rhs.unwrap_or_else(|| converted(rhs, right, b));
         // The value is what the opcode, its folding or its emulation gives, of that one's type.
         Ok(Some(self.emit(choice.op(), &lhs, &rhs, span)?))
     }
 
     /// Converts the operand `value` to the opcode's type `row` for it, if it is another, with
     /// the warning "Implicit conversion" when the conversion is costly (FTEF-23.5) and the
-    /// implicit cast's own diagnostics; a refused cast is a fatal error.
+    /// implicit cast's own diagnostics; a refused cast is a fatal error. A constant whose
+    /// conversion opcodes fold is returned as the constant they give.
     fn convert(
         &mut self,
         value: &Value,
         operand: Operand,
         row: OpType,
         span: Span,
-    ) -> Result<(), Fatal> {
+    ) -> Result<Option<Value>, Fatal> {
         // `(*op->type_a)->type != lhsd.cast->type`: an accessor's type is never the row's, so
         // it is cast to it, with the warning of a cast from an accessor to its base (FTEF-10.8).
         if (row.etype() == operand.etype && !self.env.is_accessor(&value.ty))
             || row == OpType::Variant
         {
-            return Ok(());
+            return Ok(None);
         }
         let costly = operand
             .cost_to(row.etype(), self.env.in_class())
@@ -375,11 +388,12 @@ impl<'e> Checker<'e> {
         }
         // FTEF-27.8: the cast emits its conversion opcodes, which are folded, emitted or
         // emulated in turn.
+        let opcodes = conversion_opcodes(operand.etype, row.etype());
         let mut converted = value.clone();
-        for &conv in conversion_opcodes(operand.etype, row.etype()) {
+        for &conv in opcodes {
             converted = self.emit(conv, &converted, &Value::unknown(), span)?;
         }
-        Ok(())
+        Ok((!opcodes.is_empty() && converted.known().is_some()).then_some(converted))
     }
 
     /// The operand `value` as `QCC_PR_ChooseOpcode` reads it beside `other`: a truth value as

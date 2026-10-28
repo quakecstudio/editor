@@ -4323,3 +4323,419 @@ fn a_64_bit_constant_made_an_int_is_truncated() {
         ["numerical overflow"]
     );
 }
+
+/// Constant expressions whose value the folding of one opcode feeds to the next, read as an
+/// index: the pinned FTEQCC's diagnostics for each on the FTE target (2026-10-27).
+const CHAINS: &[(&str, &[&str])] = &[
+    (
+        "('1 2 3' ^ '4 0 0')[0]",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        "('7 2 3' ^ '4 0 0')[0]",
+        &["(constant) array index out of bounds (0 <= 3 < 1)"],
+    ),
+    (
+        "('1 2 3' | '4 0 0')[0]",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        "('7 2 3' & '4 0 0')[0]",
+        &["(constant) array index out of bounds (0 <= 4 < 1)"],
+    ),
+    (
+        "5i / -1i",
+        &["(constant) array index out of bounds (0 <= -5 < 1)"],
+    ),
+    (
+        "-6i / -1i",
+        &["(constant) array index out of bounds (0 <= 6 < 1)"],
+    ),
+    (
+        "13i % 5i",
+        &["(constant) array index out of bounds (0 <= 3 < 1)"],
+    ),
+    (
+        "-13i % 5i",
+        &["(constant) array index out of bounds (0 <= -3 < 1)"],
+    ),
+    (
+        "13u % 5u",
+        &["(constant) array index out of bounds (0 <= 3 < 1)"],
+    ),
+    (
+        "13u % 0u",
+        &["(constant) array index out of bounds (0 <= 13 < 1)"],
+    ),
+    (
+        "13i % 0i",
+        &["(constant) array index out of bounds (0 <= 13 < 1)"],
+    ),
+    (
+        "(2i && 3i)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    ("(2i && 0i)", &[]),
+    ("(0i && 3i)", &[]),
+    (
+        "(2i || 0i)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    ("(0i || 0i)", &[]),
+    (
+        "(0i || 3i)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    ("(2i < 2.0)", &[]),
+    ("(2i > 2.0)", &[]),
+    ("(2.0 < 2i)", &[]),
+    ("(2.0 > 2i)", &[]),
+    (
+        "(2i <= 2.0)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        "(2i >= 2.0)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        "(2i < 3.0)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        "(3.0 > 2i)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        "(2i == 2.0)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    ("(2i == 3.0)", &[]),
+    (
+        "(2.0 == 2i)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    ("(3.0 == 2i)", &[]),
+    (
+        "(4i / 2.0)",
+        &["(constant) array index out of bounds (0 <= 2 < 1)"],
+    ),
+    (
+        "(4i / 0.0)",
+        &["(constant) array index out of bounds (0 <= -1 < 1)"],
+    ),
+    (
+        "(4.0 / 2i)",
+        &["(constant) array index out of bounds (0 <= 2 < 1)"],
+    ),
+    (
+        "(4.0 / 0i)",
+        &["(constant) array index out of bounds (0 <= -1 < 1)"],
+    ),
+    (
+        "(8.0 / 4i)",
+        &["(constant) array index out of bounds (0 <= 2 < 1)"],
+    ),
+    (
+        "(int)(-6l / -1l)",
+        &["(constant) array index out of bounds (0 <= 6 < 1)"],
+    ),
+    (
+        "(int)(6l / 2l)",
+        &["(constant) array index out of bounds (0 <= 3 < 1)"],
+    ),
+    (
+        "(int)(6l / -1l)",
+        &["(constant) array index out of bounds (0 <= -6 < 1)"],
+    ),
+    (
+        "(1ul < 2ul)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    ("(3ul < 2ul)", &[]),
+    ("(1ul <= 1ul)", &["Result of comparison is constant"]),
+    ("(2ul <= 1ul)", &["Result of comparison is constant"]),
+    (
+        "(int)~5.0",
+        &["(constant) array index out of bounds (0 <= -6 < 1)"],
+    ),
+    (
+        "~5.5",
+        &[
+            "Constant float operand 5.500000 will be truncated to 5",
+            "(constant) array index out of bounds (0 <= -6 < 1)",
+        ],
+    ),
+    (
+        "(~'5 0 0')[0]",
+        &["(constant) array index out of bounds (0 <= -6 < 1)"],
+    ),
+    (
+        "(int)~'5 1 1'[1]",
+        &["(constant) array index out of bounds (0 <= -2 < 1)"],
+    ),
+    (
+        "(__uint)7.5",
+        &[
+            "Numerical overflow. 7.500000 will be rounded to 7",
+            "(constant) array index out of bounds (0 <= 7 < 1)",
+        ],
+    ),
+    (
+        "(__uint)-3.0",
+        &["Numerical overflow. -3.000000 will be rounded to 0"],
+    ),
+    (
+        "(__double)2.5 * 2",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        "(int)(float)(__double)7.25",
+        &[
+            "Numerical overflow. 7.250000 will be rounded to 7",
+            "(constant) array index out of bounds (0 <= 7 < 1)",
+        ],
+    ),
+    (
+        "(float)(__double)3.75",
+        &["(constant) array index out of bounds (0 <= 3 < 1)"],
+    ),
+    (
+        "(int)(__double)9.5",
+        &[
+            "Numerical overflow. 9.500000 will be rounded to 9",
+            "(constant) array index out of bounds (0 <= 9 < 1)",
+        ],
+    ),
+    (
+        "(int)(__uint64)7u",
+        &["(constant) array index out of bounds (0 <= 7 < 1)"],
+    ),
+    (
+        "(int)(__int64)-3i",
+        &["(constant) array index out of bounds (0 <= -3 < 1)"],
+    ),
+    (
+        "(__int64)2.5",
+        &[
+            "Numerical overflow. 2.500000 will be rounded to 2",
+            "(constant) array index out of bounds (0 <= 2 < 1)",
+        ],
+    ),
+    (
+        "(__int64)-7.5",
+        &[
+            "Numerical overflow. -7.500000 will be rounded to -7",
+            "(constant) array index out of bounds (0 <= -7 < 1)",
+        ],
+    ),
+    (
+        "(int)(__uint64)8.5",
+        &[
+            "Numerical overflow. 8.500000 will be rounded to 8",
+            "(constant) array index out of bounds (0 <= 8 < 1)",
+        ],
+    ),
+    (
+        "(int)(__uint64)-2.0",
+        &["Numerical overflow. -2.000000 will be rounded to 0"],
+    ),
+    (
+        "(float)(__int64)5",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        "(float)(__uint64)9ul",
+        &["(constant) array index out of bounds (0 <= 9 < 1)"],
+    ),
+    (
+        "(float)9223372036854775807l",
+        &["(constant) array index out of bounds (0 <= -1 < 1)"],
+    ),
+    (
+        "(float)18446744073709551615ul",
+        &["(constant) array index out of bounds (0 <= -1 < 1)"],
+    ),
+    (
+        "(int)(__double)(__int64)5",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        "(int)(__double)18446744073709551615ul",
+        &[
+            "Numerical truncation of 0xffffffffffffffff to 0xffffffffffffffff.",
+            "Numerical overflow. 18446744073709551616.000000 will be rounded to 9223372036854775807",
+            "Numerical truncation of 7fffffffffffffff to 0xffffffff.",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
+    ),
+    (
+        "(int)(float)(__uint64)5ul",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        "3 + (int)0.0",
+        &["(constant) array index out of bounds (0 <= 3 < 1)"],
+    ),
+    (
+        "(int)((__double)2.5 < (__double)3)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    ("(int)((__double)3 < (__double)3)", &[]),
+    (
+        "(int)((__double)3 <= (__double)3)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    ("(int)((__double)4 <= (__double)3)", &[]),
+    (
+        "(int)((__double)3 == (__double)3)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    ("(int)((__double)3 != (__double)3)", &[]),
+    ("(int)((__double)2 == (__double)3)", &[]),
+    (
+        "(int)((__double)2 != (__double)3)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        "(int)((__double)3 > (__double)2)",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    ("(int)((__double)3 >= (__double)4)", &[]),
+    (
+        "(int)((__double)3 << 2i)",
+        &["(constant) array index out of bounds (0 <= 12 < 1)"],
+    ),
+    (
+        "(int)((__double)13 >> 2i)",
+        &["(constant) array index out of bounds (0 <= 3 < 1)"],
+    ),
+    (
+        "(int)((__double)-13 >> 1i)",
+        &["(constant) array index out of bounds (0 <= -7 < 1)"],
+    ),
+    (
+        "(int)((__double)12.5 & (__double)6)",
+        &["(constant) array index out of bounds (0 <= 4 < 1)"],
+    ),
+    (
+        "(int)((__double)12 | (__double)3)",
+        &["(constant) array index out of bounds (0 <= 15 < 1)"],
+    ),
+    (
+        "(int)((__double)12 ^ (__double)10)",
+        &["(constant) array index out of bounds (0 <= 6 < 1)"],
+    ),
+    (
+        "(int)((__double)7 - (__double)9.5)",
+        &[
+            "Numerical overflow. -2.500000 will be rounded to -2",
+            "(constant) array index out of bounds (0 <= -2 < 1)",
+        ],
+    ),
+    (
+        "(int)((__double)7 / (__double)2)",
+        &[
+            "Numerical overflow. 3.500000 will be rounded to 3",
+            "(constant) array index out of bounds (0 <= 3 < 1)",
+        ],
+    ),
+    (
+        "(int)((__double)7 / (__double)0)",
+        &[
+            "Numerical overflow. inf will be rounded to 9223372036854775807",
+            "Numerical truncation of 7fffffffffffffff to 0xffffffff.",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
+    ),
+    (
+        "(int)(16ul >> 2i)",
+        &["(constant) array index out of bounds (0 <= 4 < 1)"],
+    ),
+    (
+        "(int)(18446744073709551615ul >> 60i)",
+        &["(constant) array index out of bounds (0 <= 15 < 1)"],
+    ),
+    (
+        "(int)(-16l >> 2i)",
+        &["(constant) array index out of bounds (0 <= -4 < 1)"],
+    ),
+    (
+        "(int)(5l << 3i)",
+        &["(constant) array index out of bounds (0 <= 40 < 1)"],
+    ),
+    (
+        "(int)(13ul / 4ul)",
+        &[
+            "Numerical overflow. 3.250000 will be rounded to 3",
+            "(constant) array index out of bounds (0 <= 3 < 1)",
+        ],
+    ),
+    (
+        "(int)(13ul / 0ul)",
+        &[
+            "Numerical overflow. inf will be rounded to 2147483647",
+            "Constant int operand 9223372036854775807 will be truncated to -1",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
+    ),
+    ("(int)(13l / 0l)", &[]),
+    (
+        "(int)(-9223372036854775807l / -1l)",
+        &[
+            "Numerical truncation of 7fffffffffffffff to 0xffffffff.",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
+    ),
+    (
+        "(int)((__double)2 * 3i)",
+        &["(constant) array index out of bounds (0 <= 6 < 1)"],
+    ),
+    (
+        "(int)(3i * (__double)2)",
+        &["(constant) array index out of bounds (0 <= 6 < 1)"],
+    ),
+    (
+        "(int)(2.5 * (__double)2)",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        "(int)(1l + 2.5)",
+        &[
+            "Numerical overflow. 3.500000 will be rounded to 3",
+            "(constant) array index out of bounds (0 <= 3 < 1)",
+        ],
+    ),
+    (
+        "(int)(2.5 + 1l)",
+        &[
+            "Numerical overflow. 3.500000 will be rounded to 3",
+            "(constant) array index out of bounds (0 <= 3 < 1)",
+        ],
+    ),
+    (
+        "(int)(7ul - 2u)",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        "(int)(7u + 2l)",
+        &["(constant) array index out of bounds (0 <= 9 < 1)"],
+    ),
+];
+
+// spec FTEF-26.2: each fold gives C's value, which the next opcode folds in turn
+// spec FTEF-26.3: the conversions of a constant fold, warning as FTEQCC does
+// spec FTEF-26.9: two constant doubles fold as C computes them
+// spec FTEF-26.10: a constant operand an opcode converts is the constant its conversion gives
+#[test]
+fn chained_folds_give_fteqccs_values() {
+    for &(expr, expected) in CHAINS {
+        let found: Vec<String> = diags(&format!(
+            "#pragma target fte\nfloat arr[1]; float x;\nvoid() g = {{ x = arr[{expr}]; }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect();
+        assert_eq!(found, expected, "{expr}");
+    }
+}
