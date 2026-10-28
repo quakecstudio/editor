@@ -852,13 +852,19 @@ equal the operands' types exactly; if none does, it is an error, "type mismatch 
   world entity; `EQ_S` compares string contents. The VM spec states the full rules.
 - **QC-16.6** A field access `e.f` reads the field `f` of entity `e`. On the left of `=` it
   becomes a store into the field (QC-17.3).
-- **QC-16.7** A row matches by the operands' basic types alone (`type_a != op->type_a->type->type
+- **QC-16.7** **Withdrawn** (#84): it said `.` refuses a field of `void`; the field's `type_c` of
+  `ev_void` is not compared, and QC-16.8 replaces it.
+- **QC-16.8** A row matches by the operands' basic types alone (`type_a != op->type_a->type->type
   || type_b != ...`): two functions of any types are `EQ_FNC`'s, and an assignment's target and
   value must be of one basic type among float, vector, string, entity, field and function
   (`STORE_*`, and `STOREP_*` for a field of an entity, whose value must be of the field's type);
-  any other is "type mismatch for =". `.` takes an entity and a field of any type but `void`, and
-  anything else is "type mismatch for .". Each mismatch is `PR_ParseError`, which ends the
-  statement.
+  any other is "type mismatch for =". `.` takes an entity and a field, its row the one whose
+  result is the field's type; a `.void` field's `type_c` is `ev_void`, which the loop does not
+  compare (`type_c != ev_void && ...`), so the first row is taken and the value is a float:
+  `x = e.fv;` of a `.void fv` is no error. Anything else is "type mismatch for .". Each mismatch
+  is `PR_ParseError`, which ends the statement. Source:
+  id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73, `qcc/pr_comp.c`,
+  `PR_Expression`.
 
 ### Test vectors
 
