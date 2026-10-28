@@ -1663,10 +1663,10 @@ fn graph_input(db: &mut Db, case: &Case) -> ModuleInput {
 ///
 /// id's qcc stops at the first error, and finds a redeclaration at its `=`, before the
 /// initialiser (`PR_ParseDefs`); FTEQCC reports one only once it has read the initialiser
-/// (FTE-23.7), so any other error comes first.
+/// (FTE-23.17), so any other error comes first.
 fn refusal(case: &Case, errors: &[Code]) -> Outcome {
     let redeclared = if case.dialect.has_fteqcc_extensions() {
-        errors.iter().all(|code| *code == Code::E0206)
+        errors.iter().all(|code| *code == Code::E0363)
     } else {
         errors.first() == Some(&Code::E0206)
     };
@@ -1678,7 +1678,7 @@ fn refusal(case: &Case, errors: &[Code]) -> Outcome {
 }
 
 /// The builtin number and engine name the profile binds the first function of `case` to:
-/// under FTEQCC the builtin function qc-sema lowers its initialiser to (FTE-23.7), from the
+/// under FTEQCC the builtin function qc-sema lowers its initialiser to (FTE-23.17), from the
 /// file's expansion (FTE-23.10, QC-9.16); under the vanilla dialect the number
 /// `builtin_binum` gives and the definition's name (QC-13.10).
 fn binding(db: &mut Db, case: &Case) -> Option<Outcome> {

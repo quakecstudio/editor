@@ -222,3 +222,138 @@ fn a_member_array_size_is_a_nonzero_integer() {
         assert_eq!(messages(source), [], "{source}");
     }
 }
+
+// spec FTEF-6.26: an error about a braced element stands at its `{`
+#[test]
+fn a_braced_elements_error_stands_at_its_brace() {
+    let lines = |source: &str| -> Vec<usize> {
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![FileId(0)],
+            command_line: CommandLine::new::<&str>(&[]),
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .map(|d| {
+            source
+                .get(..d.diagnostic.span.start)
+                .map_or(0, |before| before.matches('\n').count() + 1)
+        })
+        .collect()
+    };
+    assert_eq!(
+        lines(
+            "struct P { float a; }; struct C : P { vector v; float w; }; C c = { {\n1 }, 2 \
+             };\n"
+        ),
+        [1]
+    );
+    assert_eq!(
+        lines("union U { float a; float b; }; U u = { 1,\n{\n2 } };\n"),
+        [2]
+    );
+}
+
+// spec FTEF-6.26: an element that should be braced is named by its first token, a comment before
+// it aside
+#[test]
+fn an_unbraced_element_is_named_by_its_first_token() {
+    let expected = |found: &str| vec![d(Code::E0204, &format!("expected {{, found {found}"))];
+    assert_eq!(
+        messages("#pragma target fte\nfloat x[2][2] = { /* c */ 1, 2 };"),
+        expected("1")
+    );
+    assert_eq!(
+        messages("#pragma target fte\nfloat x[2][2] = { {1,2}, /* c */ 3 };"),
+        expected("3")
+    );
+}
+
+// spec FTEF-5.3: an array with no size has as many elements as its braces hold, braced ones
+// included
+#[test]
+fn an_unsized_array_counts_its_braced_elements() {
+    assert_eq!(
+        messages(
+            "#pragma target fte\nstruct S { float a; }; S sa[] = { {1}, {2} }; float x; void() g = \
+             { x = sa[2].a; };"
+        ),
+        [d(
+            Code::W0249,
+            "(constant) array index out of bounds (0 <= 2 < 2)"
+        )]
+    );
+}
+
+// spec FTEF-19.53: braces for a scalar are "\"{\" - not a name"
+#[test]
+fn braces_for_a_scalar_are_no_name() {
+    let refused = vec![d(Code::E0201, "\"{\" - not a name")];
+    for source in [
+        "float x = { 1 };",
+        "string sx = { \"a\" };",
+        "entity ex = { 1 };",
+        "float fy = { };",
+        "void() g = { local float x = { 1 }; };",
+        ".float fl = { 1 };",
+        "int ix = { 1 };",
+        "float a[2] = { {1}, 2 };",
+    ] {
+        assert_eq!(
+            messages(&format!("#pragma target fte\n{source}")),
+            refused,
+            "{source}"
+        );
+    }
+    assert_eq!(messages("#pragma target fte\nvector v = { 1, 2, 3 };"), []);
+}
+
+// spec FTEF-19.56: a pointer's braces are a nameless static array whose address it takes
+#[test]
+fn braced_pointer_initialisers() {
+    let messages = |pragma: &str, source: &str| -> Vec<String> {
+        messages(&format!("{pragma}\nfloat x;\n{source}"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    let fte = "#pragma target fte";
+    assert_eq!(
+        messages(fte, "float *p = { x };"),
+        [
+            "initializer for '' is not constant",
+            "Unable to generate statements at global scope (GLOBALADDRESS).",
+            "initializer for 'p' is not constant"
+        ]
+    );
+    assert_eq!(
+        messages(fte, "void() f = { static float *p = { 1 }; };"),
+        ["initializer for 'p' is not constant"]
+    );
+    assert_eq!(
+        messages(
+            fte,
+            "void() f = { local float *p = { x, 1 }; local float *q = { \"a\" }; };"
+        ),
+        [
+            "initializer for '' is not constant",
+            "Cannot cast from string to float"
+        ]
+    );
+    assert!(
+        messages(
+            fte,
+            "void() f = { local float *p = { 1 }; const float *q = { 1 }; };"
+        )
+        .is_empty()
+    );
+    assert_eq!(
+        messages("", "float *p = { 1 };"),
+        [
+            "Address-of operator is not supported in this form without extensions. Consider the \
+             use of: #pragma target fte"
+        ]
+    );
+}

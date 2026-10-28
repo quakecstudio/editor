@@ -208,7 +208,7 @@ fn c_words_name_their_kinds() {
         ("__uint64", Kind::Uint64),
         ("__char", Kind::Integer),
         ("__short", Kind::Integer),
-        ("_Bool", Kind::Opaque),
+        ("_Bool", Kind::Integer),
         ("int int", Kind::Opaque),
         ("long", Kind::Opaque),
         ("Player", Kind::Opaque),

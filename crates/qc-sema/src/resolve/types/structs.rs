@@ -277,10 +277,9 @@ impl<'a> Resolver<'a> {
                 self.report(Code::E0211, location, message);
                 return;
             }
-            if member
-                .bits
-                .is_some_and(|width| width.is_some_and(|w| w > 64))
-            {
+            if member.bits.is_some_and(|width| {
+                width.is_some_and(|w| i32::from_le_bytes(w.to_le_bytes()) > 64)
+            }) {
                 self.report(Code::E0250, location, "too many bits".to_owned());
                 return;
             }
@@ -437,6 +436,10 @@ impl<'a> Resolver<'a> {
             .strip_prefix("struct ")
             .or_else(|| type_name.strip_prefix("union "))
             .unwrap_or(&type_name);
+        // A struct of size 0 is the check stage's "NAME was not defined yet" (FTEF-6.28).
+        if self.struct_of_no_size(&Type::Named(type_name.clone())) {
+            return StructMatch::NotStruct;
+        }
         let mut current = Some(self.type_key(bare));
         let mut anonymous = false;
         for _ in 0..MAX_CLASS_DEPTH {
@@ -479,6 +482,24 @@ impl<'a> Resolver<'a> {
 }
 
 impl Resolver<'_> {
+    /// Whether `ty` is a struct or union of size 0 (`!t->size`, FTEF-6.28): one named with no
+    /// body yet, or one whose body lays out to no word.
+    pub(in crate::resolve) fn struct_of_no_size(&self, ty: &Type) -> bool {
+        let Type::Named(name) = self.resolved(ty) else {
+            return false;
+        };
+        let Some(bare) = self.struct_type_name(&name) else {
+            return false;
+        };
+        match self.struct_defs.get(&self.type_key(bare)) {
+            Some(def) if !def.defined => true,
+            Some(_) => self
+                .layout(&Type::Named(name))
+                .is_some_and(|l| l.words == 0),
+            None => false,
+        }
+    }
+
     /// The type of the member `name` of the struct or union `ty`, found in it or its parents
     /// as `QCC_PR_FindStructMember` finds it (FTEF-6.11), and whether the member is an array.
     pub(in crate::resolve) fn struct_member(

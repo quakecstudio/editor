@@ -245,6 +245,7 @@ fn an_element_of_a_variable_is_not_constant() {
     for source in [
         "float x[2]; float y = x[1];",
         "extern \"C\" { float x[2]; float y = x[1]; }",
+        "float x[2]; void() g = { static float y = x[1]; };",
     ] {
         assert_eq!(errors(source, &[]), [Code::E0214], "{source}");
     }
@@ -359,9 +360,37 @@ fn a_type_with_no_declarator_is_checked() {
         "float (x)(float);",
         "void() g = { local float (x); };",
         "struct S2 { float b; }; S2 (x);",
+        "struct S { float a; } (x);",
     ] {
         assert_eq!(errors(source, &[]), [Code::E0204], "{source}");
     }
+}
+
+// spec FTEF-8.5: the parameter lists after a struct's or an enum's body make the declarators'
+// type a function
+#[test]
+fn a_parameter_list_after_a_body_makes_a_function() {
+    let warnings = |source: &str| -> Vec<Code> {
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![FileId(0)],
+            command_line: CommandLine::new::<&str>(&[]),
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .map(|d| d.diagnostic.code)
+        .collect()
+    };
+    assert_eq!(
+        warnings("enum { A }(float) h = #1; void() g = { h(1, 2); };\n"),
+        [Code::W0252]
+    );
+    assert_eq!(
+        warnings("struct S { float a; } (float) h = #1; void() g = { h(1); };\n"),
+        []
+    );
 }
 
 // spec FTEF-6.12: a struct is cast to and from nothing but itself; an aggregate or a value of
@@ -1108,4 +1137,60 @@ fn a_basic_type_is_no_parent_in_any_case() {
         );
         assert_eq!(errors(&source, &[]), [Code::E0241], "{parent}");
     }
+}
+
+// spec FTEF-21.23: the illegal jump errors name the function, a member as `CLASS::NAME`
+#[test]
+fn illegal_jumps_name_their_function() {
+    let messages = |source: &str| -> Vec<String> {
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![FileId(0)],
+            command_line: CommandLine::new::<&str>(&[]),
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .filter(|d| matches!(d.diagnostic.code, Code::E0244 | Code::E0245 | Code::E0259))
+        .map(|d| d.diagnostic.message.clone())
+        .collect()
+    };
+    assert_eq!(
+        messages("void() g = { break; };\n"),
+        ["g: function contains illegal breaks"]
+    );
+    assert_eq!(
+        messages("void() g = { { case 1: ; } { case 2: ; } };\n"),
+        ["g: function contains illegal cases"]
+    );
+    assert_eq!(
+        messages("class C { void() m = { continue; }; };\n"),
+        ["C::m: function contains illegal continues"]
+    );
+}
+
+// spec FTEF-6.10: a struct's redeclaration with another parent is reported at its tag
+#[test]
+fn a_structs_redeclaration_stands_at_its_tag() {
+    let source = "struct P { float a; }; struct Q { float b; }; struct S : P { float c; }; \
+                  struct\nS : Q { float d; };\n";
+    let mut db = Db::new();
+    db.set_dialect(Dialect::Fteqcc);
+    db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+    let found: Vec<(Code, usize)> = db
+        .analyze_module(&ModuleInput {
+            compiled: vec![FileId(0)],
+            command_line: CommandLine::new::<&str>(&[]),
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .map(|d| {
+            let line = source
+                .get(..d.diagnostic.span.start)
+                .map_or(0, |before| before.matches('\n').count() + 1);
+            (d.diagnostic.code, line)
+        })
+        .collect();
+    assert_eq!(found, [(Code::E0249, 2)]);
 }

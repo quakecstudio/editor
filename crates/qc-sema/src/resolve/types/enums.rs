@@ -8,7 +8,11 @@
 
 use qc_diag::Code;
 
-use crate::cast::{Kind, Source, Supply};
+use qc_preproc::Op;
+
+use crate::cast::{ConstType, Kind, Source, Supply};
+use crate::check::constant::Constant;
+use crate::check::fold::{Folded, fold};
 use crate::lower::{EnumItem, LiteralValue, RawDecl, RawValue, ValueKind};
 use crate::resolve::{EnumCursor, Resolver};
 use crate::symbol::{DefKind, Definition, FileId, Location};
@@ -173,6 +177,9 @@ impl<'a> Resolver<'a> {
         if let Some(literal) = literal {
             self.literals.insert(id, literal);
         }
+        if let Some(constant) = value.and_then(|v| integer_item(base.fteqcc_kind(), v)) {
+            self.integer_items.insert(id, constant);
+        }
     }
 
     /// FTEF-19.10: an `enumflags` value that is no whole number, or has more than one bit set,
@@ -228,7 +235,14 @@ impl<'a> Resolver<'a> {
         match &value.kind {
             ValueKind::Literal(literal) => {
                 match self.supply_value(Source::Literal(*literal), wanted, value, location) {
-                    Supply::Converted => number.map(|bits| f64::from(f32::from_bits(bits))),
+                    Supply::Converted => number.map(|bits| {
+                        let float = f32::from_bits(bits);
+                        if literal.ty == ConstType::Float {
+                            self.converted_enum_value(float, wanted, location)
+                        } else {
+                            f64::from(float)
+                        }
+                    }),
                     Supply::Lax => next,
                     Supply::Explicit | Supply::Mismatch => None,
                 }
@@ -264,4 +278,51 @@ impl<'a> Resolver<'a> {
             | ValueKind::Other => None,
         }
     }
+
+    /// FTEF-19.52: a float literal for an enum of an integer base, as `QCC_SupplyConversion`'s
+    /// conversion folds it: its value as that integer, with the fold's warnings.
+    fn converted_enum_value(&mut self, value: f32, base: Kind, location: Location) -> f64 {
+        let op = match base {
+            Kind::Integer => Op::ConvFtoi,
+            Kind::Uint => Op::ConvFu,
+            Kind::Int64 => Op::ConvFi64,
+            Kind::Uint64 => Op::ConvFu64,
+            _ => return f64::from(value),
+        };
+        let mut notices = Vec::new();
+        let folded = fold(op, Some(Constant::float(value)), None, &mut notices);
+        for notice in notices {
+            self.report(notice.code, location, notice.message);
+        }
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "spec FTEF-19.52: `next_f = (longlong)(next_i = eval->i64)`, C's conversion"
+        )]
+        match folded {
+            Some(Folded::Constant(c)) => match base {
+                Kind::Integer => f64::from(c.i()),
+                Kind::Uint => f64::from(c.u()),
+                Kind::Int64 => c.i64() as f64,
+                _ => c.u64() as f64,
+            },
+            Some(Folded::Left | Folded::Right) | None => f64::from(value),
+        }
+    }
+}
+
+/// FTEF-19.52: an item of an enum of an integer base as the constant it is, its value
+/// `next_i` made the base's integer.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "spec FTEF-19.52: `QCC_MakeIntConst(next_i)` and its kin, C's conversions"
+)]
+fn integer_item(base: Kind, value: f64) -> Option<Constant> {
+    Some(match base {
+        Kind::Integer => Constant::int(value as i64 as i32),
+        Kind::Uint => Constant::uint(value as i64 as u32),
+        Kind::Int64 => Constant::int64(value as i64),
+        Kind::Uint64 => Constant::uint64(value as u64),
+        _ => return None,
+    })
 }

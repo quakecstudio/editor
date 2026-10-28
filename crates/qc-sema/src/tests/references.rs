@@ -345,6 +345,10 @@ fn a_struct_with_no_tag_is_a_type_of_its_own() {
         ["q is not a member of <union>"]
     );
     assert_eq!(
+        fte("union { float a; vector v; } uu; float arr[1]; void() g = { arr[sizeof(uu)] = 1; };"),
+        ["(constant) array index out of bounds (0 <= 12 < 1)"]
+    );
+    assert_eq!(
         fte(
             "struct { float a; vector v; } anon; float arr[1]; void() g = { arr[sizeof(anon)] = \
              1; anon.a = \"s\"; };"
@@ -418,6 +422,40 @@ fn a_struct_function_member_is_called_by_its_type() {
     assert_eq!(
         found,
         ["too few parameters on call to w, a will be UNDEFINED"]
+    );
+}
+
+// spec FTEF-6.28: a member of a struct or union of size 0 is the fatal error "NAME was not
+// defined yet"
+// spec QCD-4.63: E0362 for a member of a struct of size 0
+// spec FTEF-6.27: a bitfield's width is a signed integer, its layout C's unsigned arithmetic
+#[test]
+fn a_struct_of_no_size_has_no_members() {
+    let messages = |source: &str| -> Vec<String> {
+        diags(&format!("#pragma target fte\n{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    assert_eq!(
+        messages("struct T; T *pt; float x; void() g = { x = pt->a; };"),
+        ["T was not defined yet"]
+    );
+    assert_eq!(
+        messages("struct T2 { }; T2 t; float x; void() g = { x = t.a; };"),
+        ["struct T2 has no members", "T2 was not defined yet"]
+    );
+    assert_eq!(
+        messages("struct S { int a : -1; }; S s; void() g = { s.a = 1; };"),
+        ["S was not defined yet"]
+    );
+    assert_eq!(
+        messages("struct S { int a : -3; int b : 2; }; S s; float x; void() g = { x = s.b; };"),
+        ["S was not defined yet"]
+    );
+    assert_eq!(
+        messages("struct S { int a : -1; int b; }; S s; float x; void() g = { x = s.b; };"),
+        Vec::<String>::new()
     );
 }
 
@@ -3659,4 +3697,42 @@ fn every_reference_is_read_as_fteqcc_reads_it() {
         .collect();
         assert_eq!(found, expected, "{target} {statement}");
     }
+}
+
+// spec FTEF-31.12: a narrow element's address through a pointer is a byte offset by `OP_ADD_I`
+#[test]
+fn a_narrow_elements_address_is_a_byte_offset() {
+    let messages = |source: &str| -> Vec<String> {
+        diags(&format!("{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    let add = [
+        "AddInt function not defined: cannot emulate int+int",
+        "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+    ];
+    let mul = [
+        "MulInt function not defined: cannot emulate int*int",
+        "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+    ];
+    assert_eq!(
+        messages("__int8 *pc; int i; void() f = { local __int8 *q = &pc[i]; };"),
+        add
+    );
+    assert_eq!(
+        messages("__int8 *pc; void() f = { local __int8 *q = &pc[2i]; };"),
+        add
+    );
+    assert_eq!(
+        messages("__int16 *pc; int i; void() f = { local __int16 *q = &pc[i]; };"),
+        [mul, add].concat()
+    );
+    assert!(messages("__uint16 *pc; void() f = { local __uint16 *q = &pc[0]; };").is_empty());
+    assert!(
+        messages(
+            "#pragma target fte\n__int16 *pc; int i; void() f = { local __int16 *q = &pc[i]; };"
+        )
+        .is_empty()
+    );
 }

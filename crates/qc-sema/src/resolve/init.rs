@@ -21,7 +21,7 @@ use crate::symbol::{DefId, DefKind, FileId, Location};
 use crate::ty::{SimpleType, Type};
 
 impl Resolver<'_> {
-    /// FTEF-19.4, FTEF-19.11: what `QCC_PR_ParseDefs` reports of an initialiser before it reads
+    /// FTEF-19.57, FTEF-19.11: what `QCC_PR_ParseDefs` reports of an initialiser before it reads
     /// it: a `shared` definition given a value; a body for a definition already initialised,
     /// "redeclaration of function body", but for `anglemod` and `crossproduct`, whose builtin
     /// a body replaces with a warning; and a `wrap` that has nothing to wrap.
@@ -183,7 +183,7 @@ impl Resolver<'_> {
 
     /// FTEF-19.31, FTEF-19.3, QC-11.3: the checks of a value initialiser of a definition of
     /// type `ty` named `name`, held as `holder` says, and the value it gives when it names a
-    /// constant (FTEF-19.5). Under the vanilla profile a literal of another type than the
+    /// constant (FTEF-19.58). Under the vanilla profile a literal of another type than the
     /// definition's is "wrong immediate type" (QCD-3.7); under FTEQCC a value its type
     /// cannot be cast to is "Cannot cast" (QCD-3.13), and a name that is no constant
     /// initialising a global or a static is "is not constant" (QCD-3.14). `Err` is a fatal
@@ -433,6 +433,11 @@ impl Resolver<'_> {
             | Type::Pointer(_) => source_ty,
         };
         let source_ty = self.resolved(&source_ty);
+        // FTEF-29.11: a constant whose word is 0 is null (`QCC_SRef_IsNull`), which casts to
+        // any type but a struct or union with no warning.
+        let null = self.facts.get(source.0).is_some_and(|f| f.constant)
+            && matches!(self.literals.get(&source), Some(LiteralValue::Float(0)))
+            && !self.is_struct_type(ty);
         // FTEF-19.10: a strict enum's value casts to no other type, but under `lax`
         // (FTEF-22.1).
         if let Type::Named(strict) = &source_ty
@@ -453,7 +458,7 @@ impl Resolver<'_> {
             if code == Code::E0213 {
                 return Err(Fatal);
             }
-        } else if self.cast_value(Source::Typed(&source_ty), ty, location, flags) {
+        } else if !null && self.cast_value(Source::Typed(&source_ty), ty, location, flags) {
             return Err(Fatal);
         }
         if matches!(holder, Holder::Local(_)) {
@@ -498,7 +503,7 @@ impl Resolver<'_> {
                 | Type::Pointer(_) => None,
             });
         }
-        // FTEF-19.5: a name of the same type gives its value, which a later initialiser is
+        // FTEF-19.58: a name of the same type gives its value, which a later initialiser is
         // compared with.
         Ok((source_ty == *ty)
             .then(|| self.literals.get(&source).cloned())
@@ -622,6 +627,11 @@ impl Resolver<'_> {
             return false;
         }
         let to = &self.resolved_deep(to, MAX_TYPEDEF_DEPTH);
+        // FTEF-23.8: a cast to a boolean is its logical truth, a number cast to the boolean's
+        // parent type, with no message.
+        if matches!(to.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat)) {
+            return false;
+        }
         // FTEF-10.8: a value of an accessor type is cast as its base's, and a cast to one is
         // checked against its base (`for (tmp = cast; tmp->type == ev_accessor; ...)`).
         let base_of = |ty: &Type| match ty {
@@ -677,14 +687,22 @@ impl Resolver<'_> {
             }
         }
         let as_entity = |ty: Type| if class_of(&ty) { entity.clone() } else { ty };
-        let to_checked = as_entity(base_of(to).unwrap_or_else(|| to.clone()));
+        // FTEF-8.6: a named enum's type casts as its base's kind, under its own name.
+        let enum_base = |ty: &Type| match ty {
+            Type::Named(name) => self
+                .named(&self.enum_types, name)
+                .map(|base| self.resolved_deep(base, MAX_TYPEDEF_DEPTH)),
+            _ => None,
+        };
+        let checked = |ty: &Type| base_of(ty).or_else(|| enum_base(ty));
+        let to_checked = as_entity(checked(to).unwrap_or_else(|| to.clone()));
         let typed;
         let shown;
         let source = match source {
             Source::Typed(ty) => {
                 let ty = self.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
                 shown = self.type_name(&base_of(&ty).unwrap_or_else(|| ty.clone()));
-                typed = as_entity(base_of(&ty).unwrap_or(ty));
+                typed = as_entity(checked(&ty).unwrap_or(ty));
                 Source::Typed(&typed)
             }
             Source::Literal(_) => {

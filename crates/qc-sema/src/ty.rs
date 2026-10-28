@@ -10,6 +10,8 @@
 
 use std::rc::Rc;
 
+use crate::check::fold::c_g;
+
 use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::c_scalar::{CContext, CScalar, CWords};
 
@@ -267,6 +269,11 @@ impl Type {
     /// and any other by the name FTEQCC registers it with, else the type named as written.
     #[must_use]
     pub fn named(words: &str, context: CContext) -> Self {
+        // FTEF-19.54: `QCC_PR_NewType("__int", ev_integer, ...)` and `__uint` are types of
+        // their own names.
+        if matches!(words, "__int" | "__uint") {
+            return Self::Named(Rc::from(words));
+        }
         let split = || words.split(' ');
         match CWords::read(split(), context) {
             (taken, Some(c_type)) if taken == split().count() => match c_type.scalar {
@@ -378,8 +385,9 @@ impl SimpleType {
 }
 
 /// A default value as `QCC_VarAtOffset` prints the constant it is once cast to the parameter's
-/// type `ty`: a float `%gf`, an integer `%#xi`, a vector `'%g %g %g'`, a string quoted; any
-/// other expression as written.
+/// type `ty` (FTEF-24.7): a float `%gf`, a double `%gd`, an `int` `%#xi`, a `uint` `%#xu`, a
+/// 64-bit integer `%#xill` or `%#xull` (`0` for zero), a vector `'%g %g %g'`, a string quoted;
+/// any other expression as written.
 fn default_text(value: &ast::Expr, ty: &Type) -> String {
     let written = String::from_utf8_lossy(&value.syntax().text())
         .trim()
@@ -390,61 +398,61 @@ fn default_text(value: &ast::Expr, ty: &Type) -> String {
             Some(rest) => (true, rest.trim()),
             None => (false, text),
         };
-        let parsed: f64 = digits.trim_end_matches(['f', 'i']).parse().ok()?;
+        let parsed: f64 = digits
+            .trim_end_matches(['f', 'i', 'd', 'u', 'l'])
+            .parse()
+            .ok()?;
         Some(if negative { -parsed } else { parsed })
+    };
+    // The integer the constant is, its bits as C's `%#x` prints them in `bits` bits.
+    let hex = |bits: u32, suffix: &str| {
+        let negative = written.trim_start().starts_with('-');
+        let digits = written
+            .trim()
+            .trim_start_matches('-')
+            .trim()
+            .trim_end_matches(['i', 'u', 'l']);
+        let parsed = match digits
+            .strip_prefix("0x")
+            .or_else(|| digits.strip_prefix("0X"))
+        {
+            Some(hex) => i128::from_str_radix(hex, 16).ok(),
+            None => digits.parse::<i128>().ok(),
+        };
+        parsed
+            .map(|v| if negative { v.wrapping_neg() } else { v })
+            .and_then(|v| u64::try_from(v.rem_euclid(1_i128 << bits)).ok())
+            .map_or(written.clone(), |v| match v {
+                0 => format!("0{suffix}"),
+                v => format!("{v:#x}{suffix}"),
+            })
     };
     match ty {
         Type::Simple(SimpleType::Float) => {
-            number(&written).map_or(written.clone(), |v| format!("{}f", format_g(v)))
+            number(&written).map_or(written.clone(), |v| format!("{}f", c_g(v)))
         }
         Type::Simple(SimpleType::Vector) => {
-            let inner = written.trim_matches('\'');
-            let parts: Option<Vec<f64>> = inner.split_whitespace().map(number).collect();
+            let inner = written.trim_matches(['\'', '[', ']']);
+            let parts: Option<Vec<f64>> = inner
+                .split(|c: char| c.is_whitespace() || c == ',')
+                .filter(|part| !part.is_empty())
+                .map(number)
+                .collect();
             match parts.as_deref() {
-                Some([x, y, z]) => {
-                    format!("'{} {} {}'", format_g(*x), format_g(*y), format_g(*z))
-                }
+                Some([x, y, z]) => format!("'{} {} {}'", c_g(*x), c_g(*y), c_g(*z)),
                 _ => written,
             }
         }
-        Type::Named(name) if name.as_ref() == "__int32" => {
-            let negative = written.trim_start().starts_with('-');
-            let digits = written
-                .trim()
-                .trim_start_matches('-')
-                .trim()
-                .trim_end_matches('i');
-            // `%#x` of the 32-bit integer the constant is, which C writes `0` for zero.
-            digits
-                .parse::<i64>()
-                .ok()
-                .map(|v| if negative { v.wrapping_neg() } else { v })
-                .and_then(|v| u32::try_from(v.rem_euclid(1_i64 << 32)).ok())
-                .map_or(written.clone(), |v| match v {
-                    0 => "0i".to_owned(),
-                    v => format!("{v:#x}i"),
-                })
-        }
+        Type::Named(_) => match ty.fteqcc_scalar() {
+            Some(CScalar::Integer) => hex(32, "i"),
+            Some(CScalar::Uint) => hex(32, "u"),
+            Some(CScalar::Int64) => hex(64, "ill"),
+            Some(CScalar::Uint64) => hex(64, "ull"),
+            Some(CScalar::Double) => {
+                number(&written).map_or(written.clone(), |v| format!("{}d", c_g(v)))
+            }
+            _ => written,
+        },
         _ => written,
     }
-}
-
-/// C's `%g`: six significant digits, trailing zeros dropped, an exponent outside 1e-4 to 1e6.
-fn format_g(value: f64) -> String {
-    let scientific = format!("{value:.5e}");
-    let (mantissa, exp) = scientific.split_once('e').unwrap_or((&scientific, "0"));
-    let exp: i32 = exp.parse().unwrap_or(0);
-    let trim = |text: &str| {
-        if text.contains('.') {
-            text.trim_end_matches('0').trim_end_matches('.').to_owned()
-        } else {
-            text.to_owned()
-        }
-    };
-    if !(-4..6).contains(&exp) {
-        let sign = if exp < 0 { '-' } else { '+' };
-        return format!("{}e{sign}{:02}", trim(mantissa), exp.unsigned_abs());
-    }
-    let decimals = usize::try_from(5_i32.saturating_sub(exp)).unwrap_or(0);
-    trim(&format!("{value:.decimals$}"))
 }

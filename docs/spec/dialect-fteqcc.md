@@ -485,6 +485,20 @@ inheritance, bitfields and nested members.
   out one with none warns "too few parameters on call to NAME, PARAM will be UNDEFINED", NAME the
   struct's definition, the member's `sym`: `w.get()` of a `float(entity e = __NULL__) get` is no
   warning, `w.two()` of a `float(float a) two` names `w`.
+- **FTEF-6.26** An error FTEQCC raises about an element of an aggregate initialiser that is
+  itself braced stands where its `{` does, the token the parser has read: "inherited structs must
+  use designated initialisers" and "member U.b was already ininitialised" are on the `{`'s line,
+  whatever follows it on the next.
+- **FTEF-6.27** A bitfield's width is the signed `int bits` `QCC_PR_IntConstExpr()` gives, kept in
+  the unsigned `bitfld->bits`: a negative width is no error ("too many bits" compares the signed
+  value with 64, and no promotion to 64 bits happens for it), and the struct's layout adds it in
+  C's unsigned arithmetic (`unsigned int bitsize`), which wraps: `struct S { int a : -1; int b;
+  };` puts `b` at bit 0 and is one word, and `struct S { int a : -1; };` is of size 0.
+- **FTEF-6.28** A member of a struct or union of size 0 (`!t->size`), one named with no body yet
+  or one laid out to no word, is the fatal error `E0362` "NAME was not defined yet"
+  (`QCC_PR_ParseRefArrayPointer`), before any member is looked up: `struct T; T *pt;` makes
+  `pt->a` that error, and `struct T2 { }; T2 t;` makes `t.a` "T2 was not defined yet", not "a is
+  not a member of T2".
 - **FTEF-6.22** A struct or union with no tag (`struct { ... } x;`, `typedef struct { ... } T;`)
   is a type of its own, with its members and its layout, named `<struct>` or `<union>`: `t.zz` of
   one is "zz is not a member of <struct>", `sizeof(T)` of `typedef struct { float a; vector v; }
@@ -590,6 +604,15 @@ full dialect also uses `enumflags`.
   class` names are those of an enum with a base type. The declarators follow the body as they
   follow any type (FTEF-15.6): `enum E { A } x;` is `E x`, `enum { A } x;` a `float x` (the
   base), and `enum class E : float { A } x;` an `E x` that no float takes (FTEF-19.10). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseEnum`.
+- **FTEF-8.6** A named enum that is not `enum class` makes a type of its name with its base's
+  basic type, the first declaration's (`enumtype = QCC_TypeForName(name); if (!enumtype) ...
+  enumtype = QCC_PR_NewType(name, basetype->type, true);`), while its names stay of the base
+  type: a value of it casts as the base does and prints by its name, so `enum EN { A }; EN e;
+  string s = e;` is `E0213` "Cannot cast from EN to string", `enum EN : int { A }` makes it
+  `W0220` "Implicit cast from EN to string", `int i = e;` warns "ftoi emulation" as a float does,
+  and `string s = A;` casts the null constant. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseEnum`.
 
@@ -859,6 +882,12 @@ Vanilla `qcc` has no `__variant`; the word is a name and "not a type" (QC-11). T
   without a type error, because of FTEF-11.1; the concrete type governs the operation.
 - **FTEF-11.3** Codegen (later): how a `__variant` value is stored and dispatched is fixed by
   L-01.
+- **FTEF-11.4** FTEF-11.1 holds only after `typecmp_lax` compares the two types' `aux_type`s
+  (`if (typecmp_lax(a->aux_type, b->aux_type)) return 1;` comes before the `ev_variant` return),
+  so a `__variant` differs from a pointer or a function, whose `aux_type` it lacks: `float **p;
+  __variant *q; q = p;` and `void() *r; q = r;` are `W0220` "Implicit cast from float** to
+  __variant*", as is `p = q;`, while `__variant **t; t = p;` and `string *s; q = s;` cast with
+  no warning.
 
 ## FTEF-12 The remaining `#pragma` directives
 
@@ -1034,7 +1063,7 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   pass compiles everything again with every name the first pass made defined: a function with a
   body from the first pass that is given a body again is "redeclaration of function body" and
   "incompatible redeclaration" (a builtin, a prototype or a body the first pass skipped is not),
-  and a value is compared with the first pass's as FTE-22.5 says. When no second pass follows, a
+  and a value is compared with the first pass's as FTE-22.6 says. When no second pass follows, a
   function whose body was skipped is "function NAME has no body" (`ERR_NOFUNC`), which this
   profile reports as QC-11.8's "NAME was not defined" (`E0211`). This profile reads the first
   pass as its own file (its flags, keywords and warning settings, FTEF-12.20), declares what it
@@ -2233,6 +2262,10 @@ declares parameters without names or with `optional` and `__out`.
   parameter list and the declarator has no name, `";" - not a name`, as it has for a type's name
   (`typedef float t; void() (t);`).
 
+- **FTEF-15.10** A parameter whose type writes a struct, union or enum (`void(union { float a;
+  vector v; } u) f`, `void(enum { EA } e) f`) has that type, read with the type
+  (`QCC_PR_ParseType`), so the function's type prints it (`void(union <union> u)`) and the
+  parameter is a value of it in the body.
 ## FTEF-16 Statements and expressions
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseStatement`, `QCC_PR_RefTerm`, `QCC_PR_ParseRefValue`
@@ -2324,7 +2357,7 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   FTEF-17.10.
 - **FTEF-17.10** A name initialised again is accepted when the "dupe initialisation"
   comparison finds the two values equal word by word: this profile compares two literals by
-  value (FTE-22.5), a builtin by its number and engine name as FTE-23.7 says, any other
+  value (FTE-22.6), a builtin by its number and engine name as FTE-23.17 says, any other
   initialiser, a builtin FTEQCC binds no number for among them, by its text, token for token.
   An enum's names are never redeclared: `QCC_PR_ParseEnum` makes each with
   `QCC_PR_DummyDef`, which looks for no earlier definition. A function body is never equal to
@@ -2755,10 +2788,11 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   will be treated as 0", and the value 0; a field always has its value (fields are "initialised
   behind the scenes") and a function not yet defined is filled in once it is (`$relocf`), so
   neither warns.
-- **FTEF-19.4** A body given to a definition already initialised, by a builtin, a body, `extern`
+- **FTEF-19.4** **Withdrawn** 2026-10-28: it gave the "incompatible redeclaration" after "redeclaration of function body" as `E0206`, which is `E0363` (FTE-22.6); replaced by FTEF-19.57.
+- **FTEF-19.57** A body given to a definition already initialised, by a builtin, a body, `extern`
   or `shared`, is the error `E0216` "redeclaration of function body" (`else if
   (basedef->initialized == 1 && !(flags & PIF_STRONGER))`), reported before the "incompatible
-  redeclaration" the two different functions then give (`E0206`); a body after a `weak` one, or
+  redeclaration" the two different functions then give (`E0363`); a body after a `weak` one, or
   for an `accumulate` function, is none, and a body after a `wrap` one is. A body replacing the
   builtin of `anglemod` or `crossproduct` is the warning `W0217` "NAME already declared as a
   builtin" instead, and the builtin is marked unused. A `wrap` body with nothing initialised to
@@ -2766,12 +2800,13 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `prior` the error `E0223` "Wrapper function \"NAME\" does not refer to its prior function". An
   `accumulate` declaration of a function initialised before without it is the warning `W0218`
   "NAME redeclared to accumulate after initial declaration".
-- **FTEF-19.5** The "dupe initialisation" comparison of FTE-22.5 and FTEF-17.10 compares the
+- **FTEF-19.5** **Withdrawn** 2026-10-28: it gave a differing word `E0206`, which is "incompatible redeclaration", `E0363` (FTE-22.6); replaced by FTEF-19.58.
+- **FTEF-19.58** The "dupe initialisation" comparison of FTE-22.6 and FTEF-17.10 compares the
   words the two initialisers give: a number literal's value as FTEQCC's lexer reads it, so
   `0x10` and `16` are equal; a constant's name, the constant's value (`float y = 2; float x = y;
   float x = 2;` compiles); a vector's components, which `QCC_PR_DummyDef` gives the vector's
   initialised state and words (`d->initialized = def->initialized;`), so `vector v = '1 2 3';
-  float v_x = 1;` compiles and `float v_x = 2;` is `E0206`; and a `const` or `static` local's, as
+  float v_x = 1;` compiles and `float v_x = 2;` is `E0363`; and a `const` or `static` local's, as
   a global's. `parseentitydata` given another builtin after `#608` or `#613` is accepted with the
   warning `W0223` "incompatible redeclaration. Please validate builtin numbers. parseentitydata
   is #613" ("dpextensions is WRONG").
@@ -2795,7 +2830,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   declaration goes on. A global marked unused that nothing refers to, `def->unused &&
   !def->referenced`, is replaced by a declaration of another type, with the warning `W0211`
   "Type redeclaration of TYPE NAME replaces existing variable": a builtin a body replaced
-  (FTEF-19.4) is one. A `noref` mark is a reference too (`if (noref) { def->unused = true;
+  (FTEF-19.57) is one. A `noref` mark is a reference too (`if (noref) { def->unused = true;
   def->referenced = true; }`), so a `noref` global declared again with another type is
   `E0205`.
   A function declared again as `T(...)` with no parameters is no difference ("c89-style dumb
@@ -2841,13 +2876,13 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   the `{` with no `:` is the warning `W0224` "legacy enum base type. Use \"enum [class]
   [name_e]:type\" instead", and so is a named enum declared again, whose name `QCC_PR_ParseType`
   then reads as that base type. A later declaration of an enum's name compares its initialiser with
-  the name's value (FTEF-19.5). The names of an `enum class` are not referable alone
+  the name's value (FTEF-19.58). The names of an `enum class` are not referable alone
   (`QCC_PR_DummyDef(..., !strictenum, ...)`), only as `Name::value`, and are of the enum's own
   type, which casts to no other: `float x = E::A;` is "Cannot cast from enum E:float to float".
 - **FTEF-19.11** A `shared` definition is initialised by its declaration (`if
   (!def->initialized && shared) ... def->initialized = true;`), and giving it a value, then or
   later, is the error `E0221` "shared values may not be assigned an initial value". An `extern`
-  function is initialised by its declaration too (FTEF-19.4); `extern` on what is no function is
+  function is initialised by its declaration too (FTEF-19.57); `extern` on what is no function is
   ignored, with the warning `W0214` "extern keyword may only apply to qc functions.".
 - **FTEF-19.12** A `static` global is visible only in its unit, the compiled file and the files
   it includes (`if ((def->isstatic||(flags&GDF_STATIC)) && strcmp(def->unitn,
@@ -3185,6 +3220,39 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   at the end of each pass of its modifier loop, the `[[...]]` branch included, so after an
   attribute list alone the type may be left out and is `__int32` (FTEF-19.21): with `attributes`
   on, `[[eraseable]] x = 5; string s = x;` warns "Implicit cast from __int32 to string".
+- **FTEF-19.52** An item of an enum of an integer base (`int`, `uint`, `__int64`, `__uint64`) is the
+  constant `QCC_MakeIntConst(next_i)` and its kin make of its value, a constant of that type the
+  folding reads: `enum E : int { C = 2, D };` makes `arr[D]` the index 3. A float literal given
+  to one is converted by `QCC_SupplyConversion`, whose `OP_CONV_FTOI` (or `OP_CONV_FU` and the
+  64-bit ones) folds with its warnings: `enum E : int { C = 1.5 };` is "Numerical overflow.
+  1.500000 will be rounded to 1" and the value 1.
+- **FTEF-19.53** A braced initialiser for a scalar, a float, string, entity, field or integer,
+  global, local or an array's element, is the error `E0201` "\"{\" - not a name" at the `{`:
+  `QCC_PR_ParseInitializerType` reads the scalar's value as an expression, which `{` cannot
+  start (`float x = { 1 };`, `float a[2] = { {1}, 2 };`); a vector takes braces as three floats.
+- **FTEF-19.54** `QCC_main` makes the core types again under names of their own:
+  `QCC_PR_NewType("__int", ev_integer, ...)`, `"__uint"`, and `"__string"`, `"__vector"` and
+  `"__entity"` when the core type's name has no `_`. Each is the basic type it names and prints
+  by its own name: `__int a; string s = a;` is "Implicit cast from __int to string", `__vector
+  cv; float f = cv;` "Cannot cast from __vector to float", and an argument of `__uint` is named
+  `__uint` in the builtin checks' messages (FTEF-33).
+- **FTEF-19.55** A float or an integer cast to a vector (`QCC_EvaluateCast`, `totype == ev_vector`)
+  is multiplied by `'1 1 1'`, `OP_MUL_FV` or `OP_MUL_IV`, folded, emitted or emulated in turn: on
+  the id target `int i; vector v; v = i;` is "Implicit cast from __int32 to vector" and then
+  `OP_MUL_IV`'s "itof emulation: denormals are unsafe i", in a store, a compound assignment and
+  a local's initialiser alike.
+- **FTEF-19.56** A pointer's braced initialiser (`else if (type->type == ev_pointer &&
+  QCC_PR_CheckToken("{"))`) is a nameless array of what the pointer points to, made by
+  `QCC_PR_DummyDef` with `GDF_STATIC` inside a function, whose elements are read as values of a
+  definition named `''`: `float x; float *p = { x };` is `E0214` "initializer for '' is not
+  constant", a local's included, and `{ 1, "a" }` "Cannot cast from string to float". The
+  pointer then takes its address with `QCC_PR_GenerateAddressOf`: a target without
+  `OP_GLOBALADDRESS` refuses it, the fatal `E0331` "Address-of operator is not supported in this
+  form without extensions. Consider the use of: #pragma target fte"; at global scope it is
+  `E0345` "Unable to generate statements at global scope (GLOBALADDRESS)."; and a global's or a
+  `static`'s value is then `E0214` "initializer for 'p' is not constant". A plain or `const`
+  local takes it with no message.
+
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and
@@ -3615,6 +3683,10 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   "expected function arg list" (`if (!type) QCC_PR_ParseError(ERR_BADNOTTYPE, "expected function
   arg list");`): `void(foo a) g;`, `float (x);` and `typedef float (t);`; a later parameter's is
   `E0203` "\"foo\" is not a type", as a return type's is.
+- **FTEF-21.23** The illegal `break`, `continue` and `case` errors of FTEF-21.19 name the
+  function, `QCC_PR_ParseError(ERR_ILLEGALCASES, "%s: function contains illegal cases",
+  f->name)`, a member function's name being `CLASS::NAME`: `void() g = { break; };` is "g:
+  function contains illegal breaks", once for the function however many it holds.
 ## FTEF-22 The flags and the target the casts read
 
 **Source:** `qcc_pr_comp.c`, `QCC_TryEvaluateCast`, `QCC_EvaluateCast`, `QCC_SupplyConversion`,
@@ -3762,6 +3834,22 @@ opcodes.rs`, the rows of `pr_opcodes[]` in order) and picks as FTEQCC picks
   next `;` at file level and reads on from there as declarations. The semantic model, which
   recovers on its own (QCD-1.4), stops checking the statement and checks the next one; the
   module fails to compile either way.
+- **FTEF-23.7** A comparison's and a logical operator's value is of the opcode's result type,
+  `type_bfloat` or `type_bint` (`EQ_F`, `NOT_F`, `AND_F`: `&type_bfloat`; `EQ_I`, `NOT_I`:
+  `&type_bint`): a float of the name `__bfloat`, printed so (`string s = (f == 1);` is "Cannot
+  cast from __bfloat to string"), and an `int` printed `__int32`; `_Bool` is `type_bint`, an
+  `int` (`_Bool b; string s = b;` is "Implicit cast from __int32 to string").
+- **FTEF-23.8** `__bint` and `__bfloat` are both `ev_boolean` (`QCC_PR_NewType("__bint",
+  ev_boolean, true)`), one type to `typecmp` and `typecmp_lax` and no other type's:
+  `__bint b; __bfloat b;` redeclares nothing, `_Bool b; int b;` is "Type mismatch on
+  redeclaration of b. __int32, should be __bint", `TypeName` printing `__bint`. A cast to either
+  is `QCC_PR_GenerateLogicalTruth`'s `!=` with zero (`NE_F`, `NE_S`, `NE_E`, `NE_V`, `NE_FNC`,
+  `NE_I` for integers and pointers, `NE_D`, `NE_I64`, `NE_U64`) then that value cast to the
+  boolean's `parentclass`, with no message, implicit or explicit (`else if (totype ==
+  ev_boolean)`), and the value is of the parent type; `QCC_StoreSRefToRef` makes the truth again
+  of a number stored into one. So on the id target `__bint c = 1.5;` folds with no overflow
+  warning, `c = f;` and `c = s;` are two "ftoi emulation" warnings, `c = (_Bool)f;` three, and a
+  local's initialiser `_Bool c = f;` one.
 
 ## FTEF-24 Member access as FTEQCC types it
 
@@ -3840,6 +3928,11 @@ statement's checks (FTEF-23.6).
   \"NAME\" in class \"CLASS\"", CLASS the class's own name: `class C { float f; }; typedef C T;
   T t;` reads `t.f`, and `t.zz` names `C`. A class a typedef writes, `typedef class C2 { float
   f; } T;`, is declared with it.
+- **FTEF-24.14** A parameter's default prints as `QCC_VarAtOffset` prints a constant of the
+  parameter's type: a float `%gf`, a double `%gd`, an `int` `%#xi`, a `uint` `%#xu`, an
+  `__int64` `%#xill` and an `__uint64` `%#xull` of its bits (C writes `0` for zero, so `0u`), a
+  vector `'%g %g %g'` whatever form it was written in (`[1, 2, 3]` is `'1 2 3'`), a string
+  quoted.
 ## FTEF-25 The opcodes the target has
 
 **Source:** `qcc_pr_comp.c`, `QCC_OPCodeValidForTarget`, `QCC_OPCodeSetTarget` and
@@ -3944,6 +4037,11 @@ saturates, as on the arm64 build the differential is recorded on.
   shifts the unsigned 64-bit value. `OP_BITEXTEND_I` and `OP_BITEXTEND_U` of two constants are
   `(a << (32 - bits - ofs)) >> (32 - bits)`, signed and unsigned, `bits` and `ofs` the low byte
   and the rest of the second. So `arr[(__double)2.5 * 2]` is index 5.
+- **FTEF-26.11** A logical not of a constant folds (`QCC_PR_StatementFlags`, `a is const, b is
+  not`): `OP_NOT_F` and `OP_NOT_V` to the float 1 when the value, or every component, is 0,
+  `OP_NOT_ENT` and `OP_NOT_FNC` of the word, and `OP_NOT_I` to the `int` 1 or 0, before any
+  emulation: on the id target `!1i` is 0 with no "Result of comparison is constant" of an
+  emulated `OP_EQ_FNC`.
 - **FTEF-26.10** A constant operand that an opcode's row converts is the constant its conversion
   folds to (`QCC_SupplyConversion` emits the conversion opcode, folded as FTEF-26.3 says), so the
   opcode then folds too: in `(__double)2.5 * 2` the float 2 is converted by `OP_CONV_FD` to the
@@ -4179,6 +4277,11 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
 - **FTEF-29.9** A constant that is null (`QCC_SRef_IsNull`, an integer, float or pointer 0) casts
   as a null whatever its definition's type, a `typedef` or `int` one included: `const int zi = 0;
   string s = zi;` is no cast warning.
+- **FTEF-29.11** So is a global's initialiser that names a constant whose word is 0
+  (`QCC_SRef_IsNull`): `enum { H }; string s = H;` and `const float z = 0; string s2 = z;` are
+  no error, where a constant 1 is "Cannot cast from float to string"; a struct or union takes no
+  null ("Cannot cast from float to struct S"), and a strict enum's value casts to no other type
+  whatever it is (FTEF-19.10).
 - **FTEF-29.10** An array named bare, its head, is the pointer to its first element to a
   prefix or postfix `++` and `--` (`REF_ARRAYHEAD`): read by its address, which the id target
   refuses (FTEF-31.4), stepped by `OP_ADD_PIW` of its element's size, `--` warning of the
@@ -4366,6 +4469,15 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
 - **FTEF-31.11** The address of a string's character is no address `QCC_PR_GenerateAddressOf`
   makes: on any target it is the fatal error `E0361` "Cannot use addressof operator ('&') on a
   global. Please use the FTE target." (`pw = &s[0];`).
+- **FTEF-31.12** The address of an element through a pointer to an 8- or 16-bit integer
+  (`basetype->align != 32`, "index is bytes or shorts or something small") is the pointer plus
+  the element's byte offset by `OP_ADD_I`, not `OP_ADD_PIW`: a constant index's
+  `index*(align/8)` folded, unless `undefwordsize`, else `OP_MUL_I` of `align/8` and the index
+  made an integer, which folds away for a byte. So on the id target `__int8 *pc; &pc[i]` is only
+  `ADD_I`'s "AddInt function not defined" and "not valid for target" errors, `__int16 *pc;
+  &pc[i]` `MUL_I`'s and then `ADD_I`'s, and `&pc[0]` none. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateAddressOf`.
 ## FTEF-32 Calls
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`,

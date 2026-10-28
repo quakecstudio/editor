@@ -110,7 +110,10 @@ impl Resolver<'_> {
                 // name, a class's or struct's among them (FTEF-19.44).
                 let other = self.other_sized_type_named(&decl.name)
                     || self.struct_defs.contains_key(&self.type_key(&decl.name));
-                self.enum_redeclared = other || !self.enum_types.insert(decl.name.clone());
+                self.enum_redeclared = other || self.enum_types.contains_key(&decl.name);
+                if !self.enum_redeclared {
+                    self.enum_types.insert(decl.name.clone(), decl.ty.clone());
+                }
                 if self.enum_redeclared {
                     self.report(
                         Code::W0224,
@@ -159,7 +162,7 @@ impl Resolver<'_> {
         REGISTERED_TYPES.iter().any(|other| same(other))
             || CScalar::named(name).is_some()
             || self.class_names.keys().any(|other| same(other))
-            || self.enum_types.iter().any(|other| same(other))
+            || self.enum_types.keys().any(|other| same(other))
             || self.typedefs.keys().any(|other| same(other))
     }
 
@@ -184,7 +187,7 @@ impl Resolver<'_> {
             }
         };
         self.enum_types
-            .iter()
+            .keys()
             .any(same)
             .then(|| format!("enum {name}"))
     }
@@ -376,14 +379,10 @@ impl Resolver<'_> {
             Kind::Uint64 => return plain(Etype::Uint64),
             Kind::Double => return plain(Etype::Double),
             Kind::Float => return plain(Etype::Float),
-            Kind::Void
-            | Kind::String
-            | Kind::Vector
-            | Kind::Entity
-            | Kind::Field
-            | Kind::Function
-            | Kind::Pointer
-            | Kind::Opaque => {}
+            Kind::String => return plain(Etype::String),
+            Kind::Vector => return plain(Etype::Vector),
+            Kind::Entity => return plain(Etype::Entity),
+            Kind::Void | Kind::Field | Kind::Function | Kind::Pointer | Kind::Opaque => {}
         }
         if matches!(name, "__variant" | "variant") {
             return plain(Etype::Variant);
@@ -402,6 +401,10 @@ impl Resolver<'_> {
             });
         }
         if let Some(base) = self.named(&self.accessor_bases, &self.type_key(name)) {
+            return self.shape(base);
+        }
+        // FTEF-8.6: a named enum's type is of its base type's kind.
+        if let Some(base) = self.named(&self.enum_types, name) {
             return self.shape(base);
         }
         if self.has_name_key(&self.class_names, name) {
@@ -513,6 +516,12 @@ impl Resolver<'_> {
         };
         if a == b {
             return true;
+        }
+        // FTEF-23.8: `__bint` and `__bfloat` are `ev_boolean`, which no other type is.
+        let boolean =
+            |ty: &Type| matches!(ty.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat));
+        if boolean(&a) || boolean(&b) {
+            return boolean(&a) && boolean(&b);
         }
         let (Some(sa), Some(sb)) = (self.shape(&a), self.shape(&b)) else {
             return true;

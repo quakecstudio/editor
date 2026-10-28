@@ -65,11 +65,14 @@ impl OpType {
     pub(crate) fn value_type(self) -> Type {
         match self {
             Self::None | Self::Void => Type::Simple(SimpleType::Void),
-            Self::Float | Self::BoolFloat => Type::Simple(SimpleType::Float),
+            Self::Float => Type::Simple(SimpleType::Float),
+            // `type_bfloat` and `type_bint`, a truth value's types, named as such (FTEF-23.7).
+            Self::BoolFloat => Type::Named("__bfloat".into()),
+            Self::BoolInt => Type::Named("__bint".into()),
             Self::Vector => Type::Simple(SimpleType::Vector),
             Self::String => Type::Simple(SimpleType::String),
             Self::Entity => Type::Simple(SimpleType::Entity),
-            Self::Integer | Self::BoolInt => Type::Named("__int32".into()),
+            Self::Integer => Type::Named("__int32".into()),
             Self::Uint => Type::Named("__uint32".into()),
             Self::Int64 => Type::Named("__int64".into()),
             Self::Uint64 => Type::Named("__uint64".into()),

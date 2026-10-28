@@ -399,12 +399,12 @@ pub(super) fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
                             let number = f32::from_bits(bits);
                             #[expect(
                                 clippy::cast_possible_truncation,
-                                clippy::cast_sign_loss,
-                                reason = "spec FTEF-6.9: the width is an integer constant, \
-                                          and a negative or fractional one is none"
+                                reason = "spec FTEF-6.27: the width is an integer constant, \
+                                          `int bits` stored in the unsigned `bitfld->bits`"
                             )]
-                            let width = number as u32;
-                            (number >= 0.0 && number.fract() == 0.0).then_some(width)
+                            let width = number as i32;
+                            (number.fract() == 0.0)
+                                .then_some(u32::from_le_bytes(width.to_le_bytes()))
                         }
                         LiteralValue::Vector(_)
                         | LiteralValue::String(_)
@@ -461,11 +461,6 @@ pub(super) fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>)
     // FTEF-19.10: in the legacy form `enum float { ... }` the word before the `{` is the base
     // type, which `QCC_PR_ParseEnum` tries first (`QCC_PR_ParseType(false, true, false)`).
     let legacy_word = en.name().filter(|t| legacy_base(t, cx).is_some());
-    if legacy_word.is_none()
-        && let Some(token) = en.name()
-    {
-        out.push(RawDecl::type_name(&token, TypeKind::Enum));
-    }
     // FTEF-19.10: `enumflags` doubles its values, and a base type given after `:`, or before
     // the `{` in the legacy form, types them.
     let flags = en
@@ -493,14 +488,17 @@ pub(super) fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>)
         }
         (None, None) => Type::Simple(SimpleType::Float),
     };
+    // FTEF-8.6: `enumtype = QCC_PR_NewType(name, basetype->type, true);`, of the base's kind.
+    if legacy_word.is_none()
+        && let Some(token) = en.name()
+    {
+        let mut decl = RawDecl::type_name(&token, TypeKind::Enum);
+        decl.ty = base.clone();
+        out.push(decl);
+    }
     // FTEF-19.10: a base type with no `:` before it is FTEQCC's legacy form, and `enum class`
     // names its values only as `Name::value`.
-    let legacy = legacy_word.is_some()
-        || (base_node.is_some()
-            && !en
-                .syntax()
-                .child_tokens()
-                .any(|t| t.kind() == SyntaxKind::Colon));
+    let legacy = legacy_word.is_some();
     // `strictenum = QCC_PR_CheckName("class");`
     let strict = en
         .syntax()

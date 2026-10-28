@@ -331,7 +331,7 @@ impl<'a> Resolver<'a> {
             if basic_word
                 || !matches!(kind, Kind::Entity | Kind::Opaque)
                 || self.has_name(&self.structs, parent)
-                || self.has_name(&self.enum_types, parent)
+                || self.named(&self.enum_types, parent).is_some()
             {
                 self.report(
                     Code::E0241,
@@ -573,7 +573,7 @@ impl<'a> Resolver<'a> {
                     self.mismatch(&name, location, &old, &decl.ty);
                     return Vec::new();
                 }
-                // FTEF-19.4: a body for a member already initialised, as for any definition.
+                // FTEF-19.57: a body for a member already initialised, as for any definition.
                 if decl.body.is_some()
                     && !decl.redefinable()
                     && !self.redefinable.contains(&existing)

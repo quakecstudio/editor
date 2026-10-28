@@ -182,7 +182,7 @@ const FTEQCC: &[&str] = &[
     "void() g = { static float y; static float x = y; };\n",
     "const float y = 2;\nvoid() g = { static float x = y; };\n",
     "void() g = { local float y; const float x = y; };\n",
-    // FTEF-19.4: a body for a definition already initialised.
+    // FTEF-19.57: a body for a definition already initialised.
     "void() g = {};\nvoid() g = {};\n",
     "void() g = {};\nvoid() g = #6;\n",
     "void() g = #6;\nvoid() g = {};\n",
@@ -203,7 +203,7 @@ const FTEQCC: &[&str] = &[
     "void() g = {};\n__accumulate void() g = {};\n",
     "__accumulate void() g = {};\n__accumulate void() g = {};\n",
     "__accumulate float x;\n",
-    // FTEF-19.5: a constant's value is compared word for word with a later initialiser.
+    // FTEF-19.58: a constant's value is compared word for word with a later initialiser.
     "float x = 1;\nfloat x = 1.0;\n",
     "float x = 0x10;\nfloat x = 16;\n",
     "string s = \"a\";\nstring s = \"a\";\n",
@@ -548,10 +548,10 @@ const WARNINGS: &[&str] = &[
     "float y;\nfloat y = 2;\n",
     "enum { A };\nfloat A;\n",
     "void() h;\nvoid() g = h;\nvoid() h = {};\n",
-    // FTEF-19.4: builtins a body replaces, accumulation.
+    // FTEF-19.57: builtins a body replaces, accumulation.
     "void() anglemod = #6;\nvoid() anglemod = {};\n",
     "void() g = {};\n__accumulate void() g = {};\n",
-    // FTEF-19.5: parseentitydata.
+    // FTEF-19.58: parseentitydata.
     "void() parseentitydata = #608;\nvoid() parseentitydata = #613;\n",
     // FTEF-19.7: optional arguments and misdeclared builtins.
     "float(float a, optional float b) g;\nfloat(float a) g = #6;\n",

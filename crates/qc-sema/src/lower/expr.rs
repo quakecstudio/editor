@@ -22,8 +22,6 @@ pub struct RawUse {
     pub scope: Option<String>,
     /// For a member use, what the access is made on.
     pub base: MemberBase,
-    /// Whether the name is the callee of a call, `name(...)` (FTEF-19.40).
-    pub called: bool,
 }
 
 impl RawUse {
@@ -35,7 +33,6 @@ impl RawUse {
             kind,
             scope: None,
             base: MemberBase::Unknown,
-            called: false,
         }
     }
 }
@@ -215,22 +212,12 @@ pub(super) fn lower_expr(expr: &ast::Expr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
     }
 }
 
-/// A call: the callee, marked as called when it is a plain name under an FTEQCC profile, and
-/// each argument as a value.
+/// A call: the callee and each argument as a value.
 fn lower_call(call: &ast::CallExpr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
     let fte = cx.fte;
     let callee = call.callee();
     if let Some(callee) = &callee {
-        let before = uses.len();
         lower_expr(callee, cx, uses);
-        if fte
-            && let ast::Expr::Name(name) = callee
-            && name.scope().is_none()
-            && uses.len() == before.saturating_add(1)
-            && let Some(use_) = uses.last_mut()
-        {
-            use_.called = true;
-        }
     }
     // FTEF-17.4: `autocvar(name, default)` names the cvar, which is no value. (`sizeof`
     // and the type it may take are a `SizeofExpr`, FTEF-18.12.)

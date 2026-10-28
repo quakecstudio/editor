@@ -4324,6 +4324,71 @@ fn a_64_bit_constant_made_an_int_is_truncated() {
     );
 }
 
+// spec FTEF-18.12: `sizeof` of a name reads it as a type when one has the name
+#[test]
+fn sizeof_a_type_name() {
+    let index = |source: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\n{source} float arr[1]; void() g = {{ arr[sizeof(T)] = 1; }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    assert_eq!(
+        index("typedef vector T;"),
+        ["(constant) array index out of bounds (0 <= 12 < 1)"]
+    );
+    assert_eq!(
+        index("struct T { float a; vector b; };"),
+        ["(constant) array index out of bounds (0 <= 16 < 1)"]
+    );
+    // A type written with its keyword names no value.
+    assert_eq!(
+        diags(
+            "#pragma target fte\nstruct S { float a; }; S *p; void *q; float arr[1]; void() g = { \
+             p = (struct S *)q; arr[sizeof(struct S)] = 1; };\n"
+        )
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect::<Vec<_>>(),
+        ["(constant) array index out of bounds (0 <= 4 < 1)"]
+    );
+}
+
+// spec FTEF-19.52: an item of an enum of an integer base is a constant of that type, a float
+// value converted with the conversion's warnings
+#[test]
+fn integer_enum_items_are_constants() {
+    let messages = |source: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\n{source} float arr[1]; void() g = {{ arr[X] = 1; }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    assert_eq!(
+        messages("enum E2 : int { C2 = 2, X };"),
+        ["(constant) array index out of bounds (0 <= 3 < 1)"]
+    );
+    assert_eq!(
+        messages("enum E5 : int { F = 2.5, X };"),
+        [
+            "Numerical overflow. 2.500000 will be rounded to 2",
+            "(constant) array index out of bounds (0 <= 3 < 1)"
+        ]
+    );
+    assert_eq!(
+        messages("enum E6 : __uint32 { X = 5 };"),
+        ["(constant) array index out of bounds (0 <= 5 < 1)"]
+    );
+    assert_eq!(
+        messages("enum E3 : __uint32 { X = -1.5 };"),
+        ["Numerical overflow. -1.500000 will be rounded to 0"]
+    );
+}
+
 /// Constant expressions whose value the folding of one opcode feeds to the next, read as an
 /// index: the pinned FTEQCC's diagnostics for each on the FTE target (2026-10-27).
 const CHAINS: &[(&str, &[&str])] = &[

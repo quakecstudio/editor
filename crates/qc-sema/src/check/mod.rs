@@ -114,6 +114,9 @@ pub(crate) trait Env {
     /// The name of the class `ty` names, its typedefs followed (`QCC_TypeForName`); `None`
     /// when it names none.
     fn class_name(&self, ty: &Type) -> Option<String>;
+    /// Whether `ty` is a struct or union of size 0, named with no body yet or laid out to no
+    /// word (FTEF-6.28).
+    fn struct_of_no_size(&self, ty: &Type) -> bool;
     /// Whether `a` and `b` are the same type by FTEQCC's `typecmp_lax`, or one is a truth value of
     /// the other (FTEF-28.2).
     fn lax_same(&self, a: &Type, b: &Type) -> bool;

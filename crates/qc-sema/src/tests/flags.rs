@@ -126,7 +126,7 @@ fn extern_c_and_assumevar() {
     // FTEF-19.3: the first declaration fixes the constness.
     assert_eq!(
         codes("extern \"C\" { float x = 5; }\nfloat x = 6;\n"),
-        [Code::W0212, Code::E0206]
+        [Code::W0212, Code::E0363]
     );
 }
 
@@ -362,6 +362,17 @@ fn typedefs_and_pragma_defaults() {
     assert_eq!(codes("nosave typedef float t;\n"), [Code::E0224]);
     assert_eq!(codes("typedef static x;\n"), [Code::W0214, Code::E0224]);
     assert_eq!(errors("typedef x;\nx y;\n"), []);
+    // FTEF-19.21: the type left out is an `int`.
+    assert_eq!(
+        analysed("typedef qq; qq a; string s = a;\n", &[])
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect::<Vec<_>>(),
+        [
+            "Implicit cast from __int32 to string",
+            "initializer for 's' is not constant"
+        ]
+    );
 }
 
 // spec FTEF-21.6: the warning is F304, which the warning settings turn off or make an error
@@ -497,6 +508,18 @@ fn c_declarators_with_qcfuncs_off() {
         assert_eq!(off(source), [], "{source}");
     }
     assert_eq!(off("void() g = { void h(); };"), [Code::E0211]);
+    // FTEF-21.8: only an empty list is variadic with `qcfuncs` off.
+    assert_eq!(
+        off("void(float a) h = {}; void() g = { h(1, 2); };"),
+        [Code::W0252]
+    );
+    assert_eq!(off("void() h0 = {}; void() g = { h0(1, 2); };"), []);
+    // FTEF-21.8: a parameter with no type is an `int` with `qcfuncs` off.
+    assert_eq!(off("void(a) hi = { local string s = a; };"), [Code::W0220]);
+    assert_eq!(
+        off("void(a) hi = {}; void() g = { hi(\"x\"); };"),
+        [Code::W0220]
+    );
     assert_eq!(off("const float (*x)(float);"), [Code::W0214, Code::E0211]);
 }
 
@@ -519,4 +542,63 @@ fn an_omitted_type_after_attributes_is_int() {
         ),
         [cast]
     );
+}
+
+// spec FTEF-21.9: `[[eraseable]]` is `noref`, and `[[__deprecated("WHY")]]` deprecates with its
+// reason
+#[test]
+fn attribute_qualifiers() {
+    let on = "#pragma flag enable attributes\n";
+    assert_eq!(
+        analysed(
+            &format!("{on}[[eraseable]] float x = 1; float x = 2;\n"),
+            &[]
+        ),
+        []
+    );
+    assert_eq!(
+        errors(&format!("{on}float y = 1; float y = 2;\n")),
+        [Code::E0363]
+    );
+    let deprecated = |attribute: &str| -> Vec<String> {
+        analysed(
+            &format!("{on}[[{attribute}]] float x; float q; void() g = {{ q = x; }};\n"),
+            &[],
+        )
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    assert_eq!(
+        deprecated("__deprecated(\"use z\")"),
+        ["Variable \"x\" is deprecated: use z"]
+    );
+    assert_eq!(deprecated("__deprecated"), ["Variable \"x\" is deprecated"]);
+}
+
+// spec FTEF-21.10: an `extern` typedef of a type that is surely no function drops the `extern`
+// with its warning; one of a function's typedef keeps it, two storage classes
+#[test]
+fn an_extern_typedef() {
+    let messages = |source: &str| -> Vec<String> {
+        analysed(&format!("#pragma target fte\n{source}\n"), &[])
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    assert_eq!(
+        messages("extern typedef float fl;"),
+        ["extern keyword may only apply to qc functions."]
+    );
+    let conflicting = |name: &str| {
+        vec![
+            "Conflicting storage classes.".to_owned(),
+            format!("bad combination of modifiers with typedef (defining {name})"),
+        ]
+    };
+    assert_eq!(
+        messages("typedef void() fn; extern typedef fn fn2;"),
+        conflicting("fn2")
+    );
+    assert_eq!(messages("extern typedef void() fn3;"), conflicting("fn3"));
 }

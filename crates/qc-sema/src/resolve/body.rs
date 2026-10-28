@@ -155,10 +155,23 @@ impl<'a> Resolver<'a> {
             inline_member: class.is_some() && decl.is_none(),
         };
         let reported = self.index.diagnostics.len();
+        // `f->name`, a member function's `CLASS::NAME`.
+        let function = self.index.def(owner).map_or_else(String::new, |d| {
+            match d.member_of.and_then(|class| self.index.def(class)) {
+                Some(class) => format!("{}::{}", class.name, d.name),
+                None => d.name.clone(),
+            }
+        });
         for d in &body.diagnostics {
             self.settle(d.span.start);
             let location = self.at(file, d.span);
-            self.report(d.code, location, d.message.clone());
+            // `QCC_PR_ParseError(..., "%s: function contains illegal ...", f->name)`.
+            let message = if matches!(d.code, Code::E0244 | Code::E0245 | Code::E0259) {
+                format!("{function}: {}", d.message)
+            } else {
+                d.message.clone()
+            };
+            self.report(d.code, location, message);
         }
         if self.profile.body_checks() {
             let function = self
@@ -664,7 +677,7 @@ impl<'a> Resolver<'a> {
         }
         // QC-11.13: under the vanilla profile a local, or the global it reuses (QC-12.3), may
         // be initialised once, which `PR_ParseDefs` checks at the `=`; FTEQCC compares a
-        // constant's or static's second initialiser as a global's (FTE-22.5), and keeps no
+        // constant's or static's second initialiser as a global's (FTE-22.6), and keeps no
         // other local initialised.
         let initialised_before = self.index.def(def).is_some_and(|d| d.initialized);
         if !self.profile.reinitialise_with_same_value() && initialised_before {
@@ -709,8 +722,10 @@ impl<'a> Resolver<'a> {
             let same = literal
                 .as_ref()
                 .is_some_and(|l| self.same_value(def, &local.name, l));
-            if !same {
-                self.report(Code::E0206, location, format!("{} redeclared", local.name));
+            if !same && literal.is_some() {
+                // FTE-22.6: a constant's other words are "incompatible redeclaration".
+                let message = "incompatible redeclaration".to_owned();
+                self.report(Code::E0363, location, message);
             }
             return;
         }

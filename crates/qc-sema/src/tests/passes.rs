@@ -155,7 +155,7 @@ fn the_pragma_holds_across_files() {
             "#pragma autoproto\n",
             "void() later = {};\n"
         ]),
-        [Code::E0301, Code::E0216, Code::E0206]
+        [Code::E0301, Code::E0216, Code::E0363]
     );
 }
 
@@ -180,18 +180,18 @@ fn what_precedes_the_pragma_is_compiled_in_full() {
         [
             Code::E0301,
             Code::E0216,
-            Code::E0206,
+            Code::E0363,
             Code::E0216,
-            Code::E0206
+            Code::E0363
         ]
     );
     assert_eq!(
         errors("void() g = {};\n#pragma autoproto\n"),
-        [Code::E0216, Code::E0206]
+        [Code::E0216, Code::E0363]
     );
     assert_eq!(
         errors("void() g = {};\nvoid() k = { g(); };\n#pragma autoproto\n"),
-        [Code::E0216, Code::E0206, Code::E0216, Code::E0206]
+        [Code::E0216, Code::E0363, Code::E0216, Code::E0363]
     );
     // A prototype, a builtin and a value are compared, not redeclared.
     assert_eq!(errors("void() g;\n#pragma autoproto\nvoid() g = {};\n"), []);
@@ -205,11 +205,11 @@ fn what_precedes_the_pragma_is_compiled_in_full() {
     );
     assert_eq!(
         errors("float x = 5;\n#pragma autoproto\nfloat x = 6;\n"),
-        [Code::E0206]
+        [Code::E0363]
     );
     assert_eq!(
         errors("void() h = {};\n#pragma autoproto\nvoid() k = { h(); };\n"),
-        [Code::E0216, Code::E0206]
+        [Code::E0216, Code::E0363]
     );
 }
 
@@ -496,7 +496,7 @@ fn the_index_holds_each_declaration_once() {
 fn the_first_pass_leaves_only_its_declarations() {
     assert_eq!(
         errors("void() g = { const float n = 1; };\n#pragma autoproto\nfloat z = 2;\n"),
-        [Code::E0216, Code::E0206]
+        [Code::E0216, Code::E0363]
     );
     // A global a body made is cut off with it and made again by the second pass.
     let mut db = Db::new();
@@ -610,5 +610,25 @@ fn a_class_parent_is_read_as_a_type() {
     assert_eq!(
         errors_with(&format!("{changed}class c : D {{ float z; }};\n"), &insens),
         [Code::E0242]
+    );
+}
+
+// spec FTEF-12.19: a lexical error only the first pass meets, whose flags differ from the
+// second's, is reported once, and one an `extern` block lexes otherwise is the parser's
+#[test]
+fn a_first_pass_lexical_error_is_kept() {
+    assert_eq!(
+        errors(
+            "#pragma flag disable qcfuncs\n#pragma autoproto\nstring s = \"\\9\";\nfloat x;\n\
+             #pragma flag enable qcfuncs\nfloat y;\n"
+        ),
+        [Code::E0103]
+    );
+    assert_eq!(
+        errors(
+            "#pragma flag disable qcfuncs\n#pragma autoproto\nextern \"QC\" { string s = \"\\9\"; }\n\
+             float x;\n#pragma flag enable qcfuncs\nfloat y;\n"
+        ),
+        []
     );
 }

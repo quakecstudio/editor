@@ -106,6 +106,9 @@ impl Checker<'_> {
             )?,
             Etype::String => self.string_method(&base, &selector)?,
             Etype::Struct | Etype::Union => {
+                if self.env.struct_of_no_size(&base.ty) {
+                    return self.not_defined_yet(&base.ty, field.syntax().span());
+                }
                 let (member, offset) = self.struct_member(&base.ty, &selector);
                 let word = member.bitfield.map_or_else(
                     || offset.map_or(0, |(units, align)| units.saturating_mul(align) >> 5),
@@ -453,6 +456,9 @@ impl Checker<'_> {
             // FTEF-6.14: read through the pointer at the member's offset, a bitfield's after
             // `bitofs / bits` more (FTEF-6.15).
             Some(Etype::Struct | Etype::Union) => {
+                if self.env.struct_of_no_size(pointee) {
+                    return self.not_defined_yet(pointee, span);
+                }
                 let (member, offset) = self.struct_member(pointee, selector);
                 // A member array through the pointer is indexed through it (FTEF-6.24).
                 if let Reference::ArrayHead(Some(array)) = member.reference {
@@ -481,6 +487,17 @@ impl Checker<'_> {
                 self.fatal(Code::E0317, span, message)
             }
         }
+    }
+
+    /// FTEF-6.28: a member of a struct or union of size 0, "NAME was not defined yet", fatal.
+    fn not_defined_yet(&mut self, ty: &Type, span: Span) -> Checked {
+        let name = self.env.type_name(ty);
+        let name = name
+            .strip_prefix("struct ")
+            .or_else(|| name.strip_prefix("union "))
+            .unwrap_or(&name)
+            .to_owned();
+        self.fatal(Code::E0362, span, format!("{name} was not defined yet"))
     }
 
     /// Reports the fatal error `code` (`QCC_PR_ParseError`), which ends the statement's checks

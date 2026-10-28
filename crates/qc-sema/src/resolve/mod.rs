@@ -19,7 +19,7 @@
 //! (scopes and lookup) and the state-header name rule of QC-13.6; reports QCD-3.5, QCD-3.6,
 //! QCD-3.7, QCD-3.11, QCD-5.4 and QCD-7.3. Under an FTEQCC profile it follows FTE-22 instead
 //! where FTEQCC differs: locals shadow globals (FTE-22.1), a constant may be initialised twice
-//! with the same literal (FTE-22.5), and with autoprototyping every top-level name is visible
+//! with the same literal (FTE-22.6), and with autoprototyping every top-level name is visible
 //! to every function body (FTE-22.3). The full dialect's classes resolve by FTEF-17: a class's
 //! members are found through the class and its parents, inside a member function's body before
 //! the globals, and after a `.` through the type of what the access is made on. FTEQCC's
@@ -35,6 +35,7 @@ use qc_preproc::{OpcodeTarget, TargetFormat, WarningSettings};
 use qc_syntax::{Dialect, Keywords};
 
 use crate::check::TypedBody;
+use crate::check::constant::Constant;
 use crate::expand::{OriginMap, ProtoPlan};
 use crate::lower::{
     ArrayDim, BuiltinFunction, FileDecls, LiteralValue, RawBody, RawDecl, RawParam, RawParamInfo,
@@ -289,6 +290,7 @@ pub(crate) fn resolve_mapped(
         facts: Vec::new(),
         globals: HashMap::new(),
         literals: HashMap::new(),
+        integer_items: HashMap::new(),
         builtin_functions: HashMap::new(),
         members: files
             .iter()
@@ -300,7 +302,7 @@ pub(crate) fn resolve_mapped(
         typedefs: HashMap::new(),
         structs: HashSet::new(),
         strict_enums: HashMap::new(),
-        enum_types: HashSet::new(),
+        enum_types: HashMap::new(),
         enum_values: HashMap::new(),
         enum_redeclared: false,
         struct_defs: HashMap::new(),
@@ -496,10 +498,13 @@ struct Resolver<'a> {
     facts: Vec<Facts>,
     /// The first global definition of each name (QC-12.2), so a global lookup is direct.
     globals: HashMap<String, Vec<DefId>>,
-    /// The literal each initialised global was given, for FTE-22.5.
+    /// The literal each initialised global was given, for FTE-22.6.
     literals: HashMap<DefId, LiteralValue>,
+    /// The value of each item of an enum of an integer base, the constant `QCC_MakeIntConst`
+    /// and its kin make of it (FTEF-19.52).
+    integer_items: HashMap<DefId, Constant>,
     /// For each builtin number and engine name, the definition whose builtin function FTEQCC
-    /// made first with them: the one a redeclaration with them reuses (FTE-23.7).
+    /// made first with them: the one a redeclaration with them reuses (FTE-23.17).
     builtin_functions: HashMap<BuiltinFunction, DefId>,
     /// The field names of every struct and accessor the module defines (FTE-14.1, FTEF-6,
     /// FTEF-10).
@@ -515,8 +520,8 @@ struct Resolver<'a> {
     typedefs: HashMap<String, Type>,
     /// The names of the structs and unions (FTEF-19.15).
     structs: HashSet<String>,
-    /// The names of the named enums' types (FTEF-19.10).
-    enum_types: HashSet<String>,
+    /// The named enums' types by their names, each its base type (FTEF-19.10, FTEF-8.6).
+    enum_types: HashMap<String, Type>,
     /// The value of each name of a named enum, by the enum's name and the name's (FTEF-19.36).
     enum_values: HashMap<(String, String), f64>,
     /// Whether the enum being declared names a type already, so `QCC_PR_ParseEnum` reads its
@@ -570,7 +575,7 @@ pub(in crate::resolve) const MAX_TYPEDEF_DEPTH: usize = 64;
 /// with a warning (FTEF-19.7): `QCC_PR_GetDef`'s "selfish lazy hack".
 const MISDECLARED_BUILTINS: [&str; 3] = ["droptofloor", "callfunction", "trailparticles"];
 
-/// The functions a body may replace a builtin of with a warning, not an error (FTEF-19.4).
+/// The functions a body may replace a builtin of with a warning, not an error (FTEF-19.57).
 const REPLACEABLE_BUILTINS: [&str; 2] = ["anglemod", "crossproduct"];
 
 /// The type of each component of a definition of type `ty`: `float` for a `vector`, `.float`
@@ -614,7 +619,7 @@ fn is_intrinsic(name: &str) -> bool {
     )
 }
 
-/// The initialiser of a declaration, as redeclaration sees it (QC-11.5, FTE-22.5): `None`
+/// The initialiser of a declaration, as redeclaration sees it (QC-11.5, FTE-22.6): `None`
 /// when there is none, and otherwise its value when it is a single literal.
 type Init<'a> = Option<Option<&'a LiteralValue>>;
 

@@ -32,7 +32,7 @@ use qc_syntax::c_scalar::CContext;
 use qc_syntax::{CompilerFlags, Dialect, Keyword, Keywords, Parse, SyntaxKind, SyntaxNode};
 
 use crate::symbol::DefKind;
-use crate::ty::{Type, TypeContext};
+use crate::ty::{FunctionType, Type, TypeContext};
 
 use decl::{decl_base, lower_declaration, lower_declarators};
 use types::{
@@ -90,6 +90,14 @@ struct Cx<'a> {
     /// Where each of the file's tokens starts, trivia aside, in order.
     tokens: &'a [usize],
     keywords: &'a [(usize, Keywords)],
+}
+
+/// Whether a parameter of `list` writes a struct, union or enum as its type, which only
+/// [`Cx::params`] reads (FTEF-15.10).
+fn writes_a_type(list: &ast::ParamList) -> bool {
+    list.params().any(|param| {
+        matches!(param.ty(), Some(ast::Type::Simple(simple)) if simple.syntax().children().next().is_some())
+    })
 }
 
 impl Cx<'_> {
@@ -159,18 +167,47 @@ impl Cx<'_> {
             ast::Type::Pointer(pointer) => Type::Pointer(std::rc::Rc::new(
                 pointer.inner().map_or(Type::Unknown, |t| self.ty(&t)),
             )),
-            ast::Type::Function(_) => Type::from_ast(ty, &|at| self.type_context(at)),
+            ast::Type::Function(function) => {
+                let read = Type::from_ast(ty, &|at| self.type_context(at));
+                match (read, function.params().filter(writes_a_type)) {
+                    (Type::Function(read), Some(list)) => {
+                        Type::Function(std::rc::Rc::new(FunctionType {
+                            params: self.params(&list),
+                            ..read.as_ref().clone()
+                        }))
+                    }
+                    (read, _) => read,
+                }
+            }
         }
     }
 
-    /// The parameter types of `list`, as [`Self::ty`] reads each.
+    /// The parameter types of `list`, as [`Self::ty`] reads each: a struct, union or enum a
+    /// parameter's type writes is that type (FTEF-15.10).
     fn params(self, list: &ast::ParamList) -> Vec<Type> {
-        Type::params_of(list, &|at| self.type_context(at))
+        let mut types = Type::params_of(list, &|at| self.type_context(at));
+        for (param, ty) in list.params().zip(types.iter_mut()) {
+            if let Some(ast::Type::Simple(simple)) = param.ty()
+                && param.array_suffixes().is_empty()
+                && let Some(nested) = nested_type(&simple, self)
+            {
+                *ty = nested;
+            }
+        }
+        types
     }
 
     /// The function type returning `ret` with the parameters of `list` (FTEF-21.8).
     fn function(self, ret: Type, list: &ast::ParamList) -> Type {
-        Type::function_of(ret, list, &|at| self.type_context(at))
+        match Type::function_of(ret, list, &|at| self.type_context(at)) {
+            Type::Function(function) if writes_a_type(list) => {
+                Type::Function(std::rc::Rc::new(FunctionType {
+                    params: self.params(list),
+                    ..function.as_ref().clone()
+                }))
+            }
+            other => other,
+        }
     }
 
     /// Whether `token` is `keyword` spelled `word`, as the parser read it (FTEF-20.2).
