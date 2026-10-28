@@ -4469,6 +4469,15 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
 - **FTEF-31.11** The address of a string's character is no address `QCC_PR_GenerateAddressOf`
   makes: on any target it is the fatal error `E0361` "Cannot use addressof operator ('&') on a
   global. Please use the FTE target." (`pw = &s[0];`).
+- **FTEF-31.12** The address of an element through a pointer to an 8- or 16-bit integer
+  (`basetype->align != 32`, "index is bytes or shorts or something small") is the pointer plus
+  the element's byte offset by `OP_ADD_I`, not `OP_ADD_PIW`: a constant index's
+  `index*(align/8)` folded, unless `undefwordsize`, else `OP_MUL_I` of `align/8` and the index
+  made an integer, which folds away for a byte. So on the id target `__int8 *pc; &pc[i]` is only
+  `ADD_I`'s "AddInt function not defined" and "not valid for target" errors, `__int16 *pc;
+  &pc[i]` `MUL_I`'s and then `ADD_I`'s, and `&pc[0]` none. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateAddressOf`.
 ## FTEF-32 Calls
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`,

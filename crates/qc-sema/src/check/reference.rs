@@ -19,7 +19,7 @@ use qc_syntax::c_scalar::CScalar;
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
-use crate::check::pointer::Pointee;
+use crate::check::pointer::{Pointee, int};
 use crate::check::{Bitfield, ElementRef, MemberArray, Reference, Sym, Value};
 use crate::ty::{SimpleType, Type};
 
@@ -725,6 +725,27 @@ impl Checker<'_> {
                 Ok(pointer_to(&value.ty))
             }
             Reference::Pointer(pointer) => {
+                // FTEF-31.12: `&p[i]` of an 8- or 16-bit pointee is `p + i` in bytes, by
+                // `OP_ADD_I`: a constant index's byte offset, else the index times the width.
+                if let Some(index) = &pointer.index
+                    && let Some(bits) = narrow_bits(&value.ty)
+                {
+                    let pointer = pointer_to(&value.ty);
+                    let width = bits
+                        .checked_div(8)
+                        .and_then(|w| i32::try_from(w).ok())
+                        .unwrap_or(1);
+                    let undefined = self.env.flags_at(span.start).has(FteFlag::Undefwordsize);
+                    let offset = match index.known() {
+                        Some(c) if !undefined => int(c.i().wrapping_mul(width)),
+                        _ => {
+                            let index = self.converted(index, Etype::Integer, span)?;
+                            self.emit(Op::MulI, &int(width), &index, span)?
+                        }
+                    };
+                    self.emit(Op::AddI, &pointer, &offset, span)?;
+                    return Ok(pointer_to(&value.ty));
+                }
                 // `&p[i]` is `p + i`, by `OP_ADD_PIW`.
                 if let Some(index) = &pointer.index
                     && index.known().is_none_or(|c| c.i() != 0)
