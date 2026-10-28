@@ -20,6 +20,7 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::opcodes::row;
 use crate::check::reference::word_type;
+use crate::check::truth::Test;
 use crate::check::{Constness, Reference, Value};
 use crate::ty::{SimpleType, Type};
 
@@ -451,29 +452,14 @@ impl Checker<'_> {
                 value.ty.fteqcc_scalar(),
                 Some(CScalar::Bool | CScalar::BFloat)
             )
+            && let Some((op, zero)) = self.etype(&value.ty).and_then(|e| Test::Truth.opcode(e))
         {
-            let truth = match self.etype(&value.ty) {
-                Some(Etype::Float) => Some((Op::NeF, Constant::float(0.0))),
-                Some(Etype::String) => Some((Op::NeS, Constant::int(0))),
-                Some(Etype::Entity) => Some((Op::NeE, Constant::int(0))),
-                Some(Etype::Vector) => Some((Op::NeV, Constant::vector([0.0; 3]))),
-                Some(Etype::Function) => Some((Op::NeFnc, Constant::int(0))),
-                Some(Etype::Integer | Etype::Uint | Etype::Pointer) => {
-                    Some((Op::NeI, Constant::int(0)))
-                }
-                Some(Etype::Double) => Some((Op::NeD, Constant::double(0.0))),
-                Some(Etype::Int64) => Some((Op::NeI64, Constant::int64(0))),
-                Some(Etype::Uint64) => Some((Op::NeU64, Constant::uint64(0))),
-                _ => None,
+            let zero = Value {
+                ty: value.ty.clone(),
+                ..zero.map_or_else(Value::unknown, Value::constant)
             };
-            if let Some((op, zero)) = truth {
-                let zero = Value {
-                    ty: value.ty.clone(),
-                    ..Value::constant(zero)
-                };
-                let truth = self.emit(op, value, &zero, span)?;
-                return self.convert_to(&truth, &parent, span);
-            }
+            let truth = self.emit(op, value, &zero, span)?;
+            return self.convert_to(&truth, &parent, span);
         }
         // FTEF-19.55: a float or an integer cast to a vector is multiplied by `'1 1 1'`
         // (`OP_MUL_FV`, `OP_MUL_IV`).
