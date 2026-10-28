@@ -3687,6 +3687,15 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   function, `QCC_PR_ParseError(ERR_ILLEGALCASES, "%s: function contains illegal cases",
   f->name)`, a member function's name being `CLASS::NAME`: `void() g = { break; };` is "g:
   function contains illegal breaks", once for the function however many it holds.
+- **FTEF-21.24** The `break`s and `continue`s FTEF-21.19 counts are those left in `num_breaks`
+  and `num_continues` when the function ends, after an `if` arm of a constant condition is
+  stripped (`QCC_UngenerateStatements(oldnumst)` forgets the `pr_breaks` and `pr_continues` at
+  or after it): `if (0) { break; }` leaves none and is no error. The continues are checked before
+  the breaks, each a fatal error. The function's name in its end-of-function messages, these and
+  FTEF-34.6's "not all control paths return a value" and "contains unreachable code", is
+  `pr_scope->name`, a member function's `CLASS::NAME`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseImmediateStatements`, `QCC_UngenerateStatements`.
 ## FTEF-22 The flags and the target the casts read
 
 **Source:** `qcc_pr_comp.c`, `QCC_TryEvaluateCast`, `QCC_EvaluateCast`, `QCC_SupplyConversion`,

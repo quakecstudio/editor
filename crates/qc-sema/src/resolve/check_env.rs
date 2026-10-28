@@ -183,7 +183,13 @@ impl Env for BodyEnv<'_, '_> {
             Some(_) | None => (Type::Unknown, false),
         };
         FunctionFacts {
-            name: def.map_or_else(String::new, |d| d.name.clone()),
+            // `pr_scope->name`, a member function's `CLASS::NAME` (FTEF-21.23).
+            name: def.map_or_else(String::new, |d| {
+                match d.member_of.and_then(|class| self.resolver.index.def(class)) {
+                    Some(class) => format!("{}::{}", class.name, d.name),
+                    None => d.name.clone(),
+                }
+            }),
             ret,
             accumulate: self
                 .resolver

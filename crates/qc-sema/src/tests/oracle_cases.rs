@@ -311,6 +311,76 @@ fn conditionals_4_are_reported_as_fteqcc_reports_them() {
     check(&CONDITIONALS[750..764]);
 }
 
+// spec FTEF-34.6: the finished function's missing returns and unreachable code
+// spec FTEF-21.24: a stripped arm's breaks and continues are forgotten
+#[test]
+fn control_flow_1_are_reported_as_fteqcc_reports_them() {
+    check(&CONTROL_FLOW[0..250]);
+}
+
+// spec FTEF-34.6: the finished function's missing returns and unreachable code
+// spec FTEF-21.24: a stripped arm's breaks and continues are forgotten
+#[test]
+fn control_flow_2_are_reported_as_fteqcc_reports_them() {
+    check(&CONTROL_FLOW[250..500]);
+}
+
+// spec FTEF-34.6: the finished function's missing returns and unreachable code
+// spec FTEF-21.24: a stripped arm's breaks and continues are forgotten
+#[test]
+fn control_flow_3_are_reported_as_fteqcc_reports_them() {
+    check(&CONTROL_FLOW[500..750]);
+}
+
+// spec FTEF-34.6: the finished function's missing returns and unreachable code
+// spec FTEF-21.24: a stripped arm's breaks and continues are forgotten
+#[test]
+fn control_flow_4_are_reported_as_fteqcc_reports_them() {
+    check(&CONTROL_FLOW[750..1000]);
+}
+
+// spec FTEF-34.6: the finished function's missing returns and unreachable code
+// spec FTEF-21.24: a stripped arm's breaks and continues are forgotten
+#[test]
+fn control_flow_5_are_reported_as_fteqcc_reports_them() {
+    check(&CONTROL_FLOW[1000..1250]);
+}
+
+// spec FTEF-34.6: the finished function's missing returns and unreachable code
+// spec FTEF-21.24: a stripped arm's breaks and continues are forgotten
+#[test]
+fn control_flow_6_are_reported_as_fteqcc_reports_them() {
+    check(&CONTROL_FLOW[1250..1500]);
+}
+
+// spec FTEF-34.6: the finished function's missing returns and unreachable code
+// spec FTEF-21.24: a stripped arm's breaks and continues are forgotten
+#[test]
+fn control_flow_7_are_reported_as_fteqcc_reports_them() {
+    check(&CONTROL_FLOW[1500..1750]);
+}
+
+// spec FTEF-34.6: the finished function's missing returns and unreachable code
+// spec FTEF-21.24: a stripped arm's breaks and continues are forgotten
+#[test]
+fn control_flow_8_are_reported_as_fteqcc_reports_them() {
+    check(&CONTROL_FLOW[1750..2000]);
+}
+
+// spec FTEF-34.6: the finished function's missing returns and unreachable code
+// spec FTEF-21.24: a stripped arm's breaks and continues are forgotten
+#[test]
+fn control_flow_9_are_reported_as_fteqcc_reports_them() {
+    check(&CONTROL_FLOW[2000..2250]);
+}
+
+// spec FTEF-34.6: the finished function's missing returns and unreachable code
+// spec FTEF-21.24: a stripped arm's breaks and continues are forgotten
+#[test]
+fn control_flow_10_are_reported_as_fteqcc_reports_them() {
+    check(&CONTROL_FLOW[2250..2360]);
+}
+
 // spec FTEF-2.8: a registered type name is a type, any other word is not
 #[test]
 fn c_type_words_are_reported_as_fteqcc_reports_them() {
@@ -345,6 +415,7 @@ const PRELUDES: &[&str] = &[
     "#pragma target dp\nstring s; float f; int i; __uint u; float x_f; int x_i;",
     "// standard target\nfloat x_f; int x_i; vector x_v; string x_s; __double x_d; __int64 x_l; float c;",
     "#pragma target fte\nfloat x_f; int x_i; vector x_v; string x_s; __double x_d; __int64 x_l; float c;",
+    "#pragma target fte\nfloat f; int i;",
     "ADD_EF",
     "ADD_EI",
     "ADD_FI",
@@ -42113,243 +42184,12234 @@ const CONDITIONALS: &[(usize, &str, &[&str])] = &[
     ),
 ];
 
+/// Returns, breaks, continues, gotos and labels in nested loops, switches and conditions, with
+/// and without a return after them: the pinned FTEQCC's diagnostics for each.
+const CONTROL_FLOW: &[(usize, &str, &[&str])] = &[
+    (
+        19,
+        "float() g = { do { break; break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { break; break; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { break; continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { break; continue; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { break; f = 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { break; f = 1; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { break; goto l1; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { break; if (f) break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { break; if (f) break; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { break; if (f) continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { break; if (f) continue; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { break; if (f) return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { break; if (f) return 1; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { break; l1: f = 2; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { break; l1: f = 2; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { break; return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { break; return 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { break; return; } while (f); };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { break; return; } while (f); return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; break; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { continue; continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; continue; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { continue; f = 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; f = 1; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; goto l1; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { continue; if (f) break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; if (f) break; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; if (f) continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; if (f) continue; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; if (f) return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; if (f) return 1; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; l1: f = 2; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; l1: f = 2; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; return 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { continue; return; } while (f); };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { continue; return; } while (f); return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { do { break; } while (f); } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { do { break; } while (f); } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { do { continue; } while (f); } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { do { continue; } while (f); } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { do { if (f) return 1; } while (f); } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { do { if (f) return 1; } while (f); } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { do { return 1; } while (f); } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { do { return 1; } while (f); } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; break; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; continue; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; f = 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; f = 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; if (f) break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; if (f) break; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; if (f) continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; if (f) continue; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; if (f) goto l1; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; if (f) return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; if (f) return 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; l1: f = 2; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; l1: f = 2; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; return 1; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; return; } while (f); };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { do { f = 1; return; } while (f); return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { do { for (;;) { break; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { for (;;) { break; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { for (;;) { continue; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { for (;;) { continue; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { for (;;) { if (f) return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { for (;;) { if (f) return 1; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { for (;;) { return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { for (;;) { return 1; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { for (i = 0; i < 3; i++) { break; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { for (i = 0; i < 3; i++) { break; } } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { for (i = 0; i < 3; i++) { continue; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { for (i = 0; i < 3; i++) { continue; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { for (i = 0; i < 3; i++) { if (f) return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { for (i = 0; i < 3; i++) { if (f) return 1; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { for (i = 0; i < 3; i++) { return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { for (i = 0; i < 3; i++) { return 1; } } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { goto l1; break; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { goto l1; continue; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { goto l1; l1: f = 2; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { goto l1; l1: f = 2; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { goto l1; return 1; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { if (0) { break; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (0) { break; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (0) { continue; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (0) { continue; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (0) { if (f) return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (0) { if (f) return 1; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (0) { return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (0) { return 1; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (1) { break; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (1) { break; } } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { if (1) { continue; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (1) { continue; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (1) { if (f) return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (1) { if (f) return 1; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (1) { return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (1) { return 1; } } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; break; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; continue; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; f = 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; f = 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; goto l1; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; if (f) break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; if (f) break; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; if (f) continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; if (f) continue; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; if (f) goto l1; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; if (f) return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; if (f) return 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; l1: f = 2; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; l1: f = 2; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; return 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; return; } while (f); };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) break; return; } while (f); return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; break; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; continue; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; f = 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; f = 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; goto l1; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; if (f) break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; if (f) break; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; if (f) continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; if (f) continue; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; if (f) goto l1; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; if (f) return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; if (f) return 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; l1: f = 2; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; l1: f = 2; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; return 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; return; } while (f); };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) continue; return; } while (f); return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) goto l1; break; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) goto l1; continue; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) goto l1; f = 1; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) goto l1; if (f) break; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) goto l1; if (f) continue; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) goto l1; if (f) return 1; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) goto l1; l1: f = 2; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) goto l1; l1: f = 2; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) goto l1; return 1; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; break; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; continue; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; f = 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; f = 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; goto l1; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; if (f) break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; if (f) break; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; if (f) continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; if (f) continue; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; if (f) goto l1; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; if (f) return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; if (f) return 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; l1: f = 2; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; l1: f = 2; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; return 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; return; } while (f); };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) return 1; return; } while (f); return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) { break; } else { break; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) { break; } else { break; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) { continue; } else { continue; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) { continue; } else { continue; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) { if (f) return 1; } else { if (f) return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) { if (f) return 1; } else { if (f) return 1; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) { return 1; } else { return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { if (f) { return 1; } else { return 1; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; break; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; continue; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; f = 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; f = 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; goto l1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; goto l1; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; if (f) break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; if (f) break; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; if (f) continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; if (f) continue; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; if (f) goto l1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; if (f) goto l1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; if (f) return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; if (f) return 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; l1: f = 2; } while (f); return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; return 1; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; return; } while (f); };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { do { l1: f = 2; return; } while (f); return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; break; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; continue; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; f = 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; f = 1; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; goto l1; } while (f); return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; if (f) break; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; if (f) break; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; if (f) continue; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; if (f) continue; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; if (f) return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; if (f) return 1; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; l1: f = 2; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; l1: f = 2; } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; return 1; } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; return 1; } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; return; } while (f); };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { return 1; return; } while (f); return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { return; break; } while (f); };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { return; break; } while (f); return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { return; continue; } while (f); };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { return; continue; } while (f); return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { return; f = 1; } while (f); };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { do { return; f = 1; } while (f); return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { do { return; if (f) break; } while (f); };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { do { return; if (f) break; } while (f); return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { do { return; if (f) continue; } while (f); };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { do { return; if (f) continue; } while (f); return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { do { return; if (f) return 1; } while (f); };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { do { return; if (f) return 1; } while (f); return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { do { return; l1: f = 2; } while (f); };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { do { return; l1: f = 2; } while (f); return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { do { return; return 1; } while (f); };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { return; return 1; } while (f); return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { return; return; } while (f); };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { return; return; } while (f); return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { do { switch (f) { case 1: break; default: break; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { switch (f) { case 1: break; default: break; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { switch (f) { case 1: continue; default: continue; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { switch (f) { case 1: continue; default: continue; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { switch (f) { case 1: return 1; default: return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { switch (f) { case 1: return 1; default: return 1; } } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { while (1) { break; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { while (1) { break; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { while (1) { continue; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { while (1) { continue; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { while (1) { if (f) return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { while (1) { if (f) return 1; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { while (1) { return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { while (1) { return 1; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { while (f) { break; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { while (f) { break; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { while (f) { continue; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { while (f) { continue; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { while (f) { if (f) return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { while (f) { if (f) return 1; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { while (f) { return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { while (f) { return 1; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { { break; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { { break; } } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { do { { continue; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { { continue; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { { if (f) return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { { if (f) return 1; } } while (f); return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { do { { return 1; } } while (f); };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { do { { return 1; } } while (f); return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (19, "float() g = { for (;;) { break; break; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { break; break; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { for (;;) { break; continue; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { break; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { break; f = 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { break; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { break; goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { break; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { break; if (f) break; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { break; if (f) break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { break; if (f) continue; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { break; if (f) continue; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { break; if (f) return 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { break; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { break; l1: f = 2; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { break; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (19, "float() g = { for (;;) { break; return 1; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { break; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { break; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { break; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (19, "float() g = { for (;;) { continue; break; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { continue; break; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { for (;;) { continue; continue; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { continue; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { continue; f = 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { continue; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { continue; goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { continue; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { continue; if (f) break; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { continue; if (f) break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { continue; if (f) continue; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { continue; if (f) continue; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { continue; if (f) return 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { continue; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { continue; l1: f = 2; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { continue; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (19, "float() g = { for (;;) { continue; return 1; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { continue; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { continue; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { continue; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { do { break; } while (f); } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { do { break; } while (f); } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { do { continue; } while (f); } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { do { continue; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { do { if (f) return 1; } while (f); } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { do { if (f) return 1; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { do { return 1; } while (f); } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { do { return 1; } while (f); } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (19, "float() g = { for (;;) { f = 1; break; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; break; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { for (;;) { f = 1; continue; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; continue; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { for (;;) { f = 1; f = 1; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; if (f) break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; if (f) continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; if (f) goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { for (;;) { f = 1; l1: f = 2; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { for (;;) { f = 1; return 1; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { f = 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (19, "float() g = { for (;;) { for (;;) { break; } } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { for (;;) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { for (;;) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { for (;;) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { for (;;) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { for (;;) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { for (;;) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { for (;;) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { for (i = 0; i < 3; i++) { break; } } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { for (i = 0; i < 3; i++) { break; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { for (i = 0; i < 3; i++) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { for (i = 0; i < 3; i++) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { for (i = 0; i < 3; i++) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { for (i = 0; i < 3; i++) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { for (i = 0; i < 3; i++) { return 1; } } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { for (i = 0; i < 3; i++) { return 1; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { goto l1; break; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { goto l1; break; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { goto l1; continue; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { goto l1; continue; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (19, "float() g = { for (;;) { goto l1; l1: f = 2; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { goto l1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { goto l1; return 1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { goto l1; return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (19, "float() g = { for (;;) { if (0) { break; } } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { if (0) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (0) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (0) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (0) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (0) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (0) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (0) { return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { for (;;) { if (1) { break; } } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { if (1) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (1) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (1) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (1) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (1) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; f = 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; if (f) break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; if (f) continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; if (f) goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; l1: f = 2; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) break; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; f = 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; if (f) break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; if (f) continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; if (f) goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; l1: f = 2; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) continue; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; break; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; break; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; continue; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; continue; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; f = 1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; f = 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; if (f) break; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; if (f) break; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; if (f) continue; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; if (f) continue; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; if (f) return 1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; if (f) return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; l1: f = 2; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; return 1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) goto l1; return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; f = 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; if (f) break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; if (f) continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; if (f) goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; l1: f = 2; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) { break; } else { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) { break; } else { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) { continue; } else { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) { continue; } else { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) { if (f) return 1; } else { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) { if (f) return 1; } else { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) { return 1; } else { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { if (f) { return 1; } else { return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { for (;;) { l1: f = 2; break; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; continue; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { for (;;) { l1: f = 2; f = 1; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; f = 1; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { for (;;) { l1: f = 2; goto l1; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; goto l1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; if (f) break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; if (f) continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; if (f) goto l1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; if (f) goto l1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; l1: f = 2; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { l1: f = 2; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (19, "float() g = { for (;;) { return 1; break; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { return 1; break; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { for (;;) { return 1; continue; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { return 1; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return 1; f = 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return 1; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return 1; goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return 1; if (f) break; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return 1; if (f) break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return 1; if (f) continue; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return 1; if (f) continue; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return 1; if (f) return 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return 1; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return 1; l1: f = 2; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return 1; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (19, "float() g = { for (;;) { return 1; return 1; } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; break; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; break; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; continue; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; continue; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; f = 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; f = 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; if (f) break; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; if (f) break; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; if (f) continue; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; if (f) continue; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; if (f) return 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; if (f) return 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; l1: f = 2; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; l1: f = 2; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; return 1; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; return 1; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { return; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { switch (f) { case 1: break; default: break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { switch (f) { case 1: break; default: break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { switch (f) { case 1: continue; default: continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { switch (f) { case 1: continue; default: continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { switch (f) { case 1: return 1; default: return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { switch (f) { case 1: return 1; default: return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (1) { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (1) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (1) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (1) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (1) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (1) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (f) { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (f) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (f) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (f) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (f) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (f) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (f) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { while (f) { return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { for (;;) { { break; } } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { { break; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { for (;;) { { continue; } } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (;;) { { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { for (;;) { { return 1; } } };", &[]),
+    (
+        19,
+        "float() g = { for (;;) { { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { break; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { break; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { break; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { break; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { break; if (f) break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { break; if (f) continue; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { break; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { break; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { break; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { break; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { break; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { continue; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { continue; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { continue; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { continue; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { continue; if (f) break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { continue; if (f) continue; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { continue; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { continue; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { continue; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { continue; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { continue; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { do { break; } while (f); } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { do { continue; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { do { if (f) return 1; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { do { return 1; } while (f); } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { f = 1; break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { f = 1; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { f = 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { f = 1; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { f = 1; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { f = 1; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { f = 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { f = 1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { f = 1; return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { f = 1; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { f = 1; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { for (;;) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { for (;;) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { for (;;) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { for (;;) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { for (i = 0; i < 3; i++) { break; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { for (i = 0; i < 3; i++) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { for (i = 0; i < 3; i++) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { for (i = 0; i < 3; i++) { return 1; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { goto l1; break; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { goto l1; continue; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { goto l1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { goto l1; return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (0) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (0) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (0) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (0) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (1) { break; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (1) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (1) { return 1; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) break; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) break; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) break; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) break; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) break; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) break; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) break; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) break; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) break; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) break; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) break; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) break; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) continue; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) continue; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) continue; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) continue; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) continue; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) continue; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) continue; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) continue; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) continue; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) continue; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) continue; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) continue; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) goto l1; break; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) goto l1; continue; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) goto l1; f = 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) goto l1; if (f) break; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) goto l1; if (f) continue; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) goto l1; if (f) return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) goto l1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) goto l1; return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) return 1; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) return 1; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) return 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) return 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) return 1; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) return 1; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) return 1; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) return 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) return 1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) { break; } else { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) { continue; } else { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) { if (f) return 1; } else { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { if (f) { return 1; } else { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { l1: f = 2; break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { l1: f = 2; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { l1: f = 2; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { l1: f = 2; goto l1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { l1: f = 2; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { l1: f = 2; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { l1: f = 2; if (f) goto l1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { l1: f = 2; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { l1: f = 2; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { l1: f = 2; return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { l1: f = 2; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { l1: f = 2; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return 1; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return 1; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return 1; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return 1; if (f) break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return 1; if (f) continue; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return 1; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return 1; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; break; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; break; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; continue; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; continue; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; f = 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; f = 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; if (f) break; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; if (f) break; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; if (f) continue; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; if (f) continue; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; if (f) return 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; if (f) return 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; l1: f = 2; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; l1: f = 2; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; return 1; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; return 1; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { return; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { switch (f) { case 1: break; default: break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { switch (f) { case 1: continue; default: continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { switch (f) { case 1: return 1; default: return 1; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { while (1) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { while (1) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { while (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { while (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { while (f) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { while (f) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { while (f) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { while (f) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { { break; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { for (i = 0; i < 3; i++) { { return 1; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; break; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; continue; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; if (f) break; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; if (f) continue; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; if (f) return 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; l1: f = 2; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; l1: f = 2; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; return 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { break; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; break; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; continue; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; if (f) break; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; if (f) continue; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; if (f) return 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; l1: f = 2; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; l1: f = 2; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; return 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { continue; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { do { break; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { do { break; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { do { continue; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { do { continue; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { do { if (f) return 1; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { do { if (f) return 1; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { do { return 1; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { do { return 1; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; break; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; continue; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; if (f) break; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; if (f) continue; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; if (f) return 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; return 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { f = 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (;;) { break; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (;;) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (;;) { continue; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (;;) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (;;) { if (f) return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (;;) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (;;) { return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (;;) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (i = 0; i < 3; i++) { break; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (i = 0; i < 3; i++) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (i = 0; i < 3; i++) { continue; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (i = 0; i < 3; i++) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (i = 0; i < 3; i++) { if (f) return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (i = 0; i < 3; i++) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (i = 0; i < 3; i++) { return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { for (i = 0; i < 3; i++) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { goto l1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { goto l1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (0) { break; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (0) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (0) { continue; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (0) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (0) { if (f) return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (0) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (0) { return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (0) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (1) { break; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (1) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (1) { continue; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (1) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (1) { if (f) return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (1) { return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; break; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; continue; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; if (f) break; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; if (f) continue; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; if (f) return 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; l1: f = 2; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; l1: f = 2; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; return 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) break; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; break; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; continue; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; if (f) break; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; if (f) continue; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; if (f) return 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; l1: f = 2; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; l1: f = 2; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; return 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) continue; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) goto l1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) goto l1; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; break; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; continue; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; if (f) break; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; if (f) continue; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; if (f) return 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; return 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) { break; } else { break; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) { break; } else { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) { continue; } else { continue; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) { continue; } else { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) { if (f) return 1; } else { if (f) return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) { if (f) return 1; } else { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) { return 1; } else { return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { if (f) { return 1; } else { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (19, "float() g = { if (0) { l1: f = 2; goto l1; } };", &[]),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; goto l1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; if (f) goto l1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; return 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (0) { l1: f = 2; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; break; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; continue; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; if (f) break; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; if (f) continue; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; if (f) return 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; return 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; break; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; break; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; continue; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; continue; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; f = 1; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; f = 1; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; if (f) break; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; if (f) break; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; if (f) continue; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; if (f) continue; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; if (f) return 1; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; if (f) return 1; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; l1: f = 2; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; l1: f = 2; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; return 1; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; return 1; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { return; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { switch (f) { case 1: break; default: break; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { switch (f) { case 1: break; default: break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { switch (f) { case 1: continue; default: continue; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { switch (f) { case 1: continue; default: continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { switch (f) { case 1: return 1; default: return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { switch (f) { case 1: return 1; default: return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (1) { break; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (1) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (1) { continue; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (1) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (1) { if (f) return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (1) { return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (f) { break; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (f) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (f) { continue; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (f) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (f) { if (f) return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (f) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (f) { return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { while (f) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { { break; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (19, "float() g = { if (0) { { break; } } return 2; };", &[]),
+    (
+        19,
+        "float() g = { if (0) { { continue; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { { if (f) return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (0) { { return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (0) { { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; f = 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; f = 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; if (f) return 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; if (f) return 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; l1: f = 2; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; l1: f = 2; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; return 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; return 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { break; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; f = 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; f = 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; if (f) break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; if (f) break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; if (f) return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; if (f) return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; l1: f = 2; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; l1: f = 2; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { continue; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { do { break; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { do { break; } while (f); } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { do { continue; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { do { continue; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { do { if (f) return 1; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { do { if (f) return 1; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { do { return 1; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { do { return 1; } while (f); } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { if (1) { f = 1; return 1; } };", &[]),
+    (
+        19,
+        "float() g = { if (1) { f = 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { f = 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (19, "float() g = { if (1) { for (;;) { break; } } };", &[]),
+    (
+        19,
+        "float() g = { if (1) { for (;;) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { for (;;) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { for (;;) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { for (;;) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { for (;;) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { for (;;) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { for (;;) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { for (i = 0; i < 3; i++) { break; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { for (i = 0; i < 3; i++) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { for (i = 0; i < 3; i++) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { for (i = 0; i < 3; i++) { return 1; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { goto l1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { goto l1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { goto l1; return 1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { if (1) { goto l1; return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (0) { break; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (0) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (0) { continue; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (0) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (0) { if (f) return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (0) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (0) { return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (0) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (1) { break; } } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (1) { break; } } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (1) { continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (1) { continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { if (1) { if (1) { return 1; } } };", &[]),
+    (
+        19,
+        "float() g = { if (1) { if (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; f = 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; f = 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; if (f) return 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; if (f) return 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; l1: f = 2; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; l1: f = 2; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; return 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; return 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) break; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; f = 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; f = 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; if (f) break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; if (f) break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; if (f) return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; if (f) return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; l1: f = 2; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; l1: f = 2; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) continue; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) goto l1; f = 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) goto l1; if (f) return 1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) goto l1; if (f) return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) goto l1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) goto l1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) goto l1; return 1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) goto l1; return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) { break; } else { break; } } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) { break; } else { break; } } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) { continue; } else { continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) { continue; } else { continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) { if (f) return 1; } else { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) { return 1; } else { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { if (f) { return 1; } else { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; f = 1; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { if (1) { l1: f = 2; goto l1; } };", &[]),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; goto l1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; if (f) goto l1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (19, "float() g = { if (1) { l1: f = 2; return 1; } };", &[]),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { l1: f = 2; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; if (f) return 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (19, "float() g = { if (1) { return 1; return 1; } };", &[]),
+    (
+        19,
+        "float() g = { if (1) { return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; break; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; break; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; continue; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; continue; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; f = 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; f = 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; if (f) break; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; if (f) break; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; if (f) continue; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; if (f) continue; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; if (f) return 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; if (f) return 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; l1: f = 2; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; l1: f = 2; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; return 1; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; return 1; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { return; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { switch (f) { case 1: break; default: break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { switch (f) { case 1: break; default: break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { switch (f) { case 1: continue; default: continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { switch (f) { case 1: continue; default: continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { switch (f) { case 1: return 1; default: return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { switch (f) { case 1: return 1; default: return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { if (1) { while (1) { break; } } };", &[]),
+    (
+        19,
+        "float() g = { if (1) { while (1) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { while (1) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { while (1) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { while (1) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { while (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { while (1) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { while (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { while (f) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { while (f) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { while (f) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { while (f) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (1) { { break; } } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { { break; } } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { { continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { { continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (1) { { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { if (1) { { return 1; } } };", &[]),
+    (
+        19,
+        "float() g = { if (1) { { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; break; } else { break; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; break; } else { break; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; continue; } else { break; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; continue; } else { break; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; f = 1; } else { break; f = 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; f = 1; } else { break; f = 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; if (f) break; } else { break; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; if (f) break; } else { break; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; if (f) continue; } else { break; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; if (f) continue; } else { break; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; if (f) return 1; } else { break; if (f) return 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; if (f) return 1; } else { break; if (f) return 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; return 1; } else { break; return 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; return 1; } else { break; return 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; return; } else { break; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { break; return; } else { break; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; break; } else { continue; break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; break; } else { continue; break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; continue; } else { continue; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; continue; } else { continue; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; f = 1; } else { continue; f = 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; f = 1; } else { continue; f = 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; if (f) break; } else { continue; if (f) break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; if (f) break; } else { continue; if (f) break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; if (f) continue; } else { continue; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; if (f) continue; } else { continue; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; if (f) return 1; } else { continue; if (f) return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; if (f) return 1; } else { continue; if (f) return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; return 1; } else { continue; return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; return 1; } else { continue; return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; return; } else { continue; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { continue; return; } else { continue; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { do { break; } while (f); } else { do { break; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { do { break; } while (f); } else { do { break; } while (f); } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { do { continue; } while (f); } else { do { continue; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { do { continue; } while (f); } else { do { continue; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { do { if (f) return 1; } while (f); } else { do { if (f) return 1; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { do { if (f) return 1; } while (f); } else { do { if (f) return 1; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { do { return 1; } while (f); } else { do { return 1; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { do { return 1; } while (f); } else { do { return 1; } while (f); } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; break; } else { f = 1; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; break; } else { f = 1; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; continue; } else { f = 1; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; continue; } else { f = 1; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; f = 1; } else { f = 1; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; f = 1; } else { f = 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; if (f) break; } else { f = 1; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; if (f) break; } else { f = 1; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; if (f) continue; } else { f = 1; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; if (f) continue; } else { f = 1; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; if (f) return 1; } else { f = 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; l1: f = 2; } else { f = 1; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; return 1; } else { f = 1; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; return 1; } else { f = 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; return; } else { f = 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { f = 1; return; } else { f = 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { for (;;) { break; } } else { for (;;) { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { for (;;) { break; } } else { for (;;) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { for (;;) { continue; } } else { for (;;) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { for (;;) { continue; } } else { for (;;) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { for (;;) { if (f) return 1; } } else { for (;;) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { for (;;) { if (f) return 1; } } else { for (;;) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { for (;;) { return 1; } } else { for (;;) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { for (;;) { return 1; } } else { for (;;) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { for (i = 0; i < 3; i++) { break; } } else { for (i = 0; i < 3; i++) { break; } } return 2; };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { for (i = 0; i < 3; i++) { continue; } } else { for (i = 0; i < 3; i++) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { for (i = 0; i < 3; i++) { if (f) return 1; } } else { for (i = 0; i < 3; i++) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { for (i = 0; i < 3; i++) { return 1; } } else { for (i = 0; i < 3; i++) { return 1; } } return 2; };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { goto l1; l1: f = 2; } else { goto l1; l1: f = 2; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { goto l1; l1: f = 2; } else { goto l1; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (0) { break; } } else { if (0) { break; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (0) { break; } } else { if (0) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (0) { continue; } } else { if (0) { continue; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (0) { continue; } } else { if (0) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (0) { if (f) return 1; } } else { if (0) { if (f) return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (0) { if (f) return 1; } } else { if (0) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (0) { return 1; } } else { if (0) { return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (0) { return 1; } } else { if (0) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (1) { break; } } else { if (1) { break; } } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (1) { break; } } else { if (1) { break; } } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (1) { continue; } } else { if (1) { continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (1) { continue; } } else { if (1) { continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (1) { if (f) return 1; } } else { if (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (1) { return 1; } } else { if (1) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (1) { return 1; } } else { if (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; break; } else { if (f) break; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; break; } else { if (f) break; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; continue; } else { if (f) break; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; continue; } else { if (f) break; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; f = 1; } else { if (f) break; f = 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; f = 1; } else { if (f) break; f = 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; if (f) break; } else { if (f) break; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; if (f) break; } else { if (f) break; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; if (f) continue; } else { if (f) break; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; if (f) continue; } else { if (f) break; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; if (f) return 1; } else { if (f) break; if (f) return 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; if (f) return 1; } else { if (f) break; if (f) return 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; return 1; } else { if (f) break; return 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; return 1; } else { if (f) break; return 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; return; } else { if (f) break; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) break; return; } else { if (f) break; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; break; } else { if (f) continue; break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; break; } else { if (f) continue; break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; continue; } else { if (f) continue; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; continue; } else { if (f) continue; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; f = 1; } else { if (f) continue; f = 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; f = 1; } else { if (f) continue; f = 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; if (f) break; } else { if (f) continue; if (f) break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; if (f) break; } else { if (f) continue; if (f) break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; if (f) continue; } else { if (f) continue; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; if (f) continue; } else { if (f) continue; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; if (f) return 1; } else { if (f) continue; if (f) return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; if (f) return 1; } else { if (f) continue; if (f) return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; return 1; } else { if (f) continue; return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; return 1; } else { if (f) continue; return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; return; } else { if (f) continue; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) continue; return; } else { if (f) continue; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) goto l1; l1: f = 2; } else { if (f) goto l1; l1: f = 2; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) goto l1; l1: f = 2; } else { if (f) goto l1; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; break; } else { if (f) return 1; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; break; } else { if (f) return 1; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; continue; } else { if (f) return 1; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; continue; } else { if (f) return 1; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; f = 1; } else { if (f) return 1; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; f = 1; } else { if (f) return 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; if (f) break; } else { if (f) return 1; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; if (f) break; } else { if (f) return 1; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; if (f) continue; } else { if (f) return 1; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; if (f) continue; } else { if (f) return 1; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; if (f) return 1; } else { if (f) return 1; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; if (f) return 1; } else { if (f) return 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; l1: f = 2; } else { if (f) return 1; l1: f = 2; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; l1: f = 2; } else { if (f) return 1; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; return 1; } else { if (f) return 1; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; return 1; } else { if (f) return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; return; } else { if (f) return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) return 1; return; } else { if (f) return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) { break; } else { break; } } else { if (f) { break; } else { break; } } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) { break; } else { break; } } else { if (f) { break; } else { break; } } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) { continue; } else { continue; } } else { if (f) { continue; } else { continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) { continue; } else { continue; } } else { if (f) { continue; } else { continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) { if (f) return 1; } else { if (f) return 1; } } else { if (f) { if (f) return 1; } else { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) { return 1; } else { return 1; } } else { if (f) { return 1; } else { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { if (f) { return 1; } else { return 1; } } else { if (f) { return 1; } else { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { l1: f = 2; f = 1; } else { l1: f = 2; f = 1; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { l1: f = 2; goto l1; } else { l1: f = 2; goto l1; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { l1: f = 2; goto l1; } else { l1: f = 2; goto l1; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { l1: f = 2; if (f) goto l1; } else { l1: f = 2; if (f) goto l1; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { l1: f = 2; if (f) return 1; } else { l1: f = 2; if (f) return 1; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { l1: f = 2; return 1; } else { l1: f = 2; return 1; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { l1: f = 2; return 1; } else { l1: f = 2; return 1; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; break; } else { return 1; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; break; } else { return 1; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; continue; } else { return 1; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; continue; } else { return 1; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; f = 1; } else { return 1; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; f = 1; } else { return 1; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; if (f) break; } else { return 1; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; if (f) break; } else { return 1; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; if (f) continue; } else { return 1; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; if (f) continue; } else { return 1; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; if (f) return 1; } else { return 1; if (f) return 1; } };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; if (f) return 1; } else { return 1; if (f) return 1; } return 2; };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; return 1; } else { return 1; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; return 1; } else { return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; return; } else { return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return 1; return; } else { return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; break; } else { return; break; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; break; } else { return; break; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; continue; } else { return; continue; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; continue; } else { return; continue; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; f = 1; } else { return; f = 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; f = 1; } else { return; f = 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; if (f) break; } else { return; if (f) break; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; if (f) break; } else { return; if (f) break; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; if (f) continue; } else { return; if (f) continue; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; if (f) continue; } else { return; if (f) continue; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; if (f) return 1; } else { return; if (f) return 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; if (f) return 1; } else { return; if (f) return 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; return 1; } else { return; return 1; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; return 1; } else { return; return 1; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; return; } else { return; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { return; return; } else { return; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { switch (f) { case 1: break; default: break; } } else { switch (f) { case 1: break; default: break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { switch (f) { case 1: break; default: break; } } else { switch (f) { case 1: break; default: break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { switch (f) { case 1: continue; default: continue; } } else { switch (f) { case 1: continue; default: continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { switch (f) { case 1: continue; default: continue; } } else { switch (f) { case 1: continue; default: continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } else { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } else { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { switch (f) { case 1: return 1; default: return 1; } } else { switch (f) { case 1: return 1; default: return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { switch (f) { case 1: return 1; default: return 1; } } else { switch (f) { case 1: return 1; default: return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (1) { break; } } else { while (1) { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (1) { break; } } else { while (1) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (1) { continue; } } else { while (1) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (1) { continue; } } else { while (1) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (1) { if (f) return 1; } } else { while (1) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (1) { if (f) return 1; } } else { while (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (1) { return 1; } } else { while (1) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (1) { return 1; } } else { while (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (f) { break; } } else { while (f) { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (f) { break; } } else { while (f) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (f) { continue; } } else { while (f) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (f) { continue; } } else { while (f) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (f) { if (f) return 1; } } else { while (f) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (f) { if (f) return 1; } } else { while (f) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (f) { return 1; } } else { while (f) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { while (f) { return 1; } } else { while (f) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { { break; } } else { { break; } } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { { break; } } else { { break; } } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { { continue; } } else { { continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { { continue; } } else { { continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { if (f) { { if (f) return 1; } } else { { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { { return 1; } } else { { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { if (f) { { return 1; } } else { { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; break; default: break; break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; break; default: break; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; continue; default: break; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; continue; default: break; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; f = 1; default: break; f = 1; } };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; f = 1; default: break; f = 1; } return 2; };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; if (f) break; default: break; if (f) break; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; if (f) break; default: break; if (f) break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; if (f) continue; default: break; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; if (f) continue; default: break; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; if (f) return 1; default: break; if (f) return 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; if (f) return 1; default: break; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; return 1; default: break; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; return 1; default: break; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; return; default: break; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: break; return; default: break; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; break; default: continue; break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; break; default: continue; break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; continue; default: continue; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; continue; default: continue; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; f = 1; default: continue; f = 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; f = 1; default: continue; f = 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; if (f) break; default: continue; if (f) break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; if (f) break; default: continue; if (f) break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; if (f) continue; default: continue; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; if (f) continue; default: continue; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; if (f) return 1; default: continue; if (f) return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; if (f) return 1; default: continue; if (f) return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; return 1; default: continue; return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; return 1; default: continue; return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; return; default: continue; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: continue; return; default: continue; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: do { break; } while (f); default: do { break; } while (f); } };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: do { break; } while (f); default: do { break; } while (f); } return 2; };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: do { continue; } while (f); default: do { continue; } while (f); } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: do { continue; } while (f); default: do { continue; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: do { if (f) return 1; } while (f); default: do { if (f) return 1; } while (f); } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: do { if (f) return 1; } while (f); default: do { if (f) return 1; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: do { return 1; } while (f); default: do { return 1; } while (f); } };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: do { return 1; } while (f); default: do { return 1; } while (f); } return 2; };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; break; default: f = 1; break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; break; default: f = 1; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; continue; default: f = 1; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; continue; default: f = 1; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; f = 1; default: f = 1; f = 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; f = 1; default: f = 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; if (f) break; default: f = 1; if (f) break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; if (f) break; default: f = 1; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; if (f) continue; default: f = 1; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; if (f) continue; default: f = 1; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; if (f) return 1; default: f = 1; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; if (f) return 1; default: f = 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; l1: f = 2; default: f = 1; l1: f = 2; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; l1: f = 2; default: f = 1; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; return 1; default: f = 1; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; return 1; default: f = 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; return; default: f = 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: f = 1; return; default: f = 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (;;) { break; } default: for (;;) { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (;;) { break; } default: for (;;) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (;;) { continue; } default: for (;;) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (;;) { continue; } default: for (;;) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (;;) { if (f) return 1; } default: for (;;) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (;;) { if (f) return 1; } default: for (;;) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (;;) { return 1; } default: for (;;) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (;;) { return 1; } default: for (;;) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (i = 0; i < 3; i++) { break; } default: for (i = 0; i < 3; i++) { break; } } };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (i = 0; i < 3; i++) { break; } default: for (i = 0; i < 3; i++) { break; } } return 2; };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (i = 0; i < 3; i++) { continue; } default: for (i = 0; i < 3; i++) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (i = 0; i < 3; i++) { continue; } default: for (i = 0; i < 3; i++) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (i = 0; i < 3; i++) { if (f) return 1; } default: for (i = 0; i < 3; i++) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (i = 0; i < 3; i++) { if (f) return 1; } default: for (i = 0; i < 3; i++) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (i = 0; i < 3; i++) { return 1; } default: for (i = 0; i < 3; i++) { return 1; } } };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: for (i = 0; i < 3; i++) { return 1; } default: for (i = 0; i < 3; i++) { return 1; } } return 2; };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: goto l1; l1: f = 2; default: goto l1; l1: f = 2; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: goto l1; l1: f = 2; default: goto l1; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (0) { break; } default: if (0) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (0) { continue; } default: if (0) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (0) { if (f) return 1; } default: if (0) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (0) { return 1; } default: if (0) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (1) { break; } default: if (1) { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (1) { break; } default: if (1) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (1) { continue; } default: if (1) { continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (1) { continue; } default: if (1) { continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (1) { if (f) return 1; } default: if (1) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (1) { if (f) return 1; } default: if (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (1) { return 1; } default: if (1) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (1) { return 1; } default: if (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; break; default: if (f) break; break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; break; default: if (f) break; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; continue; default: if (f) break; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; continue; default: if (f) break; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; f = 1; default: if (f) break; f = 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; f = 1; default: if (f) break; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; if (f) break; default: if (f) break; if (f) break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; if (f) break; default: if (f) break; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; if (f) continue; default: if (f) break; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; if (f) continue; default: if (f) break; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; if (f) return 1; default: if (f) break; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; if (f) return 1; default: if (f) break; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; l1: f = 2; default: if (f) break; l1: f = 2; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; l1: f = 2; default: if (f) break; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; return 1; default: if (f) break; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; return 1; default: if (f) break; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; return; default: if (f) break; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) break; return; default: if (f) break; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; break; default: if (f) continue; break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; break; default: if (f) continue; break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; continue; default: if (f) continue; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; continue; default: if (f) continue; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; f = 1; default: if (f) continue; f = 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; f = 1; default: if (f) continue; f = 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; if (f) break; default: if (f) continue; if (f) break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; if (f) break; default: if (f) continue; if (f) break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; if (f) continue; default: if (f) continue; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; if (f) continue; default: if (f) continue; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; if (f) return 1; default: if (f) continue; if (f) return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; if (f) return 1; default: if (f) continue; if (f) return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; return 1; default: if (f) continue; return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; return 1; default: if (f) continue; return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; return; default: if (f) continue; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) continue; return; default: if (f) continue; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) goto l1; l1: f = 2; default: if (f) goto l1; l1: f = 2; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) goto l1; l1: f = 2; default: if (f) goto l1; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; break; default: if (f) return 1; break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; break; default: if (f) return 1; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; continue; default: if (f) return 1; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; continue; default: if (f) return 1; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; f = 1; default: if (f) return 1; f = 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; f = 1; default: if (f) return 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; if (f) break; default: if (f) return 1; if (f) break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; if (f) break; default: if (f) return 1; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; if (f) continue; default: if (f) return 1; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; if (f) continue; default: if (f) return 1; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; if (f) return 1; default: if (f) return 1; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; if (f) return 1; default: if (f) return 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; l1: f = 2; default: if (f) return 1; l1: f = 2; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; l1: f = 2; default: if (f) return 1; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; return 1; default: if (f) return 1; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; return 1; default: if (f) return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; return; default: if (f) return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) return 1; return; default: if (f) return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) { break; } else { break; } default: if (f) { break; } else { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) { break; } else { break; } default: if (f) { break; } else { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) { continue; } else { continue; } default: if (f) { continue; } else { continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) { continue; } else { continue; } default: if (f) { continue; } else { continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) { if (f) return 1; } else { if (f) return 1; } default: if (f) { if (f) return 1; } else { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) { if (f) return 1; } else { if (f) return 1; } default: if (f) { if (f) return 1; } else { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) { return 1; } else { return 1; } default: if (f) { return 1; } else { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: if (f) { return 1; } else { return 1; } default: if (f) { return 1; } else { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: l1: f = 2; break; default: l1: f = 2; break; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: l1: f = 2; break; default: l1: f = 2; break; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: l1: f = 2; f = 1; default: l1: f = 2; f = 1; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: l1: f = 2; f = 1; default: l1: f = 2; f = 1; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: l1: f = 2; goto l1; default: l1: f = 2; goto l1; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: l1: f = 2; goto l1; default: l1: f = 2; goto l1; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: l1: f = 2; if (f) break; default: l1: f = 2; if (f) break; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: l1: f = 2; if (f) break; default: l1: f = 2; if (f) break; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: l1: f = 2; if (f) goto l1; default: l1: f = 2; if (f) goto l1; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: l1: f = 2; if (f) goto l1; default: l1: f = 2; if (f) goto l1; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: l1: f = 2; if (f) return 1; default: l1: f = 2; if (f) return 1; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: l1: f = 2; if (f) return 1; default: l1: f = 2; if (f) return 1; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: l1: f = 2; return 1; default: l1: f = 2; return 1; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: l1: f = 2; return 1; default: l1: f = 2; return 1; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; break; default: return 1; break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; break; default: return 1; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; continue; default: return 1; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; continue; default: return 1; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; f = 1; default: return 1; f = 1; } };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; f = 1; default: return 1; f = 1; } return 2; };",
+        &[
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; if (f) break; default: return 1; if (f) break; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; if (f) break; default: return 1; if (f) break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; if (f) continue; default: return 1; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; if (f) continue; default: return 1; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; if (f) return 1; default: return 1; if (f) return 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; if (f) return 1; default: return 1; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; return 1; default: return 1; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; return 1; default: return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; return; default: return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return 1; return; default: return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; break; default: return; break; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; break; default: return; break; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; continue; default: return; continue; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; continue; default: return; continue; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; f = 1; default: return; f = 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; f = 1; default: return; f = 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; if (f) break; default: return; if (f) break; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; if (f) break; default: return; if (f) break; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; if (f) continue; default: return; if (f) continue; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; if (f) continue; default: return; if (f) continue; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; if (f) return 1; default: return; if (f) return 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; if (f) return 1; default: return; if (f) return 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; return 1; default: return; return 1; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; return 1; default: return; return 1; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; return; default: return; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: return; return; default: return; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: switch (f) { case 1: break; default: break; } default: switch (f) { case 1: break; default: break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: switch (f) { case 1: break; default: break; } default: switch (f) { case 1: break; default: break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: switch (f) { case 1: continue; default: continue; } default: switch (f) { case 1: continue; default: continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: switch (f) { case 1: continue; default: continue; } default: switch (f) { case 1: continue; default: continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: switch (f) { case 1: if (f) return 1; default: if (f) return 1; } default: switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: switch (f) { case 1: if (f) return 1; default: if (f) return 1; } default: switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: switch (f) { case 1: return 1; default: return 1; } default: switch (f) { case 1: return 1; default: return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: switch (f) { case 1: return 1; default: return 1; } default: switch (f) { case 1: return 1; default: return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (1) { break; } default: while (1) { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (1) { break; } default: while (1) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (1) { continue; } default: while (1) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (1) { continue; } default: while (1) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (1) { if (f) return 1; } default: while (1) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (1) { if (f) return 1; } default: while (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (1) { return 1; } default: while (1) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (1) { return 1; } default: while (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (f) { break; } default: while (f) { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (f) { break; } default: while (f) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (f) { continue; } default: while (f) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (f) { continue; } default: while (f) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (f) { if (f) return 1; } default: while (f) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (f) { if (f) return 1; } default: while (f) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (f) { return 1; } default: while (f) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: while (f) { return 1; } default: while (f) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: { break; } default: { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: { break; } default: { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: { continue; } default: { continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: { continue; } default: { continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: { if (f) return 1; } default: { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: { if (f) return 1; } default: { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: { return 1; } default: { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { switch (f) { case 1: { return 1; } default: { return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { while (1) { break; break; } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { break; break; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { while (1) { break; continue; } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { break; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { break; f = 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { break; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { break; goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { break; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { break; if (f) break; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { break; if (f) break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { break; if (f) continue; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { break; if (f) continue; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { break; if (f) return 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { break; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { break; l1: f = 2; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { break; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (19, "float() g = { while (1) { break; return 1; } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { break; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { break; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { break; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (19, "float() g = { while (1) { continue; break; } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { continue; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; f = 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; if (f) break; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; if (f) break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; if (f) continue; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; if (f) continue; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; if (f) return 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; l1: f = 2; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { continue; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { do { break; } while (f); } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { do { break; } while (f); } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { do { continue; } while (f); } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { do { continue; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { do { if (f) return 1; } while (f); } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { do { if (f) return 1; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { do { return 1; } while (f); } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { do { return 1; } while (f); } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (19, "float() g = { while (1) { f = 1; break; } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { f = 1; break; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { while (1) { f = 1; continue; } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { f = 1; continue; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { while (1) { f = 1; f = 1; } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { f = 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { f = 1; goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { f = 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { f = 1; if (f) break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { f = 1; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { f = 1; if (f) continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { f = 1; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { f = 1; if (f) goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { f = 1; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { f = 1; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { f = 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { while (1) { f = 1; l1: f = 2; } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { f = 1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { while (1) { f = 1; return 1; } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { f = 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { f = 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { f = 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (;;) { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (;;) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (;;) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (;;) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (;;) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (;;) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (;;) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (;;) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (i = 0; i < 3; i++) { break; } } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (i = 0; i < 3; i++) { break; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (i = 0; i < 3; i++) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (i = 0; i < 3; i++) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (i = 0; i < 3; i++) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (i = 0; i < 3; i++) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (i = 0; i < 3; i++) { return 1; } } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { for (i = 0; i < 3; i++) { return 1; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { goto l1; break; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { goto l1; break; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { goto l1; continue; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { goto l1; continue; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { goto l1; l1: f = 2; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { goto l1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { goto l1; return 1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { goto l1; return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (19, "float() g = { while (1) { if (0) { break; } } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { if (0) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (0) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (0) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (0) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (0) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (0) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (0) { return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { while (1) { if (1) { break; } } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { if (1) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (1) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (1) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (1) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (1) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; f = 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; if (f) break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; if (f) continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; if (f) goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; l1: f = 2; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) break; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; f = 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; if (f) break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; if (f) continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; if (f) goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; l1: f = 2; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) continue; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; break; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; break; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; continue; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; continue; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; f = 1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; f = 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; if (f) break; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; if (f) break; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; if (f) continue; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; if (f) continue; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; if (f) return 1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; if (f) return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; l1: f = 2; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; return 1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) goto l1; return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; f = 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; if (f) break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; if (f) continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; if (f) goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; l1: f = 2; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) { break; } else { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) { break; } else { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) { continue; } else { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) { continue; } else { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) { if (f) return 1; } else { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) { if (f) return 1; } else { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) { return 1; } else { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { if (f) { return 1; } else { return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { while (1) { l1: f = 2; break; } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; continue; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { while (1) { l1: f = 2; f = 1; } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; goto l1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; goto l1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; if (f) break; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; if (f) continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; if (f) goto l1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; if (f) goto l1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; l1: f = 2; } };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { l1: f = 2; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (19, "float() g = { while (1) { return 1; break; } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { return 1; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; continue; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; f = 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; goto l1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; if (f) break; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; if (f) break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; if (f) continue; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; if (f) continue; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; if (f) return 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; l1: f = 2; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; break; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; break; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; continue; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; continue; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; f = 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; f = 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; if (f) break; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; if (f) break; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; if (f) continue; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; if (f) continue; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; if (f) return 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; if (f) return 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; l1: f = 2; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; l1: f = 2; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; return 1; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; return 1; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { return; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (1) { switch (f) { case 1: break; default: break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { switch (f) { case 1: break; default: break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { switch (f) { case 1: continue; default: continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { switch (f) { case 1: continue; default: continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { switch (f) { case 1: return 1; default: return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { switch (f) { case 1: return 1; default: return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (1) { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (1) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (1) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (1) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (1) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (1) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (f) { break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (f) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (f) { continue; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (f) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (f) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (f) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (f) { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { while (f) { return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { while (1) { { break; } } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { { break; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { while (1) { { continue; } } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (1) { { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { while (1) { { return 1; } } };", &[]),
+    (
+        19,
+        "float() g = { while (1) { { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { break; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { break; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { break; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { break; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { break; if (f) break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { break; if (f) continue; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { break; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { break; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { break; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { break; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { break; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { continue; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { continue; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { continue; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { continue; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { continue; if (f) break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { continue; if (f) continue; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { continue; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { continue; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { continue; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { continue; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { continue; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { do { break; } while (f); } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { do { continue; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { do { if (f) return 1; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { do { return 1; } while (f); } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { f = 1; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { f = 1; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { f = 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { f = 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { f = 1; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { f = 1; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { f = 1; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { f = 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { f = 1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { f = 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { f = 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { f = 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { for (;;) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { for (;;) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { for (;;) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { for (;;) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { for (i = 0; i < 3; i++) { break; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { for (i = 0; i < 3; i++) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { for (i = 0; i < 3; i++) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { for (i = 0; i < 3; i++) { return 1; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { goto l1; break; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { goto l1; continue; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { goto l1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { goto l1; return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (0) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (0) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (0) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (0) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (1) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (1) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) break; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) break; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) break; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) break; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) break; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) break; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) break; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) break; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) break; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) break; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) break; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) break; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) continue; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) continue; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) continue; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) continue; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) continue; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) continue; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) continue; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) continue; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) continue; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) continue; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) continue; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) continue; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) goto l1; break; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) goto l1; continue; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) goto l1; f = 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) goto l1; if (f) break; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) goto l1; if (f) continue; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) goto l1; if (f) return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) goto l1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) goto l1; return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) return 1; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) return 1; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) return 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) return 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) return 1; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) return 1; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) return 1; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) return 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) return 1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) { break; } else { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) { continue; } else { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) { if (f) return 1; } else { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { if (f) { return 1; } else { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { l1: f = 2; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { l1: f = 2; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { l1: f = 2; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { l1: f = 2; goto l1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { l1: f = 2; if (f) break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { l1: f = 2; if (f) continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { l1: f = 2; if (f) goto l1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { l1: f = 2; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { l1: f = 2; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { l1: f = 2; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { l1: f = 2; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { l1: f = 2; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return 1; break; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return 1; continue; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return 1; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return 1; if (f) break; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return 1; if (f) continue; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return 1; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return 1; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; break; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; break; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; continue; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; continue; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; f = 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; f = 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; if (f) break; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; if (f) break; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; if (f) continue; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; if (f) continue; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; if (f) return 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; if (f) return 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; l1: f = 2; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; l1: f = 2; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; return 1; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; return 1; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { return; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { while (f) { switch (f) { case 1: break; default: break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { switch (f) { case 1: continue; default: continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { switch (f) { case 1: return 1; default: return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { while (1) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { while (1) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { while (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { while (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { while (f) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { while (f) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { while (f) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { while (f) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { while (f) { { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { break; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { break; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { break; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { break; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { break; f = 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { break; f = 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { break; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { break; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { break; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { break; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { break; if (f) return 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { break; if (f) return 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { break; l1: f = 2; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { break; l1: f = 2; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { break; return 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { break; return 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { break; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { break; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { continue; break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; f = 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; f = 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; if (f) break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; if (f) break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; if (f) return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; if (f) return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; l1: f = 2; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; l1: f = 2; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { continue; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { continue; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { do { break; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { { do { break; } while (f); } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { { do { continue; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { { do { continue; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { do { if (f) return 1; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { { do { if (f) return 1; } while (f); } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { do { return 1; } while (f); } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { { do { return 1; } while (f); } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { { f = 1; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { f = 1; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { f = 1; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { f = 1; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { f = 1; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (19, "float() g = { { f = 1; f = 1; } return 2; };", &[]),
+    (
+        19,
+        "float() g = { { f = 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { { f = 1; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { f = 1; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { f = 1; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { f = 1; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { f = 1; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { { f = 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { f = 1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (19, "float() g = { { f = 1; l1: f = 2; } return 2; };", &[]),
+    (19, "float() g = { { f = 1; return 1; } };", &[]),
+    (19, "float() g = { { f = 1; return 1; } return 2; };", &[]),
+    (
+        19,
+        "float() g = { { f = 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { { f = 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (19, "float() g = { { for (;;) { break; } } };", &[]),
+    (
+        19,
+        "float() g = { { for (;;) { break; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { { for (;;) { continue; } } };", &[]),
+    (
+        19,
+        "float() g = { { for (;;) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { for (;;) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { for (;;) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { { for (;;) { return 1; } } };", &[]),
+    (
+        19,
+        "float() g = { { for (;;) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { for (i = 0; i < 3; i++) { break; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { { for (i = 0; i < 3; i++) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { for (i = 0; i < 3; i++) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { for (i = 0; i < 3; i++) { return 1; } } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { { goto l1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { { goto l1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { goto l1; return 1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { { goto l1; return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { { if (0) { break; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (19, "float() g = { { if (0) { break; } } return 2; };", &[]),
+    (
+        19,
+        "float() g = { { if (0) { continue; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { { if (0) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { if (0) { if (f) return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { { if (0) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { if (0) { return 1; } } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { { if (0) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { if (1) { break; } } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (1) { break; } } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (1) { continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (1) { continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { { if (1) { return 1; } } };", &[]),
+    (
+        19,
+        "float() g = { { if (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; f = 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; f = 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; if (f) return 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; if (f) return 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; l1: f = 2; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; l1: f = 2; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; return 1; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; return 1; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { if (f) break; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; f = 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; f = 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; if (f) break; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; if (f) break; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; if (f) return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; if (f) return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; l1: f = 2; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; l1: f = 2; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; return 1; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; return 1; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; return; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { if (f) continue; return; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { if (f) goto l1; f = 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { { if (f) goto l1; if (f) return 1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { { if (f) goto l1; if (f) return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { { if (f) goto l1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) goto l1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { if (f) goto l1; return 1; } };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { { if (f) goto l1; return 1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; f = 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; if (f) goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; if (f) return 1; } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; l1: f = 2; } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { { if (f) return 1; return 1; } };", &[]),
+    (
+        19,
+        "float() g = { { if (f) return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) { break; } else { break; } } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) { break; } else { break; } } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) { continue; } else { continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) { continue; } else { continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { if (f) { if (f) return 1; } else { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { if (f) { return 1; } else { return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { if (f) { return 1; } else { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { l1: f = 2; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { l1: f = 2; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { l1: f = 2; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { l1: f = 2; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { l1: f = 2; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (19, "float() g = { { l1: f = 2; f = 1; } return 2; };", &[]),
+    (19, "float() g = { { l1: f = 2; goto l1; } };", &[]),
+    (
+        19,
+        "float() g = { { l1: f = 2; goto l1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { l1: f = 2; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { l1: f = 2; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { l1: f = 2; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { l1: f = 2; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { l1: f = 2; if (f) goto l1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { l1: f = 2; if (f) return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { l1: f = 2; l1: f = 2; } return 2; };",
+        &["Duplicate label l1", "\"=\" - not a name"],
+    ),
+    (19, "float() g = { { l1: f = 2; return 1; } };", &[]),
+    (
+        19,
+        "float() g = { { l1: f = 2; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { l1: f = 2; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { { l1: f = 2; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; f = 1; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; f = 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; goto l1; } return 2; };",
+        &["Goto statement with no matching label \"l1\""],
+    ),
+    (
+        19,
+        "float() g = { { return 1; if (f) break; } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; if (f) break; } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; if (f) continue; } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; if (f) continue; } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; if (f) return 1; } };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; if (f) return 1; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; l1: f = 2; } };",
+        &["g: not all control paths return a value"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; l1: f = 2; } return 2; };",
+        &["g: contains unreachable code (line 3)"],
+    ),
+    (19, "float() g = { { return 1; return 1; } };", &[]),
+    (
+        19,
+        "float() g = { { return 1; return 1; } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { return 1; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { { return 1; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { { return; break; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { return; break; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { return; continue; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { return; continue; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { return; f = 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { return; f = 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { return; if (f) break; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { return; if (f) break; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal breaks",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { return; if (f) continue; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { return; if (f) continue; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: function contains illegal continues",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { return; if (f) return 1; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { return; if (f) return 1; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { return; l1: f = 2; } };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { return; l1: f = 2; } return 2; };",
+        &[
+            "'g' returned nothing, expected float",
+            "g: contains unreachable code (line 3)",
+        ],
+    ),
+    (
+        19,
+        "float() g = { { return; return 1; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { { return; return 1; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { { return; return; } };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { { return; return; } return 2; };",
+        &["'g' returned nothing, expected float"],
+    ),
+    (
+        19,
+        "float() g = { { switch (f) { case 1: break; default: break; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { switch (f) { case 1: break; default: break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { switch (f) { case 1: continue; default: continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { switch (f) { case 1: continue; default: continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { switch (f) { case 1: if (f) return 1; default: if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { switch (f) { case 1: return 1; default: return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { switch (f) { case 1: return 1; default: return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { { while (1) { break; } } };", &[]),
+    (
+        19,
+        "float() g = { { while (1) { break; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { { while (1) { continue; } } };", &[]),
+    (
+        19,
+        "float() g = { { while (1) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { while (1) { if (f) return 1; } } };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { while (1) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { { while (1) { return 1; } } };", &[]),
+    (
+        19,
+        "float() g = { { while (1) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { while (f) { break; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { while (f) { continue; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { while (f) { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { while (f) { return 1; } } return 2; };",
+        &[],
+    ),
+    (
+        19,
+        "float() g = { { { break; } } };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { { break; } } return 2; };",
+        &["g: function contains illegal breaks"],
+    ),
+    (
+        19,
+        "float() g = { { { continue; } } };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { { continue; } } return 2; };",
+        &["g: function contains illegal continues"],
+    ),
+    (
+        19,
+        "float() g = { { { if (f) return 1; } } return 2; };",
+        &[],
+    ),
+    (19, "float() g = { { { return 1; } } };", &[]),
+    (19, "float() g = { { { return 1; } } return 2; };", &[]),
+];
+
 /// C type words and opcode names written where a type stands: the pinned FTEQCC's diagnostics for each.
 const C_TYPE_WORDS: &[(usize, &str, &[&str])] = &[
-    (19, "", &["\"ADD_EF\" is not a type"]),
-    (20, "", &["\"ADD_EI\" is not a type"]),
-    (21, "", &["\"ADD_FI\" is not a type"]),
-    (22, "", &["\"ADD_FP\" is not a type"]),
-    (23, "", &["\"ADD_I\" is not a type"]),
-    (24, "", &["\"ADD_IF\" is not a type"]),
-    (25, "", &["\"ADD_IP\" is not a type"]),
-    (26, "", &["\"ADD_IS\" is not a type"]),
-    (27, "", &["\"ADD_PF\" is not a type"]),
-    (28, "", &["\"ADD_PI\" is not a type"]),
-    (29, "", &["\"ADD_PIW\" is not a type"]),
-    (30, "", &["\"ADD_PU\" is not a type"]),
-    (31, "", &["\"ADD_SF\" is not a type"]),
-    (32, "", &["\"ADD_SI\" is not a type"]),
-    (33, "", &["\"ADD_U\" is not a type"]),
-    (34, "", &["\"ADD_U64\" is not a type"]),
-    (35, "", &["\"ADD_UP\" is not a type"]),
-    (36, "", &["\"ADDSTORE_F\" is not a type"]),
-    (37, "", &["\"ADDSTORE_FI\" is not a type"]),
-    (38, "", &["\"ADDSTORE_I\" is not a type"]),
-    (39, "", &["\"ADDSTORE_IF\" is not a type"]),
-    (40, "", &["\"ADDSTORE_V\" is not a type"]),
-    (41, "", &["\"ADDSTOREP_F\" is not a type"]),
-    (42, "", &["\"ADDSTOREP_FI\" is not a type"]),
-    (43, "", &["\"ADDSTOREP_I\" is not a type"]),
-    (44, "", &["\"ADDSTOREP_IF\" is not a type"]),
-    (45, "", &["\"ADDSTOREP_V\" is not a type"]),
-    (46, "", &["\"AND_ANY\" is not a type"]),
-    (47, "", &["\"AND_FI\" is not a type"]),
-    (48, "", &["\"AND_I\" is not a type"]),
-    (49, "", &["\"AND_IF\" is not a type"]),
-    (50, "", &["\"BITAND_D\" is not a type"]),
-    (51, "", &["\"BITAND_FI\" is not a type"]),
-    (52, "", &["\"BITAND_I\" is not a type"]),
-    (53, "", &["\"BITAND_I64\" is not a type"]),
-    (54, "", &["\"BITAND_IF\" is not a type"]),
-    (55, "", &["\"BITAND_U\" is not a type"]),
-    (56, "", &["\"BITAND_U64\" is not a type"]),
-    (57, "", &["\"BITAND_V\" is not a type"]),
-    (58, "", &["\"BITCLR_D\" is not a type"]),
-    (59, "", &["\"BITCLR_F\" is not a type"]),
-    (60, "", &["\"BITCLR_I\" is not a type"]),
-    (61, "", &["\"BITCLR_I64\" is not a type"]),
-    (62, "", &["\"BITCLR_U\" is not a type"]),
-    (63, "", &["\"BITCLR_U64\" is not a type"]),
-    (64, "", &["\"BITCLR_V\" is not a type"]),
-    (65, "", &["\"BITCLRSTORE_F\" is not a type"]),
-    (66, "", &["\"BITCLRSTORE_I\" is not a type"]),
-    (67, "", &["\"BITCLRSTOREP_F\" is not a type"]),
-    (68, "", &["\"BITEXTEND_I\" is not a type"]),
-    (69, "", &["\"BITEXTEND_U\" is not a type"]),
-    (70, "", &["\"BITNOT_F\" is not a type"]),
-    (71, "", &["\"BITNOT_I\" is not a type"]),
-    (72, "", &["\"BITNOT_I64\" is not a type"]),
-    (73, "", &["\"BITNOT_U\" is not a type"]),
-    (74, "", &["\"BITNOT_U64\" is not a type"]),
-    (75, "", &["\"BITNOT_V\" is not a type"]),
-    (76, "", &["\"BITOR_D\" is not a type"]),
-    (77, "", &["\"BITOR_FI\" is not a type"]),
-    (78, "", &["\"BITOR_I\" is not a type"]),
-    (79, "", &["\"BITOR_I64\" is not a type"]),
-    (80, "", &["\"BITOR_IF\" is not a type"]),
-    (81, "", &["\"BITOR_U\" is not a type"]),
-    (82, "", &["\"BITOR_U64\" is not a type"]),
-    (83, "", &["\"BITOR_V\" is not a type"]),
-    (84, "", &["\"BITSETSTORE_F\" is not a type"]),
-    (85, "", &["\"BITSETSTORE_I\" is not a type"]),
-    (86, "", &["\"BITSETSTOREP_F\" is not a type"]),
-    (87, "", &["\"BITSETSTOREP_I\" is not a type"]),
-    (88, "", &["\"BITXOR_D\" is not a type"]),
-    (89, "", &["\"BITXOR_F\" is not a type"]),
-    (90, "", &["\"BITXOR_I\" is not a type"]),
-    (91, "", &["\"BITXOR_I64\" is not a type"]),
-    (92, "", &["\"BITXOR_U\" is not a type"]),
-    (93, "", &["\"BITXOR_U64\" is not a type"]),
-    (94, "", &["\"BITXOR_V\" is not a type"]),
-    (95, "", &["\"CONV_FTOI\" is not a type"]),
-    (96, "", &["\"CONV_FU\" is not a type"]),
-    (97, "", &["\"CONV_ITOF\" is not a type"]),
-    (98, "", &["\"CONV_UF\" is not a type"]),
-    (99, "", &["\"CROSS_V\" is not a type"]),
-    (100, "", &["\"DIV_FI\" is not a type"]),
-    (101, "", &["\"DIV_I\" is not a type"]),
-    (102, "", &["\"DIV_IF\" is not a type"]),
-    (103, "", &["\"DIV_U\" is not a type"]),
-    (104, "", &["\"DIV_VF\" is not a type"]),
-    (105, "", &["\"DIVSTORE_F\" is not a type"]),
-    (106, "", &["\"DIVSTORE_FI\" is not a type"]),
-    (107, "", &["\"DIVSTORE_I\" is not a type"]),
-    (108, "", &["\"DIVSTORE_IF\" is not a type"]),
-    (109, "", &["\"DIVSTOREP_F\" is not a type"]),
-    (110, "", &["\"DIVSTOREP_FI\" is not a type"]),
-    (111, "", &["\"DIVSTOREP_IF\" is not a type"]),
-    (112, "", &["\"EQ_FI\" is not a type"]),
-    (113, "", &["\"EQ_FLD\" is not a type"]),
-    (114, "", &["\"EQ_I\" is not a type"]),
-    (115, "", &["\"EQ_I64\" is not a type"]),
-    (116, "", &["\"EQ_IF\" is not a type"]),
-    (117, "", &["\"EQ_P\" is not a type"]),
-    (118, "", &["\"EQ_U\" is not a type"]),
-    (119, "", &["\"EQ_U64\" is not a type"]),
-    (120, "", &["\"GE_D\" is not a type"]),
-    (121, "", &["\"GE_FI\" is not a type"]),
-    (122, "", &["\"GE_I\" is not a type"]),
-    (123, "", &["\"GE_I64\" is not a type"]),
-    (124, "", &["\"GE_IF\" is not a type"]),
-    (125, "", &["\"GE_P\" is not a type"]),
-    (126, "", &["\"GE_U\" is not a type"]),
-    (127, "", &["\"GE_U64\" is not a type"]),
-    (128, "", &["\"GT_D\" is not a type"]),
-    (129, "", &["\"GT_FI\" is not a type"]),
-    (130, "", &["\"GT_I\" is not a type"]),
-    (131, "", &["\"GT_I64\" is not a type"]),
-    (132, "", &["\"GT_IF\" is not a type"]),
-    (133, "", &["\"GT_P\" is not a type"]),
-    (134, "", &["\"GT_U\" is not a type"]),
-    (135, "", &["\"GT_U64\" is not a type"]),
-    (136, "", &["\"IF_F\" is not a type"]),
-    (137, "", &["\"IF_S\" is not a type"]),
-    (138, "", &["\"IFNOT_F\" is not a type"]),
-    (139, "", &["\"IFNOT_S\" is not a type"]),
-    (140, "", &["\"LE_FI\" is not a type"]),
-    (141, "", &["\"LE_I\" is not a type"]),
-    (142, "", &["\"LE_IF\" is not a type"]),
-    (143, "", &["\"LE_P\" is not a type"]),
-    (144, "", &["\"LE_U\" is not a type"]),
-    (145, "", &["\"LOAD_I\" is not a type"]),
-    (146, "", &["\"LOAD_I64\" is not a type"]),
-    (147, "", &["\"LOAD_P\" is not a type"]),
-    (148, "", &["\"LOADA_STRUCT\" is not a type"]),
-    (149, "", &["\"LOADP_ENT\" is not a type"]),
-    (150, "", &["\"LOADP_F\" is not a type"]),
-    (151, "", &["\"LOADP_FLD\" is not a type"]),
-    (152, "", &["\"LOADP_FNC\" is not a type"]),
-    (153, "", &["\"LOADP_I\" is not a type"]),
-    (154, "", &["\"LOADP_I16\" is not a type"]),
-    (155, "", &["\"LOADP_I8\" is not a type"]),
-    (156, "", &["\"LOADP_S\" is not a type"]),
-    (157, "", &["\"LOADP_U16\" is not a type"]),
-    (158, "", &["\"LOADP_U8\" is not a type"]),
-    (159, "", &["\"LOADP_V\" is not a type"]),
-    (160, "", &["\"LSHIFT_DI\" is not a type"]),
-    (161, "", &["\"LSHIFT_F\" is not a type"]),
-    (162, "", &["\"LSHIFT_FI\" is not a type"]),
-    (163, "", &["\"LSHIFT_I\" is not a type"]),
-    (164, "", &["\"LSHIFT_IF\" is not a type"]),
-    (165, "", &["\"LSHIFT_U\" is not a type"]),
-    (166, "", &["\"LSHIFT_U64I\" is not a type"]),
-    (167, "", &["\"LT_FI\" is not a type"]),
-    (168, "", &["\"LT_I\" is not a type"]),
-    (169, "", &["\"LT_IF\" is not a type"]),
-    (170, "", &["\"LT_P\" is not a type"]),
-    (171, "", &["\"LT_U\" is not a type"]),
-    (172, "", &["\"MOD_F\" is not a type"]),
-    (173, "", &["\"MOD_FI\" is not a type"]),
-    (174, "", &["\"MOD_I\" is not a type"]),
-    (175, "", &["\"MOD_IF\" is not a type"]),
-    (176, "", &["\"MOD_U\" is not a type"]),
-    (177, "", &["\"MOD_U64\" is not a type"]),
-    (178, "", &["\"MOD_V\" is not a type"]),
-    (179, "", &["\"MUL_FI\" is not a type"]),
-    (180, "", &["\"MUL_I\" is not a type"]),
-    (181, "", &["\"MUL_IF\" is not a type"]),
-    (182, "", &["\"MUL_IV\" is not a type"]),
-    (183, "", &["\"MUL_U\" is not a type"]),
-    (184, "", &["\"MUL_U64\" is not a type"]),
-    (185, "", &["\"MUL_VI\" is not a type"]),
-    (186, "", &["\"MULSTORE_F\" is not a type"]),
-    (187, "", &["\"MULSTORE_FI\" is not a type"]),
-    (188, "", &["\"MULSTORE_IF\" is not a type"]),
-    (189, "", &["\"MULSTORE_VF\" is not a type"]),
-    (190, "", &["\"MULSTORE_VI\" is not a type"]),
-    (191, "", &["\"MULSTOREP_F\" is not a type"]),
-    (192, "", &["\"MULSTOREP_FI\" is not a type"]),
-    (193, "", &["\"MULSTOREP_IF\" is not a type"]),
-    (194, "", &["\"MULSTOREP_VF\" is not a type"]),
-    (195, "", &["\"MULSTOREP_VI\" is not a type"]),
-    (196, "", &["\"NE_FI\" is not a type"]),
-    (197, "", &["\"NE_FLD\" is not a type"]),
-    (198, "", &["\"NE_I\" is not a type"]),
-    (199, "", &["\"NE_I64\" is not a type"]),
-    (200, "", &["\"NE_IF\" is not a type"]),
-    (201, "", &["\"NE_P\" is not a type"]),
-    (202, "", &["\"NE_U\" is not a type"]),
-    (203, "", &["\"NE_U64\" is not a type"]),
-    (204, "", &["\"NOT_I\" is not a type"]),
-    (205, "", &["\"OR_ANY\" is not a type"]),
-    (206, "", &["\"OR_FI\" is not a type"]),
-    (207, "", &["\"OR_I\" is not a type"]),
-    (208, "", &["\"OR_IF\" is not a type"]),
-    (209, "", &["\"POW_F\" is not a type"]),
-    (210, "", &["\"POW_FI\" is not a type"]),
-    (211, "", &["\"POW_I\" is not a type"]),
-    (212, "", &["\"POW_IF\" is not a type"]),
-    (213, "", &["\"RSHIFT_DI\" is not a type"]),
-    (214, "", &["\"RSHIFT_F\" is not a type"]),
-    (215, "", &["\"RSHIFT_FI\" is not a type"]),
-    (216, "", &["\"RSHIFT_I\" is not a type"]),
-    (217, "", &["\"RSHIFT_IF\" is not a type"]),
-    (218, "", &["\"RSHIFT_U\" is not a type"]),
-    (219, "", &["\"SPACESHIP_F\" is not a type"]),
-    (220, "", &["\"SPACESHIP_S\" is not a type"]),
-    (221, "", &["\"STORE_FI\" is not a type"]),
-    (222, "", &["\"STORE_I\" is not a type"]),
-    (223, "", &["\"STORE_I64\" is not a type"]),
-    (224, "", &["\"STORE_IF\" is not a type"]),
-    (225, "", &["\"STORE_P\" is not a type"]),
-    (226, "", &["\"STOREP_P\" is not a type"]),
-    (227, "", &["\"SUB_EF\" is not a type"]),
-    (228, "", &["\"SUB_EI\" is not a type"]),
-    (229, "", &["\"SUB_FI\" is not a type"]),
-    (230, "", &["\"SUB_I\" is not a type"]),
-    (231, "", &["\"SUB_IF\" is not a type"]),
-    (232, "", &["\"SUB_PF\" is not a type"]),
-    (233, "", &["\"SUB_PI\" is not a type"]),
-    (234, "", &["\"SUB_PP\" is not a type"]),
-    (235, "", &["\"SUB_PU\" is not a type"]),
-    (236, "", &["\"SUB_U\" is not a type"]),
-    (237, "", &["\"SUB_U64\" is not a type"]),
-    (238, "", &["\"SUBSTORE_F\" is not a type"]),
-    (239, "", &["\"SUBSTORE_FI\" is not a type"]),
-    (240, "", &["\"SUBSTORE_I\" is not a type"]),
-    (241, "", &["\"SUBSTORE_IF\" is not a type"]),
-    (242, "", &["\"SUBSTORE_V\" is not a type"]),
-    (243, "", &["\"SUBSTOREP_F\" is not a type"]),
-    (244, "", &["\"SUBSTOREP_FI\" is not a type"]),
-    (245, "", &["\"SUBSTOREP_I\" is not a type"]),
-    (246, "", &["\"SUBSTOREP_IF\" is not a type"]),
-    (247, "", &["\"SUBSTOREP_V\" is not a type"]),
+    (20, "", &["\"ADD_EF\" is not a type"]),
+    (21, "", &["\"ADD_EI\" is not a type"]),
+    (22, "", &["\"ADD_FI\" is not a type"]),
+    (23, "", &["\"ADD_FP\" is not a type"]),
+    (24, "", &["\"ADD_I\" is not a type"]),
+    (25, "", &["\"ADD_IF\" is not a type"]),
+    (26, "", &["\"ADD_IP\" is not a type"]),
+    (27, "", &["\"ADD_IS\" is not a type"]),
+    (28, "", &["\"ADD_PF\" is not a type"]),
+    (29, "", &["\"ADD_PI\" is not a type"]),
+    (30, "", &["\"ADD_PIW\" is not a type"]),
+    (31, "", &["\"ADD_PU\" is not a type"]),
+    (32, "", &["\"ADD_SF\" is not a type"]),
+    (33, "", &["\"ADD_SI\" is not a type"]),
+    (34, "", &["\"ADD_U\" is not a type"]),
+    (35, "", &["\"ADD_U64\" is not a type"]),
+    (36, "", &["\"ADD_UP\" is not a type"]),
+    (37, "", &["\"ADDSTORE_F\" is not a type"]),
+    (38, "", &["\"ADDSTORE_FI\" is not a type"]),
+    (39, "", &["\"ADDSTORE_I\" is not a type"]),
+    (40, "", &["\"ADDSTORE_IF\" is not a type"]),
+    (41, "", &["\"ADDSTORE_V\" is not a type"]),
+    (42, "", &["\"ADDSTOREP_F\" is not a type"]),
+    (43, "", &["\"ADDSTOREP_FI\" is not a type"]),
+    (44, "", &["\"ADDSTOREP_I\" is not a type"]),
+    (45, "", &["\"ADDSTOREP_IF\" is not a type"]),
+    (46, "", &["\"ADDSTOREP_V\" is not a type"]),
+    (47, "", &["\"AND_ANY\" is not a type"]),
+    (48, "", &["\"AND_FI\" is not a type"]),
+    (49, "", &["\"AND_I\" is not a type"]),
+    (50, "", &["\"AND_IF\" is not a type"]),
+    (51, "", &["\"BITAND_D\" is not a type"]),
+    (52, "", &["\"BITAND_FI\" is not a type"]),
+    (53, "", &["\"BITAND_I\" is not a type"]),
+    (54, "", &["\"BITAND_I64\" is not a type"]),
+    (55, "", &["\"BITAND_IF\" is not a type"]),
+    (56, "", &["\"BITAND_U\" is not a type"]),
+    (57, "", &["\"BITAND_U64\" is not a type"]),
+    (58, "", &["\"BITAND_V\" is not a type"]),
+    (59, "", &["\"BITCLR_D\" is not a type"]),
+    (60, "", &["\"BITCLR_F\" is not a type"]),
+    (61, "", &["\"BITCLR_I\" is not a type"]),
+    (62, "", &["\"BITCLR_I64\" is not a type"]),
+    (63, "", &["\"BITCLR_U\" is not a type"]),
+    (64, "", &["\"BITCLR_U64\" is not a type"]),
+    (65, "", &["\"BITCLR_V\" is not a type"]),
+    (66, "", &["\"BITCLRSTORE_F\" is not a type"]),
+    (67, "", &["\"BITCLRSTORE_I\" is not a type"]),
+    (68, "", &["\"BITCLRSTOREP_F\" is not a type"]),
+    (69, "", &["\"BITEXTEND_I\" is not a type"]),
+    (70, "", &["\"BITEXTEND_U\" is not a type"]),
+    (71, "", &["\"BITNOT_F\" is not a type"]),
+    (72, "", &["\"BITNOT_I\" is not a type"]),
+    (73, "", &["\"BITNOT_I64\" is not a type"]),
+    (74, "", &["\"BITNOT_U\" is not a type"]),
+    (75, "", &["\"BITNOT_U64\" is not a type"]),
+    (76, "", &["\"BITNOT_V\" is not a type"]),
+    (77, "", &["\"BITOR_D\" is not a type"]),
+    (78, "", &["\"BITOR_FI\" is not a type"]),
+    (79, "", &["\"BITOR_I\" is not a type"]),
+    (80, "", &["\"BITOR_I64\" is not a type"]),
+    (81, "", &["\"BITOR_IF\" is not a type"]),
+    (82, "", &["\"BITOR_U\" is not a type"]),
+    (83, "", &["\"BITOR_U64\" is not a type"]),
+    (84, "", &["\"BITOR_V\" is not a type"]),
+    (85, "", &["\"BITSETSTORE_F\" is not a type"]),
+    (86, "", &["\"BITSETSTORE_I\" is not a type"]),
+    (87, "", &["\"BITSETSTOREP_F\" is not a type"]),
+    (88, "", &["\"BITSETSTOREP_I\" is not a type"]),
+    (89, "", &["\"BITXOR_D\" is not a type"]),
+    (90, "", &["\"BITXOR_F\" is not a type"]),
+    (91, "", &["\"BITXOR_I\" is not a type"]),
+    (92, "", &["\"BITXOR_I64\" is not a type"]),
+    (93, "", &["\"BITXOR_U\" is not a type"]),
+    (94, "", &["\"BITXOR_U64\" is not a type"]),
+    (95, "", &["\"BITXOR_V\" is not a type"]),
+    (96, "", &["\"CONV_FTOI\" is not a type"]),
+    (97, "", &["\"CONV_FU\" is not a type"]),
+    (98, "", &["\"CONV_ITOF\" is not a type"]),
+    (99, "", &["\"CONV_UF\" is not a type"]),
+    (100, "", &["\"CROSS_V\" is not a type"]),
+    (101, "", &["\"DIV_FI\" is not a type"]),
+    (102, "", &["\"DIV_I\" is not a type"]),
+    (103, "", &["\"DIV_IF\" is not a type"]),
+    (104, "", &["\"DIV_U\" is not a type"]),
+    (105, "", &["\"DIV_VF\" is not a type"]),
+    (106, "", &["\"DIVSTORE_F\" is not a type"]),
+    (107, "", &["\"DIVSTORE_FI\" is not a type"]),
+    (108, "", &["\"DIVSTORE_I\" is not a type"]),
+    (109, "", &["\"DIVSTORE_IF\" is not a type"]),
+    (110, "", &["\"DIVSTOREP_F\" is not a type"]),
+    (111, "", &["\"DIVSTOREP_FI\" is not a type"]),
+    (112, "", &["\"DIVSTOREP_IF\" is not a type"]),
+    (113, "", &["\"EQ_FI\" is not a type"]),
+    (114, "", &["\"EQ_FLD\" is not a type"]),
+    (115, "", &["\"EQ_I\" is not a type"]),
+    (116, "", &["\"EQ_I64\" is not a type"]),
+    (117, "", &["\"EQ_IF\" is not a type"]),
+    (118, "", &["\"EQ_P\" is not a type"]),
+    (119, "", &["\"EQ_U\" is not a type"]),
+    (120, "", &["\"EQ_U64\" is not a type"]),
+    (121, "", &["\"GE_D\" is not a type"]),
+    (122, "", &["\"GE_FI\" is not a type"]),
+    (123, "", &["\"GE_I\" is not a type"]),
+    (124, "", &["\"GE_I64\" is not a type"]),
+    (125, "", &["\"GE_IF\" is not a type"]),
+    (126, "", &["\"GE_P\" is not a type"]),
+    (127, "", &["\"GE_U\" is not a type"]),
+    (128, "", &["\"GE_U64\" is not a type"]),
+    (129, "", &["\"GT_D\" is not a type"]),
+    (130, "", &["\"GT_FI\" is not a type"]),
+    (131, "", &["\"GT_I\" is not a type"]),
+    (132, "", &["\"GT_I64\" is not a type"]),
+    (133, "", &["\"GT_IF\" is not a type"]),
+    (134, "", &["\"GT_P\" is not a type"]),
+    (135, "", &["\"GT_U\" is not a type"]),
+    (136, "", &["\"GT_U64\" is not a type"]),
+    (137, "", &["\"IF_F\" is not a type"]),
+    (138, "", &["\"IF_S\" is not a type"]),
+    (139, "", &["\"IFNOT_F\" is not a type"]),
+    (140, "", &["\"IFNOT_S\" is not a type"]),
+    (141, "", &["\"LE_FI\" is not a type"]),
+    (142, "", &["\"LE_I\" is not a type"]),
+    (143, "", &["\"LE_IF\" is not a type"]),
+    (144, "", &["\"LE_P\" is not a type"]),
+    (145, "", &["\"LE_U\" is not a type"]),
+    (146, "", &["\"LOAD_I\" is not a type"]),
+    (147, "", &["\"LOAD_I64\" is not a type"]),
+    (148, "", &["\"LOAD_P\" is not a type"]),
+    (149, "", &["\"LOADA_STRUCT\" is not a type"]),
+    (150, "", &["\"LOADP_ENT\" is not a type"]),
+    (151, "", &["\"LOADP_F\" is not a type"]),
+    (152, "", &["\"LOADP_FLD\" is not a type"]),
+    (153, "", &["\"LOADP_FNC\" is not a type"]),
+    (154, "", &["\"LOADP_I\" is not a type"]),
+    (155, "", &["\"LOADP_I16\" is not a type"]),
+    (156, "", &["\"LOADP_I8\" is not a type"]),
+    (157, "", &["\"LOADP_S\" is not a type"]),
+    (158, "", &["\"LOADP_U16\" is not a type"]),
+    (159, "", &["\"LOADP_U8\" is not a type"]),
+    (160, "", &["\"LOADP_V\" is not a type"]),
+    (161, "", &["\"LSHIFT_DI\" is not a type"]),
+    (162, "", &["\"LSHIFT_F\" is not a type"]),
+    (163, "", &["\"LSHIFT_FI\" is not a type"]),
+    (164, "", &["\"LSHIFT_I\" is not a type"]),
+    (165, "", &["\"LSHIFT_IF\" is not a type"]),
+    (166, "", &["\"LSHIFT_U\" is not a type"]),
+    (167, "", &["\"LSHIFT_U64I\" is not a type"]),
+    (168, "", &["\"LT_FI\" is not a type"]),
+    (169, "", &["\"LT_I\" is not a type"]),
+    (170, "", &["\"LT_IF\" is not a type"]),
+    (171, "", &["\"LT_P\" is not a type"]),
+    (172, "", &["\"LT_U\" is not a type"]),
+    (173, "", &["\"MOD_F\" is not a type"]),
+    (174, "", &["\"MOD_FI\" is not a type"]),
+    (175, "", &["\"MOD_I\" is not a type"]),
+    (176, "", &["\"MOD_IF\" is not a type"]),
+    (177, "", &["\"MOD_U\" is not a type"]),
+    (178, "", &["\"MOD_U64\" is not a type"]),
+    (179, "", &["\"MOD_V\" is not a type"]),
+    (180, "", &["\"MUL_FI\" is not a type"]),
+    (181, "", &["\"MUL_I\" is not a type"]),
+    (182, "", &["\"MUL_IF\" is not a type"]),
+    (183, "", &["\"MUL_IV\" is not a type"]),
+    (184, "", &["\"MUL_U\" is not a type"]),
+    (185, "", &["\"MUL_U64\" is not a type"]),
+    (186, "", &["\"MUL_VI\" is not a type"]),
+    (187, "", &["\"MULSTORE_F\" is not a type"]),
+    (188, "", &["\"MULSTORE_FI\" is not a type"]),
+    (189, "", &["\"MULSTORE_IF\" is not a type"]),
+    (190, "", &["\"MULSTORE_VF\" is not a type"]),
+    (191, "", &["\"MULSTORE_VI\" is not a type"]),
+    (192, "", &["\"MULSTOREP_F\" is not a type"]),
+    (193, "", &["\"MULSTOREP_FI\" is not a type"]),
+    (194, "", &["\"MULSTOREP_IF\" is not a type"]),
+    (195, "", &["\"MULSTOREP_VF\" is not a type"]),
+    (196, "", &["\"MULSTOREP_VI\" is not a type"]),
+    (197, "", &["\"NE_FI\" is not a type"]),
+    (198, "", &["\"NE_FLD\" is not a type"]),
+    (199, "", &["\"NE_I\" is not a type"]),
+    (200, "", &["\"NE_I64\" is not a type"]),
+    (201, "", &["\"NE_IF\" is not a type"]),
+    (202, "", &["\"NE_P\" is not a type"]),
+    (203, "", &["\"NE_U\" is not a type"]),
+    (204, "", &["\"NE_U64\" is not a type"]),
+    (205, "", &["\"NOT_I\" is not a type"]),
+    (206, "", &["\"OR_ANY\" is not a type"]),
+    (207, "", &["\"OR_FI\" is not a type"]),
+    (208, "", &["\"OR_I\" is not a type"]),
+    (209, "", &["\"OR_IF\" is not a type"]),
+    (210, "", &["\"POW_F\" is not a type"]),
+    (211, "", &["\"POW_FI\" is not a type"]),
+    (212, "", &["\"POW_I\" is not a type"]),
+    (213, "", &["\"POW_IF\" is not a type"]),
+    (214, "", &["\"RSHIFT_DI\" is not a type"]),
+    (215, "", &["\"RSHIFT_F\" is not a type"]),
+    (216, "", &["\"RSHIFT_FI\" is not a type"]),
+    (217, "", &["\"RSHIFT_I\" is not a type"]),
+    (218, "", &["\"RSHIFT_IF\" is not a type"]),
+    (219, "", &["\"RSHIFT_U\" is not a type"]),
+    (220, "", &["\"SPACESHIP_F\" is not a type"]),
+    (221, "", &["\"SPACESHIP_S\" is not a type"]),
+    (222, "", &["\"STORE_FI\" is not a type"]),
+    (223, "", &["\"STORE_I\" is not a type"]),
+    (224, "", &["\"STORE_I64\" is not a type"]),
+    (225, "", &["\"STORE_IF\" is not a type"]),
+    (226, "", &["\"STORE_P\" is not a type"]),
+    (227, "", &["\"STOREP_P\" is not a type"]),
+    (228, "", &["\"SUB_EF\" is not a type"]),
+    (229, "", &["\"SUB_EI\" is not a type"]),
+    (230, "", &["\"SUB_FI\" is not a type"]),
+    (231, "", &["\"SUB_I\" is not a type"]),
+    (232, "", &["\"SUB_IF\" is not a type"]),
+    (233, "", &["\"SUB_PF\" is not a type"]),
+    (234, "", &["\"SUB_PI\" is not a type"]),
+    (235, "", &["\"SUB_PP\" is not a type"]),
+    (236, "", &["\"SUB_PU\" is not a type"]),
+    (237, "", &["\"SUB_U\" is not a type"]),
+    (238, "", &["\"SUB_U64\" is not a type"]),
+    (239, "", &["\"SUBSTORE_F\" is not a type"]),
+    (240, "", &["\"SUBSTORE_FI\" is not a type"]),
+    (241, "", &["\"SUBSTORE_I\" is not a type"]),
+    (242, "", &["\"SUBSTORE_IF\" is not a type"]),
+    (243, "", &["\"SUBSTORE_V\" is not a type"]),
+    (244, "", &["\"SUBSTOREP_F\" is not a type"]),
+    (245, "", &["\"SUBSTOREP_FI\" is not a type"]),
+    (246, "", &["\"SUBSTOREP_I\" is not a type"]),
+    (247, "", &["\"SUBSTOREP_IF\" is not a type"]),
+    (248, "", &["\"SUBSTOREP_V\" is not a type"]),
 ];
 
 /// Opcodes the standard target emulates, at global scope and in a body: the pinned FTEQCC's diagnostics for each.
 const EMULATIONS: &[(usize, &str, &[&str])] = &[
     (
-        248,
+        249,
         "",
         &[
             "Unable to generate statements at global scope (IFNOT).",
@@ -42364,7 +54426,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        249,
+        250,
         "",
         &[
             "Unable to generate statements at global scope (IFNOT).",
@@ -42376,7 +54438,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        250,
+        251,
         "",
         &[
             "itof emulation: denormals are unsafe i",
@@ -42385,7 +54447,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        251,
+        252,
         "",
         &[
             "itof emulation: denormals are unsafe i",
@@ -42395,7 +54457,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        252,
+        253,
         "",
         &[
             "Unable to generate statements at global scope (MUL_F).",
@@ -42404,17 +54466,8 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
             "initializer for 'k' is not constant",
         ],
     ),
-    (253, "", &["itof emulation: denormals are unsafe i"]),
-    (254, "", &["ftoi emulation: denormals are unsafe"]),
-    (
-        255,
-        "",
-        &[
-            "OP_ADD_SI: string+int may be unsafe",
-            "AddInt function not defined: cannot emulate int+int",
-            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
-        ],
-    ),
+    (254, "", &["itof emulation: denormals are unsafe i"]),
+    (255, "", &["ftoi emulation: denormals are unsafe"]),
     (
         256,
         "",
@@ -42428,6 +54481,15 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         257,
         "",
         &[
+            "OP_ADD_SI: string+int may be unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        258,
+        "",
+        &[
             "OP_ADD_SF: string+float may be unsafe",
             "AddInt function not defined: cannot emulate int+int",
             "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
@@ -42435,9 +54497,9 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
             "initializer for 't' is not constant",
         ],
     ),
-    (258, "", &[]),
+    (259, "", &[]),
     (
-        259,
+        260,
         "",
         &[
             "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
@@ -42446,7 +54508,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        260,
+        261,
         "",
         &[
             "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
@@ -42455,7 +54517,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        261,
+        262,
         "",
         &[
             "Opcode \"~|BITNOT_D\" is not supported.",
@@ -42464,13 +54526,13 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
             "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
         ],
     ),
-    (262, "", &[]),
     (263, "", &[]),
     (264, "", &[]),
     (265, "", &[]),
-    (266, "", &["ftoi emulation: denormals are unsafe"]),
+    (266, "", &[]),
+    (267, "", &["ftoi emulation: denormals are unsafe"]),
     (
-        267,
+        268,
         "",
         &[
             "MulInt function not defined: cannot emulate int*int",
@@ -42478,7 +54540,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        268,
+        269,
         "",
         &[
             "itof emulation: denormals are unsafe u",
@@ -42489,7 +54551,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        269,
+        270,
         "",
         &[
             "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
@@ -42498,7 +54560,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        270,
+        271,
         "",
         &[
             "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
