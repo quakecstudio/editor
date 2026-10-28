@@ -4829,7 +4829,6 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   and "Cannot cast from float to float*". Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_RefTerm`, `QCC_TryEvaluateCast`, `QCC_SRef_IsNull`.
-## FTEF-32 Calls
 - **FTEF-31.18** A string's character read at an index that is no float is the value
   `OP_LOADP_U8` gives: an `int` on a target that has it, and on one that does not the
   `__uint32` of the last shift of its emulation (`OP_RSHIFT_U`), so under `#pragma target dp`
@@ -4841,6 +4840,8 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_StatementFlags` (`OP_LOADP_U8`, `OP_CONV_FU`), `QCC_TryEvaluateCast`,
   `QCC_PR_RefExpression`.
+
+## FTEF-32 Calls
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`,
 `QCC_PR_ParseDefs` (a local's initialiser), `QCC_PR_ParseRefValue` (`expandmemberfields`),
