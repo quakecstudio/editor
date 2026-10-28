@@ -65,7 +65,7 @@ fn terms_are_reported_as_fteqcc_reports_them() {
 
 // spec FTEF-30.1: a test of a value of each type
 // spec FTEF-30.7: a vector constructor of each type
-// spec FTEF-30.8: a cast between each pair of types
+// spec FTEF-30.11: a cast between each pair of types
 #[test]
 fn unary_and_casts_1_are_reported_as_fteqcc_reports_them() {
     check(&UNARY_AND_CASTS[0..250]);
@@ -73,7 +73,7 @@ fn unary_and_casts_1_are_reported_as_fteqcc_reports_them() {
 
 // spec FTEF-30.1: a test of a value of each type
 // spec FTEF-30.7: a vector constructor of each type
-// spec FTEF-30.8: a cast between each pair of types
+// spec FTEF-30.11: a cast between each pair of types
 #[test]
 fn unary_and_casts_2_are_reported_as_fteqcc_reports_them() {
     check(&UNARY_AND_CASTS[250..500]);
@@ -81,7 +81,7 @@ fn unary_and_casts_2_are_reported_as_fteqcc_reports_them() {
 
 // spec FTEF-30.1: a test of a value of each type
 // spec FTEF-30.7: a vector constructor of each type
-// spec FTEF-30.8: a cast between each pair of types
+// spec FTEF-30.11: a cast between each pair of types
 #[test]
 fn unary_and_casts_3_are_reported_as_fteqcc_reports_them() {
     check(&UNARY_AND_CASTS[500..535]);

@@ -148,7 +148,7 @@ impl<'e> Checker<'e> {
     }
 
     /// Whether `call` is the intrinsic `_length(e)`: its callee the name `_length` with no
-    /// definition (FTEF-30.8).
+    /// definition (FTEF-30.11).
     fn is_length(&self, call: &ast::CallExpr) -> bool {
         let Some(ast::Expr::Name(name)) = call.callee() else {
             return false;

@@ -256,7 +256,7 @@ fn a_vector_condition() {
     );
 }
 
-// spec FTEF-30.8: `sizeof` of a type or value is a constant; `_length` of a non-constant string
+// spec FTEF-30.11: `sizeof` of a type or value is a constant; `_length` of a non-constant string
 // or a float is a fatal error
 // spec QCD-4.38: E0334 for `_length` refused
 #[test]
@@ -284,7 +284,7 @@ fn sizes_and_lengths() {
     );
 }
 
-// spec FTEF-30.8: under `undefwordsize` `sizeof` is an error
+// spec FTEF-30.11: under `undefwordsize` `sizeof` is an error
 // spec QCD-4.32: E0326 for `sizeof` under undefwordsize
 #[test]
 fn sizeof_under_undefwordsize() {
@@ -467,4 +467,33 @@ fn ternaries_of_functions_structs_and_classes() {
         found("local entity r = c ? cc : e;"),
         mismatch("class C", "entity")
     );
+}
+
+// spec FTEF-30.11: an array's `sizeof` is its element's times its length and a defined array's
+// `_length` its length, constants; a struct's member array's `_length` is none
+// spec FTEF-30.7: a vector constructor of constants is a constant, an integer component made a
+// float
+#[test]
+fn array_sizes_and_constant_vectors() {
+    let defs = "#pragma target fte\nfloat farr[4]; vector varr[2]; float q; struct S { float m[3]; };\nS s;\n";
+    let found = |statement: &str| -> Vec<String> {
+        diags(&format!("{defs}void() f = {{ {statement} }};\n"))
+            .into_iter()
+            .map(|(_, m)| m)
+            .collect()
+    };
+    let past = |i: u32| format!("(constant) array index out of bounds (0 <= {i} < 4)");
+    assert_eq!(found("q = farr[sizeof(farr)];"), [past(16)]);
+    assert_eq!(found("q = farr[sizeof(farr) / 4];"), [past(4)]);
+    assert_eq!(found("q = farr[sizeof(varr)];"), [past(24)]);
+    assert_eq!(found("q = farr[sizeof(s.m)];"), [past(12)]);
+    assert_eq!(found("q = farr[_length(farr)];"), [past(4)]);
+    assert_eq!(
+        found("local float la[2]; q = farr[sizeof(la) + _length(la)];"),
+        [past(10)]
+    );
+    assert!(found("q = farr[_length(s.m)];").is_empty());
+    assert_eq!(found("q = farr[[5, 0, 0][0]];"), [past(5)]);
+    assert_eq!(found("q = farr[[5i, 0i, 0i][0]];"), [past(5)]);
+    assert_eq!(found("q = farr[[0, 6i, 0][1]];"), [past(6)]);
 }

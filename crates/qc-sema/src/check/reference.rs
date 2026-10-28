@@ -499,10 +499,7 @@ impl Checker<'_> {
             return Ok(base);
         }
         if base.is_array_head() {
-            let length = match base.reference {
-                Reference::ArrayHead(Some(member)) => member.length,
-                _ => base.sym.def().and_then(|def| self.env.array_length(def)),
-            };
+            let length = self.head_length(&base);
             self.bounds(constant, length, span);
             let at = self.scaled_index(&base.ty, at, span)?;
             let at = match base.reference {
@@ -598,6 +595,15 @@ impl Checker<'_> {
                 let message = format!("expected {expected}, found [");
                 self.fatal(Code::E0204, span, message)
             }
+        }
+    }
+
+    /// The length of the array `head` names bare: a member array's as its struct declares it,
+    /// else its definition's.
+    pub(super) fn head_length(&self, head: &Value) -> Option<u32> {
+        match head.reference {
+            Reference::ArrayHead(Some(member)) => member.length,
+            _ => head.sym.def().and_then(|def| self.env.array_length(def)),
         }
     }
 

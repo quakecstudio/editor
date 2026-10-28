@@ -4543,15 +4543,8 @@ reference are FTEF-31's.
   `OP_STORE_F` and an integer with `OP_STORE_IF`, which on the standard target is "itof
   emulation". Its "Argument not a single numeric value in vector constructor" is not reachable:
   the cast before it gives every component a float's type or fails.
-- **FTEF-30.8** `sizeof(TYPE)` and `sizeof e` are unsigned constants: a string immediate's length
-  with its NUL, a type's bytes, `bits / 8` for an 8- or 16-bit type and 4 per word for any other,
-  an array's times its length; under `undefwordsize` `sizeof` of a type is the error `E0326`
-  "sizeof was disabled, use array.length instead." and of an expression "sizeof was disabled.".
-  `_length(e)` (or `_length e`) is an integer constant: an array's length, a constant string's
-  without its NUL, a vector's 3; a string that is no constant is the fatal error `E0334`
-  "_length(string) requires an initialised constant", any other type "_length() unsupported
-  argument type for intrinsic". The model does not keep an array's length or a struct's layout,
-  so those sizes are no known constants.
+- **FTEF-30.8** **Withdrawn** (#84): it said the model keeps no array's length or struct's
+  layout, so their sizes were no known constants; it keeps both, and FTEF-30.11 replaces it.
 
 - **FTEF-30.9** `?:` compares its arms' types (FTEF-30.3) before it stores the last arm, so
   "Type mismatch on ternary operator: A vs B" comes before that store's statement.
@@ -4560,6 +4553,17 @@ reference are FTEF-31's.
   three words is the fatal error `E0370` "oversized ternary result": `struct S { float a, b, c, d;
   }; S r = c ? s1 : s2;`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefExpression`.
+- **FTEF-30.11** `sizeof(TYPE)` and `sizeof e` are unsigned constants: a string immediate's length
+  with its NUL, a type's bytes, `bits / 8` for an 8- or 16-bit type and 4 per word for any other,
+  and an array's, a member array's included, its element's times its length: `sizeof(farr)` is 16
+  for `float farr[4]`. Under `undefwordsize` `sizeof` of a type is the error `E0326` "sizeof was
+  disabled, use array.length instead." and of an expression "sizeof was disabled.". `_length(e)`
+  (or `_length e`) is an integer constant: a defined array's length, a constant string's without
+  its NUL, a vector's 3; a struct's member array's length is no constant. A string that is no
+  constant is the fatal error `E0334` "_length(string) requires an initialised constant", any
+  other type "_length() unsupported argument type for intrinsic". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_RefTerm`.
 ## FTEF-31 References
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`, `QCC_RefToDef`,
