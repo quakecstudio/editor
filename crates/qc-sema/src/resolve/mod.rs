@@ -302,7 +302,7 @@ pub(crate) fn resolve_mapped(
         typedefs: HashMap::new(),
         structs: HashSet::new(),
         strict_enums: HashMap::new(),
-        enum_types: HashSet::new(),
+        enum_types: HashMap::new(),
         enum_values: HashMap::new(),
         enum_redeclared: false,
         struct_defs: HashMap::new(),
@@ -520,8 +520,8 @@ struct Resolver<'a> {
     typedefs: HashMap<String, Type>,
     /// The names of the structs and unions (FTEF-19.15).
     structs: HashSet<String>,
-    /// The names of the named enums' types (FTEF-19.10).
-    enum_types: HashSet<String>,
+    /// The named enums' types by their names, each its base type (FTEF-19.10, FTEF-8.6).
+    enum_types: HashMap<String, Type>,
     /// The value of each name of a named enum, by the enum's name and the name's (FTEF-19.36).
     enum_values: HashMap<(String, String), f64>,
     /// Whether the enum being declared names a type already, so `QCC_PR_ParseEnum` reads its

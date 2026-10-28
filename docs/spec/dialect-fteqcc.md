@@ -606,6 +606,15 @@ full dialect also uses `enumflags`.
   base), and `enum class E : float { A } x;` an `E x` that no float takes (FTEF-19.10). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseEnum`.
+- **FTEF-8.6** A named enum that is not `enum class` makes a type of its name with its base's
+  basic type, the first declaration's (`enumtype = QCC_TypeForName(name); if (!enumtype) ...
+  enumtype = QCC_PR_NewType(name, basetype->type, true);`), while its names stay of the base
+  type: a value of it casts as the base does and prints by its name, so `enum EN { A }; EN e;
+  string s = e;` is `E0213` "Cannot cast from EN to string", `enum EN : int { A }` makes it
+  `W0220` "Implicit cast from EN to string", `int i = e;` warns "ftoi emulation" as a float does,
+  and `string s = A;` casts the null constant. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseEnum`.
 
 ## FTEF-9 Classes
 
@@ -873,6 +882,12 @@ Vanilla `qcc` has no `__variant`; the word is a name and "not a type" (QC-11). T
   without a type error, because of FTEF-11.1; the concrete type governs the operation.
 - **FTEF-11.3** Codegen (later): how a `__variant` value is stored and dispatched is fixed by
   L-01.
+- **FTEF-11.4** FTEF-11.1 holds only after `typecmp_lax` compares the two types' `aux_type`s
+  (`if (typecmp_lax(a->aux_type, b->aux_type)) return 1;` comes before the `ev_variant` return),
+  so a `__variant` differs from a pointer or a function, whose `aux_type` it lacks: `float **p;
+  __variant *q; q = p;` and `void() *r; q = r;` are `W0220` "Implicit cast from float** to
+  __variant*", as is `p = q;`, while `__variant **t; t = p;` and `string *s; q = s;` cast with
+  no warning.
 
 ## FTEF-12 The remaining `#pragma` directives
 
@@ -3224,6 +3239,18 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   the id target `int i; vector v; v = i;` is "Implicit cast from __int32 to vector" and then
   `OP_MUL_IV`'s "itof emulation: denormals are unsafe i", in a store, a compound assignment and
   a local's initialiser alike.
+- **FTEF-19.56** A pointer's braced initialiser (`else if (type->type == ev_pointer &&
+  QCC_PR_CheckToken("{"))`) is a nameless array of what the pointer points to, made by
+  `QCC_PR_DummyDef` with `GDF_STATIC` inside a function, whose elements are read as values of a
+  definition named `''`: `float x; float *p = { x };` is `E0214` "initializer for '' is not
+  constant", a local's included, and `{ 1, "a" }` "Cannot cast from string to float". The
+  pointer then takes its address with `QCC_PR_GenerateAddressOf`: a target without
+  `OP_GLOBALADDRESS` refuses it, the fatal `E0331` "Address-of operator is not supported in this
+  form without extensions. Consider the use of: #pragma target fte"; at global scope it is
+  `E0345` "Unable to generate statements at global scope (GLOBALADDRESS)."; and a global's or a
+  `static`'s value is then `E0214` "initializer for 'p' is not constant". A plain or `const`
+  local takes it with no message.
+
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and
@@ -3810,6 +3837,17 @@ opcodes.rs`, the rows of `pr_opcodes[]` in order) and picks as FTEQCC picks
   `&type_bint`): a float of the name `__bfloat`, printed so (`string s = (f == 1);` is "Cannot
   cast from __bfloat to string"), and an `int` printed `__int32`; `_Bool` is `type_bint`, an
   `int` (`_Bool b; string s = b;` is "Implicit cast from __int32 to string").
+- **FTEF-23.8** `__bint` and `__bfloat` are both `ev_boolean` (`QCC_PR_NewType("__bint",
+  ev_boolean, true)`), one type to `typecmp` and `typecmp_lax` and no other type's:
+  `__bint b; __bfloat b;` redeclares nothing, `_Bool b; int b;` is "Type mismatch on
+  redeclaration of b. __int32, should be __bint", `TypeName` printing `__bint`. A cast to either
+  is `QCC_PR_GenerateLogicalTruth`'s `!=` with zero (`NE_F`, `NE_S`, `NE_E`, `NE_V`, `NE_FNC`,
+  `NE_I` for integers and pointers, `NE_D`, `NE_I64`, `NE_U64`) then that value cast to the
+  boolean's `parentclass`, with no message, implicit or explicit (`else if (totype ==
+  ev_boolean)`), and the value is of the parent type; `QCC_StoreSRefToRef` makes the truth again
+  of a number stored into one. So on the id target `__bint c = 1.5;` folds with no overflow
+  warning, `c = f;` and `c = s;` are two "ftoi emulation" warnings, `c = (_Bool)f;` three, and a
+  local's initialiser `_Bool c = f;` one.
 
 ## FTEF-24 Member access as FTEQCC types it
 

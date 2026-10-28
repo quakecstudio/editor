@@ -629,3 +629,102 @@ fn truth_values_and_vector_casts() {
         assert!(found.contains(&bounds), "{statement}: {found:?}");
     }
 }
+
+// spec FTEF-11.4: a `__variant` target differs from a pointer or function target
+#[test]
+fn variant_pointers_against_pointer_targets() {
+    let messages = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "float **p; __variant *q; __variant **t; void() *r; string *s;\n\
+             void() g = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    assert_eq!(
+        messages("q = p;"),
+        ["Implicit cast from float** to __variant*"]
+    );
+    assert_eq!(
+        messages("q = r;"),
+        ["Implicit cast from void()* to __variant*"]
+    );
+    assert_eq!(
+        messages("p = q;"),
+        ["Implicit cast from __variant* to float**"]
+    );
+    assert!(messages("t = p;").is_empty());
+    assert!(messages("q = s;").is_empty());
+}
+
+// spec FTEF-8.6: a named enum's type casts as its base and prints by its name
+#[test]
+fn named_enum_types_cast_as_their_base() {
+    let messages = |source: &str| -> Vec<String> {
+        diags(&format!("#pragma target fte\n{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    assert_eq!(
+        messages("enum EN { A }; EN e; string s = e;"),
+        ["Cannot cast from EN to string"]
+    );
+    assert_eq!(
+        messages("enum EN : int { A }; EN e; void() f = { local string s = e; };"),
+        ["Implicit cast from EN to string"]
+    );
+    assert_eq!(
+        messages("enum EN { A }; EN e; void() f = { local entity s = e; };"),
+        ["Cannot cast from EN to entity"]
+    );
+    let standard: Vec<String> = diags("enum EN { A }; EN e; void() f = { local int i = e; };\n")
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect();
+    assert_eq!(standard, ["ftoi emulation: denormals are unsafe"]);
+    assert_eq!(
+        messages("enum EN : int { A }; enum EN { B }; EN e; void() f = { local string s = e; };"),
+        [
+            "legacy enum base type. Use \"enum [class] [name_e]:type\" instead",
+            "Implicit cast from EN to string"
+        ]
+    );
+    assert!(messages("enum EN { A }; string s = A; EN e = 1i;").is_empty());
+}
+
+// spec FTEF-23.8: booleans are one type, cast to by their logical truth
+#[test]
+fn casts_to_booleans_take_the_logical_truth() {
+    let messages = |source: &str| -> Vec<String> {
+        diags(&format!("{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    let ftoi = "ftoi emulation: denormals are unsafe";
+    assert!(messages("__bint b; __bfloat b;").is_empty());
+    assert_eq!(
+        messages("_Bool b; int b;"),
+        ["Type mismatch on redeclaration of b. __int32, should be __bint"]
+    );
+    assert_eq!(
+        messages("int b; _Bool b;"),
+        ["Type mismatch on redeclaration of b. __bint, should be __int32"]
+    );
+    assert!(messages("void() g = { local __bint c = 1.5; };").is_empty());
+    assert_eq!(
+        messages("float f; void() g = { local _Bool c = f; };"),
+        [ftoi]
+    );
+    assert_eq!(
+        messages("string s; void() g = { local __bint c; c = s; };"),
+        [ftoi, ftoi]
+    );
+    assert_eq!(
+        messages("float f; void() g = { local _Bool c; c = (_Bool)f; };"),
+        [ftoi, ftoi, ftoi]
+    );
+    assert!(messages("float f; void() g = { local __bfloat c; c = f; };").is_empty());
+}

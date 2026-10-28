@@ -331,7 +331,7 @@ impl<'a> Resolver<'a> {
             if basic_word
                 || !matches!(kind, Kind::Entity | Kind::Opaque)
                 || self.has_name(&self.structs, parent)
-                || self.has_name(&self.enum_types, parent)
+                || self.named(&self.enum_types, parent).is_some()
             {
                 self.report(
                     Code::E0241,

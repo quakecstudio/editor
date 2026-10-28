@@ -627,6 +627,11 @@ impl Resolver<'_> {
             return false;
         }
         let to = &self.resolved_deep(to, MAX_TYPEDEF_DEPTH);
+        // FTEF-23.8: a cast to a boolean is its logical truth, a number cast to the boolean's
+        // parent type, with no message.
+        if matches!(to.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat)) {
+            return false;
+        }
         // FTEF-10.8: a value of an accessor type is cast as its base's, and a cast to one is
         // checked against its base (`for (tmp = cast; tmp->type == ev_accessor; ...)`).
         let base_of = |ty: &Type| match ty {
@@ -682,14 +687,22 @@ impl Resolver<'_> {
             }
         }
         let as_entity = |ty: Type| if class_of(&ty) { entity.clone() } else { ty };
-        let to_checked = as_entity(base_of(to).unwrap_or_else(|| to.clone()));
+        // FTEF-8.6: a named enum's type casts as its base's kind, under its own name.
+        let enum_base = |ty: &Type| match ty {
+            Type::Named(name) => self
+                .named(&self.enum_types, name)
+                .map(|base| self.resolved_deep(base, MAX_TYPEDEF_DEPTH)),
+            _ => None,
+        };
+        let checked = |ty: &Type| base_of(ty).or_else(|| enum_base(ty));
+        let to_checked = as_entity(checked(to).unwrap_or_else(|| to.clone()));
         let typed;
         let shown;
         let source = match source {
             Source::Typed(ty) => {
                 let ty = self.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
                 shown = self.type_name(&base_of(&ty).unwrap_or_else(|| ty.clone()));
-                typed = as_entity(base_of(&ty).unwrap_or(ty));
+                typed = as_entity(checked(&ty).unwrap_or(ty));
                 Source::Typed(&typed)
             }
             Source::Literal(_) => {

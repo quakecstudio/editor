@@ -9,6 +9,7 @@ use qc_diag::{Code, Span};
 use qc_lexer::LexFlags;
 use qc_preproc::OpcodeTarget;
 use qc_syntax::CompilerFlags;
+use qc_syntax::c_scalar::CScalar;
 
 use crate::cast::{Cast, Kind, Source, Supply};
 use crate::check::constant::{Constant, unquoted};
@@ -322,19 +323,7 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn target_at(&self, at: usize) -> OpcodeTarget {
-        let marks = self
-            .resolver
-            .targets
-            .get(self.resolver.unit.0)
-            .copied()
-            .unwrap_or_default();
-        let index = marks.partition_point(|&(from, _)| from <= at);
-        index
-            .checked_sub(1)
-            .and_then(|i| marks.get(i))
-            .or_else(|| marks.first())
-            .map(|&(_, target)| target)
-            .unwrap_or_default()
+        self.resolver.target_at(at)
     }
 
     fn string_text(&self, def: DefId) -> Option<String> {
@@ -469,6 +458,10 @@ impl Env for BodyEnv<'_, '_> {
         let location = self.resolver.at(self.file, span);
         let flags = CompilerFlags::at(self.flags, span.start);
         let to = self.resolver.resolved_deep(to, MAX_TYPEDEF_DEPTH);
+        // FTEF-23.8: a cast to a boolean is its logical truth, with no message.
+        if matches!(to.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat)) {
+            return false;
+        }
         let typed;
         let source = match source {
             Source::Typed(ty) => {

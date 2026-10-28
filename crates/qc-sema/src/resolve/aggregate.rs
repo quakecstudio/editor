@@ -10,6 +10,7 @@
 //! is; what is left over is the reader's caller's to read.
 
 use qc_diag::Code;
+use qc_preproc::{Op, OpcodeTarget};
 
 use crate::lower::{RawAggregate, RawBraces, RawElement, RawValue};
 use crate::resolve::{Fatal, Holder, Resolver};
@@ -44,6 +45,19 @@ struct Part {
 }
 
 impl Resolver<'_> {
+    /// The opcode target at offset `at` of the unit (FTEF-27.1): the last `#pragma target`
+    /// at or before it, else the first.
+    pub(in crate::resolve) fn target_at(&self, at: usize) -> OpcodeTarget {
+        let marks = self.targets.get(self.unit.0).copied().unwrap_or_default();
+        let index = marks.partition_point(|&(from, _)| from <= at);
+        index
+            .checked_sub(1)
+            .and_then(|i| marks.get(i))
+            .or_else(|| marks.first())
+            .map(|&(_, target)| target)
+            .unwrap_or_default()
+    }
+
     /// FTEF-19.47: the aggregate `aggregate` initialising `def`, of type `ty`, at `site`.
     pub(in crate::resolve) fn check_aggregate(
         &mut self,
@@ -94,6 +108,9 @@ impl Resolver<'_> {
             RawElement::Value(value) => return self.read_value(file, &ty, value, def),
             RawElement::Braces(braces) => braces,
         };
+        if let Type::Pointer(pointee) = &ty {
+            return self.read_pointer_braces(file, pointee, braces, def, site);
+        }
         if ty == Type::Simple(SimpleType::Vector) {
             // "vectors can be treated as an array of 3 floats".
             let float = Type::Simple(SimpleType::Float);
@@ -176,6 +193,47 @@ impl Resolver<'_> {
     ) -> Result<(), Fatal> {
         self.check_value(file, def.name, ty, Some(value), def.holder)
             .map(drop)
+    }
+
+    /// FTEF-19.56: a pointer's braces are a nameless array of what it points to, each element
+    /// read as a `static`'s or a global's value, whose address the pointer takes by
+    /// `OP_GLOBALADDRESS`: refused by a target without it, a statement global scope cannot
+    /// generate, and no constant for a global or a `static` to hold.
+    fn read_pointer_braces(
+        &mut self,
+        file: FileId,
+        pointee: &Type,
+        braces: &RawBraces,
+        def: Initialised<'_>,
+        site: AggregateSite,
+    ) -> Result<(), Fatal> {
+        let holder = match def.holder {
+            Holder::Global => Holder::Global,
+            Holder::Static(scope) | Holder::Const(scope) | Holder::Local(scope) => {
+                Holder::Static(scope)
+            }
+        };
+        let element_def = Initialised { name: "", holder };
+        self.read_parts(file, braces, None, site, |r, _, e| {
+            r.read_element(file, &[], pointee, e, element_def, AggregateSite::Nested)
+        })?;
+        let location = self.at(file, braces.open);
+        if !self.target_at(braces.open.start).valid(Op::Globaladdress) {
+            let message = "Address-of operator is not supported in this form without extensions. \
+                           Consider the use of: #pragma target fte"
+                .to_owned();
+            self.report(Code::E0331, location, message);
+            return Err(Fatal);
+        }
+        if matches!(def.holder, Holder::Global) {
+            let message = "Unable to generate statements at global scope (GLOBALADDRESS).";
+            self.report(Code::E0345, location, message.to_owned());
+        }
+        if matches!(def.holder, Holder::Global | Holder::Static(_)) {
+            let message = format!("initializer for '{}' is not constant", def.name);
+            self.report(Code::E0214, location, message);
+        }
+        Ok(())
     }
 
     /// The elements of `braces`, of which the reader takes `limit`, each read by `read`; the

@@ -13,6 +13,7 @@
 //! qualifiers, `extern`, and the functions left undefined at the end (QC-11.8).
 
 use qc_diag::Code;
+use qc_syntax::c_scalar::CScalar;
 use std::collections::HashSet;
 use std::rc::Rc;
 
@@ -440,11 +441,16 @@ impl<'a> Resolver<'a> {
         ty: &Type,
     ) {
         // QCD-3.5: `PR_GetDef` finds the earlier definition with another type.
+        // FTEF-23.8: `TypeName` prints `type_bint` by its own name, which a cast does not.
+        let shown = |ty: &Type| match ty.fteqcc_scalar() {
+            Some(CScalar::Bool) => "__bint".to_owned(),
+            _ => self.type_name(ty),
+        };
         let message = if self.profile.fteqcc_diagnostics() {
             format!(
                 "Type mismatch on redeclaration of {name}. {}, should be {}",
-                self.type_name(ty),
-                self.type_name(old)
+                shown(ty),
+                shown(old)
             )
         } else {
             format!("Type mismatch on redeclaration of {name}")

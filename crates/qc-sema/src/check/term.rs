@@ -10,6 +10,7 @@
 use qc_diag::{Code, Span};
 use qc_preproc::{FteFlag, Op};
 use qc_syntax::ast::{self, AstNode as _, UnaryOp};
+use qc_syntax::c_scalar::CScalar;
 
 use crate::cast::ConstType;
 use crate::check::constant::Constant;
@@ -251,6 +252,10 @@ impl Checker<'_> {
         }
         if self.env.explicit_cast(operand.source(), &to, span) {
             return Err(Fatal);
+        }
+        // FTEF-23.8: a cast to a boolean is its logical truth, of the boolean's parent type.
+        if matches!(to.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat)) {
+            return self.convert_to(&operand, &to, span);
         }
         let conversions: &[Op] = match (self.etype_of(&operand.ty), self.etype_of(&to)) {
             (Some(Etype::Entity), Some(Etype::Float)) => &[Op::ConvItof],

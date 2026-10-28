@@ -21,7 +21,7 @@ use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::opcodes::row;
 use crate::check::reference::word_type;
 use crate::check::{Constness, Reference, Value};
-use crate::ty::Type;
+use crate::ty::{SimpleType, Type};
 
 /// What an assignment operator stores (FTEF-29.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -426,6 +426,10 @@ impl Checker<'_> {
             return Err(Fatal);
         }
         let converted = self.convert_to(value, to, span)?;
+        // FTEF-23.8: a value cast to a boolean is of the boolean's parent type.
+        if matches!(to.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat)) {
+            return Ok(converted);
+        }
         Ok(Value {
             ty: to.clone(),
             ..converted
@@ -434,7 +438,43 @@ impl Checker<'_> {
 
     /// `value` converted to a `to` by the conversion opcodes for their basic types, each folded,
     /// emitted or emulated (FTEF-27.8).
-    fn convert_to(&mut self, value: &Value, to: &Type, span: Span) -> Checked {
+    pub(super) fn convert_to(&mut self, value: &Value, to: &Type, span: Span) -> Checked {
+        // FTEF-23.8: a cast to a `__bint` or `__bfloat` is `QCC_PR_GenerateLogicalTruth`'s
+        // comparison with zero, then that cast to the boolean's parent type.
+        let parent = match to.fteqcc_scalar() {
+            Some(CScalar::Bool) => Some(Type::Named(CScalar::Integer.name().into())),
+            Some(CScalar::BFloat) => Some(Type::Simple(SimpleType::Float)),
+            _ => None,
+        };
+        if let Some(parent) = parent
+            && !matches!(
+                value.ty.fteqcc_scalar(),
+                Some(CScalar::Bool | CScalar::BFloat)
+            )
+        {
+            let truth = match self.etype(&value.ty) {
+                Some(Etype::Float) => Some((Op::NeF, Constant::float(0.0))),
+                Some(Etype::String) => Some((Op::NeS, Constant::int(0))),
+                Some(Etype::Entity) => Some((Op::NeE, Constant::int(0))),
+                Some(Etype::Vector) => Some((Op::NeV, Constant::vector([0.0; 3]))),
+                Some(Etype::Function) => Some((Op::NeFnc, Constant::int(0))),
+                Some(Etype::Integer | Etype::Uint | Etype::Pointer) => {
+                    Some((Op::NeI, Constant::int(0)))
+                }
+                Some(Etype::Double) => Some((Op::NeD, Constant::double(0.0))),
+                Some(Etype::Int64) => Some((Op::NeI64, Constant::int64(0))),
+                Some(Etype::Uint64) => Some((Op::NeU64, Constant::uint64(0))),
+                _ => None,
+            };
+            if let Some((op, zero)) = truth {
+                let zero = Value {
+                    ty: value.ty.clone(),
+                    ..Value::constant(zero)
+                };
+                let truth = self.emit(op, value, &zero, span)?;
+                return self.convert_to(&truth, &parent, span);
+            }
+        }
         // FTEF-19.55: a float or an integer cast to a vector is multiplied by `'1 1 1'`
         // (`OP_MUL_FV`, `OP_MUL_IV`).
         if self.etype(to) == Some(Etype::Vector) {

@@ -396,13 +396,19 @@ pub enum Source<'a> {
 }
 
 /// Whether two pointers' targets `a` and `b` are one type to `typecmp_lax`, which follows
-/// pointers to what they point to: a pointer and a pointer agree by their targets, anything
-/// else as [`Type::fteqcc_same`] says.
+/// pointers to what they point to: a pointer and a pointer agree by their targets, a
+/// `__variant` and a pointer or function do not (FTEF-11.4), and anything else as
+/// [`Type::fteqcc_same`] says.
 fn pointees_agree(a: &Type, b: &Type) -> bool {
+    let variant =
+        |ty: &Type| matches!(ty, Type::Named(n) if matches!(n.as_ref(), "__variant" | "variant"));
     match (a, b) {
         (Type::Pointer(a), Type::Pointer(b)) => pointees_agree(a, b),
-        (Type::Pointer(_), other) | (other, Type::Pointer(_)) => {
-            other.fteqcc_kind() == Kind::Opaque
+        (Type::Pointer(_) | Type::Function(_), other)
+        | (other, Type::Pointer(_) | Type::Function(_))
+            if variant(other) =>
+        {
+            false
         }
         _ => a.fteqcc_same(b),
     }
@@ -777,7 +783,13 @@ impl Type {
                 // A type a program names is not followed, so it agrees with anything, a pointer
                 // included; the rest agree when they are of one kind, as `int` and `integer`.
                 let (a, b) = (self.fteqcc_kind(), other.fteqcc_kind());
-                a == Kind::Opaque || b == Kind::Opaque || a == b
+                // FTEF-23.8: `__bint` and `__bfloat` are both `ev_boolean`, one type to
+                // `typecmp` and another than their parent types.
+                let boolean =
+                    |ty: &Self| matches!(ty.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat));
+                a == Kind::Opaque
+                    || b == Kind::Opaque
+                    || (boolean(self) == boolean(other) && (boolean(self) || a == b))
             }
         }
     }

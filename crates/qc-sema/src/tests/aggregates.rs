@@ -309,3 +309,51 @@ fn braces_for_a_scalar_are_no_name() {
     }
     assert_eq!(messages("#pragma target fte\nvector v = { 1, 2, 3 };"), []);
 }
+
+// spec FTEF-19.56: a pointer's braces are a nameless static array whose address it takes
+#[test]
+fn braced_pointer_initialisers() {
+    let messages = |pragma: &str, source: &str| -> Vec<String> {
+        messages(&format!("{pragma}\nfloat x;\n{source}"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    let fte = "#pragma target fte";
+    assert_eq!(
+        messages(fte, "float *p = { x };"),
+        [
+            "initializer for '' is not constant",
+            "Unable to generate statements at global scope (GLOBALADDRESS).",
+            "initializer for 'p' is not constant"
+        ]
+    );
+    assert_eq!(
+        messages(fte, "void() f = { static float *p = { 1 }; };"),
+        ["initializer for 'p' is not constant"]
+    );
+    assert_eq!(
+        messages(
+            fte,
+            "void() f = { local float *p = { x, 1 }; local float *q = { \"a\" }; };"
+        ),
+        [
+            "initializer for '' is not constant",
+            "Cannot cast from string to float"
+        ]
+    );
+    assert!(
+        messages(
+            fte,
+            "void() f = { local float *p = { 1 }; const float *q = { 1 }; };"
+        )
+        .is_empty()
+    );
+    assert_eq!(
+        messages("", "float *p = { 1 };"),
+        [
+            "Address-of operator is not supported in this form without extensions. Consider the \
+             use of: #pragma target fte"
+        ]
+    );
+}

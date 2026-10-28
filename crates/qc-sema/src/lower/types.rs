@@ -461,11 +461,6 @@ pub(super) fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>)
     // FTEF-19.10: in the legacy form `enum float { ... }` the word before the `{` is the base
     // type, which `QCC_PR_ParseEnum` tries first (`QCC_PR_ParseType(false, true, false)`).
     let legacy_word = en.name().filter(|t| legacy_base(t, cx).is_some());
-    if legacy_word.is_none()
-        && let Some(token) = en.name()
-    {
-        out.push(RawDecl::type_name(&token, TypeKind::Enum));
-    }
     // FTEF-19.10: `enumflags` doubles its values, and a base type given after `:`, or before
     // the `{` in the legacy form, types them.
     let flags = en
@@ -493,6 +488,14 @@ pub(super) fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>)
         }
         (None, None) => Type::Simple(SimpleType::Float),
     };
+    // FTEF-8.6: `enumtype = QCC_PR_NewType(name, basetype->type, true);`, of the base's kind.
+    if legacy_word.is_none()
+        && let Some(token) = en.name()
+    {
+        let mut decl = RawDecl::type_name(&token, TypeKind::Enum);
+        decl.ty = base.clone();
+        out.push(decl);
+    }
     // FTEF-19.10: a base type with no `:` before it is FTEQCC's legacy form, and `enum class`
     // names its values only as `Name::value`.
     let legacy = legacy_word.is_some();
