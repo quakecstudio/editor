@@ -759,3 +759,6 @@ fn trim_zeros(text: &str) -> String {
         text.to_owned()
     }
 }
+
+#[cfg(test)]
+mod tests;
