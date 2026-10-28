@@ -35,6 +35,7 @@ use qc_preproc::{OpcodeTarget, TargetFormat, WarningSettings};
 use qc_syntax::{Dialect, Keywords};
 
 use crate::check::TypedBody;
+use crate::check::constant::Constant;
 use crate::expand::{OriginMap, ProtoPlan};
 use crate::lower::{
     ArrayDim, BuiltinFunction, FileDecls, LiteralValue, RawBody, RawDecl, RawParam, RawParamInfo,
@@ -289,6 +290,7 @@ pub(crate) fn resolve_mapped(
         facts: Vec::new(),
         globals: HashMap::new(),
         literals: HashMap::new(),
+        integer_items: HashMap::new(),
         builtin_functions: HashMap::new(),
         members: files
             .iter()
@@ -498,6 +500,9 @@ struct Resolver<'a> {
     globals: HashMap<String, Vec<DefId>>,
     /// The literal each initialised global was given, for FTE-22.5.
     literals: HashMap<DefId, LiteralValue>,
+    /// The value of each item of an enum of an integer base, the constant `QCC_MakeIntConst`
+    /// and its kin make of it (FTEF-19.52).
+    integer_items: HashMap<DefId, Constant>,
     /// For each builtin number and engine name, the definition whose builtin function FTEQCC
     /// made first with them: the one a redeclaration with them reuses (FTE-23.7).
     builtin_functions: HashMap<BuiltinFunction, DefId>,

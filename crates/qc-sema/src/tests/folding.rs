@@ -4356,6 +4356,39 @@ fn sizeof_a_type_name() {
     );
 }
 
+// spec FTEF-19.52: an item of an enum of an integer base is a constant of that type, a float
+// value converted with the conversion's warnings
+#[test]
+fn integer_enum_items_are_constants() {
+    let messages = |source: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\n{source} float arr[1]; void() g = {{ arr[X] = 1; }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    assert_eq!(
+        messages("enum E2 : int { C2 = 2, X };"),
+        ["(constant) array index out of bounds (0 <= 3 < 1)"]
+    );
+    assert_eq!(
+        messages("enum E5 : int { F = 2.5, X };"),
+        [
+            "Numerical overflow. 2.500000 will be rounded to 2",
+            "(constant) array index out of bounds (0 <= 3 < 1)"
+        ]
+    );
+    assert_eq!(
+        messages("enum E6 : __uint32 { X = 5 };"),
+        ["(constant) array index out of bounds (0 <= 5 < 1)"]
+    );
+    assert_eq!(
+        messages("enum E3 : __uint32 { X = -1.5 };"),
+        ["Numerical overflow. -1.500000 will be rounded to 0"]
+    );
+}
+
 /// Constant expressions whose value the folding of one opcode feeds to the next, read as an
 /// index: the pinned FTEQCC's diagnostics for each on the FTE target (2026-10-27).
 const CHAINS: &[(&str, &[&str])] = &[

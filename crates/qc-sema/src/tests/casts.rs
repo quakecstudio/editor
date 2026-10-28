@@ -527,3 +527,33 @@ fn fields_of_aggregates_and_their_names() {
         assert_eq!(messages(statement), [message], "{statement}");
     }
 }
+
+// spec FTEF-29.11: a global initialised with a constant whose word is 0 takes it as a null
+#[test]
+fn a_named_null_initialises_any_global() {
+    let messages = |source: &str| -> Vec<String> {
+        diags(&format!("#pragma target fte\n{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    for source in [
+        "enum { H }; string s = H;",
+        "const float z = 0; string s2 = z;",
+        "const int zi = 0; string s3 = zi;",
+    ] {
+        assert_eq!(messages(source), Vec::<String>::new(), "{source}");
+    }
+    assert_eq!(
+        messages("enum { H, K }; string s = K;"),
+        ["Cannot cast from float to string"]
+    );
+    assert_eq!(
+        messages("struct S { float a; }; const float z = 0; S st = z;"),
+        ["Cannot cast from float to struct S"]
+    );
+    assert_eq!(
+        messages("enum class E5 : float { M }; string s = E5::M;"),
+        ["Cannot cast from enum E5:float to string"]
+    );
+}

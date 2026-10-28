@@ -284,6 +284,9 @@ impl Env for BodyEnv<'_, '_> {
         if !self.constant(def) {
             return Constness::Variable;
         }
+        if let Some(constant) = self.resolver.integer_items.get(&def) {
+            return Constness::Known(*constant);
+        }
         match self.resolver.literals.get(&def) {
             Some(LiteralValue::Float(bits)) => {
                 Constness::Known(Constant::float(f32::from_bits(*bits)))

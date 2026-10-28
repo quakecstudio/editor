@@ -3199,6 +3199,12 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   at the end of each pass of its modifier loop, the `[[...]]` branch included, so after an
   attribute list alone the type may be left out and is `__int32` (FTEF-19.21): with `attributes`
   on, `[[eraseable]] x = 5; string s = x;` warns "Implicit cast from __int32 to string".
+- **FTEF-19.52** An item of an enum of an integer base (`int`, `uint`, `__int64`, `__uint64`) is the
+  constant `QCC_MakeIntConst(next_i)` and its kin make of its value, a constant of that type the
+  folding reads: `enum E : int { C = 2, D };` makes `arr[D]` the index 3. A float literal given
+  to one is converted by `QCC_SupplyConversion`, whose `OP_CONV_FTOI` (or `OP_CONV_FU` and the
+  64-bit ones) folds with its warnings: `enum E : int { C = 1.5 };` is "Numerical overflow.
+  1.500000 will be rounded to 1" and the value 1.
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and
@@ -4202,6 +4208,11 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
 - **FTEF-29.9** A constant that is null (`QCC_SRef_IsNull`, an integer, float or pointer 0) casts
   as a null whatever its definition's type, a `typedef` or `int` one included: `const int zi = 0;
   string s = zi;` is no cast warning.
+- **FTEF-29.11** So is a global's initialiser that names a constant whose word is 0
+  (`QCC_SRef_IsNull`): `enum { H }; string s = H;` and `const float z = 0; string s2 = z;` are
+  no error, where a constant 1 is "Cannot cast from float to string"; a struct or union takes no
+  null ("Cannot cast from float to struct S"), and a strict enum's value casts to no other type
+  whatever it is (FTEF-19.10).
 - **FTEF-29.10** An array named bare, its head, is the pointer to its first element to a
   prefix or postfix `++` and `--` (`REF_ARRAYHEAD`): read by its address, which the id target
   refuses (FTEF-31.4), stepped by `OP_ADD_PIW` of its element's size, `--` warning of the

@@ -433,6 +433,11 @@ impl Resolver<'_> {
             | Type::Pointer(_) => source_ty,
         };
         let source_ty = self.resolved(&source_ty);
+        // FTEF-29.11: a constant whose word is 0 is null (`QCC_SRef_IsNull`), which casts to
+        // any type but a struct or union with no warning.
+        let null = self.facts.get(source.0).is_some_and(|f| f.constant)
+            && matches!(self.literals.get(&source), Some(LiteralValue::Float(0)))
+            && !self.is_struct_type(ty);
         // FTEF-19.10: a strict enum's value casts to no other type, but under `lax`
         // (FTEF-22.1).
         if let Type::Named(strict) = &source_ty
@@ -453,7 +458,7 @@ impl Resolver<'_> {
             if code == Code::E0213 {
                 return Err(Fatal);
             }
-        } else if self.cast_value(Source::Typed(&source_ty), ty, location, flags) {
+        } else if !null && self.cast_value(Source::Typed(&source_ty), ty, location, flags) {
             return Err(Fatal);
         }
         if matches!(holder, Holder::Local(_)) {
