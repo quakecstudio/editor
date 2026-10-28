@@ -495,12 +495,7 @@ pub(super) fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>)
     };
     // FTEF-19.10: a base type with no `:` before it is FTEQCC's legacy form, and `enum class`
     // names its values only as `Name::value`.
-    let legacy = legacy_word.is_some()
-        || (base_node.is_some()
-            && !en
-                .syntax()
-                .child_tokens()
-                .any(|t| t.kind() == SyntaxKind::Colon));
+    let legacy = legacy_word.is_some();
     // `strictenum = QCC_PR_CheckName("class");`
     let strict = en
         .syntax()

@@ -557,3 +557,26 @@ fn a_named_null_initialises_any_global() {
         ["Cannot cast from enum E5:float to string"]
     );
 }
+
+// spec FTEF-15.10: a parameter's written struct, union or enum is its type
+#[test]
+fn a_parameter_writes_its_type() {
+    let messages = |source: &str| -> Vec<String> {
+        diags(&format!("#pragma target fte\n{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    assert_eq!(
+        messages("void(union { float a; vector v; } u) f = {}; float x; void() g = { x = f; };"),
+        ["Cannot cast from void(union <union> u) to float"]
+    );
+    assert_eq!(
+        messages("void(enum { EA } e) f = { local string s = e; };"),
+        ["Cannot cast from float to string"]
+    );
+    assert_eq!(
+        messages("void(struct S1 { float a; } s) f = { s.a = \"x\"; };"),
+        ["Cannot cast from string to float"]
+    );
+}

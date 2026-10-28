@@ -2247,6 +2247,10 @@ declares parameters without names or with `optional` and `__out`.
   parameter list and the declarator has no name, `";" - not a name`, as it has for a type's name
   (`typedef float t; void() (t);`).
 
+- **FTEF-15.10** A parameter whose type writes a struct, union or enum (`void(union { float a;
+  vector v; } u) f`, `void(enum { EA } e) f`) has that type, read with the type
+  (`QCC_PR_ParseType`), so the function's type prints it (`void(union <union> u)`) and the
+  parameter is a value of it in the body.
 ## FTEF-16 Statements and expressions
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseStatement`, `QCC_PR_RefTerm`, `QCC_PR_ParseRefValue`

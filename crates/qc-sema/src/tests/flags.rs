@@ -362,6 +362,17 @@ fn typedefs_and_pragma_defaults() {
     assert_eq!(codes("nosave typedef float t;\n"), [Code::E0224]);
     assert_eq!(codes("typedef static x;\n"), [Code::W0214, Code::E0224]);
     assert_eq!(errors("typedef x;\nx y;\n"), []);
+    // FTEF-19.21: the type left out is an `int`.
+    assert_eq!(
+        analysed("typedef qq; qq a; string s = a;\n", &[])
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect::<Vec<_>>(),
+        [
+            "Implicit cast from __int32 to string",
+            "initializer for 's' is not constant"
+        ]
+    );
 }
 
 // spec FTEF-21.6: the warning is F304, which the warning settings turn off or make an error
