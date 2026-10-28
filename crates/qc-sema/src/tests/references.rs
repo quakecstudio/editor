@@ -10594,17 +10594,9 @@ const REFERENCES: &[(&str, &str, &[&str])] = &[
     ),
 ];
 
-// spec FTEF-31.1: each reference read, compared, stored to, stepped and addressed as FTEQCC does
-// spec FTEF-6.20: a struct value's member is its struct's definition at the member's word
-// spec FTEF-6.21: an 8- or 16-bit integer loaded through its address is an `int` or `uint`
-// spec FTEF-31.10: a constant index is the array's definition at that word
-// spec FTEF-31.11: the address of a string's character is the fatal error E0361
-// spec QCD-4.62: E0361 for the address of a string's character
-// spec FTEF-29.10: an array's head steps as a pointer and is no l-value
-// spec FTEF-6.24: a struct's member array is indexed at the member's word
-#[test]
-fn every_reference_is_read_as_fteqcc_reads_it() {
-    for &(target, statement, expected) in REFERENCES {
+/// Each case of `cases`, read in a body after [`REFERENCE_DEFS`] on its target.
+fn check_references(cases: &[(&str, &str, &[&str])]) {
+    for &(target, statement, expected) in cases {
         let pragma = if target == "id" {
             String::new()
         } else {
@@ -10618,4 +10610,108 @@ fn every_reference_is_read_as_fteqcc_reads_it() {
         .collect();
         assert_eq!(found, expected, "{target} {statement}");
     }
+}
+
+// spec FTEF-31.1: each reference read, compared, stored to, stepped and addressed as FTEQCC does
+// spec FTEF-6.20: a struct value's member is its struct's definition at the member's word
+// spec FTEF-6.21: an 8- or 16-bit integer loaded through its address is an `int` or `uint`
+// spec FTEF-31.10: a constant index is the array's definition at that word
+// spec FTEF-31.11: the address of a string's character is the fatal error E0361
+// spec QCD-4.62: E0361 for the address of a string's character
+// spec FTEF-29.10: an array's head steps as a pointer and is no l-value
+// spec FTEF-6.24: a struct's member array is indexed at the member's word
+#[test]
+fn every_reference_is_read_as_fteqcc_reads_it_1() {
+    check_references(&REFERENCES[0..300]);
+}
+
+// spec FTEF-31.1: each reference read, compared, stored to, stepped and addressed as FTEQCC does
+// spec FTEF-6.20: a struct value's member is its struct's definition at the member's word
+// spec FTEF-6.21: an 8- or 16-bit integer loaded through its address is an `int` or `uint`
+// spec FTEF-31.10: a constant index is the array's definition at that word
+// spec FTEF-31.11: the address of a string's character is the fatal error E0361
+// spec QCD-4.62: E0361 for the address of a string's character
+// spec FTEF-29.10: an array's head steps as a pointer and is no l-value
+// spec FTEF-6.24: a struct's member array is indexed at the member's word
+#[test]
+fn every_reference_is_read_as_fteqcc_reads_it_2() {
+    check_references(&REFERENCES[300..600]);
+}
+
+// spec FTEF-31.1: each reference read, compared, stored to, stepped and addressed as FTEQCC does
+// spec FTEF-6.20: a struct value's member is its struct's definition at the member's word
+// spec FTEF-6.21: an 8- or 16-bit integer loaded through its address is an `int` or `uint`
+// spec FTEF-31.10: a constant index is the array's definition at that word
+// spec FTEF-31.11: the address of a string's character is the fatal error E0361
+// spec QCD-4.62: E0361 for the address of a string's character
+// spec FTEF-29.10: an array's head steps as a pointer and is no l-value
+// spec FTEF-6.24: a struct's member array is indexed at the member's word
+#[test]
+fn every_reference_is_read_as_fteqcc_reads_it_3() {
+    check_references(&REFERENCES[600..900]);
+}
+
+// spec FTEF-31.1: each reference read, compared, stored to, stepped and addressed as FTEQCC does
+// spec FTEF-6.20: a struct value's member is its struct's definition at the member's word
+// spec FTEF-6.21: an 8- or 16-bit integer loaded through its address is an `int` or `uint`
+// spec FTEF-31.10: a constant index is the array's definition at that word
+// spec FTEF-31.11: the address of a string's character is the fatal error E0361
+// spec QCD-4.62: E0361 for the address of a string's character
+// spec FTEF-29.10: an array's head steps as a pointer and is no l-value
+// spec FTEF-6.24: a struct's member array is indexed at the member's word
+#[test]
+fn every_reference_is_read_as_fteqcc_reads_it_4() {
+    check_references(&REFERENCES[900..1200]);
+}
+
+// spec FTEF-31.1: each reference read, compared, stored to, stepped and addressed as FTEQCC does
+// spec FTEF-6.20: a struct value's member is its struct's definition at the member's word
+// spec FTEF-6.21: an 8- or 16-bit integer loaded through its address is an `int` or `uint`
+// spec FTEF-31.10: a constant index is the array's definition at that word
+// spec FTEF-31.11: the address of a string's character is the fatal error E0361
+// spec QCD-4.62: E0361 for the address of a string's character
+// spec FTEF-29.10: an array's head steps as a pointer and is no l-value
+// spec FTEF-6.24: a struct's member array is indexed at the member's word
+#[test]
+fn every_reference_is_read_as_fteqcc_reads_it_5() {
+    check_references(&REFERENCES[1200..1500]);
+}
+
+// spec FTEF-31.1: each reference read, compared, stored to, stepped and addressed as FTEQCC does
+// spec FTEF-6.20: a struct value's member is its struct's definition at the member's word
+// spec FTEF-6.21: an 8- or 16-bit integer loaded through its address is an `int` or `uint`
+// spec FTEF-31.10: a constant index is the array's definition at that word
+// spec FTEF-31.11: the address of a string's character is the fatal error E0361
+// spec QCD-4.62: E0361 for the address of a string's character
+// spec FTEF-29.10: an array's head steps as a pointer and is no l-value
+// spec FTEF-6.24: a struct's member array is indexed at the member's word
+#[test]
+fn every_reference_is_read_as_fteqcc_reads_it_6() {
+    check_references(&REFERENCES[1500..1800]);
+}
+
+// spec FTEF-31.1: each reference read, compared, stored to, stepped and addressed as FTEQCC does
+// spec FTEF-6.20: a struct value's member is its struct's definition at the member's word
+// spec FTEF-6.21: an 8- or 16-bit integer loaded through its address is an `int` or `uint`
+// spec FTEF-31.10: a constant index is the array's definition at that word
+// spec FTEF-31.11: the address of a string's character is the fatal error E0361
+// spec QCD-4.62: E0361 for the address of a string's character
+// spec FTEF-29.10: an array's head steps as a pointer and is no l-value
+// spec FTEF-6.24: a struct's member array is indexed at the member's word
+#[test]
+fn every_reference_is_read_as_fteqcc_reads_it_7() {
+    check_references(&REFERENCES[1800..2100]);
+}
+
+// spec FTEF-31.1: each reference read, compared, stored to, stepped and addressed as FTEQCC does
+// spec FTEF-6.20: a struct value's member is its struct's definition at the member's word
+// spec FTEF-6.21: an 8- or 16-bit integer loaded through its address is an `int` or `uint`
+// spec FTEF-31.10: a constant index is the array's definition at that word
+// spec FTEF-31.11: the address of a string's character is the fatal error E0361
+// spec QCD-4.62: E0361 for the address of a string's character
+// spec FTEF-29.10: an array's head steps as a pointer and is no l-value
+// spec FTEF-6.24: a struct's member array is indexed at the member's word
+#[test]
+fn every_reference_is_read_as_fteqcc_reads_it_8() {
+    check_references(&REFERENCES[2100..2118]);
 }

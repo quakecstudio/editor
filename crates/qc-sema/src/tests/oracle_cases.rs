@@ -44,8 +44,16 @@ fn check(cases: &[(usize, &str, &[&str])]) {
 // spec FTEF-34.3: a switch's cases are checked against its operand
 // spec FTEF-30.2: a condition is tested as `QCC_Generate_OP_IFNOT` tests it
 #[test]
-fn statements_are_reported_as_fteqcc_reports_them() {
-    check(STATEMENTS);
+fn statements_1_are_reported_as_fteqcc_reports_them() {
+    check(&STATEMENTS[0..250]);
+}
+
+// spec FTEF-34.1: a statement is checked as `QCC_PR_ParseStatement` checks it
+// spec FTEF-34.3: a switch's cases are checked against its operand
+// spec FTEF-30.2: a condition is tested as `QCC_Generate_OP_IFNOT` tests it
+#[test]
+fn statements_2_are_reported_as_fteqcc_reports_them() {
+    check(&STATEMENTS[250..451]);
 }
 
 // spec FTEF-30.4: `-e`, `++e` and `--e` of each type
@@ -59,22 +67,208 @@ fn terms_are_reported_as_fteqcc_reports_them() {
 // spec FTEF-30.7: a vector constructor of each type
 // spec FTEF-30.8: a cast between each pair of types
 #[test]
-fn unary_and_casts_are_reported_as_fteqcc_reports_them() {
-    check(UNARY_AND_CASTS);
+fn unary_and_casts_1_are_reported_as_fteqcc_reports_them() {
+    check(&UNARY_AND_CASTS[0..250]);
+}
+
+// spec FTEF-30.1: a test of a value of each type
+// spec FTEF-30.7: a vector constructor of each type
+// spec FTEF-30.8: a cast between each pair of types
+#[test]
+fn unary_and_casts_2_are_reported_as_fteqcc_reports_them() {
+    check(&UNARY_AND_CASTS[250..500]);
+}
+
+// spec FTEF-30.1: a test of a value of each type
+// spec FTEF-30.7: a vector constructor of each type
+// spec FTEF-30.8: a cast between each pair of types
+#[test]
+fn unary_and_casts_3_are_reported_as_fteqcc_reports_them() {
+    check(&UNARY_AND_CASTS[500..535]);
 }
 
 // spec FTEF-30.5: under `qccx` a float or integer dereferenced is an entity; under `qcfuncs` a
 // function is no pointer
 #[test]
-fn qccx_and_qcfuncs_are_reported_as_fteqcc_reports_them() {
-    check(QCCX_AND_QCFUNCS);
+fn qccx_and_qcfuncs_1_are_reported_as_fteqcc_reports_them() {
+    check(&QCCX_AND_QCFUNCS[0..250]);
+}
+
+// spec FTEF-30.5: under `qccx` a float or integer dereferenced is an entity; under `qcfuncs` a
+// function is no pointer
+#[test]
+fn qccx_and_qcfuncs_2_are_reported_as_fteqcc_reports_them() {
+    check(&QCCX_AND_QCFUNCS[250..293]);
 }
 
 // spec FTEF-29.7: a store checks its value's type against the target's by `typecmp_lax`
 // spec FTEF-28.2: a comparison's operands of types `typecmp_lax` tells apart warn
 #[test]
-fn assignments_are_reported_as_fteqcc_reports_them() {
-    check(ASSIGNMENTS);
+fn assignments_1_are_reported_as_fteqcc_reports_them() {
+    check(&ASSIGNMENTS[0..250]);
+}
+
+// spec FTEF-29.7: a store checks its value's type against the target's by `typecmp_lax`
+// spec FTEF-28.2: a comparison's operands of types `typecmp_lax` tells apart warn
+#[test]
+fn assignments_2_are_reported_as_fteqcc_reports_them() {
+    check(&ASSIGNMENTS[250..500]);
+}
+
+// spec FTEF-29.7: a store checks its value's type against the target's by `typecmp_lax`
+// spec FTEF-28.2: a comparison's operands of types `typecmp_lax` tells apart warn
+#[test]
+fn assignments_3_are_reported_as_fteqcc_reports_them() {
+    check(&ASSIGNMENTS[500..750]);
+}
+
+// spec FTEF-29.7: a store checks its value's type against the target's by `typecmp_lax`
+// spec FTEF-28.2: a comparison's operands of types `typecmp_lax` tells apart warn
+#[test]
+fn assignments_4_are_reported_as_fteqcc_reports_them() {
+    check(&ASSIGNMENTS[750..940]);
+}
+
+// spec FTEF-26.9: two constant doubles, 64-bit shifts and `OP_BITEXTEND_*` fold
+#[test]
+fn folds_on_fte_6614_are_reported_as_fteqcc_reports_them() {
+    check(FOLDS_ON_FTE_6614);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_1_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[0..250]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_2_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[250..500]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_3_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[500..750]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_4_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[750..1000]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_5_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[1000..1250]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_6_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[1250..1500]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_7_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[1500..1750]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_8_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[1750..2000]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_9_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[2000..2250]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_10_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[2250..2500]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_11_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[2500..2750]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_12_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[2750..3000]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_13_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[3000..3250]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_14_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[3250..3500]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_15_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[3500..3750]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_16_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[3750..4000]);
+}
+
+// spec FTEF-23.1: an operator's type is the type of the opcode it picks for its operands
+// spec FTEF-29.4: a compound assignment is its operator's opcode, then the store
+// spec FTEF-27.2: an opcode the target lacks is emulated
+#[test]
+fn operators_17_are_reported_as_fteqcc_reports_them() {
+    check(&OPERATORS[4000..4099]);
 }
 
 // spec FTEF-2.8: a registered type name is a type, any other word is not
@@ -101,6 +295,9 @@ const PRELUDES: &[&str] = &[
     "#pragma target fte\n#pragma flag enable qccx\nfloat f; int i; __uint u; __int64 l; __uint64 ul; __double d; vector v; string s; entity e; void() fn = {}; float *p; int *pi; float farr[3]; float x_f; int x_i; vector x_v; string x_s; __int64 x_l; __double x_d; entity x_e;",
     "#pragma target fte\n#pragma flag enable qcfuncs\nfloat f; int i; __uint u; __int64 l; __uint64 ul; __double d; vector v; string s; entity e; void() fn = {}; float *p; int *pi; float farr[3]; float x_f; int x_i; vector x_v; string x_s; __int64 x_l; __double x_d; entity x_e;",
     "#pragma target fte\nclass A : entity { float m; }; class B : A { float n; }; class C : entity { float m; }; struct S { float a; }; struct T { float a; }; union U { float a; }; float x; .float ff; .int fi; .vector fv; .S fs; .A fa;",
+    "#pragma target fte_6614\n\nfloat arr[1]; float x;",
+    "// standard target\nfloat x; float f; int i; __uint u; __int64 l; __uint64 ul; __double d; vector v; float * p; __int8 * pc; entity e; string s;",
+    "#pragma target fte\nfloat x; float f; int i; __uint u; __int64 l; __uint64 ul; __double d; vector v; float * p; __int8 * pc; entity e; string s;",
     "ADD_EF",
     "ADD_EI",
     "ADD_FI",
@@ -9602,243 +9799,25036 @@ const ASSIGNMENTS: &[(usize, &str, &[&str])] = &[
     ),
 ];
 
+/// Constant expressions folded on the newest FTE target, which has every opcode they use: the pinned FTEQCC's diagnostics for each.
+const FOLDS_ON_FTE_6614: &[(usize, &str, &[&str])] = &[
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)2 + (__double)3)]; };",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)2 + (__double)-7)]; };",
+        &["(constant) array index out of bounds (0 <= -5 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(1ul < 2ul)]; };",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (9, "void() g = { x = arr[(int)(3ul < 2ul)]; };", &[]),
+    (
+        9,
+        "void() g = { x = arr[(int)(1ul <= 2ul)]; };",
+        &["Result of comparison is constant"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(3ul <= 2ul)]; };",
+        &["Result of comparison is constant"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(2ul > 1ul)]; };",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(18446744073709551615ul < 1ul)]; };",
+        &[],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(('3 0 0' ^ '5 0 0') * '1 0 0')]; };",
+        &["(constant) array index out of bounds (0 <= 6 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(('3 6 0' ^ '5 3 0') * '0 1 0')]; };",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)3 << 2i)]; };",
+        &["(constant) array index out of bounds (0 <= 12 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)3 << 3i)]; };",
+        &["(constant) array index out of bounds (0 <= 24 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)24 >> 2i)]; };",
+        &["(constant) array index out of bounds (0 <= 6 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)24 >> 3i)]; };",
+        &["(constant) array index out of bounds (0 <= 3 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)12 | (__double)5)]; };",
+        &["(constant) array index out of bounds (0 <= 13 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)8 | (__double)1)]; };",
+        &["(constant) array index out of bounds (0 <= 9 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(5i % 0i)]; };",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(5i % 3i)]; };",
+        &["(constant) array index out of bounds (0 <= 2 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(5u % 0u)]; };",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(7u % 4u)]; };",
+        &["(constant) array index out of bounds (0 <= 3 < 1)"],
+    ),
+    (9, "void() g = { x = arr[(int)(0 || 0)]; };", &[]),
+    (
+        9,
+        "void() g = { x = arr[(int)(0 || 2)]; };",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(2 || 0)]; };",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(2 || 3)]; };",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (9, "void() g = { x = arr[(int)(0.0 || 0.0)]; };", &[]),
+    (
+        9,
+        "void() g = { x = arr[(int)(1.5 || 0.0)]; };",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(5i / 0.0)]; };",
+        &[
+            "Numerical overflow. inf will be rounded to 2147483647",
+            "Constant int operand 9223372036854775807 will be truncated to -1",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(5i / 2.0)]; };",
+        &[
+            "Numerical overflow. 2.500000 will be rounded to 2",
+            "(constant) array index out of bounds (0 <= 2 < 1)",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(5.0 / 0i)]; };",
+        &[
+            "Numerical overflow. inf will be rounded to 2147483647",
+            "Constant int operand 9223372036854775807 will be truncated to -1",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(5.0 / 2i)]; };",
+        &[
+            "Numerical overflow. 2.500000 will be rounded to 2",
+            "(constant) array index out of bounds (0 <= 2 < 1)",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((-9223372036854775807l - 1l) / -1l)]; };",
+        &[
+            "Numerical truncation of 7fffffffffffffff to 0xffffffff.",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((-9223372036854775807l - 1l) / 2l)]; };",
+        &["Numerical truncation of c000000000000000 to 0."],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((-9223372036854775807l - 1l) / 1l)]; };",
+        &["Numerical truncation of 8000000000000000 to 0."],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(5l / -1l)]; };",
+        &["(constant) array index out of bounds (0 <= -5 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(5l / 1l)]; };",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(!'0 0 0')]; };",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (9, "void() g = { x = arr[(int)(!'1 0 0')]; };", &[]),
+    (9, "void() g = { x = arr[(int)(!'0 0 2')]; };", &[]),
+    (
+        9,
+        "void() g = { x = arr[(int)(~5i)]; };",
+        &["(constant) array index out of bounds (0 <= -6 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(~0i)]; };",
+        &["(constant) array index out of bounds (0 <= -1 < 1)"],
+    ),
+    (9, "void() g = { x = arr[(int)(~-1i)]; };", &[]),
+    (
+        9,
+        "void() g = { x = arr[(int)(__int64)2.5]; };",
+        &[
+            "Numerical overflow. 2.500000 will be rounded to 2",
+            "(constant) array index out of bounds (0 <= 2 < 1)",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(__int64)3.0]; };",
+        &["(constant) array index out of bounds (0 <= 3 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(__int64)-2.5]; };",
+        &[
+            "Numerical overflow. -2.500000 will be rounded to -2",
+            "(constant) array index out of bounds (0 <= -2 < 1)",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(-1.0/0.0)]; };",
+        &[
+            "Numerical overflow. -inf will be rounded to -2147483648",
+            "Constant int operand 9223372036854775808 will be truncated to 0",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(1.0/0.0)]; };",
+        &[
+            "Numerical overflow. inf will be rounded to 2147483647",
+            "Constant int operand 9223372036854775807 will be truncated to -1",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
+    ),
+    (9, "void() g = { local float y; float z = y / 0.0; };", &[]),
+    (9, "void() g = { local float y; float z = y / 0i; };", &[]),
+    (9, "void() g = { local int y; int z = y / 0i; };", &[]),
+    (9, "void() g = { local int y; float z = y / 0.0; };", &[]),
+    (9, "void() g = { local void() h = {}; float z = !h; };", &[]),
+    (9, "void() g = { local entity w; float z = !w; };", &[]),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)2.5 < (__double)3)]; };",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)3 < (__double)3)]; };",
+        &[],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)3 <= (__double)3)]; };",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)4 <= (__double)3)]; };",
+        &[],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)3 == (__double)3)]; };",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)3 != (__double)3)]; };",
+        &[],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)2 == (__double)3)]; };",
+        &[],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)2 != (__double)3)]; };",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)3 > (__double)2)]; };",
+        &["(constant) array index out of bounds (0 <= 1 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)3 >= (__double)4)]; };",
+        &[],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)3 << 2i)]; };",
+        &["(constant) array index out of bounds (0 <= 12 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)13 >> 2i)]; };",
+        &["(constant) array index out of bounds (0 <= 3 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)-13 >> 1i)]; };",
+        &["(constant) array index out of bounds (0 <= -7 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)12.5 & (__double)6)]; };",
+        &["(constant) array index out of bounds (0 <= 4 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)12 | (__double)3)]; };",
+        &["(constant) array index out of bounds (0 <= 15 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)12 ^ (__double)10)]; };",
+        &["(constant) array index out of bounds (0 <= 6 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)7 - (__double)9.5)]; };",
+        &[
+            "Numerical overflow. -2.500000 will be rounded to -2",
+            "(constant) array index out of bounds (0 <= -2 < 1)",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)7 / (__double)2)]; };",
+        &[
+            "Numerical overflow. 3.500000 will be rounded to 3",
+            "(constant) array index out of bounds (0 <= 3 < 1)",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)7 / (__double)0)]; };",
+        &[
+            "Numerical overflow. inf will be rounded to 9223372036854775807",
+            "Numerical truncation of 7fffffffffffffff to 0xffffffff.",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(16ul >> 2i)]; };",
+        &["(constant) array index out of bounds (0 <= 4 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(18446744073709551615ul >> 60i)]; };",
+        &["(constant) array index out of bounds (0 <= 15 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(-16l >> 2i)]; };",
+        &["(constant) array index out of bounds (0 <= -4 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(5l << 3i)]; };",
+        &["(constant) array index out of bounds (0 <= 40 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(13ul / 4ul)]; };",
+        &[
+            "Numerical overflow. 3.250000 will be rounded to 3",
+            "(constant) array index out of bounds (0 <= 3 < 1)",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(13ul / 0ul)]; };",
+        &[
+            "Numerical overflow. inf will be rounded to 2147483647",
+            "Constant int operand 9223372036854775807 will be truncated to -1",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
+    ),
+    (9, "void() g = { x = arr[(int)(13l / 0l)]; };", &[]),
+    (
+        9,
+        "void() g = { x = arr[(int)(-9223372036854775807l / -1l)]; };",
+        &[
+            "Numerical truncation of 7fffffffffffffff to 0xffffffff.",
+            "(constant) array index out of bounds (0 <= -1 < 1)",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)((__double)2 * 3i)]; };",
+        &["(constant) array index out of bounds (0 <= 6 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(3i * (__double)2)]; };",
+        &["(constant) array index out of bounds (0 <= 6 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(2.5 * (__double)2)]; };",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(1l + 2.5)]; };",
+        &[
+            "Numerical overflow. 3.500000 will be rounded to 3",
+            "(constant) array index out of bounds (0 <= 3 < 1)",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(2.5 + 1l)]; };",
+        &[
+            "Numerical overflow. 3.500000 will be rounded to 3",
+            "(constant) array index out of bounds (0 <= 3 < 1)",
+        ],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(7ul - 2u)]; };",
+        &["(constant) array index out of bounds (0 <= 5 < 1)"],
+    ),
+    (
+        9,
+        "void() g = { x = arr[(int)(7u + 2l)]; };",
+        &["(constant) array index out of bounds (0 <= 9 < 1)"],
+    ),
+];
+
+/// Compound assignments and binary operators between every pair of basic types, on the
+/// standard and FTE targets: the pinned FTEQCC's diagnostics for each.
+const OPERATORS: &[(usize, &str, &[&str])] = &[
+    (10, "void() g = { f += f; };", &[]),
+    (10, "void() g = { f -= f; };", &[]),
+    (10, "void() g = { f *= f; };", &[]),
+    (10, "void() g = { f /= f; };", &[]),
+    (10, "void() g = { f &= f; };", &[]),
+    (10, "void() g = { f |= f; };", &[]),
+    (10, "void() g = { f ^= f; };", &[]),
+    (
+        10,
+        "void() g = { f <<= f; };",
+        &[
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f >>= f; };",
+        &[
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f += i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { f -= i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { f *= i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { f /= i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { f &= i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { f |= i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { f ^= i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { f += u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f -= u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f *= u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f /= u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f &= u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f |= u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f ^= u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f <<= u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f >>= u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f += l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { f -= l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { f *= l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { f /= l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { f &= l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { f |= l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { f ^= l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { f <<= l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f >>= l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f += ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f -= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f *= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f /= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f &= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f |= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f ^= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f <<= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f >>= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f += d; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { f -= d; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { f *= d; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { f /= d; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { f &= d; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { f |= d; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { f ^= d; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { f <<= d; };",
+        &[
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f >>= d; };",
+        &[
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f += v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { f -= v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { f *= v; };",
+        &["Implicit type mismatch on assignment to f. Needed float, got vector."],
+    ),
+    (
+        10,
+        "void() g = { f /= v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { f &= v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { f |= v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { f ^= v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { f <<= v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { f >>= v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { f += p; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit type mismatch on assignment to f. Needed float, got float*.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { f -= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { f *= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { f /= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { f &= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { f |= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { f ^= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { f <<= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { f >>= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { f -= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { f *= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { f /= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { f &= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { f |= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { f ^= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { f <<= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { f >>= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { f += e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { f -= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { f *= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { f /= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { f &= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { f |= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { f ^= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { f <<= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { f >>= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { f += s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { f -= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { f *= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { f /= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { f &= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { f |= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { f ^= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { f <<= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { f >>= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { i += f; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i -= f; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i *= f; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i /= f; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i &= f; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i |= f; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i ^= f; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i <<= f; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i += i; };",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i -= i; };",
+        &[
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i *= i; };",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i &= i; };",
+        &[
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i |= i; };",
+        &[
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i ^= i; };",
+        &[
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i <<= i; };",
+        &[
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i += u; };",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i -= u; };",
+        &[
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i *= u; };",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i &= u; };",
+        &[
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i |= u; };",
+        &[
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i ^= u; };",
+        &[
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i <<= u; };",
+        &[
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i += l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i -= l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i *= l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i &= l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i |= l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i ^= l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i <<= l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i += ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i -= ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i *= ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i &= ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i |= ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i ^= ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i <<= ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i += d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i -= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i *= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i &= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i |= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i ^= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i <<= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i += v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        10,
+        "void() g = { i -= v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        10,
+        "void() g = { i *= v; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Implicit type mismatch on assignment to i. Needed __int32, got vector.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i /= v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        10,
+        "void() g = { i &= v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        10,
+        "void() g = { i |= v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        10,
+        "void() g = { i ^= v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        10,
+        "void() g = { i <<= v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        10,
+        "void() g = { i >>= v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        10,
+        "void() g = { i += p; };",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i -= p; };",
+        &[
+            "Implicit cast from float* to __int32",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i *= p; };",
+        &[
+            "Implicit cast from float* to __int32",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i &= p; };",
+        &[
+            "Implicit cast from float* to __int32",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i |= p; };",
+        &[
+            "Implicit cast from float* to __int32",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i ^= p; };",
+        &[
+            "Implicit cast from float* to __int32",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i <<= p; };",
+        &[
+            "Implicit cast from float* to __int32",
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i += pc; };",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i -= pc; };",
+        &[
+            "Implicit cast from __int8* to __int32",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i *= pc; };",
+        &[
+            "Implicit cast from __int8* to __int32",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i &= pc; };",
+        &[
+            "Implicit cast from __int8* to __int32",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i |= pc; };",
+        &[
+            "Implicit cast from __int8* to __int32",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i ^= pc; };",
+        &[
+            "Implicit cast from __int8* to __int32",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i <<= pc; };",
+        &[
+            "Implicit cast from __int8* to __int32",
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i += e; };",
+        &[
+            "Implicit cast from entity to __int32",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i -= e; };",
+        &[
+            "Implicit cast from entity to __int32",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i *= e; };",
+        &[
+            "Implicit cast from entity to __int32",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i &= e; };",
+        &[
+            "Implicit cast from entity to __int32",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i |= e; };",
+        &[
+            "Implicit cast from entity to __int32",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i ^= e; };",
+        &[
+            "Implicit cast from entity to __int32",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i <<= e; };",
+        &[
+            "Implicit cast from entity to __int32",
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i += s; };",
+        &[
+            "OP_ADD_SI: string+int may be unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i -= s; };",
+        &[
+            "Implicit cast from string to __int32",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i *= s; };",
+        &[
+            "Implicit cast from string to __int32",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i &= s; };",
+        &[
+            "Implicit cast from string to __int32",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i |= s; };",
+        &[
+            "Implicit cast from string to __int32",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i ^= s; };",
+        &[
+            "Implicit cast from string to __int32",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { i <<= s; };",
+        &[
+            "Implicit cast from string to __int32",
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u += i; };",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u -= i; };",
+        &[
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u *= i; };",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u &= i; };",
+        &[
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u |= i; };",
+        &[
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u ^= i; };",
+        &[
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u <<= i; };",
+        &[
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u += u; };",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u -= u; };",
+        &[
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u *= u; };",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u &= u; };",
+        &[
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u |= u; };",
+        &[
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u ^= u; };",
+        &[
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u <<= u; };",
+        &[
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u >>= u; };",
+        &["Type mismatch on assignment. __uint >>= __uint is not supported"],
+    ),
+    (
+        10,
+        "void() g = { u += l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u -= l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u *= l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u &= l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u |= l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u ^= l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u <<= l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u >>= l; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __uint >>= __uint is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u += ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u -= ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u *= ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u &= ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u |= ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u ^= ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u <<= ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u >>= ul; };",
+        &[
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __uint >>= __uint is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u += d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u -= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u *= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u &= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u |= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u ^= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u <<= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u >>= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __uint >>= __uint is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u += v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u -= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u *= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u /= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u &= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u |= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u ^= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u <<= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u >>= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u += p; };",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u -= p; };",
+        &[
+            "Implicit cast from float* to __uint",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u *= p; };",
+        &[
+            "Implicit cast from float* to __uint",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u &= p; };",
+        &[
+            "Implicit cast from float* to __uint",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u |= p; };",
+        &[
+            "Implicit cast from float* to __uint",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u ^= p; };",
+        &[
+            "Implicit cast from float* to __uint",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u <<= p; };",
+        &[
+            "Implicit cast from float* to __uint",
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u >>= p; };",
+        &[
+            "Implicit cast from float* to __uint",
+            "Type mismatch on assignment. __uint >>= __uint is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u += pc; };",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u -= pc; };",
+        &[
+            "Implicit cast from __int8* to __uint",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u *= pc; };",
+        &[
+            "Implicit cast from __int8* to __uint",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u &= pc; };",
+        &[
+            "Implicit cast from __int8* to __uint",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u |= pc; };",
+        &[
+            "Implicit cast from __int8* to __uint",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u ^= pc; };",
+        &[
+            "Implicit cast from __int8* to __uint",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u <<= pc; };",
+        &[
+            "Implicit cast from __int8* to __uint",
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u >>= pc; };",
+        &[
+            "Implicit cast from __int8* to __uint",
+            "Type mismatch on assignment. __uint >>= __uint is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u += e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u -= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u *= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u /= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u &= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u |= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u ^= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u <<= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u >>= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        10,
+        "void() g = { u += s; };",
+        &[
+            "Implicit cast from string to __uint",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u -= s; };",
+        &[
+            "Implicit cast from string to __uint",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u *= s; };",
+        &[
+            "Implicit cast from string to __uint",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u &= s; };",
+        &[
+            "Implicit cast from string to __uint",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u |= s; };",
+        &[
+            "Implicit cast from string to __uint",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u ^= s; };",
+        &[
+            "Implicit cast from string to __uint",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "SubInt function not defined: cannot emulate ~int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitandInt function not defined: cannot emulate int&int",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+            "BitorInt function not defined: cannot emulate int|int",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u <<= s; };",
+        &[
+            "Implicit cast from string to __uint",
+            "pow function not defined: cannot emulate int*^int",
+            "Opcode \"*^|POW_I\" is not supported.",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { u >>= s; };",
+        &[
+            "Implicit cast from string to __uint",
+            "Type mismatch on assignment. __uint >>= __uint is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l += f; };",
+        &[
+            "Opcode \"=|CONV_FI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l -= f; };",
+        &[
+            "Opcode \"=|CONV_FI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l *= f; };",
+        &[
+            "Opcode \"=|CONV_FI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l &= f; };",
+        &[
+            "Opcode \"=|CONV_FI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l |= f; };",
+        &[
+            "Opcode \"=|CONV_FI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l ^= f; };",
+        &[
+            "Opcode \"=|CONV_FI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l <<= f; };",
+        &[
+            "Opcode \"=|CONV_FI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __int64 <<= __int64 is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l >>= f; };",
+        &[
+            "Opcode \"=|CONV_FI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __int64 >>= __int64 is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l += i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l -= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l *= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l &= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l |= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l ^= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l <<= i; };",
+        &[
+            "Opcode \"<<|LSHIFT_I64I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l >>= i; };",
+        &[
+            "Opcode \">>|RSHIFT_I64I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l += u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l -= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l *= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l &= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l |= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l ^= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l <<= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __int64 <<= __int64 is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l >>= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __int64 >>= __int64 is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l += l; };",
+        &["Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { l -= l; };",
+        &["Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { l *= l; };",
+        &["Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { l &= l; };",
+        &["Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { l |= l; };",
+        &["Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { l ^= l; };",
+        &["Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { l <<= l; };",
+        &["Type mismatch on assignment. __int64 <<= __int64 is not supported"],
+    ),
+    (
+        10,
+        "void() g = { l >>= l; };",
+        &["Type mismatch on assignment. __int64 >>= __int64 is not supported"],
+    ),
+    (
+        10,
+        "void() g = { l += ul; };",
+        &["Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { l -= ul; };",
+        &["Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { l *= ul; };",
+        &["Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { l &= ul; };",
+        &["Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { l |= ul; };",
+        &["Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { l ^= ul; };",
+        &["Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { l <<= ul; };",
+        &["Type mismatch on assignment. __int64 <<= __int64 is not supported"],
+    ),
+    (
+        10,
+        "void() g = { l >>= ul; };",
+        &["Type mismatch on assignment. __int64 >>= __int64 is not supported"],
+    ),
+    (
+        10,
+        "void() g = { l += d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l -= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l *= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l &= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l |= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l ^= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l <<= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __int64 <<= __int64 is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l >>= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __int64 >>= __int64 is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { l += v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l -= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l *= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l /= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l &= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l |= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l ^= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l <<= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l >>= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l += p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l -= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l *= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l /= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l &= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l |= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l ^= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l <<= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l >>= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l += pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l -= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l *= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l /= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l &= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l |= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l ^= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l <<= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l >>= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l += e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l -= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l *= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l /= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l &= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l |= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l ^= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l <<= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l >>= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l += s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l -= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l *= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l /= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l &= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l |= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l ^= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l <<= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        10,
+        "void() g = { l >>= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        10,
+        "void() g = { ul += f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul -= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul *= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul /= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul &= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul |= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul ^= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul <<= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Type mismatch on assignment. __uint64 <<= __uint64 is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul >>= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Type mismatch on assignment. __uint64 >>= __uint64 is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul += i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul -= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul *= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul /= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul &= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul |= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul ^= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul <<= i; };",
+        &[
+            "Opcode \"<<|LSHIFT_I64I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul >>= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __uint64 >>= __uint64 is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul += u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul -= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul *= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul /= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul &= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul |= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul ^= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul <<= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __uint64 <<= __uint64 is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul >>= u; };",
+        &[
+            "Opcode \">>|RSHIFT_U64I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul += l; };",
+        &["Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { ul -= l; };",
+        &["Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { ul *= l; };",
+        &["Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { ul /= l; };",
+        &["Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { ul &= l; };",
+        &["Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { ul |= l; };",
+        &["Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { ul ^= l; };",
+        &["Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { ul <<= l; };",
+        &["Type mismatch on assignment. __uint64 <<= __uint64 is not supported"],
+    ),
+    (
+        10,
+        "void() g = { ul >>= l; };",
+        &["Type mismatch on assignment. __uint64 >>= __uint64 is not supported"],
+    ),
+    (
+        10,
+        "void() g = { ul += ul; };",
+        &["Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { ul -= ul; };",
+        &["Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { ul *= ul; };",
+        &["Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { ul /= ul; };",
+        &["Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { ul &= ul; };",
+        &["Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { ul |= ul; };",
+        &["Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { ul ^= ul; };",
+        &["Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { ul <<= ul; };",
+        &["Type mismatch on assignment. __uint64 <<= __uint64 is not supported"],
+    ),
+    (
+        10,
+        "void() g = { ul >>= ul; };",
+        &["Type mismatch on assignment. __uint64 >>= __uint64 is not supported"],
+    ),
+    (
+        10,
+        "void() g = { ul += d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul -= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul *= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul /= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul &= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul |= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul ^= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul <<= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Type mismatch on assignment. __uint64 <<= __uint64 is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul >>= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Type mismatch on assignment. __uint64 >>= __uint64 is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { ul += v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul -= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul *= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul /= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul &= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul |= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul ^= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul <<= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul >>= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul += p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul -= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul *= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul /= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul &= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul |= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul ^= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul <<= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul >>= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul += pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul -= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul *= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul /= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul &= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul |= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul ^= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul <<= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul >>= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul += e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul -= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul *= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul /= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul &= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul |= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul ^= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul <<= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul >>= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul += s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul -= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul *= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul /= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul &= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul |= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul ^= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul <<= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { ul >>= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        10,
+        "void() g = { d += f; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d -= f; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d *= f; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d &= f; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d |= f; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d ^= f; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d <<= f; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __double <<= __double is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d >>= f; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __double >>= __double is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d += i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d -= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d *= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d &= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d |= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d ^= i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d <<= i; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"<<|LSHIFT_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d >>= i; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \">>|RSHIFT_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d += u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d -= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d *= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d &= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d |= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d ^= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d <<= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __double <<= __double is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d >>= u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __double >>= __double is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d += l; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d -= l; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d *= l; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d &= l; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d |= l; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d ^= l; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d <<= l; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __double <<= __double is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d >>= l; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Type mismatch on assignment. __double >>= __double is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d += ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d -= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d *= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d &= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d |= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d ^= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d <<= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Type mismatch on assignment. __double <<= __double is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d >>= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Type mismatch on assignment. __double >>= __double is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d += d; };",
+        &["Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { d -= d; };",
+        &["Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { d *= d; };",
+        &["Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { d &= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d |= d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d ^= d; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { d <<= d; };",
+        &["Type mismatch on assignment. __double <<= __double is not supported"],
+    ),
+    (
+        10,
+        "void() g = { d >>= d; };",
+        &["Type mismatch on assignment. __double >>= __double is not supported"],
+    ),
+    (
+        10,
+        "void() g = { d += v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        10,
+        "void() g = { d -= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        10,
+        "void() g = { d *= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        10,
+        "void() g = { d /= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        10,
+        "void() g = { d &= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        10,
+        "void() g = { d |= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        10,
+        "void() g = { d ^= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        10,
+        "void() g = { d <<= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        10,
+        "void() g = { d >>= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        10,
+        "void() g = { d += p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d -= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d *= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d /= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d &= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d |= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d ^= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d <<= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d >>= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d += pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d -= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d *= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d /= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d &= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d |= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d ^= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d <<= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d >>= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        10,
+        "void() g = { d += e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        10,
+        "void() g = { d -= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        10,
+        "void() g = { d *= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        10,
+        "void() g = { d /= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        10,
+        "void() g = { d &= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        10,
+        "void() g = { d |= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        10,
+        "void() g = { d ^= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        10,
+        "void() g = { d <<= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        10,
+        "void() g = { d >>= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        10,
+        "void() g = { d += s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        10,
+        "void() g = { d -= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        10,
+        "void() g = { d *= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        10,
+        "void() g = { d /= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        10,
+        "void() g = { d &= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        10,
+        "void() g = { d |= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        10,
+        "void() g = { d ^= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        10,
+        "void() g = { d <<= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        10,
+        "void() g = { d >>= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        10,
+        "void() g = { v += f; };",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        10,
+        "void() g = { v -= f; };",
+        &["Implicit cast from float to vector"],
+    ),
+    (10, "void() g = { v *= f; };", &[]),
+    (10, "void() g = { v /= f; };", &[]),
+    (
+        10,
+        "void() g = { v &= f; };",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        10,
+        "void() g = { v |= f; };",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        10,
+        "void() g = { v ^= f; };",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        10,
+        "void() g = { v <<= f; };",
+        &[
+            "Implicit cast from float to vector",
+            "Type mismatch on assignment. vector <<= vector is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { v >>= f; };",
+        &[
+            "Implicit cast from float to vector",
+            "Type mismatch on assignment. vector >>= vector is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { v += i; };",
+        &[
+            "Implicit cast from __int32 to vector",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { v -= i; };",
+        &[
+            "Implicit cast from __int32 to vector",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { v *= i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { v &= i; };",
+        &[
+            "Implicit cast from __int32 to vector",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { v |= i; };",
+        &[
+            "Implicit cast from __int32 to vector",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { v ^= i; };",
+        &[
+            "Implicit cast from __int32 to vector",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { v <<= i; };",
+        &[
+            "Implicit cast from __int32 to vector",
+            "itof emulation: denormals are unsafe i",
+            "Type mismatch on assignment. vector <<= vector is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { v >>= i; };",
+        &[
+            "Implicit cast from __int32 to vector",
+            "itof emulation: denormals are unsafe i",
+            "Type mismatch on assignment. vector >>= vector is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { v += u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        10,
+        "void() g = { v -= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        10,
+        "void() g = { v *= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        10,
+        "void() g = { v /= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        10,
+        "void() g = { v &= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        10,
+        "void() g = { v |= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        10,
+        "void() g = { v ^= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        10,
+        "void() g = { v <<= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        10,
+        "void() g = { v >>= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        10,
+        "void() g = { v += l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v -= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v *= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v /= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v &= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v |= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v ^= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v <<= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v >>= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v += ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v -= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v *= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v /= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v &= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v |= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v ^= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v <<= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v >>= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        10,
+        "void() g = { v += d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        10,
+        "void() g = { v -= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        10,
+        "void() g = { v *= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        10,
+        "void() g = { v /= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        10,
+        "void() g = { v &= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        10,
+        "void() g = { v |= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        10,
+        "void() g = { v ^= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        10,
+        "void() g = { v <<= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        10,
+        "void() g = { v >>= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (10, "void() g = { v += v; };", &[]),
+    (10, "void() g = { v -= v; };", &[]),
+    (10, "void() g = { v *= v; };", &[]),
+    (10, "void() g = { v &= v; };", &[]),
+    (10, "void() g = { v |= v; };", &[]),
+    (10, "void() g = { v ^= v; };", &[]),
+    (
+        10,
+        "void() g = { v <<= v; };",
+        &["Type mismatch on assignment. vector <<= vector is not supported"],
+    ),
+    (
+        10,
+        "void() g = { v >>= v; };",
+        &["Type mismatch on assignment. vector >>= vector is not supported"],
+    ),
+    (
+        10,
+        "void() g = { v += p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v -= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v *= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v /= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v &= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v |= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v ^= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v <<= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v >>= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v += pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v -= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v *= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v /= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v &= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v |= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v ^= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v <<= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v >>= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        10,
+        "void() g = { v += e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        10,
+        "void() g = { v -= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        10,
+        "void() g = { v *= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        10,
+        "void() g = { v /= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        10,
+        "void() g = { v &= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        10,
+        "void() g = { v |= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        10,
+        "void() g = { v ^= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        10,
+        "void() g = { v <<= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        10,
+        "void() g = { v >>= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        10,
+        "void() g = { v += s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        10,
+        "void() g = { v -= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        10,
+        "void() g = { v *= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        10,
+        "void() g = { v /= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        10,
+        "void() g = { v &= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        10,
+        "void() g = { v |= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        10,
+        "void() g = { v ^= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        10,
+        "void() g = { v <<= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        10,
+        "void() g = { v >>= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        10,
+        "void() g = { p += f; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p -= f; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "Constant int operand 4294967295 will be truncated to -1",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p *= f; };",
+        &["Cannot cast from float to float*"],
+    ),
+    (
+        10,
+        "void() g = { p /= f; };",
+        &["Cannot cast from float to float*"],
+    ),
+    (
+        10,
+        "void() g = { p &= f; };",
+        &["Cannot cast from float to float*"],
+    ),
+    (
+        10,
+        "void() g = { p |= f; };",
+        &["Cannot cast from float to float*"],
+    ),
+    (
+        10,
+        "void() g = { p ^= f; };",
+        &["Cannot cast from float to float*"],
+    ),
+    (
+        10,
+        "void() g = { p <<= f; };",
+        &["Cannot cast from float to float*"],
+    ),
+    (
+        10,
+        "void() g = { p >>= f; };",
+        &["Cannot cast from float to float*"],
+    ),
+    (
+        10,
+        "void() g = { p += i; };",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p -= i; };",
+        &[
+            "Constant int operand 4294967295 will be truncated to -1",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p *= i; };",
+        &[
+            "Implicit cast from __int32 to float*",
+            "Type mismatch on assignment. ptr *= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p &= i; };",
+        &[
+            "Implicit cast from __int32 to float*",
+            "Type mismatch on assignment. ptr &= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p |= i; };",
+        &[
+            "Implicit cast from __int32 to float*",
+            "Type mismatch on assignment. ptr |= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p ^= i; };",
+        &[
+            "Implicit cast from __int32 to float*",
+            "Type mismatch on assignment. ptr ^= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p <<= i; };",
+        &[
+            "Implicit cast from __int32 to float*",
+            "Type mismatch on assignment. ptr <<= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p >>= i; };",
+        &[
+            "Implicit cast from __int32 to float*",
+            "Type mismatch on assignment. ptr >>= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p += u; };",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p -= u; };",
+        &[
+            "Constant int operand 4294967295 will be truncated to -1",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p *= u; };",
+        &[
+            "Implicit cast from __uint to float*",
+            "Type mismatch on assignment. ptr *= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p &= u; };",
+        &[
+            "Implicit cast from __uint to float*",
+            "Type mismatch on assignment. ptr &= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p |= u; };",
+        &[
+            "Implicit cast from __uint to float*",
+            "Type mismatch on assignment. ptr |= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p ^= u; };",
+        &[
+            "Implicit cast from __uint to float*",
+            "Type mismatch on assignment. ptr ^= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p <<= u; };",
+        &[
+            "Implicit cast from __uint to float*",
+            "Type mismatch on assignment. ptr <<= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p >>= u; };",
+        &[
+            "Implicit cast from __uint to float*",
+            "Type mismatch on assignment. ptr >>= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p += l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p -= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p *= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p /= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p &= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p |= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p ^= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p <<= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p >>= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p += ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p -= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p *= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p /= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p &= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p |= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p ^= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p <<= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p >>= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        10,
+        "void() g = { p += d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        10,
+        "void() g = { p -= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        10,
+        "void() g = { p *= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        10,
+        "void() g = { p /= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        10,
+        "void() g = { p &= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        10,
+        "void() g = { p |= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        10,
+        "void() g = { p ^= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        10,
+        "void() g = { p <<= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        10,
+        "void() g = { p >>= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        10,
+        "void() g = { p += v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        10,
+        "void() g = { p -= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        10,
+        "void() g = { p *= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        10,
+        "void() g = { p /= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        10,
+        "void() g = { p &= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        10,
+        "void() g = { p |= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        10,
+        "void() g = { p ^= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        10,
+        "void() g = { p <<= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        10,
+        "void() g = { p >>= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        10,
+        "void() g = { p += p; };",
+        &["Type mismatch on assignment. ptr += ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { p *= p; };",
+        &["Type mismatch on assignment. ptr *= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { p &= p; };",
+        &["Type mismatch on assignment. ptr &= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { p |= p; };",
+        &["Type mismatch on assignment. ptr |= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { p ^= p; };",
+        &["Type mismatch on assignment. ptr ^= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { p <<= p; };",
+        &["Type mismatch on assignment. ptr <<= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { p >>= p; };",
+        &["Type mismatch on assignment. ptr >>= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { p += pc; };",
+        &[
+            "Implicit cast from __int8* to float*",
+            "Type mismatch on assignment. ptr += ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p -= pc; };",
+        &["incompatible pointer types"],
+    ),
+    (
+        10,
+        "void() g = { p *= pc; };",
+        &[
+            "Implicit cast from __int8* to float*",
+            "Type mismatch on assignment. ptr *= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p &= pc; };",
+        &[
+            "Implicit cast from __int8* to float*",
+            "Type mismatch on assignment. ptr &= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p |= pc; };",
+        &[
+            "Implicit cast from __int8* to float*",
+            "Type mismatch on assignment. ptr |= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p ^= pc; };",
+        &[
+            "Implicit cast from __int8* to float*",
+            "Type mismatch on assignment. ptr ^= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p <<= pc; };",
+        &[
+            "Implicit cast from __int8* to float*",
+            "Type mismatch on assignment. ptr <<= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p >>= pc; };",
+        &[
+            "Implicit cast from __int8* to float*",
+            "Type mismatch on assignment. ptr >>= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p += e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        10,
+        "void() g = { p -= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        10,
+        "void() g = { p *= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        10,
+        "void() g = { p /= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        10,
+        "void() g = { p &= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        10,
+        "void() g = { p |= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        10,
+        "void() g = { p ^= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        10,
+        "void() g = { p <<= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        10,
+        "void() g = { p >>= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        10,
+        "void() g = { p += s; };",
+        &[
+            "Implicit cast from string to float*",
+            "Type mismatch on assignment. ptr += ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p *= s; };",
+        &[
+            "Implicit cast from string to float*",
+            "Type mismatch on assignment. ptr *= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p &= s; };",
+        &[
+            "Implicit cast from string to float*",
+            "Type mismatch on assignment. ptr &= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p |= s; };",
+        &[
+            "Implicit cast from string to float*",
+            "Type mismatch on assignment. ptr |= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p ^= s; };",
+        &[
+            "Implicit cast from string to float*",
+            "Type mismatch on assignment. ptr ^= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p <<= s; };",
+        &[
+            "Implicit cast from string to float*",
+            "Type mismatch on assignment. ptr <<= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { p >>= s; };",
+        &[
+            "Implicit cast from string to float*",
+            "Type mismatch on assignment. ptr >>= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc += f; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc -= f; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc *= f; };",
+        &["Cannot cast from float to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc /= f; };",
+        &["Cannot cast from float to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc &= f; };",
+        &["Cannot cast from float to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc |= f; };",
+        &["Cannot cast from float to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc ^= f; };",
+        &["Cannot cast from float to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc <<= f; };",
+        &["Cannot cast from float to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc >>= f; };",
+        &["Cannot cast from float to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc += i; };",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc -= i; };",
+        &[
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc *= i; };",
+        &[
+            "Implicit cast from __int32 to __int8*",
+            "Type mismatch on assignment. ptr *= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc &= i; };",
+        &[
+            "Implicit cast from __int32 to __int8*",
+            "Type mismatch on assignment. ptr &= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc |= i; };",
+        &[
+            "Implicit cast from __int32 to __int8*",
+            "Type mismatch on assignment. ptr |= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc ^= i; };",
+        &[
+            "Implicit cast from __int32 to __int8*",
+            "Type mismatch on assignment. ptr ^= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc <<= i; };",
+        &[
+            "Implicit cast from __int32 to __int8*",
+            "Type mismatch on assignment. ptr <<= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc >>= i; };",
+        &[
+            "Implicit cast from __int32 to __int8*",
+            "Type mismatch on assignment. ptr >>= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc += u; };",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc -= u; };",
+        &[
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc *= u; };",
+        &[
+            "Implicit cast from __uint to __int8*",
+            "Type mismatch on assignment. ptr *= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc &= u; };",
+        &[
+            "Implicit cast from __uint to __int8*",
+            "Type mismatch on assignment. ptr &= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc |= u; };",
+        &[
+            "Implicit cast from __uint to __int8*",
+            "Type mismatch on assignment. ptr |= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc ^= u; };",
+        &[
+            "Implicit cast from __uint to __int8*",
+            "Type mismatch on assignment. ptr ^= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc <<= u; };",
+        &[
+            "Implicit cast from __uint to __int8*",
+            "Type mismatch on assignment. ptr <<= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc >>= u; };",
+        &[
+            "Implicit cast from __uint to __int8*",
+            "Type mismatch on assignment. ptr >>= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc += l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc -= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc *= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc /= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc &= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc |= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc ^= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc <<= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc >>= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc += ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc -= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc *= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc /= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc &= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc |= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc ^= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc <<= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc >>= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc += d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc -= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc *= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc /= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc &= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc |= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc ^= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc <<= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc >>= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc += v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc -= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc *= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc /= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc &= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc |= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc ^= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc <<= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc >>= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc += p; };",
+        &[
+            "Implicit cast from float* to __int8*",
+            "Type mismatch on assignment. ptr += ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc -= p; };",
+        &["incompatible pointer types"],
+    ),
+    (
+        10,
+        "void() g = { pc *= p; };",
+        &[
+            "Implicit cast from float* to __int8*",
+            "Type mismatch on assignment. ptr *= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc &= p; };",
+        &[
+            "Implicit cast from float* to __int8*",
+            "Type mismatch on assignment. ptr &= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc |= p; };",
+        &[
+            "Implicit cast from float* to __int8*",
+            "Type mismatch on assignment. ptr |= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc ^= p; };",
+        &[
+            "Implicit cast from float* to __int8*",
+            "Type mismatch on assignment. ptr ^= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc <<= p; };",
+        &[
+            "Implicit cast from float* to __int8*",
+            "Type mismatch on assignment. ptr <<= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc >>= p; };",
+        &[
+            "Implicit cast from float* to __int8*",
+            "Type mismatch on assignment. ptr >>= ptr is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc += pc; };",
+        &["Type mismatch on assignment. ptr += ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { pc -= pc; };",
+        &[
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc *= pc; };",
+        &["Type mismatch on assignment. ptr *= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { pc &= pc; };",
+        &["Type mismatch on assignment. ptr &= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { pc |= pc; };",
+        &["Type mismatch on assignment. ptr |= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { pc ^= pc; };",
+        &["Type mismatch on assignment. ptr ^= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { pc <<= pc; };",
+        &["Type mismatch on assignment. ptr <<= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { pc >>= pc; };",
+        &["Type mismatch on assignment. ptr >>= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { pc += e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc -= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc *= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc /= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc &= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc |= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc ^= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc <<= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc >>= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        10,
+        "void() g = { pc += s; };",
+        &["Type mismatch on assignment. ptr += ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { pc -= s; };",
+        &[
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { pc *= s; };",
+        &["Type mismatch on assignment. ptr *= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { pc &= s; };",
+        &["Type mismatch on assignment. ptr &= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { pc |= s; };",
+        &["Type mismatch on assignment. ptr |= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { pc ^= s; };",
+        &["Type mismatch on assignment. ptr ^= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { pc <<= s; };",
+        &["Type mismatch on assignment. ptr <<= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { pc >>= s; };",
+        &["Type mismatch on assignment. ptr >>= ptr is not supported"],
+    ),
+    (
+        10,
+        "void() g = { e += f; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { e -= f; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { e *= f; };",
+        &["Cannot cast from float to entity"],
+    ),
+    (
+        10,
+        "void() g = { e /= f; };",
+        &["Cannot cast from float to entity"],
+    ),
+    (
+        10,
+        "void() g = { e &= f; };",
+        &["Cannot cast from float to entity"],
+    ),
+    (
+        10,
+        "void() g = { e |= f; };",
+        &["Cannot cast from float to entity"],
+    ),
+    (
+        10,
+        "void() g = { e ^= f; };",
+        &["Cannot cast from float to entity"],
+    ),
+    (
+        10,
+        "void() g = { e <<= f; };",
+        &["Cannot cast from float to entity"],
+    ),
+    (
+        10,
+        "void() g = { e >>= f; };",
+        &["Cannot cast from float to entity"],
+    ),
+    (
+        10,
+        "void() g = { e += i; };",
+        &[
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { e -= i; };",
+        &[
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { e *= i; };",
+        &[
+            "Implicit cast from __int32 to entity",
+            "Type mismatch on assignment. entity *= entity is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { e &= i; };",
+        &[
+            "Implicit cast from __int32 to entity",
+            "Type mismatch on assignment. entity &= entity is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { e |= i; };",
+        &[
+            "Implicit cast from __int32 to entity",
+            "Type mismatch on assignment. entity |= entity is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { e ^= i; };",
+        &[
+            "Implicit cast from __int32 to entity",
+            "Type mismatch on assignment. entity ^= entity is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { e <<= i; };",
+        &[
+            "Implicit cast from __int32 to entity",
+            "Type mismatch on assignment. entity <<= entity is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { e >>= i; };",
+        &[
+            "Implicit cast from __int32 to entity",
+            "Type mismatch on assignment. entity >>= entity is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { e += u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        10,
+        "void() g = { e -= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        10,
+        "void() g = { e *= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        10,
+        "void() g = { e /= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        10,
+        "void() g = { e &= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        10,
+        "void() g = { e |= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        10,
+        "void() g = { e ^= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        10,
+        "void() g = { e <<= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        10,
+        "void() g = { e >>= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        10,
+        "void() g = { e += l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e -= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e *= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e /= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e &= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e |= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e ^= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e <<= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e >>= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e += ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e -= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e *= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e /= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e &= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e |= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e ^= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e <<= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e >>= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        10,
+        "void() g = { e += d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        10,
+        "void() g = { e -= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        10,
+        "void() g = { e *= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        10,
+        "void() g = { e /= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        10,
+        "void() g = { e &= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        10,
+        "void() g = { e |= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        10,
+        "void() g = { e ^= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        10,
+        "void() g = { e <<= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        10,
+        "void() g = { e >>= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        10,
+        "void() g = { e += v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        10,
+        "void() g = { e -= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        10,
+        "void() g = { e *= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        10,
+        "void() g = { e /= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        10,
+        "void() g = { e &= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        10,
+        "void() g = { e |= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        10,
+        "void() g = { e ^= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        10,
+        "void() g = { e <<= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        10,
+        "void() g = { e >>= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        10,
+        "void() g = { e += p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e -= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e *= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e /= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e &= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e |= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e ^= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e <<= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e >>= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e += pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e -= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e *= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e /= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e &= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e |= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e ^= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e <<= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e >>= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        10,
+        "void() g = { e += e; };",
+        &["Type mismatch on assignment. entity += entity is not supported"],
+    ),
+    (
+        10,
+        "void() g = { e -= e; };",
+        &["Type mismatch on assignment. entity -= entity is not supported"],
+    ),
+    (
+        10,
+        "void() g = { e *= e; };",
+        &["Type mismatch on assignment. entity *= entity is not supported"],
+    ),
+    (
+        10,
+        "void() g = { e &= e; };",
+        &["Type mismatch on assignment. entity &= entity is not supported"],
+    ),
+    (
+        10,
+        "void() g = { e |= e; };",
+        &["Type mismatch on assignment. entity |= entity is not supported"],
+    ),
+    (
+        10,
+        "void() g = { e ^= e; };",
+        &["Type mismatch on assignment. entity ^= entity is not supported"],
+    ),
+    (
+        10,
+        "void() g = { e <<= e; };",
+        &["Type mismatch on assignment. entity <<= entity is not supported"],
+    ),
+    (
+        10,
+        "void() g = { e >>= e; };",
+        &["Type mismatch on assignment. entity >>= entity is not supported"],
+    ),
+    (
+        10,
+        "void() g = { e += s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        10,
+        "void() g = { e -= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        10,
+        "void() g = { e *= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        10,
+        "void() g = { e /= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        10,
+        "void() g = { e &= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        10,
+        "void() g = { e |= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        10,
+        "void() g = { e ^= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        10,
+        "void() g = { e <<= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        10,
+        "void() g = { e >>= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        10,
+        "void() g = { s += f; };",
+        &[
+            "OP_ADD_SF: string+float may be unsafe",
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s -= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        10,
+        "void() g = { s *= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        10,
+        "void() g = { s /= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        10,
+        "void() g = { s &= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        10,
+        "void() g = { s |= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        10,
+        "void() g = { s ^= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        10,
+        "void() g = { s <<= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        10,
+        "void() g = { s >>= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        10,
+        "void() g = { s += i; };",
+        &[
+            "OP_ADD_SI: string+int may be unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s -= i; };",
+        &["Opcode \"-|SUB_SI\" is not supported."],
+    ),
+    (
+        10,
+        "void() g = { s *= i; };",
+        &[
+            "Implicit cast from __int32 to string",
+            "Type mismatch on assignment. string *= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s &= i; };",
+        &[
+            "Implicit cast from __int32 to string",
+            "Type mismatch on assignment. string &= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s |= i; };",
+        &[
+            "Implicit cast from __int32 to string",
+            "Type mismatch on assignment. string |= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s ^= i; };",
+        &[
+            "Implicit cast from __int32 to string",
+            "Type mismatch on assignment. string ^= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s <<= i; };",
+        &[
+            "Implicit cast from __int32 to string",
+            "Type mismatch on assignment. string <<= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s >>= i; };",
+        &[
+            "Implicit cast from __int32 to string",
+            "Type mismatch on assignment. string >>= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s += u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Type mismatch on assignment. string += string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s -= u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Opcode \"-|SUB_S\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit type mismatch on assignment to s. Needed string, got float.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s *= u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Type mismatch on assignment. string *= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s &= u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Type mismatch on assignment. string &= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s |= u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Type mismatch on assignment. string |= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s ^= u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Type mismatch on assignment. string ^= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s <<= u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Type mismatch on assignment. string <<= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s >>= u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Type mismatch on assignment. string >>= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s += l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s -= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s *= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s /= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s &= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s |= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s ^= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s <<= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s >>= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s += ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s -= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s *= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s /= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s &= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s |= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s ^= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s <<= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s >>= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        10,
+        "void() g = { s += d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        10,
+        "void() g = { s -= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        10,
+        "void() g = { s *= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        10,
+        "void() g = { s /= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        10,
+        "void() g = { s &= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        10,
+        "void() g = { s |= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        10,
+        "void() g = { s ^= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        10,
+        "void() g = { s <<= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        10,
+        "void() g = { s >>= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        10,
+        "void() g = { s += v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        10,
+        "void() g = { s -= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        10,
+        "void() g = { s *= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        10,
+        "void() g = { s /= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        10,
+        "void() g = { s &= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        10,
+        "void() g = { s |= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        10,
+        "void() g = { s ^= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        10,
+        "void() g = { s <<= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        10,
+        "void() g = { s >>= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        10,
+        "void() g = { s += p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Type mismatch on assignment. string += string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s -= p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Opcode \"-|SUB_S\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit type mismatch on assignment to s. Needed string, got float.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s *= p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Type mismatch on assignment. string *= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s &= p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Type mismatch on assignment. string &= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s |= p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Type mismatch on assignment. string |= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s ^= p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Type mismatch on assignment. string ^= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s <<= p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Type mismatch on assignment. string <<= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s >>= p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Type mismatch on assignment. string >>= string is not supported",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s += pc; };",
+        &["Type mismatch on assignment. string += string is not supported"],
+    ),
+    (
+        10,
+        "void() g = { s -= pc; };",
+        &[
+            "Opcode \"-|SUB_S\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit type mismatch on assignment to s. Needed string, got float.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s *= pc; };",
+        &["Type mismatch on assignment. string *= string is not supported"],
+    ),
+    (
+        10,
+        "void() g = { s &= pc; };",
+        &["Type mismatch on assignment. string &= string is not supported"],
+    ),
+    (
+        10,
+        "void() g = { s |= pc; };",
+        &["Type mismatch on assignment. string |= string is not supported"],
+    ),
+    (
+        10,
+        "void() g = { s ^= pc; };",
+        &["Type mismatch on assignment. string ^= string is not supported"],
+    ),
+    (
+        10,
+        "void() g = { s <<= pc; };",
+        &["Type mismatch on assignment. string <<= string is not supported"],
+    ),
+    (
+        10,
+        "void() g = { s >>= pc; };",
+        &["Type mismatch on assignment. string >>= string is not supported"],
+    ),
+    (
+        10,
+        "void() g = { s += e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        10,
+        "void() g = { s -= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        10,
+        "void() g = { s *= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        10,
+        "void() g = { s /= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        10,
+        "void() g = { s &= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        10,
+        "void() g = { s |= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        10,
+        "void() g = { s ^= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        10,
+        "void() g = { s <<= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        10,
+        "void() g = { s >>= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        10,
+        "void() g = { s += s; };",
+        &["Type mismatch on assignment. string += string is not supported"],
+    ),
+    (
+        10,
+        "void() g = { s -= s; };",
+        &[
+            "Opcode \"-|SUB_S\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit type mismatch on assignment to s. Needed string, got float.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { s *= s; };",
+        &["Type mismatch on assignment. string *= string is not supported"],
+    ),
+    (
+        10,
+        "void() g = { s &= s; };",
+        &["Type mismatch on assignment. string &= string is not supported"],
+    ),
+    (
+        10,
+        "void() g = { s |= s; };",
+        &["Type mismatch on assignment. string |= string is not supported"],
+    ),
+    (
+        10,
+        "void() g = { s ^= s; };",
+        &["Type mismatch on assignment. string ^= string is not supported"],
+    ),
+    (
+        10,
+        "void() g = { s <<= s; };",
+        &["Type mismatch on assignment. string <<= string is not supported"],
+    ),
+    (
+        10,
+        "void() g = { s >>= s; };",
+        &["Type mismatch on assignment. string >>= string is not supported"],
+    ),
+    (10, "void() g = { x = f + f; };", &[]),
+    (10, "void() g = { x = f - f; };", &[]),
+    (10, "void() g = { x = f * f; };", &[]),
+    (10, "void() g = { x = f / f; };", &[]),
+    (10, "void() g = { x = f & f; };", &[]),
+    (10, "void() g = { x = f | f; };", &[]),
+    (10, "void() g = { x = f ^ f; };", &[]),
+    (10, "void() g = { x = f % f; };", &[]),
+    (
+        10,
+        "void() g = { x = f << f; };",
+        &[
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f >> f; };",
+        &[
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f < f; };",
+        &["Result of comparison is constant"],
+    ),
+    (10, "void() g = { x = f >= f; };", &[]),
+    (
+        10,
+        "void() g = { x = f && f; };",
+        &["Parameter offsets for && are the same"],
+    ),
+    (
+        10,
+        "void() g = { x = f || f; };",
+        &["Parameters for || are the same"],
+    ),
+    (
+        10,
+        "void() g = { x = f + i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = f - i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = f * i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = f / i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = f & i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = f | i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = f ^ i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = f % i; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f < i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = f >= i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (10, "void() g = { x = f && i; };", &[]),
+    (10, "void() g = { x = f || i; };", &[]),
+    (
+        10,
+        "void() g = { x = f + u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f - u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f * u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f / u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f & u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f | u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f ^ u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f % u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f << u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f >> u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (10, "void() g = { x = f && u; };", &[]),
+    (10, "void() g = { x = f || u; };", &[]),
+    (
+        10,
+        "void() g = { x = f + l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = f - l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = f * l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = f / l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = f & l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = f | l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = f ^ l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = f % l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = f << l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f >> l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (10, "void() g = { x = f && l; };", &[]),
+    (10, "void() g = { x = f || l; };", &[]),
+    (
+        10,
+        "void() g = { x = f + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f - ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f * ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f / ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f & ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f | ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f ^ ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f % ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f << ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f >> ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f && ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f || ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f + d; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f - d; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f * d; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f & d; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f | d; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f ^ d; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f % d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f << d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f >> d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f + v; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f - v; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f * v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = f & v; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f | v; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f ^ v; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f % v; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "ModVec function not defined: cannot emulate vector%vector",
+            "Opcode \"%|MOD_V\" is not supported.",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f << v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f < v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f >= v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (10, "void() g = { x = f && v; };", &[]),
+    (10, "void() g = { x = f || v; };", &[]),
+    (
+        10,
+        "void() g = { x = f + p; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f % p; };",
+        &[
+            "type mismatch for % (float and float*)",
+            "Implicit conversion from float to __uint64",
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f >= p; };",
+        &[
+            "type mismatch for >= (float and float*)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (10, "void() g = { x = f && p; };", &[]),
+    (10, "void() g = { x = f || p; };", &[]),
+    (
+        10,
+        "void() g = { x = f + pc; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f % pc; };",
+        &[
+            "type mismatch for % (float and __int8*)",
+            "Implicit conversion from float to __uint64",
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f >= pc; };",
+        &[
+            "type mismatch for >= (float and __int8*)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (10, "void() g = { x = f && pc; };", &[]),
+    (10, "void() g = { x = f || pc; };", &[]),
+    (
+        10,
+        "void() g = { x = f + e; };",
+        &[
+            "type mismatch for + (float and entity)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f % e; };",
+        &[
+            "type mismatch for % (float and entity)",
+            "Implicit conversion from float to __uint64",
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f >= e; };",
+        &[
+            "type mismatch for >= (float and entity)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (10, "void() g = { x = f && e; };", &[]),
+    (10, "void() g = { x = f || e; };", &[]),
+    (
+        10,
+        "void() g = { x = f + s; };",
+        &[
+            "Implicit conversion from float to __int32",
+            "ftoi emulation: denormals are unsafe",
+            "OP_ADD_SI: string+int may be unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f % s; };",
+        &[
+            "type mismatch for % (float and string)",
+            "Implicit conversion from float to __uint64",
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = f >= s; };",
+        &[
+            "type mismatch for >= (float and string)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (10, "void() g = { x = f && s; };", &[]),
+    (10, "void() g = { x = f || s; };", &[]),
+    (
+        10,
+        "void() g = { x = i + f; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i - f; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i * f; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i / f; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i & f; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i | f; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i ^ f; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i % f; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i < f; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i >= f; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i && f; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i || f; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i < i; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i >= i; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i && i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i || i; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i >> u; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \">>|RSHIFT_U64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i < u; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "utof emulation: will break if i is big",
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i && u; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i || u; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i + l; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i - l; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i * l; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i & l; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i | l; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i ^ l; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i % l; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i && l; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i || l; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i - ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i * ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i / ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i & ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i | ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i ^ ul; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i % ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i && ul; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i || ul; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i + d; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i - d; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i * d; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i & d; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i | d; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i ^ d; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i << d; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i + v; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i * v; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i & v; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i ^ v; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i << v; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i < v; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i >= v; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i && v; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i || v; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i + p; };",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i % p; };",
+        &[
+            "type mismatch for % (__int32 and float*)",
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i >= p; };",
+        &[
+            "type mismatch for >= (__int32 and float*)",
+            "itof emulation: denormals are unsafe i",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i && p; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i || p; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i + pc; };",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i % pc; };",
+        &[
+            "type mismatch for % (__int32 and __int8*)",
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i >= pc; };",
+        &[
+            "type mismatch for >= (__int32 and __int8*)",
+            "itof emulation: denormals are unsafe i",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i && pc; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i || pc; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i + e; };",
+        &[
+            "type mismatch for + (__int32 and entity)",
+            "itof emulation: denormals are unsafe i",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i % e; };",
+        &[
+            "type mismatch for % (__int32 and entity)",
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i >= e; };",
+        &[
+            "type mismatch for >= (__int32 and entity)",
+            "itof emulation: denormals are unsafe i",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i && e; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i || e; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i + s; };",
+        &[
+            "OP_ADD_SI: string+int may be unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i % s; };",
+        &[
+            "type mismatch for % (__int32 and string)",
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i >= s; };",
+        &[
+            "type mismatch for >= (__int32 and string)",
+            "itof emulation: denormals are unsafe i",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = i && s; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = i || s; };",
+        &["itof emulation: denormals are unsafe i"],
+    ),
+    (
+        10,
+        "void() g = { x = u + f; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u - f; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u * f; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u / f; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u & f; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u | f; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u ^ f; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u % f; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u << f; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u >> f; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u && f; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u || f; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u < i; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "itof emulation: denormals are unsafe i",
+            "utof emulation: will break if i is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u && i; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u || i; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u >> u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \">>|RSHIFT_U64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u < u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u && u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u || u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u + l; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u - l; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u * l; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u & l; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u | l; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u ^ l; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u % l; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u << l; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u >> l; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u && l; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u || l; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u + ul; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u - ul; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u * ul; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u / ul; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u & ul; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u | ul; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u ^ ul; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u % ul; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u << ul; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u >> ul; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u && ul; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u || ul; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u + d; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u - d; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u * d; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u & d; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u | d; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u ^ d; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u << d; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u + v; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u * v; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u & v; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u ^ v; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u << v; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u < v; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u >= v; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u && v; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u || v; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u + p; };",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u % p; };",
+        &[
+            "type mismatch for % (__uint and float*)",
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u >= p; };",
+        &[
+            "type mismatch for >= (__uint and float*)",
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u && p; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u || p; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u + pc; };",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u % pc; };",
+        &[
+            "type mismatch for % (__uint and __int8*)",
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u >= pc; };",
+        &[
+            "type mismatch for >= (__uint and __int8*)",
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u && pc; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u || pc; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u + e; };",
+        &[
+            "type mismatch for + (__uint and entity)",
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u % e; };",
+        &[
+            "type mismatch for % (__uint and entity)",
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u >= e; };",
+        &[
+            "type mismatch for >= (__uint and entity)",
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u && e; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u || e; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u + s; };",
+        &[
+            "Implicit conversion from __uint to __int32",
+            "OP_ADD_SI: string+int may be unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u % s; };",
+        &[
+            "type mismatch for % (__uint and string)",
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u >= s; };",
+        &[
+            "type mismatch for >= (__uint and string)",
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u && s; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = u || s; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l + f; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l - f; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l * f; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l / f; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l & f; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l | f; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l ^ f; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l % f; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l << f; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l >> f; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l && f; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l || f; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l + i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l - i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l * i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l & i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l | i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l ^ i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l % i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l << i; };",
+        &[
+            "Opcode \"<<|LSHIFT_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l >> i; };",
+        &[
+            "Opcode \">>|RSHIFT_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l && i; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l || i; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l + u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l - u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l * u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l & u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l | u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l ^ u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l % u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l << u; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l >> u; };",
+        &[
+            "Opcode \">>|RSHIFT_U64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l && u; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l || u; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l + l; };",
+        &[
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l - l; };",
+        &[
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l * l; };",
+        &[
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l & l; };",
+        &["Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l | l; };",
+        &["Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l ^ l; };",
+        &["Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l % l; };",
+        &[
+            "Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l << l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l >> l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l && l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l || l; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l + ul; };",
+        &[
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l - ul; };",
+        &[
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l * ul; };",
+        &[
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l / ul; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l & ul; };",
+        &["Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l | ul; };",
+        &["Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l ^ ul; };",
+        &["Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l % ul; };",
+        &[
+            "Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l << ul; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l >> ul; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l && ul; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l || ul; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l + d; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l - d; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l * d; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l & d; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l | d; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l ^ d; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l << d; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l + v; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l * v; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l & v; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l ^ v; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l << v; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l < v; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l >= v; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l && v; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l || v; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l + p; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l % p; };",
+        &[
+            "type mismatch for % (__int64 and float*)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l >= p; };",
+        &[
+            "type mismatch for >= (__int64 and float*)",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l && p; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l || p; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l + pc; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l % pc; };",
+        &[
+            "type mismatch for % (__int64 and __int8*)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l >= pc; };",
+        &[
+            "type mismatch for >= (__int64 and __int8*)",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l && pc; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l || pc; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l + e; };",
+        &[
+            "type mismatch for + (__int64 and entity)",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l % e; };",
+        &[
+            "type mismatch for % (__int64 and entity)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l >= e; };",
+        &[
+            "type mismatch for >= (__int64 and entity)",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l && e; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l || e; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l + s; };",
+        &[
+            "Implicit conversion from __int64 to __int32",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "OP_ADD_SI: string+int may be unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l % s; };",
+        &[
+            "type mismatch for % (__int64 and string)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l >= s; };",
+        &[
+            "type mismatch for >= (__int64 and string)",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = l && s; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = l || s; };",
+        &["Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = ul + f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul - f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul * f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul / f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul & f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul | f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul ^ f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul % f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul << f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul >> f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul && f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul || f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul + i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul - i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul * i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul / i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul & i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul | i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul ^ i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul % i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe i",
+            "itof emulation: denormals are unsafe i",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul << i; };",
+        &[
+            "Opcode \"<<|LSHIFT_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul >> i; };",
+        &[
+            "Opcode \">>|RSHIFT_U64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul && i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul || i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul + u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul - u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul * u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul / u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul & u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul | u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul ^ u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul % u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul << u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul >> u; };",
+        &[
+            "Opcode \">>|RSHIFT_U64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul && u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul || u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul + l; };",
+        &[
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul - l; };",
+        &[
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul * l; };",
+        &[
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul / l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul & l; };",
+        &["Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = ul | l; };",
+        &["Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = ul ^ l; };",
+        &["Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = ul % l; };",
+        &[
+            "Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul << l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul >> l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul && l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul || l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul + ul; };",
+        &[
+            "Opcode \"+|ADD_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul - ul; };",
+        &[
+            "Opcode \"-|SUB_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul * ul; };",
+        &[
+            "Opcode \"*|MUL_I64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul / ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul & ul; };",
+        &["Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = ul | ul; };",
+        &["Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = ul ^ ul; };",
+        &["Opcode \"^|BITXOR_I\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = ul % ul; };",
+        &[
+            "Opcode \"%|DIV_U64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul << ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul >> ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul && ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul || ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul + d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul - d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul * d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul & d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul | d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul ^ d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul % d; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul << d; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul >> d; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul + v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul * v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul & v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul ^ v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul << v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul < v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul >= v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul && v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul || v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul + p; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "ftoi emulation: denormals are unsafe",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul % p; };",
+        &[
+            "type mismatch for % (__uint64 and float*)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul >= p; };",
+        &[
+            "type mismatch for >= (__uint64 and float*)",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul && p; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul || p; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul + pc; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul % pc; };",
+        &[
+            "type mismatch for % (__uint64 and __int8*)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul >= pc; };",
+        &[
+            "type mismatch for >= (__uint64 and __int8*)",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul && pc; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul || pc; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul + e; };",
+        &[
+            "type mismatch for + (__uint64 and entity)",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul % e; };",
+        &[
+            "type mismatch for % (__uint64 and entity)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul >= e; };",
+        &[
+            "type mismatch for >= (__uint64 and entity)",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul && e; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul || e; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul + s; };",
+        &[
+            "Implicit conversion from __uint64 to __int32",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "OP_ADD_SI: string+int may be unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul % s; };",
+        &[
+            "type mismatch for % (__uint64 and string)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul >= s; };",
+        &[
+            "type mismatch for >= (__uint64 and string)",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul && s; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = ul || s; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d + f; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d - f; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d * f; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d & f; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d | f; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d ^ f; };",
+        &[
+            "Opcode \"=|CONV_FD\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d % f; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d << f; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d >> f; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d && f; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d || f; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d + i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d - i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d * i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d & i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d | i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d ^ i; };",
+        &[
+            "Opcode \"=|CONV_II64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d << i; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"<<|LSHIFT_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d >> i; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \">>|RSHIFT_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d && i; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d || i; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d + u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d - u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d * u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d & u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d | u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d ^ u; };",
+        &[
+            "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d << u; };",
+        &[
+            "Implicit conversion from __uint to __int32",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"<<|LSHIFT_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d >> u; };",
+        &[
+            "Implicit conversion from __uint to __int32",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \">>|RSHIFT_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d && u; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d || u; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d + l; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d - l; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d * l; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d & l; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d | l; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d ^ l; };",
+        &[
+            "Opcode \"=|CONV_I64D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d << l; };",
+        &[
+            "Implicit conversion from __int64 to __int32",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"<<|LSHIFT_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d >> l; };",
+        &[
+            "Implicit conversion from __int64 to __int32",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \">>|RSHIFT_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d && l; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d || l; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d + ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d - ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d * ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d & ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d | ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d ^ ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d % ul; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d << ul; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d >> ul; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d && ul; };",
+        &[
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d || ul; };",
+        &[
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d + d; };",
+        &[
+            "Opcode \"+|ADD_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d - d; };",
+        &[
+            "Opcode \"-|SUB_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d * d; };",
+        &[
+            "Opcode \"*|MUL_D\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d & d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d | d; };",
+        &[
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d ^ d; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d % d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d << d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_LSHIFT_F*",
+            "Opcode \"<<|LSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d >> d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "bitshift function not defined: cannot emulate OP_RSHIFT_F*",
+            "Opcode \">>|RSHIFT_F\" is not supported.",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d + v; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d * v; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d & v; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d ^ v; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d << v; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d < v; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d >= v; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d && v; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d || v; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d + p; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d % p; };",
+        &[
+            "type mismatch for % (__double and float*)",
+            "Implicit conversion from __double to __uint64",
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d >= p; };",
+        &[
+            "type mismatch for >= (__double and float*)",
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d && p; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d || p; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d + pc; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d % pc; };",
+        &[
+            "type mismatch for % (__double and __int8*)",
+            "Implicit conversion from __double to __uint64",
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d >= pc; };",
+        &[
+            "type mismatch for >= (__double and __int8*)",
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d && pc; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d || pc; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d + e; };",
+        &[
+            "type mismatch for + (__double and entity)",
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d % e; };",
+        &[
+            "type mismatch for % (__double and entity)",
+            "Implicit conversion from __double to __uint64",
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d >= e; };",
+        &[
+            "type mismatch for >= (__double and entity)",
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d && e; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d || e; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d + s; };",
+        &[
+            "Implicit conversion from __double to __int32",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "OP_ADD_SI: string+int may be unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d % s; };",
+        &[
+            "type mismatch for % (__double and string)",
+            "Implicit conversion from __double to __uint64",
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d >= s; };",
+        &[
+            "type mismatch for >= (__double and string)",
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = d && s; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = d || s; };",
+        &["Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = v + f; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v - f; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v * f; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v / f; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v & f; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v | f; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v ^ f; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v % f; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "ModVec function not defined: cannot emulate vector%vector",
+            "Opcode \"%|MOD_V\" is not supported.",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v << f; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >> f; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v < f; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >= f; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v && f; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v || f; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v + i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v - i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v * i; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v / i; };",
+        &[
+            "itof emulation: denormals are unsafe i",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v & i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v | i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v ^ i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v % i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v << i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >> i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v < i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >= i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v && i; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v || i; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v + u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v - u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v * u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v / u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v & u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v | u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v ^ u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v % u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v << u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >> u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v < u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >= u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v && u; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v || u; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v + l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v - l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v * l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v / l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v & l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v | l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v ^ l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v % l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v << l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >> l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v < l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >= l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v && l; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v || l; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v + ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v - ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v * ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v / ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v & ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v | ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v ^ ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v % ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v << ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >> ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v < ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >= ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v && ul; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v || ul; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v + d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v - d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v * d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v / d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v & d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v | d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v ^ d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v % d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v << d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >> d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v < d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >= d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v && d; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v || d; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v + v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v - v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (10, "void() g = { x = v * v; };", &[]),
+    (
+        10,
+        "void() g = { x = v / v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v & v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v | v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v ^ v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v % v; };",
+        &[
+            "ModVec function not defined: cannot emulate vector%vector",
+            "Opcode \"%|MOD_V\" is not supported.",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v << v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >> v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v < v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >= v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v && v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v || v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v + p; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v * p; };",
+        &[
+            "type mismatch for * (vector and float*)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v % p; };",
+        &[
+            "type mismatch for % (vector and float*)",
+            "Cannot cast from vector to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >> p; };",
+        &[
+            "type mismatch for >> (vector and float*)",
+            "Cannot cast from vector to __int32",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >= p; };",
+        &[
+            "type mismatch for >= (vector and float*)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v && p; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v || p; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v + pc; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v * pc; };",
+        &[
+            "type mismatch for * (vector and __int8*)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v % pc; };",
+        &[
+            "type mismatch for % (vector and __int8*)",
+            "Cannot cast from vector to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >> pc; };",
+        &[
+            "type mismatch for >> (vector and __int8*)",
+            "Cannot cast from vector to __int32",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >= pc; };",
+        &[
+            "type mismatch for >= (vector and __int8*)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v && pc; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v || pc; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v + e; };",
+        &[
+            "type mismatch for + (vector and entity)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v * e; };",
+        &[
+            "type mismatch for * (vector and entity)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v % e; };",
+        &[
+            "type mismatch for % (vector and entity)",
+            "Cannot cast from vector to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >> e; };",
+        &[
+            "type mismatch for >> (vector and entity)",
+            "Cannot cast from vector to __int32",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >= e; };",
+        &[
+            "type mismatch for >= (vector and entity)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v && e; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v || e; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v + s; };",
+        &[
+            "type mismatch for + (vector and string)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v * s; };",
+        &[
+            "type mismatch for * (vector and string)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v % s; };",
+        &[
+            "type mismatch for % (vector and string)",
+            "Cannot cast from vector to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >> s; };",
+        &[
+            "type mismatch for >> (vector and string)",
+            "Cannot cast from vector to __int32",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v >= s; };",
+        &[
+            "type mismatch for >= (vector and string)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = v && s; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = v || s; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p + f; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p - f; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "Constant int operand 4294967295 will be truncated to -1",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p * f; };",
+        &[
+            "type mismatch for * (float* and float)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p % f; };",
+        &[
+            "type mismatch for % (float* and float)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p >= f; };",
+        &[
+            "type mismatch for >= (float* and float)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p && f; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p || f; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p + i; };",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p - i; };",
+        &[
+            "Constant int operand 4294967295 will be truncated to -1",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p * i; };",
+        &[
+            "type mismatch for * (float* and __int32)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p % i; };",
+        &[
+            "type mismatch for % (float* and __int32)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p >= i; };",
+        &[
+            "type mismatch for >= (float* and __int32)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p && i; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p || i; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p + u; };",
+        &[
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p - u; };",
+        &[
+            "Constant int operand 4294967295 will be truncated to -1",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p * u; };",
+        &[
+            "type mismatch for * (float* and __uint)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p % u; };",
+        &[
+            "type mismatch for % (float* and __uint)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p >= u; };",
+        &[
+            "type mismatch for >= (float* and __uint)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p && u; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p || u; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p + l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p - l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "Constant int operand 4294967295 will be truncated to -1",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p * l; };",
+        &[
+            "type mismatch for * (float* and __int64)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p % l; };",
+        &[
+            "type mismatch for % (float* and __int64)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p >= l; };",
+        &[
+            "type mismatch for >= (float* and __int64)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p && l; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p || l; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "ftoi emulation: denormals are unsafe",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p - ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "ftoi emulation: denormals are unsafe",
+            "Constant int operand 4294967295 will be truncated to -1",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p * ul; };",
+        &[
+            "type mismatch for * (float* and __uint64)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p % ul; };",
+        &[
+            "type mismatch for % (float* and __uint64)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p >= ul; };",
+        &[
+            "type mismatch for >= (float* and __uint64)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p && ul; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p || ul; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p + d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p - d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "Constant int operand 4294967295 will be truncated to -1",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "MulInt function not defined: cannot emulate int*int",
+            "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p * d; };",
+        &[
+            "type mismatch for * (float* and __double)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p % d; };",
+        &[
+            "type mismatch for % (float* and __double)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p >= d; };",
+        &[
+            "type mismatch for >= (float* and __double)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p && d; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p || d; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p + v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p - v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p * v; };",
+        &[
+            "type mismatch for * (float* and vector)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p % v; };",
+        &[
+            "type mismatch for % (float* and vector)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p >= v; };",
+        &[
+            "type mismatch for >= (float* and vector)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p && v; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p || v; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p + p; };",
+        &[
+            "type mismatch for + (float* and float*)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p * p; };",
+        &[
+            "type mismatch for * (float* and float*)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p % p; };",
+        &[
+            "type mismatch for % (float* and float*)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p && p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p || p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p + pc; };",
+        &[
+            "type mismatch for + (float* and __int8*)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p - pc; };",
+        &["incompatible pointer types"],
+    ),
+    (
+        10,
+        "void() g = { x = p * pc; };",
+        &[
+            "type mismatch for * (float* and __int8*)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p % pc; };",
+        &[
+            "type mismatch for % (float* and __int8*)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p && pc; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p || pc; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p + e; };",
+        &[
+            "type mismatch for + (float* and entity)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p * e; };",
+        &[
+            "type mismatch for * (float* and entity)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p % e; };",
+        &[
+            "type mismatch for % (float* and entity)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p >= e; };",
+        &[
+            "type mismatch for >= (float* and entity)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p && e; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p || e; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p + s; };",
+        &[
+            "type mismatch for + (float* and string)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p * s; };",
+        &[
+            "type mismatch for * (float* and string)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p % s; };",
+        &[
+            "type mismatch for % (float* and string)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p >= s; };",
+        &[
+            "type mismatch for >= (float* and string)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = p && s; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = p || s; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc + f; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc - f; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc * f; };",
+        &[
+            "type mismatch for * (__int8* and float)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc % f; };",
+        &[
+            "type mismatch for % (__int8* and float)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc >= f; };",
+        &[
+            "type mismatch for >= (__int8* and float)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc && f; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc || f; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc + i; };",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc - i; };",
+        &[
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc * i; };",
+        &[
+            "type mismatch for * (__int8* and __int32)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc % i; };",
+        &[
+            "type mismatch for % (__int8* and __int32)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc >= i; };",
+        &[
+            "type mismatch for >= (__int8* and __int32)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc && i; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc || i; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc + u; };",
+        &[
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc - u; };",
+        &[
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc * u; };",
+        &[
+            "type mismatch for * (__int8* and __uint)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc % u; };",
+        &[
+            "type mismatch for % (__int8* and __uint)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc >= u; };",
+        &[
+            "type mismatch for >= (__int8* and __uint)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc && u; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc || u; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc + l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc - l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc * l; };",
+        &[
+            "type mismatch for * (__int8* and __int64)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc % l; };",
+        &[
+            "type mismatch for % (__int8* and __int64)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc >= l; };",
+        &[
+            "type mismatch for >= (__int8* and __int64)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc && l; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc || l; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc - ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "ftoi emulation: denormals are unsafe",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc * ul; };",
+        &[
+            "type mismatch for * (__int8* and __uint64)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc % ul; };",
+        &[
+            "type mismatch for % (__int8* and __uint64)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc >= ul; };",
+        &[
+            "type mismatch for >= (__int8* and __uint64)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc && ul; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc || ul; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc + d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc - d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "SubInt function not defined: cannot emulate int-int",
+            "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc * d; };",
+        &[
+            "type mismatch for * (__int8* and __double)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc % d; };",
+        &[
+            "type mismatch for % (__int8* and __double)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc >= d; };",
+        &[
+            "type mismatch for >= (__int8* and __double)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc && d; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc || d; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc + v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc - v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc * v; };",
+        &[
+            "type mismatch for * (__int8* and vector)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc % v; };",
+        &[
+            "type mismatch for % (__int8* and vector)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc >= v; };",
+        &[
+            "type mismatch for >= (__int8* and vector)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc && v; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc || v; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc + p; };",
+        &[
+            "type mismatch for + (__int8* and float*)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc - p; };",
+        &["incompatible pointer types"],
+    ),
+    (
+        10,
+        "void() g = { x = pc * p; };",
+        &[
+            "type mismatch for * (__int8* and float*)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc % p; };",
+        &[
+            "type mismatch for % (__int8* and float*)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc && p; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc || p; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc + pc; };",
+        &[
+            "type mismatch for + (__int8* and __int8*)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc * pc; };",
+        &[
+            "type mismatch for * (__int8* and __int8*)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc % pc; };",
+        &[
+            "type mismatch for % (__int8* and __int8*)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc && pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc || pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc + e; };",
+        &[
+            "type mismatch for + (__int8* and entity)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc * e; };",
+        &[
+            "type mismatch for * (__int8* and entity)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc % e; };",
+        &[
+            "type mismatch for % (__int8* and entity)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc >= e; };",
+        &[
+            "type mismatch for >= (__int8* and entity)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc && e; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc || e; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc + s; };",
+        &[
+            "type mismatch for + (__int8* and string)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc * s; };",
+        &[
+            "type mismatch for * (__int8* and string)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc % s; };",
+        &[
+            "type mismatch for % (__int8* and string)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc >= s; };",
+        &[
+            "type mismatch for >= (__int8* and string)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = pc && s; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = pc || s; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e + f; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e - f; };",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e * f; };",
+        &[
+            "type mismatch for * (entity and float)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e % f; };",
+        &[
+            "type mismatch for % (entity and float)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e >= f; };",
+        &[
+            "type mismatch for >= (entity and float)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e && f; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e || f; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e + i; };",
+        &[
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e - i; };",
+        &[
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e * i; };",
+        &[
+            "type mismatch for * (entity and __int32)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e % i; };",
+        &[
+            "type mismatch for % (entity and __int32)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e >= i; };",
+        &[
+            "type mismatch for >= (entity and __int32)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e && i; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e || i; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e + u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "ftoi emulation: denormals are unsafe",
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e - u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "ftoi emulation: denormals are unsafe",
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e * u; };",
+        &[
+            "type mismatch for * (entity and __uint)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e % u; };",
+        &[
+            "type mismatch for % (entity and __uint)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e >= u; };",
+        &[
+            "type mismatch for >= (entity and __uint)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e && u; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e || u; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e + l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e - l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e * l; };",
+        &[
+            "type mismatch for * (entity and __int64)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e % l; };",
+        &[
+            "type mismatch for % (entity and __int64)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e >= l; };",
+        &[
+            "type mismatch for >= (entity and __int64)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e && l; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e || l; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "ftoi emulation: denormals are unsafe",
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e - ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "ftoi emulation: denormals are unsafe",
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e * ul; };",
+        &[
+            "type mismatch for * (entity and __uint64)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e % ul; };",
+        &[
+            "type mismatch for % (entity and __uint64)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e >= ul; };",
+        &[
+            "type mismatch for >= (entity and __uint64)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e && ul; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e || ul; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e + d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e - d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "ftoi emulation: denormals are unsafe",
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e * d; };",
+        &[
+            "type mismatch for * (entity and __double)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e % d; };",
+        &[
+            "type mismatch for % (entity and __double)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e >= d; };",
+        &[
+            "type mismatch for >= (entity and __double)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e && d; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e || d; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e + v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e - v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e * v; };",
+        &[
+            "type mismatch for * (entity and vector)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e % v; };",
+        &[
+            "type mismatch for % (entity and vector)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e >= v; };",
+        &[
+            "type mismatch for >= (entity and vector)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e && v; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e || v; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e + p; };",
+        &[
+            "type mismatch for + (entity and float*)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e * p; };",
+        &[
+            "type mismatch for * (entity and float*)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e % p; };",
+        &[
+            "type mismatch for % (entity and float*)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e >= p; };",
+        &[
+            "type mismatch for >= (entity and float*)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e && p; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e || p; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e + pc; };",
+        &[
+            "type mismatch for + (entity and __int8*)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e * pc; };",
+        &[
+            "type mismatch for * (entity and __int8*)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e % pc; };",
+        &[
+            "type mismatch for % (entity and __int8*)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e >= pc; };",
+        &[
+            "type mismatch for >= (entity and __int8*)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e && pc; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e || pc; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e + e; };",
+        &[
+            "type mismatch for + (entity and entity)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e * e; };",
+        &[
+            "type mismatch for * (entity and entity)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e % e; };",
+        &[
+            "type mismatch for % (entity and entity)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e >= e; };",
+        &[
+            "type mismatch for >= (entity and entity)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e && e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e || e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e + s; };",
+        &[
+            "type mismatch for + (entity and string)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e * s; };",
+        &[
+            "type mismatch for * (entity and string)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e % s; };",
+        &[
+            "type mismatch for % (entity and string)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e >= s; };",
+        &[
+            "type mismatch for >= (entity and string)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = e && s; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = e || s; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s + f; };",
+        &[
+            "OP_ADD_SF: string+float may be unsafe",
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s - f; };",
+        &[
+            "Implicit conversion from float to __int32",
+            "ftoi emulation: denormals are unsafe",
+            "Opcode \"-|SUB_SI\" is not supported.",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s * f; };",
+        &[
+            "type mismatch for * (string and float)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s % f; };",
+        &[
+            "type mismatch for % (string and float)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s >= f; };",
+        &[
+            "type mismatch for >= (string and float)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s && f; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s || f; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s + i; };",
+        &[
+            "OP_ADD_SI: string+int may be unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s - i; };",
+        &[
+            "Opcode \"-|SUB_SI\" is not supported.",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s * i; };",
+        &[
+            "type mismatch for * (string and __int32)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s % i; };",
+        &[
+            "type mismatch for % (string and __int32)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s >= i; };",
+        &[
+            "type mismatch for >= (string and __int32)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s && i; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s || i; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s + u; };",
+        &[
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "OP_ADD_SF: string+float may be unsafe",
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s - u; };",
+        &[
+            "Implicit conversion from __uint to __int32",
+            "Opcode \"-|SUB_SI\" is not supported.",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s * u; };",
+        &[
+            "type mismatch for * (string and __uint)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s % u; };",
+        &[
+            "type mismatch for % (string and __uint)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s >= u; };",
+        &[
+            "type mismatch for >= (string and __uint)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s && u; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s || u; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s + l; };",
+        &[
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+            "OP_ADD_SF: string+float may be unsafe",
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s - l; };",
+        &[
+            "Implicit conversion from __int64 to __int32",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_SI\" is not supported.",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s * l; };",
+        &[
+            "type mismatch for * (string and __int64)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s % l; };",
+        &[
+            "type mismatch for % (string and __int64)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s >= l; };",
+        &[
+            "type mismatch for >= (string and __int64)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s && l; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s || l; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "OP_ADD_SF: string+float may be unsafe",
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s - ul; };",
+        &[
+            "Implicit conversion from __uint64 to __int32",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_SI\" is not supported.",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s * ul; };",
+        &[
+            "type mismatch for * (string and __uint64)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s % ul; };",
+        &[
+            "type mismatch for % (string and __uint64)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s >= ul; };",
+        &[
+            "type mismatch for >= (string and __uint64)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s && ul; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s || ul; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s + d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_DF\" not valid for target. Consider the use of: #pragma target fte",
+            "OP_ADD_SF: string+float may be unsafe",
+            "ftoi emulation: denormals are unsafe",
+            "AddInt function not defined: cannot emulate int+int",
+            "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s - d; };",
+        &[
+            "Implicit conversion from __double to __int32",
+            "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Opcode \"-|SUB_SI\" is not supported.",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s * d; };",
+        &[
+            "type mismatch for * (string and __double)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s % d; };",
+        &[
+            "type mismatch for % (string and __double)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s >= d; };",
+        &[
+            "type mismatch for >= (string and __double)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s && d; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s || d; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s + v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s * v; };",
+        &[
+            "type mismatch for * (string and vector)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s % v; };",
+        &[
+            "type mismatch for % (string and vector)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s >= v; };",
+        &[
+            "type mismatch for >= (string and vector)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s && v; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s || v; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s + p; };",
+        &[
+            "type mismatch for + (string and float*)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s * p; };",
+        &[
+            "type mismatch for * (string and float*)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s % p; };",
+        &[
+            "type mismatch for % (string and float*)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s >= p; };",
+        &[
+            "type mismatch for >= (string and float*)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s && p; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s || p; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s + pc; };",
+        &[
+            "type mismatch for + (string and __int8*)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s * pc; };",
+        &[
+            "type mismatch for * (string and __int8*)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s % pc; };",
+        &[
+            "type mismatch for % (string and __int8*)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s >= pc; };",
+        &[
+            "type mismatch for >= (string and __int8*)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s && pc; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s || pc; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s + e; };",
+        &[
+            "type mismatch for + (string and entity)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s * e; };",
+        &[
+            "type mismatch for * (string and entity)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s % e; };",
+        &[
+            "type mismatch for % (string and entity)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s >= e; };",
+        &[
+            "type mismatch for >= (string and entity)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s && e; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s || e; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s + s; };",
+        &[
+            "type mismatch for + (string and string)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s - s; };",
+        &["Opcode \"-|SUB_S\" not valid for target. Consider the use of: #pragma target fte"],
+    ),
+    (
+        10,
+        "void() g = { x = s * s; };",
+        &[
+            "type mismatch for * (string and string)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s % s; };",
+        &[
+            "type mismatch for % (string and string)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s >= s; };",
+        &[
+            "type mismatch for >= (string and string)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        10,
+        "void() g = { x = s && s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        10,
+        "void() g = { x = s || s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (11, "void() g = { f += f; };", &[]),
+    (11, "void() g = { f -= f; };", &[]),
+    (11, "void() g = { f *= f; };", &[]),
+    (11, "void() g = { f /= f; };", &[]),
+    (11, "void() g = { f &= f; };", &[]),
+    (11, "void() g = { f |= f; };", &[]),
+    (11, "void() g = { f ^= f; };", &[]),
+    (11, "void() g = { f <<= f; };", &[]),
+    (11, "void() g = { f >>= f; };", &[]),
+    (11, "void() g = { f += i; };", &[]),
+    (11, "void() g = { f -= i; };", &[]),
+    (11, "void() g = { f *= i; };", &[]),
+    (11, "void() g = { f /= i; };", &[]),
+    (11, "void() g = { f &= i; };", &[]),
+    (11, "void() g = { f |= i; };", &[]),
+    (11, "void() g = { f ^= i; };", &[]),
+    (11, "void() g = { f <<= i; };", &[]),
+    (11, "void() g = { f >>= i; };", &[]),
+    (
+        11,
+        "void() g = { f += u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { f -= u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { f *= u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { f /= u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { f &= u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { f |= u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { f ^= u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { f <<= u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { f >>= u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (11, "void() g = { f += l; };", &[]),
+    (11, "void() g = { f -= l; };", &[]),
+    (11, "void() g = { f *= l; };", &[]),
+    (11, "void() g = { f /= l; };", &[]),
+    (11, "void() g = { f &= l; };", &[]),
+    (11, "void() g = { f |= l; };", &[]),
+    (11, "void() g = { f ^= l; };", &[]),
+    (11, "void() g = { f <<= l; };", &[]),
+    (11, "void() g = { f >>= l; };", &[]),
+    (
+        11,
+        "void() g = { f += ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { f -= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { f *= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { f /= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { f &= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { f |= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { f ^= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { f <<= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { f >>= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { f += d; };", &[]),
+    (11, "void() g = { f -= d; };", &[]),
+    (11, "void() g = { f *= d; };", &[]),
+    (11, "void() g = { f /= d; };", &[]),
+    (11, "void() g = { f &= d; };", &[]),
+    (11, "void() g = { f |= d; };", &[]),
+    (11, "void() g = { f ^= d; };", &[]),
+    (11, "void() g = { f <<= d; };", &[]),
+    (11, "void() g = { f >>= d; };", &[]),
+    (
+        11,
+        "void() g = { f += v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { f -= v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { f *= v; };",
+        &["Implicit type mismatch on assignment to f. Needed float, got vector."],
+    ),
+    (
+        11,
+        "void() g = { f /= v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { f &= v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { f |= v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { f ^= v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { f <<= v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { f >>= v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { f += p; };",
+        &["Implicit type mismatch on assignment to f. Needed float, got float*."],
+    ),
+    (
+        11,
+        "void() g = { f -= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { f *= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { f /= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { f &= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { f |= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { f ^= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { f <<= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { f >>= p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { f -= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { f *= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { f /= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { f &= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { f |= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { f ^= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { f <<= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { f >>= pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { f += e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { f -= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { f *= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { f /= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { f &= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { f |= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { f ^= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { f <<= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { f >>= e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { f += s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { f -= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { f *= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { f /= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { f &= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { f |= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { f ^= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { f <<= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { f >>= s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (11, "void() g = { i += f; };", &[]),
+    (11, "void() g = { i -= f; };", &[]),
+    (11, "void() g = { i *= f; };", &[]),
+    (11, "void() g = { i /= f; };", &[]),
+    (11, "void() g = { i &= f; };", &[]),
+    (11, "void() g = { i |= f; };", &[]),
+    (11, "void() g = { i ^= f; };", &[]),
+    (11, "void() g = { i <<= f; };", &[]),
+    (11, "void() g = { i >>= f; };", &[]),
+    (11, "void() g = { i += i; };", &[]),
+    (11, "void() g = { i -= i; };", &[]),
+    (11, "void() g = { i *= i; };", &[]),
+    (11, "void() g = { i /= i; };", &[]),
+    (11, "void() g = { i &= i; };", &[]),
+    (11, "void() g = { i |= i; };", &[]),
+    (11, "void() g = { i ^= i; };", &[]),
+    (11, "void() g = { i <<= i; };", &[]),
+    (11, "void() g = { i >>= i; };", &[]),
+    (11, "void() g = { i += u; };", &[]),
+    (11, "void() g = { i -= u; };", &[]),
+    (11, "void() g = { i *= u; };", &[]),
+    (11, "void() g = { i /= u; };", &[]),
+    (11, "void() g = { i &= u; };", &[]),
+    (11, "void() g = { i |= u; };", &[]),
+    (11, "void() g = { i ^= u; };", &[]),
+    (11, "void() g = { i <<= u; };", &[]),
+    (11, "void() g = { i >>= u; };", &[]),
+    (11, "void() g = { i += l; };", &[]),
+    (11, "void() g = { i -= l; };", &[]),
+    (11, "void() g = { i *= l; };", &[]),
+    (11, "void() g = { i /= l; };", &[]),
+    (11, "void() g = { i &= l; };", &[]),
+    (11, "void() g = { i |= l; };", &[]),
+    (11, "void() g = { i ^= l; };", &[]),
+    (11, "void() g = { i <<= l; };", &[]),
+    (11, "void() g = { i >>= l; };", &[]),
+    (11, "void() g = { i += ul; };", &[]),
+    (11, "void() g = { i -= ul; };", &[]),
+    (11, "void() g = { i *= ul; };", &[]),
+    (11, "void() g = { i /= ul; };", &[]),
+    (11, "void() g = { i &= ul; };", &[]),
+    (11, "void() g = { i |= ul; };", &[]),
+    (11, "void() g = { i ^= ul; };", &[]),
+    (11, "void() g = { i <<= ul; };", &[]),
+    (11, "void() g = { i >>= ul; };", &[]),
+    (11, "void() g = { i += d; };", &[]),
+    (11, "void() g = { i -= d; };", &[]),
+    (11, "void() g = { i *= d; };", &[]),
+    (11, "void() g = { i /= d; };", &[]),
+    (11, "void() g = { i &= d; };", &[]),
+    (11, "void() g = { i |= d; };", &[]),
+    (11, "void() g = { i ^= d; };", &[]),
+    (11, "void() g = { i <<= d; };", &[]),
+    (11, "void() g = { i >>= d; };", &[]),
+    (
+        11,
+        "void() g = { i += v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i -= v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i *= v; };",
+        &["Implicit type mismatch on assignment to i. Needed __int32, got vector."],
+    ),
+    (
+        11,
+        "void() g = { i /= v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i &= v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i |= v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i ^= v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i <<= v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i >>= v; };",
+        &["Cannot cast from vector to __int32"],
+    ),
+    (11, "void() g = { i += p; };", &[]),
+    (
+        11,
+        "void() g = { i -= p; };",
+        &["Implicit cast from float* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i *= p; };",
+        &["Implicit cast from float* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i /= p; };",
+        &["Implicit cast from float* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i &= p; };",
+        &["Implicit cast from float* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i |= p; };",
+        &["Implicit cast from float* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i ^= p; };",
+        &["Implicit cast from float* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i <<= p; };",
+        &["Implicit cast from float* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i >>= p; };",
+        &["Implicit cast from float* to __int32"],
+    ),
+    (11, "void() g = { i += pc; };", &[]),
+    (
+        11,
+        "void() g = { i -= pc; };",
+        &["Implicit cast from __int8* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i *= pc; };",
+        &["Implicit cast from __int8* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i /= pc; };",
+        &["Implicit cast from __int8* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i &= pc; };",
+        &["Implicit cast from __int8* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i |= pc; };",
+        &["Implicit cast from __int8* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i ^= pc; };",
+        &["Implicit cast from __int8* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i <<= pc; };",
+        &["Implicit cast from __int8* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i >>= pc; };",
+        &["Implicit cast from __int8* to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i += e; };",
+        &["Implicit cast from entity to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i -= e; };",
+        &["Implicit cast from entity to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i *= e; };",
+        &["Implicit cast from entity to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i /= e; };",
+        &["Implicit cast from entity to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i &= e; };",
+        &["Implicit cast from entity to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i |= e; };",
+        &["Implicit cast from entity to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i ^= e; };",
+        &["Implicit cast from entity to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i <<= e; };",
+        &["Implicit cast from entity to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i >>= e; };",
+        &["Implicit cast from entity to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i += s; };",
+        &["OP_ADD_SI: string+int may be unsafe"],
+    ),
+    (
+        11,
+        "void() g = { i -= s; };",
+        &["Implicit cast from string to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i *= s; };",
+        &["Implicit cast from string to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i /= s; };",
+        &["Implicit cast from string to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i &= s; };",
+        &["Implicit cast from string to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i |= s; };",
+        &["Implicit cast from string to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i ^= s; };",
+        &["Implicit cast from string to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i <<= s; };",
+        &["Implicit cast from string to __int32"],
+    ),
+    (
+        11,
+        "void() g = { i >>= s; };",
+        &["Implicit cast from string to __int32"],
+    ),
+    (11, "void() g = { u += i; };", &[]),
+    (11, "void() g = { u -= i; };", &[]),
+    (11, "void() g = { u *= i; };", &[]),
+    (11, "void() g = { u /= i; };", &[]),
+    (11, "void() g = { u &= i; };", &[]),
+    (11, "void() g = { u |= i; };", &[]),
+    (11, "void() g = { u ^= i; };", &[]),
+    (11, "void() g = { u <<= i; };", &[]),
+    (11, "void() g = { u >>= i; };", &[]),
+    (11, "void() g = { u += u; };", &[]),
+    (11, "void() g = { u -= u; };", &[]),
+    (11, "void() g = { u *= u; };", &[]),
+    (11, "void() g = { u /= u; };", &[]),
+    (11, "void() g = { u &= u; };", &[]),
+    (11, "void() g = { u |= u; };", &[]),
+    (11, "void() g = { u ^= u; };", &[]),
+    (11, "void() g = { u <<= u; };", &[]),
+    (
+        11,
+        "void() g = { u >>= u; };",
+        &["Type mismatch on assignment. __uint >>= __uint is not supported"],
+    ),
+    (11, "void() g = { u += l; };", &[]),
+    (11, "void() g = { u -= l; };", &[]),
+    (11, "void() g = { u *= l; };", &[]),
+    (11, "void() g = { u /= l; };", &[]),
+    (11, "void() g = { u &= l; };", &[]),
+    (11, "void() g = { u |= l; };", &[]),
+    (11, "void() g = { u ^= l; };", &[]),
+    (11, "void() g = { u <<= l; };", &[]),
+    (
+        11,
+        "void() g = { u >>= l; };",
+        &["Type mismatch on assignment. __uint >>= __uint is not supported"],
+    ),
+    (11, "void() g = { u += ul; };", &[]),
+    (11, "void() g = { u -= ul; };", &[]),
+    (11, "void() g = { u *= ul; };", &[]),
+    (11, "void() g = { u /= ul; };", &[]),
+    (11, "void() g = { u &= ul; };", &[]),
+    (11, "void() g = { u |= ul; };", &[]),
+    (11, "void() g = { u ^= ul; };", &[]),
+    (11, "void() g = { u <<= ul; };", &[]),
+    (
+        11,
+        "void() g = { u >>= ul; };",
+        &["Type mismatch on assignment. __uint >>= __uint is not supported"],
+    ),
+    (
+        11,
+        "void() g = { u += d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { u -= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { u *= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { u /= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { u &= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { u |= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { u ^= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { u <<= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { u >>= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Type mismatch on assignment. __uint >>= __uint is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { u += v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u -= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u *= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u /= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u &= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u |= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u ^= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u <<= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u >>= v; };",
+        &["Cannot cast from vector to __uint"],
+    ),
+    (11, "void() g = { u += p; };", &[]),
+    (
+        11,
+        "void() g = { u -= p; };",
+        &["Implicit cast from float* to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u *= p; };",
+        &["Implicit cast from float* to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u /= p; };",
+        &["Implicit cast from float* to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u &= p; };",
+        &["Implicit cast from float* to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u |= p; };",
+        &["Implicit cast from float* to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u ^= p; };",
+        &["Implicit cast from float* to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u <<= p; };",
+        &["Implicit cast from float* to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u >>= p; };",
+        &[
+            "Implicit cast from float* to __uint",
+            "Type mismatch on assignment. __uint >>= __uint is not supported",
+        ],
+    ),
+    (11, "void() g = { u += pc; };", &[]),
+    (
+        11,
+        "void() g = { u -= pc; };",
+        &["Implicit cast from __int8* to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u *= pc; };",
+        &["Implicit cast from __int8* to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u /= pc; };",
+        &["Implicit cast from __int8* to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u &= pc; };",
+        &["Implicit cast from __int8* to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u |= pc; };",
+        &["Implicit cast from __int8* to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u ^= pc; };",
+        &["Implicit cast from __int8* to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u <<= pc; };",
+        &["Implicit cast from __int8* to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u >>= pc; };",
+        &[
+            "Implicit cast from __int8* to __uint",
+            "Type mismatch on assignment. __uint >>= __uint is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { u += e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u -= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u *= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u /= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u &= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u |= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u ^= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u <<= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u >>= e; };",
+        &["Cannot cast from entity to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u += s; };",
+        &["Implicit cast from string to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u -= s; };",
+        &["Implicit cast from string to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u *= s; };",
+        &["Implicit cast from string to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u /= s; };",
+        &["Implicit cast from string to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u &= s; };",
+        &["Implicit cast from string to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u |= s; };",
+        &["Implicit cast from string to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u ^= s; };",
+        &["Implicit cast from string to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u <<= s; };",
+        &["Implicit cast from string to __uint"],
+    ),
+    (
+        11,
+        "void() g = { u >>= s; };",
+        &[
+            "Implicit cast from string to __uint",
+            "Type mismatch on assignment. __uint >>= __uint is not supported",
+        ],
+    ),
+    (11, "void() g = { l += f; };", &[]),
+    (11, "void() g = { l -= f; };", &[]),
+    (11, "void() g = { l *= f; };", &[]),
+    (11, "void() g = { l /= f; };", &[]),
+    (11, "void() g = { l &= f; };", &[]),
+    (11, "void() g = { l |= f; };", &[]),
+    (11, "void() g = { l ^= f; };", &[]),
+    (
+        11,
+        "void() g = { l <<= f; };",
+        &["Type mismatch on assignment. __int64 <<= __int64 is not supported"],
+    ),
+    (
+        11,
+        "void() g = { l >>= f; };",
+        &["Type mismatch on assignment. __int64 >>= __int64 is not supported"],
+    ),
+    (11, "void() g = { l += i; };", &[]),
+    (11, "void() g = { l -= i; };", &[]),
+    (11, "void() g = { l *= i; };", &[]),
+    (11, "void() g = { l /= i; };", &[]),
+    (11, "void() g = { l &= i; };", &[]),
+    (11, "void() g = { l |= i; };", &[]),
+    (11, "void() g = { l ^= i; };", &[]),
+    (11, "void() g = { l <<= i; };", &[]),
+    (11, "void() g = { l >>= i; };", &[]),
+    (11, "void() g = { l += u; };", &[]),
+    (11, "void() g = { l -= u; };", &[]),
+    (11, "void() g = { l *= u; };", &[]),
+    (11, "void() g = { l /= u; };", &[]),
+    (11, "void() g = { l &= u; };", &[]),
+    (11, "void() g = { l |= u; };", &[]),
+    (11, "void() g = { l ^= u; };", &[]),
+    (
+        11,
+        "void() g = { l <<= u; };",
+        &["Type mismatch on assignment. __int64 <<= __int64 is not supported"],
+    ),
+    (
+        11,
+        "void() g = { l >>= u; };",
+        &["Type mismatch on assignment. __int64 >>= __int64 is not supported"],
+    ),
+    (11, "void() g = { l += l; };", &[]),
+    (11, "void() g = { l -= l; };", &[]),
+    (11, "void() g = { l *= l; };", &[]),
+    (11, "void() g = { l /= l; };", &[]),
+    (11, "void() g = { l &= l; };", &[]),
+    (11, "void() g = { l |= l; };", &[]),
+    (11, "void() g = { l ^= l; };", &[]),
+    (
+        11,
+        "void() g = { l <<= l; };",
+        &["Type mismatch on assignment. __int64 <<= __int64 is not supported"],
+    ),
+    (
+        11,
+        "void() g = { l >>= l; };",
+        &["Type mismatch on assignment. __int64 >>= __int64 is not supported"],
+    ),
+    (11, "void() g = { l += ul; };", &[]),
+    (11, "void() g = { l -= ul; };", &[]),
+    (11, "void() g = { l *= ul; };", &[]),
+    (11, "void() g = { l /= ul; };", &[]),
+    (11, "void() g = { l &= ul; };", &[]),
+    (11, "void() g = { l |= ul; };", &[]),
+    (11, "void() g = { l ^= ul; };", &[]),
+    (
+        11,
+        "void() g = { l <<= ul; };",
+        &["Type mismatch on assignment. __int64 <<= __int64 is not supported"],
+    ),
+    (
+        11,
+        "void() g = { l >>= ul; };",
+        &["Type mismatch on assignment. __int64 >>= __int64 is not supported"],
+    ),
+    (11, "void() g = { l += d; };", &[]),
+    (11, "void() g = { l -= d; };", &[]),
+    (11, "void() g = { l *= d; };", &[]),
+    (11, "void() g = { l /= d; };", &[]),
+    (11, "void() g = { l &= d; };", &[]),
+    (11, "void() g = { l |= d; };", &[]),
+    (11, "void() g = { l ^= d; };", &[]),
+    (
+        11,
+        "void() g = { l <<= d; };",
+        &["Type mismatch on assignment. __int64 <<= __int64 is not supported"],
+    ),
+    (
+        11,
+        "void() g = { l >>= d; };",
+        &["Type mismatch on assignment. __int64 >>= __int64 is not supported"],
+    ),
+    (
+        11,
+        "void() g = { l += v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l -= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l *= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l /= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l &= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l |= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l ^= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l <<= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l >>= v; };",
+        &["Cannot cast from vector to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l += p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l -= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l *= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l /= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l &= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l |= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l ^= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l <<= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l >>= p; };",
+        &["Cannot cast from float* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l += pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l -= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l *= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l /= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l &= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l |= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l ^= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l <<= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l >>= pc; };",
+        &["Cannot cast from __int8* to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l += e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l -= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l *= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l /= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l &= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l |= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l ^= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l <<= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l >>= e; };",
+        &["Cannot cast from entity to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l += s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l -= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l *= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l /= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l &= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l |= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l ^= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l <<= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        11,
+        "void() g = { l >>= s; };",
+        &["Cannot cast from string to __int64"],
+    ),
+    (
+        11,
+        "void() g = { ul += f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul -= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul *= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul /= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul &= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul |= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul ^= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul <<= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Type mismatch on assignment. __uint64 <<= __uint64 is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul >>= f; };",
+        &[
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Type mismatch on assignment. __uint64 >>= __uint64 is not supported",
+        ],
+    ),
+    (11, "void() g = { ul += i; };", &[]),
+    (11, "void() g = { ul -= i; };", &[]),
+    (11, "void() g = { ul *= i; };", &[]),
+    (11, "void() g = { ul /= i; };", &[]),
+    (11, "void() g = { ul &= i; };", &[]),
+    (11, "void() g = { ul |= i; };", &[]),
+    (11, "void() g = { ul ^= i; };", &[]),
+    (11, "void() g = { ul <<= i; };", &[]),
+    (
+        11,
+        "void() g = { ul >>= i; };",
+        &["Type mismatch on assignment. __uint64 >>= __uint64 is not supported"],
+    ),
+    (11, "void() g = { ul += u; };", &[]),
+    (11, "void() g = { ul -= u; };", &[]),
+    (11, "void() g = { ul *= u; };", &[]),
+    (11, "void() g = { ul /= u; };", &[]),
+    (11, "void() g = { ul &= u; };", &[]),
+    (11, "void() g = { ul |= u; };", &[]),
+    (11, "void() g = { ul ^= u; };", &[]),
+    (
+        11,
+        "void() g = { ul <<= u; };",
+        &["Type mismatch on assignment. __uint64 <<= __uint64 is not supported"],
+    ),
+    (11, "void() g = { ul >>= u; };", &[]),
+    (11, "void() g = { ul += l; };", &[]),
+    (11, "void() g = { ul -= l; };", &[]),
+    (11, "void() g = { ul *= l; };", &[]),
+    (11, "void() g = { ul /= l; };", &[]),
+    (11, "void() g = { ul &= l; };", &[]),
+    (11, "void() g = { ul |= l; };", &[]),
+    (11, "void() g = { ul ^= l; };", &[]),
+    (
+        11,
+        "void() g = { ul <<= l; };",
+        &["Type mismatch on assignment. __uint64 <<= __uint64 is not supported"],
+    ),
+    (
+        11,
+        "void() g = { ul >>= l; };",
+        &["Type mismatch on assignment. __uint64 >>= __uint64 is not supported"],
+    ),
+    (11, "void() g = { ul += ul; };", &[]),
+    (11, "void() g = { ul -= ul; };", &[]),
+    (11, "void() g = { ul *= ul; };", &[]),
+    (11, "void() g = { ul /= ul; };", &[]),
+    (11, "void() g = { ul &= ul; };", &[]),
+    (11, "void() g = { ul |= ul; };", &[]),
+    (11, "void() g = { ul ^= ul; };", &[]),
+    (
+        11,
+        "void() g = { ul <<= ul; };",
+        &["Type mismatch on assignment. __uint64 <<= __uint64 is not supported"],
+    ),
+    (
+        11,
+        "void() g = { ul >>= ul; };",
+        &["Type mismatch on assignment. __uint64 >>= __uint64 is not supported"],
+    ),
+    (
+        11,
+        "void() g = { ul += d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul -= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul *= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul /= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul &= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul |= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul ^= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul <<= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Type mismatch on assignment. __uint64 <<= __uint64 is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul >>= d; };",
+        &[
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Type mismatch on assignment. __uint64 >>= __uint64 is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { ul += v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul -= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul *= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul /= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul &= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul |= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul ^= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul <<= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul >>= v; };",
+        &["Cannot cast from vector to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul += p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul -= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul *= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul /= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul &= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul |= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul ^= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul <<= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul >>= p; };",
+        &["Cannot cast from float* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul += pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul -= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul *= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul /= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul &= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul |= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul ^= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul <<= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul >>= pc; };",
+        &["Cannot cast from __int8* to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul += e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul -= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul *= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul /= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul &= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul |= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul ^= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul <<= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul >>= e; };",
+        &["Cannot cast from entity to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul += s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul -= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul *= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul /= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul &= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul |= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul ^= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul <<= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (
+        11,
+        "void() g = { ul >>= s; };",
+        &["Cannot cast from string to __uint64"],
+    ),
+    (11, "void() g = { d += f; };", &[]),
+    (11, "void() g = { d -= f; };", &[]),
+    (11, "void() g = { d *= f; };", &[]),
+    (11, "void() g = { d /= f; };", &[]),
+    (11, "void() g = { d &= f; };", &[]),
+    (11, "void() g = { d |= f; };", &[]),
+    (
+        11,
+        "void() g = { d ^= f; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { d <<= f; };",
+        &["Type mismatch on assignment. __double <<= __double is not supported"],
+    ),
+    (
+        11,
+        "void() g = { d >>= f; };",
+        &["Type mismatch on assignment. __double >>= __double is not supported"],
+    ),
+    (11, "void() g = { d += i; };", &[]),
+    (11, "void() g = { d -= i; };", &[]),
+    (11, "void() g = { d *= i; };", &[]),
+    (11, "void() g = { d /= i; };", &[]),
+    (11, "void() g = { d &= i; };", &[]),
+    (11, "void() g = { d |= i; };", &[]),
+    (
+        11,
+        "void() g = { d ^= i; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (11, "void() g = { d <<= i; };", &[]),
+    (11, "void() g = { d >>= i; };", &[]),
+    (11, "void() g = { d += u; };", &[]),
+    (11, "void() g = { d -= u; };", &[]),
+    (11, "void() g = { d *= u; };", &[]),
+    (11, "void() g = { d /= u; };", &[]),
+    (11, "void() g = { d &= u; };", &[]),
+    (11, "void() g = { d |= u; };", &[]),
+    (
+        11,
+        "void() g = { d ^= u; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { d <<= u; };",
+        &["Type mismatch on assignment. __double <<= __double is not supported"],
+    ),
+    (
+        11,
+        "void() g = { d >>= u; };",
+        &["Type mismatch on assignment. __double >>= __double is not supported"],
+    ),
+    (11, "void() g = { d += l; };", &[]),
+    (11, "void() g = { d -= l; };", &[]),
+    (11, "void() g = { d *= l; };", &[]),
+    (11, "void() g = { d /= l; };", &[]),
+    (11, "void() g = { d &= l; };", &[]),
+    (11, "void() g = { d |= l; };", &[]),
+    (
+        11,
+        "void() g = { d ^= l; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { d <<= l; };",
+        &["Type mismatch on assignment. __double <<= __double is not supported"],
+    ),
+    (
+        11,
+        "void() g = { d >>= l; };",
+        &["Type mismatch on assignment. __double >>= __double is not supported"],
+    ),
+    (
+        11,
+        "void() g = { d += ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { d -= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { d *= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { d /= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { d &= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { d |= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { d ^= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { d <<= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Type mismatch on assignment. __double <<= __double is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { d >>= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Type mismatch on assignment. __double >>= __double is not supported",
+        ],
+    ),
+    (11, "void() g = { d += d; };", &[]),
+    (11, "void() g = { d -= d; };", &[]),
+    (11, "void() g = { d *= d; };", &[]),
+    (11, "void() g = { d /= d; };", &[]),
+    (11, "void() g = { d &= d; };", &[]),
+    (11, "void() g = { d |= d; };", &[]),
+    (
+        11,
+        "void() g = { d ^= d; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { d <<= d; };",
+        &["Type mismatch on assignment. __double <<= __double is not supported"],
+    ),
+    (
+        11,
+        "void() g = { d >>= d; };",
+        &["Type mismatch on assignment. __double >>= __double is not supported"],
+    ),
+    (
+        11,
+        "void() g = { d += v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        11,
+        "void() g = { d -= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        11,
+        "void() g = { d *= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        11,
+        "void() g = { d /= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        11,
+        "void() g = { d &= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        11,
+        "void() g = { d |= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        11,
+        "void() g = { d ^= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        11,
+        "void() g = { d <<= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        11,
+        "void() g = { d >>= v; };",
+        &["Cannot cast from vector to __double"],
+    ),
+    (
+        11,
+        "void() g = { d += p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d -= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d *= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d /= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d &= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d |= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d ^= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d <<= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d >>= p; };",
+        &["Cannot cast from float* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d += pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d -= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d *= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d /= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d &= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d |= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d ^= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d <<= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d >>= pc; };",
+        &["Cannot cast from __int8* to __double"],
+    ),
+    (
+        11,
+        "void() g = { d += e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        11,
+        "void() g = { d -= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        11,
+        "void() g = { d *= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        11,
+        "void() g = { d /= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        11,
+        "void() g = { d &= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        11,
+        "void() g = { d |= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        11,
+        "void() g = { d ^= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        11,
+        "void() g = { d <<= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        11,
+        "void() g = { d >>= e; };",
+        &["Cannot cast from entity to __double"],
+    ),
+    (
+        11,
+        "void() g = { d += s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        11,
+        "void() g = { d -= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        11,
+        "void() g = { d *= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        11,
+        "void() g = { d /= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        11,
+        "void() g = { d &= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        11,
+        "void() g = { d |= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        11,
+        "void() g = { d ^= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        11,
+        "void() g = { d <<= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        11,
+        "void() g = { d >>= s; };",
+        &["Cannot cast from string to __double"],
+    ),
+    (
+        11,
+        "void() g = { v += f; };",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        11,
+        "void() g = { v -= f; };",
+        &["Implicit cast from float to vector"],
+    ),
+    (11, "void() g = { v *= f; };", &[]),
+    (11, "void() g = { v /= f; };", &[]),
+    (
+        11,
+        "void() g = { v &= f; };",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        11,
+        "void() g = { v |= f; };",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        11,
+        "void() g = { v ^= f; };",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        11,
+        "void() g = { v <<= f; };",
+        &[
+            "Implicit cast from float to vector",
+            "Type mismatch on assignment. vector <<= vector is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { v >>= f; };",
+        &[
+            "Implicit cast from float to vector",
+            "Type mismatch on assignment. vector >>= vector is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { v += i; };",
+        &["Implicit cast from __int32 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v -= i; };",
+        &["Implicit cast from __int32 to vector"],
+    ),
+    (11, "void() g = { v *= i; };", &[]),
+    (
+        11,
+        "void() g = { v &= i; };",
+        &["Implicit cast from __int32 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v |= i; };",
+        &["Implicit cast from __int32 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v ^= i; };",
+        &["Implicit cast from __int32 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v <<= i; };",
+        &[
+            "Implicit cast from __int32 to vector",
+            "Type mismatch on assignment. vector <<= vector is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { v >>= i; };",
+        &[
+            "Implicit cast from __int32 to vector",
+            "Type mismatch on assignment. vector >>= vector is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { v += u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        11,
+        "void() g = { v -= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        11,
+        "void() g = { v *= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        11,
+        "void() g = { v /= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        11,
+        "void() g = { v &= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        11,
+        "void() g = { v |= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        11,
+        "void() g = { v ^= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        11,
+        "void() g = { v <<= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        11,
+        "void() g = { v >>= u; };",
+        &["Cannot cast from __uint to vector"],
+    ),
+    (
+        11,
+        "void() g = { v += l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v -= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v *= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v /= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v &= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v |= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v ^= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v <<= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v >>= l; };",
+        &["Cannot cast from __int64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v += ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v -= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v *= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v /= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v &= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v |= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v ^= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v <<= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v >>= ul; };",
+        &["Cannot cast from __uint64 to vector"],
+    ),
+    (
+        11,
+        "void() g = { v += d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        11,
+        "void() g = { v -= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        11,
+        "void() g = { v *= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        11,
+        "void() g = { v /= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        11,
+        "void() g = { v &= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        11,
+        "void() g = { v |= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        11,
+        "void() g = { v ^= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        11,
+        "void() g = { v <<= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (
+        11,
+        "void() g = { v >>= d; };",
+        &["Cannot cast from __double to vector"],
+    ),
+    (11, "void() g = { v += v; };", &[]),
+    (11, "void() g = { v -= v; };", &[]),
+    (11, "void() g = { v *= v; };", &[]),
+    (11, "void() g = { v &= v; };", &[]),
+    (11, "void() g = { v |= v; };", &[]),
+    (11, "void() g = { v ^= v; };", &[]),
+    (
+        11,
+        "void() g = { v <<= v; };",
+        &["Type mismatch on assignment. vector <<= vector is not supported"],
+    ),
+    (
+        11,
+        "void() g = { v >>= v; };",
+        &["Type mismatch on assignment. vector >>= vector is not supported"],
+    ),
+    (
+        11,
+        "void() g = { v += p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v -= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v *= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v /= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v &= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v |= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v ^= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v <<= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v >>= p; };",
+        &["Cannot cast from float* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v += pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v -= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v *= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v /= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v &= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v |= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v ^= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v <<= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v >>= pc; };",
+        &["Cannot cast from __int8* to vector"],
+    ),
+    (
+        11,
+        "void() g = { v += e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        11,
+        "void() g = { v -= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        11,
+        "void() g = { v *= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        11,
+        "void() g = { v /= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        11,
+        "void() g = { v &= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        11,
+        "void() g = { v |= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        11,
+        "void() g = { v ^= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        11,
+        "void() g = { v <<= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        11,
+        "void() g = { v >>= e; };",
+        &["Cannot cast from entity to vector"],
+    ),
+    (
+        11,
+        "void() g = { v += s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        11,
+        "void() g = { v -= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        11,
+        "void() g = { v *= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        11,
+        "void() g = { v /= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        11,
+        "void() g = { v &= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        11,
+        "void() g = { v |= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        11,
+        "void() g = { v ^= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        11,
+        "void() g = { v <<= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (
+        11,
+        "void() g = { v >>= s; };",
+        &["Cannot cast from string to vector"],
+    ),
+    (11, "void() g = { p += f; };", &[]),
+    (
+        11,
+        "void() g = { p -= f; };",
+        &["Constant int operand 4294967295 will be truncated to -1"],
+    ),
+    (
+        11,
+        "void() g = { p *= f; };",
+        &["Cannot cast from float to float*"],
+    ),
+    (
+        11,
+        "void() g = { p /= f; };",
+        &["Cannot cast from float to float*"],
+    ),
+    (
+        11,
+        "void() g = { p &= f; };",
+        &["Cannot cast from float to float*"],
+    ),
+    (
+        11,
+        "void() g = { p |= f; };",
+        &["Cannot cast from float to float*"],
+    ),
+    (
+        11,
+        "void() g = { p ^= f; };",
+        &["Cannot cast from float to float*"],
+    ),
+    (
+        11,
+        "void() g = { p <<= f; };",
+        &["Cannot cast from float to float*"],
+    ),
+    (
+        11,
+        "void() g = { p >>= f; };",
+        &["Cannot cast from float to float*"],
+    ),
+    (11, "void() g = { p += i; };", &[]),
+    (
+        11,
+        "void() g = { p -= i; };",
+        &["Constant int operand 4294967295 will be truncated to -1"],
+    ),
+    (
+        11,
+        "void() g = { p *= i; };",
+        &[
+            "Implicit cast from __int32 to float*",
+            "Type mismatch on assignment. ptr *= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p &= i; };",
+        &[
+            "Implicit cast from __int32 to float*",
+            "Type mismatch on assignment. ptr &= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p |= i; };",
+        &[
+            "Implicit cast from __int32 to float*",
+            "Type mismatch on assignment. ptr |= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p ^= i; };",
+        &[
+            "Implicit cast from __int32 to float*",
+            "Type mismatch on assignment. ptr ^= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p <<= i; };",
+        &[
+            "Implicit cast from __int32 to float*",
+            "Type mismatch on assignment. ptr <<= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p >>= i; };",
+        &[
+            "Implicit cast from __int32 to float*",
+            "Type mismatch on assignment. ptr >>= ptr is not supported",
+        ],
+    ),
+    (11, "void() g = { p += u; };", &[]),
+    (
+        11,
+        "void() g = { p -= u; };",
+        &["Constant int operand 4294967295 will be truncated to -1"],
+    ),
+    (
+        11,
+        "void() g = { p *= u; };",
+        &[
+            "Implicit cast from __uint to float*",
+            "Type mismatch on assignment. ptr *= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p &= u; };",
+        &[
+            "Implicit cast from __uint to float*",
+            "Type mismatch on assignment. ptr &= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p |= u; };",
+        &[
+            "Implicit cast from __uint to float*",
+            "Type mismatch on assignment. ptr |= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p ^= u; };",
+        &[
+            "Implicit cast from __uint to float*",
+            "Type mismatch on assignment. ptr ^= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p <<= u; };",
+        &[
+            "Implicit cast from __uint to float*",
+            "Type mismatch on assignment. ptr <<= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p >>= u; };",
+        &[
+            "Implicit cast from __uint to float*",
+            "Type mismatch on assignment. ptr >>= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p += l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p -= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p *= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p /= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p &= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p |= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p ^= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p <<= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p >>= l; };",
+        &["Cannot cast from __int64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p += ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p -= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p *= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p /= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p &= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p |= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p ^= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p <<= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p >>= ul; };",
+        &["Cannot cast from __uint64 to float*"],
+    ),
+    (
+        11,
+        "void() g = { p += d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        11,
+        "void() g = { p -= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        11,
+        "void() g = { p *= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        11,
+        "void() g = { p /= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        11,
+        "void() g = { p &= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        11,
+        "void() g = { p |= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        11,
+        "void() g = { p ^= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        11,
+        "void() g = { p <<= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        11,
+        "void() g = { p >>= d; };",
+        &["Cannot cast from __double to float*"],
+    ),
+    (
+        11,
+        "void() g = { p += v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        11,
+        "void() g = { p -= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        11,
+        "void() g = { p *= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        11,
+        "void() g = { p /= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        11,
+        "void() g = { p &= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        11,
+        "void() g = { p |= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        11,
+        "void() g = { p ^= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        11,
+        "void() g = { p <<= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        11,
+        "void() g = { p >>= v; };",
+        &["Cannot cast from vector to float*"],
+    ),
+    (
+        11,
+        "void() g = { p += p; };",
+        &["Type mismatch on assignment. ptr += ptr is not supported"],
+    ),
+    (11, "void() g = { p -= p; };", &[]),
+    (
+        11,
+        "void() g = { p *= p; };",
+        &["Type mismatch on assignment. ptr *= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { p &= p; };",
+        &["Type mismatch on assignment. ptr &= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { p |= p; };",
+        &["Type mismatch on assignment. ptr |= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { p ^= p; };",
+        &["Type mismatch on assignment. ptr ^= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { p <<= p; };",
+        &["Type mismatch on assignment. ptr <<= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { p >>= p; };",
+        &["Type mismatch on assignment. ptr >>= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { p += pc; };",
+        &[
+            "Implicit cast from __int8* to float*",
+            "Type mismatch on assignment. ptr += ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p -= pc; };",
+        &["incompatible pointer types"],
+    ),
+    (
+        11,
+        "void() g = { p *= pc; };",
+        &[
+            "Implicit cast from __int8* to float*",
+            "Type mismatch on assignment. ptr *= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p &= pc; };",
+        &[
+            "Implicit cast from __int8* to float*",
+            "Type mismatch on assignment. ptr &= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p |= pc; };",
+        &[
+            "Implicit cast from __int8* to float*",
+            "Type mismatch on assignment. ptr |= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p ^= pc; };",
+        &[
+            "Implicit cast from __int8* to float*",
+            "Type mismatch on assignment. ptr ^= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p <<= pc; };",
+        &[
+            "Implicit cast from __int8* to float*",
+            "Type mismatch on assignment. ptr <<= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p >>= pc; };",
+        &[
+            "Implicit cast from __int8* to float*",
+            "Type mismatch on assignment. ptr >>= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p += e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        11,
+        "void() g = { p -= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        11,
+        "void() g = { p *= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        11,
+        "void() g = { p /= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        11,
+        "void() g = { p &= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        11,
+        "void() g = { p |= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        11,
+        "void() g = { p ^= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        11,
+        "void() g = { p <<= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        11,
+        "void() g = { p >>= e; };",
+        &["Cannot cast from entity to float*"],
+    ),
+    (
+        11,
+        "void() g = { p += s; };",
+        &[
+            "Implicit cast from string to float*",
+            "Type mismatch on assignment. ptr += ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p -= s; };",
+        &["Implicit cast from string to float*"],
+    ),
+    (
+        11,
+        "void() g = { p *= s; };",
+        &[
+            "Implicit cast from string to float*",
+            "Type mismatch on assignment. ptr *= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p &= s; };",
+        &[
+            "Implicit cast from string to float*",
+            "Type mismatch on assignment. ptr &= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p |= s; };",
+        &[
+            "Implicit cast from string to float*",
+            "Type mismatch on assignment. ptr |= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p ^= s; };",
+        &[
+            "Implicit cast from string to float*",
+            "Type mismatch on assignment. ptr ^= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p <<= s; };",
+        &[
+            "Implicit cast from string to float*",
+            "Type mismatch on assignment. ptr <<= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { p >>= s; };",
+        &[
+            "Implicit cast from string to float*",
+            "Type mismatch on assignment. ptr >>= ptr is not supported",
+        ],
+    ),
+    (11, "void() g = { pc += f; };", &[]),
+    (11, "void() g = { pc -= f; };", &[]),
+    (
+        11,
+        "void() g = { pc *= f; };",
+        &["Cannot cast from float to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc /= f; };",
+        &["Cannot cast from float to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc &= f; };",
+        &["Cannot cast from float to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc |= f; };",
+        &["Cannot cast from float to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc ^= f; };",
+        &["Cannot cast from float to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc <<= f; };",
+        &["Cannot cast from float to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc >>= f; };",
+        &["Cannot cast from float to __int8*"],
+    ),
+    (11, "void() g = { pc += i; };", &[]),
+    (11, "void() g = { pc -= i; };", &[]),
+    (
+        11,
+        "void() g = { pc *= i; };",
+        &[
+            "Implicit cast from __int32 to __int8*",
+            "Type mismatch on assignment. ptr *= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc &= i; };",
+        &[
+            "Implicit cast from __int32 to __int8*",
+            "Type mismatch on assignment. ptr &= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc |= i; };",
+        &[
+            "Implicit cast from __int32 to __int8*",
+            "Type mismatch on assignment. ptr |= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc ^= i; };",
+        &[
+            "Implicit cast from __int32 to __int8*",
+            "Type mismatch on assignment. ptr ^= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc <<= i; };",
+        &[
+            "Implicit cast from __int32 to __int8*",
+            "Type mismatch on assignment. ptr <<= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc >>= i; };",
+        &[
+            "Implicit cast from __int32 to __int8*",
+            "Type mismatch on assignment. ptr >>= ptr is not supported",
+        ],
+    ),
+    (11, "void() g = { pc += u; };", &[]),
+    (11, "void() g = { pc -= u; };", &[]),
+    (
+        11,
+        "void() g = { pc *= u; };",
+        &[
+            "Implicit cast from __uint to __int8*",
+            "Type mismatch on assignment. ptr *= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc &= u; };",
+        &[
+            "Implicit cast from __uint to __int8*",
+            "Type mismatch on assignment. ptr &= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc |= u; };",
+        &[
+            "Implicit cast from __uint to __int8*",
+            "Type mismatch on assignment. ptr |= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc ^= u; };",
+        &[
+            "Implicit cast from __uint to __int8*",
+            "Type mismatch on assignment. ptr ^= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc <<= u; };",
+        &[
+            "Implicit cast from __uint to __int8*",
+            "Type mismatch on assignment. ptr <<= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc >>= u; };",
+        &[
+            "Implicit cast from __uint to __int8*",
+            "Type mismatch on assignment. ptr >>= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc += l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc -= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc *= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc /= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc &= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc |= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc ^= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc <<= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc >>= l; };",
+        &["Cannot cast from __int64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc += ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc -= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc *= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc /= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc &= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc |= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc ^= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc <<= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc >>= ul; };",
+        &["Cannot cast from __uint64 to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc += d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc -= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc *= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc /= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc &= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc |= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc ^= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc <<= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc >>= d; };",
+        &["Cannot cast from __double to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc += v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc -= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc *= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc /= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc &= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc |= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc ^= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc <<= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc >>= v; };",
+        &["Cannot cast from vector to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc += p; };",
+        &[
+            "Implicit cast from float* to __int8*",
+            "Type mismatch on assignment. ptr += ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc -= p; };",
+        &["incompatible pointer types"],
+    ),
+    (
+        11,
+        "void() g = { pc *= p; };",
+        &[
+            "Implicit cast from float* to __int8*",
+            "Type mismatch on assignment. ptr *= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc &= p; };",
+        &[
+            "Implicit cast from float* to __int8*",
+            "Type mismatch on assignment. ptr &= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc |= p; };",
+        &[
+            "Implicit cast from float* to __int8*",
+            "Type mismatch on assignment. ptr |= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc ^= p; };",
+        &[
+            "Implicit cast from float* to __int8*",
+            "Type mismatch on assignment. ptr ^= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc <<= p; };",
+        &[
+            "Implicit cast from float* to __int8*",
+            "Type mismatch on assignment. ptr <<= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc >>= p; };",
+        &[
+            "Implicit cast from float* to __int8*",
+            "Type mismatch on assignment. ptr >>= ptr is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { pc += pc; };",
+        &["Type mismatch on assignment. ptr += ptr is not supported"],
+    ),
+    (11, "void() g = { pc -= pc; };", &[]),
+    (
+        11,
+        "void() g = { pc *= pc; };",
+        &["Type mismatch on assignment. ptr *= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { pc &= pc; };",
+        &["Type mismatch on assignment. ptr &= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { pc |= pc; };",
+        &["Type mismatch on assignment. ptr |= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { pc ^= pc; };",
+        &["Type mismatch on assignment. ptr ^= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { pc <<= pc; };",
+        &["Type mismatch on assignment. ptr <<= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { pc >>= pc; };",
+        &["Type mismatch on assignment. ptr >>= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { pc += e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc -= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc *= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc /= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc &= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc |= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc ^= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc <<= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc >>= e; };",
+        &["Cannot cast from entity to __int8*"],
+    ),
+    (
+        11,
+        "void() g = { pc += s; };",
+        &["Type mismatch on assignment. ptr += ptr is not supported"],
+    ),
+    (11, "void() g = { pc -= s; };", &[]),
+    (
+        11,
+        "void() g = { pc *= s; };",
+        &["Type mismatch on assignment. ptr *= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { pc &= s; };",
+        &["Type mismatch on assignment. ptr &= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { pc |= s; };",
+        &["Type mismatch on assignment. ptr |= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { pc ^= s; };",
+        &["Type mismatch on assignment. ptr ^= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { pc <<= s; };",
+        &["Type mismatch on assignment. ptr <<= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { pc >>= s; };",
+        &["Type mismatch on assignment. ptr >>= ptr is not supported"],
+    ),
+    (
+        11,
+        "void() g = { e += f; };",
+        &[
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { e -= f; };",
+        &[
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { e *= f; };",
+        &["Cannot cast from float to entity"],
+    ),
+    (
+        11,
+        "void() g = { e /= f; };",
+        &["Cannot cast from float to entity"],
+    ),
+    (
+        11,
+        "void() g = { e &= f; };",
+        &["Cannot cast from float to entity"],
+    ),
+    (
+        11,
+        "void() g = { e |= f; };",
+        &["Cannot cast from float to entity"],
+    ),
+    (
+        11,
+        "void() g = { e ^= f; };",
+        &["Cannot cast from float to entity"],
+    ),
+    (
+        11,
+        "void() g = { e <<= f; };",
+        &["Cannot cast from float to entity"],
+    ),
+    (
+        11,
+        "void() g = { e >>= f; };",
+        &["Cannot cast from float to entity"],
+    ),
+    (
+        11,
+        "void() g = { e += i; };",
+        &[
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { e -= i; };",
+        &[
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { e *= i; };",
+        &[
+            "Implicit cast from __int32 to entity",
+            "Type mismatch on assignment. entity *= entity is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { e &= i; };",
+        &[
+            "Implicit cast from __int32 to entity",
+            "Type mismatch on assignment. entity &= entity is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { e |= i; };",
+        &[
+            "Implicit cast from __int32 to entity",
+            "Type mismatch on assignment. entity |= entity is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { e ^= i; };",
+        &[
+            "Implicit cast from __int32 to entity",
+            "Type mismatch on assignment. entity ^= entity is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { e <<= i; };",
+        &[
+            "Implicit cast from __int32 to entity",
+            "Type mismatch on assignment. entity <<= entity is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { e >>= i; };",
+        &[
+            "Implicit cast from __int32 to entity",
+            "Type mismatch on assignment. entity >>= entity is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { e += u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        11,
+        "void() g = { e -= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        11,
+        "void() g = { e *= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        11,
+        "void() g = { e /= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        11,
+        "void() g = { e &= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        11,
+        "void() g = { e |= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        11,
+        "void() g = { e ^= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        11,
+        "void() g = { e <<= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        11,
+        "void() g = { e >>= u; };",
+        &["Cannot cast from __uint to entity"],
+    ),
+    (
+        11,
+        "void() g = { e += l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e -= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e *= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e /= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e &= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e |= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e ^= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e <<= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e >>= l; };",
+        &["Cannot cast from __int64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e += ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e -= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e *= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e /= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e &= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e |= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e ^= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e <<= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e >>= ul; };",
+        &["Cannot cast from __uint64 to entity"],
+    ),
+    (
+        11,
+        "void() g = { e += d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        11,
+        "void() g = { e -= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        11,
+        "void() g = { e *= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        11,
+        "void() g = { e /= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        11,
+        "void() g = { e &= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        11,
+        "void() g = { e |= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        11,
+        "void() g = { e ^= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        11,
+        "void() g = { e <<= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        11,
+        "void() g = { e >>= d; };",
+        &["Cannot cast from __double to entity"],
+    ),
+    (
+        11,
+        "void() g = { e += v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        11,
+        "void() g = { e -= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        11,
+        "void() g = { e *= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        11,
+        "void() g = { e /= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        11,
+        "void() g = { e &= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        11,
+        "void() g = { e |= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        11,
+        "void() g = { e ^= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        11,
+        "void() g = { e <<= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        11,
+        "void() g = { e >>= v; };",
+        &["Cannot cast from vector to entity"],
+    ),
+    (
+        11,
+        "void() g = { e += p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e -= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e *= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e /= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e &= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e |= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e ^= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e <<= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e >>= p; };",
+        &["Cannot cast from float* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e += pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e -= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e *= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e /= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e &= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e |= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e ^= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e <<= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e >>= pc; };",
+        &["Cannot cast from __int8* to entity"],
+    ),
+    (
+        11,
+        "void() g = { e += e; };",
+        &["Type mismatch on assignment. entity += entity is not supported"],
+    ),
+    (
+        11,
+        "void() g = { e -= e; };",
+        &["Type mismatch on assignment. entity -= entity is not supported"],
+    ),
+    (
+        11,
+        "void() g = { e *= e; };",
+        &["Type mismatch on assignment. entity *= entity is not supported"],
+    ),
+    (
+        11,
+        "void() g = { e &= e; };",
+        &["Type mismatch on assignment. entity &= entity is not supported"],
+    ),
+    (
+        11,
+        "void() g = { e |= e; };",
+        &["Type mismatch on assignment. entity |= entity is not supported"],
+    ),
+    (
+        11,
+        "void() g = { e ^= e; };",
+        &["Type mismatch on assignment. entity ^= entity is not supported"],
+    ),
+    (
+        11,
+        "void() g = { e <<= e; };",
+        &["Type mismatch on assignment. entity <<= entity is not supported"],
+    ),
+    (
+        11,
+        "void() g = { e >>= e; };",
+        &["Type mismatch on assignment. entity >>= entity is not supported"],
+    ),
+    (
+        11,
+        "void() g = { e += s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        11,
+        "void() g = { e -= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        11,
+        "void() g = { e *= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        11,
+        "void() g = { e /= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        11,
+        "void() g = { e &= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        11,
+        "void() g = { e |= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        11,
+        "void() g = { e ^= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        11,
+        "void() g = { e <<= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (
+        11,
+        "void() g = { e >>= s; };",
+        &["Cannot cast from string to entity"],
+    ),
+    (11, "void() g = { s += f; };", &[]),
+    (
+        11,
+        "void() g = { s -= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        11,
+        "void() g = { s *= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        11,
+        "void() g = { s /= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        11,
+        "void() g = { s &= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        11,
+        "void() g = { s |= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        11,
+        "void() g = { s ^= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        11,
+        "void() g = { s <<= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        11,
+        "void() g = { s >>= f; };",
+        &["Cannot cast from float to string"],
+    ),
+    (
+        11,
+        "void() g = { s += i; };",
+        &["OP_ADD_SI: string+int may be unsafe"],
+    ),
+    (
+        11,
+        "void() g = { s -= i; };",
+        &["Opcode \"-|SUB_SI\" is not supported."],
+    ),
+    (
+        11,
+        "void() g = { s *= i; };",
+        &[
+            "Implicit cast from __int32 to string",
+            "Type mismatch on assignment. string *= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s &= i; };",
+        &[
+            "Implicit cast from __int32 to string",
+            "Type mismatch on assignment. string &= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s |= i; };",
+        &[
+            "Implicit cast from __int32 to string",
+            "Type mismatch on assignment. string |= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s ^= i; };",
+        &[
+            "Implicit cast from __int32 to string",
+            "Type mismatch on assignment. string ^= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s <<= i; };",
+        &[
+            "Implicit cast from __int32 to string",
+            "Type mismatch on assignment. string <<= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s >>= i; };",
+        &[
+            "Implicit cast from __int32 to string",
+            "Type mismatch on assignment. string >>= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s += u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Type mismatch on assignment. string += string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s -= u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Implicit type mismatch on assignment to s. Needed string, got float.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s *= u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Type mismatch on assignment. string *= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s &= u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Type mismatch on assignment. string &= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s |= u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Type mismatch on assignment. string |= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s ^= u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Type mismatch on assignment. string ^= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s <<= u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Type mismatch on assignment. string <<= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s >>= u; };",
+        &[
+            "Implicit cast from __uint to string",
+            "Type mismatch on assignment. string >>= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s += l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s -= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s *= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s /= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s &= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s |= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s ^= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s <<= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s >>= l; };",
+        &["Cannot cast from __int64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s += ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s -= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s *= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s /= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s &= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s |= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s ^= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s <<= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s >>= ul; };",
+        &["Cannot cast from __uint64 to string"],
+    ),
+    (
+        11,
+        "void() g = { s += d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        11,
+        "void() g = { s -= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        11,
+        "void() g = { s *= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        11,
+        "void() g = { s /= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        11,
+        "void() g = { s &= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        11,
+        "void() g = { s |= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        11,
+        "void() g = { s ^= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        11,
+        "void() g = { s <<= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        11,
+        "void() g = { s >>= d; };",
+        &["Cannot cast from __double to string"],
+    ),
+    (
+        11,
+        "void() g = { s += v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        11,
+        "void() g = { s -= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        11,
+        "void() g = { s *= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        11,
+        "void() g = { s /= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        11,
+        "void() g = { s &= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        11,
+        "void() g = { s |= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        11,
+        "void() g = { s ^= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        11,
+        "void() g = { s <<= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        11,
+        "void() g = { s >>= v; };",
+        &["Cannot cast from vector to string"],
+    ),
+    (
+        11,
+        "void() g = { s += p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Type mismatch on assignment. string += string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s -= p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Implicit type mismatch on assignment to s. Needed string, got float.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s *= p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Type mismatch on assignment. string *= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s &= p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Type mismatch on assignment. string &= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s |= p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Type mismatch on assignment. string |= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s ^= p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Type mismatch on assignment. string ^= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s <<= p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Type mismatch on assignment. string <<= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s >>= p; };",
+        &[
+            "Implicit cast from float* to string",
+            "Type mismatch on assignment. string >>= string is not supported",
+        ],
+    ),
+    (
+        11,
+        "void() g = { s += pc; };",
+        &["Type mismatch on assignment. string += string is not supported"],
+    ),
+    (
+        11,
+        "void() g = { s -= pc; };",
+        &["Implicit type mismatch on assignment to s. Needed string, got float."],
+    ),
+    (
+        11,
+        "void() g = { s *= pc; };",
+        &["Type mismatch on assignment. string *= string is not supported"],
+    ),
+    (
+        11,
+        "void() g = { s &= pc; };",
+        &["Type mismatch on assignment. string &= string is not supported"],
+    ),
+    (
+        11,
+        "void() g = { s |= pc; };",
+        &["Type mismatch on assignment. string |= string is not supported"],
+    ),
+    (
+        11,
+        "void() g = { s ^= pc; };",
+        &["Type mismatch on assignment. string ^= string is not supported"],
+    ),
+    (
+        11,
+        "void() g = { s <<= pc; };",
+        &["Type mismatch on assignment. string <<= string is not supported"],
+    ),
+    (
+        11,
+        "void() g = { s >>= pc; };",
+        &["Type mismatch on assignment. string >>= string is not supported"],
+    ),
+    (
+        11,
+        "void() g = { s += e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        11,
+        "void() g = { s -= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        11,
+        "void() g = { s *= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        11,
+        "void() g = { s /= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        11,
+        "void() g = { s &= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        11,
+        "void() g = { s |= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        11,
+        "void() g = { s ^= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        11,
+        "void() g = { s <<= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        11,
+        "void() g = { s >>= e; };",
+        &["Cannot cast from entity to string"],
+    ),
+    (
+        11,
+        "void() g = { s += s; };",
+        &["Type mismatch on assignment. string += string is not supported"],
+    ),
+    (
+        11,
+        "void() g = { s -= s; };",
+        &["Implicit type mismatch on assignment to s. Needed string, got float."],
+    ),
+    (
+        11,
+        "void() g = { s *= s; };",
+        &["Type mismatch on assignment. string *= string is not supported"],
+    ),
+    (
+        11,
+        "void() g = { s &= s; };",
+        &["Type mismatch on assignment. string &= string is not supported"],
+    ),
+    (
+        11,
+        "void() g = { s |= s; };",
+        &["Type mismatch on assignment. string |= string is not supported"],
+    ),
+    (
+        11,
+        "void() g = { s ^= s; };",
+        &["Type mismatch on assignment. string ^= string is not supported"],
+    ),
+    (
+        11,
+        "void() g = { s <<= s; };",
+        &["Type mismatch on assignment. string <<= string is not supported"],
+    ),
+    (
+        11,
+        "void() g = { s >>= s; };",
+        &["Type mismatch on assignment. string >>= string is not supported"],
+    ),
+    (11, "void() g = { x = f + f; };", &[]),
+    (11, "void() g = { x = f - f; };", &[]),
+    (11, "void() g = { x = f * f; };", &[]),
+    (11, "void() g = { x = f / f; };", &[]),
+    (11, "void() g = { x = f & f; };", &[]),
+    (11, "void() g = { x = f | f; };", &[]),
+    (11, "void() g = { x = f ^ f; };", &[]),
+    (11, "void() g = { x = f % f; };", &[]),
+    (11, "void() g = { x = f << f; };", &[]),
+    (11, "void() g = { x = f >> f; };", &[]),
+    (
+        11,
+        "void() g = { x = f < f; };",
+        &["Result of comparison is constant"],
+    ),
+    (11, "void() g = { x = f >= f; };", &[]),
+    (
+        11,
+        "void() g = { x = f && f; };",
+        &["Parameter offsets for && are the same"],
+    ),
+    (
+        11,
+        "void() g = { x = f || f; };",
+        &["Parameters for || are the same"],
+    ),
+    (11, "void() g = { x = f + i; };", &[]),
+    (11, "void() g = { x = f - i; };", &[]),
+    (11, "void() g = { x = f * i; };", &[]),
+    (11, "void() g = { x = f / i; };", &[]),
+    (11, "void() g = { x = f & i; };", &[]),
+    (11, "void() g = { x = f | i; };", &[]),
+    (11, "void() g = { x = f ^ i; };", &[]),
+    (11, "void() g = { x = f % i; };", &[]),
+    (11, "void() g = { x = f << i; };", &[]),
+    (11, "void() g = { x = f >> i; };", &[]),
+    (11, "void() g = { x = f < i; };", &[]),
+    (11, "void() g = { x = f >= i; };", &[]),
+    (11, "void() g = { x = f && i; };", &[]),
+    (11, "void() g = { x = f || i; };", &[]),
+    (
+        11,
+        "void() g = { x = f + u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = f - u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = f * u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = f / u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = f & u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = f | u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = f ^ u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = f % u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = f << u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = f >> u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (11, "void() g = { x = f && u; };", &[]),
+    (11, "void() g = { x = f || u; };", &[]),
+    (11, "void() g = { x = f + l; };", &[]),
+    (11, "void() g = { x = f - l; };", &[]),
+    (11, "void() g = { x = f * l; };", &[]),
+    (11, "void() g = { x = f / l; };", &[]),
+    (11, "void() g = { x = f & l; };", &[]),
+    (11, "void() g = { x = f | l; };", &[]),
+    (11, "void() g = { x = f ^ l; };", &[]),
+    (11, "void() g = { x = f % l; };", &[]),
+    (11, "void() g = { x = f << l; };", &[]),
+    (11, "void() g = { x = f >> l; };", &[]),
+    (11, "void() g = { x = f && l; };", &[]),
+    (11, "void() g = { x = f || l; };", &[]),
+    (
+        11,
+        "void() g = { x = f + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f - ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f * ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f / ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f & ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f | ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f ^ ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f % ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f << ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f >> ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f && ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f || ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = f + d; };", &[]),
+    (11, "void() g = { x = f - d; };", &[]),
+    (11, "void() g = { x = f * d; };", &[]),
+    (11, "void() g = { x = f / d; };", &[]),
+    (11, "void() g = { x = f & d; };", &[]),
+    (11, "void() g = { x = f | d; };", &[]),
+    (
+        11,
+        "void() g = { x = f ^ d; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f % d; };",
+        &["Implicit conversion from __double to float"],
+    ),
+    (
+        11,
+        "void() g = { x = f << d; };",
+        &["Implicit conversion from __double to float"],
+    ),
+    (
+        11,
+        "void() g = { x = f >> d; };",
+        &["Implicit conversion from __double to float"],
+    ),
+    (11, "void() g = { x = f < d; };", &[]),
+    (11, "void() g = { x = f >= d; };", &[]),
+    (11, "void() g = { x = f && d; };", &[]),
+    (11, "void() g = { x = f || d; };", &[]),
+    (
+        11,
+        "void() g = { x = f + v; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f - v; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f * v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = f & v; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f | v; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f ^ v; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f % v; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "ModVec function not defined: cannot emulate vector%vector",
+            "Opcode \"%|MOD_V\" is not supported.",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f << v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f < v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f >= v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (11, "void() g = { x = f && v; };", &[]),
+    (11, "void() g = { x = f || v; };", &[]),
+    (
+        11,
+        "void() g = { x = f + p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = f % p; };",
+        &[
+            "type mismatch for % (float and float*)",
+            "Implicit conversion from float to __uint64",
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f >= p; };",
+        &[
+            "type mismatch for >= (float and float*)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (11, "void() g = { x = f && p; };", &[]),
+    (11, "void() g = { x = f || p; };", &[]),
+    (
+        11,
+        "void() g = { x = f + pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = f % pc; };",
+        &[
+            "type mismatch for % (float and __int8*)",
+            "Implicit conversion from float to __uint64",
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f >= pc; };",
+        &[
+            "type mismatch for >= (float and __int8*)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (11, "void() g = { x = f && pc; };", &[]),
+    (11, "void() g = { x = f || pc; };", &[]),
+    (
+        11,
+        "void() g = { x = f + e; };",
+        &[
+            "type mismatch for + (float and entity)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f % e; };",
+        &[
+            "type mismatch for % (float and entity)",
+            "Implicit conversion from float to __uint64",
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f >= e; };",
+        &[
+            "type mismatch for >= (float and entity)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (11, "void() g = { x = f && e; };", &[]),
+    (11, "void() g = { x = f || e; };", &[]),
+    (
+        11,
+        "void() g = { x = f + s; };",
+        &[
+            "Implicit conversion from float to __int32",
+            "OP_ADD_SI: string+int may be unsafe",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f % s; };",
+        &[
+            "type mismatch for % (float and string)",
+            "Implicit conversion from float to __uint64",
+            "Opcode \"=|CONV_FU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = f >= s; };",
+        &[
+            "type mismatch for >= (float and string)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (11, "void() g = { x = f && s; };", &[]),
+    (11, "void() g = { x = f || s; };", &[]),
+    (11, "void() g = { x = i + f; };", &[]),
+    (11, "void() g = { x = i - f; };", &[]),
+    (11, "void() g = { x = i * f; };", &[]),
+    (11, "void() g = { x = i / f; };", &[]),
+    (11, "void() g = { x = i & f; };", &[]),
+    (11, "void() g = { x = i | f; };", &[]),
+    (11, "void() g = { x = i ^ f; };", &[]),
+    (11, "void() g = { x = i % f; };", &[]),
+    (11, "void() g = { x = i << f; };", &[]),
+    (11, "void() g = { x = i >> f; };", &[]),
+    (11, "void() g = { x = i < f; };", &[]),
+    (11, "void() g = { x = i >= f; };", &[]),
+    (11, "void() g = { x = i && f; };", &[]),
+    (11, "void() g = { x = i || f; };", &[]),
+    (11, "void() g = { x = i + i; };", &[]),
+    (11, "void() g = { x = i - i; };", &[]),
+    (11, "void() g = { x = i * i; };", &[]),
+    (11, "void() g = { x = i / i; };", &[]),
+    (11, "void() g = { x = i & i; };", &[]),
+    (11, "void() g = { x = i | i; };", &[]),
+    (11, "void() g = { x = i ^ i; };", &[]),
+    (11, "void() g = { x = i % i; };", &[]),
+    (11, "void() g = { x = i << i; };", &[]),
+    (11, "void() g = { x = i >> i; };", &[]),
+    (11, "void() g = { x = i < i; };", &[]),
+    (11, "void() g = { x = i >= i; };", &[]),
+    (11, "void() g = { x = i && i; };", &[]),
+    (11, "void() g = { x = i || i; };", &[]),
+    (
+        11,
+        "void() g = { x = i >> u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = i < u; };", &[]),
+    (11, "void() g = { x = i >= u; };", &[]),
+    (11, "void() g = { x = i && u; };", &[]),
+    (11, "void() g = { x = i || u; };", &[]),
+    (11, "void() g = { x = i + l; };", &[]),
+    (11, "void() g = { x = i - l; };", &[]),
+    (11, "void() g = { x = i * l; };", &[]),
+    (11, "void() g = { x = i / l; };", &[]),
+    (11, "void() g = { x = i & l; };", &[]),
+    (11, "void() g = { x = i | l; };", &[]),
+    (11, "void() g = { x = i ^ l; };", &[]),
+    (
+        11,
+        "void() g = { x = i % l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = i << l; };", &[]),
+    (11, "void() g = { x = i >> l; };", &[]),
+    (11, "void() g = { x = i < l; };", &[]),
+    (11, "void() g = { x = i >= l; };", &[]),
+    (11, "void() g = { x = i && l; };", &[]),
+    (11, "void() g = { x = i || l; };", &[]),
+    (
+        11,
+        "void() g = { x = i + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i - ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i * ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i / ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i & ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i | ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i ^ ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i % ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i << ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i >> ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i < ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i >= ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i && ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i || ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = i + d; };", &[]),
+    (11, "void() g = { x = i - d; };", &[]),
+    (11, "void() g = { x = i * d; };", &[]),
+    (11, "void() g = { x = i / d; };", &[]),
+    (11, "void() g = { x = i & d; };", &[]),
+    (11, "void() g = { x = i | d; };", &[]),
+    (
+        11,
+        "void() g = { x = i ^ d; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i % d; };",
+        &["Implicit conversion from __double to float"],
+    ),
+    (
+        11,
+        "void() g = { x = i << d; };",
+        &["Implicit conversion from __double to float"],
+    ),
+    (
+        11,
+        "void() g = { x = i >> d; };",
+        &["Implicit conversion from __double to float"],
+    ),
+    (11, "void() g = { x = i < d; };", &[]),
+    (11, "void() g = { x = i >= d; };", &[]),
+    (11, "void() g = { x = i && d; };", &[]),
+    (11, "void() g = { x = i || d; };", &[]),
+    (
+        11,
+        "void() g = { x = i + v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i - v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i * v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = i / v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i & v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i | v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i ^ v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i % v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i << v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i >> v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i < v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i >= v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (11, "void() g = { x = i && v; };", &[]),
+    (11, "void() g = { x = i || v; };", &[]),
+    (
+        11,
+        "void() g = { x = i + p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = i % p; };",
+        &[
+            "type mismatch for % (__int32 and float*)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i >= p; };",
+        &[
+            "type mismatch for >= (__int32 and float*)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (11, "void() g = { x = i && p; };", &[]),
+    (11, "void() g = { x = i || p; };", &[]),
+    (
+        11,
+        "void() g = { x = i + pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = i % pc; };",
+        &[
+            "type mismatch for % (__int32 and __int8*)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i >= pc; };",
+        &[
+            "type mismatch for >= (__int32 and __int8*)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (11, "void() g = { x = i && pc; };", &[]),
+    (11, "void() g = { x = i || pc; };", &[]),
+    (
+        11,
+        "void() g = { x = i + e; };",
+        &[
+            "type mismatch for + (__int32 and entity)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i % e; };",
+        &[
+            "type mismatch for % (__int32 and entity)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i >= e; };",
+        &[
+            "type mismatch for >= (__int32 and entity)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (11, "void() g = { x = i && e; };", &[]),
+    (11, "void() g = { x = i || e; };", &[]),
+    (
+        11,
+        "void() g = { x = i + s; };",
+        &[
+            "OP_ADD_SI: string+int may be unsafe",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i % s; };",
+        &[
+            "type mismatch for % (__int32 and string)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = i >= s; };",
+        &[
+            "type mismatch for >= (__int32 and string)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (11, "void() g = { x = i && s; };", &[]),
+    (11, "void() g = { x = i || s; };", &[]),
+    (
+        11,
+        "void() g = { x = u + f; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u - f; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u * f; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u / f; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u & f; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u | f; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u ^ f; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u % f; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u << f; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u >> f; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u && f; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u || f; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (11, "void() g = { x = u < i; };", &[]),
+    (11, "void() g = { x = u >= i; };", &[]),
+    (
+        11,
+        "void() g = { x = u && i; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u || i; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u >> u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = u < u; };", &[]),
+    (11, "void() g = { x = u >= u; };", &[]),
+    (
+        11,
+        "void() g = { x = u && u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u || u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (11, "void() g = { x = u + l; };", &[]),
+    (11, "void() g = { x = u - l; };", &[]),
+    (11, "void() g = { x = u * l; };", &[]),
+    (11, "void() g = { x = u / l; };", &[]),
+    (11, "void() g = { x = u & l; };", &[]),
+    (11, "void() g = { x = u | l; };", &[]),
+    (11, "void() g = { x = u ^ l; };", &[]),
+    (
+        11,
+        "void() g = { x = u % l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u << l; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u >> l; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (11, "void() g = { x = u < l; };", &[]),
+    (11, "void() g = { x = u >= l; };", &[]),
+    (
+        11,
+        "void() g = { x = u && l; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u || l; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u - ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u * ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u / ul; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u & ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u | ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u ^ ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u % ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u << ul; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u >> ul; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = u < ul; };", &[]),
+    (11, "void() g = { x = u >= ul; };", &[]),
+    (
+        11,
+        "void() g = { x = u && ul; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u || ul; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = u + d; };", &[]),
+    (11, "void() g = { x = u - d; };", &[]),
+    (11, "void() g = { x = u * d; };", &[]),
+    (11, "void() g = { x = u / d; };", &[]),
+    (11, "void() g = { x = u & d; };", &[]),
+    (11, "void() g = { x = u | d; };", &[]),
+    (
+        11,
+        "void() g = { x = u ^ d; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u << d; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Implicit conversion from __double to float",
+        ],
+    ),
+    (11, "void() g = { x = u < d; };", &[]),
+    (11, "void() g = { x = u >= d; };", &[]),
+    (
+        11,
+        "void() g = { x = u && d; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u || d; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u + v; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u * v; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u & v; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u ^ v; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u << v; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u < v; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u >= v; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u && v; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u || v; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u + p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = u % p; };",
+        &[
+            "type mismatch for % (__uint and float*)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u >= p; };",
+        &[
+            "type mismatch for >= (__uint and float*)",
+            "utof emulation: will break if u is big",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u && p; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u || p; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u + pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = u % pc; };",
+        &[
+            "type mismatch for % (__uint and __int8*)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u >= pc; };",
+        &[
+            "type mismatch for >= (__uint and __int8*)",
+            "utof emulation: will break if u is big",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u && pc; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u || pc; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u + e; };",
+        &[
+            "type mismatch for + (__uint and entity)",
+            "utof emulation: will break if u is big",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u % e; };",
+        &[
+            "type mismatch for % (__uint and entity)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u >= e; };",
+        &[
+            "type mismatch for >= (__uint and entity)",
+            "utof emulation: will break if u is big",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u && e; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u || e; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u + s; };",
+        &[
+            "Implicit conversion from __uint to __int32",
+            "OP_ADD_SI: string+int may be unsafe",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u % s; };",
+        &[
+            "type mismatch for % (__uint and string)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u >= s; };",
+        &[
+            "type mismatch for >= (__uint and string)",
+            "utof emulation: will break if u is big",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = u && s; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = u || s; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (11, "void() g = { x = l + f; };", &[]),
+    (11, "void() g = { x = l - f; };", &[]),
+    (11, "void() g = { x = l * f; };", &[]),
+    (11, "void() g = { x = l / f; };", &[]),
+    (11, "void() g = { x = l & f; };", &[]),
+    (11, "void() g = { x = l | f; };", &[]),
+    (11, "void() g = { x = l ^ f; };", &[]),
+    (11, "void() g = { x = l % f; };", &[]),
+    (11, "void() g = { x = l << f; };", &[]),
+    (11, "void() g = { x = l >> f; };", &[]),
+    (11, "void() g = { x = l && f; };", &[]),
+    (11, "void() g = { x = l || f; };", &[]),
+    (11, "void() g = { x = l + i; };", &[]),
+    (11, "void() g = { x = l - i; };", &[]),
+    (11, "void() g = { x = l * i; };", &[]),
+    (11, "void() g = { x = l / i; };", &[]),
+    (11, "void() g = { x = l & i; };", &[]),
+    (11, "void() g = { x = l | i; };", &[]),
+    (11, "void() g = { x = l ^ i; };", &[]),
+    (
+        11,
+        "void() g = { x = l % i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = l << i; };", &[]),
+    (11, "void() g = { x = l >> i; };", &[]),
+    (11, "void() g = { x = l < i; };", &[]),
+    (11, "void() g = { x = l >= i; };", &[]),
+    (11, "void() g = { x = l && i; };", &[]),
+    (11, "void() g = { x = l || i; };", &[]),
+    (11, "void() g = { x = l + u; };", &[]),
+    (11, "void() g = { x = l - u; };", &[]),
+    (11, "void() g = { x = l * u; };", &[]),
+    (11, "void() g = { x = l / u; };", &[]),
+    (11, "void() g = { x = l & u; };", &[]),
+    (11, "void() g = { x = l | u; };", &[]),
+    (11, "void() g = { x = l ^ u; };", &[]),
+    (
+        11,
+        "void() g = { x = l % u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l << u; };",
+        &["utof emulation: will break if u is big"],
+    ),
+    (
+        11,
+        "void() g = { x = l >> u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = l < u; };", &[]),
+    (11, "void() g = { x = l >= u; };", &[]),
+    (11, "void() g = { x = l && u; };", &[]),
+    (11, "void() g = { x = l || u; };", &[]),
+    (11, "void() g = { x = l + l; };", &[]),
+    (11, "void() g = { x = l - l; };", &[]),
+    (11, "void() g = { x = l * l; };", &[]),
+    (11, "void() g = { x = l / l; };", &[]),
+    (11, "void() g = { x = l & l; };", &[]),
+    (11, "void() g = { x = l | l; };", &[]),
+    (11, "void() g = { x = l ^ l; };", &[]),
+    (
+        11,
+        "void() g = { x = l % l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = l << l; };", &[]),
+    (11, "void() g = { x = l >> l; };", &[]),
+    (11, "void() g = { x = l < l; };", &[]),
+    (11, "void() g = { x = l >= l; };", &[]),
+    (11, "void() g = { x = l && l; };", &[]),
+    (11, "void() g = { x = l || l; };", &[]),
+    (
+        11,
+        "void() g = { x = l + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l - ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l * ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l / ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l & ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l | ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l ^ ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l % ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l << ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l >> ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = l < ul; };", &[]),
+    (11, "void() g = { x = l >= ul; };", &[]),
+    (
+        11,
+        "void() g = { x = l && ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l || ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = l + d; };", &[]),
+    (11, "void() g = { x = l - d; };", &[]),
+    (11, "void() g = { x = l * d; };", &[]),
+    (11, "void() g = { x = l / d; };", &[]),
+    (11, "void() g = { x = l & d; };", &[]),
+    (11, "void() g = { x = l | d; };", &[]),
+    (
+        11,
+        "void() g = { x = l ^ d; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l << d; };",
+        &["Implicit conversion from __double to float"],
+    ),
+    (11, "void() g = { x = l < d; };", &[]),
+    (11, "void() g = { x = l >= d; };", &[]),
+    (11, "void() g = { x = l && d; };", &[]),
+    (11, "void() g = { x = l || d; };", &[]),
+    (
+        11,
+        "void() g = { x = l + v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l * v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = l & v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l ^ v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l << v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l < v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l >= v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (11, "void() g = { x = l && v; };", &[]),
+    (11, "void() g = { x = l || v; };", &[]),
+    (
+        11,
+        "void() g = { x = l + p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = l % p; };",
+        &[
+            "type mismatch for % (__int64 and float*)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l >= p; };",
+        &[
+            "type mismatch for >= (__int64 and float*)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (11, "void() g = { x = l && p; };", &[]),
+    (11, "void() g = { x = l || p; };", &[]),
+    (
+        11,
+        "void() g = { x = l + pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = l % pc; };",
+        &[
+            "type mismatch for % (__int64 and __int8*)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l >= pc; };",
+        &[
+            "type mismatch for >= (__int64 and __int8*)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (11, "void() g = { x = l && pc; };", &[]),
+    (11, "void() g = { x = l || pc; };", &[]),
+    (
+        11,
+        "void() g = { x = l + e; };",
+        &[
+            "type mismatch for + (__int64 and entity)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l % e; };",
+        &[
+            "type mismatch for % (__int64 and entity)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l >= e; };",
+        &[
+            "type mismatch for >= (__int64 and entity)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (11, "void() g = { x = l && e; };", &[]),
+    (11, "void() g = { x = l || e; };", &[]),
+    (
+        11,
+        "void() g = { x = l + s; };",
+        &[
+            "Implicit conversion from __int64 to __int32",
+            "OP_ADD_SI: string+int may be unsafe",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l % s; };",
+        &[
+            "type mismatch for % (__int64 and string)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = l >= s; };",
+        &[
+            "type mismatch for >= (__int64 and string)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (11, "void() g = { x = l && s; };", &[]),
+    (11, "void() g = { x = l || s; };", &[]),
+    (
+        11,
+        "void() g = { x = ul + f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul - f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul * f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul / f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul & f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul | f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul ^ f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul % f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul << f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul >> f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul && f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul || f; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul + i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul - i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul * i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul / i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul & i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul | i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul ^ i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul % i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul << i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul >> i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul < i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul >= i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul && i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul || i; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul + u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul - u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul * u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul / u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul & u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul | u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul ^ u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul % u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul << u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "utof emulation: will break if u is big",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul >> u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = ul < u; };", &[]),
+    (11, "void() g = { x = ul >= u; };", &[]),
+    (
+        11,
+        "void() g = { x = ul && u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul || u; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul + l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul - l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul * l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul / l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul & l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul | l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul ^ l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul % l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul << l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul >> l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = ul < l; };", &[]),
+    (11, "void() g = { x = ul >= l; };", &[]),
+    (
+        11,
+        "void() g = { x = ul && l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul || l; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul - ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul * ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul / ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul & ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul | ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul ^ ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul % ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul << ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul >> ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = ul < ul; };", &[]),
+    (11, "void() g = { x = ul >= ul; };", &[]),
+    (
+        11,
+        "void() g = { x = ul && ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul || ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul + d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul - d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul * d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul / d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul & d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul | d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul ^ d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul % d; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from __double to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul << d; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from __double to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul >> d; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from __double to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul < d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul >= d; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul && d; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul || d; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul + v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul * v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul & v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul ^ v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul << v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul < v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul >= v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul && v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul || v; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul + p; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul % p; };",
+        &[
+            "type mismatch for % (__uint64 and float*)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul >= p; };",
+        &[
+            "type mismatch for >= (__uint64 and float*)",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul && p; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul || p; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul + pc; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul % pc; };",
+        &[
+            "type mismatch for % (__uint64 and __int8*)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul >= pc; };",
+        &[
+            "type mismatch for >= (__uint64 and __int8*)",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul && pc; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul || pc; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul + e; };",
+        &[
+            "type mismatch for + (__uint64 and entity)",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul % e; };",
+        &[
+            "type mismatch for % (__uint64 and entity)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul >= e; };",
+        &[
+            "type mismatch for >= (__uint64 and entity)",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul && e; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul || e; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul + s; };",
+        &[
+            "Implicit conversion from __uint64 to __int32",
+            "OP_ADD_SI: string+int may be unsafe",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul % s; };",
+        &[
+            "type mismatch for % (__uint64 and string)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul >= s; };",
+        &[
+            "type mismatch for >= (__uint64 and string)",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul && s; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = ul || s; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = d + f; };", &[]),
+    (11, "void() g = { x = d - f; };", &[]),
+    (11, "void() g = { x = d * f; };", &[]),
+    (11, "void() g = { x = d / f; };", &[]),
+    (11, "void() g = { x = d & f; };", &[]),
+    (11, "void() g = { x = d | f; };", &[]),
+    (
+        11,
+        "void() g = { x = d ^ f; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d % f; };",
+        &["Implicit conversion from __double to float"],
+    ),
+    (
+        11,
+        "void() g = { x = d << f; };",
+        &["Implicit conversion from __double to float"],
+    ),
+    (
+        11,
+        "void() g = { x = d >> f; };",
+        &["Implicit conversion from __double to float"],
+    ),
+    (11, "void() g = { x = d < f; };", &[]),
+    (11, "void() g = { x = d >= f; };", &[]),
+    (11, "void() g = { x = d && f; };", &[]),
+    (11, "void() g = { x = d || f; };", &[]),
+    (11, "void() g = { x = d + i; };", &[]),
+    (11, "void() g = { x = d - i; };", &[]),
+    (11, "void() g = { x = d * i; };", &[]),
+    (11, "void() g = { x = d / i; };", &[]),
+    (11, "void() g = { x = d & i; };", &[]),
+    (11, "void() g = { x = d | i; };", &[]),
+    (
+        11,
+        "void() g = { x = d ^ i; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d % i; };",
+        &["Implicit conversion from __double to float"],
+    ),
+    (11, "void() g = { x = d << i; };", &[]),
+    (11, "void() g = { x = d >> i; };", &[]),
+    (11, "void() g = { x = d < i; };", &[]),
+    (11, "void() g = { x = d >= i; };", &[]),
+    (11, "void() g = { x = d && i; };", &[]),
+    (11, "void() g = { x = d || i; };", &[]),
+    (11, "void() g = { x = d + u; };", &[]),
+    (11, "void() g = { x = d - u; };", &[]),
+    (11, "void() g = { x = d * u; };", &[]),
+    (11, "void() g = { x = d / u; };", &[]),
+    (11, "void() g = { x = d & u; };", &[]),
+    (11, "void() g = { x = d | u; };", &[]),
+    (
+        11,
+        "void() g = { x = d ^ u; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d << u; };",
+        &["Implicit conversion from __uint to __int32"],
+    ),
+    (
+        11,
+        "void() g = { x = d >> u; };",
+        &["Implicit conversion from __uint to __int32"],
+    ),
+    (11, "void() g = { x = d < u; };", &[]),
+    (11, "void() g = { x = d >= u; };", &[]),
+    (11, "void() g = { x = d && u; };", &[]),
+    (11, "void() g = { x = d || u; };", &[]),
+    (11, "void() g = { x = d + l; };", &[]),
+    (11, "void() g = { x = d - l; };", &[]),
+    (11, "void() g = { x = d * l; };", &[]),
+    (11, "void() g = { x = d / l; };", &[]),
+    (11, "void() g = { x = d & l; };", &[]),
+    (11, "void() g = { x = d | l; };", &[]),
+    (
+        11,
+        "void() g = { x = d ^ l; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d << l; };",
+        &["Implicit conversion from __int64 to __int32"],
+    ),
+    (
+        11,
+        "void() g = { x = d >> l; };",
+        &["Implicit conversion from __int64 to __int32"],
+    ),
+    (11, "void() g = { x = d < l; };", &[]),
+    (11, "void() g = { x = d >= l; };", &[]),
+    (11, "void() g = { x = d && l; };", &[]),
+    (11, "void() g = { x = d || l; };", &[]),
+    (
+        11,
+        "void() g = { x = d + ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d - ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d * ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d / ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d & ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d | ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d ^ ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d % ul; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d << ul; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d >> ul; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d < ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d >= ul; };",
+        &[
+            "Opcode \"=|CONV_U64D\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d && ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d || ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (11, "void() g = { x = d + d; };", &[]),
+    (11, "void() g = { x = d - d; };", &[]),
+    (11, "void() g = { x = d * d; };", &[]),
+    (11, "void() g = { x = d / d; };", &[]),
+    (11, "void() g = { x = d & d; };", &[]),
+    (11, "void() g = { x = d | d; };", &[]),
+    (
+        11,
+        "void() g = { x = d ^ d; };",
+        &[
+            "Opcode \"~|BITNOT_D\" is not supported.",
+            "Opcode \"~|BITNOT_D\" is not supported.",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d % d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Implicit conversion from __double to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d << d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Implicit conversion from __double to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d >> d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Implicit conversion from __double to float",
+        ],
+    ),
+    (11, "void() g = { x = d < d; };", &[]),
+    (11, "void() g = { x = d >= d; };", &[]),
+    (11, "void() g = { x = d && d; };", &[]),
+    (11, "void() g = { x = d || d; };", &[]),
+    (
+        11,
+        "void() g = { x = d + v; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d * v; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d & v; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d ^ v; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d << v; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d < v; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d >= v; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (11, "void() g = { x = d && v; };", &[]),
+    (11, "void() g = { x = d || v; };", &[]),
+    (
+        11,
+        "void() g = { x = d + p; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d % p; };",
+        &[
+            "type mismatch for % (__double and float*)",
+            "Implicit conversion from __double to __uint64",
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d >= p; };",
+        &[
+            "type mismatch for >= (__double and float*)",
+            "Implicit conversion from __double to float",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (11, "void() g = { x = d && p; };", &[]),
+    (11, "void() g = { x = d || p; };", &[]),
+    (
+        11,
+        "void() g = { x = d + pc; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d % pc; };",
+        &[
+            "type mismatch for % (__double and __int8*)",
+            "Implicit conversion from __double to __uint64",
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d >= pc; };",
+        &[
+            "type mismatch for >= (__double and __int8*)",
+            "Implicit conversion from __double to float",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (11, "void() g = { x = d && pc; };", &[]),
+    (11, "void() g = { x = d || pc; };", &[]),
+    (
+        11,
+        "void() g = { x = d + e; };",
+        &[
+            "type mismatch for + (__double and entity)",
+            "Implicit conversion from __double to float",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d % e; };",
+        &[
+            "type mismatch for % (__double and entity)",
+            "Implicit conversion from __double to __uint64",
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d >= e; };",
+        &[
+            "type mismatch for >= (__double and entity)",
+            "Implicit conversion from __double to float",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (11, "void() g = { x = d && e; };", &[]),
+    (11, "void() g = { x = d || e; };", &[]),
+    (
+        11,
+        "void() g = { x = d + s; };",
+        &[
+            "Implicit conversion from __double to __int32",
+            "OP_ADD_SI: string+int may be unsafe",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d % s; };",
+        &[
+            "type mismatch for % (__double and string)",
+            "Implicit conversion from __double to __uint64",
+            "Opcode \"=|CONV_DU64\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = d >= s; };",
+        &[
+            "type mismatch for >= (__double and string)",
+            "Implicit conversion from __double to float",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (11, "void() g = { x = d && s; };", &[]),
+    (11, "void() g = { x = d || s; };", &[]),
+    (
+        11,
+        "void() g = { x = v + f; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v - f; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v * f; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v / f; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v & f; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v | f; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v ^ f; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v % f; };",
+        &[
+            "Implicit conversion from float to vector",
+            "Implicit cast from float to vector",
+            "ModVec function not defined: cannot emulate vector%vector",
+            "Opcode \"%|MOD_V\" is not supported.",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v << f; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >> f; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v < f; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >= f; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v && f; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v || f; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v + i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v - i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v * i; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v / i; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v & i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v | i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v ^ i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v % i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v << i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >> i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v < i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >= i; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v && i; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v || i; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v + u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v - u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v * u; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v / u; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v & u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v | u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v ^ u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v % u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v << u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >> u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v < u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >= u; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v && u; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v || u; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v + l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v - l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v * l; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v / l; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v & l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v | l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v ^ l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v % l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v << l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >> l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v < l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >= l; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v && l; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v || l; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v + ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v - ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v * ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v / ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v & ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v | ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v ^ ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v % ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v << ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >> ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v < ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >= ul; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v && ul; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v || ul; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v + d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v - d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v * d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v / d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v & d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v | d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v ^ d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v % d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v << d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >> d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v < d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >= d; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v && d; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v || d; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v + v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v - v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (11, "void() g = { x = v * v; };", &[]),
+    (
+        11,
+        "void() g = { x = v / v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v & v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v | v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v ^ v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v % v; };",
+        &[
+            "ModVec function not defined: cannot emulate vector%vector",
+            "Opcode \"%|MOD_V\" is not supported.",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v << v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >> v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v < v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >= v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v && v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v || v; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v + p; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v * p; };",
+        &[
+            "type mismatch for * (vector and float*)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v % p; };",
+        &[
+            "type mismatch for % (vector and float*)",
+            "Cannot cast from vector to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >> p; };",
+        &[
+            "type mismatch for >> (vector and float*)",
+            "Cannot cast from vector to __int32",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >= p; };",
+        &[
+            "type mismatch for >= (vector and float*)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v && p; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v || p; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v + pc; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v * pc; };",
+        &[
+            "type mismatch for * (vector and __int8*)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v % pc; };",
+        &[
+            "type mismatch for % (vector and __int8*)",
+            "Cannot cast from vector to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >> pc; };",
+        &[
+            "type mismatch for >> (vector and __int8*)",
+            "Cannot cast from vector to __int32",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >= pc; };",
+        &[
+            "type mismatch for >= (vector and __int8*)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v && pc; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v || pc; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v + e; };",
+        &[
+            "type mismatch for + (vector and entity)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v * e; };",
+        &[
+            "type mismatch for * (vector and entity)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v % e; };",
+        &[
+            "type mismatch for % (vector and entity)",
+            "Cannot cast from vector to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >> e; };",
+        &[
+            "type mismatch for >> (vector and entity)",
+            "Cannot cast from vector to __int32",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >= e; };",
+        &[
+            "type mismatch for >= (vector and entity)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v && e; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v || e; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v + s; };",
+        &[
+            "type mismatch for + (vector and string)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v * s; };",
+        &[
+            "type mismatch for * (vector and string)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v % s; };",
+        &[
+            "type mismatch for % (vector and string)",
+            "Cannot cast from vector to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >> s; };",
+        &[
+            "type mismatch for >> (vector and string)",
+            "Cannot cast from vector to __int32",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v >= s; };",
+        &[
+            "type mismatch for >= (vector and string)",
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = v && s; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = v || s; };",
+        &["Cannot cast from vector to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p + f; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p - f; };",
+        &[
+            "Constant int operand 4294967295 will be truncated to -1",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p * f; };",
+        &[
+            "type mismatch for * (float* and float)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p % f; };",
+        &[
+            "type mismatch for % (float* and float)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p >= f; };",
+        &[
+            "type mismatch for >= (float* and float)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p && f; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p || f; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p + i; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p - i; };",
+        &[
+            "Constant int operand 4294967295 will be truncated to -1",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p * i; };",
+        &[
+            "type mismatch for * (float* and __int32)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p % i; };",
+        &[
+            "type mismatch for % (float* and __int32)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p >> i; };",
+        &[
+            "type mismatch for >> (float* and __int32)",
+            "Implicit cast from float* to __int32",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p >= i; };",
+        &[
+            "type mismatch for >= (float* and __int32)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p && i; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p || i; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p + u; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p - u; };",
+        &[
+            "Constant int operand 4294967295 will be truncated to -1",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p * u; };",
+        &[
+            "type mismatch for * (float* and __uint)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p % u; };",
+        &[
+            "type mismatch for % (float* and __uint)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p >= u; };",
+        &[
+            "type mismatch for >= (float* and __uint)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p && u; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p || u; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p + l; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p - l; };",
+        &[
+            "Constant int operand 4294967295 will be truncated to -1",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p * l; };",
+        &[
+            "type mismatch for * (float* and __int64)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p % l; };",
+        &[
+            "type mismatch for % (float* and __int64)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p >= l; };",
+        &[
+            "type mismatch for >= (float* and __int64)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p && l; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p || l; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p - ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Constant int operand 4294967295 will be truncated to -1",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p * ul; };",
+        &[
+            "type mismatch for * (float* and __uint64)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p % ul; };",
+        &[
+            "type mismatch for % (float* and __uint64)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p >= ul; };",
+        &[
+            "type mismatch for >= (float* and __uint64)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p && ul; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p || ul; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p + d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p - d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Constant int operand 4294967295 will be truncated to -1",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p * d; };",
+        &[
+            "type mismatch for * (float* and __double)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p % d; };",
+        &[
+            "type mismatch for % (float* and __double)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p >= d; };",
+        &[
+            "type mismatch for >= (float* and __double)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p && d; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p || d; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p + v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p - v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p * v; };",
+        &[
+            "type mismatch for * (float* and vector)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p % v; };",
+        &[
+            "type mismatch for % (float* and vector)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p >= v; };",
+        &[
+            "type mismatch for >= (float* and vector)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p && v; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p || v; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p + p; };",
+        &[
+            "type mismatch for + (float* and float*)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (11, "void() g = { x = p - p; };", &[]),
+    (
+        11,
+        "void() g = { x = p * p; };",
+        &[
+            "type mismatch for * (float* and float*)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p % p; };",
+        &[
+            "type mismatch for % (float* and float*)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (11, "void() g = { x = p < p; };", &[]),
+    (11, "void() g = { x = p >= p; };", &[]),
+    (
+        11,
+        "void() g = { x = p && p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p || p; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p + pc; };",
+        &[
+            "type mismatch for + (float* and __int8*)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p - pc; };",
+        &["incompatible pointer types"],
+    ),
+    (
+        11,
+        "void() g = { x = p * pc; };",
+        &[
+            "type mismatch for * (float* and __int8*)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p % pc; };",
+        &[
+            "type mismatch for % (float* and __int8*)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (11, "void() g = { x = p < pc; };", &[]),
+    (11, "void() g = { x = p >= pc; };", &[]),
+    (
+        11,
+        "void() g = { x = p && pc; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p || pc; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p + e; };",
+        &[
+            "type mismatch for + (float* and entity)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p * e; };",
+        &[
+            "type mismatch for * (float* and entity)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p % e; };",
+        &[
+            "type mismatch for % (float* and entity)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p >= e; };",
+        &[
+            "type mismatch for >= (float* and entity)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p && e; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p || e; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p + s; };",
+        &[
+            "type mismatch for + (float* and string)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p * s; };",
+        &[
+            "type mismatch for * (float* and string)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p % s; };",
+        &[
+            "type mismatch for % (float* and string)",
+            "Cannot cast from float* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p >= s; };",
+        &[
+            "type mismatch for >= (float* and string)",
+            "Cannot cast from float* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = p && s; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = p || s; };",
+        &["Cannot cast from float* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc + f; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc - f; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc * f; };",
+        &[
+            "type mismatch for * (__int8* and float)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc % f; };",
+        &[
+            "type mismatch for % (__int8* and float)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc >= f; };",
+        &[
+            "type mismatch for >= (__int8* and float)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc && f; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc || f; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc + i; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc - i; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc * i; };",
+        &[
+            "type mismatch for * (__int8* and __int32)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc % i; };",
+        &[
+            "type mismatch for % (__int8* and __int32)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc >> i; };",
+        &[
+            "type mismatch for >> (__int8* and __int32)",
+            "Implicit cast from __int8* to __int32",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc >= i; };",
+        &[
+            "type mismatch for >= (__int8* and __int32)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc && i; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc || i; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc + u; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc - u; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc * u; };",
+        &[
+            "type mismatch for * (__int8* and __uint)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc % u; };",
+        &[
+            "type mismatch for % (__int8* and __uint)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc >= u; };",
+        &[
+            "type mismatch for >= (__int8* and __uint)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc && u; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc || u; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc + l; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc - l; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc * l; };",
+        &[
+            "type mismatch for * (__int8* and __int64)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc % l; };",
+        &[
+            "type mismatch for % (__int8* and __int64)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc >= l; };",
+        &[
+            "type mismatch for >= (__int8* and __int64)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc && l; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc || l; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc - ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc * ul; };",
+        &[
+            "type mismatch for * (__int8* and __uint64)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc % ul; };",
+        &[
+            "type mismatch for % (__int8* and __uint64)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc >= ul; };",
+        &[
+            "type mismatch for >= (__int8* and __uint64)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc && ul; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc || ul; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc + d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc - d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc * d; };",
+        &[
+            "type mismatch for * (__int8* and __double)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc % d; };",
+        &[
+            "type mismatch for % (__int8* and __double)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc >= d; };",
+        &[
+            "type mismatch for >= (__int8* and __double)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc && d; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc || d; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc + v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc - v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc * v; };",
+        &[
+            "type mismatch for * (__int8* and vector)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc % v; };",
+        &[
+            "type mismatch for % (__int8* and vector)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc >= v; };",
+        &[
+            "type mismatch for >= (__int8* and vector)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc && v; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc || v; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc + p; };",
+        &[
+            "type mismatch for + (__int8* and float*)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc - p; };",
+        &["incompatible pointer types"],
+    ),
+    (
+        11,
+        "void() g = { x = pc * p; };",
+        &[
+            "type mismatch for * (__int8* and float*)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc % p; };",
+        &[
+            "type mismatch for % (__int8* and float*)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (11, "void() g = { x = pc < p; };", &[]),
+    (11, "void() g = { x = pc >= p; };", &[]),
+    (
+        11,
+        "void() g = { x = pc && p; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc || p; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc + pc; };",
+        &[
+            "type mismatch for + (__int8* and __int8*)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (11, "void() g = { x = pc - pc; };", &[]),
+    (
+        11,
+        "void() g = { x = pc * pc; };",
+        &[
+            "type mismatch for * (__int8* and __int8*)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc % pc; };",
+        &[
+            "type mismatch for % (__int8* and __int8*)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (11, "void() g = { x = pc < pc; };", &[]),
+    (11, "void() g = { x = pc >= pc; };", &[]),
+    (
+        11,
+        "void() g = { x = pc && pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc || pc; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc + e; };",
+        &[
+            "type mismatch for + (__int8* and entity)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc * e; };",
+        &[
+            "type mismatch for * (__int8* and entity)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc % e; };",
+        &[
+            "type mismatch for % (__int8* and entity)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc >= e; };",
+        &[
+            "type mismatch for >= (__int8* and entity)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc && e; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc || e; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc + s; };",
+        &[
+            "type mismatch for + (__int8* and string)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc * s; };",
+        &[
+            "type mismatch for * (__int8* and string)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc % s; };",
+        &[
+            "type mismatch for % (__int8* and string)",
+            "Cannot cast from __int8* to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc >= s; };",
+        &[
+            "type mismatch for >= (__int8* and string)",
+            "Cannot cast from __int8* to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = pc && s; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = pc || s; };",
+        &["Cannot cast from __int8* to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e + f; };",
+        &[
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e - f; };",
+        &[
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e * f; };",
+        &[
+            "type mismatch for * (entity and float)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e % f; };",
+        &[
+            "type mismatch for % (entity and float)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e >= f; };",
+        &[
+            "type mismatch for >= (entity and float)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e && f; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e || f; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e + i; };",
+        &[
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e - i; };",
+        &[
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e * i; };",
+        &[
+            "type mismatch for * (entity and __int32)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e % i; };",
+        &[
+            "type mismatch for % (entity and __int32)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e >> i; };",
+        &[
+            "type mismatch for >> (entity and __int32)",
+            "Implicit cast from entity to __int32",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e >= i; };",
+        &[
+            "type mismatch for >= (entity and __int32)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e && i; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e || i; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e + u; };",
+        &[
+            "utof emulation: will break if u is big",
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e - u; };",
+        &[
+            "utof emulation: will break if u is big",
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e * u; };",
+        &[
+            "type mismatch for * (entity and __uint)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e % u; };",
+        &[
+            "type mismatch for % (entity and __uint)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e >= u; };",
+        &[
+            "type mismatch for >= (entity and __uint)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e && u; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e || u; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e + l; };",
+        &[
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e - l; };",
+        &[
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e * l; };",
+        &[
+            "type mismatch for * (entity and __int64)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e % l; };",
+        &[
+            "type mismatch for % (entity and __int64)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e >= l; };",
+        &[
+            "type mismatch for >= (entity and __int64)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e && l; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e || l; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e - ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e * ul; };",
+        &[
+            "type mismatch for * (entity and __uint64)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e % ul; };",
+        &[
+            "type mismatch for % (entity and __uint64)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e >= ul; };",
+        &[
+            "type mismatch for >= (entity and __uint64)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e && ul; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e || ul; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e + d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "the nextent builtin is not defined",
+            "Opcode \"+|ADD_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e - d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "the nextent builtin is not defined",
+            "Opcode \"-|SUB_EI\" is not supported.",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e * d; };",
+        &[
+            "type mismatch for * (entity and __double)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e % d; };",
+        &[
+            "type mismatch for % (entity and __double)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e >= d; };",
+        &[
+            "type mismatch for >= (entity and __double)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e && d; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e || d; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e + v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e - v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e * v; };",
+        &[
+            "type mismatch for * (entity and vector)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e % v; };",
+        &[
+            "type mismatch for % (entity and vector)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e >= v; };",
+        &[
+            "type mismatch for >= (entity and vector)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e && v; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e || v; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e + p; };",
+        &[
+            "type mismatch for + (entity and float*)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e * p; };",
+        &[
+            "type mismatch for * (entity and float*)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e % p; };",
+        &[
+            "type mismatch for % (entity and float*)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e >= p; };",
+        &[
+            "type mismatch for >= (entity and float*)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e && p; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e || p; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e + pc; };",
+        &[
+            "type mismatch for + (entity and __int8*)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e * pc; };",
+        &[
+            "type mismatch for * (entity and __int8*)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e % pc; };",
+        &[
+            "type mismatch for % (entity and __int8*)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e >= pc; };",
+        &[
+            "type mismatch for >= (entity and __int8*)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e && pc; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e || pc; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e + e; };",
+        &[
+            "type mismatch for + (entity and entity)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e * e; };",
+        &[
+            "type mismatch for * (entity and entity)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e % e; };",
+        &[
+            "type mismatch for % (entity and entity)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e >= e; };",
+        &[
+            "type mismatch for >= (entity and entity)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e && e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e || e; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e + s; };",
+        &[
+            "type mismatch for + (entity and string)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e * s; };",
+        &[
+            "type mismatch for * (entity and string)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e % s; };",
+        &[
+            "type mismatch for % (entity and string)",
+            "Cannot cast from entity to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e >= s; };",
+        &[
+            "type mismatch for >= (entity and string)",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = e && s; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = e || s; };",
+        &["Cannot cast from entity to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s + f; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s - f; };",
+        &[
+            "Implicit conversion from float to __int32",
+            "Opcode \"-|SUB_SI\" is not supported.",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s * f; };",
+        &[
+            "type mismatch for * (string and float)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s % f; };",
+        &[
+            "type mismatch for % (string and float)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s >= f; };",
+        &[
+            "type mismatch for >= (string and float)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s && f; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s || f; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s + i; };",
+        &[
+            "OP_ADD_SI: string+int may be unsafe",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s - i; };",
+        &[
+            "Opcode \"-|SUB_SI\" is not supported.",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s * i; };",
+        &[
+            "type mismatch for * (string and __int32)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s % i; };",
+        &[
+            "type mismatch for % (string and __int32)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s >> i; };",
+        &[
+            "type mismatch for >> (string and __int32)",
+            "Implicit cast from string to __int32",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s >= i; };",
+        &[
+            "type mismatch for >= (string and __int32)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s && i; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s || i; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s + u; };",
+        &[
+            "utof emulation: will break if u is big",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s - u; };",
+        &[
+            "Implicit conversion from __uint to __int32",
+            "Opcode \"-|SUB_SI\" is not supported.",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s * u; };",
+        &[
+            "type mismatch for * (string and __uint)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s % u; };",
+        &[
+            "type mismatch for % (string and __uint)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s >= u; };",
+        &[
+            "type mismatch for >= (string and __uint)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s && u; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s || u; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s + l; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s - l; };",
+        &[
+            "Implicit conversion from __int64 to __int32",
+            "Opcode \"-|SUB_SI\" is not supported.",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s * l; };",
+        &[
+            "type mismatch for * (string and __int64)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s % l; };",
+        &[
+            "type mismatch for % (string and __int64)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s >= l; };",
+        &[
+            "type mismatch for >= (string and __int64)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s && l; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s || l; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s + ul; };",
+        &[
+            "Opcode \"=|CONV_U64F\" not valid for target. Consider the use of: #pragma target fte_6614",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s - ul; };",
+        &[
+            "Implicit conversion from __uint64 to __int32",
+            "Opcode \"-|SUB_SI\" is not supported.",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s * ul; };",
+        &[
+            "type mismatch for * (string and __uint64)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s % ul; };",
+        &[
+            "type mismatch for % (string and __uint64)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s >= ul; };",
+        &[
+            "type mismatch for >= (string and __uint64)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s && ul; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s || ul; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s + d; };",
+        &[
+            "Implicit conversion from __double to float",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s - d; };",
+        &[
+            "Implicit conversion from __double to __int32",
+            "Opcode \"-|SUB_SI\" is not supported.",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s * d; };",
+        &[
+            "type mismatch for * (string and __double)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s % d; };",
+        &[
+            "type mismatch for % (string and __double)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s >= d; };",
+        &[
+            "type mismatch for >= (string and __double)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s && d; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s || d; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s + v; };",
+        &[
+            "Implicit conversion from vector to float",
+            "Cannot cast from vector to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s * v; };",
+        &[
+            "type mismatch for * (string and vector)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s % v; };",
+        &[
+            "type mismatch for % (string and vector)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s >= v; };",
+        &[
+            "type mismatch for >= (string and vector)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s && v; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s || v; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s + p; };",
+        &[
+            "type mismatch for + (string and float*)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s * p; };",
+        &[
+            "type mismatch for * (string and float*)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s % p; };",
+        &[
+            "type mismatch for % (string and float*)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s >= p; };",
+        &[
+            "type mismatch for >= (string and float*)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s && p; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s || p; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s + pc; };",
+        &[
+            "type mismatch for + (string and __int8*)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s * pc; };",
+        &[
+            "type mismatch for * (string and __int8*)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s % pc; };",
+        &[
+            "type mismatch for % (string and __int8*)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s >= pc; };",
+        &[
+            "type mismatch for >= (string and __int8*)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s && pc; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s || pc; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s + e; };",
+        &[
+            "type mismatch for + (string and entity)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s * e; };",
+        &[
+            "type mismatch for * (string and entity)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s % e; };",
+        &[
+            "type mismatch for % (string and entity)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s >= e; };",
+        &[
+            "type mismatch for >= (string and entity)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s && e; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s || e; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s + s; };",
+        &[
+            "type mismatch for + (string and string)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (11, "void() g = { x = s - s; };", &[]),
+    (
+        11,
+        "void() g = { x = s * s; };",
+        &[
+            "type mismatch for * (string and string)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s % s; };",
+        &[
+            "type mismatch for % (string and string)",
+            "Cannot cast from string to __uint64",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s >= s; };",
+        &[
+            "type mismatch for >= (string and string)",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        11,
+        "void() g = { x = s && s; };",
+        &["Cannot cast from string to float"],
+    ),
+    (
+        11,
+        "void() g = { x = s || s; };",
+        &["Cannot cast from string to float"],
+    ),
+];
+
 /// C type words and opcode names written where a type stands: the pinned FTEQCC's diagnostics for each.
 const C_TYPE_WORDS: &[(usize, &str, &[&str])] = &[
-    (9, "", &["\"ADD_EF\" is not a type"]),
-    (10, "", &["\"ADD_EI\" is not a type"]),
-    (11, "", &["\"ADD_FI\" is not a type"]),
-    (12, "", &["\"ADD_FP\" is not a type"]),
-    (13, "", &["\"ADD_I\" is not a type"]),
-    (14, "", &["\"ADD_IF\" is not a type"]),
-    (15, "", &["\"ADD_IP\" is not a type"]),
-    (16, "", &["\"ADD_IS\" is not a type"]),
-    (17, "", &["\"ADD_PF\" is not a type"]),
-    (18, "", &["\"ADD_PI\" is not a type"]),
-    (19, "", &["\"ADD_PIW\" is not a type"]),
-    (20, "", &["\"ADD_PU\" is not a type"]),
-    (21, "", &["\"ADD_SF\" is not a type"]),
-    (22, "", &["\"ADD_SI\" is not a type"]),
-    (23, "", &["\"ADD_U\" is not a type"]),
-    (24, "", &["\"ADD_U64\" is not a type"]),
-    (25, "", &["\"ADD_UP\" is not a type"]),
-    (26, "", &["\"ADDSTORE_F\" is not a type"]),
-    (27, "", &["\"ADDSTORE_FI\" is not a type"]),
-    (28, "", &["\"ADDSTORE_I\" is not a type"]),
-    (29, "", &["\"ADDSTORE_IF\" is not a type"]),
-    (30, "", &["\"ADDSTORE_V\" is not a type"]),
-    (31, "", &["\"ADDSTOREP_F\" is not a type"]),
-    (32, "", &["\"ADDSTOREP_FI\" is not a type"]),
-    (33, "", &["\"ADDSTOREP_I\" is not a type"]),
-    (34, "", &["\"ADDSTOREP_IF\" is not a type"]),
-    (35, "", &["\"ADDSTOREP_V\" is not a type"]),
-    (36, "", &["\"AND_ANY\" is not a type"]),
-    (37, "", &["\"AND_FI\" is not a type"]),
-    (38, "", &["\"AND_I\" is not a type"]),
-    (39, "", &["\"AND_IF\" is not a type"]),
-    (40, "", &["\"BITAND_D\" is not a type"]),
-    (41, "", &["\"BITAND_FI\" is not a type"]),
-    (42, "", &["\"BITAND_I\" is not a type"]),
-    (43, "", &["\"BITAND_I64\" is not a type"]),
-    (44, "", &["\"BITAND_IF\" is not a type"]),
-    (45, "", &["\"BITAND_U\" is not a type"]),
-    (46, "", &["\"BITAND_U64\" is not a type"]),
-    (47, "", &["\"BITAND_V\" is not a type"]),
-    (48, "", &["\"BITCLR_D\" is not a type"]),
-    (49, "", &["\"BITCLR_F\" is not a type"]),
-    (50, "", &["\"BITCLR_I\" is not a type"]),
-    (51, "", &["\"BITCLR_I64\" is not a type"]),
-    (52, "", &["\"BITCLR_U\" is not a type"]),
-    (53, "", &["\"BITCLR_U64\" is not a type"]),
-    (54, "", &["\"BITCLR_V\" is not a type"]),
-    (55, "", &["\"BITCLRSTORE_F\" is not a type"]),
-    (56, "", &["\"BITCLRSTORE_I\" is not a type"]),
-    (57, "", &["\"BITCLRSTOREP_F\" is not a type"]),
-    (58, "", &["\"BITEXTEND_I\" is not a type"]),
-    (59, "", &["\"BITEXTEND_U\" is not a type"]),
-    (60, "", &["\"BITNOT_F\" is not a type"]),
-    (61, "", &["\"BITNOT_I\" is not a type"]),
-    (62, "", &["\"BITNOT_I64\" is not a type"]),
-    (63, "", &["\"BITNOT_U\" is not a type"]),
-    (64, "", &["\"BITNOT_U64\" is not a type"]),
-    (65, "", &["\"BITNOT_V\" is not a type"]),
-    (66, "", &["\"BITOR_D\" is not a type"]),
-    (67, "", &["\"BITOR_FI\" is not a type"]),
-    (68, "", &["\"BITOR_I\" is not a type"]),
-    (69, "", &["\"BITOR_I64\" is not a type"]),
-    (70, "", &["\"BITOR_IF\" is not a type"]),
-    (71, "", &["\"BITOR_U\" is not a type"]),
-    (72, "", &["\"BITOR_U64\" is not a type"]),
-    (73, "", &["\"BITOR_V\" is not a type"]),
-    (74, "", &["\"BITSETSTORE_F\" is not a type"]),
-    (75, "", &["\"BITSETSTORE_I\" is not a type"]),
-    (76, "", &["\"BITSETSTOREP_F\" is not a type"]),
-    (77, "", &["\"BITSETSTOREP_I\" is not a type"]),
-    (78, "", &["\"BITXOR_D\" is not a type"]),
-    (79, "", &["\"BITXOR_F\" is not a type"]),
-    (80, "", &["\"BITXOR_I\" is not a type"]),
-    (81, "", &["\"BITXOR_I64\" is not a type"]),
-    (82, "", &["\"BITXOR_U\" is not a type"]),
-    (83, "", &["\"BITXOR_U64\" is not a type"]),
-    (84, "", &["\"BITXOR_V\" is not a type"]),
-    (85, "", &["\"CONV_FTOI\" is not a type"]),
-    (86, "", &["\"CONV_FU\" is not a type"]),
-    (87, "", &["\"CONV_ITOF\" is not a type"]),
-    (88, "", &["\"CONV_UF\" is not a type"]),
-    (89, "", &["\"CROSS_V\" is not a type"]),
-    (90, "", &["\"DIV_FI\" is not a type"]),
-    (91, "", &["\"DIV_I\" is not a type"]),
-    (92, "", &["\"DIV_IF\" is not a type"]),
-    (93, "", &["\"DIV_U\" is not a type"]),
-    (94, "", &["\"DIV_VF\" is not a type"]),
-    (95, "", &["\"DIVSTORE_F\" is not a type"]),
-    (96, "", &["\"DIVSTORE_FI\" is not a type"]),
-    (97, "", &["\"DIVSTORE_I\" is not a type"]),
-    (98, "", &["\"DIVSTORE_IF\" is not a type"]),
-    (99, "", &["\"DIVSTOREP_F\" is not a type"]),
-    (100, "", &["\"DIVSTOREP_FI\" is not a type"]),
-    (101, "", &["\"DIVSTOREP_IF\" is not a type"]),
-    (102, "", &["\"EQ_FI\" is not a type"]),
-    (103, "", &["\"EQ_FLD\" is not a type"]),
-    (104, "", &["\"EQ_I\" is not a type"]),
-    (105, "", &["\"EQ_I64\" is not a type"]),
-    (106, "", &["\"EQ_IF\" is not a type"]),
-    (107, "", &["\"EQ_P\" is not a type"]),
-    (108, "", &["\"EQ_U\" is not a type"]),
-    (109, "", &["\"EQ_U64\" is not a type"]),
-    (110, "", &["\"GE_D\" is not a type"]),
-    (111, "", &["\"GE_FI\" is not a type"]),
-    (112, "", &["\"GE_I\" is not a type"]),
-    (113, "", &["\"GE_I64\" is not a type"]),
-    (114, "", &["\"GE_IF\" is not a type"]),
-    (115, "", &["\"GE_P\" is not a type"]),
-    (116, "", &["\"GE_U\" is not a type"]),
-    (117, "", &["\"GE_U64\" is not a type"]),
-    (118, "", &["\"GT_D\" is not a type"]),
-    (119, "", &["\"GT_FI\" is not a type"]),
-    (120, "", &["\"GT_I\" is not a type"]),
-    (121, "", &["\"GT_I64\" is not a type"]),
-    (122, "", &["\"GT_IF\" is not a type"]),
-    (123, "", &["\"GT_P\" is not a type"]),
-    (124, "", &["\"GT_U\" is not a type"]),
-    (125, "", &["\"GT_U64\" is not a type"]),
-    (126, "", &["\"IF_F\" is not a type"]),
-    (127, "", &["\"IF_S\" is not a type"]),
-    (128, "", &["\"IFNOT_F\" is not a type"]),
-    (129, "", &["\"IFNOT_S\" is not a type"]),
-    (130, "", &["\"LE_FI\" is not a type"]),
-    (131, "", &["\"LE_I\" is not a type"]),
-    (132, "", &["\"LE_IF\" is not a type"]),
-    (133, "", &["\"LE_P\" is not a type"]),
-    (134, "", &["\"LE_U\" is not a type"]),
-    (135, "", &["\"LOAD_I\" is not a type"]),
-    (136, "", &["\"LOAD_I64\" is not a type"]),
-    (137, "", &["\"LOAD_P\" is not a type"]),
-    (138, "", &["\"LOADA_STRUCT\" is not a type"]),
-    (139, "", &["\"LOADP_ENT\" is not a type"]),
-    (140, "", &["\"LOADP_F\" is not a type"]),
-    (141, "", &["\"LOADP_FLD\" is not a type"]),
-    (142, "", &["\"LOADP_FNC\" is not a type"]),
-    (143, "", &["\"LOADP_I\" is not a type"]),
-    (144, "", &["\"LOADP_I16\" is not a type"]),
-    (145, "", &["\"LOADP_I8\" is not a type"]),
-    (146, "", &["\"LOADP_S\" is not a type"]),
-    (147, "", &["\"LOADP_U16\" is not a type"]),
-    (148, "", &["\"LOADP_U8\" is not a type"]),
-    (149, "", &["\"LOADP_V\" is not a type"]),
-    (150, "", &["\"LSHIFT_DI\" is not a type"]),
-    (151, "", &["\"LSHIFT_F\" is not a type"]),
-    (152, "", &["\"LSHIFT_FI\" is not a type"]),
-    (153, "", &["\"LSHIFT_I\" is not a type"]),
-    (154, "", &["\"LSHIFT_IF\" is not a type"]),
-    (155, "", &["\"LSHIFT_U\" is not a type"]),
-    (156, "", &["\"LSHIFT_U64I\" is not a type"]),
-    (157, "", &["\"LT_FI\" is not a type"]),
-    (158, "", &["\"LT_I\" is not a type"]),
-    (159, "", &["\"LT_IF\" is not a type"]),
-    (160, "", &["\"LT_P\" is not a type"]),
-    (161, "", &["\"LT_U\" is not a type"]),
-    (162, "", &["\"MOD_F\" is not a type"]),
-    (163, "", &["\"MOD_FI\" is not a type"]),
-    (164, "", &["\"MOD_I\" is not a type"]),
-    (165, "", &["\"MOD_IF\" is not a type"]),
-    (166, "", &["\"MOD_U\" is not a type"]),
-    (167, "", &["\"MOD_U64\" is not a type"]),
-    (168, "", &["\"MOD_V\" is not a type"]),
-    (169, "", &["\"MUL_FI\" is not a type"]),
-    (170, "", &["\"MUL_I\" is not a type"]),
-    (171, "", &["\"MUL_IF\" is not a type"]),
-    (172, "", &["\"MUL_IV\" is not a type"]),
-    (173, "", &["\"MUL_U\" is not a type"]),
-    (174, "", &["\"MUL_U64\" is not a type"]),
-    (175, "", &["\"MUL_VI\" is not a type"]),
-    (176, "", &["\"MULSTORE_F\" is not a type"]),
-    (177, "", &["\"MULSTORE_FI\" is not a type"]),
-    (178, "", &["\"MULSTORE_IF\" is not a type"]),
-    (179, "", &["\"MULSTORE_VF\" is not a type"]),
-    (180, "", &["\"MULSTORE_VI\" is not a type"]),
-    (181, "", &["\"MULSTOREP_F\" is not a type"]),
-    (182, "", &["\"MULSTOREP_FI\" is not a type"]),
-    (183, "", &["\"MULSTOREP_IF\" is not a type"]),
-    (184, "", &["\"MULSTOREP_VF\" is not a type"]),
-    (185, "", &["\"MULSTOREP_VI\" is not a type"]),
-    (186, "", &["\"NE_FI\" is not a type"]),
-    (187, "", &["\"NE_FLD\" is not a type"]),
-    (188, "", &["\"NE_I\" is not a type"]),
-    (189, "", &["\"NE_I64\" is not a type"]),
-    (190, "", &["\"NE_IF\" is not a type"]),
-    (191, "", &["\"NE_P\" is not a type"]),
-    (192, "", &["\"NE_U\" is not a type"]),
-    (193, "", &["\"NE_U64\" is not a type"]),
-    (194, "", &["\"NOT_I\" is not a type"]),
-    (195, "", &["\"OR_ANY\" is not a type"]),
-    (196, "", &["\"OR_FI\" is not a type"]),
-    (197, "", &["\"OR_I\" is not a type"]),
-    (198, "", &["\"OR_IF\" is not a type"]),
-    (199, "", &["\"POW_F\" is not a type"]),
-    (200, "", &["\"POW_FI\" is not a type"]),
-    (201, "", &["\"POW_I\" is not a type"]),
-    (202, "", &["\"POW_IF\" is not a type"]),
-    (203, "", &["\"RSHIFT_DI\" is not a type"]),
-    (204, "", &["\"RSHIFT_F\" is not a type"]),
-    (205, "", &["\"RSHIFT_FI\" is not a type"]),
-    (206, "", &["\"RSHIFT_I\" is not a type"]),
-    (207, "", &["\"RSHIFT_IF\" is not a type"]),
-    (208, "", &["\"RSHIFT_U\" is not a type"]),
-    (209, "", &["\"SPACESHIP_F\" is not a type"]),
-    (210, "", &["\"SPACESHIP_S\" is not a type"]),
-    (211, "", &["\"STORE_FI\" is not a type"]),
-    (212, "", &["\"STORE_I\" is not a type"]),
-    (213, "", &["\"STORE_I64\" is not a type"]),
-    (214, "", &["\"STORE_IF\" is not a type"]),
-    (215, "", &["\"STORE_P\" is not a type"]),
-    (216, "", &["\"STOREP_P\" is not a type"]),
-    (217, "", &["\"SUB_EF\" is not a type"]),
-    (218, "", &["\"SUB_EI\" is not a type"]),
-    (219, "", &["\"SUB_FI\" is not a type"]),
-    (220, "", &["\"SUB_I\" is not a type"]),
-    (221, "", &["\"SUB_IF\" is not a type"]),
-    (222, "", &["\"SUB_PF\" is not a type"]),
-    (223, "", &["\"SUB_PI\" is not a type"]),
-    (224, "", &["\"SUB_PP\" is not a type"]),
-    (225, "", &["\"SUB_PU\" is not a type"]),
-    (226, "", &["\"SUB_U\" is not a type"]),
-    (227, "", &["\"SUB_U64\" is not a type"]),
-    (228, "", &["\"SUBSTORE_F\" is not a type"]),
-    (229, "", &["\"SUBSTORE_FI\" is not a type"]),
-    (230, "", &["\"SUBSTORE_I\" is not a type"]),
-    (231, "", &["\"SUBSTORE_IF\" is not a type"]),
-    (232, "", &["\"SUBSTORE_V\" is not a type"]),
-    (233, "", &["\"SUBSTOREP_F\" is not a type"]),
-    (234, "", &["\"SUBSTOREP_FI\" is not a type"]),
-    (235, "", &["\"SUBSTOREP_I\" is not a type"]),
-    (236, "", &["\"SUBSTOREP_IF\" is not a type"]),
-    (237, "", &["\"SUBSTOREP_V\" is not a type"]),
+    (12, "", &["\"ADD_EF\" is not a type"]),
+    (13, "", &["\"ADD_EI\" is not a type"]),
+    (14, "", &["\"ADD_FI\" is not a type"]),
+    (15, "", &["\"ADD_FP\" is not a type"]),
+    (16, "", &["\"ADD_I\" is not a type"]),
+    (17, "", &["\"ADD_IF\" is not a type"]),
+    (18, "", &["\"ADD_IP\" is not a type"]),
+    (19, "", &["\"ADD_IS\" is not a type"]),
+    (20, "", &["\"ADD_PF\" is not a type"]),
+    (21, "", &["\"ADD_PI\" is not a type"]),
+    (22, "", &["\"ADD_PIW\" is not a type"]),
+    (23, "", &["\"ADD_PU\" is not a type"]),
+    (24, "", &["\"ADD_SF\" is not a type"]),
+    (25, "", &["\"ADD_SI\" is not a type"]),
+    (26, "", &["\"ADD_U\" is not a type"]),
+    (27, "", &["\"ADD_U64\" is not a type"]),
+    (28, "", &["\"ADD_UP\" is not a type"]),
+    (29, "", &["\"ADDSTORE_F\" is not a type"]),
+    (30, "", &["\"ADDSTORE_FI\" is not a type"]),
+    (31, "", &["\"ADDSTORE_I\" is not a type"]),
+    (32, "", &["\"ADDSTORE_IF\" is not a type"]),
+    (33, "", &["\"ADDSTORE_V\" is not a type"]),
+    (34, "", &["\"ADDSTOREP_F\" is not a type"]),
+    (35, "", &["\"ADDSTOREP_FI\" is not a type"]),
+    (36, "", &["\"ADDSTOREP_I\" is not a type"]),
+    (37, "", &["\"ADDSTOREP_IF\" is not a type"]),
+    (38, "", &["\"ADDSTOREP_V\" is not a type"]),
+    (39, "", &["\"AND_ANY\" is not a type"]),
+    (40, "", &["\"AND_FI\" is not a type"]),
+    (41, "", &["\"AND_I\" is not a type"]),
+    (42, "", &["\"AND_IF\" is not a type"]),
+    (43, "", &["\"BITAND_D\" is not a type"]),
+    (44, "", &["\"BITAND_FI\" is not a type"]),
+    (45, "", &["\"BITAND_I\" is not a type"]),
+    (46, "", &["\"BITAND_I64\" is not a type"]),
+    (47, "", &["\"BITAND_IF\" is not a type"]),
+    (48, "", &["\"BITAND_U\" is not a type"]),
+    (49, "", &["\"BITAND_U64\" is not a type"]),
+    (50, "", &["\"BITAND_V\" is not a type"]),
+    (51, "", &["\"BITCLR_D\" is not a type"]),
+    (52, "", &["\"BITCLR_F\" is not a type"]),
+    (53, "", &["\"BITCLR_I\" is not a type"]),
+    (54, "", &["\"BITCLR_I64\" is not a type"]),
+    (55, "", &["\"BITCLR_U\" is not a type"]),
+    (56, "", &["\"BITCLR_U64\" is not a type"]),
+    (57, "", &["\"BITCLR_V\" is not a type"]),
+    (58, "", &["\"BITCLRSTORE_F\" is not a type"]),
+    (59, "", &["\"BITCLRSTORE_I\" is not a type"]),
+    (60, "", &["\"BITCLRSTOREP_F\" is not a type"]),
+    (61, "", &["\"BITEXTEND_I\" is not a type"]),
+    (62, "", &["\"BITEXTEND_U\" is not a type"]),
+    (63, "", &["\"BITNOT_F\" is not a type"]),
+    (64, "", &["\"BITNOT_I\" is not a type"]),
+    (65, "", &["\"BITNOT_I64\" is not a type"]),
+    (66, "", &["\"BITNOT_U\" is not a type"]),
+    (67, "", &["\"BITNOT_U64\" is not a type"]),
+    (68, "", &["\"BITNOT_V\" is not a type"]),
+    (69, "", &["\"BITOR_D\" is not a type"]),
+    (70, "", &["\"BITOR_FI\" is not a type"]),
+    (71, "", &["\"BITOR_I\" is not a type"]),
+    (72, "", &["\"BITOR_I64\" is not a type"]),
+    (73, "", &["\"BITOR_IF\" is not a type"]),
+    (74, "", &["\"BITOR_U\" is not a type"]),
+    (75, "", &["\"BITOR_U64\" is not a type"]),
+    (76, "", &["\"BITOR_V\" is not a type"]),
+    (77, "", &["\"BITSETSTORE_F\" is not a type"]),
+    (78, "", &["\"BITSETSTORE_I\" is not a type"]),
+    (79, "", &["\"BITSETSTOREP_F\" is not a type"]),
+    (80, "", &["\"BITSETSTOREP_I\" is not a type"]),
+    (81, "", &["\"BITXOR_D\" is not a type"]),
+    (82, "", &["\"BITXOR_F\" is not a type"]),
+    (83, "", &["\"BITXOR_I\" is not a type"]),
+    (84, "", &["\"BITXOR_I64\" is not a type"]),
+    (85, "", &["\"BITXOR_U\" is not a type"]),
+    (86, "", &["\"BITXOR_U64\" is not a type"]),
+    (87, "", &["\"BITXOR_V\" is not a type"]),
+    (88, "", &["\"CONV_FTOI\" is not a type"]),
+    (89, "", &["\"CONV_FU\" is not a type"]),
+    (90, "", &["\"CONV_ITOF\" is not a type"]),
+    (91, "", &["\"CONV_UF\" is not a type"]),
+    (92, "", &["\"CROSS_V\" is not a type"]),
+    (93, "", &["\"DIV_FI\" is not a type"]),
+    (94, "", &["\"DIV_I\" is not a type"]),
+    (95, "", &["\"DIV_IF\" is not a type"]),
+    (96, "", &["\"DIV_U\" is not a type"]),
+    (97, "", &["\"DIV_VF\" is not a type"]),
+    (98, "", &["\"DIVSTORE_F\" is not a type"]),
+    (99, "", &["\"DIVSTORE_FI\" is not a type"]),
+    (100, "", &["\"DIVSTORE_I\" is not a type"]),
+    (101, "", &["\"DIVSTORE_IF\" is not a type"]),
+    (102, "", &["\"DIVSTOREP_F\" is not a type"]),
+    (103, "", &["\"DIVSTOREP_FI\" is not a type"]),
+    (104, "", &["\"DIVSTOREP_IF\" is not a type"]),
+    (105, "", &["\"EQ_FI\" is not a type"]),
+    (106, "", &["\"EQ_FLD\" is not a type"]),
+    (107, "", &["\"EQ_I\" is not a type"]),
+    (108, "", &["\"EQ_I64\" is not a type"]),
+    (109, "", &["\"EQ_IF\" is not a type"]),
+    (110, "", &["\"EQ_P\" is not a type"]),
+    (111, "", &["\"EQ_U\" is not a type"]),
+    (112, "", &["\"EQ_U64\" is not a type"]),
+    (113, "", &["\"GE_D\" is not a type"]),
+    (114, "", &["\"GE_FI\" is not a type"]),
+    (115, "", &["\"GE_I\" is not a type"]),
+    (116, "", &["\"GE_I64\" is not a type"]),
+    (117, "", &["\"GE_IF\" is not a type"]),
+    (118, "", &["\"GE_P\" is not a type"]),
+    (119, "", &["\"GE_U\" is not a type"]),
+    (120, "", &["\"GE_U64\" is not a type"]),
+    (121, "", &["\"GT_D\" is not a type"]),
+    (122, "", &["\"GT_FI\" is not a type"]),
+    (123, "", &["\"GT_I\" is not a type"]),
+    (124, "", &["\"GT_I64\" is not a type"]),
+    (125, "", &["\"GT_IF\" is not a type"]),
+    (126, "", &["\"GT_P\" is not a type"]),
+    (127, "", &["\"GT_U\" is not a type"]),
+    (128, "", &["\"GT_U64\" is not a type"]),
+    (129, "", &["\"IF_F\" is not a type"]),
+    (130, "", &["\"IF_S\" is not a type"]),
+    (131, "", &["\"IFNOT_F\" is not a type"]),
+    (132, "", &["\"IFNOT_S\" is not a type"]),
+    (133, "", &["\"LE_FI\" is not a type"]),
+    (134, "", &["\"LE_I\" is not a type"]),
+    (135, "", &["\"LE_IF\" is not a type"]),
+    (136, "", &["\"LE_P\" is not a type"]),
+    (137, "", &["\"LE_U\" is not a type"]),
+    (138, "", &["\"LOAD_I\" is not a type"]),
+    (139, "", &["\"LOAD_I64\" is not a type"]),
+    (140, "", &["\"LOAD_P\" is not a type"]),
+    (141, "", &["\"LOADA_STRUCT\" is not a type"]),
+    (142, "", &["\"LOADP_ENT\" is not a type"]),
+    (143, "", &["\"LOADP_F\" is not a type"]),
+    (144, "", &["\"LOADP_FLD\" is not a type"]),
+    (145, "", &["\"LOADP_FNC\" is not a type"]),
+    (146, "", &["\"LOADP_I\" is not a type"]),
+    (147, "", &["\"LOADP_I16\" is not a type"]),
+    (148, "", &["\"LOADP_I8\" is not a type"]),
+    (149, "", &["\"LOADP_S\" is not a type"]),
+    (150, "", &["\"LOADP_U16\" is not a type"]),
+    (151, "", &["\"LOADP_U8\" is not a type"]),
+    (152, "", &["\"LOADP_V\" is not a type"]),
+    (153, "", &["\"LSHIFT_DI\" is not a type"]),
+    (154, "", &["\"LSHIFT_F\" is not a type"]),
+    (155, "", &["\"LSHIFT_FI\" is not a type"]),
+    (156, "", &["\"LSHIFT_I\" is not a type"]),
+    (157, "", &["\"LSHIFT_IF\" is not a type"]),
+    (158, "", &["\"LSHIFT_U\" is not a type"]),
+    (159, "", &["\"LSHIFT_U64I\" is not a type"]),
+    (160, "", &["\"LT_FI\" is not a type"]),
+    (161, "", &["\"LT_I\" is not a type"]),
+    (162, "", &["\"LT_IF\" is not a type"]),
+    (163, "", &["\"LT_P\" is not a type"]),
+    (164, "", &["\"LT_U\" is not a type"]),
+    (165, "", &["\"MOD_F\" is not a type"]),
+    (166, "", &["\"MOD_FI\" is not a type"]),
+    (167, "", &["\"MOD_I\" is not a type"]),
+    (168, "", &["\"MOD_IF\" is not a type"]),
+    (169, "", &["\"MOD_U\" is not a type"]),
+    (170, "", &["\"MOD_U64\" is not a type"]),
+    (171, "", &["\"MOD_V\" is not a type"]),
+    (172, "", &["\"MUL_FI\" is not a type"]),
+    (173, "", &["\"MUL_I\" is not a type"]),
+    (174, "", &["\"MUL_IF\" is not a type"]),
+    (175, "", &["\"MUL_IV\" is not a type"]),
+    (176, "", &["\"MUL_U\" is not a type"]),
+    (177, "", &["\"MUL_U64\" is not a type"]),
+    (178, "", &["\"MUL_VI\" is not a type"]),
+    (179, "", &["\"MULSTORE_F\" is not a type"]),
+    (180, "", &["\"MULSTORE_FI\" is not a type"]),
+    (181, "", &["\"MULSTORE_IF\" is not a type"]),
+    (182, "", &["\"MULSTORE_VF\" is not a type"]),
+    (183, "", &["\"MULSTORE_VI\" is not a type"]),
+    (184, "", &["\"MULSTOREP_F\" is not a type"]),
+    (185, "", &["\"MULSTOREP_FI\" is not a type"]),
+    (186, "", &["\"MULSTOREP_IF\" is not a type"]),
+    (187, "", &["\"MULSTOREP_VF\" is not a type"]),
+    (188, "", &["\"MULSTOREP_VI\" is not a type"]),
+    (189, "", &["\"NE_FI\" is not a type"]),
+    (190, "", &["\"NE_FLD\" is not a type"]),
+    (191, "", &["\"NE_I\" is not a type"]),
+    (192, "", &["\"NE_I64\" is not a type"]),
+    (193, "", &["\"NE_IF\" is not a type"]),
+    (194, "", &["\"NE_P\" is not a type"]),
+    (195, "", &["\"NE_U\" is not a type"]),
+    (196, "", &["\"NE_U64\" is not a type"]),
+    (197, "", &["\"NOT_I\" is not a type"]),
+    (198, "", &["\"OR_ANY\" is not a type"]),
+    (199, "", &["\"OR_FI\" is not a type"]),
+    (200, "", &["\"OR_I\" is not a type"]),
+    (201, "", &["\"OR_IF\" is not a type"]),
+    (202, "", &["\"POW_F\" is not a type"]),
+    (203, "", &["\"POW_FI\" is not a type"]),
+    (204, "", &["\"POW_I\" is not a type"]),
+    (205, "", &["\"POW_IF\" is not a type"]),
+    (206, "", &["\"RSHIFT_DI\" is not a type"]),
+    (207, "", &["\"RSHIFT_F\" is not a type"]),
+    (208, "", &["\"RSHIFT_FI\" is not a type"]),
+    (209, "", &["\"RSHIFT_I\" is not a type"]),
+    (210, "", &["\"RSHIFT_IF\" is not a type"]),
+    (211, "", &["\"RSHIFT_U\" is not a type"]),
+    (212, "", &["\"SPACESHIP_F\" is not a type"]),
+    (213, "", &["\"SPACESHIP_S\" is not a type"]),
+    (214, "", &["\"STORE_FI\" is not a type"]),
+    (215, "", &["\"STORE_I\" is not a type"]),
+    (216, "", &["\"STORE_I64\" is not a type"]),
+    (217, "", &["\"STORE_IF\" is not a type"]),
+    (218, "", &["\"STORE_P\" is not a type"]),
+    (219, "", &["\"STOREP_P\" is not a type"]),
+    (220, "", &["\"SUB_EF\" is not a type"]),
+    (221, "", &["\"SUB_EI\" is not a type"]),
+    (222, "", &["\"SUB_FI\" is not a type"]),
+    (223, "", &["\"SUB_I\" is not a type"]),
+    (224, "", &["\"SUB_IF\" is not a type"]),
+    (225, "", &["\"SUB_PF\" is not a type"]),
+    (226, "", &["\"SUB_PI\" is not a type"]),
+    (227, "", &["\"SUB_PP\" is not a type"]),
+    (228, "", &["\"SUB_PU\" is not a type"]),
+    (229, "", &["\"SUB_U\" is not a type"]),
+    (230, "", &["\"SUB_U64\" is not a type"]),
+    (231, "", &["\"SUBSTORE_F\" is not a type"]),
+    (232, "", &["\"SUBSTORE_FI\" is not a type"]),
+    (233, "", &["\"SUBSTORE_I\" is not a type"]),
+    (234, "", &["\"SUBSTORE_IF\" is not a type"]),
+    (235, "", &["\"SUBSTORE_V\" is not a type"]),
+    (236, "", &["\"SUBSTOREP_F\" is not a type"]),
+    (237, "", &["\"SUBSTOREP_FI\" is not a type"]),
+    (238, "", &["\"SUBSTOREP_I\" is not a type"]),
+    (239, "", &["\"SUBSTOREP_IF\" is not a type"]),
+    (240, "", &["\"SUBSTOREP_V\" is not a type"]),
 ];
 
 /// Opcodes the standard target emulates, at global scope and in a body: the pinned FTEQCC's diagnostics for each.
 const EMULATIONS: &[(usize, &str, &[&str])] = &[
     (
-        238,
+        241,
         "",
         &[
             "Unable to generate statements at global scope (IFNOT).",
@@ -9853,7 +34843,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        239,
+        242,
         "",
         &[
             "Unable to generate statements at global scope (IFNOT).",
@@ -9865,7 +34855,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        240,
+        243,
         "",
         &[
             "itof emulation: denormals are unsafe i",
@@ -9874,7 +34864,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        241,
+        244,
         "",
         &[
             "itof emulation: denormals are unsafe i",
@@ -9884,7 +34874,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        242,
+        245,
         "",
         &[
             "Unable to generate statements at global scope (MUL_F).",
@@ -9893,10 +34883,10 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
             "initializer for 'k' is not constant",
         ],
     ),
-    (243, "", &["itof emulation: denormals are unsafe i"]),
-    (244, "", &["ftoi emulation: denormals are unsafe"]),
+    (246, "", &["itof emulation: denormals are unsafe i"]),
+    (247, "", &["ftoi emulation: denormals are unsafe"]),
     (
-        245,
+        248,
         "",
         &[
             "OP_ADD_SI: string+int may be unsafe",
@@ -9905,7 +34895,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        246,
+        249,
         "",
         &[
             "OP_ADD_SI: string+int may be unsafe",
@@ -9914,7 +34904,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        247,
+        250,
         "",
         &[
             "OP_ADD_SF: string+float may be unsafe",
@@ -9924,9 +34914,9 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
             "initializer for 't' is not constant",
         ],
     ),
-    (248, "", &[]),
+    (251, "", &[]),
     (
-        249,
+        252,
         "",
         &[
             "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
@@ -9935,7 +34925,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        250,
+        253,
         "",
         &[
             "Opcode \"=|CONV_DI64\" not valid for target. Consider the use of: #pragma target fte",
@@ -9944,7 +34934,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        251,
+        254,
         "",
         &[
             "Opcode \"~|BITNOT_D\" is not supported.",
@@ -9953,13 +34943,13 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
             "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
         ],
     ),
-    (252, "", &[]),
-    (253, "", &[]),
-    (254, "", &[]),
     (255, "", &[]),
-    (256, "", &["ftoi emulation: denormals are unsafe"]),
+    (256, "", &[]),
+    (257, "", &[]),
+    (258, "", &[]),
+    (259, "", &["ftoi emulation: denormals are unsafe"]),
     (
-        257,
+        260,
         "",
         &[
             "MulInt function not defined: cannot emulate int*int",
@@ -9967,7 +34957,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        258,
+        261,
         "",
         &[
             "itof emulation: denormals are unsafe u",
@@ -9978,7 +34968,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        259,
+        262,
         "",
         &[
             "Opcode \"=|CONV_UI64\" not valid for target. Consider the use of: #pragma target fte",
@@ -9987,7 +34977,7 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
     (
-        260,
+        263,
         "",
         &[
             "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
