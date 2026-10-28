@@ -45,6 +45,15 @@ impl core::fmt::Display for WriteError {
 
 impl core::error::Error for WriteError {}
 
+/// LNO-6.3: whether a line table of `len` entries can be recorded, at most
+/// [`LNO_MAX_STATEMENTS`]: the writer refuses a longer one.
+pub(crate) const fn statement_count_fits(len: usize) -> Result<(), WriteError> {
+    if len > LNO_MAX_STATEMENTS {
+        return Err(WriteError::TooManyStatements(len));
+    }
+    Ok(())
+}
+
 impl LnoFile {
     /// Writes this `.lno` back to bytes (LNO-6).
     ///
@@ -58,10 +67,7 @@ impl LnoFile {
     /// table's, when a column table is given for an empty line table, or when the line table
     /// has more than [`LNO_MAX_STATEMENTS`] entries. Nothing is written in that case.
     pub fn write(&self) -> Result<Vec<u8>, WriteError> {
-        // LNO-6.3: the writer refuses a line table it could not record.
-        if self.lines.len() > LNO_MAX_STATEMENTS {
-            return Err(WriteError::TooManyStatements(self.lines.len()));
-        }
+        statement_count_fits(self.lines.len())?;
         if let Some(columns) = &self.columns {
             // LNO-6.3: a column table whose length differs from the line table's.
             if columns.len() != self.lines.len() {
@@ -104,7 +110,7 @@ impl LnoFile {
     /// The exact number of bytes [`LnoFile::write`] will produce for a file it accepts: the
     /// header, the line table, the column table if any and the trailing bytes. Saturates
     /// rather than overflowing; a file that would overflow is refused by `write` first.
-    fn size_hint(&self) -> usize {
+    pub(crate) fn size_hint(&self) -> usize {
         let per_statement = if self.columns.is_some() { 8 } else { 4 };
         self.lines
             .len()

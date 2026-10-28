@@ -39,15 +39,8 @@ compiler, CI only).
 
 ## Mutation
 
-Four mutants in `LnoFile::write` have no distinguishing input observable through the public
-API, so they cannot be killed by a test. They are recorded in `ratchets.toml` under
-`[crates.qc-lno].equivalent_mutants` with these reasons, and the mutation bar is waived by the
-matching `[crates.qc-lno].exceptions` entry (the four hold the measured score at 89%, one point
-under the 90% bar; every other mutant is caught):
-
-- The LNO-6.3 guard `self.lines.len() > LNO_MAX_STATEMENTS` (`>` to `==` or `>=`): the only
-  input that tells the forms apart is a line table of exactly `LNO_MAX_STATEMENTS` (`i32::MAX`,
-  2_147_483_647) entries, over 8 GiB of `i32`, which cannot be allocated in a test.
-- `size_hint` (to `0` or `1`): it only feeds `Vec::with_capacity` to pre-size the output
-  buffer; the bytes written are identical whatever the capacity (LNO-6.1, LNO-6.2), so a wrong
-  hint is not observable through the public API.
+Every mutant is caught. The statement limit of LNO-6.3 is checked by `statement_count_fits` on
+a length alone, so a test reaches `LNO_MAX_STATEMENTS` (`i32::MAX`) and one more without
+allocating the line table, and a test holds `size_hint` to the length `write` produces. Until a
+readiness review measures the crate again, `ratchets.toml` keeps the P1-R0 minimums, with the
+exception and the four equivalent entries that review recorded for these mutants.

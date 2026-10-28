@@ -50,7 +50,10 @@ equivalent_mutants = { "xtask/src/main.rs: replace main -> ExitCode with Default
 # Recording them as equivalent leaves the measured mutation at 34 of 38 (89%),
 # one point under the 90% bar only because of these unkillable mutants, so the
 # mutation bar is waived by an exception with the same reason (also in
-# crates/qc-lno/README.md). The P1-R0 review set the minimums below.
+# crates/qc-lno/README.md). The P1-R0 review set the minimums below. Since #84
+# the four are killed by tests of the statement limit and the size hint, and
+# every mutant is caught; the exception and these entries stay until a
+# readiness review measures the crate again and sets its minimums.
 [crates.qc-lno]
 readiness = "P1-R0"
 lines = 98
