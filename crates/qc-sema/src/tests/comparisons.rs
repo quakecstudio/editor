@@ -95,3 +95,30 @@ fn type_mismatch_needs_different_basic_types() {
                   void() g = { local float a; local entity e; local entity f; a = (e == f); };\n";
     assert_eq!(diags(source), []);
 }
+
+// spec FTEF-23.9: an operand converted to the opcode's type is of that type, so a null constant
+// compared with a string, entity or field is no type mismatch; FreeCS compares its strings and
+// entities with `__NULL__` so, over a thousand times
+// spec FTEF-28.2: a mismatch the converted types still show warns
+#[test]
+fn null_constants_compare_with_any_type() {
+    let found = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nstring s; entity e; float x; .float fl;\nvoid() f = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    for quiet in [
+        "if (s == __NULL__) x = 1;",
+        "if (s != __NULL__) x = 1;",
+        "if (e == __NULL__) x = 1;",
+        "if (e == 0i) x = 1;",
+        "if (s == 0) x = 1;",
+        "if (fl == 0) x = 1;",
+        "if (x == 1i) x = 1;",
+    ] {
+        assert!(found(quiet).is_empty(), "{quiet}: {:?}", found(quiet));
+    }
+}

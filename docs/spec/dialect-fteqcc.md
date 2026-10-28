@@ -4029,6 +4029,13 @@ opcodes.rs`, the rows of `pr_opcodes[]` in order) and picks as FTEQCC picks
   of a number stored into one. So on the id target `__bint c = 1.5;` folds with no overflow
   warning, `c = f;` and `c = s;` are two "ftoi emulation" warnings, `c = (_Bool)f;` three, and a
   local's initialiser `_Bool c = f;` one.
+- **FTEF-23.9** An operand converted to the chosen row's type is the cast's result
+  (`QCC_EvaluateCast(lhsd, (*op->type_a), true)`), of the row's type, so the opcode's own checks
+  read that type: a null constant, which converts to any type (FTEF-23.3), compared with a
+  string, an entity or a field is no "'==' type mismatch" (FTEF-28.2): `s == __NULL__`, `e ==
+  0i` and `fld == 0` warn of nothing. An operand of the row's basic type keeps its own type, a
+  class's among them. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefExpression`, `QCC_EvaluateCast`.
 
 ## FTEF-24 Member access as FTEQCC types it
 

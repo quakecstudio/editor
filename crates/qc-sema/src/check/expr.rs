@@ -347,15 +347,21 @@ impl<'e> Checker<'e> {
                 Constness::Opaque
             }
         };
-        // A converted operand is a temporary the conversion made.
-        let converted = |value: &Value, operand: Operand, row: OpType| Value {
-            constness: constness(value, operand, row),
-            sym: if row.etype() == operand.etype || row == OpType::Variant {
-                value.sym
-            } else {
-                Sym::Temp
-            },
-            ..value.clone()
+        // A converted operand is what `QCC_EvaluateCast(lhsd, *op->type_a, true)` gives, of the
+        // row's type, a temporary the conversion made (FTEF-23.9); a null constant is cast so
+        // too, and the opcode's warnings then read the row's type.
+        let converted = |value: &Value, operand: Operand, row: OpType| {
+            let kept = row.etype() == operand.etype || row == OpType::Variant;
+            Value {
+                constness: constness(value, operand, row),
+                sym: if kept { value.sym } else { Sym::Temp },
+                ty: if kept {
+                    value.ty.clone()
+                } else {
+                    row.value_type()
+                },
+                ..value.clone()
+            }
         };
         // A constant whose conversion folded is the constant it folded to (FTEF-26.3).
         let [folded_lhs, folded_rhs] = folded;
