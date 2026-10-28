@@ -111,6 +111,9 @@ pub(crate) trait Env {
     /// FTEF-24.6), as the body sees it at offset `at` (FTEF-17.16); `None` when `ty` is no
     /// class or none has the member.
     fn class_member(&self, ty: &Type, name: &str, at: usize) -> Option<DefId>;
+    /// The name of the class `ty` names, its typedefs followed (`QCC_TypeForName`); `None`
+    /// when it names none.
+    fn class_name(&self, ty: &Type) -> Option<String>;
     /// Whether `a` and `b` are the same type by FTEQCC's `typecmp_lax`, or one is a truth value of
     /// the other (FTEF-28.2).
     fn lax_same(&self, a: &Type, b: &Type) -> bool;

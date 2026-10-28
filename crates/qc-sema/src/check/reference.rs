@@ -49,6 +49,7 @@ impl Checker<'_> {
         {
             let word = self.read(
                 Value {
+                    ty: word_type(&value.ty),
                     bitfield: None,
                     ..value
                 },
@@ -319,9 +320,9 @@ impl Checker<'_> {
             let pointer = Value::of(Type::Pointer(value.ty.clone().into()));
             let zero = Value::constant(Constant::uint(0));
             let loaded = self.emit(op, &pointer, index.unwrap_or(&zero), span)?;
-            // The narrow loads give an `int` or a `uint` (`type_c`); a bitfield keeps its type.
+            // The narrow loads give an `int` or a `uint` (`type_c`), a bitfield its own type.
             let ty = match (value.bitfield, narrow.1) {
-                (Some(_), _) => value.ty,
+                (Some(_), _) => word_type(&value.ty),
                 (None, true) => Type::Named("__int32".into()),
                 (None, false) => Type::Named("__uint32".into()),
             };
@@ -829,6 +830,16 @@ fn eval_int(c: Constant) -> Option<i32> {
         ConstType::Integer | ConstType::Uint => Some(c.i()),
         ConstType::Int64 | ConstType::Uint64 => Some(low_word(c.i64())),
         ConstType::Vector | ConstType::String => None,
+    }
+}
+
+/// The type a bitfield's word is read as: an 8- or 16-bit integer's `parentclass`, `int` or
+/// `uint` (FTEF-2.12), else the bitfield's own type.
+pub(super) fn word_type(ty: &Type) -> Type {
+    match ty.fteqcc_scalar() {
+        Some(CScalar::Int8 | CScalar::Int16) => Type::Named("__int32".into()),
+        Some(CScalar::Uint8 | CScalar::Uint16) => Type::Named("__uint32".into()),
+        _ => ty.clone(),
     }
 }
 

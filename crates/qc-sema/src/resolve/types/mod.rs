@@ -447,7 +447,7 @@ impl Resolver<'_> {
                 // FTEF-24.7: a named union is made `ev_struct` (`QCC_PR_NewType(tname, ev_struct,
                 // ...)`) and prints as a struct; one with no tag is `<struct>` or `<union>`.
                 if let Some(bare) = self.struct_type_name(name) {
-                    if bare == "{}" {
+                    if bare.starts_with("{}") {
                         let kind = if name.starts_with("union ") {
                             "union"
                         } else {
@@ -570,6 +570,12 @@ impl Resolver<'_> {
                         .all(|(p, q)| self.typecmp(p, q))
             }
             (Type::Unknown, _) | (_, Type::Unknown) => true,
+            // `typecmp` compares two structs or unions by their size and their name, which is
+            // `<struct>` or `<union>` for every one with no tag (FTEF-6.12).
+            _ if self.is_struct_type(&a) && self.is_struct_type(&b) => {
+                self.type_name(&a) == self.type_name(&b)
+                    && self.layout(&a).map(|l| l.words) == self.layout(&b).map(|l| l.words)
+            }
             _ => match (a.fteqcc_kind(), b.fteqcc_kind()) {
                 (Kind::Opaque, Kind::Opaque) => a.fteqcc_name() == b.fteqcc_name(),
                 (x, y) => x == y,

@@ -464,6 +464,17 @@ inheritance, bitfields and nested members.
   extension at a constant index is (FTEF-2.12): `x_s = carr[i];`, `x_s = *pc;` and `x_s =
   ps->c;` of `__int8`s warn "Implicit cast from __int32 to string", of `__uint16`s "from
   __uint32"; a bitfield read so keeps its type.
+- **FTEF-6.23** An 8- or 16-bit integer member of a struct is `ev_bitfld` (FTEF-2.12), read and
+  stored as a bitfield of its width at bit 0 of the word that holds it (the member's `bitofs` is
+  0): on the id target `st.h = 1;` of a `__uint16 h` is the `OP_BITAND_I` and `OP_BITOR_I` of
+  `QCC_PR_Statement_BitCopy`, with no shift, a read is `OP_BITEXTEND_U` by `(0<<8)|16`, and its
+  address and a pointer's index to it count its bytes (FTEF-6.19).
+- **FTEF-6.22** A struct or union with no tag (`struct { ... } x;`, `typedef struct { ... } T;`)
+  is a type of its own, with its members and its layout, named `<struct>` or `<union>`: `t.zz` of
+  one is "zz is not a member of <struct>", `sizeof(T)` of `typedef struct { float a; vector v; }
+  T;` is 16, and since `typecmp` compares a struct by its size and name, two of them with the
+  same size cast to each other (`A a; B b; a = b;` for two `typedef struct { float a; }`), and of
+  different sizes are "Cannot cast from struct <struct> to struct <struct>".
 - **FTEF-6.14** A struct or union read through a pointer is read word by word
   (`QCC_LoadFromPointer`, `case ev_struct: case ev_union:`): `OP_LOADP_V` for each three of its
   words and `OP_LOADP_I` for each word after them, each a `QCC_PR_SimpleStatement`, which
@@ -3808,6 +3819,11 @@ statement's checks (FTEF-23.6).
   union with no tag is `struct <struct>` or `union <union>` (`QCC_PR_NewType(structtype==ev_union?
   "<union>":"<struct>", structtype, false)`); and a field of a struct or union prints its own name,
   `.NAME`.
+- **FTEF-24.13** A typedef of a class is the class (`QCC_TypeForName` gives the typedef's real
+  type), so a value of it has the class's members, and a member it lacks is "Unknown field
+  \"NAME\" in class \"CLASS\"", CLASS the class's own name: `class C { float f; }; typedef C T;
+  T t;` reads `t.f`, and `t.zz` names `C`. A class a typedef writes, `typedef class C2 { float
+  f; } T;`, is declared with it.
 ## FTEF-25 The opcodes the target has
 
 **Source:** `qcc_pr_comp.c`, `QCC_OPCodeValidForTarget`, `QCC_OPCodeSetTarget` and

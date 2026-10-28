@@ -300,6 +300,16 @@ impl IntConst {
     }
 }
 
+/// The tag of a struct or union the `StructType` node `node` writes with none, a type of its
+/// own (FTEF-6.12): `{}` and where its keyword stands, which no program can name.
+pub(super) fn anonymous_tag(node: &SyntaxNode) -> String {
+    let at = node
+        .child_tokens()
+        .next()
+        .map_or(node.span().start, |t| t.span().start);
+    format!("{{}}{at}")
+}
+
 /// The [`RawStruct`] of a `StructType` node.
 pub(super) fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
     let keyword = node.child_tokens().next()?;
@@ -602,7 +612,7 @@ pub(super) fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDec
             let tag = st
                 .child_tokens()
                 .find(|t| t.kind() == SyntaxKind::Name)
-                .map_or_else(|| "{}".to_owned(), |t| t.text_lossless());
+                .map_or_else(|| anonymous_tag(&st), |t| t.text_lossless());
             Type::Named(std::rc::Rc::from(format!("{keyword} {tag}").as_str()))
         });
     let enum_ty = enum_ty.or(struct_ty);
@@ -1050,7 +1060,7 @@ pub(super) fn nested_type(simple: &ast::SimpleType, cx: Cx<'_>) -> Option<Type> 
             } else {
                 "struct"
             };
-            let tag = name(&child).unwrap_or_else(|| "{}".to_owned());
+            let tag = name(&child).unwrap_or_else(|| anonymous_tag(&child));
             Type::Named(std::rc::Rc::from(format!("{keyword} {tag}").as_str()))
         }
         SyntaxKind::ClassDecl | SyntaxKind::AccessorDecl => {

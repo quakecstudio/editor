@@ -36,8 +36,8 @@ use crate::ty::{Type, TypeContext};
 
 use decl::{decl_base, lower_declaration, lower_declarators};
 use types::{
-    lower_accessor, lower_class, lower_enum, lower_struct, lower_typedef, nested_type,
-    record_fields,
+    anonymous_tag, lower_accessor, lower_class, lower_enum, lower_struct, lower_typedef,
+    nested_type, record_fields,
 };
 
 /// Every declaration a file contributes, in source order.
@@ -330,11 +330,15 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
                             Type::Named(std::rc::Rc::from(token.text_lossless().as_str()))
                         }
                         // A body with no tag is a struct type of its own (FTEF-6.12).
-                        None => Type::Named(std::rc::Rc::from(if union {
-                            "union {}"
-                        } else {
-                            "struct {}"
-                        })),
+                        None => {
+                            let tag = st
+                                .syntax()
+                                .children()
+                                .find(|n| n.kind() == SyntaxKind::StructType)
+                                .map_or_else(|| "{}".to_owned(), |node| anonymous_tag(&node));
+                            let keyword = if union { "union" } else { "struct" };
+                            Type::Named(std::rc::Rc::from(format!("{keyword} {tag}").as_str()))
+                        }
                     };
                     let base = decl_base(st.syntax(), base, cx, &mut out.decls);
                     // FTEF-6.1: `struct { ... } a[4], *p;` declares variables too.

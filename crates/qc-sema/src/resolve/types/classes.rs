@@ -702,6 +702,7 @@ impl<'a> Resolver<'a> {
 
     /// The class a type names, if it names one (FTEF-17.3).
     pub(in crate::resolve) fn class_of(&self, ty: &Type) -> Option<DefId> {
+        let ty = self.resolved(ty);
         self.named(&self.class_names, ty.type_name()?).copied()
     }
 

@@ -19,6 +19,7 @@ use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::opcodes::row;
+use crate::check::reference::word_type;
 use crate::check::{Constness, Reference, Value};
 use crate::ty::Type;
 
@@ -305,6 +306,7 @@ impl Checker<'_> {
             return Ok(value.clone());
         }
         let word = Value {
+            ty: word_type(&lhs.ty),
             bitfield: None,
             ..lhs.clone()
         };

@@ -323,6 +323,62 @@ fn a_constant_index_is_evaluated_as_an_integer() {
     );
 }
 
+// spec FTEF-6.22: a struct or union with no tag has its members, its layout and its name
+#[test]
+fn a_struct_with_no_tag_is_a_type_of_its_own() {
+    let fte = |source: &str| -> Vec<String> {
+        diags(&format!("#pragma target fte\n{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    assert_eq!(
+        fte("typedef struct { float a; vector v; } T; T t; void() g = { t.a = \"s\"; };"),
+        ["Cannot cast from string to float"]
+    );
+    assert_eq!(
+        fte("typedef struct { float a; vector v; } T; T t; void() g = { t.zz = 1; };"),
+        ["zz is not a member of <struct>"]
+    );
+    assert_eq!(
+        fte("union { float a; vector v; } u; void() g = { u.q = 1; };"),
+        ["q is not a member of <union>"]
+    );
+    assert_eq!(
+        fte(
+            "struct { float a; vector v; } anon; float arr[1]; void() g = { arr[sizeof(anon)] = \
+             1; anon.a = \"s\"; };"
+        ),
+        [
+            "(constant) array index out of bounds (0 <= 16 < 1)",
+            "Cannot cast from string to float"
+        ]
+    );
+    assert_eq!(
+        fte(
+            "typedef union { float a; vector v; } U; float arr[1]; void() g = { arr[sizeof(U)] = 1; };"
+        ),
+        ["(constant) array index out of bounds (0 <= 12 < 1)"]
+    );
+    let two = |a: &str, b: &str| {
+        fte(&format!(
+            "typedef {a} A; typedef {b} B; A a; B b; void() g = {{ a = b; }};"
+        ))
+    };
+    assert_eq!(
+        two("struct { float a; }", "struct { float a; }"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        two("struct { float a; }", "struct { vector a; }"),
+        ["Cannot cast from struct <struct> to struct <struct>"]
+    );
+    assert_eq!(
+        two("union { float a; }", "struct { float a; }"),
+        ["Cannot cast from struct <struct> to union <union>"]
+    );
+}
+
 /// The definitions every case of [`REFERENCES`] reads.
 const REFERENCE_DEFS: &str = "struct S { int a : 3; int b : 5; __int8 c; __uint16 h; float f; vector v; }; S st; S *ps; S sarr[3]; S **pps; float f; int i; __uint u; __int64 l; vector v; string s; entity e; float b; float farr[4]; vector varr[3]; int iarr[4]; __int8 carr[4]; __uint8 ucarr[4]; __int16 harr[2]; float *p; int *pi; vector *pv; __int8 *pc; __uint16 *ph; void *pw; .float fl; .vector fv; .int fi; float x_f; int x_i; vector x_v; string x_s;";
 
@@ -2733,4 +2789,30 @@ fn every_reference_is_read_as_fteqcc_reads_it() {
         .collect();
         assert_eq!(found, expected, "{target} {statement}");
     }
+}
+
+// spec FTEF-6.23: an 8- or 16-bit struct member is a bitfield at bit 0 of its word
+#[test]
+fn a_narrow_member_is_a_bitfield_at_bit_zero() {
+    let defs = "struct S { int a : 3; int b : 5; __int8 c; __uint16 h; float f; }; S st; S *ps;";
+    let messages = |statement: &str| -> Vec<String> {
+        diags(&format!("{defs}\nvoid() g = {{ {statement} }};\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    let bitcopy = [
+        "BitandInt function not defined: cannot emulate int&int",
+        "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte",
+        "BitorInt function not defined: cannot emulate int|int",
+        "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte",
+    ];
+    assert_eq!(messages("st.h = 1;"), bitcopy);
+    assert_eq!(messages("st.c = 1;"), bitcopy);
+    let mut pointer = vec![
+        "memgetval function not defined: cannot emulate OP_LOADP_*",
+        "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte",
+    ];
+    pointer.extend(bitcopy);
+    assert_eq!(messages("ps->h = 2;"), pointer);
 }

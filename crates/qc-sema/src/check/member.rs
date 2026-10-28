@@ -257,7 +257,10 @@ impl Checker<'_> {
     /// statement; the member is a `variant` field of the entity, which may be assigned to.
     fn unknown_field(&mut self, base: &Value, name: &str, span: Span) -> Value {
         let class = match &base.ty {
-            Type::Named(class) => class.to_string(),
+            Type::Named(class) => self
+                .env
+                .class_name(&base.ty)
+                .unwrap_or_else(|| class.to_string()),
             _ => "entity".to_owned(),
         };
         let message = format!("Unknown field \"{name}\" in class \"{class}\"");
@@ -315,11 +318,22 @@ impl Checker<'_> {
         let Some(member) = self.env.struct_member(ty, &name).filter(|m| !m.array) else {
             return (Value::unknown(), None);
         };
-        // FTEF-6.15: a bitfield of fewer than 32 bits is read and stored by its bits.
-        let bitfield = match (member.bits, member.position) {
+        // FTEF-6.15: a bitfield of fewer than 32 bits is read and stored by its bits, and so is
+        // an 8- or 16-bit integer, `ev_bitfld` (FTEF-2.12).
+        let narrow = match member.ty.fteqcc_scalar() {
+            Some(CScalar::Int8 | CScalar::Uint8) => Some(8),
+            Some(CScalar::Int16 | CScalar::Uint16) => Some(16),
+            _ => None,
+        };
+        // FTEQCC reads and stores an 8- or 16-bit member at bit 0 of the word that holds it.
+        let bitfield = match (member.bits.or(narrow), member.position) {
             (Some(bits), Some(position)) if bits != 32 => Some(Bitfield {
                 bits,
-                offset: position & 31,
+                offset: if member.bits.is_some() {
+                    position & 31
+                } else {
+                    0
+                },
                 word: position >> 5,
                 signed: self.etype_of(&member.ty) != Some(Etype::Uint),
             }),
@@ -328,7 +342,7 @@ impl Checker<'_> {
         // A bitfield's `bitofs / bits` more than its word; a narrow integer's in its own units,
         // `ofs*(32/align) + (mbitofs>>3)`.
         let align = alignment(&member.ty);
-        let offset = match bitfield {
+        let offset = match bitfield.filter(|_| member.bits.is_some()) {
             Some(bitfield) => {
                 let element = bitfield.offset.checked_div(bitfield.bits).unwrap_or(0);
                 Some((bitfield.word.saturating_add(element), align))

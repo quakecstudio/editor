@@ -423,6 +423,17 @@ fn a_typedef_enum_declares_its_names() {
     assert_eq!(defs_named(&index, "color_t").len(), 1);
 }
 
+// spec FTEF-8.2: an enum written in the struct type a declaration names declares its names once.
+#[test]
+fn an_enum_in_a_declarations_struct_declares_its_names_once() {
+    let index = fte_index_of("struct { enum { A, B } e; } s;\nfloat x = B;\n");
+    assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
+    assert_eq!(defs_named(&index, "B").len(), 1);
+    let index = fte_index_of("class C { enum { CA, CB } m; };\nfloat y = CB;\n");
+    assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
+    assert_eq!(defs_named(&index, "CB").len(), 1);
+}
+
 // spec FTEF-8.2: an enum written as a parameter's type declares its names.
 // spec FTEF-15.3: an unnamed parameter declares nothing, and `(void)` has no parameters.
 #[test]

@@ -429,6 +429,11 @@ impl Env for BodyEnv<'_, '_> {
             .then_some(member)
     }
 
+    fn class_name(&self, ty: &Type) -> Option<String> {
+        let class = self.resolver.class_of(ty)?;
+        self.resolver.index.def(class).map(|def| def.name.clone())
+    }
+
     fn lax_same(&self, a: &Type, b: &Type) -> bool {
         self.resolver.lax_same_value(a, b)
     }
