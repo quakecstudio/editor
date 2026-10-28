@@ -371,6 +371,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   as an index (FTEF-31.8); not a fatal error.
 - **QCD-4.62** `E0361` "Cannot use addressof operator ('&') on a global. Please use the FTE
   target.": the address of a string's character (FTEF-31.11); a fatal error.
+- **QCD-4.63** `E0362` "NAME was not defined yet": a member of a struct or union of size 0
+  (FTEF-6.28); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 

@@ -434,6 +434,10 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.index.def(class).map(|def| def.name.clone())
     }
 
+    fn struct_of_no_size(&self, ty: &Type) -> bool {
+        self.resolver.struct_of_no_size(ty)
+    }
+
     fn lax_same(&self, a: &Type, b: &Type) -> bool {
         self.resolver.lax_same_value(a, b)
     }

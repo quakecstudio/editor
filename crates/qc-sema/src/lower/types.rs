@@ -399,12 +399,12 @@ pub(super) fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
                             let number = f32::from_bits(bits);
                             #[expect(
                                 clippy::cast_possible_truncation,
-                                clippy::cast_sign_loss,
-                                reason = "spec FTEF-6.9: the width is an integer constant, \
-                                          and a negative or fractional one is none"
+                                reason = "spec FTEF-6.27: the width is an integer constant, \
+                                          `int bits` stored in the unsigned `bitfld->bits`"
                             )]
-                            let width = number as u32;
-                            (number >= 0.0 && number.fract() == 0.0).then_some(width)
+                            let width = number as i32;
+                            (number.fract() == 0.0)
+                                .then_some(u32::from_le_bytes(width.to_le_bytes()))
                         }
                         LiteralValue::Vector(_)
                         | LiteralValue::String(_)

@@ -485,6 +485,20 @@ inheritance, bitfields and nested members.
   out one with none warns "too few parameters on call to NAME, PARAM will be UNDEFINED", NAME the
   struct's definition, the member's `sym`: `w.get()` of a `float(entity e = __NULL__) get` is no
   warning, `w.two()` of a `float(float a) two` names `w`.
+- **FTEF-6.26** An error FTEQCC raises about an element of an aggregate initialiser that is
+  itself braced stands where its `{` does, the token the parser has read: "inherited structs must
+  use designated initialisers" and "member U.b was already ininitialised" are on the `{`'s line,
+  whatever follows it on the next.
+- **FTEF-6.27** A bitfield's width is the signed `int bits` `QCC_PR_IntConstExpr()` gives, kept in
+  the unsigned `bitfld->bits`: a negative width is no error ("too many bits" compares the signed
+  value with 64, and no promotion to 64 bits happens for it), and the struct's layout adds it in
+  C's unsigned arithmetic (`unsigned int bitsize`), which wraps: `struct S { int a : -1; int b;
+  };` puts `b` at bit 0 and is one word, and `struct S { int a : -1; };` is of size 0.
+- **FTEF-6.28** A member of a struct or union of size 0 (`!t->size`), one named with no body yet
+  or one laid out to no word, is the fatal error `E0362` "NAME was not defined yet"
+  (`QCC_PR_ParseRefArrayPointer`), before any member is looked up: `struct T; T *pt;` makes
+  `pt->a` that error, and `struct T2 { }; T2 t;` makes `t.a` "T2 was not defined yet", not "a is
+  not a member of T2".
 - **FTEF-6.22** A struct or union with no tag (`struct { ... } x;`, `typedef struct { ... } T;`)
   is a type of its own, with its members and its layout, named `<struct>` or `<union>`: `t.zz` of
   one is "zz is not a member of <struct>", `sizeof(T)` of `typedef struct { float a; vector v; }

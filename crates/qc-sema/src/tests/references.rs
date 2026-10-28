@@ -421,6 +421,40 @@ fn a_struct_function_member_is_called_by_its_type() {
     );
 }
 
+// spec FTEF-6.28: a member of a struct or union of size 0 is the fatal error "NAME was not
+// defined yet"
+// spec QCD-4.63: E0362 for a member of a struct of size 0
+// spec FTEF-6.27: a bitfield's width is a signed integer, its layout C's unsigned arithmetic
+#[test]
+fn a_struct_of_no_size_has_no_members() {
+    let messages = |source: &str| -> Vec<String> {
+        diags(&format!("#pragma target fte\n{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    assert_eq!(
+        messages("struct T; T *pt; float x; void() g = { x = pt->a; };"),
+        ["T was not defined yet"]
+    );
+    assert_eq!(
+        messages("struct T2 { }; T2 t; float x; void() g = { x = t.a; };"),
+        ["struct T2 has no members", "T2 was not defined yet"]
+    );
+    assert_eq!(
+        messages("struct S { int a : -1; }; S s; void() g = { s.a = 1; };"),
+        ["S was not defined yet"]
+    );
+    assert_eq!(
+        messages("struct S { int a : -3; int b : 2; }; S s; float x; void() g = { x = s.b; };"),
+        ["S was not defined yet"]
+    );
+    assert_eq!(
+        messages("struct S { int a : -1; int b; }; S s; float x; void() g = { x = s.b; };"),
+        Vec::<String>::new()
+    );
+}
+
 /// The definitions every case of [`REFERENCES`] reads.
 const REFERENCE_DEFS: &str = "struct S { int a : 3; int b : 5; __int8 c; __uint16 h; float f; vector v; }; S st; S *ps; S sarr[3]; S **pps; struct S4 { float b; float a[3]; vector av[2]; }; S4 s4; S4 *ps4; typedef struct { float q; int r[2]; } T; T t; float f; int i; __uint u; __int64 l; vector v; string s; entity e; float b; float farr[4]; vector varr[3]; int iarr[4]; __int8 carr[4]; __uint8 ucarr[4]; __int16 harr[2]; float *p; int *pi; vector *pv; __int8 *pc; __uint16 *ph; void *pw; .float fl; .vector fv; .int fi; float x_f; int x_i; vector x_v; string x_s;";
 

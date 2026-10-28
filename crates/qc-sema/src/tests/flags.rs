@@ -532,3 +532,62 @@ fn an_omitted_type_after_attributes_is_int() {
         [cast]
     );
 }
+
+// spec FTEF-21.9: `[[eraseable]]` is `noref`, and `[[__deprecated("WHY")]]` deprecates with its
+// reason
+#[test]
+fn attribute_qualifiers() {
+    let on = "#pragma flag enable attributes\n";
+    assert_eq!(
+        analysed(
+            &format!("{on}[[eraseable]] float x = 1; float x = 2;\n"),
+            &[]
+        ),
+        []
+    );
+    assert_eq!(
+        errors(&format!("{on}float y = 1; float y = 2;\n")),
+        [Code::E0206]
+    );
+    let deprecated = |attribute: &str| -> Vec<String> {
+        analysed(
+            &format!("{on}[[{attribute}]] float x; float q; void() g = {{ q = x; }};\n"),
+            &[],
+        )
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    assert_eq!(
+        deprecated("__deprecated(\"use z\")"),
+        ["Variable \"x\" is deprecated: use z"]
+    );
+    assert_eq!(deprecated("__deprecated"), ["Variable \"x\" is deprecated"]);
+}
+
+// spec FTEF-21.10: an `extern` typedef of a type that is surely no function drops the `extern`
+// with its warning; one of a function's typedef keeps it, two storage classes
+#[test]
+fn an_extern_typedef() {
+    let messages = |source: &str| -> Vec<String> {
+        analysed(&format!("#pragma target fte\n{source}\n"), &[])
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    assert_eq!(
+        messages("extern typedef float fl;"),
+        ["extern keyword may only apply to qc functions."]
+    );
+    let conflicting = |name: &str| {
+        vec![
+            "Conflicting storage classes.".to_owned(),
+            format!("bad combination of modifiers with typedef (defining {name})"),
+        ]
+    };
+    assert_eq!(
+        messages("typedef void() fn; extern typedef fn fn2;"),
+        conflicting("fn2")
+    );
+    assert_eq!(messages("extern typedef void() fn3;"), conflicting("fn3"));
+}

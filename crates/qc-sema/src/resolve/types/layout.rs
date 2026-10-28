@@ -55,9 +55,9 @@ impl Layout {
 }
 
 /// `x` rounded up to a multiple of `to`, a power of two.
-fn align_up(x: u32, to: u32) -> Option<u32> {
-    let mask = to.checked_sub(1)?;
-    Some(x.checked_add(mask)? & !mask)
+fn align_up(x: u32, to: u32) -> u32 {
+    let mask = to.wrapping_sub(1);
+    x.wrapping_add(mask) & !mask
 }
 
 impl Resolver<'_> {
@@ -145,7 +145,8 @@ impl Resolver<'_> {
             }
             None => (Layout::words(0), None),
         };
-        let mut bitsize = parent.words.checked_mul(WORD_BITS)?;
+        // `unsigned int bitsize`, whose arithmetic wraps as C's does (FTEF-6.27).
+        let mut bitsize = parent.words.wrapping_mul(WORD_BITS);
         let mut bitalign = 0;
         for member in &def.members {
             if member.is_static
@@ -164,40 +165,40 @@ impl Resolver<'_> {
                 bitalign.max(layout.align)
             };
             let span = if layout.bits == 0 {
-                WORD_BITS.checked_mul(layout.words)?.checked_mul(count)?
+                WORD_BITS.wrapping_mul(layout.words).wrapping_mul(count)
             } else {
-                layout.bits.checked_mul(count)?
+                layout.bits.wrapping_mul(count)
             };
             let wanted =
                 found.is_none() && find.is_some_and(|n| self.same_member_name(&member.name, n));
             if def.union {
                 if wanted {
-                    found = Some(parent.words.checked_mul(WORD_BITS)?);
+                    found = Some(parent.words.wrapping_mul(WORD_BITS));
                 }
                 bitsize = bitsize.max(span);
                 continue;
             }
             if layout.bits == 0 {
-                bitsize = align_up(bitsize, WORD_BITS)?;
+                bitsize = align_up(bitsize, WORD_BITS);
             } else if member.bits.is_some() && layout.bits < layout.align {
                 // A bitfield is realigned only where it would cross its parent's alignment.
                 let within = bitsize & layout.align.checked_sub(1)?;
-                if within.checked_add(layout.bits)? > layout.align {
-                    bitsize = align_up(bitsize, layout.align)?;
+                if within.wrapping_add(layout.bits) > layout.align {
+                    bitsize = align_up(bitsize, layout.align);
                 }
             } else {
-                bitsize = align_up(bitsize, layout.align)?;
+                bitsize = align_up(bitsize, layout.align);
             }
             if wanted {
                 found = Some(bitsize);
             }
-            bitsize = bitsize.checked_add(span)?;
+            bitsize = bitsize.wrapping_add(span);
         }
         if bitalign != 0 {
-            bitsize = align_up(bitsize, bitalign)?;
+            bitsize = align_up(bitsize, bitalign);
         }
         let layout = Layout {
-            words: bitsize.checked_add(WORD_MASK)? >> WORD_SHIFT,
+            words: bitsize.wrapping_add(WORD_MASK) >> WORD_SHIFT,
             bits: if bitalign & WORD_MASK == 0 {
                 0
             } else {
@@ -216,7 +217,8 @@ impl Resolver<'_> {
             return Some(layout);
         };
         let bits = width?;
-        let words = if bits > WORD_BITS && layout.words == 1 {
+        // `if (bits > 32 && ...)` of the signed `int bits`.
+        let words = if i32::from_le_bytes(bits.to_le_bytes()) > 32 && layout.words == 1 {
             2
         } else {
             layout.words

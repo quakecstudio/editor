@@ -518,8 +518,8 @@ pub struct RawAggregate {
 pub struct RawBraces {
     /// Whether it names its members, `{ .a = 1 }`.
     pub designated: bool,
-    /// The first token inside, `}` for none, and its span.
-    pub first: (String, Span),
+    /// The span of its `{`, where an error about it as an element stands.
+    pub open: Span,
     /// Its elements, in order.
     pub elements: Vec<RawElement>,
 }
@@ -538,7 +538,7 @@ impl RawElement {
     #[must_use]
     pub fn first(&self) -> (String, Span) {
         match self {
-            Self::Braces(braces) => ("{".to_owned(), braces.first.1),
+            Self::Braces(braces) => ("{".to_owned(), braces.open),
             Self::Value(value) => (value.first.clone(), value.span),
         }
     }
@@ -553,10 +553,8 @@ fn raw_braces(agg: &ast::AggregateInit, cx: Cx<'_>) -> RawBraces {
             qc_syntax::SyntaxElement::Token(t) if !t.kind().is_trivia() => Some(t),
             qc_syntax::SyntaxElement::Token(_) | qc_syntax::SyntaxElement::Node(_) => None,
         });
-    let first = tokens.nth(1).map_or_else(
-        || ("}".to_owned(), agg.syntax().span()),
-        |t| (t.text_lossless(), t.span()),
-    );
+    let open = tokens.next().map_or(agg.syntax().span(), |t| t.span());
+    let designated = tokens.next().is_some_and(|t| t.text_lossless() == ".");
     let elements = agg
         .syntax()
         .children()
@@ -566,8 +564,8 @@ fn raw_braces(agg: &ast::AggregateInit, cx: Cx<'_>) -> RawBraces {
         })
         .collect();
     RawBraces {
-        designated: first.0 == ".",
-        first,
+        designated,
+        open,
         elements,
     }
 }
