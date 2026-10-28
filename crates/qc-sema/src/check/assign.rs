@@ -707,7 +707,7 @@ impl Checker<'_> {
             let stray = self.stray.take();
             checked?;
             // FTEF-18.38: the definition ends at the `[`, which starts a statement of its own.
-            if let Some(span) = stray {
+            if let Some((span, _)) = stray {
                 let message = "Missing semicolon at end of definition".to_owned();
                 self.env.report(Code::W0203, span, message);
                 let message = "Statement does not do anything".to_owned();

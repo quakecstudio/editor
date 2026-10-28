@@ -479,7 +479,7 @@ pub(super) fn raw_value(expr: &ast::Expr, cx: Cx<'_>) -> RawValue {
     };
     let syntax = matches!(
         kind,
-        ValueKind::Other | ValueKind::Indexed(_) | ValueKind::Name(_)
+        ValueKind::Other | ValueKind::Indexed(_) | ValueKind::Name(_) | ValueKind::Cast(_)
     )
     .then(|| expr.clone());
     let written_types = match &syntax {

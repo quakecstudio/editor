@@ -2378,6 +2378,18 @@ The corpus writes locals of class and pointer types, casts to classes (`(ncPlaye
   keyword used as variable name - coexisting" and then "Unknown value \"local\"." (FTEF-19.45),
   and the type word after it is "expected ;, found float". The warning is given for any unknown
   name that is a keyword in force (FTEF-20.4).
+- **FTEF-16.15** `(NAME)` where `QCC_PR_ParseType` finds no type of the name is no cast but the
+  value in parentheses, an unknown name a `variant` (FTEF-19.69), and what this profile's parser
+  read as the cast's operand follows it (FTEF-16.2): `- e`, and a negative number, which the
+  lexer splits after a value (`QCC_PR_IncludeChunk`), is a subtraction, `(x) -1` as `x - 1`;
+  `(args)` calls the value, "not a function" of a `float`; `[i]` is an index the value does not
+  take (FTEF-18.37, FTEF-18.38); and a number or a name is "Expected punctuation"
+  (`WARN_UNEXPECTEDPUNCT`), then "expected ;, found TOKEN", or in a definition's value the end
+  of the value, "Missing semicolon at end of definition" and at global scope "\"TOKEN\" is not a
+  type". So `(x)[1] = 2;` of a `float x` is "Statement does not do anything" and "expected ;,
+  found [", `y = (x) 1;` "Expected punctuation" and "expected ;, found 1", and no `(x)` is
+  "\"x\" is not a type". Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefTerm`, `QCC_PR_RefExpression`.
 ## FTEF-17 Name resolution
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseRefValue` (`assumeclass`, `this`, `super`, the

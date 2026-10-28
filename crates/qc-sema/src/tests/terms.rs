@@ -689,6 +689,65 @@ fn a_converted_variable_is_read_at_global_scope() {
     );
 }
 
+// spec FTEF-16.15: `(x)` of a name that is no type is the value in parentheses, and what was read
+// as the cast's operand follows it
+#[test]
+fn a_name_in_parentheses_is_its_value() {
+    let found = |source: &str| -> Vec<String> {
+        diags(&format!(
+            "entity self; float x, y; float(float a) f2 = {{ return a; }};\n{source}\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let body = |statement: &str| found(&format!("void() g = {{ {statement} }};"));
+    for quiet in [
+        "y = (x) - 1;",
+        "y = (x) -1;",
+        "y = (y) * 2;",
+        "y = (f2)(1);",
+        "y = (float) 1;",
+    ] {
+        assert!(body(quiet).is_empty(), "{quiet}");
+    }
+    assert_eq!(body("y = (x)(1);"), ["not a function"]);
+    assert_eq!(
+        body("(x)[1] = 2;"),
+        ["Statement does not do anything", "expected ;, found ["]
+    );
+    assert_eq!(body("y = (x) [1];"), ["expected ;, found ["]);
+    assert_eq!(
+        body("y = (x) 1;"),
+        ["Expected punctuation", "expected ;, found 1"]
+    );
+    assert_eq!(
+        body("local float q = (x) y;"),
+        [
+            "Expected punctuation",
+            "Missing semicolon at end of definition",
+            "Statement does not do anything"
+        ]
+    );
+    assert_eq!(
+        found("float q = (x) 1;"),
+        [
+            "Expected punctuation",
+            "initializer for 'q' is not constant",
+            "Missing semicolon at end of definition",
+            "\"1\" is not a type"
+        ]
+    );
+    assert_eq!(
+        body("y = (nope) 1;"),
+        [
+            "Unknown value \"nope\".",
+            "Expected punctuation",
+            "expected ;, found 1"
+        ]
+    );
+}
+
 // spec FTEF-19.69: an unknown name is a `variant` defined in its function, which its later uses
 // there find, and which the checks after it read
 #[test]

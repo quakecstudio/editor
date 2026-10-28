@@ -675,14 +675,14 @@ impl Checker<'_> {
         {
             self.env.report(Code::E0204, span, message);
         }
-        // FTEF-18.38: the definition ends at the `[`, where the next one's type is read.
-        if let Some(span) = self.stray.take()
+        // FTEF-18.38: the definition ends at the token, where the next one's type is read.
+        if let Some((span, token)) = self.stray.take()
             && checked.is_ok()
         {
             let message = "Missing semicolon at end of definition".to_owned();
             self.env.report(Code::W0203, span, message);
             self.env
-                .report(Code::E0203, span, "\"[\" is not a type".to_owned());
+                .report(Code::E0203, span, format!("\"{token}\" is not a type"));
         }
     }
 

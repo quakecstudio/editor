@@ -301,6 +301,10 @@ impl Resolver<'_> {
             // FTEF-19.43: `(T)0` is a value of `T`, converted to the definition's type as a
             // name's would be (FTEF-22).
             ValueKind::Cast(cast) => {
+                // FTEF-16.15: `(x)` of a name that is no type is a value the check stage reads.
+                if matches!(holder, Holder::Global) && self.cast_names_value(cast) {
+                    return Ok(None);
+                }
                 let source = match self.resolved(cast) {
                     // A class is an entity (`QCC_PR_NewType(classname, ev_entity, ...)`).
                     Type::Named(n) if self.has_name_key(&self.class_names, &n) => {
@@ -355,6 +359,14 @@ impl Resolver<'_> {
 
     /// [`Resolver::check_value`] of a value that is the name `source_name`, cast with the
     /// flags `flags` at the token after it (FTEF-22.6).
+    /// FTEF-16.15: whether a cast's type, as a global's value writes it, is a lone name that
+    /// names no type, read as a value in parentheses under FTEQCC's diagnostics.
+    pub(in crate::resolve) fn cast_names_value(&self, ty: &Type) -> bool {
+        self.profile.fteqcc_diagnostics()
+            && matches!(ty, Type::Named(name) if !name.contains(char::is_whitespace))
+            && self.unknown_type_name(ty, &[], usize::MAX).is_some()
+    }
+
     /// FTEF-19.72: whether a global's value, the global variable `source_name`, is converted to
     /// `ty` by opcodes, which the check stage reads at global scope (FTEF-34.9).
     pub(in crate::resolve) fn converted_variable(&self, source_name: &str, ty: &Type) -> bool {

@@ -344,9 +344,12 @@ impl<'a> Resolver<'a> {
         let Some(expr) = value.syntax.clone() else {
             return;
         };
-        if let ValueKind::Name(source) = &value.kind
-            && !self.converted_variable(source, &decl.ty)
-        {
+        let checked = match &value.kind {
+            ValueKind::Name(source) => self.converted_variable(source, &decl.ty),
+            ValueKind::Cast(cast) => self.cast_names_value(cast),
+            _ => true,
+        };
+        if !checked {
             return;
         }
         let written = value.written_types.clone();
@@ -559,6 +562,20 @@ impl<'a> Resolver<'a> {
                     let typedefs = self.body_typedefs.clone();
                     self.check_type_names(&ty, &typedefs, use_.span.start, location);
                     Found::Nothing
+                }
+                // FTEF-16.15: `QCC_PR_ParseType` finds no type of the name, so `(x)` is the
+                // value in parentheses, which the check stage reads with what follows.
+                (_, UseKind::CastName) => {
+                    let ty = Type::Named(use_.name.as_str().into());
+                    let typedefs = self.body_typedefs.clone();
+                    if self
+                        .unknown_type_name(&ty, &typedefs, use_.span.start)
+                        .is_none()
+                    {
+                        Found::Nothing
+                    } else {
+                        self.resolve_value(scope, &use_.name, false)
+                    }
                 }
                 (_, UseKind::Member) => self.resolve_member(scope, use_),
                 (_, UseKind::NamedField) => {

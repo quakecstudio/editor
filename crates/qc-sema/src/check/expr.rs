@@ -48,9 +48,9 @@ pub(super) struct Checker<'e> {
     /// A token the statement does not take, found where an expression ended early, reported
     /// once the statement has read the expression it has (FTEF-24.10).
     pub(super) pending: Option<(String, qc_diag::Span)>,
-    /// The `[` a definition's value ended before, reported once the definition has read the
-    /// value it has (FTEF-18.38).
-    pub(super) stray: Option<qc_diag::Span>,
+    /// The token a definition's value ended before, `[` or what follows a value in parentheses,
+    /// reported once the definition has read the value it has (FTEF-18.38, FTEF-16.15).
+    pub(super) stray: Option<(qc_diag::Span, String)>,
 }
 
 /// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which nothing more of the
@@ -232,6 +232,17 @@ impl<'e> Checker<'e> {
             }
             return Value::unknown();
         };
+        self.def_value(def, &token, scoped)
+    }
+
+    /// The value of the definition `def` named by `token`, `::`-scoped or not
+    /// ([`Checker::name`]).
+    pub(super) fn def_value(
+        &mut self,
+        def: DefId,
+        token: &qc_syntax::SyntaxToken,
+        scoped: bool,
+    ) -> Value {
         let array = self.env.is_array(def);
         let constness = self.env.constness(def);
         let Some(ty) = self.env.definition(def).map(|def| def.ty.clone()) else {
@@ -305,6 +316,20 @@ impl<'e> Checker<'e> {
         let Some(op) = binary.op() else {
             return Ok(None);
         };
+        let span = binary
+            .op_token()
+            .map_or_else(|| binary.syntax().span(), |t| t.span());
+        self.operator_at(op, span, lhs, rhs)
+    }
+
+    /// [`Checker::operator`] of the operator `op` at `span`.
+    pub(super) fn operator_at(
+        &mut self,
+        op: BinaryOp,
+        span: Span,
+        lhs: &Value,
+        rhs: &Value,
+    ) -> Result<Option<Value>, Fatal> {
         let Some(spelling) = binary_spelling(op) else {
             return Ok(None);
         };
@@ -326,9 +351,6 @@ impl<'e> Checker<'e> {
         let Some(opcode) = row(choice.op()) else {
             return Ok(None);
         };
-        let span = binary
-            .op_token()
-            .map_or_else(|| binary.syntax().span(), |t| t.span());
         if let Choice::Mismatch(_) = choice {
             self.mismatch(spelling, lhs, rhs, span);
         }
