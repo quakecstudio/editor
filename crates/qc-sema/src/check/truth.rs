@@ -12,11 +12,11 @@ use qc_preproc::{FteFlag, Op};
 use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::c_scalar::CScalar;
 
+use crate::check::Value;
 use crate::check::constant::Constant;
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
-use crate::check::{Sym, Value};
 use crate::ty::Type;
 
 /// Which of FTEQCC's tests of a value is made.
@@ -164,7 +164,10 @@ impl Checker<'_> {
         let span = ternary.syntax().span();
         let condition = self.value(ternary.condition())?;
         self.branch(&condition, Jump::IfNot, span)?;
-        self.generate(Op::IfnotI, span);
+        // `QCC_Generate_OP_IFNOT` of a vector under `ifvector` tests `!v` by `OP_IF_I`.
+        let vector = self.etype_of(&condition.ty) == Some(Etype::Vector)
+            && self.env.flags_at(span.start).has(FteFlag::Ifvector);
+        self.generate(if vector { Op::IfI } else { Op::IfnotI }, span);
         let (middle, last) = ternary.arms();
         let (kept, kept_null) = match middle {
             None => {
@@ -172,6 +175,7 @@ impl Checker<'_> {
                 // `(r.cast->size>=3)?OP_STORE_V:OP_STORE_F`, after the `IFNOT`.
                 let words = self.env.layout(&condition.ty).map_or(1, |l| l.words);
                 let op = if words >= 3 { Op::StoreV } else { Op::StoreF };
+                self.clobber_returned(Some(op), &condition, span)?;
                 self.arm_store(Some(op), &condition, self.emitted, span)?;
                 (condition, null)
             }
@@ -192,6 +196,7 @@ impl Checker<'_> {
                         return self.fatal(Code::E0370, span, message);
                     }
                 };
+                self.clobber_returned(op, &value, span)?;
                 self.arm_store(op, &value, before, span)?;
                 (value, null)
             }
@@ -227,9 +232,19 @@ impl Checker<'_> {
         Ok(value)
     }
 
+    /// FTEF-30.13: the first arm's store asks for its statement (`&truthstore`), which copies
+    /// the aliases, a call's return value among them, to temporaries first (`QCC_ClobberDef`).
+    fn clobber_returned(&mut self, op: Option<Op>, value: &Value, span: Span) -> Result<(), Fatal> {
+        if let Some(op) = op.filter(|_| value.returned) {
+            let operand = Value::of(value.ty.clone());
+            self.emit(op, &operand, &operand, span)?;
+        }
+        Ok(())
+    }
+
     /// FTEF-30.3: an arm's store, `op` through `QCC_PR_StatementFlags`, which folds it into the
     /// statement that made the arm's temporary when the arm made one since `before` emitted
-    /// statements (`opt_assignments`).
+    /// statements (`opt_assignments`); a call's return value is no such temporary (FTEF-30.13).
     fn arm_store(
         &mut self,
         op: Option<Op>,
@@ -237,7 +252,10 @@ impl Checker<'_> {
         before: usize,
         span: Span,
     ) -> Result<(), Fatal> {
-        let folded = value.sym == Sym::Temp && self.emitted > before;
+        let folded = value.temp.is_some()
+            && value.temp == self.last_temp
+            && self.emitted > before
+            && !value.returned;
         if let Some(op) = op.filter(|_| !folded && value.ty != Type::Unknown) {
             let operand = Value::of(value.ty.clone());
             self.emit(op, &operand, &operand, span)?;
@@ -251,7 +269,16 @@ impl Checker<'_> {
         if kept.ty == Type::Unknown || other.ty == Type::Unknown {
             return Ok(Value::unknown());
         }
-        let (Some(a), Some(b)) = (self.etype_of(&kept.ty), self.etype_of(&other.ty)) else {
+        // A truth value is `ev_boolean`, which neither the promotions nor the sizes below
+        // read as its parent.
+        let etype = |checker: &Self, ty: &Type| {
+            if is_truth(ty) {
+                Some(Etype::Boolean)
+            } else {
+                checker.etype_of(ty)
+            }
+        };
+        let (Some(a), Some(b)) = (etype(self, &kept.ty), etype(self, &other.ty)) else {
             return Ok(Value::unknown());
         };
         match (a, b) {
@@ -290,14 +317,22 @@ impl Checker<'_> {
                 return self.fatal(Code::E0332, span, message);
             }
         }
-        Ok(Value::of(kept.ty))
+        // The arms are stored to `QCC_PR_DummyDef(type, "ternary", ...)`.
+        Ok(Value {
+            name: Some("ternary".to_owned()),
+            ..Value::of(kept.ty)
+        })
     }
 
     /// An arm of `?:` as it is stored: an integer made a float when the target has no
     /// `OP_STORE_IF` (`QCC_SupplyConversion(val, ev_float, true)`).
     fn stored_arm(&mut self, value: Value, span: Span) -> Checked {
         let target = self.env.target_at(span.start);
-        if self.etype_of(&value.ty) == Some(Etype::Integer) && !target.valid(Op::StoreIf) {
+        // `val.cast->type == ev_integer`: a truth value, `ev_boolean`, is not converted.
+        if self.etype_of(&value.ty) == Some(Etype::Integer)
+            && !is_truth(&value.ty)
+            && !target.valid(Op::StoreIf)
+        {
             return self.converted(&value, Etype::Float, span);
         }
         Ok(value)

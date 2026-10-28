@@ -4137,6 +4137,11 @@ opcodes.rs`, the rows of `pr_opcodes[]` in order) and picks as FTEQCC picks
   three. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateLogicalTruth`, `QCC_TryEvaluateCast`,
   `QCC_StoreSRefToRef`.
+- **FTEF-23.11** Under `lax` a `void` value made a boolean warns "cast to boolean"
+  (`QCC_PR_GenerateLogicalTruth`'s `t == ev_void && flag_laxcasts`, its message given whole) and
+  is `OP_NE_F` against 0: `bb = (_Bool)vf();` of a `void() vf` is that warning, then on the id
+  target three "ftoi emulation". Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateLogicalTruth`.
 
 ## FTEF-24 Member access as FTEQCC types it
 
@@ -4629,6 +4634,13 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   only the first. A struct's member array frees its offset constants as well, which this
   profile does not follow. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_StoreSRefToRef`, `QCC_FreeTemp`.
+- **FTEF-29.13** A store to a definition is its `OP_STORE_*` statement, unless the value is the
+  temporary the statement before made, which `opt_assignments` folds the store into; and a postfix
+  `++` or `--` whose value is read copies the old value to a temporary by `OP_STORE_*` first. At
+  global scope each is "Unable to generate statements": `float q = (x = y);` is `STORE_F`, `(x =
+  y + 1)` only `ADD_F`, `float q = x++;` `STORE_F` and `ADD_F`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreSRefToRef`, `QCC_PR_RefExpression` (`ref->postinc`), `QCC_RefToDef`.
 - **FTEF-29.10** An array named bare, its head, is the pointer to its first element to a
   prefix or postfix `++` and `--` (`REF_ARRAYHEAD`): read by its address, which the id target
   refuses (FTEF-31.4), stepped by `OP_ADD_PIW` of its element's size, `--` warning of the
@@ -4726,6 +4738,22 @@ reference are FTEF-31's.
   other type "_length() unsupported argument type for intrinsic". Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_RefTerm`.
+- **FTEF-30.12** A truth value as an arm of `?:` is `ev_boolean`: it is not the `int` arm a
+  target with no `OP_STORE_IF` makes a float, nor the `int` promoted to the other arm's `float`,
+  so `x = q ? bb : x;` of a `_Bool bb` warns "Type mismatch on ternary operator: __int32 vs
+  float", and the `?:` is the arms' store, `QCC_PR_DummyDef(type, "ternary", ...)`, which the
+  emulation warnings name `ternary`: "itof emulation: denormals are unsafe ternary" as it is
+  stored to the float. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefExpression` (`?`).
+- **FTEF-30.13** A call's value is an alias of `OFS_RETURN` (`QCC_GetAliasTemp`), no temporary,
+  so an arm's store of it is no folded one; and the first arm's store, the condition's under `?:`
+  or the middle arm's, asks for its statement (`&truthstore`), which first copies the aliases to
+  temporaries (`QCC_ClobberDef(NULL)`): at global scope `float q = c ? ff() : y;` is "Unable to
+  generate statements" of `IFNOT`, `CALL0`, two `STORE_F`, `GOTO` and a last `STORE_F`, where
+  `c ? y : ff()` stores the call once. A `?:` with a vector condition under `ifvector`, its
+  default, tests `!v` by `OP_IF_I`, "(IF)". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_RefExpression` (`?`), `QCC_ClobberDef`, `QCC_Generate_OP_IFNOT`.
 ## FTEF-31 References
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`, `QCC_RefToDef`,

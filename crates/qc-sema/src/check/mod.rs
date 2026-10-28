@@ -218,6 +218,9 @@ pub(crate) struct Value {
     pub(crate) bitfield: Option<Bitfield>,
     /// The word offset of the temporary that holds it, `temp_N` (FTEF-27.16).
     pub(crate) temp: Option<u32>,
+    /// Whether it is a call's return value, an alias of `OFS_RETURN` that a statement which
+    /// clobbers the aliases copies to a temporary first (`QCC_ClobberDef`, FTEF-30.13).
+    pub(crate) returned: bool,
 }
 
 /// FTEQCC's temporaries (`tempsinfo`), kept across the module's functions: each one's word
@@ -329,6 +332,7 @@ impl Value {
             text: None,
             bitfield: None,
             temp: None,
+            returned: false,
         }
     }
 

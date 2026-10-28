@@ -51,6 +51,9 @@ pub(super) struct Checker<'e> {
     /// The token a definition's value ended before, `[` or what follows a value in parentheses,
     /// reported once the definition has read the value it has (FTEF-18.38, FTEF-16.15).
     pub(super) stray: Option<(qc_diag::Span, String)>,
+    /// The temporary the last statement emitted made, which a store of it folds into
+    /// (`opt_assignments`, FTEF-30.3).
+    pub(super) last_temp: Option<u32>,
 }
 
 /// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which nothing more of the
@@ -75,6 +78,7 @@ impl<'e> Checker<'e> {
             global: false,
             pending: None,
             stray: None,
+            last_temp: None,
         }
     }
 

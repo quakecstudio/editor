@@ -153,6 +153,7 @@ impl Checker<'_> {
             return result;
         }
         let temp = Some(self.env.temps().take(words));
+        self.last_temp = temp;
         Value { temp, ..result }
     }
 

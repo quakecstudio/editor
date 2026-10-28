@@ -99,8 +99,12 @@ impl Checker<'_> {
                 // Emitted, or on a target without it as `QCC_PR_StatementFlags` replaces it:
                 // `OP_LOAD_I` and `OP_LOAD_P` as `OP_LOAD_F`, `OP_LOAD_I64` as two plain
                 // `OP_LOAD_FLD`s (FTEF-27.9, FTEF-27.11).
-                self.emit(load, &Value::unknown(), &Value::unknown(), span)?;
-                Ok(value)
+                // The value read is the load's temporary (FTEF-27.16).
+                let loaded = self.emit(load, &Value::unknown(), &Value::unknown(), span)?;
+                Ok(Value {
+                    temp: loaded.temp,
+                    ..value
+                })
             }
             Reference::ArrayHead(_) => {
                 let address = self.address_of(value, span)?;

@@ -763,7 +763,8 @@ fn pointers_and_functions_cast_by_typecmp_lax() {
 fn a_boolean_is_always_a_truth() {
     let found = |statement: &str| -> usize {
         diags(&format!(
-            "_Bool b; int i; void() fn = {{}};\nvoid() g = {{ {statement} }};\n"
+            "_Bool b; int i; void() fn = {{}}; entity e1; vector v; __int64 l; __uint64 ul; \
+             __double d; string s;\nvoid() g = {{ {statement} }};\n"
         ))
         .iter()
         .filter(|(_, m)| m.as_str() == "ftoi emulation: denormals are unsafe")
@@ -773,4 +774,28 @@ fn a_boolean_is_always_a_truth() {
     assert_eq!(found("b = i;"), 2);
     assert_eq!(found("b = (_Bool)i;"), 3);
     assert_eq!(found("b = (_Bool)fn;"), 3);
+    // Each basic type's comparison with zero, emulated or refused on the id target.
+    for three in [
+        "b = (_Bool)e1;",
+        "b = (_Bool)v;",
+        "b = (_Bool)l;",
+        "b = (_Bool)s;",
+    ] {
+        assert_eq!(found(three), 3, "{three}");
+    }
+    assert_eq!(found("b = (_Bool)ul;"), 2);
+    assert_eq!(found("b = (_Bool)d;"), 2);
+}
+
+// spec FTEF-23.11: under `lax` a `void` made a boolean warns "cast to boolean" and is `OP_NE_F`
+#[test]
+fn a_lax_void_made_a_boolean() {
+    let found: Vec<String> = diags(
+        "#pragma flag enable lax\n_Bool bb; void() vf = {};\nvoid() g = { bb = (_Bool)vf(); };\n",
+    )
+    .into_iter()
+    .map(|(_, m)| m)
+    .collect();
+    assert_eq!(found.first().map(String::as_str), Some("cast to boolean"));
+    assert_eq!(found.len(), 4, "{found:?}");
 }

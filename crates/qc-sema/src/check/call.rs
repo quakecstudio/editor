@@ -198,7 +198,10 @@ impl Checker<'_> {
             let returned = Value::of(reference.ty.clone());
             self.store_reference(reference, &returned, span)?;
         }
-        Ok(Value::of(function.ret.clone()))
+        Ok(Value {
+            returned: true,
+            ..Value::of(function.ret.clone())
+        })
     }
 
     /// FTEF-32.9: an argument left empty where no parameter takes it: the expression read

@@ -8,7 +8,7 @@
 //! (FTEF-29).
 
 use qc_diag::{Code, Span};
-use qc_preproc::Op;
+use qc_preproc::{FteFlag, Op};
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{SyntaxKind, SyntaxNode};
@@ -274,6 +274,13 @@ impl Checker<'_> {
                 }
             }
         };
+        // FTEF-29.13: a store to a definition is its `OP_STORE_*`, unless it folds into the
+        // statement that made the value's temporary (`opt_assignments`).
+        let folded = stored.temp.is_some() && stored.temp == self.last_temp;
+        if matches!(kind, Assign::Store) && lhs.reference == Reference::Global && !folded {
+            let store = Checker::store_op(self.etype(&target));
+            self.emit(store, &stored, &Value::unknown(), span)?;
+        }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
         if lhs.readonly {
             let message = format!("Assignment to constant {}", lhs.label());
@@ -468,7 +475,7 @@ impl Checker<'_> {
             Some(CScalar::BFloat) => Some(Type::Simple(SimpleType::Float)),
             _ => None,
         };
-        if let Some(parent) = parent
+        if let Some(parent) = parent.clone()
             && let Some((op, zero)) = self.etype(&value.ty).and_then(|e| Test::Truth.opcode(e))
         {
             let zero = Value {
@@ -476,6 +483,14 @@ impl Checker<'_> {
                 ..zero.map_or_else(Value::unknown, Value::constant)
             };
             let truth = self.emit(op, value, &zero, span)?;
+            return self.convert_to(&truth, &parent, span);
+        }
+        // `t == ev_void && flag_laxcasts`: "cast to boolean", then `OP_NE_F` (FTEF-23.11).
+        if let Some(parent) = parent
+            && self.etype(&value.ty) == Some(Etype::Void)
+            && self.env.flags_at(span.start).has(FteFlag::Laxcasts)
+        {
+            let truth = self.test(Test::Truth, value, span, "cast to boolean")?;
             return self.convert_to(&truth, &parent, span);
         }
         // FTEF-19.55: a float or an integer cast to a vector is multiplied by `'1 1 1'`
@@ -615,6 +630,11 @@ impl Checker<'_> {
             constness: Constness::Variable,
             ..self.read(operand.clone(), span)?
         };
+        // FTEF-29.13: a value the postfix gives is the old one, copied to a temporary first.
+        if !discarded && operand.reference == Reference::Global {
+            let store = Checker::store_op(self.etype(&operand.ty));
+            self.emit(store, &old, &Value::unknown(), span)?;
+        }
         // `switch(ref->cast->type)`: a bitfield, or an 8- or 16-bit integer, is `ev_bitfld`,
         // which only a discarded value steps, by the type it is read as.
         let narrow = matches!(

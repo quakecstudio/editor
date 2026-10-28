@@ -748,6 +748,36 @@ fn a_name_in_parentheses_is_its_value() {
     );
 }
 
+// spec FTEF-30.12: a truth value as an arm of `?:` is no `int`, and the `?:` is named `ternary`
+#[test]
+fn a_truth_arm_is_no_integer() {
+    let found = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "_Bool bb; __bfloat bf; int ii; float q, x;\nvoid() g = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let mismatch = |a: &str, b: &str| format!("Type mismatch on ternary operator: {a} vs {b}");
+    assert_eq!(
+        found("x = q ? bb : x;"),
+        [
+            mismatch("__int32", "float"),
+            "itof emulation: denormals are unsafe ternary".to_owned()
+        ]
+    );
+    assert_eq!(
+        found("ii = q ? ii : bb;"),
+        [
+            "itof emulation: denormals are unsafe ii".to_owned(),
+            mismatch("float", "__int32"),
+            "ftoi emulation: denormals are unsafe".to_owned()
+        ]
+    );
+    assert!(found("x = q ? bf : x;").is_empty());
+}
+
 // spec FTEF-19.69: an unknown name is a `variant` defined in its function, which its later uses
 // there find, and which the checks after it read
 #[test]
@@ -796,4 +826,991 @@ fn an_unknown_name_is_a_variant_of_its_function() {
         found("struct S { float a; }; S s1; __variant va;\nvoid() f = { s1 = va; va = s1; };")
             .is_empty()
     );
+}
+
+/// The cases of [`ternaries_are_typed_as_fteqcc_types_them`], each with the pinned FTEQCC's messages.
+const TERNARIES_ARE_TYPED_AS_FTEQCC_TYPES_THEM_CASES: &[(&str, &str, &[&str])] = &[
+    (
+        "target standard",
+        "v = q ? v : 0;",
+        &["Type mismatch on ternary operator: vector vs float"],
+    ),
+    ("target standard", "e1 = q ? e1 : 0;", &[]),
+    ("target standard", "e1 = q ? 0 : e1;", &[]),
+    ("target standard", "x = q ? 0 : x;", &[]),
+    (
+        "target standard",
+        "v = q ? 0 : v;",
+        &[
+            "Type mismatch on ternary operator: float vs vector",
+            "Implicit cast from float to vector",
+        ],
+    ),
+    ("target standard", "x = q ? (x == y) : x;", &[]),
+    ("target standard", "x = q ? x : (x == y);", &[]),
+    ("target standard", "bf = q ? bf : x;", &[]),
+    ("target standard", "x = q ? x + 1 : y;", &[]),
+    ("target standard", "x = q ? x : y + 1;", &[]),
+    ("target standard", "v = v ?: v2;", &[]),
+    ("target standard", "x = x ?: y;", &[]),
+    ("target standard", "e1 = e1 ?: e1;", &[]),
+    (
+        "target standard",
+        "ii = q ? ii : x;",
+        &[
+            "itof emulation: denormals are unsafe ii",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "target standard",
+        "x = q ? x : ii;",
+        &["itof emulation: denormals are unsafe ii"],
+    ),
+    (
+        "target standard",
+        "u = q ? u : ii;",
+        &[
+            "itof emulation: denormals are unsafe ii",
+            "Type mismatch on ternary operator: __uint vs float",
+        ],
+    ),
+    (
+        "target standard",
+        "ii = q ? ii : u;",
+        &[
+            "itof emulation: denormals are unsafe ii",
+            "itof emulation: denormals are unsafe u",
+            "utof emulation: will break if u is big",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    ("target standard", "l = q ? l : ul;", &[]),
+    ("target standard", "ul = q ? l : ul;", &[]),
+    (
+        "target standard",
+        "x = q ? s : x;",
+        &[
+            "Type mismatch on ternary operator: string vs float",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        "target standard",
+        "x = q ? e1 : x;",
+        &[
+            "Type mismatch on ternary operator: entity vs float",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    ("target standard", "s = q ? s : 0;", &[]),
+    (
+        "target standard",
+        "x = q ? vf : ff;",
+        &[
+            "Type mismatch on ternary operator: void() vs float()",
+            "Cannot cast from void() to float",
+        ],
+    ),
+    (
+        "target standard",
+        "bb = q ? bb : ii;",
+        &[
+            "itof emulation: denormals are unsafe ii",
+            "Type mismatch on ternary operator: __int32 vs float",
+            "ftoi emulation: denormals are unsafe",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "target standard",
+        "ii = q ? bb : ii;",
+        &[
+            "itof emulation: denormals are unsafe ii",
+            "Type mismatch on ternary operator: __int32 vs float",
+        ],
+    ),
+    (
+        "target standard",
+        "v = q ? v : x;",
+        &["Type mismatch on ternary operator: vector vs float"],
+    ),
+    (
+        "target standard",
+        "l = q ? l : 0;",
+        &["Type mismatch on ternary operator: __int64 vs float"],
+    ),
+    (
+        "target standard",
+        "x = q ? l : 0;",
+        &[
+            "Type mismatch on ternary operator: __int64 vs float",
+            "Opcode \"=|CONV_I64F\" not valid for target. Consider the use of: #pragma target fte",
+        ],
+    ),
+    (
+        "target standard",
+        "v = q ? 0 : x;",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        "target standard;;flag enable lax",
+        "if (!vf()) x = 1;",
+        &["Type mismatch: !void"],
+    ),
+    (
+        "target standard;;flag enable lax",
+        "bb = (_Bool)vf();",
+        &[
+            "cast to boolean",
+            "ftoi emulation: denormals are unsafe",
+            "ftoi emulation: denormals are unsafe",
+            "ftoi emulation: denormals are unsafe",
+        ],
+    ),
+    (
+        "target standard;;flag enable lax",
+        "x = !vf();",
+        &["Type mismatch: !void"],
+    ),
+    (
+        "target fte",
+        "v = q ? v : 0;",
+        &["Type mismatch on ternary operator: vector vs float"],
+    ),
+    ("target fte", "e1 = q ? e1 : 0;", &[]),
+    ("target fte", "e1 = q ? 0 : e1;", &[]),
+    ("target fte", "x = q ? 0 : x;", &[]),
+    (
+        "target fte",
+        "v = q ? 0 : v;",
+        &[
+            "Type mismatch on ternary operator: float vs vector",
+            "Implicit cast from float to vector",
+        ],
+    ),
+    ("target fte", "x = q ? (x == y) : x;", &[]),
+    ("target fte", "x = q ? x : (x == y);", &[]),
+    ("target fte", "bf = q ? bf : x;", &[]),
+    ("target fte", "x = q ? x + 1 : y;", &[]),
+    ("target fte", "x = q ? x : y + 1;", &[]),
+    ("target fte", "v = v ?: v2;", &[]),
+    ("target fte", "x = x ?: y;", &[]),
+    ("target fte", "e1 = e1 ?: e1;", &[]),
+    ("target fte", "ii = q ? ii : x;", &[]),
+    ("target fte", "x = q ? x : ii;", &[]),
+    ("target fte", "u = q ? u : ii;", &[]),
+    ("target fte", "ii = q ? ii : u;", &[]),
+    ("target fte", "l = q ? l : ul;", &[]),
+    ("target fte", "ul = q ? l : ul;", &[]),
+    (
+        "target fte",
+        "x = q ? s : x;",
+        &[
+            "Type mismatch on ternary operator: string vs float",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        "target fte",
+        "x = q ? e1 : x;",
+        &[
+            "Type mismatch on ternary operator: entity vs float",
+            "Cannot cast from entity to float",
+        ],
+    ),
+    ("target fte", "s = q ? s : 0;", &[]),
+    (
+        "target fte",
+        "x = q ? vf : ff;",
+        &[
+            "Type mismatch on ternary operator: void() vs float()",
+            "Cannot cast from void() to float",
+        ],
+    ),
+    ("target fte", "bb = q ? bb : ii;", &[]),
+    ("target fte", "ii = q ? bb : ii;", &[]),
+    (
+        "target fte",
+        "v = q ? v : x;",
+        &["Type mismatch on ternary operator: vector vs float"],
+    ),
+    (
+        "target fte",
+        "l = q ? l : 0;",
+        &["Type mismatch on ternary operator: __int64 vs float"],
+    ),
+    (
+        "target fte",
+        "x = q ? l : 0;",
+        &["Type mismatch on ternary operator: __int64 vs float"],
+    ),
+    (
+        "target fte",
+        "v = q ? 0 : x;",
+        &["Implicit cast from float to vector"],
+    ),
+    (
+        "target fte;;flag enable lax",
+        "if (!vf()) x = 1;",
+        &["Type mismatch: !void"],
+    ),
+    (
+        "target fte;;flag enable lax",
+        "bb = (_Bool)vf();",
+        &["cast to boolean"],
+    ),
+    (
+        "target fte;;flag enable lax",
+        "x = !vf();",
+        &["Type mismatch: !void"],
+    ),
+];
+
+// spec FTEF-30.3: each arm pair, a truth value among them (FTEF-30.12), as the pinned FTEQCC
+// reports it, and a lax `void` tested (FTEF-23.11)
+#[test]
+fn ternaries_are_typed_as_fteqcc_types_them() {
+    const DEFS: &str = "float q, x, y; vector v, v2; entity e1; string s; int ii; __uint u; __int64 l; __uint64 ul; __bfloat bf; _Bool bb; void() vf = {}; float() ff = { return 1; };";
+    let cases = TERNARIES_ARE_TYPED_AS_FTEQCC_TYPES_THEM_CASES;
+    for (pragmas, statement, expected) in cases {
+        let head: String = pragmas
+            .split(";;")
+            .filter(|p| !p.is_empty())
+            .map(|p| format!("#pragma {p}\n"))
+            .collect();
+        let source = format!("{head}{DEFS}\nvoid() g = {{ {statement} }};\n");
+        let found: Vec<String> = diags(&source).into_iter().map(|(_, m)| m).collect();
+        assert_eq!(found, *expected, "{source}");
+    }
+}
+
+/// The cases of [`ternaries_at_global_scope_are_statements`], each with the pinned FTEQCC's messages.
+const TERNARIES_AT_GLOBAL_SCOPE_ARE_STATEMENTS_CASES: &[(&str, &[&str])] = &[
+    (
+        "vector v, v2; vector q = v ?: v2;\n",
+        &[
+            "Unable to generate statements at global scope (NOT_V).",
+            "Unable to generate statements at global scope (IF).",
+            "Unable to generate statements at global scope (STORE_V).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_V).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float x, y; float q = x ?: y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float x, y, c; float q = c ? x : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "vector v, v2; float c; vector q = c ? v : v2;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_V).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_V).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float x, y, c; float q = c ? x + 1 : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (ADD_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float x, y, c; float q = c ? x : y + 1;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (ADD_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "vector v, v2; float c; vector q = c ? v * 2 : v2;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (MUL_VF).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_V).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "__uint64 ul; _Bool b = (_Bool)ul;\n",
+        &[
+            "Unable to generate statements at global scope (NE_FNC).",
+            "Unable to generate statements at global scope (NE_FNC).",
+            "Unable to generate statements at global scope (OR_F).",
+            "Opcode \"=|CONV_I64I\" not valid for target. Consider the use of: #pragma target fte",
+            "Unable to generate statements at global scope (CONV_I64I).",
+            "Unable to generate statements at global scope (NE_FNC).",
+            "ftoi emulation: denormals are unsafe",
+            "Unable to generate statements at global scope (MUL_F).",
+            "initializer for 'b' is not constant",
+        ],
+    ),
+    (
+        "entity e1, e2; float c; entity q = c ? e1 : e2;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_ENT).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "#pragma flag enable lax\nvoid() vf = {}; _Bool b = (_Bool)vf();\n",
+        &[
+            "Unable to generate statements at global scope (CALL0).",
+            "cast to boolean",
+            "Unable to generate statements at global scope (NE_F).",
+            "ftoi emulation: denormals are unsafe",
+            "Unable to generate statements at global scope (MUL_F).",
+            "Unable to generate statements at global scope (NE_FNC).",
+            "ftoi emulation: denormals are unsafe",
+            "Unable to generate statements at global scope (MUL_F).",
+            "initializer for 'b' is not constant",
+        ],
+    ),
+];
+
+// spec FTEF-30.13: a `?:` at global scope is its jumps and stores, each "Unable to generate
+// statements", a vector condition tested by `OP_IF_I` of its `!` (FTEF-30.3)
+#[test]
+fn ternaries_at_global_scope_are_statements() {
+    let cases = TERNARIES_AT_GLOBAL_SCOPE_ARE_STATEMENTS_CASES;
+    for (source, expected) in cases {
+        let found: Vec<String> = diags(source).into_iter().map(|(_, m)| m).collect();
+        assert_eq!(found, *expected, "{source}");
+    }
+}
+
+/// The cases of [`a_calls_value_is_an_alias_in_an_arm`], each with the pinned FTEQCC's messages.
+const A_CALLS_VALUE_IS_AN_ALIAS_IN_AN_ARM_CASES: &[(&str, &[&str])] = &[
+    (
+        "float() ff = { return 1; }; float c, y; float q = c ? ff() : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (CALL0).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float() ff = { return 1; }; float c, y; float q = c ? y : ff();\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (CALL0).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float() ff = { return 1; }; float q = ff() ?: 2;\n",
+        &[
+            "Unable to generate statements at global scope (CALL0).",
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "vector() fv = { return [1,2,3]; }; float c; vector v; vector q = c ? fv() : v;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (CALL0).",
+            "Unable to generate statements at global scope (STORE_V).",
+            "Unable to generate statements at global scope (STORE_V).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_V).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+];
+
+// spec FTEF-30.13: a call's value in a `?:` arm is copied before the first arm's store
+#[test]
+fn a_calls_value_is_an_alias_in_an_arm() {
+    let cases = A_CALLS_VALUE_IS_AN_ALIAS_IN_AN_ARM_CASES;
+    for (source, expected) in cases {
+        let found: Vec<String> = diags(source).into_iter().map(|(_, m)| m).collect();
+        assert_eq!(found, *expected, "{source}");
+    }
+}
+
+/// The cases of [`global_arms_and_stores_are_statements`], each with the pinned FTEQCC's messages.
+const GLOBAL_ARMS_AND_STORES_ARE_STATEMENTS_CASES: &[(&str, &[&str])] = &[
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? (float)e : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "itof emulation: denormals are unsafe e",
+            "Unable to generate statements at global scope (DIV_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : (float)e;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "itof emulation: denormals are unsafe e",
+            "Unable to generate statements at global scope (DIV_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = (float)e ?: y;\n",
+        &[
+            "itof emulation: denormals are unsafe e",
+            "Unable to generate statements at global scope (DIV_F).",
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? __NULL__ : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : __NULL__;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? (c ? x : y) : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : (c ? x : y);\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = (c ? x : y) ?: y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? v_x : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : v_x;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = v_x ?: y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? e.fl : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (LOADF_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : e.fl;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (LOADF_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = e.fl ?: y;\n",
+        &[
+            "Unable to generate statements at global scope (LOADF_F).",
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? *p : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "Unable to generate statements at global scope (LOADP_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : *p;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "Unable to generate statements at global scope (LOADP_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = *p ?: y;\n",
+        &[
+            "memgetval function not defined: cannot emulate OP_LOADP_*",
+            "Opcode \"=|LOADP_F\" not valid for target. Consider the use of: #pragma target fte",
+            "Unable to generate statements at global scope (LOADP_F).",
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? -x : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (SUB_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : -x;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (SUB_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = -x ?: y;\n",
+        &[
+            "Unable to generate statements at global scope (SUB_F).",
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? !x : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (NOT_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : !x;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (NOT_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = !x ?: y;\n",
+        &[
+            "Unable to generate statements at global scope (NOT_F).",
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? x++ : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (ADD_F).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : x++;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (ADD_F).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = x++ ?: y;\n",
+        &[
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (ADD_F).",
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? (x = y) : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : (x = y);\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = (x = y) ?: y;\n",
+        &[
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? sizeof(x) : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Type mismatch on ternary operator: __uint32 vs float",
+            "Unable to generate statements at global scope (STORE_F).",
+            "itof emulation: denormals are unsafe ternary",
+            "Unable to generate statements at global scope (DIV_F).",
+            "utof emulation: will break if ternary is big",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : sizeof(x);\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? ff : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Type mismatch on ternary operator: float() vs float",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Cannot cast from float() to float",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : ff;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Type mismatch on ternary operator: float vs float()",
+            "Unable to generate statements at global scope (STORE_FNC).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? ii : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "itof emulation: denormals are unsafe ii",
+            "Unable to generate statements at global scope (DIV_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : ii;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "itof emulation: denormals are unsafe ii",
+            "Unable to generate statements at global scope (DIV_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = ii ?: y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? (int)x : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "ftoi emulation: denormals are unsafe",
+            "Unable to generate statements at global scope (MUL_F).",
+            "itof emulation: denormals are unsafe temp_0",
+            "Unable to generate statements at global scope (DIV_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : (int)x;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "ftoi emulation: denormals are unsafe",
+            "Unable to generate statements at global scope (MUL_F).",
+            "itof emulation: denormals are unsafe temp_0",
+            "Unable to generate statements at global scope (DIV_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = (int)x ?: y;\n",
+        &[
+            "ftoi emulation: denormals are unsafe",
+            "Unable to generate statements at global scope (MUL_F).",
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? x * 2 : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (MUL_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : x * 2;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (MUL_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = x * 2 ?: y;\n",
+        &[
+            "Unable to generate statements at global scope (MUL_F).",
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? \"a\" : y;\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Type mismatch on ternary operator: string vs float",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Cannot cast from string to float",
+        ],
+    ),
+    (
+        "float c, d, x, y; entity e; vector v; string s; .float fl; float *p; int ii; float() ff = { return 1; }; float q = c ? y : \"a\";\n",
+        &[
+            "Unable to generate statements at global scope (IFNOT).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (GOTO).",
+            "Type mismatch on ternary operator: float vs string",
+            "Unable to generate statements at global scope (STORE_S).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float x; float q = x++;\n",
+        &[
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (ADD_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float x, y; float q = (x = y);\n",
+        &[
+            "Unable to generate statements at global scope (STORE_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float x, y; float q = (x = y + 1);\n",
+        &[
+            "Unable to generate statements at global scope (ADD_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "vector v, w; vector q = (v = w);\n",
+        &[
+            "Unable to generate statements at global scope (STORE_V).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+    (
+        "float x, y; float q = (x += y);\n",
+        &[
+            "Unable to generate statements at global scope (ADD_F).",
+            "initializer for 'q' is not constant",
+        ],
+    ),
+];
+
+// spec FTEF-29.13: a store and a postfix copy are statements, an arm's store folded only into the
+// statement whose temporary it stores (FTEF-30.3, FTEF-30.13)
+#[test]
+fn global_arms_and_stores_are_statements() {
+    let cases = GLOBAL_ARMS_AND_STORES_ARE_STATEMENTS_CASES;
+    for (source, expected) in cases {
+        let found: Vec<String> = diags(source).into_iter().map(|(_, m)| m).collect();
+        assert_eq!(found, *expected, "{source}");
+    }
 }
