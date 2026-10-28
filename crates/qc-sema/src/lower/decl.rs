@@ -527,6 +527,9 @@ pub struct RawBraces {
     pub plain: Option<Span>,
     /// The span of its `{`, where an error about it as an element stands.
     pub open: Span,
+    /// The span of its `}` when a `,` comes before it, which a struct whose members all have
+    /// values leaves to what reads on (FTEF-19.65).
+    pub trailing: Option<Span>,
     /// Its elements, in order.
     pub elements: Vec<RawElement>,
 }
@@ -575,6 +578,7 @@ fn raw_braces(agg: &ast::AggregateInit, cx: Cx<'_>) -> RawBraces {
     // `}` straight after `{` is empty braces; after a `,` it stands where a `.` is expected.
     let mut starts = Vec::new();
     let mut after = None;
+    let mut trailing = None;
     for element in agg.syntax().children_with_tokens() {
         let (text, span) = match &element {
             qc_syntax::SyntaxElement::Token(t) if t.kind().is_trivia() => continue,
@@ -584,6 +588,9 @@ fn raw_braces(agg: &ast::AggregateInit, cx: Cx<'_>) -> RawBraces {
         if matches!(text.as_str(), "{" | ",") {
             after = Some(text);
             continue;
+        }
+        if after.as_deref() == Some(",") && text == "}" {
+            trailing = Some(span);
         }
         if after.as_deref() == Some(",") || (after.is_some() && text != "}") {
             starts.push((text, span));
@@ -602,6 +609,7 @@ fn raw_braces(agg: &ast::AggregateInit, cx: Cx<'_>) -> RawBraces {
         designated,
         plain,
         open,
+        trailing,
         elements,
     }
 }

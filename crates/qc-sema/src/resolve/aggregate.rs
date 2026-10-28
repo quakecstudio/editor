@@ -173,6 +173,17 @@ impl Resolver<'_> {
             self.report(Code::E0355, location, message);
             return Err(Fatal);
         }
+        // FTEF-19.65: the loop ends at the last member, before the `}` after a trailing `,`.
+        if let Some(close) = braces.trailing
+            && braces.elements.len() == members.len()
+            && site != AggregateSite::Nested
+        {
+            let location = self.at(file, close);
+            let message = "Missing semicolon at end of definition".to_owned();
+            self.report(Code::W0203, location, message);
+            self.report(Code::E0203, location, "\"}\" is not a type".to_owned());
+            return Err(Fatal);
+        }
         self.read_parts(
             file,
             braces,

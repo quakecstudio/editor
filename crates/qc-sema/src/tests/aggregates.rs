@@ -377,3 +377,21 @@ fn designated_initialisers_name_every_member() {
     );
     assert!(messages(&format!("{defs}S st = {{ .a = 1, .b = {{1, 2, 3}} }};")).is_empty());
 }
+
+// spec FTEF-19.65: a trailing comma after every member's value leaves the struct's `}` to the
+// definition, which is missing its semicolon
+#[test]
+fn a_trailing_comma_after_every_member() {
+    let defs = "struct S { float a; float b; };\n";
+    let left = [missing_semicolon(), d(Code::E0203, "\"}\" is not a type")];
+    assert_eq!(messages(&format!("{defs}S st = {{ 1, 2, }};")), left);
+    assert_eq!(
+        messages(&format!(
+            "{defs}void() f = {{ local S st = {{ 1, 2, }}; }};"
+        )),
+        left
+    );
+    assert!(messages(&format!("{defs}S st = {{ 1, }};")).is_empty());
+    assert!(messages(&format!("{defs}S st = {{ 1, 2 }};")).is_empty());
+    assert!(messages("union U { float a; float b; };\nU u = { 1, };").is_empty());
+}
