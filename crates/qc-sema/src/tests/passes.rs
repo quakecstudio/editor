@@ -612,3 +612,23 @@ fn a_class_parent_is_read_as_a_type() {
         [Code::E0242]
     );
 }
+
+// spec FTEF-12.19: a lexical error only the first pass meets, whose flags differ from the
+// second's, is reported once, and one an `extern` block lexes otherwise is the parser's
+#[test]
+fn a_first_pass_lexical_error_is_kept() {
+    assert_eq!(
+        errors(
+            "#pragma flag disable qcfuncs\n#pragma autoproto\nstring s = \"\\9\";\nfloat x;\n\
+             #pragma flag enable qcfuncs\nfloat y;\n"
+        ),
+        [Code::E0103]
+    );
+    assert_eq!(
+        errors(
+            "#pragma flag disable qcfuncs\n#pragma autoproto\nextern \"QC\" { string s = \"\\9\"; }\n\
+             float x;\n#pragma flag enable qcfuncs\nfloat y;\n"
+        ),
+        []
+    );
+}
