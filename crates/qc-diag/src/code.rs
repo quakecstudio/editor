@@ -608,13 +608,17 @@ pub enum Code {
     W0314,
     /// "NAME defined static": a name found only as a `static` of another unit (QCD-7.108).
     W0315,
+    /// "'self' used inside OO function, use 'this'." (QCD-7.109).
+    W0316,
+    /// "backslashes in path names are non-portable - PATH" (QCD-7.110).
+    W0317,
     /// "NAME differs in case from the file it opens, STORED" (QCD-7.16).
     W0402,
 }
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 269] = [
+    pub const ALL: [Self; 271] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -883,6 +887,8 @@ impl Code {
         Self::W0313,
         Self::W0314,
         Self::W0315,
+        Self::W0316,
+        Self::W0317,
         Self::W0402,
     ];
 
@@ -1063,6 +1069,8 @@ impl Code {
             Self::W0402 => "W0402",
             Self::W0314 => "W0314",
             Self::W0315 => "W0315",
+            Self::W0316 => "W0316",
+            Self::W0317 => "W0317",
             Self::W0218 => "W0218",
             Self::W0217 => "W0217",
             Self::W0216 => "W0216",
@@ -1225,6 +1233,8 @@ impl Code {
             | Self::W0218
             | Self::W0314
             | Self::W0315
+            | Self::W0316
+            | Self::W0317
             | Self::W0231
             | Self::W0232
             | Self::W0233

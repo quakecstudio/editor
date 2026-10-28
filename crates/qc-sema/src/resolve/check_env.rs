@@ -15,7 +15,7 @@ use crate::cast::{Cast, Kind, Source, Supply};
 use crate::check::constant::{Constant, unquoted};
 use crate::check::etype::Etype;
 use crate::check::{
-    Constness, CvarValue, Env, FunctionFacts, ParamFacts, Shape, StructMemberFacts,
+    Constness, CvarValue, Env, FunctionFacts, ParamFacts, PathList, Shape, StructMemberFacts,
 };
 use crate::lower::{ArrayDim, LiteralValue, RawLocal};
 use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
@@ -148,6 +148,18 @@ impl Env for BodyEnv<'_, '_> {
             .entry(name.to_owned())
             .or_insert(value);
         false
+    }
+
+    fn record_path(&mut self, list: PathList, path: &str, span: Span) {
+        if path.is_empty() || !self.resolver.paths.insert((list, path.to_owned())) {
+            return;
+        }
+        if path.contains('\\') {
+            self.resolver.settle(span.start);
+            let location = self.resolver.at(self.file, span);
+            let message = format!("backslashes in path names are non-portable - {path}");
+            self.resolver.report(Code::W0317, location, message);
+        }
     }
 
     fn local_static(&self, at: usize) -> bool {
@@ -480,9 +492,7 @@ impl Env for BodyEnv<'_, '_> {
 
     fn class_member(&self, ty: &Type, name: &str, at: usize) -> Option<DefId> {
         let member = self.resolver.class_member(ty, name)?;
-        let def = self.resolver.index.def(member)?;
-        (!self.inline_member || def.location.file != self.file || def.location.span.start <= at)
-            .then_some(member)
+        (!self.inline_member || self.resolver.declared_by(member, self.file, at)).then_some(member)
     }
 
     fn class_name(&self, ty: &Type) -> Option<String> {

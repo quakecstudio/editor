@@ -69,6 +69,9 @@ pub(crate) trait Env {
     /// FTEF-17.17: the cvar `name` an `autocvar` call gives the default `value`: whether a value
     /// the cvar was given before differs from it, which ends the call.
     fn autocvar(&mut self, name: &str, value: CvarValue, span: Span) -> bool;
+    /// FTEF-17.19: `path` named for the program's `list` of sounds, models, textures or files,
+    /// which warns of a backslash the first time the list has it.
+    fn record_path(&mut self, list: PathList, path: &str, span: Span);
     /// Whether the local whose name starts at offset `at` is `static` (FTEF-21.14).
     fn local_static(&self, at: usize) -> bool;
     /// FTEF-19.62: the local whose name starts at offset `at` is an array of `size` elements.
@@ -526,6 +529,19 @@ pub(crate) enum Constness {
     /// A constant whose value the model does not follow; nothing that its value decides, folding
     /// or emulation, is checked.
     Opaque,
+}
+
+/// The lists of files FTEQCC keeps as it reads the program's calls (FTEF-17.19).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum PathList {
+    /// `precache_sound`, `sound`, `localsound` and `used_sound`.
+    Sound,
+    /// `precache_model`, `setmodel` and `used_model`.
+    Model,
+    /// `precache_texture`.
+    Texture,
+    /// `precache_file`.
+    File,
 }
 
 /// The default an `autocvar` call gives its cvar, as the call compares it with the cvar's

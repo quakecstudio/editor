@@ -202,6 +202,19 @@ impl<'e> Checker<'e> {
         let Some(token) = name.name() else {
             return Value::unknown();
         };
+        // FTEF-17.18: in a member function `self` is `this` ("class code uses self as though
+        // it was 'this'"), with the warning `WARN_SELFNOTTHIS`.
+        if !scoped
+            && token.text() == b"self"
+            && let Some(class) = self.env.this_type()
+        {
+            let message = "'self' used inside OO function, use 'this'.".to_owned();
+            self.env.report(Code::W0316, token.span(), message);
+            return Value {
+                name: Some("this".to_owned()),
+                ..Value::of(class)
+            };
+        }
         let Some(def) = self.env.reference(token.span().start) else {
             // FTEF-17.14: `this` is the entity `self` as the function's class.
             if !scoped

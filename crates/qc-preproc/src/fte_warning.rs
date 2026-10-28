@@ -465,6 +465,7 @@ impl FteWarning {
             Code::W0205 | Code::W0215 => Self::UnexpectedPunct,
             Code::W0206 | Code::W0210 | Code::W0211 | Code::W0223 => Self::CompatibilityHack,
             Code::W0207 => Self::DuplicateDefinition,
+            Code::W0316 => Self::SelfNotThis,
             Code::W0208 | Code::W0315 => Self::SameNameAsGlobal,
             Code::W0209 => Self::TypeMismatchRedecOptional,
             Code::W0212 => Self::RedeclarationMismatch,

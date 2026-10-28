@@ -2445,6 +2445,21 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   is not compared with the call's value by this profile. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseFunctionCall`.
+- **FTEF-17.18** In a member function, `self` not after `::` is `this`, the function's class:
+  `QCC_PR_ParseValue` warns `WARN_SELFNOTTHIS` (`F331`, off by default) "'self' used inside OO
+  function, use 'this'." and reads `this` in its place, so `self.x` is the class's member `x`.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseValue`.
+- **FTEF-17.19** FTEQCC keeps a list of the sounds, models, textures and files the program
+  names: the first argument of a `precache_sound`, `precache_model`, `precache_texture` or
+  `precache_file` function (any name with that prefix), the second of `setmodel` and
+  `localsound`, the third of `sound`, and the argument of `used_sound` and `used_model`, each a
+  string immediate or a constant string. A path that is new to its list and has a backslash
+  warns "backslashes in path names are non-portable - PATH", with the path's escapes read, and
+  no command-line flag turns it off; a path the list has already warns no more. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PrecacheSound`, `QCC_PrecacheModel`, `QCC_SetModel`, `QCC_SoundUsed`,
+  `QCC_PrecacheTexture`, `QCC_PrecacheFile`, `QCC_PR_ParseFunctionCall`.
 
 ## FTEF-18 Further statements, terms and frame macros
 

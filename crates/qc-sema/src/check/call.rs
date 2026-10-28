@@ -12,12 +12,13 @@ use qc_diag::{Code, Span};
 use qc_preproc::Op;
 use qc_syntax::ast::{self, AstNode as _};
 
+use crate::check::assign::{lexed_string, string_bytes};
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::reference::expected_after;
 use crate::check::term::string_immediate;
-use crate::check::{Constness, CvarValue, ParamFacts, Reference, Value};
+use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Value};
 use crate::ty::{FunctionType, SimpleType, Type};
 
 /// `MAX_PARMS`: the parameters a call passes in the parameter globals.
@@ -132,6 +133,7 @@ impl Checker<'_> {
                 value = self.cast_to(&value, param, arg_span)?;
             }
             passed.push(reference);
+            self.record_call_path(&name, at, arg);
             values.push(value);
             self.end_of_construct()?;
         }
@@ -392,6 +394,15 @@ impl Checker<'_> {
                 Ok(Some(Value::of(value.ty)))
             }
             "used_sound" | "used_model" => {
+                let list = if name == "used_sound" {
+                    PathList::Sound
+                } else {
+                    PathList::Model
+                };
+                if let Some(bytes) = args.first().and_then(string_bytes) {
+                    self.env
+                        .record_path(list, &String::from_utf8_lossy(&bytes), span);
+                }
                 if !args.first().is_some_and(is_string_literal) {
                     let message =
                         format!("Argument to {name} intrinsic was not a string immediate.");
@@ -400,6 +411,33 @@ impl Checker<'_> {
                 Ok(Some(string()))
             }
             _ => Ok(None),
+        }
+    }
+
+    /// FTEF-17.19: the path a call names by a constant string: a `precache_` function's first
+    /// argument, `setmodel`'s and `localsound`'s second and `sound`'s third.
+    fn record_call_path(&mut self, name: &str, at: usize, arg: &ast::Expr) {
+        let list = match (at, name) {
+            (0, _) if name.starts_with("precache_sound") => PathList::Sound,
+            (0, _) if name.starts_with("precache_model") => PathList::Model,
+            (0, _) if name.starts_with("precache_texture") => PathList::Texture,
+            (0, _) if name.starts_with("precache_file") => PathList::File,
+            (1, "setmodel") => PathList::Model,
+            (1, "localsound") | (2, "sound") => PathList::Sound,
+            _ => return,
+        };
+        let bytes = match arg {
+            ast::Expr::Literal(_) => string_bytes(arg),
+            ast::Expr::Name(name) => name
+                .name()
+                .and_then(|t| self.env.reference(t.span().start))
+                .and_then(|def| self.env.string_text(def))
+                .and_then(|text| lexed_string(&format!("\"{text}\""))),
+            _ => None,
+        };
+        if let Some(bytes) = bytes {
+            self.env
+                .record_path(list, &String::from_utf8_lossy(&bytes), arg.syntax().span());
         }
     }
 

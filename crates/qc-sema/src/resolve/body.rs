@@ -150,6 +150,7 @@ impl<'a> Resolver<'a> {
         // Record where this function's locals start, so lookups in it see only its own.
         let scope = Scope {
             owner,
+            file,
             locals_start: self.index.defs.len(),
             class,
             at: 0,

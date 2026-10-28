@@ -418,3 +418,45 @@ fn autocvar_calls_give_their_cvar_a_value() {
         ["autocvar sv_s was already initialised with another value"]
     );
 }
+
+// spec FTEF-17.19: a path new to its list warns of a backslash, once per list
+// spec QCD-7.110: W0317 "backslashes in path names are non-portable - PATH"
+#[test]
+fn backslashes_in_paths_warn_once_per_list() {
+    let messages = |body: &str| -> Vec<String> {
+        diags(&format!(
+            "entity world;\nvoid(string s) precache_sound = #19;\n\
+             void(string s) precache_model = #20;\nvoid(entity e, string m) setmodel = #3;\n\
+             void(entity e, float c, string s, float v, float a) sound = #8;\n\
+             void(entity e, string s) localsound = #9;\n\
+             string P = \"m\\\\p.mdl\";\nvoid() f = {{ {body} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let warn = |path: &str| format!("backslashes in path names are non-portable - {path}");
+    assert_eq!(
+        messages(r#"precache_sound("a\\b.wav"); precache_sound("a\\b.wav");"#),
+        [warn(r"a\b.wav")]
+    );
+    assert_eq!(
+        messages(r#"precache_sound("a\\b.wav"); precache_model("a\\b.wav");"#),
+        [warn(r"a\b.wav"), warn(r"a\b.wav")]
+    );
+    assert_eq!(
+        messages("setmodel(world, P); precache_model(P);"),
+        [warn(r"m\p.mdl")]
+    );
+    assert_eq!(
+        messages(r#"sound(world, 0, "c\\d.wav", 1, 1); localsound(world, "c\\d.wav");"#),
+        [warn(r"c\d.wav")]
+    );
+    assert_eq!(messages(r#"used_model("e\\f.mdl");"#)[0], warn(r"e\f.mdl"));
+    assert!(messages(r#"precache_sound("a/b.wav"); setmodel(world, "");"#).is_empty());
+    assert!(
+        messages(r#"setmodel("x\\y.mdl", world);"#)
+            .iter()
+            .all(|m| !m.starts_with("backslashes"))
+    );
+}

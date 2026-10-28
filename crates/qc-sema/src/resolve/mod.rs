@@ -34,9 +34,9 @@ use qc_diag::{Code, Diagnostic, Span};
 use qc_preproc::{OpcodeTarget, TargetFormat, WarningSettings};
 use qc_syntax::{Dialect, Keywords};
 
-use crate::check::CvarValue;
 use crate::check::TypedBody;
 use crate::check::constant::Constant;
+use crate::check::{CvarValue, PathList};
 use crate::expand::{OriginMap, ProtoPlan};
 use crate::lower::{
     ArrayDim, BuiltinFunction, FileDecls, LiteralValue, RawBody, RawDecl, RawParam, RawParamInfo,
@@ -305,6 +305,7 @@ pub(crate) fn resolve_mapped(
         strict_enums: HashMap::new(),
         folded_sizes: HashMap::new(),
         autocvars: HashMap::new(),
+        paths: HashSet::new(),
         enum_types: HashMap::new(),
         enum_values: HashMap::new(),
         enum_redeclared: false,
@@ -553,6 +554,8 @@ struct Resolver<'a> {
     folded_sizes: HashMap<usize, u32>,
     /// The default each cvar an `autocvar` call names was given first (FTEF-17.17).
     autocvars: HashMap<String, CvarValue>,
+    /// The paths each list of sounds, models, textures and files holds (FTEF-17.19).
+    paths: HashSet<(PathList, String)>,
     /// The definitions whose last initialiser was `weak` or that are `accumulate`, which the
     /// next may replace (FTEF-15.5): FTEQCC's `def->weak`, which gives the next initialiser
     /// `PIF_STRONGER`, and `def->accumulate`.
@@ -880,6 +883,8 @@ enum Found {
 #[derive(Clone, Copy)]
 struct Scope {
     owner: DefId,
+    /// The compiled file the body is in, whose text [`Self::at`] is an offset of.
+    file: FileId,
     locals_start: usize,
     class: Option<DefId>,
     /// The byte offset the lookup is made at, which a `for` statement's locals are found

@@ -768,14 +768,18 @@ fn discarded(node: &SyntaxNode) -> bool {
 }
 
 /// The bytes of the string literal `expr` as FTEQCC's lexer reads them, `pr_immediate_string`.
-fn string_bytes(expr: &ast::Expr) -> Option<Vec<u8>> {
+pub(super) fn string_bytes(expr: &ast::Expr) -> Option<Vec<u8>> {
     let ast::Expr::Literal(literal) = expr else {
         return None;
     };
     if literal.kind() != Some(ast::LiteralKind::String) {
         return None;
     }
-    let text = literal.token()?.text_lossless();
+    lexed_string(&literal.token()?.text_lossless())
+}
+
+/// The bytes of the one quoted string `text`, with its escapes read as FTEQCC's lexer reads them.
+pub(super) fn lexed_string(text: &str) -> Option<Vec<u8>> {
     let lexed = qc_lexer::lex_with(text.as_bytes(), qc_syntax::Dialect::Fteqcc);
     match lexed.tokens.as_slice() {
         [token] => match &token.kind {

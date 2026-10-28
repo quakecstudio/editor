@@ -756,6 +756,10 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   not supported at this time" (FTEF-9.16). `WARN_MISSINGMEMBERQUALIFIER`, F334.
 - **QCD-7.108** `W0315` "NAME defined static": a name found only as a `static` global of another
   unit (FTEF-19.60), the warning `WARN_SAMENAMEASGLOBAL`.
+- **QCD-7.109** `W0316` "'self' used inside OO function, use 'this'.": `self` in a member
+  function (FTEF-17.18), the warning `WARN_SELFNOTTHIS`.
+- **QCD-7.110** `W0317` "backslashes in path names are non-portable - PATH": a path new to the
+  program's list of sounds, models, textures or files (FTEF-17.19), `WARN_NONPORTABLEFILENAME`.
 
 ## QCD-8 Preprocessor errors
 

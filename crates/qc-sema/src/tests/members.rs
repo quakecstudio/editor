@@ -483,3 +483,36 @@ fn undefined_classes_and_oversized_conditionals() {
         [(Code::E0370, "oversized ternary result".to_owned())]
     );
 }
+
+// spec FTEF-17.18: `self` in a member function is `this`, with F331's warning when it is on
+// spec QCD-7.109: W0316 "'self' used inside OO function, use 'this'."
+// spec FTEF-17.16: an inline member function sees the members declared before it, where a
+// warning pragma ahead of the class moves the text the parser read
+#[test]
+fn self_in_member_functions_is_this() {
+    let messages = |pragma: &str| -> Vec<String> {
+        let source = format!(
+            "{pragma}\nentity self; .float y;\nclass C : entity {{ float x;\n\
+             void() m = {{ this.x = 1; self.x = 2; self.y = 3; z = 1; }}; float z; }};\n"
+        );
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        let file = FileId(0);
+        db.set_file(file, PathBuf::from("t.qc"), source.into_bytes());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![file],
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .filter(|d| !d.diagnostic.message.ends_with("Assuming non-virtual."))
+        .map(|d| format!("{}: {}", d.diagnostic.code.as_str(), d.diagnostic.message))
+        .collect()
+    };
+    let this = "W0316: 'self' used inside OO function, use 'this'.";
+    let unknown = "E0301: Unknown value \"z\".";
+    assert_eq!(
+        messages("#pragma warning enable F331"),
+        [unknown, this, this]
+    );
+    assert_eq!(messages("#pragma warning disable F331"), [unknown]);
+}
