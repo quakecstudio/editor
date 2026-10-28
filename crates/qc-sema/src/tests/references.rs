@@ -283,7 +283,7 @@ fn an_indexed_store_of_another_type() {
 }
 
 // spec FTEF-31.8: a constant index is `QCC_Eval_Int` of it; a vector or a string has no value
-// spec QCD-4.61: E0359 "Unable to evaluate to numeric constant" for such an index
+// spec QCD-4.61: E0360 "Unable to evaluate to numeric constant" for such an index
 #[test]
 fn a_constant_index_is_evaluated_as_an_integer() {
     let messages = |statement: &str| -> Vec<String> {

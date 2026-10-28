@@ -4260,7 +4260,7 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
 - **FTEF-31.8** A constant index is read by `QCC_Eval_Int`, a 64-bit integer: C's conversion of a
   float or double (saturating, as on arm64), an integer, or a 64-bit one, and the bounds check
   compares its low word as unsigned, so `arr[13.5 / 0.0]` is "(constant) array index out of bounds
-  (0 <= -1 < 1)". A vector or string constant has no value there, `E0359` "Unable to evaluate to
+  (0 <= -1 < 1)". A vector or string constant has no value there, `E0360` "Unable to evaluate to
   numeric constant", twice for an array's, a vector's and a `.vector` field's index (the bounds
   and the element's read) and 0 for the index; a pointer's index is made an integer instead, a
   string "Implicit type mismatch. Needed integer, got string.".

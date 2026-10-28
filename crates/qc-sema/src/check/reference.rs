@@ -420,7 +420,7 @@ impl Checker<'_> {
                     if evaluated {
                         for _ in 0..2 {
                             let message = "Unable to evaluate to numeric constant".to_owned();
-                            self.env.report(Code::E0359, span, message);
+                            self.env.report(Code::E0360, span, message);
                         }
                     }
                     0
