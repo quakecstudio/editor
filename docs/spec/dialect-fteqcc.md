@@ -3209,6 +3209,10 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   to one is converted by `QCC_SupplyConversion`, whose `OP_CONV_FTOI` (or `OP_CONV_FU` and the
   64-bit ones) folds with its warnings: `enum E : int { C = 1.5 };` is "Numerical overflow.
   1.500000 will be rounded to 1" and the value 1.
+- **FTEF-19.53** A braced initialiser for a scalar, a float, string, entity, field or integer,
+  global, local or an array's element, is the error `E0201` "\"{\" - not a name" at the `{`:
+  `QCC_PR_ParseInitializerType` reads the scalar's value as an expression, which `{` cannot
+  start (`float x = { 1 };`, `float a[2] = { {1}, 2 };`); a vector takes braces as three floats.
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and

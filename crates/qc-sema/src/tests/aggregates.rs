@@ -286,3 +286,26 @@ fn an_unsized_array_counts_its_braced_elements() {
         )]
     );
 }
+
+// spec FTEF-19.53: braces for a scalar are "\"{\" - not a name"
+#[test]
+fn braces_for_a_scalar_are_no_name() {
+    let refused = vec![d(Code::E0201, "\"{\" - not a name")];
+    for source in [
+        "float x = { 1 };",
+        "string sx = { \"a\" };",
+        "entity ex = { 1 };",
+        "float fy = { };",
+        "void() g = { local float x = { 1 }; };",
+        ".float fl = { 1 };",
+        "int ix = { 1 };",
+        "float a[2] = { {1}, 2 };",
+    ] {
+        assert_eq!(
+            messages(&format!("#pragma target fte\n{source}")),
+            refused,
+            "{source}"
+        );
+    }
+    assert_eq!(messages("#pragma target fte\nvector v = { 1, 2, 3 };"), []);
+}

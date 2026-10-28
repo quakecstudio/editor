@@ -345,6 +345,10 @@ fn a_struct_with_no_tag_is_a_type_of_its_own() {
         ["q is not a member of <union>"]
     );
     assert_eq!(
+        fte("union { float a; vector v; } uu; float arr[1]; void() g = { arr[sizeof(uu)] = 1; };"),
+        ["(constant) array index out of bounds (0 <= 12 < 1)"]
+    );
+    assert_eq!(
         fte(
             "struct { float a; vector v; } anon; float arr[1]; void() g = { arr[sizeof(anon)] = \
              1; anon.a = \"s\"; };"

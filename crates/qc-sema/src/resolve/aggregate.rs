@@ -99,6 +99,17 @@ impl Resolver<'_> {
             let float = Type::Simple(SimpleType::Float);
             return self.read_element(file, &[Some(3)], &float, element, def, site);
         }
+        // FTEF-19.53: a scalar's value is an expression, which `{` cannot start.
+        let scalar = matches!(
+            ty,
+            Type::Simple(SimpleType::Float | SimpleType::String | SimpleType::Entity)
+                | Type::Field(_)
+        ) || ty.fteqcc_scalar().is_some();
+        if scalar {
+            let location = self.at(file, braces.open);
+            self.report(Code::E0201, location, "\"{\" - not a name".to_owned());
+            return Err(Fatal);
+        }
         let Some(struct_def) = self.struct_def_of(&ty) else {
             return Ok(());
         };
