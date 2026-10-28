@@ -371,7 +371,7 @@ impl<'a> Resolver<'a> {
         };
         let checked = match &value.kind {
             ValueKind::Name(source) => self.converted_variable(source, &decl.ty),
-            ValueKind::Cast(cast) => self.cast_names_value(cast),
+            ValueKind::Cast(cast) => self.cast_checked(cast),
             _ => true,
         };
         if !checked {

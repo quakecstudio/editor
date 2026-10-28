@@ -799,3 +799,80 @@ fn a_lax_void_made_a_boolean() {
     assert_eq!(found.first().map(String::as_str), Some("cast to boolean"));
     assert_eq!(found.len(), 4, "{found:?}");
 }
+
+/// The cases of [`strict_enums_cast_to_nothing`], each with the pinned FTEQCC's messages.
+const STRICT_ENUMS_CAST_TO_NOTHING_CASES: &[(&str, &[&str])] = &[
+    (
+        "enum class E : float { A }; float f; void() g = { f = E::A; };\n",
+        &["Cannot cast from enum E:float to float"],
+    ),
+    (
+        "enum class E : float { A }; E e; void() g = { e = (E)1; };\n",
+        &["Cannot cast from float to enum E:float"],
+    ),
+    (
+        "enum class E : float { A }; E e; void() g = { e = 1; };\n",
+        &["Cannot cast from float to enum E:float"],
+    ),
+    (
+        "enum class E : float { A, B }; E e; void() g = { e = E::B; e = E::A; };\n",
+        &[],
+    ),
+    (
+        "enum class E : float { A }; float c; E e; float f; void() g = { f = c ? e : f; };\n",
+        &[
+            "Type mismatch on ternary operator: enum E:float vs float",
+            "Cannot cast from enum E:float to float",
+        ],
+    ),
+    (
+        "enum E : float { A }; float f; string s; void() g = { f = A; s = A; };\n",
+        &[],
+    ),
+    (
+        "enum class E : float { A }; float f; void() g = { f = (float)E::A; };\n",
+        &["Cannot cast from enum E:float to float"],
+    ),
+    (
+        "enum class E : float { A }; E e = (E)1;\n",
+        &["Cannot cast from float to enum E:float"],
+    ),
+    (
+        "enum class E : float { A }; E e = (E)\"a\";\n",
+        &["Cannot cast from string to enum E:float"],
+    ),
+    (
+        "enum class E : float { A }; E e; float f; void() g = { f = e; };\n",
+        &["Cannot cast from enum E:float to float"],
+    ),
+    (
+        "enum class E : float { A }; E e; float f = e;\n",
+        &["Cannot cast from enum E:float to float"],
+    ),
+    (
+        "enum class E : float { A }; void(float x) h = {}; E e; void() g = { h(e); };\n",
+        &["Cannot cast from enum E:float to float"],
+    ),
+    (
+        "enum class E : float { A }; E e; float f; void() g = { f = (float)e; };\n",
+        &["Cannot cast from enum E:float to float"],
+    ),
+    (
+        "#pragma flag enable lax\nenum class E : float { A }; E e; float f; void() g = { f = e; };\n",
+        &["Implicit lax cast from enum E:float to float"],
+    ),
+    (
+        "enum class E : float { A }; E e; float e;\n",
+        &["Type mismatch on redeclaration of e. float, should be enum E:float"],
+    ),
+];
+
+// spec FTEF-19.75: a strict enum casts to and from no other type, its null constant and a literal included
+#[test]
+fn strict_enums_cast_to_nothing() {
+    let cases = STRICT_ENUMS_CAST_TO_NOTHING_CASES;
+    for (source, expected) in cases {
+        let found: Vec<String> = diags(source).into_iter().map(|(_, m)| m).collect();
+        assert_eq!(found, *expected, "{source}");
+    }
+}

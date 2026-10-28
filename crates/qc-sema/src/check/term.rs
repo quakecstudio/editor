@@ -330,7 +330,10 @@ impl Checker<'_> {
         if operand.ty == Type::Unknown {
             return Ok(Value::of(to));
         }
-        if self.env.explicit_cast(operand.source(), &to, span) {
+        if self
+            .env
+            .explicit_cast(self.cast_source(&operand), &to, span)
+        {
             return Err(Fatal);
         }
         // FTEF-23.8: a cast to a boolean is its logical truth, of the boolean's parent type.
@@ -374,7 +377,7 @@ impl Checker<'_> {
                 self.etype_of(&value.ty),
                 Some(Etype::Float | Etype::Integer)
             );
-            if !numeric && self.env.cast(value.source(), &float, span) {
+            if !numeric && self.env.cast(self.cast_source(&value), &float, span) {
                 return Err(Fatal);
             }
             components.push(Some(if numeric {

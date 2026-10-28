@@ -12,6 +12,7 @@ use qc_diag::{Code, Span};
 use qc_preproc::FteFlag;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 
+use crate::cast::Source;
 use crate::check::assign::assign_spelling;
 use crate::check::constant::{Constant, unquoted};
 use crate::check::convert::{Choice, Operand, choose_opcode};
@@ -79,6 +80,16 @@ impl<'e> Checker<'e> {
             pending: None,
             stray: None,
             last_temp: None,
+        }
+    }
+
+    /// What a cast reads `value` as: a constant as its literal, but a strict enum's value as
+    /// of its enum, whose null constant casts to no other type (FTEF-19.10).
+    pub(super) fn cast_source<'v>(&self, value: &'v Value) -> Source<'v> {
+        if self.env.strict_enum(&value.ty) {
+            Source::Typed(&value.ty)
+        } else {
+            value.source()
         }
     }
 
@@ -443,7 +454,10 @@ impl<'e> Checker<'e> {
             );
             self.env.report(Code::W0232, span, message);
         }
-        if self.env.cast(value.source(), &row.value_type(), span) {
+        if self
+            .env
+            .cast(self.cast_source(value), &row.value_type(), span)
+        {
             return Err(Fatal);
         }
         // FTEF-27.8: the cast emits its conversion opcodes, which are folded, emitted or

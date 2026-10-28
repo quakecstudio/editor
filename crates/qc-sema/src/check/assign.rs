@@ -446,7 +446,7 @@ impl Checker<'_> {
     /// then the conversion opcodes it emits (FTEF-27.8); the value cast is a `to`, under `lax`
     /// too.
     pub(super) fn cast_to(&mut self, value: &Value, to: &Type, span: Span) -> Checked {
-        if self.env.cast(value.source(), to, span) {
+        if self.env.cast(self.cast_source(value), to, span) {
             return Err(Fatal);
         }
         let converted = self.convert_to(value, to, span)?;

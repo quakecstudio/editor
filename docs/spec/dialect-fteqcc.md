@@ -3513,6 +3513,14 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   type", which `local T x;` still is (FTEF-19.20). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseStatement`, `QCC_PR_RefExpression`.
+- **FTEF-19.75** A strict enum, `enum class E : T`, casts to and from no other type wherever a
+  value is cast, stored, passed, or cast explicitly (FTEF-19.10): its item's null constant too,
+  which `QCC_SRef_IsNull` would let any other type take, so `f = E::A;` of a float `f` is
+  "Cannot cast from enum E:float to float", and `e = 1;`, `e = (E)1;` and the global `E e =
+  (E)1;` are "Cannot cast from float to enum E:float"; under `lax` "Implicit lax cast". A plain
+  enum's item is its base type's constant, and its 0 casts to a string with no message. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_TryEvaluateCast`, `QCC_PR_ParseEnum`.
 
 ## FTEF-20 Keywords
 

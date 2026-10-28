@@ -301,8 +301,9 @@ impl Resolver<'_> {
             // FTEF-19.43: `(T)0` is a value of `T`, converted to the definition's type as a
             // name's would be (FTEF-22).
             ValueKind::Cast(cast) => {
-                // FTEF-16.15: `(x)` of a name that is no type is a value the check stage reads.
-                if matches!(holder, Holder::Global) && self.cast_names_value(cast) {
+                // FTEF-16.15: `(x)` of a name that is no type is a value the check stage reads,
+                // as is a cast to a strict enum, which no literal takes (FTEF-19.10).
+                if matches!(holder, Holder::Global) && self.cast_checked(cast) {
                     return Ok(None);
                 }
                 let source = match self.resolved(cast) {
@@ -359,12 +360,15 @@ impl Resolver<'_> {
 
     /// [`Resolver::check_value`] of a value that is the name `source_name`, cast with the
     /// flags `flags` at the token after it (FTEF-22.6).
-    /// FTEF-16.15: whether a cast's type, as a global's value writes it, is a lone name that
-    /// names no type, read as a value in parentheses under FTEQCC's diagnostics.
-    pub(in crate::resolve) fn cast_names_value(&self, ty: &Type) -> bool {
-        self.profile.fteqcc_diagnostics()
-            && matches!(ty, Type::Named(name) if !name.contains(char::is_whitespace))
-            && self.unknown_type_name(ty, &[], usize::MAX).is_some()
+    /// Whether a global's value that is a cast of a literal to `ty` is read by the check stage
+    /// under FTEQCC's diagnostics: a lone name that names no type, a value in parentheses
+    /// (FTEF-16.15), or a strict enum, which no literal casts to (FTEF-19.10).
+    pub(in crate::resolve) fn cast_checked(&self, ty: &Type) -> bool {
+        let lone_value = matches!(ty, Type::Named(name) if !name.contains(char::is_whitespace))
+            && self.unknown_type_name(ty, &[], usize::MAX).is_some();
+        let strict =
+            matches!(ty, Type::Named(name) if self.named(&self.strict_enums, name).is_some());
+        self.profile.fteqcc_diagnostics() && (lone_value || strict)
     }
 
     /// FTEF-19.72: whether a global's value, the global variable `source_name`, is converted to
@@ -483,28 +487,14 @@ impl Resolver<'_> {
         let null = self.facts.get(source.0).is_some_and(|f| f.constant)
             && matches!(self.literals.get(&source), Some(LiteralValue::Float(0)))
             && !self.is_struct_type(ty);
-        // FTEF-19.10: a strict enum's value casts to no other type, but under `lax`
-        // (FTEF-22.1).
-        if let Type::Named(strict) = &source_ty
-            && let Some(base) = self.named(&self.strict_enums, strict.as_ref())
-            && source_ty != *ty
-        {
-            let (code, verb) = if flags.has(FteFlag::Laxcasts) {
-                (Code::W0229, "Implicit lax cast")
-            } else {
-                (Code::E0213, "Cannot cast")
-            };
-            let message = format!(
-                "{verb} from enum {strict}:{} to {}",
-                base.fteqcc_name(),
-                ty.fteqcc_name()
-            );
-            self.report(code, location, message);
-            if code == Code::E0213 {
+        // A strict enum's value is refused even when it is null (FTEF-19.10).
+        match self.strict_enum_cast(&source_ty, ty, location, flags) {
+            Some(true) => return Err(Fatal),
+            Some(false) => {}
+            None if !null && self.cast_value(Source::Typed(&source_ty), ty, location, flags) => {
                 return Err(Fatal);
             }
-        } else if !null && self.cast_value(Source::Typed(&source_ty), ty, location, flags) {
-            return Err(Fatal);
+            None => {}
         }
         if matches!(holder, Holder::Local(_)) {
             return Ok(None);
@@ -642,6 +632,39 @@ impl Resolver<'_> {
             || base_of(b).is_some_and(|base| !is_accessor(a) && resolved(&base) == resolved(a))
     }
 
+    /// FTEF-19.10: a strict enum's value casts to no other type, implicitly or explicitly, but
+    /// under `lax` with a warning (FTEF-22.1). Whether it was refused, when the value is one.
+    pub(in crate::resolve) fn strict_enum_cast(
+        &mut self,
+        from: &Type,
+        to: &Type,
+        location: Location,
+        flags: CompilerFlags,
+    ) -> Option<bool> {
+        // Either side may be the enum: no other type casts to it either.
+        let (strict, base) = [from, to].into_iter().find_map(|ty| match ty {
+            Type::Named(name) => self
+                .named(&self.strict_enums, name.as_ref())
+                .map(|base| (name.clone(), base.clone())),
+            _ => None,
+        })?;
+        if from == to {
+            return None;
+        }
+        let (code, verb) = if flags.has(FteFlag::Laxcasts) {
+            (Code::W0229, "Implicit lax cast")
+        } else {
+            (Code::E0213, "Cannot cast")
+        };
+        let name = |ty: &Type| match ty {
+            Type::Named(n) if *n == strict => format!("enum {strict}:{}", base.fteqcc_name()),
+            _ => ty.fteqcc_name(),
+        };
+        let message = format!("{verb} from {} to {}", name(from), name(to));
+        self.report(code, location, message);
+        Some(code == Code::E0213)
+    }
+
     pub(in crate::resolve) fn cast_value(
         &mut self,
         source: Source<'_>,
@@ -670,6 +693,11 @@ impl Resolver<'_> {
             );
             self.report(Code::W0264, location, message);
             return false;
+        }
+        if let Some(from) = from
+            && let Some(refused) = self.strict_enum_cast(from, to, location, flags)
+        {
+            return refused;
         }
         let to = &self.resolved_deep(to, MAX_TYPEDEF_DEPTH);
         // FTEF-23.8: a cast to a boolean is its logical truth, a number cast to the boolean's

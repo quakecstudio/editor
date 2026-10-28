@@ -204,6 +204,10 @@ impl Env for BodyEnv<'_, '_> {
             .is_some_and(|first| first == def.0)
     }
 
+    fn strict_enum(&self, ty: &Type) -> bool {
+        matches!(ty, Type::Named(name) if self.resolver.named(&self.resolver.strict_enums, name).is_some())
+    }
+
     fn is_array(&self, def: DefId) -> bool {
         self.resolver
             .facts
@@ -374,6 +378,7 @@ impl Env for BodyEnv<'_, '_> {
         if !self.constant(def) {
             return Constness::Variable;
         }
+
         if let Some(constant) = self.resolver.integer_items.get(&def) {
             return Constness::Known(*constant);
         }
@@ -549,6 +554,13 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.settle(span.start);
         let location = self.resolver.at(self.file, span);
         let flags = CompilerFlags::at(self.flags, span.start);
+        let from = match source {
+            Source::Typed(from) => from.clone(),
+            Source::Literal(literal) => literal.ty.value_type(),
+        };
+        if let Some(refused) = self.resolver.strict_enum_cast(&from, to, location, flags) {
+            return refused;
+        }
         let to = self.resolver.resolved_deep(to, MAX_TYPEDEF_DEPTH);
         // FTEF-23.8: a cast to a boolean is its logical truth, with no message.
         if matches!(to.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat)) {

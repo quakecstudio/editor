@@ -86,6 +86,8 @@ pub(crate) trait Env {
     fn definition(&self, def: DefId) -> Option<&Definition>;
     /// Whether a definition is an array (`def->arraysize`, FTEF-19.8).
     fn is_array(&self, def: DefId) -> bool;
+    /// Whether `ty` is a strict enum, `enum class`, whose values no cast takes (FTEF-19.10).
+    fn strict_enum(&self, ty: &Type) -> bool;
     /// Whether the field `def` is the module's first, at offset 0 (FTEF-31.17).
     fn first_field(&self, def: DefId) -> bool;
     /// Whether a definition is a constant, and its value (`QCC_SRef_EvalConst`, FTEF-26.5).
