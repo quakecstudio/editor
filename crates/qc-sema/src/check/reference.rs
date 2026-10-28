@@ -11,7 +11,7 @@
 use qc_diag::{Code, Span};
 use qc_preproc::{FteFlag, Op};
 use qc_syntax::SyntaxKind;
-use qc_syntax::ast::{self, AstNode as _};
+use qc_syntax::ast::{self, AstNode as _, BinaryOp, UnaryOp};
 
 use crate::cast::ConstType;
 use qc_syntax::c_scalar::CScalar;
@@ -591,6 +591,7 @@ impl Checker<'_> {
                 })
             }
             _ => {
+                self.statement_before(index.syntax(), index.base());
                 let expected = expected_after(index.syntax());
                 let message = format!("expected {expected}, found [");
                 self.fatal(Code::E0204, span, message)
@@ -915,6 +916,71 @@ impl Checker<'_> {
         self.emit(Op::AddI, &string, &index, span)?;
         self.small_store(op, &value, None, span)
     }
+}
+
+impl Checker<'_> {
+    /// FTEF-18.37: where FTEQCC's expression ends at the `[` or `.` after `base`, its statement
+    /// is `base` alone when `base` starts it, which "does not do anything" unless it calls or
+    /// stores. The parser, which reads the whole statement, warns of it only when the whole does
+    /// nothing; here it is warned of when the whole does something.
+    pub(super) fn statement_before(
+        &mut self,
+        node: &qc_syntax::SyntaxNode,
+        base: Option<ast::Expr>,
+    ) {
+        let Some(base) = base else {
+            return;
+        };
+        let Some(statement) = node.ancestors().find(|n| n.kind() == SyntaxKind::ExprStmt) else {
+            return;
+        };
+        let start = |n: &qc_syntax::SyntaxNode| first_token_start(n);
+        if start(&statement) != start(base.syntax()) || does_something(base.syntax()) {
+            return;
+        }
+        if does_something(&statement) {
+            let message = "Statement does not do anything".to_owned();
+            self.env.report(Code::W0313, base.syntax().span(), message);
+        }
+    }
+}
+
+/// Where the first token of `node` that is no trivia starts.
+fn first_token_start(node: &qc_syntax::SyntaxNode) -> Option<usize> {
+    node.descendants_with_tokens().find_map(|e| match e {
+        qc_syntax::SyntaxElement::Token(t) if !t.kind().is_trivia() => Some(t.span().start),
+        qc_syntax::SyntaxElement::Token(_) | qc_syntax::SyntaxElement::Node(_) => None,
+    })
+}
+
+/// Whether `node` calls a function or stores, which makes a statement of it do something
+/// (`qcc_usefulstatement`).
+fn does_something(node: &qc_syntax::SyntaxNode) -> bool {
+    node.descendants().any(|n| match n.kind() {
+        SyntaxKind::CallExpr | SyntaxKind::PostfixExpr => true,
+        SyntaxKind::BinaryExpr => ast::BinaryExpr::cast(n)
+            .and_then(|b| b.op())
+            .is_some_and(|op| {
+                matches!(
+                    op,
+                    BinaryOp::Assign
+                        | BinaryOp::AddAssign
+                        | BinaryOp::SubAssign
+                        | BinaryOp::MulAssign
+                        | BinaryOp::DivAssign
+                        | BinaryOp::BitAndAssign
+                        | BinaryOp::BitOrAssign
+                        | BinaryOp::BitClearAssign
+                        | BinaryOp::BitXorAssign
+                        | BinaryOp::ShlAssign
+                        | BinaryOp::ShrAssign
+                )
+            }),
+        SyntaxKind::UnaryExpr => ast::UnaryExpr::cast(n)
+            .and_then(|u| u.op())
+            .is_some_and(|op| matches!(op, UnaryOp::PreIncrement | UnaryOp::PreDecrement)),
+        _ => false,
+    })
 }
 
 /// The token FTEQCC's parser expects where a `[` stands after what is no array: `)` inside

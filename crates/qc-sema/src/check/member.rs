@@ -168,6 +168,7 @@ impl Checker<'_> {
             | Etype::Enum
             | Etype::Boolean
             | Etype::Variant => {
+                self.statement_before(field.syntax(), field.base());
                 let expected = expected_after(field.syntax());
                 let message = format!("expected {expected}, found .");
                 let span = field.syntax().span();

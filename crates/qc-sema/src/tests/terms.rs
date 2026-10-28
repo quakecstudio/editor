@@ -497,3 +497,37 @@ fn array_sizes_and_constant_vectors() {
     assert_eq!(found("q = farr[[5i, 0i, 0i][0]];"), [past(5)]);
     assert_eq!(found("q = farr[[0, 6i, 0][1]];"), [past(6)]);
 }
+
+// spec FTEF-18.37: a statement that indexes or selects from a value that takes neither is that
+// value alone, which does nothing unless it calls or stores
+#[test]
+fn a_statement_that_stops_at_its_first_value() {
+    let found = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nfloat x; float() g = {{ return 1; }}; struct S {{ float a; }}; \
+             S s2;\nvoid() f = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let nothing = "Statement does not do anything";
+    for (statement, found_at) in [
+        ("x[1] = 2;", "["),
+        ("x.y = 2;", "."),
+        ("s2.a[1] = 2;", "["),
+        ("3[1] = 2;", "["),
+        ("x[1];", "["),
+        ("x[1] + 1;", "["),
+        ("x[1]++;", "["),
+    ] {
+        assert_eq!(
+            found(statement),
+            [nothing.to_owned(), format!("expected ;, found {found_at}")],
+            "{statement}"
+        );
+    }
+    for statement in ["g()[1] = 2;", "x = x[1];"] {
+        assert_eq!(found(statement), ["expected ;, found ["], "{statement}");
+    }
+}

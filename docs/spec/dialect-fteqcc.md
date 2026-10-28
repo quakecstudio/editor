@@ -2791,6 +2791,13 @@ against FTEQCC.
   a further one is `QCC_PR_ParseDefs`'s (`while(QCC_PR_CheckToken ("("))`), and the declarator it
   starts then needs a name (`name = QCC_PR_ParseName ()`): `void()();` and `void() (float);` are
   the error `E0201` `";" - not a name`, and `void();` declares nothing.
+- **FTEF-18.37** Where FTEQCC's expression ends at a `[` or `.` after a value that takes
+  neither (FTEF-31.2, FTEF-24.1), the statement it has read is that value alone when the value
+  starts the statement, so `x[1] = 2;`, `x.y = 2;` and `3[1] = 2;` warn "Statement does not do
+  anything" before "expected ;, found [", as a value that calls nothing and stores nothing
+  does (FTEF-18.25); `g()[1] = 2;` does not, nor does `y = x[1];`, whose statement starts
+  elsewhere. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_DiscardExpression`, `QCC_PR_ParseStatement`.
 - **FTEF-18.34** This profile's error recovery (QCD-1.4) ends the body of a struct, class,
   accessor, `switch` or function at a declaration line, a token at column 0 that has a
   declaration's shape or is one of `typedef`, `class`, `accessor`, `enum`, `enumflags`, `struct`
