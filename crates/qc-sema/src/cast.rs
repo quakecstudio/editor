@@ -19,7 +19,7 @@ use qc_lexer::{LexFlag, LexFlags};
 use qc_preproc::{CompilerFlags, FteFlag};
 use qc_syntax::c_scalar::CScalar;
 
-use crate::ty::{SimpleType, Type};
+use crate::ty::{FunctionType, SimpleType, Type};
 
 /// The type FTEQCC gives a literal (FTEF-3.1, FTEF-3.3, QC-4, QC-5, QC-6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -544,10 +544,14 @@ impl Source<'_> {
             return Some(Cast::Silent);
         }
         // FTEF-22.8: two functions are "acceptable" casts, which warn only when `typecmp_lax`
-        // tells them apart: by their return types and parameters, not by `...`; the model keeps
-        // no `optional` mark, so a parameter one has beyond the other tells them apart.
+        // tells them apart: by their return types and the parameters both have, any more one
+        // has being `optional`, not by `...` (FTEF-30.14).
+        let optional_beyond = |f: &FunctionType, both: usize| {
+            (both..f.params.len()).all(|at| f.labels.0.get(at).is_some_and(|l| l.optional))
+        };
         if let (Type::Function(to), Some(Type::Function(from))) = (to, from_ty)
-            && from.params.len() == to.params.len()
+            && optional_beyond(from, to.params.len().min(from.params.len()))
+            && optional_beyond(to, to.params.len().min(from.params.len()))
             && from.ret.fteqcc_same(&to.ret)
             && from
                 .params

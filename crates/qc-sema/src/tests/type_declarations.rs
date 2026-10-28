@@ -1095,7 +1095,7 @@ fn a_bodys_types_last_to_their_block() {
     assert!(!errors("void() g = { { typedef float t; } t x; };", &[]).is_empty());
     assert_eq!(
         errors("void() g = { { struct S { float a; }; } S x; };", &[]),
-        [Code::E0203]
+        [Code::E0301, Code::E0204]
     );
     for source in [
         "void() g = { typedef struct S { float a; } T; }; S y;",

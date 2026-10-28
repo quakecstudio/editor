@@ -642,7 +642,7 @@ fn body_typedef_scopes_in_any_case() {
     assert_eq!(errors("void() f = { typedef float t; t x; };\n"), []);
     assert_eq!(
         errors("void() f = { { typedef float t; }t x; };\n"),
-        [Code::E0203]
+        [Code::E0301, Code::E0204]
     );
     assert_eq!(
         errors_with("void() f = { typedef float T; t x; };\n", &insens),
@@ -650,11 +650,11 @@ fn body_typedef_scopes_in_any_case() {
     );
     assert_eq!(
         errors_with("void() f = { { typedef float T; }t x; };\n", &insens),
-        [Code::E0203]
+        [Code::E0301, Code::E0204]
     );
     assert_eq!(
         errors_with("void() f = { t x; typedef float T; };\n", &insens),
-        [Code::E0203]
+        [Code::E0301, Code::E0204]
     );
     let no_qcfuncs = ["-Fcaseinsens", "-Fno-qcfuncs"];
     assert_eq!(errors_with("String s;\n", &no_qcfuncs), [Code::E0203]);

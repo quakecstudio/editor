@@ -1814,3 +1814,266 @@ fn global_arms_and_stores_are_statements() {
         assert_eq!(found, *expected, "{source}");
     }
 }
+
+/// The cases of [`types_are_compared_as_fteqcc_compares_them`], each with the pinned FTEQCC's messages.
+const TYPES_ARE_COMPARED_AS_FTEQCC_COMPARES_THEM_CASES: &[(&str, &[&str])] = &[
+    ("typedef float float;\n", &[]),
+    ("typedef vector vector;\n", &[]),
+    ("typedef string string;\n", &[]),
+    ("typedef entity entity;\n", &[]),
+    (
+        "typedef float vector;\n",
+        &["Cannot redeclare typedef vector from vector to float"],
+    ),
+    (
+        "typedef vector float;\n",
+        &["Cannot redeclare typedef float from float to vector"],
+    ),
+    (
+        "typedef entity string;\n",
+        &["Cannot redeclare typedef string from string to entity"],
+    ),
+    (
+        "typedef string entity;\n",
+        &["Cannot redeclare typedef entity from entity to string"],
+    ),
+    ("typedef int int;\n", &[]),
+    ("typedef float int;\n", &[]),
+    (
+        "struct S { float a : 3; };\n",
+        &["bitfields must be integer types"],
+    ),
+    ("struct S { int a : 3; };\n", &[]),
+    ("struct S { __uint a : 3; };\n", &[]),
+    ("struct S { __int64 a : 3; };\n", &[]),
+    (
+        "struct S { __int8 a : 3; };\n",
+        &["bitfields must be integer types"],
+    ),
+    (
+        "struct S { vector a : 3; };\n",
+        &["bitfields must be integer types"],
+    ),
+    (
+        "#pragma target fte\n__int8 c; __uint8 uc; __int16 s16; __uint16 us; float x; void() g = { x = c; x = uc; x = s16; x = us; };\n",
+        &[
+            "utof emulation: will break if temp_0 is big",
+            "utof emulation: will break if temp_0 is big",
+        ],
+    ),
+    (
+        "#pragma target fte\n__int8 c; string s; void() g = { s = c; };\n",
+        &["Implicit cast from __int32 to string"],
+    ),
+    (
+        "#pragma target fte\n__uint8 c; string s; void() g = { s = c; };\n",
+        &["Implicit cast from __uint32 to string"],
+    ),
+    (
+        "float(float a) f; float(float b) f;\n",
+        &["function f has no body"],
+    ),
+    (
+        "float(float a, ...) f; float(float a) f;\n",
+        &["function f has no body"],
+    ),
+    (
+        ".float f; .vector f;\n",
+        &["Type mismatch on redeclaration of f. .vector, should be .float"],
+    ),
+    (".float f; .float f;\n", &[]),
+    ("float *p; float *p;\n", &[]),
+    (
+        "float *p; int *p;\n",
+        &["Type mismatch on redeclaration of p. __int32*, should be float*"],
+    ),
+    (
+        "class A : entity {}; class B : entity {}; A a; B a;\n",
+        &["Optional arguments differ on redeclaration of a. class B, should be class A"],
+    ),
+    (
+        "class A : entity {}; class B : entity {}; float c; A a; B b; entity e; void() g = { e = c ? a : b; };\n",
+        &["Ternary operator with mismatching types"],
+    ),
+    (
+        "class A : entity { float x; }; class B : entity { float x; }; float c; A a; B b; entity e; void() g = { e = c ? a : b; };\n",
+        &["Ternary operator with mismatching types"],
+    ),
+    (
+        "class A : entity { float x; }; class B : entity { vector x; }; float c; A a; B b; entity e; void() g = { e = c ? a : b; };\n",
+        &["Type mismatch on ternary operator: class A vs class B"],
+    ),
+    (
+        "float c; void() f1 = {}; float() f2 = { return 1; }; void() g = { local void() r; r = c ? f1 : f2; };\n",
+        &["Type mismatch on ternary operator: void() vs float()"],
+    ),
+    (
+        "float c; void(float a) f1 = {}; void(float b) f2 = {}; void() g = { local void(float a) r; r = c ? f1 : f2; };\n",
+        &[],
+    ),
+    (
+        "float c; void(float a) f1 = {}; void(vector b) f2 = {}; void() g = { local void(float a) r; r = c ? f1 : f2; };\n",
+        &["Type mismatch on ternary operator: void(float a) vs void(vector b)"],
+    ),
+    (
+        "float c; void(float a, ...) f1 = {}; void(float b) f2 = {}; void() g = { local void(float a) r; r = c ? f1 : f2; };\n",
+        &["Ternary operator with mismatching types"],
+    ),
+    (
+        "float c; .float f1; .vector f2; void() g = { local .float r; r = c ? f1 : f2; };\n",
+        &["Type mismatch on ternary operator: .float vs .vector"],
+    ),
+    (
+        "float c; float *p1; int *p2; void() g = { local float *r; r = c ? p1 : p2; };\n",
+        &["Type mismatch on ternary operator: float* vs __int32*"],
+    ),
+    (
+        "enum E { A, B }; enum F { C, D }; float c; void() g = { local float r; r = c ? A : C; };\n",
+        &[],
+    ),
+    ("enum E { A, B }; E e; float e;\n", &[]),
+    (
+        "struct S { float a; }; struct T { float a; }; S s; T s;\n",
+        &["Optional arguments differ on redeclaration of s. struct T, should be struct S"],
+    ),
+    ("struct S { float a; }; S s; S s;\n", &[]),
+    (
+        "float c; void(float a, ...) f1 = {}; void(float b) f2 = {}; void() g = { local void(float a) r; r = c ? f1 : f2; };\n",
+        &["Ternary operator with mismatching types"],
+    ),
+    (
+        "float c; void(float a, float b) f1 = {}; void(float b) f2 = {}; void() g = { local void(float a) r; r = c ? f1 : f2; };\n",
+        &[
+            "Type mismatch on ternary operator: void(float a, float b) vs void(float b)",
+            "Implicit cast from void(float a, float b) to void(float a)",
+        ],
+    ),
+    (
+        "float c; void(float a, optional float b) f1 = {}; void(float b) f2 = {}; void() g = { local void(float a) r; r = c ? f1 : f2; };\n",
+        &["Ternary operator with mismatching types"],
+    ),
+    (
+        "float c; void(float a) f1 = {}; void() f2 = {}; void() g = { local void(float a) r; r = c ? f1 : f2; };\n",
+        &["Type mismatch on ternary operator: void(float a) vs void()"],
+    ),
+    (
+        "void(float a) f; void(float a, optional float b) f;\n",
+        &[
+            "Optional arguments differ on redeclaration of f. void(float a, optional float b), should be void(float a)",
+            "function f has no body",
+        ],
+    ),
+    (
+        "void(float a) f1 = {}; void(float a, float b) fp; void() g = { fp = f1; };\n",
+        &[
+            "Assignment to const",
+            "Implicit cast from void(float a) to void(float a, float b)",
+            "Assignment to constant fp",
+            "function fp has no body",
+        ],
+    ),
+    (
+        "void(float a) f1 = {}; void(float a, optional float b) fp; void() g = { fp = f1; };\n",
+        &[
+            "Assignment to const",
+            "Assignment to constant fp",
+            "function fp has no body",
+        ],
+    ),
+    (
+        "void(float a, optional float b) f1 = {}; void(float a) fp; void() g = { fp = f1; };\n",
+        &[
+            "Assignment to const",
+            "Assignment to constant fp",
+            "function fp has no body",
+        ],
+    ),
+    (
+        "void(float a, ...) f1 = {}; void(float a) fp; void() g = { fp = f1; };\n",
+        &[
+            "Assignment to const",
+            "Assignment to constant fp",
+            "function fp has no body",
+        ],
+    ),
+    (
+        "void() f1 = {}; void(float a) fp; void() g = { fp = f1; };\n",
+        &[
+            "Assignment to const",
+            "Implicit cast from void() to void(float a)",
+            "Assignment to constant fp",
+            "function fp has no body",
+        ],
+    ),
+    (
+        "void() g = { T x; };\n",
+        &[
+            "Unknown value \"T\".",
+            "Expected punctuation",
+            "Statement does not do anything",
+            "expected ;, found x",
+        ],
+    ),
+    ("void() g = { local T x; };\n", &["\"T\" is not a type"]),
+    (
+        "void() g = { T x = 1; };\n",
+        &[
+            "Unknown value \"T\".",
+            "Expected punctuation",
+            "Statement does not do anything",
+            "expected ;, found x",
+        ],
+    ),
+    (
+        "void() g = { T x, y; };\n",
+        &[
+            "Unknown value \"T\".",
+            "Expected punctuation",
+            "Statement does not do anything",
+            "expected ;, found x",
+        ],
+    ),
+    (
+        "float T; void() g = { T x; };\n",
+        &[
+            "Expected punctuation",
+            "Statement does not do anything",
+            "expected ;, found x",
+        ],
+    ),
+    (
+        "void() g = { { typedef float T; } T x; };\n",
+        &[
+            "Unknown value \"T\".",
+            "Expected punctuation",
+            "Statement does not do anything",
+            "expected ;, found x",
+        ],
+    ),
+    ("typedef float T; void() g = { T x; };\n", &[]),
+    ("class C : entity {}; void() g = { C x; };\n", &[]),
+    (
+        "#pragma target fte\nclass A : entity { float x; }; float c; A a; __variant v; void() g = { v = c ? a : v; };\n",
+        &["Ternary operator with mismatching types"],
+    ),
+    (
+        "#pragma target fte\nclass A : entity { float x; }; float c; A a; __variant v; void() g = { v = c ? v : a; };\n",
+        &["Ternary operator with mismatching types"],
+    ),
+    (
+        "#pragma target fte\nclass A : entity { float x; }; float c; A a; __variant v; entity e; void() g = { e = c ? a : v; };\n",
+        &["Ternary operator with mismatching types"],
+    ),
+];
+
+// spec FTEF-30.14: types compared by `typecmp` and `typecmp_lax` as the pinned FTEQCC compares them,
+// a function by the parameters both have, any more optional
+// spec FTEF-19.74: `T x;` of a name no type has is the expression `T`
+#[test]
+fn types_are_compared_as_fteqcc_compares_them() {
+    let cases = TYPES_ARE_COMPARED_AS_FTEQCC_COMPARES_THEM_CASES;
+    for (source, expected) in cases {
+        let found: Vec<String> = diags(source).into_iter().map(|(_, m)| m).collect();
+        assert_eq!(found, *expected, "{source}");
+    }
+}

@@ -3504,6 +3504,15 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   not a name" and "\"5\" - not a name", never "is not a type". Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseDefs`; `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseName`.
+- **FTEF-19.74** In a body a statement `T x;`, with no `local` or qualifier and `T` a lone name
+  that names no type there, is no definition: `QCC_PR_ParseStatement` finds no type and reads
+  the expression `T`, an unknown name being a `variant` (FTEF-19.69), "Unknown value \"T\".",
+  then at `x` "Expected punctuation", the statement "Statement does not do anything", and the
+  fatal "expected ;, found x"; a name that is a value gives all but the first. So a typedef out
+  of its block, a struct of an inner block, or a type named before its typedef is not "is not a
+  type", which `local T x;` still is (FTEF-19.20). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseStatement`, `QCC_PR_RefExpression`.
 
 ## FTEF-20 Keywords
 
@@ -4754,6 +4763,14 @@ reference are FTEF-31's.
   default, tests `!v` by `OP_IF_I`, "(IF)". Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_RefExpression` (`?`), `QCC_ClobberDef`, `QCC_Generate_OP_IFNOT`.
+- **FTEF-30.14** `typecmp_lax` compares two function types by their return types and the
+  parameters both have (`minargs`), any more one of them has being `optional`; whether either
+  takes `...` is not compared. So `void(float a, ...)` and `void(float b)` are one type to it,
+  and as `?:` arms, which `typecmp` tells apart, are "Ternary operator with mismatching types";
+  `void(float a, float b)` and `void(float b)` are not, "Type mismatch on ternary operator"; and
+  `void(float a)` stores to a `void(float a, optional float b)` with no "Implicit cast" (FTEF-22.8).
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `typecmp_lax`.
 ## FTEF-31 References
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`, `QCC_RefToDef`,

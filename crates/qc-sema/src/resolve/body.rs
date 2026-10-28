@@ -233,6 +233,7 @@ impl<'a> Resolver<'a> {
             let location = self.at(file, *span);
             self.check_type_names(ty, &body.typedefs, span.start, location);
         }
+        let mut bare_reported: Option<usize> = None;
         for local in &body.locals {
             self.settle(local.span.start);
             let location = self.at(file, local.span);
@@ -242,6 +243,30 @@ impl<'a> Resolver<'a> {
                     location,
                     "Fields and functions must be global".to_owned(),
                 );
+                continue;
+            }
+            // FTEF-19.74: `T x;` with `T` no type is the expression `T`, then `x` where the
+            // statement wants its `;`.
+            if let Some((name, type_span)) = &local.bare_type
+                && self.profile.fteqcc_diagnostics()
+                && self
+                    .unknown_type_name(&local.ty, &body.typedefs, local.span.start)
+                    .is_some()
+            {
+                if bare_reported != Some(type_span.start) {
+                    bare_reported = Some(type_span.start);
+                    let type_location = self.at(file, *type_span);
+                    if self.lookup_in_scope(scope, name).is_none() {
+                        let message = format!("Unknown value \"{name}\".");
+                        self.report(Code::E0301, type_location, message);
+                        self.define_variant(name, Some(scope.owner), type_location);
+                    }
+                    let found = &local.name;
+                    self.report(Code::W0205, location, "Expected punctuation".to_owned());
+                    let message = "Statement does not do anything".to_owned();
+                    self.report(Code::W0313, type_location, message);
+                    self.report(Code::E0204, location, format!("expected ;, found {found}"));
+                }
                 continue;
             }
             // FTEF-19.20: a type name no type has is "not a type", and no local is made.

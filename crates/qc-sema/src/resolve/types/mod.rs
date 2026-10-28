@@ -25,7 +25,7 @@ use crate::check::etype::Etype;
 use crate::lower::{RawDecl, TypeKind};
 use crate::resolve::{MAX_TYPEDEF_DEPTH, Resolver, TABLE_TYPES};
 use crate::symbol::Location;
-use crate::ty::{SimpleType, Type};
+use crate::ty::{FunctionType, SimpleType, Type};
 
 impl Resolver<'_> {
     /// The name of a type: FTEF-19.9 compares a `typedef` with the one of the same name before
@@ -539,14 +539,21 @@ impl Resolver<'_> {
             (Type::Field(x), Type::Field(y)) | (Type::Pointer(x), Type::Pointer(y)) => {
                 self.typecmp_lax_within(x, y, depth)
             }
+            // `typecmp_lax` compares the parameters both have (`minargs`), any more one has
+            // being `optional`, and not whether either takes `...` (FTEF-30.14).
             (Type::Function(x), Type::Function(y)) => {
-                x.variadic == y.variadic
-                    && x.params.len() == y.params.len()
-                    && self.typecmp_lax_within(&x.ret, &y.ret, depth)
+                let both = x.params.len().min(y.params.len());
+                let optional_rest = |f: &FunctionType| {
+                    (both..f.params.len())
+                        .all(|at| f.labels.0.get(at).is_some_and(|label| label.optional))
+                };
+                self.typecmp_lax_within(&x.ret, &y.ret, depth)
                     && x.params
                         .iter()
                         .zip(&y.params)
                         .all(|(p, q)| self.same_param(p, q, depth))
+                    && optional_rest(x)
+                    && optional_rest(y)
             }
             // What one holds against nothing the other holds.
             (Type::Field(_) | Type::Pointer(_) | Type::Function(_), _)

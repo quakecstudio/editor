@@ -131,6 +131,10 @@ pub struct RawLocal {
     /// Whether it is a C function declaration with `qcfuncs` off, which declares a global
     /// constant function rather than a local (FTEF-21.10).
     pub global_function: bool,
+    /// With no `local` or qualifier before it, the name its type is written as alone, and its
+    /// span: a statement `T x;` FTEQCC reads as an expression when `T` names no type
+    /// (FTEF-19.74).
+    pub bare_type: Option<(String, Span)>,
 }
 
 impl RawLocal {
@@ -566,6 +570,23 @@ fn lower_local(local: &ast::LocalDecl, cx: Cx<'_>, body: &mut RawBody) {
     {
         body.type_only.push((base.clone(), node.syntax().span()));
     }
+    let bare_type = local
+        .ty()
+        .filter(|_| {
+            fte && local.local_token().is_none() && qualifiers_of(local.syntax()).is_empty()
+        })
+        .and_then(|t| {
+            let mut tokens = t
+                .syntax()
+                .descendants_with_tokens()
+                .filter_map(|e| match e {
+                    qc_syntax::SyntaxElement::Token(t) if !t.kind().is_trivia() => Some(t),
+                    qc_syntax::SyntaxElement::Token(_) | qc_syntax::SyntaxElement::Node(_) => None,
+                });
+            let first = tokens.next()?;
+            (tokens.next().is_none() && first.kind() == qc_syntax::SyntaxKind::Name)
+                .then(|| (first.text_lossless(), first.span()))
+        });
     for declarator in local.declarators() {
         let Some(name_token) = declarator.name() else {
             continue;
@@ -620,6 +641,7 @@ fn lower_local(local: &ast::LocalDecl, cx: Cx<'_>, body: &mut RawBody) {
             scope_end: None,
             flags: cx.flags_at(local.syntax().span().start),
             global_function,
+            bare_type: bare_type.clone(),
         });
     }
 }
