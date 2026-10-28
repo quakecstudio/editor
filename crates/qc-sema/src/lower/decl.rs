@@ -60,6 +60,9 @@ pub struct RawDecl {
     pub type_only: bool,
     /// Whether it is a `CLASS::NAME` definition written with no type, a `void` (FTEF-19.66).
     pub untyped: bool,
+    /// Whether it is an accessor member's function, which another member of the name defines
+    /// again with no check (FTEF-10.12).
+    pub accessor_body: bool,
     /// Whether its function type was written inline and a parameter list follows its name, a
     /// function returning a function (FTEF-19.67).
     pub returns_function: bool,
@@ -285,6 +288,7 @@ impl RawDecl {
             type_kind: None,
             type_only: false,
             untyped: false,
+            accessor_body: false,
             returns_function: false,
             accessor: None,
             qualifiers: Vec::new(),
@@ -379,7 +383,10 @@ impl RawDecl {
     /// again (FTEF-15.5).
     #[must_use]
     pub fn redefinable(&self) -> bool {
-        self.has(&Qualifier::Wrap) || self.has(&Qualifier::Weak) || self.has(&Qualifier::Accumulate)
+        self.accessor_body
+            || self.has(&Qualifier::Wrap)
+            || self.has(&Qualifier::Weak)
+            || self.has(&Qualifier::Accumulate)
     }
 
     /// The reason a `deprecated` qualifier gives, `Some("")` for none; `None` when the

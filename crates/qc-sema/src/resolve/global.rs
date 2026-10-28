@@ -893,7 +893,7 @@ impl<'a> Resolver<'a> {
         {
             d.initialized = true;
         }
-        if decl.has(&Qualifier::Weak) || decl.has(&Qualifier::Accumulate) {
+        if decl.has(&Qualifier::Weak) || decl.has(&Qualifier::Accumulate) || decl.accessor_body {
             self.redefinable.insert(def);
         } else if decl.initialized && !self.facts.get(def.0).is_some_and(|f| f.accumulate) {
             self.redefinable.remove(&def);

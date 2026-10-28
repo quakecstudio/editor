@@ -899,6 +899,13 @@ others).
   from the member's only in such a parameter is not reported. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_ParseAccessorMember`.
+- **FTEF-10.12** A second `get` or `set` member of one name defines its function again:
+  `QCC_PR_ParseAccessorMember` parses the body into the definition with no test that it has one
+  (`f = QCC_PR_ParseImmediateStatements(...); def.sym->initialized = 1;`), so `get float x = {
+  return 1; }; get float x = { return 2; };` in an accessor or a class is no "redeclaration of
+  function body". A function defined twice outside an accessor still is. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseAccessorMember`.
 
 ## FTEF-11 The `__variant` type
 

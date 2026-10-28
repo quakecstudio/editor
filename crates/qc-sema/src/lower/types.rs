@@ -1171,6 +1171,7 @@ fn lower_accessor_body(
         .map_or_else(|| member.syntax().span(), |t| t.span());
     let name = format!("{owner}::{}_{field}", if set { "set" } else { "get" });
     let mut decl = RawDecl::new(name, span, Type::Unknown);
+    decl.accessor_body = true;
     if let Some(fn_body) = member.body() {
         // FTEF-10.8: the function `QCC_PR_GenFunctionType` makes: `this` of the accessor's
         // type, the index of its indexer's, and for `set` the value of the member's; `get`

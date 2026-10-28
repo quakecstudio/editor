@@ -684,3 +684,36 @@ fn an_accessor_indexer_reads_and_stores() {
         ["Implicit type mismatch. Needed float, got string."]
     );
 }
+
+// spec FTEF-10.12: a second accessor member of one name defines its function again with no
+// error, in an accessor or a class
+#[test]
+fn accessor_members_may_be_defined_again() {
+    let messages = |source: &str| -> Vec<String> {
+        fte_index_of(source)
+            .diagnostics
+            .iter()
+            .map(|d| d.diagnostic.message.clone())
+            .collect()
+    };
+    assert!(
+        messages(
+            "accessor A : float { get float x = { return 1; }; get float x = { return 2; }; };\n"
+        )
+        .is_empty()
+    );
+    assert!(messages("accessor A : float { set float x = { }; set float x = { }; };\n").is_empty());
+    assert!(
+        messages(
+            "class C : entity { get float x = { return 1; }; get float x = { return 2; }; };\n"
+        )
+        .is_empty()
+    );
+    assert_eq!(
+        messages("float() g = { return 1; };\nfloat() g = { return 2; };\n"),
+        [
+            "redeclaration of function body",
+            "incompatible redeclaration"
+        ]
+    );
+}
