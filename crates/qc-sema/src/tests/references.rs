@@ -281,3 +281,44 @@ fn an_indexed_store_of_another_type() {
         ]
     );
 }
+
+// spec FTEF-31.8: a constant index is `QCC_Eval_Int` of it; a vector or a string has no value
+// spec QCD-4.61: E0359 "Unable to evaluate to numeric constant" for such an index
+#[test]
+fn a_constant_index_is_evaluated_as_an_integer() {
+    let messages = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nfloat arr[1]; float x; vector v; float *p; entity e; .vector fv;\n\
+             void() g = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let out = |i: &str| format!("(constant) array index out of bounds (0 <= {i} < 1)");
+    for (index, shown) in [
+        ("13.0d", "13"),
+        ("(__int64)13i", "13"),
+        ("(__uint)13i", "13"),
+        ("5000000000ll", "705032704"),
+        ("(13.5 / 0.0)", "-1"),
+    ] {
+        assert_eq!(
+            messages(&format!("x = arr[{index}];")),
+            [out(shown)],
+            "{index}"
+        );
+    }
+    let unable = "Unable to evaluate to numeric constant".to_owned();
+    for statement in ["x = arr[\"s\"];", "x = v[\"s\"];", "x = e.fv['1 2 3'];"] {
+        assert_eq!(
+            messages(statement),
+            [unable.clone(), unable.clone()],
+            "{statement}"
+        );
+    }
+    assert_eq!(
+        messages("x = p[\"s\"];"),
+        ["Implicit type mismatch. Needed integer, got string."]
+    );
+}

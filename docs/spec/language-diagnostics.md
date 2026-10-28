@@ -367,6 +367,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   integer read (FTEF-2.12); a fatal error.
 - **QCD-4.60** `E0359` "Unable to evaluate to numeric constant": a store to a field of an 8- or
   16-bit integer (FTEF-2.12); not a fatal error.
+- **QCD-4.61** `E0359` "Unable to evaluate to numeric constant" is also a vector or string
+  constant read as an index (FTEF-31.8); not a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 

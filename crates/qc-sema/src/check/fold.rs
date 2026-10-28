@@ -195,7 +195,8 @@ fn both(op: Op, a: Constant, b: Constant, notices: &mut Vec<Notice>) -> Option<C
         Op::NeFi => int_bool(fa != int_to_f32(ib)),
         Op::LtU => Constant::uint(u32::from(a.u() < b.u())),
         Op::LeU => Constant::uint(u32::from(a.u() <= b.u())),
-        Op::DivU if b.u() != 0 => Constant::uint(a.u().checked_div(b.u()).unwrap_or(0)),
+        // C's `_uint / _uint` with no check; arm64's `udiv` by 0 is 0.
+        Op::DivU => Constant::uint(a.u().checked_div(b.u()).unwrap_or(0)),
         Op::RshiftU => Constant::uint(a.u().wrapping_shr(shift(ib))),
         Op::AddI64 => Constant::int64(a.i64().wrapping_add(b.i64())),
         Op::SubI64 => Constant::int64(a.i64().wrapping_sub(b.i64())),

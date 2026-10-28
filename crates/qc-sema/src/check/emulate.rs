@@ -38,6 +38,10 @@ enum Emulation {
     /// Emit these opcodes on the operands in turn, the last giving the value; each is emitted
     /// or emulated in turn. For `%` when no `mod` function is defined (FTEF-27.4).
     Expand(&'static [Op]),
+    /// `a % b` as `a - b * (a / b)`: the division, the floor (`d | d`) for a float one, the
+    /// product of `b` and the quotient and the difference from `a`, each emitted in turn
+    /// (FTEF-27.4).
+    Remainder(&'static [Op]),
     /// `return QCC_PR_StatementFlags(OTHER, a, b, ...)`: this opcode instead, folded, emitted or
     /// emulated in turn.
     Instead(Op),
@@ -181,6 +185,17 @@ impl Checker<'_> {
                     constness: Constness::Variable,
                     ..result
                 })
+            }
+            Emulation::Remainder(steps) => {
+                let &[div, ref rest @ .., mul, sub] = steps else {
+                    return Ok(result);
+                };
+                let mut quotient = self.emit(div, lhs, rhs, span)?;
+                if let [floor] = rest {
+                    quotient = self.emit(*floor, &quotient, &quotient, span)?;
+                }
+                let product = self.emit(mul, rhs, &quotient, span)?;
+                self.emit(sub, lhs, &product, span)
             }
             Emulation::Instead(other) => Ok(Value {
                 ty: result.ty,
@@ -626,7 +641,7 @@ impl Checker<'_> {
 const fn emulation(op: Op) -> Emulation {
     use Emulation::{
         Conversion, ConvertLeft, ConvertRight, Emitted, Expand, Forced, Helper, Instead, Refuse,
-        Simple, Special,
+        Remainder, Simple, Special,
     };
     if let Some(substitution) = substitution(op) {
         return substitution;
@@ -651,11 +666,11 @@ const fn emulation(op: Op) -> Emulation {
         Op::PowI => Helper(&["pow", "powf"], "int*^int"),
         Op::PowFi => Helper(&["pow", "powf"], "float*^int"),
         Op::PowIf => Helper(&["pow", "powf"], "int*^float"),
-        Op::ModF => Expand(&[Op::DivF, Op::BitorF, Op::MulF, Op::SubF]),
-        Op::ModI => Expand(&[Op::DivI, Op::MulI, Op::SubI]),
-        Op::ModU => Expand(&[Op::DivU, Op::MulU, Op::SubU]),
-        Op::ModFi => Expand(&[Op::DivFi, Op::BitorF, Op::MulIf, Op::SubF]),
-        Op::ModIf => Expand(&[Op::DivIf, Op::BitorF, Op::MulF, Op::SubIf]),
+        Op::ModF => Remainder(&[Op::DivF, Op::BitorF, Op::MulF, Op::SubF]),
+        Op::ModI => Remainder(&[Op::DivI, Op::MulI, Op::SubI]),
+        Op::ModU => Remainder(&[Op::DivU, Op::MulU, Op::SubU]),
+        Op::ModFi => Remainder(&[Op::DivFi, Op::BitorF, Op::MulIf, Op::SubF]),
+        Op::ModIf => Remainder(&[Op::DivIf, Op::BitorF, Op::MulF, Op::SubIf]),
         // `(a & ~b) | (b & ~a)`.
         Op::BitxorF => Expand(&[
             Op::BitnotF,

@@ -125,7 +125,8 @@ impl Checker<'_> {
                 // `QCC_SupplyConversion(ref->index, ev_integer, true)`.
                 let index = match &pointer.index {
                     Some(index) if self.etype_of(&index.ty) != Some(Etype::Integer) => {
-                        Some(self.converted(index, Etype::Integer, span)?)
+                        let int = Type::Named("__int32".into());
+                        Some(self.supplied(index, &int, span)?)
                     }
                     index => index.clone(),
                 };
@@ -410,13 +411,26 @@ impl Checker<'_> {
         if base.ty == Type::Unknown || at.ty == Type::Unknown || !self.env.fteqcc() {
             return Ok(Value::unknown());
         }
-        let constant = at.known().map(|c| {
-            if c.ty == ConstType::Float {
-                f32_index(c.f())
-            } else {
-                c.i()
-            }
-        });
+        let constant = match at.known() {
+            Some(c) => Some(match eval_int(c) {
+                Some(i) => i,
+                None => {
+                    // `QCC_Eval_Int`'s default, once for the bounds and once as the element is
+                    // read, for an array's, a vector's and a `.vector` field's index (FTEF-31.8).
+                    let evaluated = base.is_array_head()
+                        || matches!(self.etype_of(&base.ty), Some(Etype::Vector))
+                        || matches!(&base.ty, Type::Field(held) if self.etype_of(held) == Some(Etype::Vector));
+                    if evaluated {
+                        for _ in 0..2 {
+                            let message = "Unable to evaluate to numeric constant".to_owned();
+                            self.env.report(Code::E0359, span, message);
+                        }
+                    }
+                    0
+                }
+            }),
+            None => None,
+        };
         let label = base.label();
         // FTEF-10.7: an accessor member's index, or an accessor's indexer, `get T[index]`.
         if let Some(element) = self.accessor_index(&base, &at) {
@@ -724,7 +738,8 @@ impl Checker<'_> {
                 // `QCC_SupplyConversion(dest->index, ev_integer, true)`.
                 let index = match &pointer.index {
                     Some(index) if self.etype_of(&index.ty) != Some(Etype::Integer) => {
-                        Some(self.converted(index, Etype::Integer, span)?)
+                        let int = Type::Named("__int32".into());
+                        Some(self.supplied(index, &int, span)?)
                     }
                     index => index.clone(),
                 };
@@ -778,13 +793,42 @@ pub(super) fn expected_after(node: &qc_syntax::SyntaxNode) -> &'static str {
     ";"
 }
 
-/// C's `(int)` of a float index (`QCC_Eval_Int`).
+/// FTEF-31.8: `QCC_Eval_Int` of a constant: C's `(int)` of a float or double, an integer as it
+/// is, a 64-bit one's low word; `None` for a vector or a string, "Unable to evaluate to numeric
+/// constant".
+fn eval_int(c: Constant) -> Option<i32> {
+    match c.ty {
+        ConstType::Float => Some(f32_index(c.f())),
+        ConstType::Double => Some(f64_index(c.d())),
+        ConstType::Integer | ConstType::Uint => Some(c.i()),
+        ConstType::Int64 | ConstType::Uint64 => Some(low_word(c.i64())),
+        ConstType::Vector | ConstType::String => None,
+    }
+}
+
+/// `(unsigned)QCC_Eval_Int` of a double index, as [`f32_index`] (FTEF-31.8).
 #[expect(
     clippy::cast_possible_truncation,
-    reason = "spec FTEF-31.2: QCC_Eval_Int of a float constant is C's float to int conversion"
+    reason = "spec FTEF-31.8: QCC_Eval_Int of a double is C's double to 64-bit conversion"
+)]
+const fn f64_index(value: f64) -> i32 {
+    low_word(value as i64)
+}
+
+/// The low 32 bits of `value`, as C's truncation to `int` keeps them.
+const fn low_word(value: i64) -> i32 {
+    let [a, b, c, d, ..] = value.to_le_bytes();
+    i32::from_le_bytes([a, b, c, d])
+}
+
+/// `(unsigned)QCC_Eval_Int` of a float index: C's `(pint64_t)` of it, saturating on the arm64
+/// build the differential is recorded on, then its low word (FTEF-31.8).
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "spec FTEF-31.8: QCC_Eval_Int of a float is C's float to 64-bit conversion"
 )]
 const fn f32_index(value: f32) -> i32 {
-    value as i32
+    low_word(value as i64)
 }
 
 /// C's `(float)` of a small `int`.

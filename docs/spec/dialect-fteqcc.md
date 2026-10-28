@@ -3872,6 +3872,11 @@ saturates, as on the arm64 build the differential is recorded on.
   initialiser, kept as text, an enum's item, a `length`) decides nothing it checks: no folding,
   no emulation.
 
+- **FTEF-26.6** An unsigned division folds with no check of its divisor (`eval_a->_uint /
+  eval_b->_uint`), a 0 divisor giving 0 as arm64's `udiv` does. A remainder by a constant 0,
+  which is not folded (FTEF-26.2), is emulated as `a - b * (a / b)` in that order (FTEF-27.4), its
+  steps folding in turn, so `13i % 0i` is 13 (`13 / 0` is 0 with "Division by constant 0", ignored
+  by default) and `13.5 % 0.0` is 13 with the truncation warnings of `inf | inf`.
 ## FTEF-27 Opcodes the target lacks
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (its `if (!QCC_OPCodeValid(op))` switch and
@@ -4252,6 +4257,13 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   (`t->bits`) is made an integer and multiplied by one, which emits nothing. `pv[i]` of a
   `vector *pv` is `OP_MUL_I` of `i` by 3, which the id target emulates.
 
+- **FTEF-31.8** A constant index is read by `QCC_Eval_Int`, a 64-bit integer: C's conversion of a
+  float or double (saturating, as on arm64), an integer, or a 64-bit one, and the bounds check
+  compares its low word as unsigned, so `arr[13.5 / 0.0]` is "(constant) array index out of bounds
+  (0 <= -1 < 1)". A vector or string constant has no value there, `E0359` "Unable to evaluate to
+  numeric constant", twice for an array's, a vector's and a `.vector` field's index (the bounds
+  and the element's read) and 0 for the index; a pointer's index is made an integer instead, a
+  string "Implicit type mismatch. Needed integer, got string.".
 ## FTEF-32 Calls
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`,
