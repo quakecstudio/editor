@@ -385,6 +385,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   default is no constant (FTEF-17.17).
 - **QCD-4.69** `E0368` "autocvar NAME was already initialised with another value": an
   `autocvar` call whose default differs from the cvar's earlier value (FTEF-17.17); a fatal error.
+- **QCD-4.70** `E0369` "[non]virtual members must be functions": a `virtual` struct member that
+  is no function (FTEF-6.29); the declaration goes on.
 
 ## QCD-5 Project, limit and fatal errors
 

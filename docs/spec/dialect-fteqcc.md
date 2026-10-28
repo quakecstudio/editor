@@ -515,6 +515,14 @@ inheritance, bitfields and nested members.
   offset (FTEF-27.10), the pointer read first, so `(*pp)->a` loads `*pp` with `OP_LOADP_I` and
   then `a` with `OP_LOADP_F`. On the id target `local S y = *p;` is "Opcode \"=|LOADP_I\" not
   valid for target" for a one-word `S`, and `OP_LOADP_V` for one of four words.
+- **FTEF-6.29** A struct or union member that is a type with nothing after it but `;`, other
+  than a struct's or union's, whose members it nests, is the warning `W0204` "declaration does not
+  declare anything (TYPE)" (`WARN_POINTLESSSTATEMENT`), and declares nothing: `struct S { float;
+  };`. A `virtual` member that is no function is the error `E0369` "[non]virtual members must be
+  functions", which goes on (`if ((isnonvirt || isvirt) && type->type != ev_function)`; FTEQCC
+  reads no `nonvirtual` in a struct). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseStruct`.
 
 ## FTEF-7 `typedef` of any type
 

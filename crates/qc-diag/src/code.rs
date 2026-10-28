@@ -356,6 +356,9 @@ pub enum Code {
     E0367,
     /// "autocvar NAME was already initialised with another value" (QCD-4.69).
     E0368,
+    /// "[non]virtual members must be functions": a `virtual` struct member that is no function
+    /// (QCD-4.70).
+    E0369,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -604,7 +607,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 265] = [
+    pub const ALL: [Self; 266] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -760,6 +763,7 @@ impl Code {
         Self::E0366,
         Self::E0367,
         Self::E0368,
+        Self::E0369,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -1118,6 +1122,7 @@ impl Code {
             Self::E0366 => "E0366",
             Self::E0367 => "E0367",
             Self::E0368 => "E0368",
+            Self::E0369 => "E0369",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1414,6 +1419,7 @@ impl Code {
             | Self::E0366
             | Self::E0367
             | Self::E0368
+            | Self::E0369
             | Self::E0408 => true,
         }
     }
