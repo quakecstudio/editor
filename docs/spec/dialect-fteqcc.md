@@ -4675,6 +4675,14 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   defined" and "not valid for target" errors and then "Implicit cast from float to string".
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_RefTerm`.
+- **FTEF-31.14** A string's character is read and stored through `QCC_SupplyConversion(..., true)`:
+  read at an index that is no float, the index is made an integer, and stored, the value is made
+  a float or an integer for the opcode FTEF-31.5 chooses, then the index an integer. A type that
+  does not convert is the error "Implicit type mismatch. Needed integer, got string." for an index
+  (a warning under `lax`), and the value's cast is the definition's (FTEF-19.31): `s["a"]`, `s[e]
+  = 1` and `s[1] = "b"`, "Cannot cast from string to float". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_RefToDef`, `QCC_StoreSRefToRef`, `QCC_SupplyConversion`.
 ## FTEF-32 Calls
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`,

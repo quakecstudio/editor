@@ -330,3 +330,104 @@ fn a_pointers_prefix_step_is_its_size() {
     let [helper, refusal] = add();
     assert_eq!(id("--p;"), [truncated("4294967295", "-1"), helper, refusal]);
 }
+
+// spec FTEF-2.12: an 8- or 16-bit integer is read as its word, `__int32` or `__uint32`, a name
+// and an element alike
+// spec FTEF-19.31: a local's value is cast to its type, an array's element included
+#[test]
+fn narrow_reads_and_elements_are_cast_as_their_words() {
+    let defs = "float farr[4]; int iarr[2]; __int8 n8; __uint8 u8; __uint8 arr[4];";
+    let cases = [
+        (
+            "local string q = farr[1];",
+            "Cannot cast from float to string",
+        ),
+        (
+            "local string q = farr[i];",
+            "Cannot cast from float to string",
+        ),
+        (
+            "local entity q = iarr[1];",
+            "Implicit cast from __int32 to entity",
+        ),
+        (
+            "local string q = n8;",
+            "Implicit cast from __int32 to string",
+        ),
+        (
+            "local string q = u8;",
+            "Implicit cast from __uint32 to string",
+        ),
+        (
+            "local string q = arr[1];",
+            "Implicit cast from __uint32 to string",
+        ),
+        (
+            "local string q = arr[i];",
+            "Implicit cast from __uint32 to string",
+        ),
+    ];
+    for (statement, message) in cases {
+        let found = diags(&format!("#pragma target fte\n{defs}"), statement);
+        assert_eq!(
+            found.iter().map(|(_, m)| m.as_str()).collect::<Vec<_>>(),
+            [message],
+            "{statement}"
+        );
+    }
+    assert!(
+        diags(
+            &format!("#pragma target fte\n{defs}"),
+            "local float q = farr[1];"
+        )
+        .is_empty()
+    );
+}
+
+// spec FTEF-31.14: a string's character index, and the value stored to it, are supplied as
+// FTEQCC converts them, a type that does not convert refused
+// spec FTEF-6.14: a struct of two words is read through a pointer by `OP_LOADP_I` twice
+// spec FTEF-31.2: a `.vector` field's component at a constant index past 2 is fatal, and
+// another field type takes no index
+#[test]
+fn characters_vector_fields_and_two_word_structs() {
+    let defs = "#pragma target fte\nstring txt; entity e; .vector fv; .float ff; vector v; \
+                float farr[4];";
+    let found = |statement: &str| -> Vec<String> {
+        diags(defs, statement).into_iter().map(|(_, m)| m).collect()
+    };
+    let mismatch = |got: &str| format!("Implicit type mismatch. Needed integer, got {got}.");
+    assert_eq!(found("local float q = txt[\"a\"];"), [mismatch("string")]);
+    assert_eq!(found("local float q = txt[v];"), [mismatch("vector")]);
+    assert_eq!(found("txt[e] = 1;"), [mismatch("entity")]);
+    assert_eq!(found("txt[1] = \"b\";"), ["Cannot cast from string to float"]);
+    assert!(found("txt[1] = 1; local float q = txt[1];").is_empty());
+    assert!(found("local .float q = fv[1];").is_empty());
+    assert_eq!(
+        found("local .float q = fv[3];"),
+        ["(.vector) array index out of bounds"]
+    );
+    assert_eq!(
+        found("local string q = fv[1];"),
+        ["Cannot cast from .float to string"]
+    );
+    assert_eq!(found("local .float q = ff[1];"), ["expected ;, found ["]);
+    let unevaluated = "Unable to evaluate to numeric constant";
+    assert_eq!(
+        found("local float q = farr[\"a\"];"),
+        [unevaluated, unevaluated]
+    );
+    assert_eq!(
+        found("local float q = v[\"a\"];"),
+        [unevaluated, unevaluated]
+    );
+    let two = "struct t2 { float a, b; }; t2 *p2; t2 x2;";
+    assert_eq!(
+        diags(two, "x2 = *p2;"),
+        [(
+            Code::E0320,
+            "Opcode \"=|LOADP_I\" not valid for target. Consider the use of: #pragma target fte"
+                .to_owned()
+        )]
+    );
+}

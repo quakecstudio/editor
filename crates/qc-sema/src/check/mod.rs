@@ -24,7 +24,7 @@ mod format;
 mod member;
 pub(crate) mod opcodes;
 mod pointer;
-mod reference;
+pub(crate) mod reference;
 mod statement;
 mod term;
 mod truth;

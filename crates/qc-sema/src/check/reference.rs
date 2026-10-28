@@ -143,6 +143,12 @@ impl Checker<'_> {
             }
             Reference::Character(index) => {
                 let float_index = self.etype_of(&index.ty) == Some(Etype::Float);
+                // `QCC_SupplyConversion(ref->index, ev_integer, true)` for `OP_LOADP_U8`.
+                let index = if float_index {
+                    *index
+                } else {
+                    self.supplied(&index, &Type::Named("__int32".into()), span)?
+                };
                 let op = if float_index { Op::LoadpC } else { Op::LoadpU8 };
                 let string = Value::of(Type::Simple(SimpleType::String));
                 let loaded = self.emit(op, &string, &index, span)?;
@@ -878,13 +884,16 @@ impl Checker<'_> {
         } else {
             Op::StorepI8
         };
+        // `QCC_SupplyConversion(source, ...)`, then the index's, each refusing a type that does
+        // not convert.
+        let int = Type::Named("__int32".into());
         let to = if op == Op::StorepC {
-            Etype::Float
+            Type::Simple(SimpleType::Float)
         } else {
-            Etype::Integer
+            int.clone()
         };
-        let value = self.converted(stored, to, span)?;
-        let index = self.converted(index, Etype::Integer, span)?;
+        let value = self.supplied(stored, &to, span)?;
+        let index = self.supplied(index, &int, span)?;
         if target.stores_at_offset() {
             return self.small_store(op, &value, Some(&index), span);
         }
@@ -923,7 +932,7 @@ pub(super) fn eval_int(c: Constant) -> Option<i32> {
 
 /// The type a bitfield's word is read as: an 8- or 16-bit integer's `parentclass`, `int` or
 /// `uint` (FTEF-2.12), else the bitfield's own type.
-pub(super) fn word_type(ty: &Type) -> Type {
+pub(crate) fn word_type(ty: &Type) -> Type {
     match ty.fteqcc_scalar() {
         Some(CScalar::Int8 | CScalar::Int16) => Type::Named("__int32".into()),
         Some(CScalar::Uint8 | CScalar::Uint16) => Type::Named("__uint32".into()),

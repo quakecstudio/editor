@@ -691,7 +691,7 @@ impl Checker<'_> {
             }
             let span = init.syntax().span();
             let resolver_casts = match &init {
-                ast::Expr::Literal(_) | ast::Expr::Name(_) | ast::Expr::Index(_) => true,
+                ast::Expr::Literal(_) | ast::Expr::Name(_) => true,
                 ast::Expr::Cast(cast) => matches!(cast.operand(), Some(ast::Expr::Literal(_))),
                 ast::Expr::Call(call) => matches!(
                     call.callee(),
