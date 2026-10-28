@@ -636,6 +636,8 @@ pub(super) fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDec
             continue;
         };
         let mut decl = RawDecl::type_name(&token, TypeKind::Typedef);
+        decl.returns_function =
+            matches!(node, Some(ast::Type::Function(_))) && declarator.params().is_some();
         // FTEF-7.5: the parameters of a function type, from the type's list or the
         // declarator's, for the bodies of the type's definitions.
         let list = match &node {

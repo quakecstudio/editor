@@ -1171,6 +1171,17 @@ impl<'a> Parser<'a> {
             self.finish_node();
             return;
         }
+        // FTEF-19.66: `CLASS::NAME` writes no type, the class's name read as the type and
+        // then taken as the definition's scope.
+        if self.fteqcc()
+            && self.at(K::Name)
+            && self.nth(1).is_some_and(|t| t.kind == K::ColonColon)
+            && self.nth(2).is_some_and(|t| t.kind == K::Name)
+        {
+            self.declarators(TypeShape::default(), Site::File);
+            self.finish_node();
+            return;
+        }
         match self.type_or_user_type() {
             Some(ty) => self.declarators(ty, Site::File),
             None => self.recover(false),
@@ -1672,9 +1683,9 @@ impl<'a> Parser<'a> {
         // FTE-17.1: the C-style function declarator `rettype name(params)`, which the
         // rerelease uses beside the vanilla `rettype(params) name`, and FTEF-5.3: `T
         // name[N](params)`, an array of functions. A `(` after the name or its array
-        // suffixes, on a non-function type, is the parameter list, and the declarator is then
-        // a function.
-        if self.fteqcc() && !ty.function && self.at(K::LParen) {
+        // suffixes is the parameter list, and the declarator is then a function, one returning
+        // a function on a function type (FTEF-19.67).
+        if self.fteqcc() && self.at(K::LParen) {
             self.fte_param_list();
             ty.function = true;
         }

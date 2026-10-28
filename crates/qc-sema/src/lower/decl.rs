@@ -11,7 +11,7 @@ use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{CompilerFlags, Dialect, SyntaxKind, SyntaxNode};
 
 use crate::cast::{ConstType, Literal};
-use crate::ty::Type;
+use crate::ty::{SimpleType, Type};
 
 use super::body::{RawBody, RawParam, lower_body, next_think_of, omitted_type};
 use super::expr::{RawUse, lower_expr};
@@ -57,6 +57,11 @@ pub struct RawDecl {
     /// Whether this stands for a type written with no declarator, `float (x);`, which only has
     /// its type names checked (FTEF-20.12).
     pub type_only: bool,
+    /// Whether it is a `CLASS::NAME` definition written with no type, a `void` (FTEF-19.66).
+    pub untyped: bool,
+    /// Whether its function type was written inline and a parameter list follows its name, a
+    /// function returning a function (FTEF-19.67).
+    pub returns_function: bool,
     /// For an accessor, its base type after `:`, `None` inside `Some` when it has none
     /// (FTEF-10.6).
     pub accessor: Option<Option<Type>>,
@@ -278,6 +283,8 @@ impl RawDecl {
             class: None,
             type_kind: None,
             type_only: false,
+            untyped: false,
+            returns_function: false,
             accessor: None,
             qualifiers: Vec::new(),
             value: None,
@@ -1006,9 +1013,26 @@ pub(super) fn lower_declaration(decl: &ast::Declaration, cx: Cx<'_>, out: &mut V
     for en in decl.syntax().descendants().filter_map(ast::EnumDecl::cast) {
         lower_enum(&en, cx, out);
     }
-    let base = decl.ty().map_or_else(omitted_type, |t| cx.ty(&t));
+    // FTEF-19.66: `CLASS::NAME` with no type is a `void`.
+    let untyped = fte
+        && decl.ty().is_none()
+        && decl
+            .declarators()
+            .next()
+            .is_some_and(|d| d.scope().is_some());
+    let base = match decl.ty() {
+        Some(ty) => cx.ty(&ty),
+        None if untyped => Type::Simple(SimpleType::Void),
+        None => omitted_type(),
+    };
     let first = out.len();
     lower_declarators(decl.declarators(), &base, decl.ty(), cx, out);
+    let inline_function = matches!(decl.ty(), Some(ast::Type::Function(_)));
+    let named = decl.declarators().filter(|d| d.name().is_some());
+    for (raw, declarator) in out.iter_mut().skip(first).zip(named) {
+        raw.untyped = untyped;
+        raw.returns_function = inline_function && declarator.params().is_some();
+    }
     if decl.declarators().next().is_none()
         && fte
         && let Some(node) = decl.ty()

@@ -737,8 +737,13 @@ impl Type {
                 if func.variadic {
                     params.push("...".to_owned());
                 }
-                // The return type by its name, `type->aux_type->name`, not by `TypeName`.
-                format!("{}({})", func.ret.fteqcc_name(), params.join(", "))
+                // The return type by its name, `type->aux_type->name`, not by `TypeName`: a
+                // function type's is `__function` (FTEF-19.67).
+                let ret = match &func.ret {
+                    Type::Function(_) => "__function".to_owned(),
+                    ret => ret.fteqcc_name(),
+                };
+                format!("{ret}({})", params.join(", "))
             }
         }
     }

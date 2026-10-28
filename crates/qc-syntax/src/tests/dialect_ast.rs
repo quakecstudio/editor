@@ -378,3 +378,26 @@ fn empty_argument_slots() {
     let vanilla = parse_with(in_body("f(1, , 3);").as_bytes(), Dialect::Vanilla);
     assert!(vanilla.errors().next().is_some());
 }
+
+// spec FTEF-19.66: `CLASS::NAME` at the start of a definition writes no type
+// spec FTEF-19.67: a `(` after the name of a function type's definition is a parameter list
+#[test]
+fn untyped_scoped_definitions_and_returned_functions() {
+    let class = "class C : entity { void() m; };\n";
+    let source = format!("{class}C::m() = {{}};\n");
+    let decl = fte(&source)
+        .syntax()
+        .descendants()
+        .filter_map(ast::Declaration::cast)
+        .find(|d| d.ty().is_none())
+        .unwrap();
+    let declarator = decl.declarators().next().unwrap();
+    assert_eq!(declarator.scope().unwrap().text_lossless(), "C");
+    assert_eq!(declarator.name().unwrap().text_lossless(), "m");
+    assert!(declarator.params().is_some());
+    assert!(fte_errors(&source).is_empty());
+    let decl: ast::Declaration = first("float() g() = { return 0; };\n");
+    assert!(matches!(decl.ty(), Some(ast::Type::Function(_))));
+    assert!(decl.declarators().next().unwrap().params().is_some());
+    assert!(fte_errors("float() g() = { return 0; };\n").is_empty());
+}

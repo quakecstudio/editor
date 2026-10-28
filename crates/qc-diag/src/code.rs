@@ -372,6 +372,8 @@ pub enum Code {
     E0374,
     /// "Default value not specified for implicit argument N" (QCD-4.76).
     E0375,
+    /// "no type specified for CLASS::NAME. this is only allowed for constructors" (QCD-4.77).
+    E0376,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -622,13 +624,16 @@ pub enum Code {
     W0318,
     /// "INTERNAL: over-freed refcount to NAME" (QCD-7.112).
     W0319,
+    /// "Function returning function. Is this what you meant? (suggestion: use typedefs)"
+    /// (QCD-7.113).
+    W0320,
     /// "NAME differs in case from the file it opens, STORED" (QCD-7.16).
     W0402,
 }
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 276] = [
+    pub const ALL: [Self; 278] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -791,6 +796,7 @@ impl Code {
         Self::E0373,
         Self::E0374,
         Self::E0375,
+        Self::E0376,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -904,6 +910,7 @@ impl Code {
         Self::W0317,
         Self::W0318,
         Self::W0319,
+        Self::W0320,
         Self::W0402,
     ];
 
@@ -1088,6 +1095,7 @@ impl Code {
             Self::W0317 => "W0317",
             Self::W0318 => "W0318",
             Self::W0319 => "W0319",
+            Self::W0320 => "W0320",
             Self::W0218 => "W0218",
             Self::W0217 => "W0217",
             Self::W0216 => "W0216",
@@ -1164,6 +1172,7 @@ impl Code {
             Self::E0373 => "E0373",
             Self::E0374 => "E0374",
             Self::E0375 => "E0375",
+            Self::E0376 => "E0376",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1257,6 +1266,7 @@ impl Code {
             | Self::W0317
             | Self::W0318
             | Self::W0319
+            | Self::W0320
             | Self::W0231
             | Self::W0232
             | Self::W0233
@@ -1471,6 +1481,7 @@ impl Code {
             | Self::E0373
             | Self::E0374
             | Self::E0375
+            | Self::E0376
             | Self::E0408 => true,
         }
     }

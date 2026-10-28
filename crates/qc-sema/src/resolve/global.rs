@@ -40,9 +40,12 @@ impl<'a> Resolver<'a> {
     pub(in crate::resolve) fn push_def(&mut self, def: Definition) -> DefId {
         // FTEF-20.4: `QCC_PR_DummyDef` warns of a definition named as a keyword that is on,
         // which keeps its meaning beside it with `kce` on and is turned off with it off.
-        // A class's members are made by `QCC_PR_ParseEntClass`, not as definitions named so.
+        // A class's members are made by `QCC_PR_ParseEntClass`, not as definitions named so,
+        // and a type's name, which `declare_special` defines with no type, as a type.
+        let type_name = def.ty == Type::Unknown && self.type_names.contains(&def.name);
         if self.profile.warns_keyword_names()
             && def.member_of.is_none()
+            && !type_name
             && self
                 .keywords
                 .named_definition(&def.name, def.ty.is_function())
@@ -702,12 +705,33 @@ impl<'a> Resolver<'a> {
 
     /// Declares one top-level declaration, and returns the function bodies it brings, to
     /// resolve now or, with autoprototyping, after every declaration (FTE-22.3).
+    #[expect(
+        clippy::too_many_lines,
+        reason = "QCC_PR_ParseDefs' checks of one global definition, in its order"
+    )]
     pub(in crate::resolve) fn declare_top_level(
         &mut self,
         file: FileId,
         decl: &'a RawDecl,
     ) -> Vec<Pending<'a>> {
         let location = self.at(file, decl.span);
+        // FTEF-19.66: `if (!strcmp(classname, name)) ; else QCC_PR_ParseWarning(ERR_NOTATYPE,
+        // ...)`, an error that does not end the definition.
+        if decl.untyped && decl.scope.as_deref() != Some(decl.name.as_str()) {
+            let class = decl.scope.as_deref().unwrap_or_default();
+            let message = format!(
+                "no type specified for {class}::{}. this is only allowed for constructors",
+                decl.name
+            );
+            self.report(Code::E0376, location, message);
+        }
+        // FTEF-19.67: `if (inlinefunction) QCC_PR_ParseWarning(WARN_UNSAFEFUNCTIONRETURNTYPE,
+        // ...)`, for a typedef too.
+        if decl.returns_function {
+            let message =
+                "Function returning function. Is this what you meant? (suggestion: use typedefs)";
+            self.report(Code::W0320, location, message.to_owned());
+        }
         let qualifier_fatal = match self.declare_special(file, decl, location) {
             Special::Declared(pending) => return pending,
             Special::Plain { qualifier_fatal } => qualifier_fatal,

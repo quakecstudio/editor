@@ -399,6 +399,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   that is no field (FTEF-17.20).
 - **QCD-4.76** `E0375` "Default value not specified for implicit argument N": an argument left
   empty whose parameter has no default (FTEF-32.9).
+- **QCD-4.77** `E0376` "no type specified for CLASS::NAME. this is only allowed for
+  constructors": a `CLASS::NAME` definition with no type that is no constructor (FTEF-19.66).
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -770,6 +772,9 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   (FTEF-17.20).
 - **QCD-7.112** `W0319` "INTERNAL: over-freed refcount to NAME": an argument left empty, which
   passes its parameter's default (FTEF-32.9), the warning `WARN_DEBUGGING`.
+- **QCD-7.113** `W0320` "Function returning function. Is this what you meant? (suggestion: use
+  typedefs)": a parameter list after the name of a definition of an inline function type
+  (FTEF-19.67).
 
 ## QCD-8 Preprocessor errors
 

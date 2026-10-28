@@ -1495,3 +1495,82 @@ fn array_sizes_are_folded() {
     );
     assert!(fte("const float N = 3; float c[N];\nfloat c[3];\n").is_empty());
 }
+
+// spec FTEF-19.66: `CLASS::NAME` with no type is a `void`, an error but for a constructor
+// spec QCD-4.77: E0376 "no type specified for CLASS::NAME. this is only allowed for constructors"
+// spec FTEF-19.67: a parameter list after the name of an inline function type's definition is a
+// function returning a function, which warns
+// spec QCD-7.113: W0320 "Function returning function. Is this what you meant? (suggestion: use
+// typedefs)"
+#[test]
+fn untyped_members_and_functions_returning_functions() {
+    let messages = |source: &str| -> Vec<(Code, String)> {
+        diagnostics(&fte_index_of(&format!(
+            "class C : entity {{ void() C; nonvirtual void() m; }};\n{source}\n"
+        )))
+        .into_iter()
+        .filter(|(_, message)| !message.ends_with("has no body"))
+        .collect()
+    };
+    let untyped = (
+        Code::E0376,
+        "no type specified for C::m. this is only allowed for constructors".to_owned(),
+    );
+    assert_eq!(messages("C::m() = {};"), std::slice::from_ref(&untyped));
+    assert!(messages("C::C() = {};").is_empty());
+    assert_eq!(
+        messages("C::m = {};"),
+        [
+            untyped,
+            (
+                Code::E0205,
+                "Type mismatch on redeclaration of C::m. void, should be void()".to_owned()
+            )
+        ]
+    );
+    let returning = (
+        Code::W0320,
+        "Function returning function. Is this what you meant? (suggestion: use typedefs)"
+            .to_owned(),
+    );
+    assert_eq!(
+        messages("float() g() = { return 0; };"),
+        std::slice::from_ref(&returning)
+    );
+    assert!(messages("typedef float() fn; fn k() = { return 0; };").is_empty());
+    assert_eq!(
+        messages("typedef float() fn(); fn h; float x = h;"),
+        [
+            (Code::W0320, returning.1.clone()),
+            (
+                Code::E0213,
+                "Cannot cast from __function() to float".to_owned()
+            ),
+        ]
+    );
+}
+
+// spec FTEF-19.68: a typedef named as a type FTEQCC defines must name that type
+#[test]
+fn typedefs_named_as_builtin_types() {
+    let messages = |source: &str| diagnostics(&fte_index_of(source));
+    let redeclared = |name: &str, to: &str| {
+        (
+            Code::E0219,
+            format!("Cannot redeclare typedef {name} from {name} to {to}"),
+        )
+    };
+    assert_eq!(
+        messages("typedef vector float;\n"),
+        [redeclared("float", "vector")]
+    );
+    assert_eq!(
+        messages("typedef void() void;\n"),
+        [redeclared("void", "void()")]
+    );
+    assert_eq!(
+        messages("typedef float __int;\n"),
+        [redeclared("__int", "float")]
+    );
+    assert!(messages("typedef float float;\ntypedef __int __int;\n").is_empty());
+}

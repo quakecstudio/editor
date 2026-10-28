@@ -3357,6 +3357,30 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   braces, nor what a local's definition is when more statements follow it. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseInitializerType_Internal`.
+- **FTEF-19.66** A definition may write `CLASS::NAME` with no type: `QCC_PR_ParseDefs` reads the
+  class's name as the type and, with `::` after it, takes it as the scope (`classname =
+  type->name; type = type_invalid;`), and the type is then `void`, so `C::m() = {}` defines a
+  `void()`. Unless the name is the class's, a constructor's, it is the error `E0376` "no type
+  specified for CLASS::NAME. this is only allowed for constructors", which does not end the
+  definition: `C::m = {};` is then also "Type mismatch on redeclaration of C::m. void, should be
+  void()". A scope that names no type is `"D" is not a type`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefs`.
+- **FTEF-19.67** A `(` after a definition's name, and its array suffixes, is a parameter list
+  whatever the type (`if (QCC_PR_CheckToken("("))`), so on a function type the definition is a
+  function returning a function: `float() g()`. When that function type was written inline
+  rather than by a typedef (`type_inlinefunction`), it warns `W0320` "Function returning
+  function. Is this what you meant? (suggestion: use typedefs)" (`WARN_UNSAFEFUNCTIONRETURNTYPE`,
+  which no flag names), a typedef's as a definition's. Such a type prints its return type by the
+  function type's name, `__function()`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`.
+- **FTEF-19.68** A typedef's name is looked up among the types FTEQCC defines itself as among
+  the program's (`old = QCC_TypeForName(name)`): `void`, `float`, `vector`, `string`, `entity`
+  and the registered C scalars such as `__int`. A typedef naming another type by one of them is
+  the error `E0219` "Cannot redeclare typedef NAME from NAME to TYPE": `typedef vector float;`;
+  one naming the same type is none, and, being a type, no definition named as a keyword. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefs`.
 
 ## FTEF-20 Keywords
 

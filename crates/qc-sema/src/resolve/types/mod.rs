@@ -17,7 +17,7 @@ mod structs;
 pub(crate) use layout::Layout;
 
 use qc_diag::{Code, Span};
-use qc_syntax::c_scalar::{CScalar, REGISTERED_TYPES};
+use qc_syntax::c_scalar::{CContext, CScalar, REGISTERED_TYPES};
 
 use crate::cast::Kind;
 use crate::check::Shape;
@@ -62,6 +62,20 @@ impl Resolver<'_> {
                         .unwrap_or(n);
                     self.type_key(bare) == self.type_key(&decl.name)
                 });
+                // FTEF-19.68: and a type FTEQCC defines itself, which the typedef must name.
+                if let Some(builtin) = builtin_type(&decl.name)
+                    && ty != Type::Unknown
+                    && !ty.fteqcc_same(&builtin)
+                {
+                    let message = format!(
+                        "Cannot redeclare typedef {} from {} to {}",
+                        decl.name,
+                        builtin.fteqcc_name(),
+                        ty.fteqcc_name()
+                    );
+                    self.report(Code::E0219, location, message);
+                    return;
+                }
                 if !itself
                     && ty != Type::Unknown
                     && let Some(other) = self.other_type_named(&decl.name)
@@ -616,4 +630,18 @@ impl Resolver<'_> {
             _ => self.typecmp_lax_within(&p, &q, depth),
         }
     }
+}
+
+/// The type FTEQCC defines itself by the name `name`, which `QCC_TypeForName` finds as any
+/// other (FTEF-19.68): the simple types and the C scalars.
+fn builtin_type(name: &str) -> Option<Type> {
+    let simple = match name {
+        "void" => SimpleType::Void,
+        "float" => SimpleType::Float,
+        "vector" => SimpleType::Vector,
+        "string" => SimpleType::String,
+        "entity" => SimpleType::Entity,
+        _ => return CScalar::named(name).map(|_| Type::named(name, CContext::default())),
+    };
+    Some(Type::Simple(simple))
 }
