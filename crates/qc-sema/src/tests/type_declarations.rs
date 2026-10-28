@@ -351,6 +351,7 @@ fn a_state_in_a_member_names_a_void_function() {
 }
 
 // spec FTEF-19.35: a type written with no declarator has its type names checked
+// spec FTEF-21.22: `(x)` of a name that is no type is "expected function arg list"
 #[test]
 fn a_type_with_no_declarator_is_checked() {
     for source in [
@@ -359,7 +360,7 @@ fn a_type_with_no_declarator_is_checked() {
         "void() g = { local float (x); };",
         "struct S2 { float b; }; S2 (x);",
     ] {
-        assert_eq!(errors(source, &[]), [Code::E0203], "{source}");
+        assert_eq!(errors(source, &[]), [Code::E0204], "{source}");
     }
 }
 
@@ -940,12 +941,13 @@ fn a_negative_width_is_accepted() {
 }
 
 // spec FTEF-7.5, FTEF-19.35: a typedef's declarator `(name)` is a parameter that names no type
+// spec FTEF-21.22: so the typedef is "expected function arg list"
 #[test]
 fn a_typedef_with_a_parenthesised_name_is_refused() {
-    assert_eq!(errors("typedef float (t);", &[]), [Code::E0203]);
+    assert_eq!(errors("typedef float (t);", &[]), [Code::E0204]);
     assert_eq!(
         errors("typedef float t; typedef t (u);", &[]),
-        [Code::E0203]
+        [Code::E0204]
     );
     for source in [
         "typedef void() fn; fn g = { return; };",

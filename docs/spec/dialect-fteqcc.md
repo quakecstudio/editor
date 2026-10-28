@@ -3567,6 +3567,11 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   parameters are those of the last list before its name when the type takes none, `void(float
   x) h = { x = 1; };`, and so for a struct's or a typedef's parameter type.
 
+- **FTEF-21.22** A function type whose first parameter's type is a name that is no type, through
+  `*`s, makes `QCC_PR_ParseFunctionType` return none, and its caller the fatal error `E0204`
+  "expected function arg list" (`if (!type) QCC_PR_ParseError(ERR_BADNOTTYPE, "expected function
+  arg list");`): `void(foo a) g;`, `float (x);` and `typedef float (t);`; a later parameter's is
+  `E0203` "\"foo\" is not a type", as a return type's is.
 ## FTEF-22 The flags and the target the casts read
 
 **Source:** `qcc_pr_comp.c`, `QCC_TryEvaluateCast`, `QCC_EvaluateCast`, `QCC_SupplyConversion`,
