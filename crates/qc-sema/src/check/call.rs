@@ -388,7 +388,7 @@ impl Checker<'_> {
                     let message = "autocvar default value is not constant".to_owned();
                     self.env.report(Code::E0367, span, message);
                 }
-                if self.env.autocvar(&name, cvar, span) {
+                if self.env.autocvar(&name, &value.ty, cvar, span) {
                     return Err(Fatal);
                 }
                 Ok(Some(Value::of(value.ty)))

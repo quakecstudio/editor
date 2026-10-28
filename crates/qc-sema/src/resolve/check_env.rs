@@ -17,7 +17,7 @@ use crate::check::etype::Etype;
 use crate::check::{
     Constness, CvarValue, Env, FunctionFacts, ParamFacts, PathList, Shape, StructMemberFacts,
 };
-use crate::lower::{ArrayDim, LiteralValue, RawLocal};
+use crate::lower::{ArrayDim, LiteralValue, RawLocal, top_level_kind};
 use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, DefKind, Definition, FileId};
 use crate::ty::Type;
@@ -112,42 +112,35 @@ impl Env for BodyEnv<'_, '_> {
             .map(|local| self.resolver.resolved_deep(&local.ty, MAX_TYPEDEF_DEPTH))
     }
 
-    fn autocvar(&mut self, name: &str, value: CvarValue, span: Span) -> bool {
+    fn autocvar(&mut self, name: &str, ty: &Type, value: CvarValue, span: Span) -> bool {
+        self.resolver.settle(span.start);
+        let location = self.resolver.at(self.file, span);
+        // `QCC_PR_GetSRef(e.cast, autocvarname, NULL, true, 0, GDF_USED)`.
         let global = format!("autocvar_{name}");
-        let before = match self
+        let def = self
             .resolver
-            .lookup_global(&global)
-            .and_then(|def| self.resolver.literals.get(&def))
-        {
-            Some(LiteralValue::Float(bits)) => {
-                CvarValue::Number(Constant::float(f32::from_bits(*bits)))
-            }
-            Some(LiteralValue::Vector(bits)) => {
-                CvarValue::Number(Constant::vector(bits.map(f32::from_bits)))
-            }
-            Some(LiteralValue::String(text)) => CvarValue::Text(unquoted(text)),
-            Some(LiteralValue::Builtin { .. } | LiteralValue::Text(_)) => CvarValue::Unknown,
-            None => self
-                .resolver
-                .autocvars
-                .get(name)
-                .cloned()
-                .unwrap_or(CvarValue::Unknown),
+            .declare_global(&global, ty, top_level_kind(ty), location, None);
+        let Some(facts) = self.resolver.index.defs.get_mut(def.0) else {
+            return false;
         };
-        let differs =
-            before != CvarValue::Unknown && value != CvarValue::Unknown && before != value;
-        if differs {
-            self.resolver.settle(span.start);
-            let location = self.resolver.at(self.file, span);
-            let message = format!("autocvar {name} was already initialised with another value");
-            self.resolver.report(Code::E0368, location, message);
-            return true;
+        if !facts.initialized {
+            facts.initialized = true;
+            if let Some(literal) = value.literal() {
+                self.resolver.literals.insert(def, literal);
+            }
+            return false;
         }
-        self.resolver
-            .autocvars
-            .entry(name.to_owned())
-            .or_insert(value);
-        false
+        let before = self
+            .resolver
+            .literals
+            .get(&def)
+            .map_or(CvarValue::Unknown, CvarValue::of_literal);
+        if before == CvarValue::Unknown || value == CvarValue::Unknown || before == value {
+            return false;
+        }
+        let message = format!("autocvar {name} was already initialised with another value");
+        self.resolver.report(Code::E0368, location, message);
+        true
     }
 
     fn record_path(&mut self, list: PathList, path: &str, span: Span) {

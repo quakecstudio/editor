@@ -42,11 +42,12 @@ use qc_preproc::OpcodeTarget;
 use qc_syntax::CompilerFlags;
 use qc_syntax::ast::{self, AstNode as _};
 
-use crate::cast::{Literal, Source};
+use crate::cast::{ConstType, Literal, Source};
+use crate::lower::LiteralValue;
 use crate::resolve::{AccessorFacts, Layout};
 use crate::symbol::{DefId, Definition};
 use crate::ty::Type;
-use constant::Constant;
+use constant::{Constant, unquoted};
 
 use etype::Etype;
 
@@ -66,9 +67,10 @@ pub(crate) trait Env {
     fn is_accessor(&self, ty: &Type) -> bool;
     /// The type of the local whose name starts at offset `at`, through typedefs.
     fn local_type(&self, at: usize) -> Option<Type>;
-    /// FTEF-17.17: the cvar `name` an `autocvar` call gives the default `value`: whether a value
-    /// the cvar was given before differs from it, which ends the call.
-    fn autocvar(&mut self, name: &str, value: CvarValue, span: Span) -> bool;
+    /// FTEF-17.17: the global `autocvar_name` of type `ty`, which an `autocvar` call makes and
+    /// gives the default `value`: whether a value it was given before differs, which ends the
+    /// call.
+    fn autocvar(&mut self, name: &str, ty: &Type, value: CvarValue, span: Span) -> bool;
     /// FTEF-17.19: `path` named for the program's `list` of sounds, models, textures or files,
     /// which warns of a backslash the first time the list has it.
     fn record_path(&mut self, list: PathList, path: &str, span: Span);
@@ -554,6 +556,31 @@ pub(crate) enum CvarValue {
     Text(String),
     /// A value the model keeps no words of.
     Unknown,
+}
+
+impl CvarValue {
+    /// The value a global's initialiser `literal` gives it.
+    pub(crate) fn of_literal(literal: &LiteralValue) -> Self {
+        match literal {
+            LiteralValue::Float(bits) => Self::Number(Constant::float(f32::from_bits(*bits))),
+            LiteralValue::Vector(bits) => Self::Number(Constant::vector(bits.map(f32::from_bits))),
+            LiteralValue::String(text) => Self::Text(unquoted(text)),
+            LiteralValue::Builtin { .. } | LiteralValue::Text(_) => Self::Unknown,
+        }
+    }
+
+    /// The initialiser that gives a global this value, which a later definition of it is
+    /// compared with; `None` for one of a type the model keeps no literal of.
+    pub(crate) fn literal(&self) -> Option<LiteralValue> {
+        match self {
+            Self::Number(c) if c.ty == ConstType::Float => Some(LiteralValue::Float(c.u())),
+            Self::Number(c) if c.ty == ConstType::Vector => {
+                Some(LiteralValue::Vector(c.v().map(f32::to_bits)))
+            }
+            Self::Text(text) => Some(LiteralValue::String(format!("\"{text}\""))),
+            Self::Number(_) | Self::Unknown => None,
+        }
+    }
 }
 
 /// A checked function body: the type of each expression, by where it starts and ends in the

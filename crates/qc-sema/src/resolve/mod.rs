@@ -34,9 +34,9 @@ use qc_diag::{Code, Diagnostic, Span};
 use qc_preproc::{OpcodeTarget, TargetFormat, WarningSettings};
 use qc_syntax::{Dialect, Keywords};
 
+use crate::check::PathList;
 use crate::check::TypedBody;
 use crate::check::constant::Constant;
-use crate::check::{CvarValue, PathList};
 use crate::expand::{OriginMap, ProtoPlan};
 use crate::lower::{
     ArrayDim, BuiltinFunction, FileDecls, LiteralValue, RawBody, RawDecl, RawParam, RawParamInfo,
@@ -304,7 +304,6 @@ pub(crate) fn resolve_mapped(
         structs: HashSet::new(),
         strict_enums: HashMap::new(),
         folded_sizes: HashMap::new(),
-        autocvars: HashMap::new(),
         paths: HashSet::new(),
         enum_types: HashMap::new(),
         enum_values: HashMap::new(),
@@ -552,8 +551,6 @@ struct Resolver<'a> {
     /// The size each global array whose size is an expression folds to, by where its
     /// declaration's name starts (FTEF-19.62).
     folded_sizes: HashMap<usize, u32>,
-    /// The default each cvar an `autocvar` call names was given first (FTEF-17.17).
-    autocvars: HashMap<String, CvarValue>,
     /// The paths each list of sounds, models, textures and files holds (FTEF-17.19).
     paths: HashSet<(PathList, String)>,
     /// The definitions whose last initialiser was `weak` or that are `accumulate`, which the

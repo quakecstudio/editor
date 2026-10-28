@@ -2439,10 +2439,12 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   made by the call with the default's type and value (`QCC_PR_GetSRef(e.cast, autocvarname, NULL,
   true, 0, GDF_USED)`), so the call is a value of that type: `string s = autocvar(sv_x, 1);` is
   "Cannot cast from float to string". A default that is no constant is the error `E0367`
-  "autocvar default value is not constant", and one that differs from the value the cvar was
-  given before, by an `autocvar_` global or an earlier call, is the fatal error `E0368` "autocvar
-  NAME was already initialised with another value". A global `autocvar_` declared after a call
-  is not compared with the call's value by this profile. Source:
+  "autocvar default value is not constant", and one that differs from the value the global was
+  given before, by its definition or an earlier call, is the fatal error `E0368` "autocvar NAME
+  was already initialised with another value". The global is a definition as any other: the
+  rest of the module refers to it, a global `autocvar_name` of another type is "Type mismatch on
+  redeclaration", before the call or after it, and a later one given another value is
+  "incompatible redeclaration". Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseFunctionCall`.
 - **FTEF-17.18** In a member function, `self` not after `::` is `this`, the function's class:
@@ -3329,6 +3331,18 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   2, }` are the fatal error `E0372`, at the element. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseInitializerType_Internal`.
+- **FTEF-19.65** Positional struct braces are read member by member, each value followed by `,`
+  or by the closing `}`, and the loop ends at the last member (`for (partnum = 0; partnum <
+  (type)->num_parms; partnum++) { if (QCC_PR_CheckToken("}")) break; ... if (isunion ||
+  !QCC_PR_CheckToken(",")) { QCC_PR_Expect("}"); break; } }`). After a value for every member
+  and a trailing `,`, the closing `}` is left to what reads on: a global's or a local's definition
+  is the warning "Missing semicolon at end of definition" and the fatal error `"}" is not a type`,
+  at the `}`; `S st = { 1, 2, };` for a struct of two members. Braces with fewer values end at
+  their `}`. This profile does not follow the `}` of nested braces, which closes the enclosing
+  braces, nor what a local's definition is when more statements follow it. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseInitializerType_Internal`.
+
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and

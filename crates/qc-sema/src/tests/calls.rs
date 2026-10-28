@@ -417,6 +417,35 @@ fn autocvar_calls_give_their_cvar_a_value() {
         ),
         ["autocvar sv_s was already initialised with another value"]
     );
+    // The call defines the global, which the rest of the module refers to and redeclares.
+    let module = |source: &str| -> Vec<String> {
+        diags(&format!("#pragma target fte\n{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    let call = "void() f = { local float a = autocvar(sv_x, 1); };";
+    assert_eq!(
+        module(&format!(
+            "{call} void() g = {{ local string b = autocvar_sv_x; }};"
+        )),
+        ["Cannot cast from float to string"]
+    );
+    assert_eq!(
+        module(&format!("{call} string autocvar_sv_x;")),
+        ["Type mismatch on redeclaration of autocvar_sv_x. string, should be float"]
+    );
+    assert_eq!(
+        module(&format!("string autocvar_sv_x; {call}")),
+        ["Type mismatch on redeclaration of autocvar_sv_x. float, should be string"]
+    );
+    assert!(module(&format!("{call} float autocvar_sv_x;")).is_empty());
+    let changed = |value: &str| module(&format!("{call} float autocvar_sv_x = {value};"));
+    assert_eq!(changed("1").len(), 2);
+    assert_eq!(
+        changed("2").last().map(String::as_str),
+        Some("incompatible redeclaration")
+    );
 }
 
 // spec FTEF-17.19: a path new to its list warns of a backslash, once per list
