@@ -411,3 +411,60 @@ fn a_qccx_address_of_a_float_is_read_through() {
         ]
     );
 }
+
+// spec FTEF-30.3: arms of function types compare by their return types, parameters, counts and
+// variadic marks, parameters of a class or entity by their names; two structs `typecmp`
+// tells apart and `typecmp_lax` does not end FTEQCC, and two classes of the same members too
+// spec QCD-7.86: W0244 for a type mismatch on `?:`
+#[test]
+fn ternaries_of_functions_structs_and_classes() {
+    let defs = "class C : entity { float m; }; class D : entity { float m; }; struct S { float a; };\n\
+                struct T { float a; }; float(float a) f1; float(string a) f2;\n\
+                float(float a, float b) f3; float(float b) f4; float(...) f5; string(float a) f6;\n\
+                void(entity e) g1; void(C e) g2; void(D e) g3; S s1; T t1; float c; entity e;\n\
+                C cc; D dd;\n";
+    let found = |statement: &str| -> Vec<(Code, String)> {
+        diags(&format!("{defs}void() f = {{ {statement} }};\n"))
+            .into_iter()
+            .filter(|(_, m)| !m.ends_with("has no body"))
+            .collect()
+    };
+    let mismatch = |a: &str, b: &str| {
+        vec![d(
+            Code::W0244,
+            &format!("Type mismatch on ternary operator: {a} vs {b}"),
+        )]
+    };
+    assert_eq!(
+        found("local float(float) r = c ? f1 : f2;"),
+        mismatch("float(float a)", "float(string a)")
+    );
+    assert_eq!(
+        found("local float(float) r = c ? f1 : f3;"),
+        mismatch("float(float a)", "float(float a, float b)")
+    );
+    assert!(found("local float(float) r = c ? f1 : f4;").is_empty());
+    assert_eq!(
+        found("local float(float) r = c ? f1 : f5;"),
+        mismatch("float(float a)", "float(...)")
+    );
+    assert_eq!(
+        found("local float(float) r = c ? f1 : f6;"),
+        mismatch("float(float a)", "string(float a)")
+    );
+    assert_eq!(
+        found("local void(entity) r = c ? g1 : g2;"),
+        mismatch("void(entity e)", "void(class C e)")
+    );
+    assert_eq!(
+        found("local void(C) r = c ? g2 : g3;"),
+        mismatch("void(class C e)", "void(class D e)")
+    );
+    let fatal = vec![d(Code::E0332, "Ternary operator with mismatching types")];
+    assert_eq!(found("local S r = c ? s1 : t1;"), fatal);
+    assert_eq!(found("local C r = c ? cc : dd;"), fatal);
+    assert_eq!(
+        found("local entity r = c ? cc : e;"),
+        mismatch("class C", "entity")
+    );
+}
