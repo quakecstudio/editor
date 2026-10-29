@@ -38,8 +38,8 @@ pub(crate) enum Control {
 const NEXT: Control = Control::Next { builtin: None };
 
 /// The float value `1.0` and `0.0` as slots (VM notation).
-const ONE: Slot = Slot(0x3F80_0000);
-const ZERO: Slot = Slot(0);
+const ONE: Slot = Slot::from_bits(0x3F80_0000);
+const ZERO: Slot = Slot::ZERO;
 
 /// Executes one statement, id's `PR_ExecuteProgram` switch (VM-4 to VM-17).
 pub(crate) fn execute_statement(
@@ -465,7 +465,7 @@ fn bits_cmp(
         .global(st.b)
         .map_err(|e| exec::global_error(machine, progs, e))?;
     // VM-7.4: EQ_E compares bits; a NaN pattern equals itself, -0 and +0 differ.
-    let same = a.0 == b.0;
+    let same = a.bits() == b.bits();
     let result = if equal { same } else { !same };
     write_slot(machine, progs, st.c, bool_slot(result))?;
     Ok(NEXT)
@@ -542,7 +542,7 @@ fn not_bits(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<
         .global(st.a)
         .map_err(|e| exec::global_error(machine, progs, e))?;
     // VM-8.4, VM-8.5: NOT_ENT and NOT_FNC write 1.0 when the value's bits are 0.
-    write_slot(machine, progs, st.c, bool_slot(a.0 == 0))?;
+    write_slot(machine, progs, st.c, bool_slot(a.bits() == 0))?;
     Ok(NEXT)
 }
 
@@ -693,7 +693,7 @@ fn load_target(
     // fails.
     let number = machine
         .edicts
-        .num_for_edict(EntityRef(entity))
+        .num_for_edict(EntityRef::from_bits(entity))
         .map_err(|_| load_divergence(machine, progs, "entity value does not name an edict"))?;
     let field_index = usize::try_from(field)
         .ok()
@@ -794,19 +794,19 @@ fn address(
     // pointer must name a real field slot of a real edict to have meaning; resolve it.
     let number = machine
         .edicts
-        .num_for_edict(EntityRef(entity))
+        .num_for_edict(EntityRef::from_bits(entity))
         .map_err(|_| address_divergence(machine, progs, "entity value does not name an edict"))?;
     let number_i32 = i32_from(number);
     let field_index = usize::try_from(field)
         .ok()
         .filter(|f| *f < machine.edicts.layout().entityfields())
         .ok_or_else(|| address_divergence(machine, progs, "field index out of range"))?;
-    let PointerRef(pointer) = machine
+    let pointer = machine
         .edicts
         .layout()
         .pointer_value(number_i32, field_index)
         .ok_or_else(|| address_divergence(machine, progs, "pointer out of range"))?;
-    write_slot(machine, progs, st.c, Slot::from_i32(pointer))?;
+    write_slot(machine, progs, st.c, Slot::from(pointer))?;
     Ok(NEXT)
 }
 
@@ -821,7 +821,7 @@ fn storep_target(
         .map_err(|e| exec::global_error(machine, progs, e))?
         .as_i32();
     // VM-12.5: a pointer that does not name a field slot of an edict fails without writing.
-    let (number, field) = pointer_target(machine, PointerRef(pointer))
+    let (number, field) = pointer_target(machine, PointerRef::from_bits(pointer))
         .ok_or_else(|| storep_divergence(machine, progs, "pointer does not name a field slot"))?;
     Ok((number, field))
 }
@@ -830,7 +830,7 @@ fn storep_target(
 fn pointer_target(machine: &Machine, pointer: PointerRef) -> Option<(usize, usize)> {
     let edict_size = machine.edicts.layout().edict_size();
     let header = qc_edict::EDICT_HEADER_SIZE;
-    let value = pointer.0;
+    let value = pointer.bits();
     if value < 0 {
         return None;
     }
@@ -938,7 +938,7 @@ fn branch(
         .global(st.a)
         .map_err(|e| exec::global_error(machine, progs, e))?;
     // VM-13.3: the test is on the 32-bit pattern, so -0.0 and every NaN are true.
-    let nonzero = value.0 != 0;
+    let nonzero = value.bits() != 0;
     let jump = if on_nonzero { nonzero } else { !nonzero };
     if jump {
         Ok(Control::Jump(machine.xstatement.wrapping_add(st.b)))
@@ -1048,7 +1048,7 @@ fn state(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Con
         .as_i32();
     let number = machine
         .edicts
-        .num_for_edict(EntityRef(self_value))
+        .num_for_edict(EntityRef::from_bits(self_value))
         .map_err(|_| state_divergence(machine, progs, "self does not name an edict"))?;
 
     // VM-17.1: nextthink = (float)((double)time + 0.1), 0.1 the double.
@@ -1065,7 +1065,10 @@ fn state(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Con
     let a = machine
         .global(st.a)
         .map_err(|e| exec::global_error(machine, progs, e))?;
-    let frame_now = machine.edicts.field(number, FIELD_FRAME).unwrap_or(Slot(0));
+    let frame_now = machine
+        .edicts
+        .field(number, FIELD_FRAME)
+        .unwrap_or(Slot::ZERO);
     // VM-17.2: set frame only when the new float is not equal to the current frame; -0
     // equals +0, a NaN new value is not equal to anything so it is written.
     #[expect(

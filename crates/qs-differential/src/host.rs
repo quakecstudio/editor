@@ -293,14 +293,14 @@ impl Host<'_> {
 
         // SV_ConnectClient: run SetNewParms with nothing set (EDICT-9.1), then save parm1..16.
         self.run_named(progs, "SetNewParms")?;
-        let mut spawn_parms = [Slot(0); NUM_SPAWN_PARMS];
+        let mut spawn_parms = [Slot::ZERO; NUM_SPAWN_PARMS];
         for (i, cell) in spawn_parms.iter_mut().enumerate() {
             *cell = self.global_slot(parm_slot(i));
         }
 
         // Host_Spawn_f: zero the slot's edict without changing its free flag.
         if let Some(fields) = self.machine.edicts_mut().fields_mut(edict) {
-            fields.fill(Slot(0));
+            fields.fill(Slot::ZERO);
         }
         // colormap = edict number, team = 1, netname = engine string "player" (DIFF-4.1).
         let colormap = u8::try_from(edict).map_or(0.0, f32::from);
@@ -437,7 +437,10 @@ impl Host<'_> {
 
     /// Reads field slot `field` of edict `edict`, or 0 when it does not exist.
     pub(crate) fn field(&self, edict: usize, field: usize) -> Slot {
-        self.machine.edicts().field(edict, field).unwrap_or(Slot(0))
+        self.machine
+            .edicts()
+            .field(edict, field)
+            .unwrap_or(Slot::ZERO)
     }
 
     /// Writes the system global named `name` (EDICT-2.1).
@@ -455,7 +458,7 @@ impl Host<'_> {
 
     /// Reads global slot `slot`, or 0 when out of range.
     pub(crate) fn global_slot(&self, slot: i32) -> Slot {
-        self.machine.global(slot).unwrap_or(Slot(0))
+        self.machine.global(slot).unwrap_or(Slot::ZERO)
     }
 
     /// Sets the `self` global to the entity value of edict `edict` (EDICT-9.1).

@@ -891,7 +891,7 @@ fn progs_with(functions: &[(i32, &str)]) -> Vec<u8> {
         statements: vec![qc_progs::Statement::default()],
         functions: records,
         strings,
-        globals: vec![Slot(0); 28],
+        globals: vec![Slot::ZERO; 28],
         ..ProgsFile::default()
     };
     write(&file).unwrap()

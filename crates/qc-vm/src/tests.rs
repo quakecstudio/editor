@@ -73,7 +73,7 @@ fn run_does_not_mutate_progs() {
         )
         .unwrap();
     assert_eq!(progs.statements().get(1).unwrap(), before);
-    assert_eq!(machine.globals()[101].0, 0x3F80_0000);
+    assert_eq!(machine.globals()[101].bits(), 0x3F80_0000);
 }
 
 // spec VM-19.6: after a runtime error the call depth is 0 but the local stack is not reset:
@@ -294,7 +294,7 @@ fn nested_error_aborts_all_runs() {
         .unwrap_err();
     assert_eq!(error.message(), "Bad opcode 66");
     // The outer's statement 3 (slot 103) never ran: it stays 0 (VM-19.2).
-    assert_eq!(machine.globals()[103].0, 0);
+    assert_eq!(machine.globals()[103].bits(), 0);
     // Depth is reset to 0 (VM-19.6).
     assert_eq!(machine.depth(), 0);
 }
@@ -422,7 +422,7 @@ mod coverage {
         assert_eq!(machine.global3(100).unwrap()[1].as_f32(), 2.0);
         assert_eq!(machine.global3(100).unwrap()[2].as_f32(), 3.0);
         // A slot past the globals (128 slots, 0..127) errors and writes nothing.
-        assert!(machine.set_global3(200, [Slot(0); 3]).is_err());
+        assert!(machine.set_global3(200, [Slot::ZERO; 3]).is_err());
     }
 
     /// An observer that records the deepest call depth seen during a run.

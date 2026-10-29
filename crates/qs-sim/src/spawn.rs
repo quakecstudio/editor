@@ -339,7 +339,7 @@ fn parse_epair<H: SpawnHost>(
         Etype::Field => {
             let name = c_string(value);
             let named = host.find_field(name).ok_or(SpawnError::ParseError)?;
-            let global = host.global(named.slot).unwrap_or(Slot(0));
+            let global = host.global(named.slot).unwrap_or(Slot::ZERO);
             host.set_field(edict, field.slot, global);
         }
         // ev_void and ev_pointer are never a field's declared type a map key names.

@@ -149,7 +149,7 @@ fn header_follows_the_tables() {
     let mut file = Progs::read(&bytes).unwrap().to_file();
     file.crc = 77;
     file.entityfields = 9;
-    file.globals.push(Slot(0xDEAD_BEEF));
+    file.globals.push(Slot::from_bits(0xDEAD_BEEF));
     let written = write(&file).unwrap();
     assert_eq!(written.len(), bytes.len() + 4);
     assert_eq!(word(&written, field::CRC), 77);
@@ -166,7 +166,7 @@ fn header_follows_the_tables() {
         check_header_crc: false,
     };
     let reread = Progs::read_with(&written, &options).unwrap();
-    assert_eq!(reread.globals().get(44), Some(Slot(0xDEAD_BEEF)));
+    assert_eq!(reread.globals().get(44), Some(Slot::from_bits(0xDEAD_BEEF)));
     assert_eq!(reread.layout(), file.layout);
 }
 
@@ -389,7 +389,7 @@ fn valid_records() -> impl Strategy<Value = ProgsFile> {
                         )
                         .collect(),
                     strings,
-                    globals: slots.into_iter().map(Slot).collect(),
+                    globals: slots.into_iter().map(Slot::from_bits).collect(),
                     ..ProgsFile::default()
                 }
             },

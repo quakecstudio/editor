@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use qc_progs::{Progs, ReadOptions};
 use qc_trace::Record;
-use qc_types::{EntityRef, PointerRef, Slot};
+use qc_types::Slot;
 
 use crate::Machine;
 use crate::exec::ServerState;
@@ -240,7 +240,12 @@ fn parse_value(text: &str) -> u32 {
 fn resolve_value(text: &str, machine: &Machine) -> ExpectedValue {
     if let Some(rest) = text.strip_prefix('e') {
         if let Ok(number) = rest.parse::<i32>() {
-            let EntityRef(bits) = machine.edicts().layout().entity_value(number).unwrap();
+            let bits = machine
+                .edicts()
+                .layout()
+                .entity_value(number)
+                .unwrap()
+                .bits();
             return ExpectedValue::Exact(bits.cast_unsigned());
         } else if rest == "s" {
             return ExpectedValue::AnyEngineString;
@@ -248,11 +253,12 @@ fn resolve_value(text: &str, machine: &Machine) -> ExpectedValue {
     }
     if let Some(rest) = text.strip_prefix('p') {
         let (edict, field) = rest.split_once('.').unwrap();
-        let PointerRef(bits) = machine
+        let bits = machine
             .edicts()
             .layout()
             .pointer_value(edict.parse().unwrap(), field.parse().unwrap())
-            .unwrap();
+            .unwrap()
+            .bits();
         return ExpectedValue::Exact(bits.cast_unsigned());
     }
     if text == "nan" {
@@ -267,14 +273,24 @@ fn resolve_init(text: &str, machine: &Machine) -> u32 {
     if let Some(rest) = text.strip_prefix('e')
         && let Ok(number) = rest.parse::<i32>()
     {
-        let EntityRef(bits) = machine.edicts().layout().entity_value(number).unwrap();
+        let bits = machine
+            .edicts()
+            .layout()
+            .entity_value(number)
+            .unwrap()
+            .bits();
         return bits.cast_unsigned();
     }
     if let Some(rest) = text.strip_prefix('p')
         && let Some((edict, field)) = rest.split_once('.')
         && let (Ok(e), Ok(f)) = (edict.parse::<i32>(), field.parse::<usize>())
     {
-        let PointerRef(bits) = machine.edicts().layout().pointer_value(e, f).unwrap();
+        let bits = machine
+            .edicts()
+            .layout()
+            .pointer_value(e, f)
+            .unwrap()
+            .bits();
         return bits.cast_unsigned();
     }
     parse_value(text)
@@ -410,11 +426,13 @@ fn run_vector(v: &Vector) -> (qc_trace::Trace, Option<crate::RunError>, Machine)
         machine.edicts_mut().alloc(0.0).unwrap();
     }
     for (slot, value) in &v.globals {
-        machine.set_global_test(*slot as i32, Slot(resolve_init(value, &machine)));
+        machine.set_global_test(*slot as i32, Slot::from_bits(resolve_init(value, &machine)));
     }
     for (edict, field, value) in &v.fields {
         let bits = resolve_init(value, &machine);
-        machine.edicts_mut().set_field(*edict, *field, Slot(bits));
+        machine
+            .edicts_mut()
+            .set_field(*edict, *field, Slot::from_bits(bits));
     }
 
     let server = if v.server_loading {

@@ -84,7 +84,7 @@ impl Machine {
             globals,
             edicts,
             stack: Vec::new(),
-            localstack: vec![Slot(0); crate::LIMIT_LOCALSTACK_SIZE],
+            localstack: vec![Slot::ZERO; crate::LIMIT_LOCALSTACK_SIZE],
             localstack_used: 0,
             xfunction: 0,
             xstatement: 0,

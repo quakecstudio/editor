@@ -83,7 +83,7 @@ fn run_with_engine(
 
 /// The slot `c` holds after the run, as its raw bits.
 fn result_bits(machine: &Machine, slot: i32) -> u32 {
-    machine.global(slot).unwrap().0
+    machine.global(slot).unwrap().bits()
 }
 
 // spec VM-7.3: EQ_S resolves two engine-allocated string values (outside the table) to their
@@ -109,7 +109,7 @@ fn eq_s_equal_engine_strings_are_equal() {
     )
     .unwrap();
     // VM-7.1: equal strings write 1.0.
-    assert_eq!(result_bits(&machine, 102), Slot::from_f32(1.0).0);
+    assert_eq!(result_bits(&machine, 102), Slot::from_f32(1.0).bits());
 }
 
 // spec VM-7.3: EQ_S resolves engine-allocated strings with different text to not equal, so it
@@ -129,7 +129,7 @@ fn eq_s_different_engine_strings_are_not_equal() {
     )
     .unwrap();
     // VM-7.1: different strings write 0.0.
-    assert_eq!(result_bits(&machine, 102), Slot::from_f32(0.0).0);
+    assert_eq!(result_bits(&machine, 102), Slot::from_f32(0.0).bits());
 }
 
 // spec VM-7.3: NE_S resolves an engine-allocated string value against a table offset and
@@ -145,7 +145,7 @@ fn ne_s_engine_string_against_table_offset() {
     )
     .unwrap();
     // VM-7.2: equal strings (both empty) write 0.0.
-    assert_eq!(result_bits(&machine, 102), Slot::from_f32(0.0).0);
+    assert_eq!(result_bits(&machine, 102), Slot::from_f32(0.0).bits());
 }
 
 // spec VM-8.3: NOT_S on a non-empty engine-allocated string writes 0.0 (it is true), reading
@@ -160,7 +160,7 @@ fn not_s_nonempty_engine_string_is_false() {
     )
     .unwrap();
     // VM-8.3: a non-empty string writes 0.0.
-    assert_eq!(result_bits(&machine, 102), Slot::from_f32(0.0).0);
+    assert_eq!(result_bits(&machine, 102), Slot::from_f32(0.0).bits());
 }
 
 // spec VM-8.3: NOT_S on an empty engine-allocated string writes 1.0 (its first byte is NUL).
@@ -174,7 +174,7 @@ fn not_s_empty_engine_string_is_true() {
     )
     .unwrap();
     // VM-8.3: an empty string writes 1.0.
-    assert_eq!(result_bits(&machine, 102), Slot::from_f32(1.0).0);
+    assert_eq!(result_bits(&machine, 102), Slot::from_f32(1.0).bits());
 }
 
 // spec VM-7.3: a string value that is neither a table offset nor an engine-allocated string

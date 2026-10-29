@@ -154,7 +154,7 @@ fn progs() -> Result<Vec<u8>, String> {
         statements: vec![Statement::default()],
         functions: vec![Function::default()],
         strings: vec![0],
-        globals: vec![Slot(0); MIN_GLOBALS],
+        globals: vec![Slot::ZERO; MIN_GLOBALS],
         ..ProgsFile::default()
     };
     write(&file).map_err(|e| format!("cannot write the progs: {e:?}"))

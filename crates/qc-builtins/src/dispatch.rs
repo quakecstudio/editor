@@ -323,7 +323,7 @@ fn num_for_edict_bad() -> BuiltinError {
 /// (BUILTIN-2.7).
 fn checked_edict(context: &mut Context<'_, '_>, value: i32) -> Result<usize, BuiltinError> {
     let edict_size = context.machine().edicts().layout().edict_size();
-    match EntityRef(value).number(edict_size) {
+    match EntityRef::from_bits(value).number(edict_size) {
         Some(number) if number >= 0 => usize::try_from(number).map_err(|_| invalid_entity()),
         _ => Err(invalid_entity()),
     }
@@ -443,7 +443,7 @@ fn write_return_edict(context: &mut Context<'_, '_>, number: i32) -> Result<(), 
         .edicts()
         .edict_num(number)
         .map_err(|_| invalid_entity())?;
-    write_return_int(context, value.0)
+    write_return_int(context, value.bits())
 }
 
 /// Writes a vector result to `OFS_RETURN` (BUILTIN-1.4, PROGS-18).
@@ -764,7 +764,7 @@ impl MockBuiltins<MockEngine> {
                         .edict_num(this)
                         .map_err(|_| invalid_entity())?;
                     write_field_int(context, number, "chain", chain)?;
-                    chain = value.0;
+                    chain = value.bits();
                 }
             }
             number = number.saturating_add(1);
@@ -1378,7 +1378,7 @@ impl MockBuiltins<MockEngine> {
         let slot = system_global_slot("trace_ent")?;
         context
             .machine()
-            .set_global(slot, Slot::from_i32(world.0))
+            .set_global(slot, Slot::from(world))
             .map_err(|_| BuiltinError::Runtime("no system global trace_ent".to_string()))?;
         write_system_global_float(context, "trace_inopen", 1.0)?;
         write_system_global_float(context, "trace_inwater", 0.0)

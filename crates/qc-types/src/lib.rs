@@ -236,9 +236,24 @@ impl DefType {
 /// Implements PROGS-17.1: the same bits read as an `f32` or as an `i32`, like id's `eval_t`
 /// union; nothing converts between the two.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Slot(pub u32);
+pub struct Slot(u32);
 
 impl Slot {
+    /// The slot whose bits are all 0: the float 0, the integer 0 and every null reference.
+    pub const ZERO: Self = Self(0);
+
+    /// The slot holding exactly these bits.
+    #[must_use]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self(bits)
+    }
+
+    /// The slot's bits.
+    #[must_use]
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+
     /// A slot whose bits are this float's.
     #[must_use]
     pub const fn from_f32(value: f32) -> Self {
@@ -280,7 +295,7 @@ impl Slot {
 ///
 /// Implements PROGS-17.2.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct StringRef(pub i32);
+pub struct StringRef(i32);
 
 impl StringRef {
     /// Offset 0, the empty string.
@@ -292,7 +307,7 @@ impl StringRef {
 /// Implements PROGS-17.4: the offset is the entity number times the engine's edict size,
 /// id's `EDICT_TO_PROG` and `PROG_TO_EDICT`; it is not the entity number.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct EntityRef(pub i32);
+pub struct EntityRef(i32);
 
 impl EntityRef {
     /// Offset 0, the world.
@@ -326,7 +341,7 @@ impl EntityRef {
 ///
 /// Implements PROGS-17.5.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct FieldRef(pub i32);
+pub struct FieldRef(i32);
 
 impl FieldRef {
     /// Component `index` of a vector field: `.origin_y` is `.origin` plus 1 (PROGS-17.5).
@@ -346,7 +361,7 @@ impl FieldRef {
 ///
 /// Implements PROGS-17.6.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct FunctionRef(pub i32);
+pub struct FunctionRef(i32);
 
 impl FunctionRef {
     /// Index 0, the null function.
@@ -358,7 +373,41 @@ impl FunctionRef {
 ///
 /// Implements PROGS-17.7.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct PointerRef(pub i32);
+pub struct PointerRef(i32);
+
+/// The bits of a reference type, and its conversions to and from the [`Slot`] that holds it:
+/// a reference is stored as its 32-bit value, which the VM may reinterpret as any type.
+macro_rules! reference_bits {
+    ($($name:ident),*) => {$(
+        impl $name {
+            /// The reference with this 32-bit value.
+            #[must_use]
+            pub const fn from_bits(bits: i32) -> Self {
+                Self(bits)
+            }
+
+            /// Its 32-bit value.
+            #[must_use]
+            pub const fn bits(self) -> i32 {
+                self.0
+            }
+        }
+
+        impl From<$name> for Slot {
+            fn from(value: $name) -> Self {
+                Self::from_i32(value.0)
+            }
+        }
+
+        impl From<Slot> for $name {
+            fn from(slot: Slot) -> Self {
+                Self(slot.as_i32())
+            }
+        }
+    )*};
+}
+
+reference_bits!(StringRef, EntityRef, FieldRef, FunctionRef, PointerRef);
 
 /// A typed QC value.
 ///

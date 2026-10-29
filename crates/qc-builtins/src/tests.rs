@@ -709,7 +709,7 @@ mod bodies {
     /// then is done. Function 2 is the builtin (`first_statement = -number`). `strings` is the
     /// string table bytes (a leading NUL for the empty string); `numglobals` is at least 92.
     fn build_progs(number: u32, argc: u16, strings: Vec<u8>) -> Vec<u8> {
-        let mut globals = vec![Slot(0); 128];
+        let mut globals = vec![Slot::ZERO; 128];
         globals[usize::try_from(CALL_TARGET_SLOT).unwrap()] = Slot::from_i32(2);
 
         let call_number = 51_u32.saturating_add(u32::from(argc));
@@ -823,9 +823,7 @@ mod bodies {
         fn set_global_entity(&mut self, name: &str, number: i32) {
             let value = self.machine.edicts().edict_num(number).unwrap();
             let slot = i32::try_from(global_by_name(name).unwrap().slot).unwrap();
-            self.machine
-                .set_global(slot, Slot::from_i32(value.0))
-                .unwrap();
+            self.machine.set_global(slot, Slot::from(value)).unwrap();
         }
 
         /// Sets a scalar field of edict `number` to a float.
@@ -964,7 +962,7 @@ mod bodies {
             .edicts()
             .edict_num(i32::try_from(before).unwrap())
             .unwrap();
-        assert_eq!(f.return_i(), value.0);
+        assert_eq!(f.return_i(), value.bits());
         assert_eq!(f.machine.edicts().is_free(before), Some(false));
     }
 
@@ -976,7 +974,7 @@ mod bodies {
         f.machine.edicts_mut().alloc(1.0).unwrap();
         in_use(&mut f, 1);
         let value = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, value.0);
+        f.set_parm_i(0, value.bits());
         f.run_ok(ServerState::Active);
         assert_eq!(f.machine.edicts().is_free(1), Some(true));
     }
@@ -992,7 +990,7 @@ mod bodies {
         f.set_parm_i(0, 0);
         f.run_ok(ServerState::Active);
         let e2 = f.machine.edicts().edict_num(2).unwrap();
-        assert_eq!(f.return_i(), e2.0);
+        assert_eq!(f.return_i(), e2.bits());
     }
 
     // spec BUILTIN-8.3: find returns the first edict whose string field equals match.
@@ -1008,12 +1006,12 @@ mod bodies {
             .edicts_mut()
             .set_field(2, classname, Slot::from_i32(offsets[0]));
         let world = f.machine.edicts().edict_num(0).unwrap();
-        f.set_parm_i(0, world.0); // start
+        f.set_parm_i(0, world.bits()); // start
         f.set_parm_i(1, i32::try_from(classname).unwrap()); // field
         f.set_parm_i(2, offsets[0]); // match "ab"
         f.run_ok(ServerState::Active);
         let e2 = f.machine.edicts().edict_num(2).unwrap();
-        assert_eq!(f.return_i(), e2.0);
+        assert_eq!(f.return_i(), e2.bits());
     }
 
     // spec BUILTIN-8.6: findradius chains the included edicts, newest first.
@@ -1031,10 +1029,13 @@ mod bodies {
         f.run_ok(ServerState::Active);
         // The head is edict 2 (last included); its chain is edict 1; edict 1's chain is world.
         let e2 = f.machine.edicts().edict_num(2).unwrap();
-        assert_eq!(f.return_i(), e2.0);
+        assert_eq!(f.return_i(), e2.bits());
         let e1 = f.machine.edicts().edict_num(1).unwrap();
         let chain = field_by_name("chain").unwrap().slot;
-        assert_eq!(f.machine.edicts().field(2, chain).unwrap().as_i32(), e1.0);
+        assert_eq!(
+            f.machine.edicts().field(2, chain).unwrap().as_i32(),
+            e1.bits()
+        );
         assert_eq!(f.machine.edicts().field(1, chain).unwrap().as_i32(), 0);
     }
 
@@ -1045,7 +1046,7 @@ mod bodies {
         f.machine.edicts_mut().alloc(1.0).unwrap(); // edict 2, not a client slot
         in_use(&mut f, 2);
         let e2 = f.machine.edicts().edict_num(2).unwrap();
-        f.set_parm_i(0, e2.0);
+        f.set_parm_i(0, e2.bits());
         f.run_err(ServerState::Active, "Entity is not a client");
     }
 
@@ -1057,7 +1058,7 @@ mod bodies {
         let mut f = Fixture::new(2, 2, vec![0], 0);
         f.machine.edicts_mut().alloc(1.0).unwrap(); // edict 1
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.set_parm_v(1, [1.0, 2.0, 3.0]);
         f.run_ok(ServerState::Active);
         assert_eq!(f.field_v(1, "origin"), [1.0, 2.0, 3.0]);
@@ -1071,7 +1072,7 @@ mod bodies {
         let mut f = Fixture::new(4, 3, vec![0], 0);
         f.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.set_parm_v(1, [1.0, 0.0, 0.0]); // min
         f.set_parm_v(2, [0.0, 0.0, 0.0]); // max, backwards on x
         f.run_err(ServerState::Active, "backwards mins/maxs");
@@ -1084,7 +1085,7 @@ mod bodies {
         let mut f = Fixture::new(4, 3, vec![0], 0);
         f.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.set_parm_v(1, [-16.0, -16.0, -24.0]);
         f.set_parm_v(2, [16.0, 16.0, 32.0]);
         f.run_ok(ServerState::Active);
@@ -1099,7 +1100,7 @@ mod bodies {
         let mut f = Fixture::new(3, 2, strings, 0);
         f.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.set_parm_i(1, offsets[0]);
         f.run_err(ServerState::Active, "no precache: progs/x.mdl\n");
     }
@@ -1112,7 +1113,7 @@ mod bodies {
         f.builtins.engine_mut().precache_model_name("progs/x.mdl");
         f.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.set_parm_i(1, offsets[0]);
         f.run_ok(ServerState::Active);
         assert_eq!(f.field_i(1, "model"), offsets[0]);
@@ -1183,7 +1184,7 @@ mod bodies {
         f.machine.edicts_mut().alloc(1.0).unwrap(); // edict 2, not a client
         in_use(&mut f, 2);
         let e2 = f.machine.edicts().edict_num(2).unwrap();
-        f.set_parm_i(0, e2.0);
+        f.set_parm_i(0, e2.bits());
         f.set_parm_i(1, offsets[0]);
         f.run_err(ServerState::Active, "Parm 0 not a client");
     }
@@ -1259,7 +1260,7 @@ mod bodies {
         f.builtins.engine_mut().precache_sound_name("misc/x.wav");
         f.machine.edicts_mut().alloc(1.0).unwrap(); // edict 1
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.set_parm_f(1, 0.0);
         f.set_parm_i(2, offsets[0]);
         f.set_parm_f(3, 1.0);
@@ -1296,7 +1297,7 @@ mod bodies {
         f.machine.edicts_mut().alloc(1.0).unwrap(); // edict 1
         // model field 0 means the empty model (index 0), which is allowed.
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.run_ok(ServerState::Active);
         assert!(f.engine().buffers.signon > 0);
         assert_eq!(f.machine.edicts().is_free(1), Some(true));
@@ -1432,7 +1433,7 @@ mod bodies {
         let mut f = Fixture::new(18, 3, strings, 0); // find
         f.machine.edicts_mut().alloc(1.0).unwrap(); // edict 1, so find examines it
         let world = f.machine.edicts().edict_num(0).unwrap();
-        f.set_parm_i(0, world.0);
+        f.set_parm_i(0, world.bits());
         f.set_parm_i(1, 500); // 500 >= entityfields (105): invalid field
         f.set_parm_i(2, offsets[0]);
         f.run_err(ServerState::Active, "invalid field");
@@ -1488,7 +1489,7 @@ mod bodies {
         let mut f = Fixture::new(40, 1, vec![0], 0);
         f.machine.edicts_mut().alloc(1.0).unwrap(); // edict 1
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.run_ok(ServerState::Active);
         assert_eq!(f.return_f(), 1.0);
     }
@@ -1737,7 +1738,7 @@ mod bodies {
         f.builtins.engine_mut().precache_model_name("progs/x.mdl");
         f.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.set_parm_i(1, offsets[0]);
         f.run_ok(ServerState::Active);
         // model_precache is "", "maps/<map>.bsp", then "progs/x.mdl" at index 2.
@@ -1764,7 +1765,7 @@ mod bodies {
         f.run_ok(ServerState::Active);
         // Only edict 1 is within 100 units; it is the chain head, its chain is the world.
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        assert_eq!(f.return_i(), e1.0);
+        assert_eq!(f.return_i(), e1.bits());
         let chain = field_by_name("chain").unwrap().slot;
         assert_eq!(f.machine.edicts().field(1, chain).unwrap().as_i32(), 0);
     }
@@ -1804,7 +1805,7 @@ mod bodies {
         f.machine.edicts_mut().alloc(1.0).unwrap(); // edict 1
         let e1 = f.machine.edicts().edict_num(1).unwrap();
         f.set_parm_f(0, 2.0); // MSG_ALL, the reliable datagram
-        f.set_parm_i(1, e1.0);
+        f.set_parm_i(1, e1.bits());
         f.run_ok(ServerState::Active);
         assert_eq!(f.engine().buffers.reliable, 2);
     }
@@ -1892,7 +1893,7 @@ mod bodies {
         f.builtins.engine_mut().precache_sound_name("misc/x.wav");
         f.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.set_parm_f(1, 0.0);
         f.set_parm_i(2, offsets[0]);
         f.set_parm_f(3, 1.0); // default volume
@@ -1905,7 +1906,7 @@ mod bodies {
         g.builtins.engine_mut().precache_sound_name("misc/x.wav");
         g.machine.edicts_mut().alloc(1.0).unwrap();
         let ge1 = g.machine.edicts().edict_num(1).unwrap();
-        g.set_parm_i(0, ge1.0);
+        g.set_parm_i(0, ge1.bits());
         g.set_parm_f(1, 0.0);
         g.set_parm_i(2, offsets[0]);
         g.set_parm_f(3, 0.5); // non-default volume
@@ -1924,13 +1925,13 @@ mod bodies {
         let (strings, offsets) = string_table(&["hi"]);
         // sprint (24) to client slot 1.
         let mut f = Fixture::new(24, 2, strings.clone(), 1);
-        f.set_parm_i(0, f.machine.edicts().edict_num(1).unwrap().0);
+        f.set_parm_i(0, f.machine.edicts().edict_num(1).unwrap().bits());
         f.set_parm_i(1, offsets[0]);
         f.run_ok(ServerState::Active);
 
         // sprint to a non-client (slot 0, the world): a console message, still Ok.
         let mut g = Fixture::new(24, 2, strings.clone(), 1);
-        g.set_parm_i(0, g.machine.edicts().edict_num(0).unwrap().0);
+        g.set_parm_i(0, g.machine.edicts().edict_num(0).unwrap().bits());
         g.set_parm_i(1, offsets[0]);
         g.run_ok(ServerState::Active);
 
@@ -1945,7 +1946,7 @@ mod bodies {
     #[test]
     fn sprint_valid_client_checks_string() {
         let mut f = Fixture::new(24, 2, vec![0], 1);
-        f.set_parm_i(0, f.machine.edicts().edict_num(1).unwrap().0);
+        f.set_parm_i(0, f.machine.edicts().edict_num(1).unwrap().bits());
         f.set_parm_i(1, 0x0100_0000); // bad string value
         f.run_err(ServerState::Active, "invalid string");
     }
@@ -1959,7 +1960,7 @@ mod bodies {
         f.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = f.machine.edicts().edict_num(1).unwrap();
         // Poison RETURN so a no-op body (leaving RETURN unchanged) is caught.
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.set_parm_f(1, 100.0);
         f.machine
             .set_global3(i32::from(PROGS_OFS_RETURN), [Slot::from_f32(-9.0); 3])
@@ -1977,7 +1978,7 @@ mod bodies {
         let mut f = Fixture::new(17, 0, vec![0], 0);
         f.run_ok(ServerState::Active);
         let world = f.machine.edicts().edict_num(0).unwrap();
-        assert_eq!(f.return_i(), world.0);
+        assert_eq!(f.return_i(), world.bits());
     }
 
     // spec DIFF-7.3: checkclient chooses a healthy, non-notarget client in a slot and returns
@@ -1991,7 +1992,7 @@ mod bodies {
         f.set_field_f(1, "flags", 0.0);
         f.run_ok(ServerState::Active);
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        assert_eq!(f.return_i(), e1.0);
+        assert_eq!(f.return_i(), e1.bits());
     }
 
     // spec DIFF-7.3: a client with FL_NOTARGET does not qualify, so checkclient's search skips
@@ -2010,7 +2011,7 @@ mod bodies {
         f.set_field_f(2, "flags", 0.0);
         f.run_ok(ServerState::Active);
         let e2 = f.machine.edicts().edict_num(2).unwrap();
-        assert_eq!(f.return_i(), e2.0);
+        assert_eq!(f.return_i(), e2.bits());
     }
 
     // spec BUILTIN-15.4: ChangeYaw turns self's yaw toward ideal_yaw by at most yaw_speed; a
@@ -2089,7 +2090,7 @@ mod bodies {
         f.set_field_v(1, "maxs", [5.0, 6.0, 7.0]);
         f.set_field_f(1, "flags", 0.0); // not an item: widen 1
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.set_parm_v(1, [10.0, 20.0, 30.0]); // origin
         f.run_ok(ServerState::Active);
         // absmin = origin + mins - 1.
@@ -2108,7 +2109,7 @@ mod bodies {
         f.set_field_v(1, "maxs", [0.0, 0.0, 0.0]);
         f.set_field_f(1, "flags", 256.0); // FL_ITEM
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.set_parm_v(1, [100.0, 100.0, 100.0]);
         f.run_ok(ServerState::Active);
         // widen (15, 15, 0): absmin = origin - (15,15,0), absmax = origin + (15,15,0).
@@ -2135,7 +2136,7 @@ mod bodies {
         inc.set_parm_f(1, 11.5); // radius 11.5 > 11: included
         inc.run_ok(ServerState::Active);
         let e1 = inc.machine.edicts().edict_num(1).unwrap();
-        assert_eq!(inc.return_i(), e1.0);
+        assert_eq!(inc.return_i(), e1.bits());
 
         let mut exc = Fixture::new(22, 2, vec![0], 0);
         exc.machine.edicts_mut().alloc(1.0).unwrap();
@@ -2190,7 +2191,7 @@ mod bodies {
             .edicts_mut()
             .set_field(1, classname, Slot::from_i32(offsets[1]));
         let world = f.machine.edicts().edict_num(0).unwrap();
-        f.set_parm_i(0, world.0);
+        f.set_parm_i(0, world.bits());
         f.set_parm_i(1, i32::try_from(classname).unwrap());
         f.set_parm_i(2, offsets[0]); // "zzz" matches nothing
         f.run_ok(ServerState::Active);
@@ -2205,11 +2206,11 @@ mod bodies {
     fn setspawnparms_client_range() {
         // Slot 1 with maxclients 2 succeeds.
         let mut ok = Fixture::new(78, 1, vec![0], 2);
-        ok.set_parm_i(0, ok.machine.edicts().edict_num(1).unwrap().0);
+        ok.set_parm_i(0, ok.machine.edicts().edict_num(1).unwrap().bits());
         ok.run_ok(ServerState::Active);
         // The world (slot 0) is below 1: the error.
         let mut world = Fixture::new(78, 1, vec![0], 2);
-        world.set_parm_i(0, world.machine.edicts().edict_num(0).unwrap().0);
+        world.set_parm_i(0, world.machine.edicts().edict_num(0).unwrap().bits());
         world.run_err(ServerState::Active, "Entity is not a client");
     }
 
@@ -2219,7 +2220,7 @@ mod bodies {
     fn stuffcmd_valid_client_succeeds() {
         let (strings, offsets) = string_table(&["cmd\n"]);
         let mut f = Fixture::new(21, 2, strings, 1);
-        f.set_parm_i(0, f.machine.edicts().edict_num(1).unwrap().0);
+        f.set_parm_i(0, f.machine.edicts().edict_num(1).unwrap().bits());
         f.set_parm_i(1, offsets[0]);
         f.run_ok(ServerState::Active);
     }
@@ -2229,7 +2230,7 @@ mod bodies {
     #[test]
     fn centerprint_valid_client_checks_string() {
         let mut f = Fixture::new(73, 2, vec![0], 1);
-        f.set_parm_i(0, f.machine.edicts().edict_num(1).unwrap().0);
+        f.set_parm_i(0, f.machine.edicts().edict_num(1).unwrap().bits());
         f.set_parm_i(1, 0x0100_0000); // bad string
         f.run_err(ServerState::Active, "invalid string");
     }
@@ -2255,7 +2256,7 @@ mod bodies {
         f.builtins.engine_mut().precache_sound_name("misc/x.wav");
         f.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.set_parm_f(1, 0.0);
         f.set_parm_i(2, offsets[0]);
         f.set_parm_f(3, 0.5); // non-default volume keeps the volume byte
@@ -2299,7 +2300,7 @@ mod bodies {
         let mut f = Fixture::new(69, 1, vec![0], 0);
         f.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.run_ok(ServerState::Active);
         assert_eq!(f.engine().buffers.signon, 14);
     }
@@ -2442,7 +2443,7 @@ mod bodies {
         let (strings, offsets) = string_table(&["x"]);
         let mut bad = Fixture::new(18, 3, strings.clone(), 0); // find
         bad.machine.edicts_mut().alloc(1.0).unwrap();
-        bad.set_parm_i(0, bad.machine.edicts().edict_num(0).unwrap().0);
+        bad.set_parm_i(0, bad.machine.edicts().edict_num(0).unwrap().bits());
         bad.set_parm_i(1, 105); // == entityfields: invalid field
         bad.set_parm_i(2, offsets[0]);
         bad.run_err(ServerState::Active, "invalid field");
@@ -2450,7 +2451,7 @@ mod bodies {
         // Slot 104 is a valid field; find examines edict 1 and finds no match, returns world.
         let mut ok = Fixture::new(18, 3, strings, 0);
         ok.machine.edicts_mut().alloc(1.0).unwrap();
-        ok.set_parm_i(0, ok.machine.edicts().edict_num(0).unwrap().0);
+        ok.set_parm_i(0, ok.machine.edicts().edict_num(0).unwrap().bits());
         ok.set_parm_i(1, 104);
         ok.set_parm_i(2, offsets[0]);
         ok.run_ok(ServerState::Active);
@@ -2483,7 +2484,7 @@ mod bodies {
             .make(b"progs/none.mdl".to_vec());
         f.set_field_i(1, "model", value);
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.run_err(
             ServerState::Active,
             "SV_ModelIndex: model progs/none.mdl not precached",
@@ -2527,7 +2528,7 @@ mod bodies {
             .strings
             .make(b"progs/e.mdl".to_vec());
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.set_parm_i(1, value); // the engine-string value
         f.run_ok(ServerState::Active);
         // model is the engine-string value itself; modelindex is the list entry.
@@ -2571,7 +2572,7 @@ mod bodies {
         let mut f = Fixture::new(4, 3, vec![0], 0);
         f.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        f.set_parm_i(0, e1.0);
+        f.set_parm_i(0, e1.bits());
         f.set_parm_v(1, [5.0, 0.0, -3.0]); // min
         f.set_parm_v(2, [5.0, 0.0, -3.0]); // max equal on every axis
         f.run_ok(ServerState::Active);
@@ -2588,7 +2589,7 @@ mod bodies {
             f.builtins.engine_mut().precache_sound_name("misc/x.wav");
             f.machine.edicts_mut().alloc(1.0).unwrap();
             let e1 = f.machine.edicts().edict_num(1).unwrap();
-            f.set_parm_i(0, e1.0);
+            f.set_parm_i(0, e1.bits());
             f.set_parm_f(1, 0.0);
             f.set_parm_i(2, offsets[0]);
             f.set_parm_f(3, vol); // 0 -> 0, 1.0 -> 255: both in range
@@ -2619,7 +2620,7 @@ mod bodies {
             .append_message(MessageDest::Broadcast, 1008);
         at.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = at.machine.edicts().edict_num(1).unwrap();
-        at.set_parm_i(0, e1.0);
+        at.set_parm_i(0, e1.bits());
         at.set_parm_f(1, 0.0);
         at.set_parm_i(2, offsets[0]);
         at.set_parm_f(3, 0.5);
@@ -2633,7 +2634,7 @@ mod bodies {
         past.builtins
             .engine_mut()
             .append_message(MessageDest::Broadcast, 1009);
-        past.set_parm_i(0, past.machine.edicts().edict_num(0).unwrap().0);
+        past.set_parm_i(0, past.machine.edicts().edict_num(0).unwrap().bits());
         past.set_parm_f(1, 0.0);
         past.set_parm_i(2, offsets[0]);
         past.set_parm_f(3, 0.5);
@@ -2678,14 +2679,14 @@ mod bodies {
         let (strings, offsets) = string_table(&["cmd\n"]);
         // maxclients 2, slot 2 is valid (exactly at the bound).
         let mut ok = Fixture::new(21, 2, strings.clone(), 2);
-        ok.set_parm_i(0, ok.machine.edicts().edict_num(2).unwrap().0);
+        ok.set_parm_i(0, ok.machine.edicts().edict_num(2).unwrap().bits());
         ok.set_parm_i(1, offsets[0]);
         ok.run_ok(ServerState::Active);
         // Slot 3 with maxclients 2 is one past the bound: the non-client error.
         let mut fail = Fixture::new(21, 2, strings, 2);
         fail.machine.edicts_mut().alloc(1.0).unwrap(); // edict 2
         fail.machine.edicts_mut().alloc(1.0).unwrap(); // edict 3 (not a client slot)
-        fail.set_parm_i(0, fail.machine.edicts().edict_num(3).unwrap().0);
+        fail.set_parm_i(0, fail.machine.edicts().edict_num(3).unwrap().bits());
         fail.set_parm_i(1, offsets[0]);
         fail.run_err(ServerState::Active, "Parm 0 not a client");
     }
@@ -2696,7 +2697,7 @@ mod bodies {
     #[test]
     fn sprint_upper_bound_reads_text() {
         let mut f = Fixture::new(24, 2, vec![0], 2);
-        f.set_parm_i(0, f.machine.edicts().edict_num(2).unwrap().0); // slot 2 == maxclients
+        f.set_parm_i(0, f.machine.edicts().edict_num(2).unwrap().bits()); // slot 2 == maxclients
         f.set_parm_i(1, 0x0100_0000); // bad string
         f.run_err(ServerState::Active, "invalid string");
     }
@@ -2751,7 +2752,7 @@ mod bodies {
             f.builtins.engine_mut().precache_sound_name("misc/x.wav");
             f.machine.edicts_mut().alloc(1.0).unwrap();
             let e1 = f.machine.edicts().edict_num(1).unwrap();
-            f.set_parm_i(0, e1.0);
+            f.set_parm_i(0, e1.bits());
             f.set_parm_f(1, 0.0);
             f.set_parm_i(2, offsets[0]);
             f.set_parm_f(3, 0.5);
@@ -2778,7 +2779,7 @@ mod bodies {
             f.builtins.engine_mut().precache_sound_name("misc/x.wav");
             f.machine.edicts_mut().alloc(1.0).unwrap();
             let e1 = f.machine.edicts().edict_num(1).unwrap();
-            f.set_parm_i(0, e1.0);
+            f.set_parm_i(0, e1.bits());
             f.set_parm_f(1, chan);
             f.set_parm_i(2, offsets[0]);
             f.set_parm_f(3, 0.5);
@@ -2825,7 +2826,7 @@ mod bodies {
         f.set_parm_f(1, 8.0); // radius 8: includes distance 5, excludes 15
         f.run_ok(ServerState::Active);
         let e1 = f.machine.edicts().edict_num(1).unwrap();
-        assert_eq!(f.return_i(), e1.0);
+        assert_eq!(f.return_i(), e1.bits());
     }
 
     // spec BUILTIN-11.2: sprint to the world (slot 0, below 1) prints a console message and
@@ -2834,7 +2835,7 @@ mod bodies {
     #[test]
     fn sprint_world_does_not_read_text() {
         let mut f = Fixture::new(24, 2, vec![0], 2);
-        f.set_parm_i(0, f.machine.edicts().edict_num(0).unwrap().0); // the world
+        f.set_parm_i(0, f.machine.edicts().edict_num(0).unwrap().bits()); // the world
         f.set_parm_i(1, 0x0100_0000); // a bad string, which must not be read
         f.run_ok(ServerState::Active);
     }
@@ -2845,7 +2846,7 @@ mod bodies {
     #[test]
     fn sprint_slot_below_max_reads_text() {
         let mut f = Fixture::new(24, 2, vec![0], 2);
-        f.set_parm_i(0, f.machine.edicts().edict_num(1).unwrap().0); // slot 1 < maxclients 2
+        f.set_parm_i(0, f.machine.edicts().edict_num(1).unwrap().bits()); // slot 1 < maxclients 2
         f.set_parm_i(1, 0x0100_0000); // bad string
         f.run_err(ServerState::Active, "invalid string");
     }
@@ -2855,7 +2856,7 @@ mod bodies {
     #[test]
     fn setspawnparms_upper_bound() {
         let mut f = Fixture::new(78, 1, vec![0], 3);
-        f.set_parm_i(0, f.machine.edicts().edict_num(3).unwrap().0); // slot 3 == maxclients
+        f.set_parm_i(0, f.machine.edicts().edict_num(3).unwrap().bits()); // slot 3 == maxclients
         f.run_ok(ServerState::Active);
     }
 
@@ -2921,7 +2922,7 @@ mod bodies {
         f.set_field_f(1, "flags", 0.0);
         f.run_ok(ServerState::Active);
         let world = f.machine.edicts().edict_num(0).unwrap();
-        assert_eq!(f.return_i(), world.0);
+        assert_eq!(f.return_i(), world.bits());
     }
 
     // spec BUILTIN-2.9: ChangeYaw reads `self` with the G_EDICT check and turns that edict, not
@@ -2954,7 +2955,7 @@ mod bodies {
         let mut f = Fixture::new(18, 3, vec![0], 0); // num_edicts starts at 1 (maxclients 0)
         let classname = field_by_name("classname").unwrap().slot;
         let world = f.machine.edicts().edict_num(0).unwrap();
-        f.set_parm_i(0, world.0); // start at the world; loop begins at edict 1
+        f.set_parm_i(0, world.bits()); // start at the world; loop begins at edict 1
         f.set_parm_i(1, i32::try_from(classname).unwrap());
         f.set_parm_i(2, 0); // the empty string, which edict 1's zeroed classname would equal
         f.run_ok(ServerState::Active);

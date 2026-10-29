@@ -349,7 +349,7 @@ impl SpawnHost for Spawner<'_, '_> {
             .machine
             .edicts()
             .edict_num(number)
-            .map(|entity| entity.0)
+            .map(|entity| entity.bits())
             .map_err(|_| SpawnError::BadEdictNumber { number })
     }
 

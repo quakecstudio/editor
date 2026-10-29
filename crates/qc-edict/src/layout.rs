@@ -196,6 +196,6 @@ impl EdictLayout {
             .checked_mul(4)
             .and_then(|bytes| bytes.checked_add(EDICT_HEADER_SIZE))
             .and_then(|header_and_field| base.checked_add(header_and_field))?;
-        Some(PointerRef(offset))
+        Some(PointerRef::from_bits(offset))
     }
 }

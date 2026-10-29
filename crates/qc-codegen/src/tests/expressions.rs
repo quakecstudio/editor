@@ -533,7 +533,7 @@ fn folded(source: &str) -> qc_progs::ProgsFile {
 
 /// The float in the global at `ofs`.
 fn float_at(p: &qc_progs::ProgsFile, ofs: i32) -> f32 {
-    f32::from_bits(p.globals[usize::try_from(ofs).unwrap()].0)
+    f32::from_bits(p.globals[usize::try_from(ofs).unwrap()].bits())
 }
 
 // spec QC-27.20: with `--opt fold` an arithmetic operator of two literals is the literal of its

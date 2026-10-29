@@ -162,7 +162,7 @@ fn write_pair(out: &mut Vec<u8>, key: &[u8], value: &[u8]) {
 /// [`SuiteError::Progs`] when `qc-progs` refuses the progs.
 pub fn initial_globals(progs_bytes: &[u8]) -> Result<Vec<u32>, SuiteError> {
     let progs = Progs::read(progs_bytes).map_err(|e| SuiteError::Progs(format!("{e:?}")))?;
-    Ok(progs.globals().iter().map(|slot| slot.0).collect())
+    Ok(progs.globals().iter().map(|slot| slot.bits()).collect())
 }
 
 /// The number of statements a progs has, `numstatements` (PROGS-2.1); its statements are 1 to

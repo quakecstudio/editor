@@ -342,7 +342,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
     pub(crate) fn edict_of(&self, value: i32) -> usize {
         let layout = self.context.machine_view().edicts().layout();
         layout
-            .edict_number(EntityRef(value))
+            .edict_number(EntityRef::from_bits(value))
             .and_then(|n| usize::try_from(n).ok())
             .unwrap_or(0)
     }
@@ -595,7 +595,7 @@ fn parm_edict(context: &Vm<'_, '_, '_>, n: u16) -> Result<usize, RunError> {
         .machine_view()
         .edicts()
         .layout()
-        .edict_number(EntityRef(value))
+        .edict_number(EntityRef::from_bits(value))
         .and_then(|n| usize::try_from(n).ok())
         .ok_or_else(|| {
             context.run_error(ErrorKind::Builtin {

@@ -117,12 +117,12 @@ impl Pools {
             let (Ok(ofs), Ok(index)) = (u32::try_from(slot), usize::try_from(slot)) else {
                 continue;
             };
-            let Some(value) = progs.globals().get(index).filter(|value| value.0 != 0) else {
+            let Some(value) = progs.globals().get(index).filter(|value| value.bits() != 0) else {
                 continue;
             };
             match types.get(&ofs) {
                 Some(DefType::Known(Etype::Float)) => {
-                    numbers.insert(value.0);
+                    numbers.insert(value.bits());
                 }
                 Some(DefType::Known(Etype::String)) => {
                     if let Some(text) = progs.string(value.as_i32()) {
@@ -168,7 +168,10 @@ impl<'a, 'p> Drawer<'a, 'p> {
             .iter()
             .filter(|(_, def_type, ofs)| {
                 matches!(drawable(*def_type), Some(Etype::Float | Etype::String))
-                    && progs.globals().get(*ofs).is_some_and(|slot| slot.0 == 0)
+                    && progs
+                        .globals()
+                        .get(*ofs)
+                        .is_some_and(|slot| slot.bits() == 0)
             })
             .map(|(name, def_type, _)| (name.clone(), *def_type))
             .collect();

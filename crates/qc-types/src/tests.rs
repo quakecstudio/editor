@@ -93,6 +93,15 @@ fn only_pointer_is_not_declarable() {
     }
 }
 
+// spec PROGS-17.1: the zero slot is every view's zero
+#[test]
+fn the_zero_slot() {
+    assert_eq!(Slot::ZERO.bits(), 0);
+    assert_eq!(Slot::ZERO.as_i32(), 0);
+    assert_eq!(Slot::ZERO.as_f32().to_bits(), 0);
+    assert_eq!(EntityRef::from(Slot::ZERO), EntityRef::WORLD);
+}
+
 // spec PROGS-17.1: a slot is the same 4 bytes read as f32 or i32, never converted.
 #[test]
 fn slot_reinterprets_bits() {
@@ -260,6 +269,20 @@ proptest! {
         prop_assert_eq!(Slot::from_f32(slot.as_f32()), slot);
         prop_assert_eq!(Slot::from_i32(slot.as_i32()), slot);
         prop_assert_eq!(Slot::from_le_bytes(slot.to_le_bytes()), slot);
+    }
+
+    // spec PROGS-17.1: a slot built from bits gives them back, and a reference stored in a slot
+    // is its 32-bit value, read back unchanged
+    #[test]
+    fn bits_and_references_round_trip_through_slots(bits in any::<u32>(), value in any::<i32>()) {
+        prop_assert_eq!(Slot::from_bits(bits).bits(), bits);
+        prop_assert_eq!(Slot::from_bits(bits), Slot(bits));
+        prop_assert_eq!(Slot::from(EntityRef::from_bits(value)).as_i32(), value);
+        prop_assert_eq!(EntityRef::from(Slot::from_i32(value)).bits(), value);
+        prop_assert_eq!(StringRef::from(Slot::from(StringRef::from_bits(value))).bits(), value);
+        prop_assert_eq!(FieldRef::from(Slot::from(FieldRef::from_bits(value))).bits(), value);
+        prop_assert_eq!(FunctionRef::from(Slot::from(FunctionRef::from_bits(value))).bits(), value);
+        prop_assert_eq!(PointerRef::from(Slot::from(PointerRef::from_bits(value))).bits(), value);
     }
 
     // spec PROGS-17.1: writing a value then reading it back gives the same bits, NaNs included.

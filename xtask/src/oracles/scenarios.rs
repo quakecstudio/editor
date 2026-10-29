@@ -335,7 +335,11 @@ impl Program {
             field_defs: self.field_defs.clone(),
             functions: self.functions.clone(),
             strings: self.strings.clone(),
-            globals: self.globals.iter().map(|bits| Slot(*bits)).collect(),
+            globals: self
+                .globals
+                .iter()
+                .map(|bits| Slot::from_bits(*bits))
+                .collect(),
             ..ProgsFile::default()
         };
         write(&file).map_err(|e| format!("cannot write the progs: {e:?}"))

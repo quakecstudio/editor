@@ -270,7 +270,7 @@ fn done_does_not_fall_through_into_the_next_statement() {
         .unwrap();
     // Slot 101 would be 1.0 had statement 2 run; it must stay 0 (VM-16.4).
     assert_eq!(
-        machine.globals()[101].0,
+        machine.globals()[101].bits(),
         0,
         "DONE ends the run, statement 2 never runs"
     );
