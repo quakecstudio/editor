@@ -172,13 +172,109 @@ stop.
 
 ## PHYS-8 Clients
 
-**Source:** `WinQuake/sv_phys.c`, `SV_Physics_Client`.
+**Source:** `WinQuake/sv_phys.c`, `SV_Physics_Client`, `SV_WalkMove`, `SV_CheckWater`,
+`SV_CheckStuck`, `SV_WallFriction`, `SV_TryUnstick`.
 
 ### Behaviour
 
 - **PHYS-8.1** A client slot whose client is not connected does nothing in the frame
-  ("unconnected slot"). A connected client's physics (`PlayerPreThink`, its movetype,
-  `PlayerPostThink`) is not ported yet; a frame with one fails.
+  ("unconnected slot"). A connected client runs `PlayerPreThink` with `self` the client and
+  `time` the server's, has its velocity bounded (PHYS-6.3), moves by its movetype as an int,
+  is linked touching triggers, and runs `PlayerPostThink` the same way.
+- **PHYS-8.2** By movetype: `MOVETYPE_NONE` thinks; `MOVETYPE_WALK` thinks, adds gravity
+  unless `SV_CheckWater` reports it waist deep or its `flags` has `FL_WATERJUMP` (2048), checks
+  it is not stuck, and walks (PHYS-8.3); `MOVETYPE_TOSS` and `MOVETYPE_BOUNCE` are PHYS-4;
+  `MOVETYPE_FLY` thinks and slides for the frame (PHYS-7); `MOVETYPE_NOCLIP` thinks and moves
+  by `frametime * velocity`. A think that freed the client ends its frame before the link.
+  Any other movetype is `Sys_Error ("SV_Physics_client: bad movetype %i")`.
+- **PHYS-8.3** `SV_WalkMove` clears `FL_ONGROUND` and slides for the frame, keeping the trace
+  of any vertical wall hit. When that was not blocked by a step (bit 2), or the player was not
+  on the ground and is not in water, or is no longer `MOVETYPE_WALK`, or has `FL_WATERJUMP`,
+  that is the move. Otherwise from the start it is pushed up 18 (`STEPSIZE`), slid again with
+  the old horizontal velocity and no vertical, and, when that made less than 1/32 of progress
+  on both x and y, unstuck (PHYS-8.6); a wall then hit slows it (PHYS-8.5); and it is pushed
+  down by `-18 + oldvel[2] * frametime`. When the ground below is a floor (normal z above 0.7)
+  and the player's own `solid` is `SOLID_BSP`, which it never is, `FL_ONGROUND` and
+  `groundentity` are set; when it is not a floor, the move without the step is kept.
+- **PHYS-8.4** `SV_CheckWater` sets `waterlevel` 0 and `watertype` `CONTENTS_EMPTY`, then from
+  the contents 1 above the feet: liquid makes `watertype` those contents and `waterlevel` 1,
+  liquid at the box's middle 2, and liquid at `view_ofs` 3. It reports `waterlevel` above 1.
+- **PHYS-8.5** `SV_WallFriction`: with `d` the dot product of the wall's normal and the
+  forward of `v_angle`, plus 0.5, when `d` is below 0 the velocity's x and y become those of
+  its part along the wall times `1 + d`.
+- **PHYS-8.6** `SV_TryUnstick` pushes the player 2 along x, y, -x, -y and the four diagonals
+  in turn, slides 0.1 with the old horizontal velocity, and keeps the first that moved it more
+  than 4 on x or y, returning its blocked bits; else it puts it back each time and, after all
+  eight, stops it and returns 7.
+- **PHYS-8.7** `SV_CheckStuck`: a player not in solid has its `origin` kept as `oldorigin`.
+  One in solid is tried at `oldorigin`, then at its `origin` moved by -1 to 1 on x and y and 0
+  to 17 up, x outermost after z, and is linked touching triggers at the first not in solid;
+  when none is free it stays where it was.
+
+## PHYS-9 The client's command
+
+**Source:** `WinQuake/sv_user.c`, `SV_ReadClientMove`, `SV_ClientThink`, `SV_AirMove`,
+`SV_WaterMove`, `SV_WaterJump`, `SV_UserFriction`, `SV_Accelerate`, `SV_AirAccelerate`,
+`DropPunchAngle`; `WinQuake/view.c`, `V_CalcRoll`; `WinQuake/common.c`, `MSG_WriteAngle`,
+`MSG_ReadAngle`; `WinQuake/cl_input.c`, `CL_SendMove`.
+
+### Behaviour
+
+- **PHYS-9.1** `SV_ClientThink` does nothing for `MOVETYPE_NONE`. Otherwise it takes on-ground
+  from `FL_ONGROUND`, shortens `punchangle` by `10 * frametime` (not below 0), and stops for a
+  player whose `health` is 0 or less. The roll of `angles` becomes 4 times `V_CalcRoll`: the
+  velocity's part along the right of `angles`, its sign kept, scaled by 2/200 below 200 and 2
+  from there (`cl_rollangle`, `cl_rollspeed`). Unless `fixangle` is set, the pitch becomes
+  `-v_angle[0]/3` and the yaw `v_angle[1]`, `v_angle` with `punchangle` added. A player with
+  `FL_WATERJUMP` water-jumps (PHYS-9.5), one at `waterlevel` 2 or more that is not
+  `MOVETYPE_NOCLIP` swims (PHYS-9.5), and any other air-moves (PHYS-9.2).
+- **PHYS-9.2** `SV_AirMove` takes forward and right from `angles`, the forward move 0 when
+  `sv.time` is before `teleport_time` and it is backward, and wishes for
+  `forward * forwardmove + right * sidemove`, its z `upmove` unless `MOVETYPE_WALK`, then 0.
+  The wish is bounded to `sv_maxspeed` (320). `MOVETYPE_NOCLIP` takes it as its velocity; on
+  the ground friction then acceleration apply (PHYS-9.3, PHYS-9.4); off it air acceleration.
+- **PHYS-9.3** `SV_UserFriction`: with `speed` the horizontal speed, when not 0, a point 16
+  ahead along it at the feet is traced 34 down (`MOVE_NOMONSTERS`); hitting nothing makes the
+  friction `sv_friction * edgefriction`, 4 times 2, else 4. The speed loses
+  `frametime * max(speed, sv_stopspeed) * friction`, `sv_stopspeed` 100, not below 0, and the
+  velocity is scaled to it.
+- **PHYS-9.4** `SV_Accelerate` adds `min(sv_accelerate * frametime * wishspeed, wishspeed -
+  velocity . wishdir)` along the wish when that is above 0, `sv_accelerate` 10.
+  `SV_AirAccelerate` does the same toward a wish of at most 30, with `sv_accelerate *
+  wishspeed * frametime` for the step, `wishspeed` the bounded speed of PHYS-9.2.
+- **PHYS-9.5** `SV_WaterMove` wishes along `v_angle`'s forward and right, its z less 60 with no
+  move at all ("drift towards bottom"), else plus `upmove`; the wish's length is bounded to 320
+  and scaled by 0.7. The speed loses `frametime * speed * sv_friction`, not below 0; then,
+  when the wish is not 0, `min(sv_accelerate * wishspeed * frametime, wishspeed - newspeed)`
+  is added along the wish when that is above 0. A water
+  jump clears `FL_WATERJUMP` and `teleport_time` once `sv.time` passes `teleport_time` or the
+  player is out of water, and keeps the velocity's x and y at `movedir`'s.
+- **PHYS-9.6** A command arrives as `CL_SendMove` sends it: each view angle through
+  `MSG_WriteAngle`, `((int)f*256/360) & 255`, read back as a signed byte times `360.0/256`;
+  each move through `MSG_WriteShort`, the float to an int kept to 16 bits. It sets `v_angle`,
+  `button0` from bit 0 and `button2` from bit 1, and `impulse` when it is not 0.
+
+## PHYS-10 Entering the game
+
+**Source:** `WinQuake/sv_main.c`, `SV_ConnectClient`, `SV_WriteClientdataToMessage`;
+`WinQuake/host_cmd.c`, `Host_Spawn_f`; `WinQuake/host.c`, `Host_ServerFrame`,
+`Host_FilterTime`.
+
+### Behaviour
+
+- **PHYS-10.1** A client connecting runs `SetNewParms` and keeps `parm1` to `parm16`. Spawning,
+  its edict's fields are all cleared, `colormap` becomes its number, `team` its colour plus 1,
+  `netname` its name; the kept parms are copied back; `time` is the server's and `self` the
+  client; and `ClientConnect` then `PutClientInServer` run.
+- **PHYS-10.2** After each frame, while the client's `fixangle` is set, its `angles` are sent
+  to the client through `MSG_WriteAngle`, which takes them as its view, and `fixangle` is
+  cleared.
+- **PHYS-10.3** A server frame sets the `frametime` global, runs each spawned client's
+  command (PHYS-9), then the physics (PHYS-1).
+
+The frame's length is the host's: `Host_FilterTime` runs a frame once 1/72 of a second has
+passed since the last, its `frametime` the time passed, 0.001 to 0.1. `qs-sim` takes the
+frametime it is given; the viewer paces its frames that way.
 
 ## Constants
 
@@ -192,3 +288,9 @@ stop.
 | `PHYS_MAX_CLIP_PLANES` | 5 | `WinQuake/sv_phys.c`, `#define MAX_CLIP_PLANES 5` |
 | `PHYS_BUMPS` | 4 | `WinQuake/sv_phys.c`, `numbumps = 4` in `SV_FlyMove` |
 | `PHYS_BOUNCE` | 1.5 | `WinQuake/sv_phys.c`, `backoff = 1.5` in `SV_Physics_Toss` |
+| `PHYS_MAXSPEED` | 320 | `WinQuake/sv_user.c`, `sv_maxspeed = {"sv_maxspeed", "320"}` |
+| `PHYS_ACCELERATE` | 10 | `WinQuake/sv_user.c`, `sv_accelerate = {"sv_accelerate", "10"}` |
+| `PHYS_EDGEFRICTION` | 2 | `WinQuake/sv_user.c`, `sv_edgefriction = {"edgefriction", "2"}` |
+| `PHYS_ROLLANGLE`, `PHYS_ROLLSPEED` | 2, 200 | `WinQuake/view.c`, `cl_rollangle`, `cl_rollspeed` |
+| `PHYS_STEPSIZE` | 18 | `WinQuake/sv_phys.c`, `#define STEPSIZE 18` before `SV_WalkMove` |
+| `PHYS_MAXFPS` | 72 | `WinQuake/host.c`, `realtime - oldrealtime < 1.0/72.0` in `Host_FilterTime` |

@@ -443,7 +443,7 @@ impl SimCall<'_, '_, '_> {
         Ok(self.float(ent, "waterlevel") > 1.0)
     }
 
-    /// `SV_CheckStuck` (PHYS-8.5).
+    /// `SV_CheckStuck` (PHYS-8.7).
     fn check_stuck(&mut self, ent: usize) -> Result<(), RunError> {
         let stuck = |call: &Self| test_entity_position(call, ent).map_err(|e| call.error(e));
         if !stuck(self)? {
@@ -477,7 +477,7 @@ impl SimCall<'_, '_, '_> {
         Ok(())
     }
 
-    /// `SV_WallFriction` (PHYS-8.6).
+    /// `SV_WallFriction` (PHYS-8.5).
     fn wall_friction(&mut self, ent: usize, trace: &Trace) {
         let (forward, _, _) = angle_vectors(self.vector(ent, "v_angle"));
         let d = dot(trace.plane.normal, forward) + 0.5;
@@ -495,7 +495,7 @@ impl SimCall<'_, '_, '_> {
         );
     }
 
-    /// `SV_TryUnstick` (PHYS-8.7).
+    /// `SV_TryUnstick` (PHYS-8.6).
     fn try_unstick(&mut self, ent: usize, oldvel: [f32; 3]) -> Result<i32, RunError> {
         let oldorg = self.vector(ent, "origin");
         let pushes = [
@@ -589,4 +589,35 @@ impl SimCall<'_, '_, '_> {
 
 fn add([a, b, c]: [f32; 3], [x, y, z]: [f32; 3]) -> [f32; 3] {
     [a + x, b + y, c + z]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{calc_roll, wire_angle, wire_short};
+
+    // spec PHYS-9.6: angles go as (int)f*256/360 in a byte, read back signed; moves as the
+    // int kept to 16 bits
+    #[test]
+    fn the_wire_quantises_the_command() {
+        assert_eq!(wire_angle(90.0), 90.0);
+        assert_eq!(wire_angle(100.7), 99.843_75);
+        assert_eq!(wire_angle(-10.0), -9.843_75);
+        assert_eq!(wire_angle(180.0), -180.0);
+        assert_eq!(wire_angle(720.0), 0.0);
+        assert_eq!(wire_short(200.9), 200.0);
+        assert_eq!(wire_short(-200.9), -200.0);
+        assert_eq!(wire_short(70_000.0), 4464.0);
+        assert_eq!(wire_short(-70_000.0), -4464.0);
+    }
+
+    // spec PHYS-9.1: the roll is the sideways speed times 2/200 below 200 and 2 from there,
+    // its sign kept
+    #[test]
+    fn the_roll_leans_with_the_sideways_speed() {
+        assert_eq!(calc_roll([0.0; 3], [0.0, -100.0, 0.0]), 1.0);
+        assert_eq!(calc_roll([0.0; 3], [0.0, 100.0, 0.0]), -1.0);
+        assert_eq!(calc_roll([0.0; 3], [0.0, -200.0, 0.0]), 2.0);
+        assert_eq!(calc_roll([0.0; 3], [0.0, -900.0, 0.0]), 2.0);
+        assert_eq!(calc_roll([0.0; 3], [500.0, 0.0, 0.0]), 0.0);
+    }
 }

@@ -21,6 +21,8 @@ use qc_types::{Etype, Slot};
 use qs_bsp::{Bsp, BspLoader, ClipNode};
 
 use super::{World, WorldError, field_slot};
+use crate::UserCmd;
+use crate::collision::CONTENTS_WATER;
 use crate::fixtures::{CONTENTS_EMPTY, CONTENTS_SOLID, MapSpec, bsp, node, plane};
 
 /// The type `defs.qc` declares a system variable with.
@@ -1418,4 +1420,542 @@ fn client_slots_and_none() {
     let w = &run.world;
     assert_eq!(w.vector(2, "origin"), [0.0, 0.0, 50.0]);
     assert!(w.float(2, "frags") >= 3.0);
+}
+
+impl Running {
+    /// The player enters the game.
+    fn connect(&mut self) {
+        let progs = Progs::read(&self.progs).unwrap();
+        self.world.connect(&progs).unwrap();
+    }
+}
+
+/// A connected player on `spec`: `PutClientInServer` makes a walking, living player of the
+/// player's size and runs `put`; `PlayerPreThink` runs `pre`. `more` is further source.
+fn player(spec: &MapSpec, put: &str, pre: &str, more: &str) -> Running {
+    let source = format!(
+        "{more}void() PutClientInServer = {{ self.health = 100; self.solid = 3; \
+         self.movetype = 3; self.view_ofs = '0 0 22'; {PLAYER_SIZE} {put} }};\n\
+         void() PlayerPreThink = {{ {pre} }};\n"
+    );
+    let mut run = run_on(spec, &source, "");
+    run.connect();
+    run
+}
+
+/// The player with the command `cmd` after `count` frames of `frametime`.
+fn moved(run: &mut Running, cmd: UserCmd, count: usize, frametime: f64) -> &World {
+    run.world.set_command(cmd);
+    run.frames(count, frametime).unwrap();
+    &run.world
+}
+
+const P: usize = 1;
+
+fn close(got: f32, want: f32) -> bool {
+    (got - want).abs() < 1e-3
+}
+
+// spec PHYS-10.1: connecting runs SetNewParms, clears the client's edict, names it, puts the
+// parms back and runs ClientConnect then PutClientInServer with self the client
+#[test]
+fn connecting_runs_the_entry_points() {
+    let source = "void() SetNewParms = { parm1 = 5; parm16 = 7; };\n\
+        void() ClientConnect = { self.frags = parm1 + parm16; self.ammo_shells = time; \
+        if (self.netname == \"player\") self.ammo_nails = 1; };\n\
+        void() PutClientInServer = { self.ammo_nails = self.ammo_nails * 10 + 2; };\n";
+    let mut run = run_on(&ledge(), source, "");
+    run.world
+        .machine
+        .edicts_mut()
+        .set_field(P, field_slot("armorvalue"), Slot::from_f32(9.0));
+    assert!(run.world.player_view().is_none());
+    run.connect();
+    let w = &run.world;
+    assert_eq!(w.float(P, "armorvalue"), 0.0);
+    assert_eq!(w.float(P, "colormap"), 1.0);
+    assert_eq!(w.float(P, "team"), 1.0);
+    assert_eq!(w.float(P, "frags"), 12.0);
+    assert_eq!(f64::from(w.float(P, "ammo_shells")), w.time());
+    assert_eq!(w.float(P, "ammo_nails"), 12.0);
+    assert!(w.player_view().is_some());
+}
+
+// spec PHYS-10.2: while fixangle is set the client's angles go to the client through
+// MSG_WriteAngle, once, and fixangle is cleared
+// spec PHYS-9.1: with fixangle set the pitch and yaw are kept
+#[test]
+fn fixangle_turns_the_view_once() {
+    let mut run = player(
+        &ledge(),
+        "self.angles = '0 100 0'; self.fixangle = 1;",
+        "",
+        "",
+    );
+    let w = moved(&mut run, UserCmd::default(), 1, 0.1);
+    assert_eq!(w.vector(P, "angles")[1], 100.0);
+    assert_eq!(w.float(P, "fixangle"), 0.0);
+    assert_eq!(run.world.take_set_angle(), Some([0.0, 99.843_75, 0.0]));
+    run.frames(1, 0.1).unwrap();
+    assert_eq!(run.world.take_set_angle(), None);
+    // Unfixed, the yaw follows the view.
+    assert_eq!(run.world.vector(P, "angles")[1], 0.0);
+}
+
+// spec PHYS-10.3: a server frame sets the frametime global before the clients move
+#[test]
+fn the_frame_sets_frametime() {
+    let mut run = player(&ledge(), "", "self.ammo_shells = frametime;", "");
+    let w = moved(&mut run, UserCmd::default(), 1, 0.05);
+    assert_eq!(w.float(P, "ammo_shells"), 0.05);
+}
+
+// spec PHYS-9.6: the view angles become v_angle as the wire carries them; the buttons and a
+// non-zero impulse are set
+#[test]
+fn the_command_sets_the_view_and_buttons() {
+    let mut run = player(&ledge(), "self.health = 0;", "", "");
+    let cmd = UserCmd {
+        angles: [10.0, -10.0, 350.0],
+        buttons: 3,
+        impulse: 5,
+        ..UserCmd::default()
+    };
+    let w = moved(&mut run, cmd, 1, 0.1);
+    assert_eq!(w.vector(P, "v_angle"), [9.843_75, -9.843_75, -11.25]);
+    assert_eq!((w.float(P, "button0"), w.float(P, "button2")), (1.0, 1.0));
+    assert_eq!(w.float(P, "impulse"), 5.0);
+    let cmd = UserCmd {
+        buttons: 2,
+        ..UserCmd::default()
+    };
+    let w = moved(&mut run, cmd, 1, 0.1);
+    assert_eq!((w.float(P, "button0"), w.float(P, "button2")), (0.0, 1.0));
+    assert_eq!(w.float(P, "impulse"), 5.0);
+}
+
+/// A player standing on the ledge at `origin`, already moving at `velocity`.
+fn standing(spec: &MapSpec, origin: &str, velocity: &str, more: &str) -> Running {
+    let put = format!(
+        "setorigin(self, '{origin}'); self.velocity = '{velocity}'; self.flags = 512; {more}"
+    );
+    player(spec, &put, "", "")
+}
+
+fn forward(speed: f32) -> UserCmd {
+    UserCmd {
+        forward: speed,
+        ..UserCmd::default()
+    }
+}
+
+// spec PHYS-9.2: on the ground the wish is forward times the forward move, bounded to 320,
+// with no z for a walker
+// spec PHYS-9.4: acceleration adds up to sv_accelerate * frametime * wishspeed toward it
+#[test]
+fn the_player_accelerates_on_the_ground() {
+    let mut run = standing(&ledge(), "0 0 24.03125", "0 0 0", "");
+    let w = moved(&mut run, forward(200.0), 1, 0.1);
+    assert!(
+        close(w.vector(P, "velocity")[0], 200.0),
+        "{:?}",
+        w.vector(P, "velocity")
+    );
+    assert!(close(w.vector(P, "origin")[0], 20.0));
+    let mut run = standing(&ledge(), "0 0 24.03125", "0 0 0", "");
+    let cmd = UserCmd {
+        up: 300.0,
+        ..forward(1000.0)
+    };
+    let w = moved(&mut run, cmd, 1, 0.1);
+    assert!(close(w.vector(P, "velocity")[0], 320.0));
+    assert_eq!(w.vector(P, "velocity")[2], 0.0);
+    // Half the way there, acceleration is a step of 10 * 0.05 * 200.
+    let mut run = standing(&ledge(), "0 0 24.03125", "0 0 0", "");
+    let w = moved(&mut run, forward(200.0), 1, 0.05);
+    assert!(close(w.vector(P, "velocity")[0], 100.0));
+}
+
+// spec PHYS-9.3: friction takes frametime * max(speed, 100) * 4, twice that over an edge,
+// not below 0
+#[test]
+fn friction_stops_the_player() {
+    let speed = |spec: &MapSpec, origin: &str, velocity: &str| {
+        let mut run = standing(spec, origin, velocity, "");
+        moved(&mut run, UserCmd::default(), 1, 0.1).vector(P, "velocity")[0]
+    };
+    assert!(close(speed(&ledge(), "0 0 24.03125", "200 0 0"), 120.0));
+    // Below sv_stopspeed the control is 100.
+    assert!(close(speed(&ledge(), "0 0 24.03125", "50 0 0"), 10.0));
+    assert_eq!(speed(&ledge(), "0 0 24.03125", "20 0 0"), 0.0);
+    // 16 ahead is past the edge at 100, and nothing is within 34 below it.
+    assert!(close(
+        speed(&ledge_over(100.0), "90 0 24.03125", "100 0 0"),
+        20.0
+    ));
+    assert!(close(
+        speed(&ledge_over(20.0), "90 0 24.03125", "100 0 0"),
+        60.0
+    ));
+}
+
+// spec PHYS-9.2: off the ground only air acceleration applies; going back is cut while
+// teleport_time is ahead; noclip takes the wish, with up, as its velocity
+// spec PHYS-9.4: air acceleration aims for at most 30, by sv_accelerate * wishspeed * frametime
+// spec PHYS-8.2: a noclip player moves by frametime * velocity
+#[test]
+fn air_teleport_and_noclip_moves() {
+    let mut run = player(&ledge(), "setorigin(self, '0 0 200');", "", "");
+    let w = moved(&mut run, forward(200.0), 1, 0.1);
+    assert!(close(w.vector(P, "velocity")[0], 30.0));
+    let mut run = player(
+        &ledge(),
+        "setorigin(self, '0 0 200'); self.velocity = '40 0 0';",
+        "",
+        "",
+    );
+    assert!(close(
+        moved(&mut run, forward(200.0), 1, 0.1).vector(P, "velocity")[0],
+        40.0
+    ));
+    // A slow wish: the step is 10 * 2 * 0.01.
+    let mut run = player(&ledge(), "setorigin(self, '0 0 200');", "", "");
+    assert!(close(
+        moved(&mut run, forward(2.0), 1, 0.01).vector(P, "velocity")[0],
+        0.2
+    ));
+    let mut run = standing(
+        &ledge(),
+        "0 0 24.03125",
+        "0 0 0",
+        "self.teleport_time = 100;",
+    );
+    assert_eq!(
+        moved(&mut run, forward(-200.0), 1, 0.1).vector(P, "velocity")[0],
+        0.0
+    );
+    let mut run = player(
+        &ledge(),
+        "setorigin(self, '0 0 200'); self.movetype = 8;",
+        "",
+        "",
+    );
+    let cmd = UserCmd {
+        up: 100.0,
+        ..UserCmd::default()
+    };
+    let w = moved(&mut run, cmd, 1, 0.1);
+    assert_eq!(w.vector(P, "velocity"), [0.0, 0.0, 100.0]);
+    assert!(close(w.vector(P, "origin")[2], 210.0));
+}
+
+// spec PHYS-9.1: the punch fades by 10 a second; the roll is 4 times V_CalcRoll of the
+// velocity along the right; the pitch is a third of the view's, negated, and the yaw the
+// view's, both with the punch; a dead player only fades its punch, and MOVETYPE_NONE nothing
+#[test]
+fn view_angles_roll_and_punch() {
+    let put = "setorigin(self, '0 0 200'); self.punchangle = '10 0 0'; self.velocity = '0 -100 0';";
+    let cmd = UserCmd {
+        angles: [30.0, 45.0, 0.0],
+        ..UserCmd::default()
+    };
+    let mut run = player(&ledge(), put, "", "");
+    let w = moved(&mut run, cmd, 1, 0.1);
+    assert!(close(w.vector(P, "punchangle")[0], 9.0));
+    let [pitch, yaw, roll] = w.vector(P, "angles");
+    assert!(close(pitch, -(29.531_25 + 9.0) / 3.0), "{pitch}");
+    assert!(close(yaw, 45.0));
+    assert!(close(roll, 4.0), "{roll}");
+    let mut run = player(
+        &ledge(),
+        &format!("{put} self.velocity = '0 300 0';"),
+        "",
+        "",
+    );
+    assert!(close(
+        moved(&mut run, cmd, 1, 0.1).vector(P, "angles")[2],
+        -8.0
+    ));
+    let mut run = player(&ledge(), &format!("{put} self.health = 0;"), "", "");
+    let w = moved(&mut run, cmd, 1, 0.1);
+    assert!(close(w.vector(P, "punchangle")[0], 9.0));
+    assert_eq!(w.vector(P, "angles"), [0.0; 3]);
+    let mut run = player(&ledge(), &format!("{put} self.movetype = 0;"), "", "");
+    assert_eq!(
+        moved(&mut run, cmd, 1, 0.1).vector(P, "punchangle")[0],
+        10.0
+    );
+}
+
+/// Water from z = 0 to 40 over a floor at 0; for the player's hull, the floor at 24.
+fn pool() -> MapSpec {
+    MapSpec {
+        planes: vec![
+            plane([0.0, 0.0, 1.0], 40.0, 2),
+            plane([0.0, 0.0, 1.0], 0.0, 2),
+            plane([0.0, 0.0, 1.0], 24.0, 2),
+        ],
+        nodes: vec![node(0, [-2, 1]), node(1, [-3, -1])],
+        leafs: vec![CONTENTS_SOLID, CONTENTS_EMPTY, CONTENTS_WATER],
+        clipnodes: vec![ClipNode {
+            planenum: 2,
+            children: [CONTENTS_EMPTY, CONTENTS_SOLID],
+        }],
+    }
+}
+
+// spec PHYS-8.4: the waterlevel is 1 for liquid 1 above the feet, 2 at the middle, 3 at the
+// eyes, with the watertype the feet's contents
+// spec PHYS-8.2: a walker waist deep has no gravity
+#[test]
+fn water_levels() {
+    let level = |origin: &str, eyes: &str| {
+        let put =
+            format!("setorigin(self, '{origin}'); self.view_ofs = '0 0 {eyes}'; self.health = 0;");
+        let mut run = player(&pool(), &put, "", "");
+        let w = moved(&mut run, UserCmd::default(), 1, 0.1);
+        (
+            w.float(P, "waterlevel"),
+            w.float(P, "watertype"),
+            w.vector(P, "velocity")[2],
+        )
+    };
+    assert_eq!(level("0 0 30", "22"), (2.0, -3.0, 0.0));
+    assert_eq!(level("0 0 30", "8"), (3.0, -3.0, 0.0));
+    let (one, kind, fall) = level("0 0 37", "22");
+    assert_eq!((one, kind), (1.0, -3.0));
+    assert!(close(fall, -80.0));
+    let (dry, kind, _) = level("0 0 100", "22");
+    assert_eq!((dry, kind), (0.0, -1.0));
+}
+
+// spec PHYS-9.5: a swimmer with no move sinks toward 60 * 0.7; one moving loses
+// frametime * speed * 4 and gains toward 0.7 of its wish along v_angle
+// spec PHYS-9.1: a player waist deep swims
+#[test]
+fn swimming() {
+    let put = "setorigin(self, '0 0 30'); self.waterlevel = 2;";
+    let mut run = player(&pool(), put, "", "");
+    let w = moved(&mut run, UserCmd::default(), 1, 0.1);
+    assert!(
+        close(w.vector(P, "velocity")[2], -42.0),
+        "{:?}",
+        w.vector(P, "velocity")
+    );
+    let mut run = player(
+        &pool(),
+        &format!("{put} self.velocity = '100 0 0';"),
+        "",
+        "",
+    );
+    let w = moved(&mut run, forward(100.0), 1, 0.1);
+    assert!(close(w.vector(P, "velocity")[0], 70.0));
+    // Faster than the wish: only the water's friction.
+    let mut run = player(
+        &pool(),
+        &format!("{put} self.velocity = '300 0 0';"),
+        "",
+        "",
+    );
+    assert!(close(
+        moved(&mut run, forward(100.0), 1, 0.1).vector(P, "velocity")[0],
+        180.0
+    ));
+    let cmd = UserCmd {
+        up: 100.0,
+        ..UserCmd::default()
+    };
+    let mut run = player(&pool(), put, "", "");
+    assert!(close(
+        moved(&mut run, cmd, 1, 0.1).vector(P, "velocity")[2],
+        70.0
+    ));
+}
+
+// spec PHYS-9.5: a water jump keeps the velocity's x and y at movedir's, and ends once
+// teleport_time is past or the player is out of water
+// spec PHYS-8.2: with FL_WATERJUMP a walker has no gravity
+#[test]
+fn water_jumps() {
+    let jump = |teleport: &str| {
+        let put = format!(
+            "setorigin(self, '0 0 100'); self.flags = 2048; self.waterlevel = 1; \
+             self.movedir = '50 0 0'; self.velocity = '0 0 300'; self.teleport_time = {teleport};"
+        );
+        let mut run = player(&ledge(), &put, "", "");
+        let w = moved(&mut run, UserCmd::default(), 1, 0.1);
+        (
+            w.vector(P, "velocity"),
+            w.float(P, "flags"),
+            w.float(P, "teleport_time"),
+        )
+    };
+    let (velocity, flags, teleport) = jump("time + 5");
+    assert_eq!(velocity, [50.0, 0.0, 300.0]);
+    assert_eq!(flags, 2048.0);
+    assert!(teleport > 5.0);
+    let (velocity, flags, teleport) = jump("0");
+    assert_eq!((velocity[0], flags, teleport), (50.0, 0.0, 0.0));
+    assert!(close(velocity[2], 220.0));
+}
+
+// spec PHYS-8.1: a connected client runs PlayerPreThink, has its velocity bounded, moves,
+// touches triggers and runs PlayerPostThink, each think with self the client and time now
+#[test]
+fn the_client_thinks_around_its_move() {
+    let more = "void() PlayerPostThink = { self.armorvalue = self.origin * '1 0 0'; \
+        self.ammo_nails = time; };\n\
+        void() pad_touch = { other.ammo_shells = other.ammo_shells + 1; };\n\
+        void() worldspawn = { local entity pad; pad = spawn(); pad.solid = 1; \
+        pad.touch = pad_touch; setsize(pad, '-8 -8 -8', '8 8 8'); setorigin(pad, '200 0 200'); };\n";
+    let put = "setorigin(self, '0 0 200'); self.movetype = 8;";
+    let pre = "self.frags = self.frags + 1; self.velocity = '5000 0 0'; self.health = time;";
+    let mut run = player(&ledge(), put, pre, more);
+    let start = run.world.time();
+    let w = moved(&mut run, UserCmd::default(), 1, 0.1);
+    assert_eq!(w.float(P, "frags"), 1.0);
+    assert_eq!(f64::from(w.float(P, "health")), start);
+    assert_eq!(w.vector(P, "velocity")[0], 2000.0);
+    assert!(close(w.vector(P, "origin")[0], 200.0));
+    assert!(close(w.float(P, "armorvalue"), 200.0));
+    assert_eq!(f64::from(w.float(P, "ammo_nails")), start);
+    assert_eq!(w.float(P, "ammo_shells"), 1.0);
+    assert!(w.linked(P));
+}
+
+// spec PHYS-8.2: MOVETYPE_NONE thinks, toss falls, fly slides without gravity, and any other
+// movetype is Sys_Error
+#[test]
+fn client_movetypes() {
+    let more = "void() thought = { self.frags = 3; };\n";
+    let put = |movetype: &str| {
+        format!(
+            "setorigin(self, '0 0 200'); self.movetype = {movetype}; self.velocity = '10 0 0'; \
+             self.think = thought; self.nextthink = time + 0.05;"
+        )
+    };
+    let mut run = player(&ledge(), &put("0"), "", more);
+    let w = moved(&mut run, UserCmd::default(), 1, 0.1);
+    assert_eq!(w.float(P, "frags"), 3.0);
+    assert_eq!(w.vector(P, "origin"), [0.0, 0.0, 200.0]);
+    let mut run = player(&ledge(), &put("6"), "", more);
+    let w = moved(&mut run, UserCmd::default(), 1, 0.1);
+    assert!(
+        close(w.vector(P, "origin")[2], 192.0),
+        "{:?}",
+        w.vector(P, "origin")
+    );
+    let mut run = player(&ledge(), &put("5"), "", more);
+    let w = moved(&mut run, UserCmd::default(), 1, 0.1);
+    assert_eq!(w.float(P, "frags"), 3.0);
+    assert!(close(w.vector(P, "origin")[2], 200.0));
+    assert!(w.vector(P, "origin")[0] > 0.9);
+    let mut run = player(&ledge(), &put("7"), "", more);
+    run.world.set_command(UserCmd::default());
+    let error = run.frames(1, 0.1).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("SV_Physics_client: bad movetype 7"),
+        "{error}"
+    );
+}
+
+/// A dead player in the pit of `spec` at `origin`, its velocity and flags set each frame by
+/// the think before its move.
+fn pushed(spec: &MapSpec, origin: &str, velocity: &str, flags: &str) -> Running {
+    let put = format!("setorigin(self, '{origin}'); self.health = 0;");
+    let pre = format!("self.velocity = '{velocity}'; self.flags = {flags};");
+    player(spec, &put, &pre, "")
+}
+
+// spec PHYS-8.3: a walk blocked by a step goes up 18, across and down onto the floor; not
+// while off the ground and out of water
+#[test]
+fn the_player_climbs_steps() {
+    let step = |flags: &str| {
+        let mut run = pushed(&ledge_over(10.0), "120 0 14.03125", "-200 0 0", flags);
+        moved(&mut run, UserCmd::default(), 1, 0.1).vector(P, "origin")
+    };
+    let [x, _, z] = step("512");
+    assert!(close(x, 100.0), "{x}");
+    assert!(close(z, 24.031_25), "{z}");
+    let [x, _, z] = step("0");
+    assert!(close(x, 116.031_25), "{x}");
+    assert!(z < 15.0);
+}
+
+// spec PHYS-8.3: when the step's push down does not reach a floor, the move without the
+// step is kept
+#[test]
+fn a_step_that_finds_no_floor_is_undone() {
+    let mut run = pushed(&ledge_over(50.0), "120 0 -25.96875", "-200 0 100", "512");
+    let w = moved(&mut run, UserCmd::default(), 1, 0.1);
+    assert!(
+        close(w.vector(P, "velocity")[2], 20.0),
+        "{:?}",
+        w.vector(P, "velocity")
+    );
+    assert!(close(w.vector(P, "origin")[0], 116.031_25));
+}
+
+// spec PHYS-8.5: facing a wall it walks into slows the player along it by 1 + d
+#[test]
+fn walls_slow_the_player_facing_them() {
+    let along = |yaw: f32| {
+        let mut run = pushed(&ledge_over(50.0), "120 0 -25.96875", "-100 100 0", "512");
+        let cmd = UserCmd {
+            angles: [0.0, yaw, 0.0],
+            ..UserCmd::default()
+        };
+        moved(&mut run, cmd, 1, 0.1).vector(P, "velocity")[1]
+    };
+    assert!(close(along(180.0), 50.0), "{}", along(180.0));
+    assert!(close(along(0.0), 100.0), "{}", along(0.0));
+}
+
+// spec PHYS-8.6: a step that makes no progress is unstuck by pushes of 2, keeping the first
+// that moves the player more than 4; when none does it is stopped
+#[test]
+fn a_player_stuck_on_a_step_is_pushed_free() {
+    let mut run = pushed(
+        &ledge_over(50.0),
+        "116.03125 0 -25.96875",
+        "-100 30 -100",
+        "512",
+    );
+    let y = moved(&mut run, UserCmd::default(), 1, 0.001).vector(P, "origin")[1];
+    assert!(y > 4.0 && y < 6.0, "{y}");
+    let mut run = pushed(
+        &ledge_over(50.0),
+        "116.03125 0 -25.96875",
+        "-100 0 -100",
+        "512",
+    );
+    let w = moved(&mut run, UserCmd::default(), 1, 0.001);
+    assert_eq!(w.vector(P, "velocity"), [0.0; 3]);
+    assert!(close(w.vector(P, "origin")[1], 0.0));
+}
+
+// spec PHYS-8.7: a player out of solid keeps its origin as oldorigin; one in solid goes back
+// to oldorigin, else to the first free spot -1 to 1 across and 0 to 17 up; else it stays
+#[test]
+fn a_player_in_solid_is_unstuck() {
+    let stuck = |origin: &str, old: &str| {
+        let put =
+            format!("setorigin(self, '{origin}'); self.oldorigin = '{old}'; self.health = 0;");
+        let mut run = player(&ledge(), &put, "", "");
+        let w = moved(&mut run, UserCmd::default(), 1, 0.01);
+        (w.vector(P, "origin"), w.vector(P, "oldorigin"))
+    };
+    let (origin, old) = stuck("50 0 100", "0 0 0");
+    assert_eq!(old, [50.0, 0.0, 100.0]);
+    assert!(close(origin[2], 99.92));
+    let (origin, _) = stuck("50 0 20", "60 5 40");
+    assert_eq!((origin[0], origin[1]), (60.0, 5.0));
+    let (origin, _) = stuck("50 0 20", "0 0 0");
+    assert_eq!((origin[0], origin[1]), (49.0, -1.0));
+    assert!(close(origin[2], 24.0), "{origin:?}");
+    let (origin, _) = stuck("50 0 -100", "0 0 0");
+    assert_eq!(origin, [50.0, 0.0, -100.0]);
 }
