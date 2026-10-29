@@ -363,8 +363,70 @@ fn a_setting_is_changed_where_the_file_writes_it() {
     )
     .unwrap();
     store.put(Scope::User, Setting::LogFilter, None).unwrap();
-    // The blank line before the next table stays.
-    assert_eq!(text(), "\n[appearance]\ntheme = \"dark\"\n");
+    // The blank line that separated the removed table from the next goes with it.
+    assert_eq!(text(), "[appearance]\ntheme = \"dark\"\n");
+    // A file that starts with a blank line keeps it.
+    fs::write(&user, "\n[log]\nfilter = \"warn\"\n").unwrap();
+    store
+        .put(Scope::User, Setting::Theme, Some(json!("light")))
+        .unwrap();
+    assert_eq!(
+        text(),
+        "\n[log]\nfilter = \"warn\"\n\n[appearance]\ntheme = \"light\"\n"
+    );
+}
+
+// QA-10 (P2-148): a new table goes after the comments that end a file, so a file of comments
+// keeps them at its top.
+#[test]
+fn a_new_table_goes_after_the_comments_that_end_the_file() {
+    let dir = TempDir::new("trailing");
+    let spec = StoreSpec {
+        user: Some("# My settings.\n"),
+        ..StoreSpec::default()
+    };
+    let (user, _, mut store) = store(&dir, &spec);
+    store
+        .put(Scope::User, Setting::Theme, Some(json!("light")))
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(&user).unwrap(),
+        "# My settings.\n[appearance]\ntheme = \"light\"\n"
+    );
+    store
+        .put(Scope::User, Setting::LogFilter, Some(json!("warn")))
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(&user).unwrap(),
+        "# My settings.\n[appearance]\ntheme = \"light\"\n\n[log]\nfilter = \"warn\"\n"
+    );
+}
+
+// QA-10 (P2-148): a file with CRLF line endings keeps them, on every line.
+#[test]
+fn a_crlf_file_keeps_its_line_endings() {
+    let dir = TempDir::new("crlf");
+    let spec = StoreSpec {
+        user: Some("# Mine.\r\n[log]\r\nfilter = \"warn\"\r\n"),
+        ..StoreSpec::default()
+    };
+    let (user, _, mut store) = store(&dir, &spec);
+    store
+        .put(Scope::User, Setting::Theme, Some(json!("light")))
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(&user).unwrap(),
+        "# Mine.\r\n[log]\r\nfilter = \"warn\"\r\n\r\n[appearance]\r\ntheme = \"light\"\r\n"
+    );
+}
+
+// QA-10: the table and name a setting is written under spell its key.
+#[test]
+fn a_setting_is_written_under_its_key() {
+    for setting in Setting::ALL {
+        let (table, name) = setting.place();
+        assert_eq!(format!("{table}.{name}"), setting.key());
+    }
 }
 
 // QA-10 (P2-148): a file that no longer parses, or that writes a table another way, is refused

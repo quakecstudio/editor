@@ -35,7 +35,9 @@ what it sets; an unknown key or a value of the wrong type is an error, so a typo
 | `settings.set` | Sets a setting in the user's file, or with `"scope": "project"` the project's, and writes the file. |
 | `settings.reset` | Removes a setting from the user's or the project's file and writes the file. |
 
-`settings.set` and `settings.reset` are undoable when they change the file.
+`settings.set` and `settings.reset` are undoable when they change the file. The settings UI is
+these commands, through the palette like every other command; the settings screen of the app
+(L7) calls them too.
 
 ## Hand edits and commands
 
@@ -49,12 +51,14 @@ again each time a command changes a setting in it, so:
   file, the store reports what it read at open.
 - Comments, blank lines, the order of keys and the way a table is written (a `[table]` header,
   dotted keys or an inline table) stay as they are. A changed value keeps the comment after it
-  on its line. `settings.reset` removes the setting's line and the comment lines just above it;
-  a table it leaves empty is removed too, unless a comment is attached to its header.
+  on its line. A setting in a table the file does not have yet goes in a new `[table]` at the
+  end of the file, after any comments there. `settings.reset` removes the setting's line and
+  the comment lines just above it (for a setting on the file's first line, written as a dotted
+  key, those are the file's opening comments); a `[table]` it leaves empty is removed too,
+  unless a comment is attached to its header (an inline table stays, as `appearance = {}`). A
+  file with CRLF line endings keeps them.
 - A command that sets a value the file already has does not write the file at all, and records
   no undo step. An undo puts back the value the file had when the command ran.
 - A file that no longer parses, or that writes a settings table as something other than a table
   (TOML reads `appearance = ["light"]` as the table's fields in order), is refused with
-  `SettingsError::Parse` and left as it is. The settings UI is
-these commands, through the palette like every other command; the settings screen of the app
-(L7) calls them too.
+  `SettingsError::Parse` and left as it is.

@@ -1280,15 +1280,9 @@ enum Op {
 const fn assert_send<T: Send>() {}
 const fn assert_sync<T: Sync>() {}
 
-/// Checked when the test module compiles: a registry is shared between threads and a session
-/// over a `Send` context moves to the thread an agent, MCP or ACP server runs on (README,
-/// "Threads").
-const _: () = {
-    assert_send::<Registry<Doc>>();
-    assert_sync::<Registry<Doc>>();
-    assert_send::<Session<Doc>>();
-};
-
+// PRIN-3: a registry is shared between threads and a session over a `Send` context moves to
+// the thread an agent, MCP or ACP server runs on (README, "Threads"). Checked when the test
+// compiles: without the bounds it is a type error.
 #[test]
 fn a_registry_is_send_and_sync_and_a_session_over_a_send_context_is_send() {
     assert_send::<Registry<Doc>>();

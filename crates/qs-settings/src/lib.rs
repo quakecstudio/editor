@@ -242,8 +242,9 @@ fn write_text(path: &Path, text: &str) -> Result<(), SettingsError> {
 /// `text`, the file at `path`, with `setting` set to `value`, or removed for `None`, and the
 /// rest of it as it was, comments included.
 ///
-/// A value keeps the comment after it on its line. A table a removal leaves empty is removed
-/// too, unless a comment is attached to its header.
+/// A value keeps the comment after it on its line. A new table goes at the end of the file,
+/// after any comments there. A `[table]` a removal leaves empty is removed too, unless a comment
+/// is attached to its header. A file with CRLF line endings keeps them.
 fn edit(
     path: &Path,
     text: &str,
@@ -257,6 +258,18 @@ fn edit(
     match value {
         Some(value) => {
             let mut value = toml_value(path, value)?;
+            if !document.contains_key(table_name) {
+                // toml_edit keeps the comments after the last item as the document's trailing
+                // text, which it writes after every table; a new table goes before them unless
+                // they become its prefix.
+                let mut table = toml_edit::Table::new();
+                let trailing = document.trailing().as_str().unwrap_or_default().to_owned();
+                if !trailing.is_empty() {
+                    table.decor_mut().set_prefix(trailing);
+                    document.set_trailing("");
+                }
+                document.insert(table_name, Item::Table(table));
+            }
             let item = document.entry(table_name).or_insert_with(toml_edit::table);
             let table = table_like(path, table_name, item)?;
             if let Some(old) = table.get_mut(name).and_then(Item::as_value_mut) {
@@ -278,7 +291,15 @@ fn edit(
             }
         }
     }
-    Ok(document.to_string())
+    let mut written = document.to_string();
+    // Removing the first table leaves the blank line that separated it from the next.
+    if !text.starts_with(['\r', '\n']) {
+        written = written.trim_start_matches(['\r', '\n']).to_owned();
+    }
+    if text.contains("\r\n") {
+        written = written.replace("\r\n", "\n").replace('\n', "\r\n");
+    }
+    Ok(written)
 }
 
 /// The table `name` of the file at `path`, refused when it is written another way (as an
