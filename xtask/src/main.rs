@@ -87,6 +87,7 @@ mod adr;
 mod attribution;
 mod bench;
 mod ci;
+mod codegen_corpus;
 mod commands;
 mod contrast;
 mod conventions;
@@ -180,6 +181,7 @@ fn command(name: &str) -> Option<Command> {
     match name {
         "assets" => Some(corpus::assets_main),
         "bench" => Some(bench::main),
+        "codegen-corpus" => Some(codegen_corpus::main),
         "commands" => Some(commands::main),
         "corpus" => Some(corpus::main),
         "differential" => Some(differential::main),

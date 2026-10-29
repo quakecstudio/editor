@@ -27,21 +27,26 @@ fn errors_are_located_in_the_source() {
 }
 
 #[test]
-fn only_the_vanilla_dialect_is_compiled() {
-    let mut db = Db::new();
-    db.set_dialect(Dialect::Fteqcc);
-    db.set_file(
-        FileId(0),
-        PathBuf::from("t.qc"),
-        b"void() f = {};\n".to_vec(),
-    );
-    let input = ModuleInput {
-        compiled: vec![FileId(0)],
-        ..ModuleInput::default()
+fn the_vanilla_and_fteqcc_dialects_are_compiled_and_gmqcc_is_not() {
+    let compiled = |dialect: Dialect| {
+        let mut db = Db::new();
+        db.set_dialect(dialect);
+        db.set_file(
+            FileId(0),
+            PathBuf::from("t.qc"),
+            b"void() f = {};\n".to_vec(),
+        );
+        let input = ModuleInput {
+            compiled: vec![FileId(0)],
+            ..ModuleInput::default()
+        };
+        compile_module(&mut db, &input, |_| "t.qc".to_owned(), Options::default())
     };
+    assert!(compiled(Dialect::Vanilla).is_ok());
+    assert!(compiled(Dialect::Fteqcc).is_ok());
     assert_eq!(
-        compile_module(&mut db, &input, |_| "t.qc".to_owned(), Options::default()),
-        Err(CompileError::Dialect(Dialect::Fteqcc))
+        compiled(Dialect::Gmqcc),
+        Err(CompileError::Dialect(Dialect::Gmqcc))
     );
 }
 
