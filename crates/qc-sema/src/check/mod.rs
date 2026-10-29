@@ -90,7 +90,7 @@ pub(crate) trait Env {
     fn strict_enum(&self, ty: &Type) -> bool;
     /// Whether the field `def` is the module's first, at offset 0 (FTEF-31.17).
     fn first_field(&self, def: DefId) -> bool;
-    /// Whether a definition is a constant, and its value (`QCC_SRef_EvalConst`, FTEF-26.5).
+    /// Whether a definition is a constant, and its value (`QCC_SRef_EvalConst`, FTEF-26.13).
     fn constness(&self, def: DefId) -> Constness;
     /// `FILE:LINE` of offset `span.start`, as `s_filen` and `pr_source_line` print it.
     fn file_line(&self, span: Span) -> String;
@@ -601,7 +601,7 @@ impl Reference {
     }
 }
 
-/// Whether a value is a constant (`QCC_SRef_EvalConst`, FTEF-26.5).
+/// Whether a value is a constant (`QCC_SRef_EvalConst`, FTEF-26.13).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Constness {
     /// Not a constant: no folding reads it.

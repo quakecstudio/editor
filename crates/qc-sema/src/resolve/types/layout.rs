@@ -12,8 +12,10 @@
 use qc_syntax::c_scalar::CScalar;
 
 use crate::check::etype::Etype;
-use crate::lower::StructMember;
-use crate::resolve::{MAX_CLASS_DEPTH, Resolver};
+use crate::lower::LiteralValue;
+use crate::lower::{ArrayDim, StructMember};
+use crate::resolve::{InitialValue, MAX_CLASS_DEPTH, MemberShape, Resolver, StructShape};
+use crate::symbol::DefId;
 use crate::ty::Type;
 
 /// The bits of a word.
@@ -228,6 +230,98 @@ impl Resolver<'_> {
             bits,
             align: layout.align,
         })
+    }
+}
+
+impl Resolver<'_> {
+    /// Records in the index each array definition's elements and the layout of each struct
+    /// type a definition or a member is written with, for a compiler to allocate and address
+    /// them (FTEF-19.8, FTEF-6.13).
+    pub(in crate::resolve) fn record_shapes(&mut self) {
+        let mut pending = Vec::new();
+        for (i, def) in self.index.defs.iter().enumerate() {
+            if let Some(ArrayDim::Sized(count)) = self.facts.get(i).and_then(|f| f.array) {
+                self.index.arrays.insert(DefId(i), count);
+            }
+            pending.push(def.ty.clone());
+        }
+        for (id, constant) in &self.integer_items {
+            if let Some(value) = constant.initial_value() {
+                self.index.initial_values.entry(*id).or_insert(value);
+            }
+        }
+        for (id, literal) in &self.literals {
+            if let LiteralValue::Float(bits) = literal {
+                self.index
+                    .initial_values
+                    .entry(*id)
+                    .or_insert_with(|| InitialValue::new(vec![*bits]));
+            }
+        }
+        let named: Vec<Type> = self.index.defs.iter().map(|d| d.ty.clone()).collect();
+        for ty in &named {
+            let Type::Named(name) = ty else {
+                continue;
+            };
+            let base = match (
+                self.named(&self.strict_enums, name),
+                self.named(&self.enum_types, name),
+            ) {
+                (Some(base), _) | (None, Some(base)) => base.clone(),
+                (None, None) => self.resolved(ty),
+            };
+            if base != *ty {
+                self.index.aliases.insert(ty.clone(), base);
+            }
+        }
+        while let Some(ty) = pending.pop() {
+            if self.index.structs.contains_key(&ty) {
+                continue;
+            }
+            let Some(shape) = self.struct_shape(&ty, MAX_CLASS_DEPTH) else {
+                continue;
+            };
+            pending.extend(shape.members.iter().map(|m| m.ty.clone()));
+            self.index.structs.insert(ty, shape);
+        }
+    }
+
+    /// The layout of the struct or union `ty` names, when the model lays it out.
+    fn struct_shape(&self, ty: &Type, depth: usize) -> Option<StructShape> {
+        let depth = depth.checked_sub(1)?;
+        let resolved = self.resolved(ty);
+        let Type::Named(name) = &resolved else {
+            return None;
+        };
+        let def = self
+            .struct_defs
+            .get(&self.type_key(self.struct_type_name(name)?))?;
+        let words = self.layout(&resolved)?.words;
+        let mut members = match &def.parent {
+            Some(parent) => {
+                self.struct_shape(&Type::Named(parent.as_str().into()), depth)?
+                    .members
+            }
+            None => Vec::new(),
+        };
+        for member in &def.members {
+            if member.is_static || member.name.is_empty() || member.bits.is_some() {
+                continue;
+            }
+            let Some(position) = self.member_position(&resolved, &member.name) else {
+                continue;
+            };
+            if position & WORD_MASK != 0 || self.layout(&member.ty)?.bits != 0 {
+                continue;
+            }
+            members.push(MemberShape {
+                name: member.name.clone(),
+                ty: member.ty.clone(),
+                word: position >> WORD_SHIFT,
+                count: array_count(member)?,
+            });
+        }
+        Some(StructShape { words, members })
     }
 }
 

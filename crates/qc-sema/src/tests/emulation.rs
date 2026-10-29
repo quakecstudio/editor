@@ -210,7 +210,7 @@ fn operand_conversions_are_emulated() {
     );
 }
 
-// spec FTEF-26.5: an enum's item and a `length` are constants, so their conversions fold and
+// spec FTEF-26.13: an enum's item and a `length` are constants, so their conversions fold and
 // nothing is emulated (the pinned FTEQCC compiles this with no diagnostic, 2026-10-27)
 #[test]
 fn constants_are_not_emulated() {

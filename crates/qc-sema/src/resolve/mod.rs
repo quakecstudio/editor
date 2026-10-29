@@ -96,8 +96,41 @@ pub struct ModuleIndex {
     /// Each function body's types, by the function's definition (`crate::check`).
     pub bodies: HashMap<DefId, TypedBody>,
     /// What each global whose initialiser is an expression, not a literal, folds to under an
-    /// FTEQCC profile (FTEF-34.9), which a compiler writes to the global's words.
+    /// FTEQCC profile (FTEF-34.9), and each enum's item whose value the model computes
+    /// (FTEF-19.10), which a compiler writes to the global's words.
     pub initial_values: HashMap<DefId, InitialValue>,
+    /// The elements of each array definition whose size the model knows, `arraysize`
+    /// (FTEF-19.8): a written number, or the count of an unsized array's initialiser.
+    pub arrays: HashMap<DefId, u32>,
+    /// The layout of each struct or union type a definition, or a member of another, is
+    /// written with, by the type as written (FTEF-6.13), when the model lays it out.
+    pub structs: HashMap<Type, StructShape>,
+    /// The type each named type a definition is written with stands for, when it is another:
+    /// a typedef's, or an enum's base type (FTEF-7.2, FTEF-19.10).
+    pub aliases: HashMap<Type, Type>,
+}
+
+/// A struct's or union's layout as FTEQCC places it (FTEF-6.13): the words it takes and where
+/// each member is, its parent's first.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StructShape {
+    /// The words a value takes, `type->size`.
+    pub words: u32,
+    /// The members that start at a word, in order; a bitfield or a narrow integer is left out.
+    pub members: Vec<MemberShape>,
+}
+
+/// One member of a [`StructShape`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MemberShape {
+    /// Its name.
+    pub name: String,
+    /// Its type as written.
+    pub ty: Type,
+    /// The word of the struct it starts at.
+    pub word: u32,
+    /// Its elements, 1 for no array.
+    pub count: u32,
 }
 
 /// The value a global's initialiser folds to (FTEF-34.9, FTEF-26): the words it holds in the
@@ -813,6 +846,7 @@ impl<'a> Resolver<'a> {
 
     fn finish(mut self) -> ModuleIndex {
         self.check_undefined_functions();
+        self.record_shapes();
         self.index
     }
 }

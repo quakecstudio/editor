@@ -80,6 +80,15 @@ fn variable_division_by_zero() {
     );
 }
 
+// spec FTEF-26.13: an array's `length` is its size, a constant that folds: the pinned FTEQCC
+// warns of the division by `names.length - 2` (2026-10-29)
+#[test]
+fn an_array_length_folds() {
+    let source = "#pragma warning enable F332\nstring names[] = { \"a\", \"b\" };\n\
+                  void() g = { local float a; a = a / (names.length - 2); };\n";
+    assert_eq!(diags(source), one(Code::W0233, "Division by 0"));
+}
+
 // spec FTEF-26.2: a bitwise operand that is no whole number is truncated, with a warning
 // spec QCD-7.76: W0234 for a constant folding converts with a loss
 #[test]
@@ -137,7 +146,7 @@ fn c_g_prints_like_c() {
     assert_eq!(c_g(1e20), "1e+20");
 }
 
-// spec FTEF-26.5: an initialised global is a constant whose value folds, unless it is `var`
+// spec FTEF-26.13: an initialised global is a constant whose value folds, unless it is `var`
 #[test]
 fn initialised_globals_fold() {
     let source = "#pragma warning enable F332\nconst float zero = 0;\nfloat notconst = 0;\n\
