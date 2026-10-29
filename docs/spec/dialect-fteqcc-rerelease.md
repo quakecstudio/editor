@@ -592,6 +592,12 @@ and sets flags with `self.flags &~= FL_ONGROUND` and `other.flags (+) FL_INSHELT
 - **FTE-19.9** `v / f` of a vector and a float is `OP_DIV_VF`'s emulation, `v * (1 / f)`:
   `DIV_F 1, f` then `MUL_VF`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`.
 
+- **FTE-19.10** `a && b` and `a || b` whose operands are not both floats are `OP_AND_ANY` and
+  `OP_OR_ANY` on the vanilla opcodes: a vector operand is first `MUL_V` of it with itself
+  under `vectorlogic` (a default flag), then `AND` or `OR` of the two words; a string's word is
+  read as it is, `ifstring` being off by default. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags`.
 ## FTE-20 Further literals
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_Lex`, `QCC_PR_LexNumber` and `QCC_PR_LexEscapedCodepoint`,

@@ -5,8 +5,8 @@
 //! read from the statement that made it.
 
 use qc_progs::opcode::Opcode::{
-    self, AddF, BitAnd, BitOr, Call1, Call2, Call3, DivF, Done, If, IfNot, Lt, MulF, MulVf, Return,
-    StoreF, StoreS, StoreV, SubF,
+    self, AddF, And, BitAnd, BitOr, Call1, Call2, Call3, DivF, Done, EqF, Goto, If, IfNot, Lt,
+    MulF, MulV, MulVf, NotV, Return, StoreF, StoreS, StoreV, SubF, SubV,
 };
 use qc_progs::{ProgsFile, Statement};
 
@@ -429,18 +429,196 @@ fn a_for_loop_tests_its_condition() {
     let t = body(&p, "t");
     assert_eq!(
         opcodes(&t),
-        ops(&[
-            StoreF,
-            Lt,
-            IfNot,
-            StoreF,
-            StoreF,
-            AddF,
-            StoreF,
-            Opcode::Goto,
-            Done
-        ])
+        ops(&[StoreF, Lt, IfNot, StoreF, StoreF, AddF, StoreF, Goto, Done])
     );
     assert_eq!(t[2].b, 6);
     assert_eq!(t[7].a, -6);
+}
+
+// spec FTE-2.4: `break` is a GOTO past the loop and `continue` a GOTO to its step
+#[test]
+fn break_and_continue_leave_and_restart_a_loop() {
+    let p = fte_progs(
+        "float n;\nvoid() t = { for (;;) { break; } };\nvoid() u = { for (;; n++) { continue; } };\n",
+    );
+    assert_eq!(
+        body(&p, "t"),
+        [st(Goto, 2, 0, 0), st(Goto, -1, 0, 0), st(Done, 0, 0, 0)]
+    );
+    let u = body(&p, "u");
+    assert_eq!(opcodes(&u), ops(&[Goto, StoreF, AddF, StoreF, Goto, Done]));
+    assert_eq!((u[0].a, u[4].a), (1, -4));
+}
+
+// spec FTE-3.4: a switch jumps to its tests after the body, each case an EQ_F and IF back to
+// its label, then a GOTO to `default`; `break` goes past the switch
+#[test]
+fn a_switch_tests_its_cases_after_its_body() {
+    let p = fte_progs(
+        "float a, b;\nvoid() t = { switch (a) { case 1: b = 1; break; default: b = 2; } };\n",
+    );
+    let (a, b) = (global(&p, "a"), global(&p, "b"));
+    let (one, two) = (immediate(&p, 1.0), immediate(&p, 2.0));
+    let t = body(&p, "t");
+    assert_eq!(
+        t,
+        [
+            st(Goto, 5, 0, 0),
+            st(StoreF, one, b, 0),
+            st(Goto, 6, 0, 0),
+            st(StoreF, two, b, 0),
+            st(Goto, 4, 0, 0),
+            st(EqF, a, one, t[5].c),
+            st(If, t[5].c, -5, 0),
+            st(Goto, -4, 0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTE-5.3: `x++` copies the old value to a temporary, stores the temporary plus 1 back,
+// and is the old value
+#[test]
+fn postfix_increment_is_the_old_value() {
+    let p = fte_progs("float a, b;\nvoid() t = { b = a++; a--; };\n");
+    let (a, b) = (global(&p, "a"), global(&p, "b"));
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, a, t[0].b, 0));
+    assert_eq!(t[1], st(AddF, t[0].b, immediate(&p, 1.0), t[1].c));
+    assert_eq!(t[2], st(StoreF, t[1].c, a, 0));
+    assert_eq!(t[3], st(StoreF, t[0].b, b, 0));
+    assert_eq!(t[5], st(AddF, t[4].b, immediate(&p, -1.0), t[5].c));
+}
+
+// spec FTE-19.4: `-x` is `0 - x`, of a vector `'0 0 0' - v`; `~x` is `-1 - x`; `++x` stores
+// `x + 1` and is it
+#[test]
+fn prefix_operators_are_subtractions_and_stores() {
+    let p =
+        fte_progs("float a, b;\nvector v, w;\nvoid() t = { b = -a; w = -v; b = ~a; b = ++a; };\n");
+    let (a, b, v) = (global(&p, "a"), global(&p, "b"), global(&p, "v"));
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(SubF, immediate(&p, 0.0), a, t[0].c));
+    assert_eq!((t[2].op, t[2].b), (u32::from(SubV.number()), v));
+    assert_eq!(t[4], st(SubF, immediate(&p, -1.0), a, t[4].c));
+    assert_eq!(t[6], st(AddF, a, immediate(&p, 1.0), t[6].c));
+    assert_eq!(t[7], st(StoreF, t[6].c, a, 0));
+    assert_eq!(t[8], st(StoreF, t[6].c, b, 0));
+}
+
+// spec FTE-8.3: `c ? a : b` is IFNOT over the first arm's store and a GOTO over the second's,
+// both to one temporary; `c ?: b` stores the condition as the first arm
+#[test]
+fn a_ternary_stores_either_arm_to_one_temporary() {
+    let p = fte_progs("float a, b, c;\nvoid() t = { c = a ? b : 1; c = a ?: b; };\n");
+    let (a, b, c) = (global(&p, "a"), global(&p, "b"), global(&p, "c"));
+    let t = body(&p, "t");
+    let r = t[1].b;
+    assert_eq!(
+        t[..5],
+        [
+            st(IfNot, a, 3, 0),
+            st(StoreF, b, r, 0),
+            st(Goto, 2, 0, 0),
+            st(StoreF, immediate(&p, 1.0), r, 0),
+            st(StoreF, r, c, 0),
+        ]
+    );
+    assert_eq!(t[6], st(StoreF, a, t[6].b, 0));
+    assert_eq!(t[8], st(StoreF, b, t[6].b, 0));
+}
+
+// spec FTEF-23.10: under `ifvector` a vector condition is NOT_V and IF, so every component
+// counts
+#[test]
+fn a_vector_condition_is_tested_by_not_v() {
+    let p = fte_progs("vector v;\nfloat a;\nvoid() t = { if (v) a = 1; };\n");
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(NotV, global(&p, "v"), 0, t[0].c));
+    assert_eq!(t[1], st(If, t[0].c, 2, 0));
+}
+
+// spec FTE-19.10: `v && a` is the vector's MUL_V with itself, then AND
+#[test]
+fn logic_of_a_vector_is_its_dot_product() {
+    let p = fte_progs("vector v;\nfloat a, b;\nvoid() t = { if (v && a) b = 1; };\n");
+    let (v, a) = (global(&p, "v"), global(&p, "a"));
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(MulV, v, v, t[0].c));
+    assert_eq!(t[1], st(And, t[0].c, a, t[1].c));
+}
+
+// spec FTE-19.1: `a op= b` stores `a op b` to `a`; `&~=` stores `a - (a & b)`
+#[test]
+fn compound_assignments_store_back() {
+    let p = fte_progs("float a, b;\nvoid() t = { a += b; a &~= b; };\n");
+    let (a, b) = (global(&p, "a"), global(&p, "b"));
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(AddF, a, b, t[0].c));
+    assert_eq!(t[1], st(StoreF, t[0].c, a, 0));
+    assert_eq!(t[2], st(BitAnd, a, b, t[2].c));
+    assert_eq!(t[3], st(SubF, a, t[2].c, t[3].c));
+    assert_eq!(t[4], st(StoreF, t[3].c, a, 0));
+}
+
+// spec FTE-9.3: `v.y` is the vector's second word
+#[test]
+fn a_vector_component_is_its_word() {
+    let p = fte_progs("vector v;\nfloat a;\nvoid() t = { a = v.y; v.z = a; a = v[0]; };\n");
+    let (v, a) = (global(&p, "v"), global(&p, "a"));
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(StoreF, v + 1, a, 0),
+            st(StoreF, a, v + 2, 0),
+            st(StoreF, v, a, 0),
+            st(Done, 0, 0, 0)
+        ]
+    );
+}
+
+// spec FTEF-32.4: a local's initialiser is a store each time the function runs
+#[test]
+fn a_local_initialiser_is_a_store() {
+    let p = fte_progs("void() t = { local float a = 2; };\n");
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, immediate(&p, 2.0), global(&p, "a"), 0));
+}
+
+// spec FTEF-34.9: a global's initialiser that is an expression is the value it folds to
+#[test]
+fn a_global_initialiser_is_its_folded_value() {
+    let p = fte_progs("const float a = 2 * 3 + 1;\n");
+    assert_eq!(global_words(&p, "a", 1), [7.0_f32.to_bits()]);
+}
+
+// spec FTE-17.1: a C-style definition's parameters are the names after its own
+#[test]
+fn c_style_parameters_are_the_functions_first_locals() {
+    let p = fte_progs("float f(float x, float y) { return y; };\n");
+    let f = function(&p, "f");
+    assert_eq!((f.numparms, f.parm_start), (2, global(&p, "x")));
+    assert_eq!(body(&p, "f")[0], st(Return, global(&p, "y"), 0, 0));
+}
+
+// spec FTEF-32.3: under FTEQCC an argument past the last parameter is read and ignored, and
+// fewer arguments leave the rest
+#[test]
+fn extra_arguments_are_read_and_dropped() {
+    let p = fte_progs("void(float x) f = {};\nfloat a;\nvoid() t = { f(a, a + 1); f(); };\n");
+    let t = body(&p, "t");
+    assert_eq!(
+        opcodes(&t),
+        ops(&[StoreV, AddF, Call1, Opcode::Call0, Done])
+    );
+}
+
+// spec FTE-22.3: a name used before its definition is read is made where it is first used
+#[test]
+fn a_name_used_before_its_definition_is_made_there() {
+    let p = fte_progs("#pragma autoproto\nvoid() t = { later = 1; };\nfloat later;\n");
+    assert_eq!(
+        body(&p, "t")[0],
+        st(StoreF, immediate(&p, 1.0), global(&p, "later"), 0)
+    );
 }

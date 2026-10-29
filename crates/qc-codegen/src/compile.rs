@@ -1150,7 +1150,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// FTEQCC's `&&` and `||` of operands that are not both floats, `OP_AND_ANY` and
-    /// `OP_OR_ANY` on the vanilla opcodes: a vector is first its dot product with itself under
+    /// `OP_OR_ANY` on the vanilla opcodes (FTE-19.10): a vector is first its dot product with itself under
     /// `vectorlogic`, then `AND_F` or `OR_F` of the two words.
     fn any_logic(
         &mut self,
