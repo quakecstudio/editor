@@ -257,7 +257,9 @@ fn bad_directives_are_an_error() {
             .starts_with("invalid log directives \"qs_vm=loud\": "),
         "{err}"
     );
-    assert!(std::error::Error::source(&err).is_none());
+    // The parser's error is the source, and the message ends with it.
+    let source = std::error::Error::source(&err).unwrap().to_string();
+    assert!(err.to_string().ends_with(&source), "{err} / {source}");
 }
 
 #[test]

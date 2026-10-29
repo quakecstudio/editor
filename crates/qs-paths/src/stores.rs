@@ -11,7 +11,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use crate::{Platform, is_absolute};
+use crate::{Platform, absolute_var, join_all};
 
 /// The folders where game stores and launchers may keep Quake, for one platform.
 ///
@@ -70,17 +70,9 @@ pub fn store_dirs<F>(platform: Platform, env: F) -> StoreDirs
 where
     F: Fn(&'static str) -> Option<OsString>,
 {
-    let var = |name: &'static str| -> Option<PathBuf> {
-        env(name)
-            .filter(|value| !value.is_empty() && is_absolute(platform, value))
-            .map(PathBuf::from)
-    };
+    let var = |name: &'static str| absolute_var(platform, &env, name);
     let under = |base: &Option<PathBuf>, parts: &[&str]| -> Option<PathBuf> {
-        base.as_ref().map(|base| {
-            parts
-                .iter()
-                .fold(base.clone(), |path, part| path.join(part))
-        })
+        base.as_ref().map(|base| join_all(base, parts))
     };
     match platform {
         Platform::MacOs => {

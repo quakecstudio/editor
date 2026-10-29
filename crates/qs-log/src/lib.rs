@@ -122,8 +122,8 @@ pub enum LogError {
     Directives {
         /// The directives as given.
         directives: String,
-        /// The parser's explanation.
-        reason: String,
+        /// The parser's error.
+        source: ParseError,
     },
     /// A global subscriber was already installed.
     AlreadyInstalled,
@@ -135,8 +135,8 @@ impl fmt::Display for LogError {
             Self::Io { dir, source } => {
                 write!(f, "cannot open the log in {}: {source}", dir.display())
             }
-            Self::Directives { directives, reason } => {
-                write!(f, "invalid log directives {directives:?}: {reason}")
+            Self::Directives { directives, source } => {
+                write!(f, "invalid log directives {directives:?}: {source}")
             }
             Self::AlreadyInstalled => f.write_str("a global log subscriber is already installed"),
         }
@@ -147,7 +147,8 @@ impl std::error::Error for LogError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io { source, .. } => Some(source),
-            Self::Directives { .. } | Self::AlreadyInstalled => None,
+            Self::Directives { source, .. } => Some(source),
+            Self::AlreadyInstalled => None,
         }
     }
 }
@@ -163,9 +164,9 @@ pub fn subscriber(config: &LogConfig) -> Result<impl Subscriber + Send + Sync + 
         config
             .directives
             .parse()
-            .map_err(|err: ParseError| LogError::Directives {
+            .map_err(|source: ParseError| LogError::Directives {
                 directives: config.directives.clone(),
-                reason: err.to_string(),
+                source,
             })?;
     let file = RotatingFile::open(
         &config.dir,

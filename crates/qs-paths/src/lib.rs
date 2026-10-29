@@ -174,16 +174,8 @@ where
         Platform::Linux => {
             let home = required(platform, &env, "HOME")?;
             let xdg = |name: &'static str, default: &[&str]| -> PathBuf {
-                let base = env(name)
-                    .filter(|value| is_absolute(platform, value))
-                    .map_or_else(
-                        || {
-                            default
-                                .iter()
-                                .fold(home.clone(), |path, part| path.join(part))
-                        },
-                        PathBuf::from,
-                    );
+                let base =
+                    absolute_var(platform, &env, name).unwrap_or_else(|| join_all(&home, default));
                 base.join(APP_DIR_NAME_UNIX)
             };
             Ok(AppDirs {
@@ -203,23 +195,42 @@ where
     let Some(value) = env(name).filter(|value| !value.is_empty()) else {
         return Err(PathsError::MissingVar { name });
     };
-    if !is_absolute(platform, &value) {
+    if !platform.is_absolute(&value) {
         return Err(PathsError::RelativeVar { name, value });
     }
     Ok(PathBuf::from(value))
 }
 
-/// Whether `value` is an absolute path on `platform`, whatever the host is.
-fn is_absolute(platform: Platform, value: &OsStr) -> bool {
-    let bytes = value.as_encoded_bytes();
-    match platform {
-        Platform::MacOs | Platform::Linux => bytes.starts_with(b"/"),
-        Platform::Windows => match bytes {
-            [drive, b':', b'\\' | b'/', ..] => drive.is_ascii_alphabetic(),
-            [b'\\', b'\\', ..] => true,
-            _ => false,
-        },
+impl Platform {
+    /// Whether `value` is an absolute path on this platform, whatever the host is.
+    fn is_absolute(self, value: &OsStr) -> bool {
+        let bytes = value.as_encoded_bytes();
+        match self {
+            Self::MacOs | Self::Linux => bytes.starts_with(b"/"),
+            Self::Windows => match bytes {
+                [drive, b':', b'\\' | b'/', ..] => drive.is_ascii_alphabetic(),
+                [b'\\', b'\\', ..] => true,
+                _ => false,
+            },
+        }
     }
+}
+
+/// The environment variable `name` as a path, when it is set to an absolute one on `platform`.
+fn absolute_var<F>(platform: Platform, env: &F, name: &'static str) -> Option<PathBuf>
+where
+    F: Fn(&'static str) -> Option<OsString>,
+{
+    env(name)
+        .filter(|value| !value.is_empty() && platform.is_absolute(value))
+        .map(PathBuf::from)
+}
+
+/// `base` with each of `parts` joined in turn.
+fn join_all(base: &Path, parts: &[&str]) -> PathBuf {
+    parts
+        .iter()
+        .fold(base.to_path_buf(), |path, part| path.join(part))
 }
 
 #[cfg(test)]
