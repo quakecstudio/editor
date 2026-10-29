@@ -1071,3 +1071,28 @@ mod spacing;
 mod text;
 mod warnings;
 mod words;
+
+// spec PRJ-5.4: a module's defines are defined before the first file, and again after a
+// restart, in both dialects; a define's body expands to its text
+#[test]
+fn module_defines_hold_before_the_first_file() {
+    let text = "#ifdef X\nfloat a = Y;\n#else\nfloat b;\n#endif\n";
+    let defines = [
+        ("X".to_owned(), String::new()),
+        ("Y".to_owned(), "2".to_owned()),
+    ];
+    for dialect in [qc_lexer::Dialect::Vanilla, qc_lexer::Dialect::Fteqcc] {
+        let mut loader = MemoryLoader::new();
+        loader.insert("a.qc", text.as_bytes());
+        let mut pp = Preprocessor::new(loader)
+            .with_dialect(dialect)
+            .with_defines(&defines);
+        let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+        assert_eq!(tokens(&out), "float a = 2 ;", "{dialect:?}");
+        pp.restart();
+        let again = pp.preprocess_file(Path::new("a.qc")).unwrap();
+        assert_eq!(tokens(&again), "float a = 2 ;", "{dialect:?}");
+    }
+    let (_, without) = one(text);
+    assert_eq!(tokens(&without), "float b ;");
+}
