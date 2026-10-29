@@ -17,7 +17,7 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
 | --- | --- | --- | --- | --- | --- |
 | `open_project_and_type` | PRIN-5 | 1 s | p95 | [#74](https://github.com/quakecstudio/editor/issues/74) P2-18 | pending |
 | `keystroke` | PRIN-5 | 8.33 ms | p99 | [#74](https://github.com/quakecstudio/editor/issues/74) P2-18 | pending |
-| `id1_recompile` | PRIN-5 | 200 ms | median | [#67](https://github.com/quakecstudio/editor/issues/67) P2-11 | pending |
+| `id1_recompile` | PRIN-5 | 200 ms | median | [#67](https://github.com/quakecstudio/editor/issues/67) P2-11 | active |
 | `save_to_game` | ENG-13 | 1 s | p95 | [#100](https://github.com/quakecstudio/editor/issues/100) P3-12 | pending |
 <!-- /perf-budgets -->
 
@@ -42,8 +42,10 @@ name.
 
 `cargo xtask bench` (or `make bench`):
 
-1. runs the benchmarks with `cargo bench --package qs-bench --bench budgets`, writing criterion's
-   output to a fresh `target/xtask/bench/criterion/`;
+1. fetches id 1.01 into the asset cache for `id1_recompile` (`cargo xtask corpus fetch
+   id-1.01`; offline once cached), then runs the benchmarks with `cargo bench --package qs-bench
+   --bench budgets`, with `QS_BENCH_ID1` naming that directory, writing criterion's output to a
+   fresh `target/xtask/bench/criterion/`;
 2. reads each benchmark's samples and computes the median, p95 and p99 time per iteration
    (nearest rank over criterion's samples);
 3. for each **active** row, fails if the row's statistic is over its budget, or more than 10%

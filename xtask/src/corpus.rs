@@ -210,6 +210,12 @@ fn resolve(path: &Path) -> PathBuf {
 
 /// `$QS_TEST_ASSETS`, else `quakecstudio/test-assets` under `$XDG_CACHE_HOME`, else under the
 /// home directory's `.cache` (`$HOME`, or `%USERPROFILE%` on Windows).
+/// The asset cache `cargo xtask corpus fetch` writes to by default: `$QS_TEST_ASSETS`, else
+/// `quakecstudio/test-assets` under the user's cache directory.
+pub(crate) fn asset_cache() -> Option<PathBuf> {
+    default_dest(&|key| env::var_os(key).map(PathBuf::from))
+}
+
 fn default_dest(var: &dyn Fn(&str) -> Option<PathBuf>) -> Option<PathBuf> {
     let nonempty = |key: &str| var(key).filter(|p| !p.as_os_str().is_empty());
     if let Some(dest) = nonempty("QS_TEST_ASSETS") {
