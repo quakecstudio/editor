@@ -520,7 +520,7 @@ A function whose work is reading one type's data is a method on that type, not a
 function taking it. A method is found where the type is documented, sits beside the related
 methods, and keeps the type's rules in one place instead of in each crate that needs them.
 
-`crates/qc-sema/src/resolve.rs` and `crates/qc-sema/src/nav.rs`:
+`crates/qc-sema/src/resolve/` and `crates/qc-sema/src/nav.rs`:
 
 ```rust
 fn component_type(ty: &Type) -> Option<Type> { /* float for vector, .float for .vector */ }

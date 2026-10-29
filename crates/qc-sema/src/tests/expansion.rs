@@ -498,6 +498,20 @@ fn module_input_from_a_graph() {
     assert_eq!(input.compiled, [FileId(0), FileId(1)]);
     graph.files = vec![file("main.qc", Via::Root)];
     assert_eq!(ModuleInput::from_graph(&graph).compiled, [FileId(0)]);
+    let module = qc_project::Module {
+        name: "progs".to_owned(),
+        kind: qc_project::ModuleKind::Ssqc,
+        src: PathBuf::from("progs.src"),
+        dialect: qc_project::Dialect::Fteqcc,
+        target: qc_project::Target::Quake,
+        output: PathBuf::from("progs.dat"),
+        defines: Vec::new(),
+        include_dirs: vec![PathBuf::from("lib")],
+        graph,
+    };
+    let input = ModuleInput::from_module(&module);
+    assert_eq!(input.include_dirs, [PathBuf::from("lib")]);
+    assert_eq!(input.compiled, [FileId(0)]);
 }
 
 // spec FTEF-12.18: the `#pragma autoproto` setting the graph read from a list-form

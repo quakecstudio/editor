@@ -22,7 +22,7 @@ check: ## Type-check every target
 	$(CARGO) check --locked --workspace --all-targets --all-features
 
 test: ## Run every test
-	$(CARGO) test --locked --workspace --all-features
+	$(CARGO) nextest run --locked --workspace --all-features
 
 test-integration: ## Run the cross-crate integration tests (qs-tests)
 	$(CARGO) test --locked --package qs-tests
@@ -34,7 +34,7 @@ test-coverage: ## Measure test coverage (needs cargo-llvm-cov)
 	$(CARGO) llvm-cov --locked --workspace --all-features
 
 test-mutants: ## Run mutation testing (needs cargo-mutants)
-	$(CARGO) mutants --workspace --profile mutants --minimum-test-timeout 10
+	$(CARGO) mutants --workspace --profile mutants --test-tool nextest --minimum-test-timeout 10
 
 audit: ## Check dependencies (cargo-deny), SPDX and ported-file headers, and asset attribution
 	$(CARGO) deny --locked --all-features check advisories bans licenses sources

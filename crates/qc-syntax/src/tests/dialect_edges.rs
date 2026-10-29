@@ -161,13 +161,10 @@ fn tagged_struct_variables_and_struct_declarations() {
         top_kinds("struct tag { float a; }; float b;\n"),
         [SyntaxKind::StructDecl, SyntaxKind::Declaration]
     );
-    // A struct with no `;` after it is reported, and the next declaration still read.
+    // A struct with no `;` after it takes the next word for a variable's name, as
+    // `QCC_PR_ParseDefs` does, so `.float` is no name (FTEF-6.7).
     let source = "struct tag { float a; }\n.float b;\n";
-    assert_eq!(fte_codes(source), [Code::E0204]);
-    assert_eq!(
-        top_kinds(source),
-        [SyntaxKind::StructDecl, SyntaxKind::Declaration]
-    );
+    assert_eq!(fte_codes(source), [Code::E0201]);
 }
 
 // spec FTEF-7.1: `typedef struct { ... } Name;` and `typedef struct tag { ... } Name;` define
@@ -182,26 +179,35 @@ fn typedef_struct_forms() {
     ] {
         let typedef = first_node(source, SyntaxKind::TypedefDecl);
         let direct: Vec<SyntaxKind> = typedef.children().map(|n| n.kind()).collect();
-        assert_eq!(direct, [SyntaxKind::StructType], "{source}");
+        assert_eq!(
+            direct,
+            [SyntaxKind::StructType, SyntaxKind::Declarator],
+            "{source}"
+        );
         assert_eq!(fte_codes(source), [], "{source}");
         let decl = ast::TypedefDecl::cast(typedef).unwrap();
-        assert_eq!(text(decl.name()), "T", "{source}");
+        assert_eq!(
+            text(decl.declarators().next().unwrap().name()),
+            "T",
+            "{source}"
+        );
     }
     for source in ["typedef struct tag T;\n", "typedef union tag T;\n"] {
         let typedef = first_node(source, SyntaxKind::TypedefDecl);
         let direct: Vec<SyntaxKind> = typedef.children().map(|n| n.kind()).collect();
-        assert_eq!(direct, [SyntaxKind::SimpleType], "{source}");
+        assert_eq!(
+            direct,
+            [SyntaxKind::SimpleType, SyntaxKind::Declarator],
+            "{source}"
+        );
         assert_eq!(fte_codes(source), [], "{source}");
     }
     // `typedef struct { ... } *P;` names a pointer to it.
     let source = "typedef struct { float a; } *P;\n";
     assert_eq!(fte_codes(source), []);
-    let typedef = first_node(source, SyntaxKind::TypedefDecl);
-    let stars = token_kinds(&typedef)
-        .into_iter()
-        .filter(|k| *k == SyntaxKind::Star)
-        .count();
-    assert_eq!(stars, 1);
+    let typedef = ast::TypedefDecl::cast(first_node(source, SyntaxKind::TypedefDecl)).unwrap();
+    let declarator = typedef.declarators().next().unwrap();
+    assert_eq!(declarator.pointer_depth(), 1);
     // `typedef enum { ... } Name;` defines the enum there.
     for source in [
         "typedef enum { A, B } E;\n",
@@ -209,7 +215,11 @@ fn typedef_struct_forms() {
     ] {
         let typedef = first_node(source, SyntaxKind::TypedefDecl);
         let direct: Vec<SyntaxKind> = typedef.children().map(|n| n.kind()).collect();
-        assert_eq!(direct, [SyntaxKind::EnumDecl], "{source}");
+        assert_eq!(
+            direct,
+            [SyntaxKind::EnumDecl, SyntaxKind::Declarator],
+            "{source}"
+        );
         assert_eq!(fte_codes(source), [], "{source}");
     }
     // An array typedef, `typedef float V[3];`.
@@ -217,16 +227,20 @@ fn typedef_struct_forms() {
     assert_eq!(fte_codes(source), []);
     assert!(
         first_node(source, SyntaxKind::TypedefDecl)
-            .children()
+            .descendants()
             .any(|n| n.kind() == SyntaxKind::ArraySuffix)
     );
 }
 
-// spec FTE-15.1: an enum's last enumerator may have a `,` after it, and an enum may have none
+// spec FTE-15.1: an enum's last enumerator may have a `,` after it
+// spec FTEF-19.37: an enum has at least one enumerator, `QCC_PR_ParseEnum` reading a name
+// before it looks for the `}`
 #[test]
 fn enum_trailing_comma_and_empty_enum() {
     assert_eq!(fte_codes("enum { A, B, };\n"), []);
-    assert_eq!(fte_codes("enum { };\n"), []);
+    assert_eq!(fte_codes("enum { };\n"), [Code::E0201]);
+    assert_eq!(fte_codes("enum { , };\n"), [Code::E0201]);
+    assert_eq!(fte_codes("enum { A,, B };\n"), [Code::E0201]);
     let decl = ast::EnumDecl::cast(first_node("enum { A, B, };\n", SyntaxKind::EnumDecl)).unwrap();
     assert_eq!(decl.enumerators().count(), 2);
 }
@@ -298,12 +312,18 @@ fn for_clauses_and_the_useful_flag() {
     assert_eq!(pointless("for (; a, a < 1; ) c = 1;"), ["a"]);
 }
 
-// spec FTEF-16.9: the first clause of a `for` may declare locals with `local`, a type word or a
-// C type word
+// spec FTEF-16.14: `local` starts no declaration in a `for` header: it is a name there
+#[test]
+fn local_is_no_for_clause_declaration() {
+    let body = "for (local float i = 0; i < 3; i++) c = 1;";
+    assert!(body_codes(body).contains(&Code::E0204), "{body}");
+}
+
+// spec FTEF-16.9: the first clause of a `for` may declare locals with a type word or a C type
+// word
 #[test]
 fn for_clause_declarations() {
     for body in [
-        "for (local float i = 0; i < 3; i++) c = 1;",
         "for (float i = 0; i < 3; i++) c = 1;",
         "for (int i = 0; i < 3; i++) c = 1;",
     ] {
@@ -341,13 +361,13 @@ fn global_scope_needs_a_name() {
     assert!(body_codes("a = ::1;").contains(&Code::E0201));
 }
 
-// spec FTEF-4.4: `*e` dereferences, and is assigned to; `&e` takes an address, which is not
-// spec QC-27.10: an assignment's left side must be assignable
+// spec FTEF-4.4: `*e` dereferences, and is assigned to
+// spec FTEF-16.13: any left side of an assignment parses; the checker warns of it
 #[test]
 fn dereference_is_assignable() {
     assert_eq!(body_codes("*e = 1;"), []);
-    assert_eq!(body_codes("&e = 1;"), [Code::E0508]);
-    assert_eq!(body_codes("~a = 1;"), [Code::E0508]);
+    assert_eq!(body_codes("&e = 1;"), []);
+    assert_eq!(body_codes("~a = 1;"), []);
 }
 
 // spec FTEF-16.11: `.member = value` in a brace initialiser names a member; any other word
@@ -356,7 +376,7 @@ fn dereference_is_assignable() {
 fn designated_initialisers() {
     assert_eq!(fte_codes("vector v = { .x = 1, .y = 2 };\n"), []);
     assert!(fte_codes("vector v = { a b = 1 };\n").contains(&Code::E0204));
-    assert!(fte_codes("vector v = { ~a = 1 };\n").contains(&Code::E0508));
+    assert!(!fte_codes("vector v = { ~a = 1 };\n").contains(&Code::E0508));
 }
 
 // spec FTEF-9.1: a class with a body has one, a forward declaration has none
@@ -529,8 +549,15 @@ fn class_member_kinds() {
             .collect()
     };
     assert_eq!(
-        members("public:\nprivate:\nprotected:\nvirtual:\nnonvirtual:"),
-        [SyntaxKind::AccessLabel; 5]
+        members("public:\nprivate:\nprotected: :\nvirtual:\nnonvirtual:\nfloat a;"),
+        [
+            SyntaxKind::AccessLabel,
+            SyntaxKind::AccessLabel,
+            SyntaxKind::AccessLabel,
+            SyntaxKind::AccessLabel,
+            SyntaxKind::AccessLabel,
+            SyntaxKind::Declaration,
+        ]
     );
     assert_eq!(
         members("virtual void Think(void);\nfloat public;\nfloat get;"),

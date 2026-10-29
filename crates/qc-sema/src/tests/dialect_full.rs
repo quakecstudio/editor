@@ -87,9 +87,9 @@ class Thing : Base
 \tvirtual void Spawned(void);
 \tstatic Thing Make(void);
 };
-void Base::Spawned(void) { m_flBase = 1; };
+void Base::Spawned(void) { this.m_flBase = 1; };
 void Base::Helper(void) { };
-void Thing::Thing(void) { m_flTime = time; m_flBase = 2; };
+void Thing::Thing(void) { this.m_flTime = time; this.m_flBase = 2; };
 void Thing::Spawned(void) { super::Spawned(); Helper(); think = Base::Helper; };
 Thing Thing::Make(void) { Thing t = spawn(Thing); t.m_flTime = 3; t.health = 1; return t; };
 void() user = { Thing t = Thing::Make(); t.Spawned(); ((Thing)self).m_flTime = 4; };
@@ -97,7 +97,8 @@ void() user = { Thing t = Thing::Make(); t.Spawned(); ((Thing)self).m_flTime = 4
 
 // spec FTEF-9.1: a class and its parent; members of the parent are members of the child.
 // spec FTEF-17.1: a class's name is a type and a value, `spawn(Thing)`.
-// spec FTEF-17.2: members resolve through the class and its parents, before the globals.
+// spec FTEF-17.14: members resolve through the class and its parents, a member function by its
+// bare name, a field as `this.field`.
 #[test]
 fn class_members_resolve() {
     let index = fte_index_of(CLASSES);
@@ -149,14 +150,22 @@ fn member_access_follows_the_base_type() {
     assert!(targets(&index, CLASSES, "health").contains(&health));
 }
 
-// spec FTEF-17.3: an unknown member is reported; a vector member, `.length` and a struct field
-// are no definitions, and a member of a class not known from the base resolves by name.
+// spec FTEF-17.3: a member of a class not known from the base resolves by name, for navigation
+// spec FTEF-24.6: an entity's member no definition has, or a class's member on a plain entity,
+// is "Unknown field" (the pinned FTEQCC, 2026-10-27: both lines of this program)
+// spec QCD-4.25: E0319 "Unknown field \"NAME\" in class \"CLASS\""
 #[test]
 fn unknown_members_are_reported() {
     let index = fte_index_of(
         "class A { float m_a; };\nentity e;\nvoid() f = { e.m_a = 1; e.nothing = 2; };\n",
     );
-    assert_eq!(messages(&index), ["Unknown value \"nothing\""]);
+    assert_eq!(
+        messages(&index),
+        [
+            "Unknown field \"m_a\" in class \"entity\"",
+            "Unknown field \"nothing\" in class \"entity\""
+        ]
+    );
     let m_a = defs_named(&index, "m_a")[0];
     assert_eq!(index.refs.iter().filter(|r| r.def == m_a).count(), 1);
 }
@@ -207,7 +216,8 @@ fn type_names_may_be_declared_again() {
 #[test]
 fn intrinsics_resolve() {
     let index = fte_index_of(
-        "float() f = { local float n = sizeof(int) + autocvar(cl_speed, 3) + randomv(); \
+        "float() f = { local float n = sizeof(int) + autocvar(cl_speed, 3); \
+         local vector v = randomv(); \
          _(\"text\"); return 0; };\n\
          class C { float() m; };\nfloat() C::m = { return this ? 0 : 1; };\n",
     );
@@ -249,7 +259,7 @@ fn equal_initialisers_are_accepted() {
     );
     assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
     let different = fte_index_of("void() b = #12;\nvoid() b = #13;\n");
-    assert_eq!(errors(&different), [Code::E0206]);
+    assert_eq!(errors(&different), [Code::E0363]);
 }
 
 // spec FTEF-17.10: a builtin's number is the `binum` FTEQCC binds (FTE-17.6): `#16777217i` is
@@ -257,7 +267,7 @@ fn equal_initialisers_are_accepted() {
 #[test]
 fn builtins_compare_by_the_number_fteqcc_binds() {
     let int = fte_index_of("void() b = #16777217i;\nvoid() b = #16777216;\n");
-    assert_eq!(errors(&int), [Code::E0206]);
+    assert_eq!(errors(&int), [Code::E0363]);
     let wrapped = fte_index_of("void() b = #4294967313i;\nvoid() b = #17;\n");
     assert_eq!(
         errors(&wrapped),
@@ -279,10 +289,10 @@ fn other_initialisers_compare_token_for_token() {
         messages(&spaced)
     );
     let other = fte_index_of("const float a = 1 + 2;\nconst float a = 1 + 3;\n");
-    assert_eq!(errors(&other), [Code::E0206]);
+    assert_eq!(errors(&other), [Code::E0363]);
 }
 
-// spec FTEF-17.13: a redeclaration whose type involves a type name or an unknown type is no
+// spec FTEF-17.21: a redeclaration whose type involves a type name or an unknown type is no
 // mismatch; one between two simple types still is, and so is a pointer against a non-pointer.
 // spec FTEF-11.2: `__variant` mixes with a concrete type without a type error.
 #[test]
@@ -299,15 +309,27 @@ fn opaque_types_are_compatible() {
 }
 
 // spec FTEF-17.11: a function with no body is an error whether or not it is referred to,
-// unless it is marked `noref` and not referred to; a member function is not checked.
+// unless it is marked `noref` and not referred to; a member function a class declares and no
+// `Class::member` defines has none either (FTEF-19.41).
 #[test]
 fn undefined_functions_are_reported_unless_noref_and_unused() {
     let unused = fte_index_of("void() never;\n");
     assert_eq!(errors(&unused), [Code::E0211]);
+    assert_eq!(
+        unused
+            .diagnostics
+            .first()
+            .map(|d| d.diagnostic.message.as_str()),
+        Some("function never has no body")
+    );
     let used = fte_index_of("void() needed;\nvoid() f = { needed(); };\n");
     assert_eq!(errors(&used), [Code::E0211]);
-    let noref = fte_index_of("noref void() never;\nclass A { nonvirtual void M(void); };\n");
+    let noref = fte_index_of("noref void() never;\n");
     assert_eq!(errors(&noref), Vec::<Code>::new());
+    let member = fte_index_of("class A { nonvirtual void M(void); };\n");
+    assert_eq!(errors(&member), [Code::E0211]);
+    let defined = fte_index_of("class A { nonvirtual void M(void); };\nvoid A::M(void) {};\n");
+    assert_eq!(errors(&defined), Vec::<Code>::new());
     let noref_used = fte_index_of("noref void() needed;\nvoid() f = { needed(); };\n");
     assert_eq!(errors(&noref_used), [Code::E0211]);
 }
@@ -327,11 +349,11 @@ fn redefinable_external_and_variable_functions() {
     let v = defs_named(&index, "v")[0];
     assert_eq!(index.defs[v.0].kind, DefKind::Global);
     let twice = fte_index_of("void() a = { };\nvoid() a = { };\n");
-    assert_eq!(errors(&twice), [Code::E0216, Code::E0206]);
-    // FTEF-19.4: a body after a wrap is one more body for the function.
+    assert_eq!(errors(&twice), [Code::E0216, Code::E0363]);
+    // FTEF-19.57: a body after a wrap is one more body for the function.
     let after_wrap =
         fte_index_of("void() a = { };\n__wrap void() a = { prior(); };\nvoid() a = { };\n");
-    assert_eq!(errors(&after_wrap), [Code::E0216, Code::E0206]);
+    assert_eq!(errors(&after_wrap), [Code::E0216, Code::E0363]);
 }
 
 // spec FTEF-10.2: an accessor's members are no globals, and their bodies see `this`, `value`
@@ -342,7 +364,7 @@ fn accessor_members_resolve() {
         "float(float b, float i) bufstr_get = #0;\n\
          accessor strbuf : float { inline get float at[float idx] = { return bufstr_get(this, idx); }; \
          set float at[float idx] = { bufstr_get(this, value); }; };\n\
-         strbuf b;\nvoid() f = { local float n = b.at; };\n",
+         strbuf b;\nvoid() f = { local float n = b.at[1]; };\n",
     );
     assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
 }
@@ -371,7 +393,7 @@ fn noref_allows_reinitialisation() {
     };
     let analysis = db.analyze_module(&input);
     let codes: Vec<_> = analysis.diagnostics().map(|d| d.diagnostic.code).collect();
-    assert_eq!(codes, [Code::E0206], "only the plain builtin is redeclared");
+    assert_eq!(codes, [Code::E0363], "only the plain builtin is redeclared");
     let noref = fte_index_of("noref float x = 1;\nfloat x = 2;\n");
     assert_eq!(errors(&noref), Vec::<Code>::new());
 }
@@ -400,6 +422,17 @@ fn a_typedef_enum_declares_its_names() {
     assert_eq!(green.len(), 1);
     assert_eq!(index.refs.iter().filter(|r| r.def == green[0]).count(), 1);
     assert_eq!(defs_named(&index, "color_t").len(), 1);
+}
+
+// spec FTEF-8.2: an enum written in the struct type a declaration names declares its names once.
+#[test]
+fn an_enum_in_a_declarations_struct_declares_its_names_once() {
+    let index = fte_index_of("struct { enum { A, B } e; } s;\nfloat x = B;\n");
+    assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
+    assert_eq!(defs_named(&index, "B").len(), 1);
+    let index = fte_index_of("class C { enum { CA, CB } m; };\nfloat y = CB;\n");
+    assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
+    assert_eq!(defs_named(&index, "CB").len(), 1);
 }
 
 // spec FTEF-8.2: an enum written as a parameter's type declares its names.

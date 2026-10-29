@@ -81,10 +81,7 @@ fn lax_makes_refused_casts_warnings() {
         codes(&format!("{lax}float(float a = \"a\") g = #2;\n")),
         [Code::W0229]
     );
-    assert_eq!(
-        codes("float(float a = \"a\") g = #2;\n"),
-        [Code::E0213, Code::E0211]
-    );
+    assert_eq!(codes("float(float a = \"a\") g = #2;\n"), [Code::E0213]);
     assert_eq!(
         diags(&format!(
             "{lax}enum class E : float {{ A }};\nfloat x = E::A;\n"
@@ -239,7 +236,7 @@ fn lax_conversions_and_mismatches() {
         codes(&format!(
             "{lax}enum {{ A = \"a\", B }};\nfloat x = B;\nfloat x = 2;\n"
         )),
-        [Code::W0230, Code::E0206]
+        [Code::W0230, Code::E0363]
     );
     assert_eq!(
         codes(&format!(
@@ -426,7 +423,7 @@ fn casts_compare_types_through_typedefs_and_pointers() {
         diags("void() g = { void(float x) a; void(vector x) b = a; };\n"),
         one(
             Code::W0220,
-            "Implicit cast from void(float) to void(vector)"
+            "Implicit cast from void(float x) to void(vector x)"
         )
     );
     assert_eq!(
@@ -457,4 +454,425 @@ fn state_headers_and_typedef_enum_values() {
         codes("typedef string str;\nconst str s = \"a\";\nenum { A = s };\n"),
         [Code::E0227]
     );
+}
+
+// spec FTEF-24.7: a function type prints its parameters' marks, names and defaults
+// spec FTEF-24.14: a default prints as QCC_VarAtOffset prints a constant of its type
+#[test]
+fn function_types_print_their_parameters() {
+    for (ty, shown) in [
+        ("void(float x, string y)", "void(float x, string y)"),
+        ("void(float x, ...)", "void(float x, ...)"),
+        (
+            "void(float x, optional float y = 2)",
+            "void(float x, optional float y = 2f)",
+        ),
+        (
+            "void(float x = 0.5, vector v = '1 2 3', string s = \"a\")",
+            "void(float x = 0.5f, vector v = '1 2 3', string s = \"a\")",
+        ),
+        ("void(__inout float x)", "void(inout float x)"),
+        ("void(int x = 3)", "void(__int32 x = 0x3i)"),
+        ("void(__uint32 x = 5)", "void(__uint32 x = 0x5u)"),
+        ("void(__uint32 x = 0)", "void(__uint32 x = 0u)"),
+        (
+            "void(__int64 x = -1)",
+            "void(__int64 x = 0xffffffffffffffffill)",
+        ),
+        ("void(__uint64 x = 7)", "void(__uint64 x = 0x7ull)"),
+        ("void(__double x = 2.5)", "void(__double x = 2.5d)"),
+        ("void(vector x = [1, 2, 3])", "void(vector x = '1 2 3')"),
+        ("void(int x = 0x10)", "void(__int32 x = 0x10i)"),
+    ] {
+        assert_eq!(
+            diags(&format!(
+                "{ty} h = {{}}; float b; void() g = {{ b = h; }};\n"
+            )),
+            [(Code::E0213, format!("Cannot cast from {shown} to float"))],
+            "{ty}"
+        );
+    }
+}
+
+// spec FTEF-19.50: a field of a struct, union or class type casts only to a field of its own type
+// or of a variant
+// spec FTEF-24.12: a named union prints as a struct, one with no tag `<union>`, and a field of a
+// struct its own name
+#[test]
+fn fields_of_aggregates_and_their_names() {
+    let messages = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nstruct S {{ float x; }}; union U {{ float a; }}; \
+             typedef union {{ float a; }} V; class Player {{ float hp; }}; \
+             class Other : Player {{ float y; }};\n.S fs, fs2; .U fu; .Player fc; .Other fo; \
+             .__variant fv; .float fa; S s; U u; V v;\nvoid() g = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .filter(|(code, _)| *code == Code::E0213)
+        .map(|(_, message)| message)
+        .collect()
+    };
+    for quiet in ["fs = fs2;", "fs = fv;", "fv = fs;"] {
+        assert_eq!(messages(quiet), Vec::<String>::new(), "{quiet}");
+    }
+    for (statement, message) in [
+        ("fs = fu;", "Cannot cast from .U to .S"),
+        ("fs = fa;", "Cannot cast from .float to .S"),
+        ("fa = fs;", "Cannot cast from .S to .float"),
+        ("fc = fo;", "Cannot cast from class Other to class Player"),
+        ("fc = fa;", "Cannot cast from .float to class Player"),
+        ("s = u;", "Cannot cast from struct U to struct S"),
+        ("s = v;", "Cannot cast from union <union> to struct S"),
+    ] {
+        assert_eq!(messages(statement), [message], "{statement}");
+    }
+}
+
+// spec FTEF-29.11: a global initialised with a constant whose word is 0 takes it as a null
+#[test]
+fn a_named_null_initialises_any_global() {
+    let messages = |source: &str| -> Vec<String> {
+        diags(&format!("#pragma target fte\n{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    for source in [
+        "enum { H }; string s = H;",
+        "const float z = 0; string s2 = z;",
+        "const int zi = 0; string s3 = zi;",
+    ] {
+        assert_eq!(messages(source), Vec::<String>::new(), "{source}");
+    }
+    assert_eq!(
+        messages("enum { H, K }; string s = K;"),
+        ["Cannot cast from float to string"]
+    );
+    assert_eq!(
+        messages("struct S { float a; }; const float z = 0; S st = z;"),
+        ["Cannot cast from float to struct S"]
+    );
+    assert_eq!(
+        messages("enum class E5 : float { M }; string s = E5::M;"),
+        ["Cannot cast from enum E5:float to string"]
+    );
+}
+
+// spec FTEF-15.10: a parameter's written struct, union or enum is its type
+#[test]
+fn a_parameter_writes_its_type() {
+    let messages = |source: &str| -> Vec<String> {
+        diags(&format!("#pragma target fte\n{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    assert_eq!(
+        messages("void(union { float a; vector v; } u) f = {}; float x; void() g = { x = f; };"),
+        ["Cannot cast from void(union <union> u) to float"]
+    );
+    assert_eq!(
+        messages("void(enum { EA } e) f = { local string s = e; };"),
+        ["Cannot cast from float to string"]
+    );
+    assert_eq!(
+        messages("void(struct S1 { float a; } s) f = { s.a = \"x\"; };"),
+        ["Cannot cast from string to float"]
+    );
+}
+
+// spec FTEF-23.7: a comparison's value is a `__bfloat`, `_Bool` an `int`
+// spec FTEF-19.55: a float or an integer cast to a vector is multiplied by `'1 1 1'`
+// spec FTEF-26.11: a logical not of a constant folds before any emulation
+#[test]
+fn truth_values_and_vector_casts() {
+    let messages = |pragma: &str, statement: &str| -> Vec<String> {
+        diags(&format!(
+            "{pragma}\n_Bool b; string s; vector v; float f; int i; float arr[1]; float x; \
+             entity world;\nvoid() g = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let fte = "#pragma target fte";
+    assert_eq!(
+        messages(fte, "s = (f == 1);"),
+        ["Cannot cast from __bfloat to string"]
+    );
+    assert_eq!(
+        messages(fte, "s = b;"),
+        ["Implicit cast from __int32 to string"]
+    );
+    assert_eq!(
+        messages("", "v = i;"),
+        [
+            "Implicit cast from __int32 to vector",
+            "itof emulation: denormals are unsafe i"
+        ]
+    );
+    assert_eq!(
+        messages("", "local vector lv = i;"),
+        [
+            "Implicit cast from __int32 to vector",
+            "itof emulation: denormals are unsafe i"
+        ]
+    );
+    assert_eq!(messages("", "if (!1i) f = 1;"), Vec::<String>::new());
+    for (statement, index) in [
+        ("x = arr[(!0i) + 3i];", 4),
+        ("x = arr[(!'0 1 0') + 3];", 3),
+        ("x = arr[(!0.0) + 3];", 4),
+    ] {
+        let found = messages(fte, statement);
+        let bounds = format!("(constant) array index out of bounds (0 <= {index} < 1)");
+        assert!(found.contains(&bounds), "{statement}: {found:?}");
+    }
+}
+
+// spec FTEF-11.4: a `__variant` target differs from a pointer or function target
+#[test]
+fn variant_pointers_against_pointer_targets() {
+    let messages = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "float **p; __variant *q; __variant **t; void() *r; string *s;\n\
+             void() g = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    assert_eq!(
+        messages("q = p;"),
+        ["Implicit cast from float** to __variant*"]
+    );
+    assert_eq!(
+        messages("q = r;"),
+        ["Implicit cast from void()* to __variant*"]
+    );
+    assert_eq!(
+        messages("p = q;"),
+        ["Implicit cast from __variant* to float**"]
+    );
+    assert!(messages("t = p;").is_empty());
+    assert!(messages("q = s;").is_empty());
+}
+
+// spec FTEF-8.6: a named enum's type casts as its base and prints by its name
+#[test]
+fn named_enum_types_cast_as_their_base() {
+    let messages = |source: &str| -> Vec<String> {
+        diags(&format!("#pragma target fte\n{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    assert_eq!(
+        messages("enum EN { A }; EN e; string s = e;"),
+        ["Cannot cast from EN to string"]
+    );
+    assert_eq!(
+        messages("enum EN : int { A }; EN e; void() f = { local string s = e; };"),
+        ["Implicit cast from EN to string"]
+    );
+    assert_eq!(
+        messages("enum EN { A }; EN e; void() f = { local entity s = e; };"),
+        ["Cannot cast from EN to entity"]
+    );
+    let standard: Vec<String> = diags("enum EN { A }; EN e; void() f = { local int i = e; };\n")
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect();
+    assert_eq!(standard, ["ftoi emulation: denormals are unsafe"]);
+    assert_eq!(
+        messages("enum EN : int { A }; enum EN { B }; EN e; void() f = { local string s = e; };"),
+        [
+            "legacy enum base type. Use \"enum [class] [name_e]:type\" instead",
+            "Implicit cast from EN to string"
+        ]
+    );
+    assert!(messages("enum EN { A }; string s = A; EN e = 1i;").is_empty());
+}
+
+// spec FTEF-23.8: booleans are one type, cast to by their logical truth
+#[test]
+fn casts_to_booleans_take_the_logical_truth() {
+    let messages = |source: &str| -> Vec<String> {
+        diags(&format!("{source}\n"))
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    let ftoi = "ftoi emulation: denormals are unsafe";
+    assert!(messages("__bint b; __bfloat b;").is_empty());
+    assert_eq!(
+        messages("_Bool b; int b;"),
+        ["Type mismatch on redeclaration of b. __int32, should be __bint"]
+    );
+    assert_eq!(
+        messages("int b; _Bool b;"),
+        ["Type mismatch on redeclaration of b. __bint, should be __int32"]
+    );
+    assert!(messages("void() g = { local __bint c = 1.5; };").is_empty());
+    assert_eq!(
+        messages("float f; void() g = { local _Bool c = f; };"),
+        [ftoi]
+    );
+    assert_eq!(
+        messages("string s; void() g = { local __bint c; c = s; };"),
+        [ftoi, ftoi]
+    );
+    assert_eq!(
+        messages("float f; void() g = { local _Bool c; c = (_Bool)f; };"),
+        [ftoi, ftoi, ftoi]
+    );
+    assert!(messages("float f; void() g = { local __bfloat c; c = f; };").is_empty());
+}
+
+// spec FTEF-22.8: pointers cast by their pointees and functions by `typecmp_lax`
+#[test]
+fn pointers_and_functions_cast_by_typecmp_lax() {
+    let messages = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nstruct S {{ float a; }};\nvoid() g = {{ local float *pf; local S *ps; \
+             local float **ppf; local void(float) f2; local void(float, ...) f4; local void(int) f3; \
+             {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    assert_eq!(
+        messages("pf = ps;"),
+        ["Implicit cast from struct S* to float*"]
+    );
+    assert_eq!(
+        messages("ps = ppf;"),
+        ["Implicit cast from float** to struct S*"]
+    );
+    assert!(messages("f2 = f4; f4 = f2;").is_empty());
+    assert_eq!(
+        messages("f2 = f3;"),
+        ["Implicit cast from void(__int32) to void(float)"]
+    );
+}
+
+// spec FTEF-23.10: a value made a boolean is always its truth, a boolean's too
+// spec FTEF-26.12: a function's definition is emitted and emulated as a variable is
+#[test]
+fn a_boolean_is_always_a_truth() {
+    let found = |statement: &str| -> usize {
+        diags(&format!(
+            "_Bool b; int i; void() fn = {{}}; entity e1; vector v; __int64 l; __uint64 ul; \
+             __double d; string s;\nvoid() g = {{ {statement} }};\n"
+        ))
+        .iter()
+        .filter(|(_, m)| m.as_str() == "ftoi emulation: denormals are unsafe")
+        .count()
+    };
+    assert_eq!(found("b = b;"), 2);
+    assert_eq!(found("b = i;"), 2);
+    assert_eq!(found("b = (_Bool)i;"), 3);
+    assert_eq!(found("b = (_Bool)fn;"), 3);
+    // Each basic type's comparison with zero, emulated or refused on the id target.
+    for three in [
+        "b = (_Bool)e1;",
+        "b = (_Bool)v;",
+        "b = (_Bool)l;",
+        "b = (_Bool)s;",
+    ] {
+        assert_eq!(found(three), 3, "{three}");
+    }
+    assert_eq!(found("b = (_Bool)ul;"), 2);
+    assert_eq!(found("b = (_Bool)d;"), 2);
+}
+
+// spec FTEF-23.11: under `lax` a `void` made a boolean warns "cast to boolean" and is `OP_NE_F`
+#[test]
+fn a_lax_void_made_a_boolean() {
+    let found: Vec<String> = diags(
+        "#pragma flag enable lax\n_Bool bb; void() vf = {};\nvoid() g = { bb = (_Bool)vf(); };\n",
+    )
+    .into_iter()
+    .map(|(_, m)| m)
+    .collect();
+    assert_eq!(found.first().map(String::as_str), Some("cast to boolean"));
+    assert_eq!(found.len(), 4, "{found:?}");
+}
+
+/// The cases of [`strict_enums_cast_to_nothing`], each with the pinned FTEQCC's messages.
+const STRICT_ENUMS_CAST_TO_NOTHING_CASES: &[(&str, &[&str])] = &[
+    (
+        "enum class E : float { A }; float f; void() g = { f = E::A; };\n",
+        &["Cannot cast from enum E:float to float"],
+    ),
+    (
+        "enum class E : float { A }; E e; void() g = { e = (E)1; };\n",
+        &["Cannot cast from float to enum E:float"],
+    ),
+    (
+        "enum class E : float { A }; E e; void() g = { e = 1; };\n",
+        &["Cannot cast from float to enum E:float"],
+    ),
+    (
+        "enum class E : float { A, B }; E e; void() g = { e = E::B; e = E::A; };\n",
+        &[],
+    ),
+    (
+        "enum class E : float { A }; float c; E e; float f; void() g = { f = c ? e : f; };\n",
+        &[
+            "Type mismatch on ternary operator: enum E:float vs float",
+            "Cannot cast from enum E:float to float",
+        ],
+    ),
+    (
+        "enum E : float { A }; float f; string s; void() g = { f = A; s = A; };\n",
+        &[],
+    ),
+    (
+        "enum class E : float { A }; float f; void() g = { f = (float)E::A; };\n",
+        &["Cannot cast from enum E:float to float"],
+    ),
+    (
+        "enum class E : float { A }; E e = (E)1;\n",
+        &["Cannot cast from float to enum E:float"],
+    ),
+    (
+        "enum class E : float { A }; E e = (E)\"a\";\n",
+        &["Cannot cast from string to enum E:float"],
+    ),
+    (
+        "enum class E : float { A }; E e; float f; void() g = { f = e; };\n",
+        &["Cannot cast from enum E:float to float"],
+    ),
+    (
+        "enum class E : float { A }; E e; float f = e;\n",
+        &["Cannot cast from enum E:float to float"],
+    ),
+    (
+        "enum class E : float { A }; void(float x) h = {}; E e; void() g = { h(e); };\n",
+        &["Cannot cast from enum E:float to float"],
+    ),
+    (
+        "enum class E : float { A }; E e; float f; void() g = { f = (float)e; };\n",
+        &["Cannot cast from enum E:float to float"],
+    ),
+    (
+        "#pragma flag enable lax\nenum class E : float { A }; E e; float f; void() g = { f = e; };\n",
+        &["Implicit lax cast from enum E:float to float"],
+    ),
+    (
+        "enum class E : float { A }; E e; float e;\n",
+        &["Type mismatch on redeclaration of e. float, should be enum E:float"],
+    ),
+];
+
+// spec FTEF-19.75: a strict enum casts to and from no other type, its null constant and a literal included
+#[test]
+fn strict_enums_cast_to_nothing() {
+    let cases = STRICT_ENUMS_CAST_TO_NOTHING_CASES;
+    for (source, expected) in cases {
+        let found: Vec<String> = diags(source).into_iter().map(|(_, m)| m).collect();
+        assert_eq!(found, *expected, "{source}");
+    }
 }

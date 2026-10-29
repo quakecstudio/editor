@@ -59,9 +59,14 @@ fn compound_assignment_operands_are_uses() {
         .iter()
         .map(|d| d.diagnostic.message.as_str())
         .collect();
+    // `missing` is then a `variant` (FTEF-19.69), which `|=` does not take.
     assert_eq!(
         messages,
-        ["Unknown value \"nope\"", "Unknown value \"missing\""]
+        [
+            "Unknown value \"nope\".",
+            "Unknown value \"missing\".",
+            "Type mismatch on assignment. __variant |= __variant is not supported"
+        ]
     );
     assert_eq!(index.refs.len(), 2);
 }
@@ -90,7 +95,7 @@ fn c_style_definitions_match_vanilla_prototypes() {
     assert_eq!(error_codes(&mismatch), [Code::E0205, Code::E0211]);
 }
 
-// spec FTE-17.2: a body written without `=` defines the function and binds its parameters.
+// spec FTE-17.7: a body written without `=` defines the function and binds its parameters.
 #[test]
 fn bodies_without_equals_define_functions() {
     let index = fte_index_of("float out;\nvoid set(float v) { out = v; }\nvoid() g { set(1); }\n");
@@ -162,9 +167,14 @@ fn prefix_and_cast_operands_are_uses() {
         .iter()
         .map(|d| d.diagnostic.message.as_str())
         .collect();
+    // `nope` is then a `variant` (FTEF-19.69), which `-` does not take.
     assert_eq!(
         messages,
-        ["Unknown value \"nope\"", "Unknown value \"gone\""]
+        [
+            "Unknown value \"nope\".",
+            "Unknown value \"gone\".",
+            "type mismatch for -"
+        ]
     );
 }
 
@@ -177,7 +187,7 @@ fn negative_number_subtraction_resolves_its_operand() {
         .iter()
         .map(|d| d.diagnostic.message.as_str())
         .collect();
-    assert_eq!(messages, ["Unknown value \"nope\""]);
+    assert_eq!(messages, ["Unknown value \"nope\"."]);
 }
 
 // spec FTE-21.1: a local declared without `local`, mid-body, resolves.
@@ -204,8 +214,7 @@ fn bare_and_function_locals_resolve() {
 #[test]
 fn locals_shadow_globals() {
     let source = "void() light = { };\n\
-                  void(vector org, float light) launch = { if (light) org_x = 0; };\n\
-                  .string target;\nvoid(entity target) use = { target.target = \"\"; };\n";
+                  void(vector org, float light) launch = { if (light) org_x = 0; };\n";
     let index = fte_index_of(source);
     assert_eq!(all_codes(&index), Vec::<Code>::new());
     let param = index
@@ -220,7 +229,7 @@ fn locals_shadow_globals() {
         .unwrap();
     assert_eq!(use_of_light.def.0, param);
     // Vanilla reuses the global, so another type is a type mismatch (QC-12.3).
-    assert_eq!(error_codes(&index_of(source)), [Code::E0205, Code::E0205]);
+    assert_eq!(error_codes(&index_of(source)), [Code::E0205]);
     // A second declaration in one function is still that definition, or a mismatch.
     let twice = fte_index_of("void() f = { local float x; local string x; };\n");
     assert_eq!(error_codes(&twice), [Code::E0205]);
@@ -228,8 +237,9 @@ fn locals_shadow_globals() {
     assert_eq!(error_codes(&same), Vec::<Code>::new());
 }
 
-// spec FTE-22.5: a constant initialised twice with the same literal is accepted; a different
-// literal is still "NAME redeclared".
+// spec FTE-22.6: a constant initialised twice with the same value is accepted; another
+// constant is "incompatible redeclaration", and a value that is no constant is not compared.
+// spec QCD-4.64: "incompatible redeclaration" is `E0363`.
 // spec FTEF-17.10: so is an initialiser written differently, and a body is never equal.
 #[test]
 fn equal_reinitialisation_is_accepted() {
@@ -240,20 +250,24 @@ fn equal_reinitialisation_is_accepted() {
     assert_eq!(all_codes(&index), Vec::<Code>::new());
     assert_eq!(
         error_codes(&fte_index_of("float A = 1;\nfloat A = 2;\n")),
-        [Code::E0206]
+        [Code::E0363]
     );
-    // FTEF-19.5: a constant's name gives its value.
+    // FTEF-19.58: a constant's name gives its value.
     assert_eq!(
         error_codes(&fte_index_of("float A = 1;\nfloat B = 1;\nfloat A = B;\n")),
         Vec::<Code>::new()
     );
     assert_eq!(
         error_codes(&fte_index_of("float A = 1;\nfloat B = 2;\nfloat A = B;\n")),
-        [Code::E0206]
+        [Code::E0363]
+    );
+    assert_eq!(
+        error_codes(&fte_index_of("float x;\nfloat A = 1;\nfloat A = x;\n")),
+        [Code::E0214]
     );
     assert_eq!(
         error_codes(&fte_index_of("void() f = { };\nvoid() f = { };\n")),
-        [Code::E0216, Code::E0206]
+        [Code::E0216, Code::E0363]
     );
     assert_eq!(
         error_codes(&index_of("float A = 1;\nfloat A = 1;")),
@@ -305,9 +319,13 @@ fn type_names_are_definitions() {
     // A local of a type the model does not know is never a type mismatch, and a local named
     // like the type shadows it (FTE-22.1).
     assert_eq!(all_codes(&index), Vec::<Code>::new());
-    // FTEF-19.20: a name no type has is "not a type", and the local is not made.
+    // spec FTEF-19.74: a statement `T x;` of a name no type has is the expression `T`, an unknown
+    // value, then `x` where the `;` belongs; the local is not made.
     let unknown = fte_index_of("void() f = { poseInfo p; float p; };\n");
-    assert_eq!(all_codes(&unknown), [Code::E0203]);
+    assert_eq!(
+        all_codes(&unknown),
+        [Code::E0301, Code::W0205, Code::W0313, Code::E0204]
+    );
 }
 
 // spec FTE-21.1: the names a local's initialiser uses are resolved, a value or an aggregate.
@@ -323,7 +341,7 @@ fn local_initialisers_are_uses() {
         .collect();
     assert_eq!(
         messages,
-        ["Unknown value \"nope\"", "Unknown value \"gone\""]
+        ["Unknown value \"nope\".", "Unknown value \"gone\"."]
     );
 }
 
@@ -357,4 +375,30 @@ fn shadowing_vectors_have_components() {
         .find(|r| index.defs[r.def.0].name == "org_x")
         .unwrap();
     assert_eq!(index.defs[used.def.0].kind, DefKind::Param);
+}
+
+// spec FTEF-24.1: the selector is looked up as a value, so a local of its name hides the field:
+// `target.target` with a parameter `entity target` is "target is not a field" (the pinned
+// FTEQCC, 2026-10-27)
+#[test]
+fn a_local_hides_a_field_of_its_name_after_a_dot() {
+    let index =
+        fte_index_of(".string target;\nvoid(entity target) use = { target.target = \"\"; };\n");
+    assert_eq!(all_codes(&index), [Code::E0318]);
+}
+
+// spec FTEF-19.45: FTEQCC reports an unknown name "Unknown value \"NAME\"." with a full stop, a
+// scoped one with none; vanilla's has none
+#[test]
+fn unknown_values_end_with_a_full_stop_under_fteqcc() {
+    let messages = |index: &ModuleIndex| -> Vec<String> {
+        index
+            .diagnostics
+            .iter()
+            .map(|d| d.diagnostic.message.clone())
+            .collect()
+    };
+    let source = "float a;\nvoid() f = { a = nope; };\n";
+    assert_eq!(messages(&fte_index_of(source)), ["Unknown value \"nope\"."]);
+    assert_eq!(messages(&index_of(source)), ["Unknown value \"nope\""]);
 }

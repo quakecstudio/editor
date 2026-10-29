@@ -591,7 +591,8 @@ const MUTANT_DATA_LIMIT: u64 = 3 * 1024 * 1024 * 1024;
 /// as an argument. This applies to cargo run, cargo test and cargo bench
 /// commands" (`target.<triple>.runner`; both at
 /// <https://doc.rust-lang.org/cargo/reference/config.html>). cargo mutants runs
-/// each mutant's tests with `cargo test`, so every test binary gets the runner.
+/// each mutant's tests with nextest, which runs every test binary through the
+/// target's runner too.
 pub(crate) fn mutant_runner(host: &str) -> Option<(String, String)> {
     if !host.contains("-linux-") {
         return None;
@@ -637,11 +638,16 @@ fn mutation(
     let jobs = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     // Incremental builds: each mutant rebuilds one crate, and CI's rust-cache
     // sets CARGO_INCREMENTAL=0, which would make every rebuild a full one.
+    // Each mutant's tests by nextest, which stops at the first test that fails
+    // (https://mutants.rs/nextest.html), where `cargo test` runs every test of
+    // the failing binary first.
     command.env("CARGO_INCREMENTAL", "1").args([
         "mutants",
         "--all-features",
         "--no-shuffle",
         "--copy-vcs=true",
+        "--test-tool",
+        "nextest",
     ]);
     // A member builds with the workspace's `mutants` profile (Cargo.toml),
     // which a standalone crate, its own workspace, does not have. The test

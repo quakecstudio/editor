@@ -29,8 +29,11 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::fs;
+use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::thread;
 use std::time::Duration;
 
 use qc_preproc::CommandLine;
@@ -46,10 +49,12 @@ mod casts;
 mod declarations;
 mod defs;
 mod directives;
+mod expressions;
 mod flags;
 mod keywords;
 mod lexical;
 mod passes;
+mod types;
 
 /// The recorded outcomes of the oracles, relative to the repository.
 pub(crate) const FIXTURE: &str = "xtask/fixtures/oracles/builtin-outcomes.json";
@@ -231,7 +236,7 @@ impl Case {
     }
 
     /// The case's key in [`FIXTURE`].
-    fn key(&self) -> String {
+    pub(crate) fn key(&self) -> String {
         let mut key = format!("{}|", dialect_name(self.dialect));
         if let Some(project) = &self.project {
             key.push_str(&project.compiled);
@@ -1216,6 +1221,8 @@ pub(crate) fn cases() -> Vec<Case> {
     cases.extend(caseinsens::cases());
     cases.extend(casts::cases());
     cases.extend(defs::cases());
+    cases.extend(types::cases());
+    cases.extend(expressions::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));
@@ -1509,6 +1516,16 @@ pub(crate) fn expected_difference(
         if *oracle == Outcome::Hangs && HANGING.iter().any(|value| case.source.contains(value)) {
             return Some("FTEF-13.8");
         }
+        // FTEF-20.15: a body's enum is declared at file level here, so its names are seen
+        // after the body, where FTEQCC's are the function's.
+        if *oracle == Outcome::Rejected
+            && *ours != Outcome::Rejected
+            && case
+                .texts()
+                .any(|t| t.contains("= { enum") || t.contains("= { typedef enum"))
+        {
+            return Some("FTEF-20.15");
+        }
         // FTEF-14.47: an `#eof` that is not a file's first line ends the text here, where the
         // pinned FTEQCC crashes, reading on from the end it made; and `#merge` and `#datafile`
         // open no file here, where FTEQCC refuses a missing one.
@@ -1646,10 +1663,10 @@ fn graph_input(db: &mut Db, case: &Case) -> ModuleInput {
 ///
 /// id's qcc stops at the first error, and finds a redeclaration at its `=`, before the
 /// initialiser (`PR_ParseDefs`); FTEQCC reports one only once it has read the initialiser
-/// (FTE-23.7), so any other error comes first.
+/// (FTE-23.17), so any other error comes first.
 fn refusal(case: &Case, errors: &[Code]) -> Outcome {
     let redeclared = if case.dialect.has_fteqcc_extensions() {
-        errors.iter().all(|code| *code == Code::E0206)
+        errors.iter().all(|code| *code == Code::E0363)
     } else {
         errors.first() == Some(&Code::E0206)
     };
@@ -1661,7 +1678,7 @@ fn refusal(case: &Case, errors: &[Code]) -> Outcome {
 }
 
 /// The builtin number and engine name the profile binds the first function of `case` to:
-/// under FTEQCC the builtin function qc-sema lowers its initialiser to (FTE-23.7), from the
+/// under FTEQCC the builtin function qc-sema lowers its initialiser to (FTE-23.17), from the
 /// file's expansion (FTE-23.10, QC-9.16); under the vanilla dialect the number
 /// `builtin_binum` gives and the definition's name (QC-13.10).
 fn binding(db: &mut Db, case: &Case) -> Option<Outcome> {
@@ -1892,22 +1909,98 @@ pub(crate) fn read_fixture(root: &Path) -> Result<BTreeMap<String, Outcome>, Str
         .collect()
 }
 
+/// How many threads the cases run on: one per core of the host.
+fn threads() -> NonZero<usize> {
+    thread::available_parallelism().unwrap_or(NonZero::<usize>::MIN)
+}
+
+/// Runs `work` on each of `items` on `threads` threads, at most one per item, each thread
+/// taking the next item no thread has taken, and gives the results in the items' order. `work`
+/// gets the number of its thread, from 0, so that each thread can have files of its own. The
+/// first error stops every thread and is the result; a thread that panics is an error too.
+fn across_cores<T: Sync, R: Send>(
+    items: &[T],
+    threads: NonZero<usize>,
+    work: impl Fn(usize, &T) -> Result<R, String> + Sync,
+) -> Result<Vec<R>, String> {
+    let next = &AtomicUsize::new(0);
+    let stop = &AtomicBool::new(false);
+    let work = &work;
+    let joined = thread::scope(|scope| {
+        let handles: Vec<_> = (0..threads.get().min(items.len()))
+            .map(|thread| {
+                scope.spawn(move || {
+                    let mut done = Vec::new();
+                    while !stop.load(Ordering::SeqCst) {
+                        let index = next.fetch_add(1, Ordering::SeqCst);
+                        let Some(item) = items.get(index) else {
+                            break;
+                        };
+                        match work(thread, item) {
+                            Ok(result) => done.push((index, result)),
+                            Err(problem) => {
+                                stop.store(true, Ordering::SeqCst);
+                                return Err(problem);
+                            }
+                        }
+                    }
+                    Ok(done)
+                })
+            })
+            .collect();
+        // Every handle is joined here, so that no panic is left for the scope to raise again.
+        handles
+            .into_iter()
+            .map(thread::ScopedJoinHandle::join)
+            .collect::<Vec<_>>()
+    });
+    let mut slots: Vec<Option<R>> = (0..items.len()).map(|_| None).collect();
+    for outcome in joined {
+        let done =
+            outcome.map_err(|_| "a thread of the builtin differential panicked".to_owned())?;
+        for (index, result) in done? {
+            if let Some(slot) = slots.get_mut(index) {
+                *slot = Some(result);
+            }
+        }
+    }
+    slots
+        .into_iter()
+        .collect::<Option<Vec<R>>>()
+        .ok_or_else(|| "a thread of the builtin differential left an item undone".to_owned())
+}
+
 /// Compares the profile with `recorded`, the outcomes of oracles that ran on `host`; prints each
-/// disagreement and returns how many cases agree and how many do not.
+/// disagreement and returns how many cases agree and how many do not. The profile reads the
+/// cases across the cores.
 pub(crate) fn compare(
     cases: &[Case],
     recorded: &BTreeMap<String, Outcome>,
     host: impl Into<Host>,
-) -> Tally {
+) -> Result<Tally, String> {
+    compare_on(cases, recorded, host, threads())
+}
+
+/// [`compare`] with the profile reading the cases on `threads` threads; what it prints and
+/// tallies does not depend on how many.
+fn compare_on(
+    cases: &[Case],
+    recorded: &BTreeMap<String, Outcome>,
+    host: impl Into<Host>,
+    threads: NonZero<usize>,
+) -> Result<Tally, String> {
     let host = host.into();
     let mut tally = Tally::default();
-    for case in cases {
-        let Some(oracle) = recorded.get(&case.key()) else {
+    // A case not recorded is reported, not profiled.
+    let profiled = across_cores(cases, threads, |_, case| {
+        Ok(recorded.contains_key(&case.key()).then(|| profile(case)))
+    })?;
+    for (case, profiled) in cases.iter().zip(profiled) {
+        let (Some(oracle), Some((ours, errors))) = (recorded.get(&case.key()), profiled) else {
             tally.differ = tally.differ.saturating_add(1);
             println!("FAIL  {}: not recorded in {FIXTURE}", show(case));
             continue;
         };
-        let (ours, errors) = profile(case);
         if ours == *oracle {
             tally.agree = tally.agree.saturating_add(1);
         } else if let Some(statement) = expected_difference(case, &ours, &errors, oracle, host) {
@@ -1918,7 +2011,7 @@ pub(crate) fn compare(
             println!("FAIL  {}: oracle {oracle}, profile {ours}", show(case));
         }
     }
-    tally
+    Ok(tally)
 }
 
 /// What the project graph of `case`, a graph case of the directive family, makes of the
@@ -1956,6 +2049,22 @@ pub(crate) fn graph_cases() -> Vec<Case> {
     directives::graph_cases()
 }
 
+/// The cases a check runs: cases of the cross product, and project graph cases.
+pub(crate) struct Suite {
+    pub(crate) cases: Vec<Case>,
+    pub(crate) graph: Vec<Case>,
+}
+
+impl Suite {
+    /// Every case: the whole cross product and every graph case, as `cargo xtask oracles` runs.
+    pub(crate) fn all() -> Self {
+        Self {
+            cases: cases(),
+            graph: graph_cases(),
+        }
+    }
+}
+
 /// The graph cases whose project graph lists the file that binds `f` where `outcomes`, of
 /// oracles that ran where `long` is `ulong` wide, say the oracle did not read it, or the other way
 /// round; whose oracle rejected the program where the graph reports no error, as each compiler
@@ -1963,38 +2072,42 @@ pub(crate) fn graph_cases() -> Vec<Case> {
 /// accepted nor rejected the program, so that the case says nothing of what it read (PRJ-5.13).
 /// Where `long` is 32 bits a case whose directive holds a number `atoi` reads otherwise may read
 /// the other file (FTEF-14.55).
-pub(crate) fn graph_differences(outcomes: &BTreeMap<String, Outcome>, ulong: ULong) -> Vec<String> {
+pub(crate) fn graph_differences(
+    graph: &[Case],
+    outcomes: &BTreeMap<String, Outcome>,
+    ulong: ULong,
+) -> Vec<String> {
     let mut differ = Vec::new();
-    for case in graph_cases() {
+    for case in graph {
         let read = match outcomes.get(&case.key()) {
             Some(Outcome::Bound { number: 5, .. }) => true,
             Some(Outcome::Accepted) => false,
             Some(Outcome::Rejected) => {
-                if !graph_reads(&case).1 {
+                if !graph_reads(case).1 {
                     let why = "oracle rejected, the graph reports no error";
-                    differ.push(format!("{}: {why}", show(&case)));
+                    differ.push(format!("{}: {why}", show(case)));
                 }
                 continue;
             }
             Some(oracle) => {
                 differ.push(format!(
                     "{}: oracle {oracle}, which reads no file",
-                    show(&case)
+                    show(case)
                 ));
                 continue;
             }
             None => {
-                differ.push(format!("{}: not recorded in {FIXTURE}", show(&case)));
+                differ.push(format!("{}: not recorded in {FIXTURE}", show(case)));
                 continue;
             }
         };
-        if graph_reads(&case).0 != read && !ulong.atoi_reads_otherwise(&case) {
+        if graph_reads(case).0 != read && !ulong.atoi_reads_otherwise(case) {
             let which = if read {
                 "the oracle reads the file, the graph does not"
             } else {
                 "the oracle does not read the file, the graph does"
             };
-            differ.push(format!("{}: {which}", show(&case)));
+            differ.push(format!("{}: {which}", show(case)));
         }
     }
     differ
@@ -2046,20 +2159,54 @@ fn show(case: &Case) -> String {
     }
 }
 
-/// Runs every case through the oracles; checks them against [`FIXTURE`] (or, with `record`,
-/// writes it) and the profile against them.
-pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool, String> {
-    check_where(root, oracles, record, Host::HOST)
+/// Runs every case of `suite` through the oracles; checks them against [`FIXTURE`] (or, with
+/// `record`, writes it) and the profile against them.
+pub(crate) fn check(
+    root: &Path,
+    oracles: &Oracles,
+    record: bool,
+    suite: &Suite,
+) -> Result<bool, String> {
+    check_where(root, oracles, record, Host::HOST, suite)
+}
+
+/// Checks the profile against the outcomes [`FIXTURE`] records, without the oracles: what
+/// [`check`] tallies once the oracles agree with the fixture, in seconds instead of minutes.
+pub(crate) fn check_recorded(root: &Path, suite: &Suite) -> Result<bool, String> {
+    let recorded = read_fixture(root)?;
+    let cases = &suite.cases;
+    let tally = compare(cases, &recorded, Host::HOST)?;
+    println!(
+        "oracles: {} builtin initialiser cases against {FIXTURE}: {tally}",
+        cases.len()
+    );
+    Ok(tally.differ == 0)
 }
 
 /// [`check`] with oracles that run on `host`, which records nothing unless its `unsigned long`
 /// is 64 bits (FTEF-14.50). A host whose build reads on past a pragma's overrun records, for each
 /// case that overrun may change, the outcome [`FIXTURE`] holds, a stopping build's (FTEF-14.66).
+/// The oracles run across the cores.
 fn check_where(
     root: &Path,
     oracles: &Oracles,
     record: bool,
     host: impl Into<Host>,
+    suite: &Suite,
+) -> Result<bool, String> {
+    check_on(root, oracles, record, host, suite, threads())
+}
+
+/// [`check_where`] with the oracles and the profile on `threads` threads, each thread's oracle
+/// in a work directory of its own, so that no two share a `progs.src` or a `progs.dat`; what it
+/// prints and records does not depend on how many.
+fn check_on(
+    root: &Path,
+    oracles: &Oracles,
+    record: bool,
+    host: impl Into<Host>,
+    suite: &Suite,
+    threads: NonZero<usize>,
 ) -> Result<bool, String> {
     let host = host.into();
     let ulong = host.ulong;
@@ -2071,28 +2218,34 @@ fn check_where(
     }
     let work = oracles.work.join("builtins");
     fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
-    let cases = cases();
-    let graph_cases = graph_cases();
-    let mut outcomes = BTreeMap::new();
-    for case in cases.iter().chain(&graph_cases) {
-        // A graph case may be a case of the cross product too.
-        if outcomes.contains_key(&case.key()) {
-            continue;
+    let cases = &suite.cases;
+    let graph_cases = &suite.graph;
+    // A graph case may be a case of the cross product too.
+    let mut keys = HashSet::new();
+    let unique: Vec<&Case> = cases
+        .iter()
+        .chain(graph_cases)
+        .filter(|case| keys.insert(case.key()))
+        .collect();
+    let ran = across_cores(&unique, threads, |thread, case| {
+        oracle(oracles, &work.join(format!("thread{thread}")), case)
+    });
+    let ran = match ran {
+        Ok(ran) => ran,
+        Err(problem) => {
+            // An oracle that misbehaves on one case says nothing about the profile.
+            println!("FAIL  builtin differential: {problem}");
+            return Ok(false);
         }
-        match oracle(oracles, &work, case) {
-            Ok(outcome) => outcomes.insert(case.key(), outcome),
-            Err(problem) => {
-                // An oracle that misbehaves on one case says nothing about the profile.
-                println!("FAIL  builtin differential: {problem}");
-                return Ok(false);
-            }
-        };
-    }
+    };
+    let outcomes: BTreeMap<String, Outcome> =
+        unique.iter().map(|case| case.key()).zip(ran).collect();
+    let mut outcomes = outcomes;
     let mut ok = true;
     if record {
         if host.overrun != Overrun::Caught {
             let held = read_fixture(root).unwrap_or_default();
-            for case in cases.iter().chain(&graph_cases) {
+            for case in cases.iter().chain(graph_cases) {
                 let key = case.key();
                 if let Some(outcome) = held.get(&key).filter(|_| host.reads_otherwise(case)) {
                     outcomes.insert(key, outcome.clone());
@@ -2113,7 +2266,7 @@ fn check_where(
         // A changed cross product is recorded again with `--record` once it is right. Where
         // `long` is 32 bits a wide `#pragma line` or `#if` number may read otherwise
         // (FTEF-14.50, FTEF-14.55).
-        for case in cases.iter().chain(&graph_cases) {
+        for case in cases.iter().chain(graph_cases) {
             let key = case.key();
             let Some(outcome) = outcomes.get(&key) else {
                 continue;
@@ -2130,12 +2283,12 @@ fn check_where(
             println!("FAIL  {FIXTURE} records cases the cross product does not make (--record)");
         }
     }
-    let tally = compare(&cases, &outcomes, host);
+    let tally = compare_on(cases, &outcomes, host, threads)?;
     println!(
         "oracles: {} builtin initialiser cases: {tally}",
         cases.len()
     );
-    let graph = graph_differences(&outcomes, ulong);
+    let graph = graph_differences(graph_cases, &outcomes, ulong);
     for problem in &graph {
         println!("FAIL  project graph: {problem}");
     }

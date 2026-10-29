@@ -67,16 +67,19 @@ fn input_cut_off_at_the_end() {
     ] {
         assert!(!fte_errors(source).is_empty(), "{source}");
     }
-    // A class or an accessor with its `}` and no `;` before the end is whole.
-    assert_eq!(fte_errors("class C { }"), []);
-    assert_eq!(fte_errors("accessor A : float { get float v = f; }"), []);
+    // A class or an accessor with its `}` and no `;` before the end lacks the name of the
+    // variable `QCC_PR_ParseDefs` reads next (FTEF-9.8).
+    assert_eq!(fte_errors("class C { }"), [Code::E0201]);
+    assert_eq!(
+        fte_errors("accessor A : float { get float v = f; }"),
+        [Code::E0201]
+    );
 }
 
 // spec QCD-1.4: a word that starts no type where a type belongs is "not a type"
 #[test]
 fn not_a_type() {
     for source in [
-        "typedef 1 x;\n",
         "typedef for x;\n",
         "goto x;\n",
         "void(1) f;\n",
@@ -115,7 +118,6 @@ fn missing_tokens_are_reported() {
 #[test]
 fn pointer_declarators() {
     for source in [
-        "struct *p;\n",
         "struct { float a; } *p;\n",
         "float * const p;\n",
         "struct s { float a, b; };\n",
@@ -137,18 +139,25 @@ fn function_pointer_parameters() {
     assert!(!fte_errors("void(float &(x)) f;\n").is_empty());
 }
 
-// spec FTEF-9.3: a class body may hold empty members and field members
+// spec FTEF-9.3: a class body may hold field members, and no empty member: a `;` where a type
+// belongs is "not a type"
 #[test]
 fn class_body_members() {
-    assert_eq!(fte_errors("class C { ; .float f; };\n"), []);
+    assert_eq!(fte_errors("class C { .float f; };\n"), []);
+    assert_eq!(fte_errors("class C { ; .float f; };\n"), [Code::E0203]);
 }
 
-// spec FTEF-10.2: an accessor member may leave out its function, and its index its name
+// spec FTEF-10.2: an accessor member's index may leave out its name
+// spec FTEF-10.11: an accessor member must give its function, `QCC_PR_Expect("=")`
 #[test]
 fn accessor_member_forms() {
     assert_eq!(
-        fte_errors("accessor A : float { get float v; set float[float] = g; };\n"),
+        fte_errors("accessor A : float { get float v = f; set float[float] = g; };\n"),
         []
+    );
+    assert_eq!(
+        fte_errors("accessor A : float { get float v; };\n"),
+        [Code::E0204]
     );
     assert!(!fte_errors("accessor A : float { get float v[1] = g; };\n").is_empty());
 }

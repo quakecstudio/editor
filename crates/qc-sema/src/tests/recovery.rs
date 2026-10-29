@@ -15,6 +15,15 @@ fn unknown(source: &str) -> Vec<String> {
         .collect()
 }
 
+/// The names `source` reports unknown, in order: what the recovery resolved. An unknown name is
+/// a `variant` (FTEF-19.69), which the checks after it may report too.
+fn unknown_names(source: &str) -> Vec<String> {
+    unknown(source)
+        .into_iter()
+        .filter(|m| m.starts_with("Unknown value"))
+        .collect()
+}
+
 // spec QCD-1.4: a statement missing its condition, its body or a clause is still lowered, and
 // the names it has are resolved.
 #[test]
@@ -35,9 +44,9 @@ fn partial_statements_resolve_what_they_have() {
     ] {
         let expected: Vec<_> = names
             .iter()
-            .map(|name| format!("Unknown value \"{name}\""))
+            .map(|name| format!("Unknown value \"{name}\"."))
             .collect();
-        assert_eq!(unknown(source), expected, "{source:?}");
+        assert_eq!(unknown_names(source), expected, "{source:?}");
     }
 }
 
@@ -57,14 +66,15 @@ fn partial_expressions_resolve_what_they_have() {
         ("void() f = { u1 = (float); };\n", &["u1"]),
         ("void() f = { u1++; ++; };\n", &["u1"]),
         ("void() f = { u1 = []; };\n", &["u1"]),
-        ("void() f = { .x; };\n", &[]),
     ] {
         let expected: Vec<_> = names
             .iter()
-            .map(|name| format!("Unknown value \"{name}\""))
+            .map(|name| format!("Unknown value \"{name}\"."))
             .collect();
-        assert_eq!(unknown(source), expected, "{source:?}");
+        assert_eq!(unknown_names(source), expected, "{source:?}");
     }
+    // A field of a type no program defines is a type error, not a value (FTEF-20.12).
+    assert_eq!(unknown("void() f = { .x; };\n"), ["\"x\" is not a type"]);
 }
 
 // spec QCD-1.4: a class, typedef, accessor, member, enumerator or function with no name or no
@@ -78,11 +88,11 @@ fn nameless_declarations_declare_nothing() {
         ("accessor : float;\n", None),
         ("class A { float; };\n", None),
         ("enum { = 1 };\n", None),
-        ("void(float a) f = ;\n", Some("function f was not defined")),
+        ("void(float a) f = ;\n", Some("function f has no body")),
         ("void() f = [1, ] { };\n", None),
     ] {
         let after = format!("{source}void() g = {{ u1 = 1; }};\n");
-        let mut expected = vec!["Unknown value \"u1\""];
+        let mut expected = vec!["Unknown value \"u1\"."];
         expected.extend(bodyless);
         if source.starts_with("typedef") {
             // FTEF-19.9: a typedef that defines no type is a warning.

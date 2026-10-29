@@ -270,6 +270,8 @@ pub enum SyntaxKind {
     CallExpr,
     /// The parenthesised arguments of a call.
     ArgList,
+    /// `field: value` or `field = value` among `spawn`'s arguments (FTEQCC, FTEF-17.20).
+    NamedArg,
 
     /// `for (init; cond; step) body` (FTEQCC, FTE-2).
     ForStmt,

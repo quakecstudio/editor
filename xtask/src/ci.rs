@@ -62,7 +62,16 @@ pub(crate) const STEPS: [Step; 19] = [
         "-D",
         "warnings",
     ]),
-    Step::Cargo(&["test", "--locked", "--workspace", "--all-features"]),
+    // cargo-nextest, so the run stops scheduling tests after the first failure
+    // (its fail-fast default). The workspace has no doc tests, which nextest
+    // does not run: every rustdoc code block is `text`.
+    Step::Cargo(&[
+        "nextest",
+        "run",
+        "--locked",
+        "--workspace",
+        "--all-features",
+    ]),
     // P2-12: the command guard catches a panic in a release build, whose profile sets
     // `panic = "unwind"` (CONV-6). Test targets ignore the profile's `panic` setting, so a
     // release binary is what proves it.
@@ -268,7 +277,7 @@ mod tests {
         for expected in [
             "cargo fmt --all --check",
             "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
-            "cargo test --locked --workspace --all-features",
+            "cargo nextest run --locked --workspace --all-features",
             "cargo run --locked -p qs-commands --profile release --example release_guard",
             "cargo xtask commands",
             "cargo xtask conventions",
@@ -351,7 +360,7 @@ mod tests {
         for name in [
             "fmt",
             "clippy",
-            "test",
+            "nextest",
             "deny",
             "plan",
             "plan-tests",
@@ -365,9 +374,9 @@ mod tests {
     #[test]
     fn skip_names_exactly_the_steps_it_lists() {
         assert_eq!(parse_skip(&[], &STEPS), Ok(Vec::new()));
-        let skip = args(&["--skip", "fmt,clippy,test,deny"]);
+        let skip = args(&["--skip", "fmt,clippy,nextest,deny"]);
         let names = parse_skip(&skip, &STEPS).unwrap_or_default();
-        assert_eq!(names, ["fmt", "clippy", "test", "deny"]);
+        assert_eq!(names, ["fmt", "clippy", "nextest", "deny"]);
         let skip = args(&["--skip", "clippy-fixtures"]);
         assert_eq!(parse_skip(&skip, &STEPS), Ok(vec!["clippy-fixtures"]));
     }
@@ -380,7 +389,7 @@ mod tests {
         let all: Vec<&str> = STEPS.iter().map(Step::name).collect();
         assert_eq!(names(&[]), all);
         assert_eq!(
-            names(&["fmt", "clippy", "test", "deny"]),
+            names(&["fmt", "clippy", "nextest", "deny"]),
             [
                 "plan",
                 "plan-tests",
@@ -418,7 +427,7 @@ mod tests {
             &["--skip"][..],
             &["--only", "fmt"],
             &["fmt"],
-            &["--skip", "fmt", "--skip", "test"],
+            &["--skip", "fmt", "--skip", "nextest"],
         ] {
             assert_eq!(
                 parse_skip(&args(bad), &STEPS),
@@ -472,8 +481,8 @@ mod tests {
             quoted,
             [
                 "refs/heads/main",
-                "clippy,test,differential",
-                "fmt,clippy,test,deny,differential"
+                "clippy,nextest,differential",
+                "fmt,clippy,nextest,deny,differential"
             ]
         );
         let lists = quoted.get(1..).unwrap_or_default();

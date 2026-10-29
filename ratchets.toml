@@ -50,7 +50,10 @@ equivalent_mutants = { "xtask/src/main.rs: replace main -> ExitCode with Default
 # Recording them as equivalent leaves the measured mutation at 34 of 38 (89%),
 # one point under the 90% bar only because of these unkillable mutants, so the
 # mutation bar is waived by an exception with the same reason (also in
-# crates/qc-lno/README.md). The P1-R0 review set the minimums below.
+# crates/qc-lno/README.md). The P1-R0 review set the minimums below. Since #84
+# the four are killed by tests of the statement limit and the size hint, and
+# every mutant is caught; the exception and these entries stay until a
+# readiness review measures the crate again and sets its minimums.
 [crates.qc-lno]
 readiness = "P1-R0"
 lines = 98
@@ -177,30 +180,32 @@ branches = 87
 mutation = 100
 spec = 100
 
-# qc-lexer (L2 syntax): the P1-R2 readiness re-run (run 39020739388) measures
-# the layer ready; no surviving mutants and 100% on every axis.
+# qc-lexer (L2 syntax): the P2-R2 readiness review (docs/readiness/p2-r2.md,
+# run 40332289531) measures the layer ready; 100% on every axis.
 [crates.qc-lexer]
-readiness = "P1-R2"
+readiness = "P2-R2"
 lines = 100
 branches = 100
 mutation = 100
 spec = 100
 
-# qc-syntax (L2 syntax): the P1-R2 readiness re-run (run 39020739388) measures
-# the layer ready; no surviving mutants.
+# qc-syntax (L2 syntax): the P2-R2 readiness review (docs/readiness/p2-r2.md,
+# run 40429148034) measures the layer ready; no surviving mutants.
 [crates.qc-syntax]
-readiness = "P1-R2"
-lines = 97
-branches = 92
-mutation = 100
+readiness = "P2-R2"
+lines = 98
+branches = 94
+mutation = 99
 spec = 100
+reason = "P2-R2: two of #581's mutants cannot be observed, so they are listed as equivalent and hold the measured mutation at 99.9%"
+equivalent_mutants = { "crates/qc-syntax/src/parser/fte.rs: replace > with >= in Parser<'_>::class_member" = "the class body's loop calls class_member only when the current token is not `}`, so when `labels > 0 && self.at(K::RBrace)` is tested at a `}` at least one label was just read: labels is never 0 there and `> 0` and `>= 0` agree on every input", "crates/qc-syntax/src/parser/mod.rs: replace && with || in Parser<'a>::starts_declaration" = "under the vanilla profile both sides of `tok.kind == K::LBracket && self.fteqcc()` are false for every token but `[`, where they agree; under the FTEQCC profile the mutant sends every name to fte_starts_declaration, whose registered_type test answers true for every name type_word does (registered_type reads type_word first), so the two paths give the same answer for every name" }
 
-# qc-project (L2 syntax): the P1-R2 readiness re-run (run 39020739388) measures
-# the layer ready; no surviving mutants.
+# qc-project (L2 syntax): the P2-R2 readiness review (docs/readiness/p2-r2.md,
+# run 40332289531) measures the layer ready; no surviving mutants.
 [crates.qc-project]
-readiness = "P1-R2"
-lines = 97
-branches = 93
+readiness = "P2-R2"
+lines = 98
+branches = 94
 mutation = 100
 spec = 100
 
@@ -211,12 +216,14 @@ spec = 100
 # MemoryLoader::folded, now written with Iterator::min so the comparison has no
 # operator to flip). The two below are equivalent on every realisable input.
 # The P1-R2 re-run (run 39020739388) measures the layer ready and sets the
-# minimums below; the two equivalent mutants hold the measured mutation at 98%.
+# minimums below. The P2-R2 review (docs/readiness/p2-r2.md, run 40388389285)
+# measures it again after P2-137 killed the four survivors of #570 and #557; the
+# one equivalent mutant it still reaches holds the measured mutation at 99.9%.
 [crates.qc-preproc]
-readiness = "P1-R2"
+readiness = "P2-R2"
 lines = 98
-branches = 91
-mutation = 98
+branches = 95
+mutation = 99
 spec = 100
 reason = "P1-58 (#360): the trait default already returns None, and no lexical diagnostic can start at a conditional skip region's end, so neither survivor has a distinguishing input"
 equivalent_mutants = { "crates/qc-preproc/src/lib.rs: replace < with <= in Preprocessor<L>::finish_cursor" = "the guard `s.start <= d.span.start && d.span.start < s.end` suppresses a lexical diagnostic inside a skipped conditional region [start, end); a skip region's end is always either the file length (no byte starts there) or the start of the `#else`/`#endif` that re-enables output (a `#`, which lexes as Punct(Hash) and is never a lexical error, QC-9.6), so no diagnostic's span starts at s.end and `<` and `<=` agree on every input", "crates/qc-preproc/src/source.rs: replace Loader::stored_name -> Option<OsString> with None" = "the Loader trait's default stored_name body is `let _ = path; None`, so returning None is the unmutated value; a loader that lists no directory cannot tell the stored name (PRJ-7.2), which a_loader_without_a_directory_has_no_stored_name pins, while the Some(Default::default()) mutant of the same default is killed by it" }
@@ -314,5 +321,5 @@ spec = 100
 # survivors; the new tests kill the other 51). The P2-R3 readiness review adds
 # the minimums and `readiness`.
 [crates.qc-sema]
-reason = "P2-43: OriginMap::locate's `>` and `>=` differ only for a one-byte span, where the last byte's origin is the first byte's, so both forms return the first token's origin"
-equivalent_mutants = { "crates/qc-sema/src/expand.rs: replace > with >= in OriginMap::locate" = "locate reads the last byte as `span.end.checked_sub(1).filter(|&e| e > span.start)`; `>=` differs only when span.end - 1 == span.start, a one-byte span, and then the last byte is span.start itself, so `origin_at` returns the same origin as for the first byte; the merged location is then Span::new(first.span.start, first.span.end) in first.file, which is the first origin unchanged, or, if that origin's end were before its start, the first origin returned as is, so both forms return the first token's origin for every input (QC-9.7)" }
+reason = "P2-43 and the #84 survivor batch: mutants no input can kill, each with its reason below; OriginMap::locate's `>` and `>=` differ only for a one-byte span, and c_g's sign tests are reached only where the value is never 0; a narrow integer's bit offset and its BITEXTEND mask are operands only of opcodes whose other operand, the word, is never a known constant, so no fold or diagnostic reads them; the vanilla field check reads only basic types, which every vanilla type is; a body typedef is seen from its name to its block's end, offsets no use of it is at; call.rs: the defaulted-parameter count, a spawn argument's first token and supplied's type are equivalent"
+equivalent_mutants = { "crates/qc-sema/src/expand.rs: replace > with >= in OriginMap::locate" = "locate reads the last byte as `span.end.checked_sub(1).filter(|&e| e > span.start)`; `>=` differs only when span.end - 1 == span.start, a one-byte span, and then the last byte is span.start itself, so `origin_at` returns the same origin as for the first byte; the merged location is then Span::new(first.span.start, first.span.end) in first.file, which is the first origin unchanged, or, if that origin's end were before its start, the first origin returned as is, so both forms return the first token's origin for every input (QC-9.7)", "crates/qc-sema/src/check/fold.rs: replace < with <= in c_g" = "c_g has two `<` tests, and the key names both: `value < 0.0` chooses -inf or inf and is reached only for an infinite value, which is never 0; `exponent < 0` chooses the sign of the exponent and is reached only for an exponent outside -4..6, which is never 0; so `<` and `<=` agree on every input of each (C's %g, FTEF-26.2)", "crates/qc-sema/src/check/reference.rs: replace | with & in Checker<'_>::read" = "`QCC_MakeUIntConst((bitofs<<8)|bits)` is the second operand of OP_BITEXTEND_I or OP_BITEXTEND_U, whose first is the word that holds the narrow integer; that word is a definition or a temporary the model never knows the value of (a const narrow integer and a const struct member are not folded, FTEF-2.12), so emit folds nothing and the mask reaches no diagnostic; bitofs < 32 shifted by 8 shares no bit with bits <= 16, so | and ^ also give the same value", "crates/qc-sema/src/check/reference.rs: replace | with ^ in Checker<'_>::read" = "`QCC_MakeUIntConst((bitofs<<8)|bits)` is the second operand of OP_BITEXTEND_I or OP_BITEXTEND_U, whose first is the word that holds the narrow integer; that word is a definition or a temporary the model never knows the value of (a const narrow integer and a const struct member are not folded, FTEF-2.12), so emit folds nothing and the mask reaches no diagnostic; bitofs < 32 shifted by 8 shares no bit with bits <= 16, so | and ^ also give the same value", "crates/qc-sema/src/check/reference.rs: replace | with & in Checker<'_>::extend_bits" = "`QCC_MakeUIntConst((bitofs<<8)|bits)` is the second operand of OP_BITEXTEND_I or OP_BITEXTEND_U, whose first is the word that holds the narrow integer; that word is a definition or a temporary the model never knows the value of (a const narrow integer and a const struct member are not folded, FTEF-2.12), so emit folds nothing and the mask reaches no diagnostic; bitofs < 32 shifted by 8 shares no bit with bits <= 16, so | and ^ also give the same value", "crates/qc-sema/src/check/reference.rs: replace | with ^ in Checker<'_>::extend_bits" = "`QCC_MakeUIntConst((bitofs<<8)|bits)` is the second operand of OP_BITEXTEND_I or OP_BITEXTEND_U, whose first is the word that holds the narrow integer; that word is a definition or a temporary the model never knows the value of (a const narrow integer and a const struct member are not folded, FTEF-2.12), so emit folds nothing and the mask reaches no diagnostic; bitofs < 32 shifted by 8 shares no bit with bits <= 16, so | and ^ also give the same value", "crates/qc-sema/src/check/reference.rs: replace & with | in Checker<'_>::narrow_element" = "the offset `& 31` is a bit position that only builds the BITEXTEND mask (see read) or, in a store, the constants of BITAND_I and LSHIFT_I whose result is ORed with the cleared word, a value the model never knows, so no fold reaches a diagnostic; LSHIFT_I and BITAND_I fold without notices (FTEF-26.2), and the post-increment check of a bit offset reads a member's bitfield, never an element's (FTEF-2.12)", "crates/qc-sema/src/check/reference.rs: replace & with ^ in Checker<'_>::narrow_element" = "the offset `& 31` is a bit position that only builds the BITEXTEND mask (see read) or, in a store, the constants of BITAND_I and LSHIFT_I whose result is ORed with the cleared word, a value the model never knows, so no fold reaches a diagnostic; LSHIFT_I and BITAND_I fold without notices (FTEF-26.2), and the post-increment check of a bit offset reads a member's bitfield, never an element's (FTEF-2.12)", "crates/qc-sema/src/check/reference.rs: replace & with | in Checker<'_>::narrow_bitfield" = "the offset `& 31` is a bit position that only builds the BITEXTEND mask (see read) or, in a store, the constants of BITAND_I and LSHIFT_I whose result is ORed with the cleared word, a value the model never knows, so no fold reaches a diagnostic; LSHIFT_I and BITAND_I fold without notices (FTEF-26.2), and the post-increment check of a bit offset reads a member's bitfield, never an element's (FTEF-2.12)", "crates/qc-sema/src/check/reference.rs: replace & with ^ in Checker<'_>::narrow_bitfield" = "the offset `& 31` is a bit position that only builds the BITEXTEND mask (see read) or, in a store, the constants of BITAND_I and LSHIFT_I whose result is ORed with the cleared word, a value the model never knows, so no fold reaches a diagnostic; LSHIFT_I and BITAND_I fold without notices (FTEF-26.2), and the post-increment check of a bit offset reads a member's bitfield, never an element's (FTEF-2.12)", "crates/qc-sema/src/check/vanilla.rs: delete match arm (None, _) in Vanilla<'_>::field" = "the arm takes a base whose type `Basic::of` does not follow: a pointer, a named type or `Type::Unknown`; the vanilla profile has no pointer or named type (QC-10), and an unknown name or an earlier error gives the base no type at all, `Ok(None)`, which returns before the match, so no vanilla base reaches the arm and the mismatch arm it falls to is never taken instead", "crates/qc-sema/src/check/vanilla.rs: replace match guard Basic::of(held) == Some(Basic::Void) with true in Vanilla<'_>::field" = "the guarded arm follows the arm for an entity and a field of any basic type but void, so it is reached only by a field of `void` or of a type `Basic::of` does not follow; a vanilla field holds one of the basic types (QC-10.2), so only `void` reaches it and the guard is true for every input that gets there", "crates/qc-sema/src/resolve/types/mod.rs: replace < with <= in Resolver<'_>::is_type_name" = "a body typedef's span `seen` runs from its name token's start to its block's end; a type use whose offset is `seen.start` would be the typedef's own name, which is a declarator and no use, and one at `seen.end` would follow the block's closing `}`, outside it, where FTEF-19.20 already ends the typedef, so `<` and `<=` agree at both ends for every use (FTEF-19.20, FTEF-19.33)", "crates/qc-sema/src/check/call.rs: replace < with <= in Checker<'_>::call" = "the loop counting defaulted parameters stops on `params.get(count).is_some_and(..)`, which is false once count reaches params.len(), so `<=` runs no further pass", "crates/qc-sema/src/check/call.rs: replace match guard !t.kind().is_trivia() with true in Checker<'_>::spawn" = "an argument's node starts at its first token, its leading trivia belonging to the token before it, so the first token of its descendants is never trivia", "crates/qc-sema/src/check/call.rs: delete field ty from struct Value expression in Checker<'_>::supplied" = "the converted value already carries the conversion opcode's result type, or the value's own when none applies; every caller (a switch's cases, an index, `random`, `alloca`, `va_arg`, a delay) reads only its basic type" }

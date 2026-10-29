@@ -91,7 +91,7 @@ fn check_keyword_spellings() {
         [Code::E0204]
     );
     // An accessor's words are `QCC_PR_CheckName`'s.
-    let accessor = "accessor A : float { GET float() = { return 0; } };\n";
+    let accessor = "accessor A : float { GET float = { return 0; } };\n";
     assert_eq!(errors(accessor, any_case), []);
     assert_ne!(errors(accessor, Keywords::default()), []);
     let prefixed = "accessor A : float { __get float() = { return 0; } };\n";
