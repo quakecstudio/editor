@@ -11,6 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use proptest::prelude::*;
 use qs_commands::{CommandError, Registry, Session};
 use serde_json::{Value, json};
 
@@ -455,4 +456,39 @@ fn a_log_filter_with_awkward_characters_round_trips() {
     .unwrap();
     let reread = SettingsStore::open(user, None).unwrap();
     assert_eq!(reread.log_filter(), filter);
+}
+
+fn theme() -> impl Strategy<Value = Option<Theme>> {
+    prop_oneof![
+        Just(None),
+        Just(Some(Theme::Dark)),
+        Just(Some(Theme::Light))
+    ]
+}
+
+proptest! {
+    // TEST-4, QA-10: a settings file is written and read back unchanged, whatever it sets.
+    #[test]
+    fn a_settings_file_round_trips(theme in theme(), filter in proptest::option::of(".*")) {
+        let dir = TempDir::new("round-trip");
+        let path = dir.path().join("settings.toml");
+        let file = SettingsFile {
+            appearance: crate::Appearance { theme },
+            log: crate::Log { filter },
+        };
+        file.save(&path).unwrap();
+        prop_assert_eq!(SettingsFile::load(&path).unwrap(), file);
+    }
+
+    // TEST-4, QA-10: the value a file is given is the value it then holds, for every setting.
+    #[test]
+    fn a_put_value_is_the_value_got(theme in theme(), filter in proptest::option::of(".*")) {
+        let mut file = SettingsFile::default();
+        let theme = theme.map(|t| serde_json::to_value(t).unwrap());
+        let filter = filter.map(Value::from);
+        file.put(Setting::Theme, theme.clone()).unwrap();
+        file.put(Setting::LogFilter, filter.clone()).unwrap();
+        prop_assert_eq!(file.get(Setting::Theme), theme);
+        prop_assert_eq!(file.get(Setting::LogFilter), filter);
+    }
 }

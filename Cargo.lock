@@ -592,6 +592,7 @@ version = "2026.10.0"
 name = "qs-settings"
 version = "2026.10.0"
 dependencies = [
+ "proptest",
  "qs-commands",
  "schemars",
  "serde",

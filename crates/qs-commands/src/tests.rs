@@ -1267,3 +1267,63 @@ fn a_command_named_commands_links_past_the_title() {
         "{markdown}"
     );
 }
+
+/// One step of a session in the history property.
+#[derive(Clone, Debug)]
+enum Op {
+    Append(String),
+    Read,
+    Undo,
+    Redo,
+}
+
+fn op() -> impl Strategy<Value = Op> {
+    prop_oneof![
+        "[a-z]{0,3}".prop_map(Op::Append),
+        Just(Op::Read),
+        Just(Op::Undo),
+        Just(Op::Redo),
+    ]
+}
+
+proptest! {
+    // TEST-4, PRIN-3: the session's history behaves as two stacks of changes. After any run of
+    // changes, reads, undos and redos, the text is the model's, both depths are the model's,
+    // and an undo or redo with an empty stack is an error that changes nothing.
+    #[test]
+    fn the_history_matches_a_two_stack_model(ops in proptest::collection::vec(op(), 0..40)) {
+        let mut s = session(SessionSpec::default());
+        let mut done: Vec<String> = Vec::new();
+        let mut undone: Vec<String> = Vec::new();
+        for op in ops {
+            match op {
+                Op::Append(text) => {
+                    append(&mut s, &text);
+                    done.push(text);
+                    undone.clear();
+                }
+                Op::Read => {
+                    s.execute("doc.len", json!({})).unwrap();
+                }
+                Op::Undo => match done.pop() {
+                    Some(text) => {
+                        let command = s.undo().unwrap();
+                        prop_assert_eq!(command.as_str(), "doc.append");
+                        undone.push(text);
+                    }
+                    None => prop_assert!(matches!(s.undo(), Err(CommandError::NothingToUndo))),
+                },
+                Op::Redo => match undone.pop() {
+                    Some(text) => {
+                        let command = s.redo().unwrap();
+                        prop_assert_eq!(command.as_str(), "doc.append");
+                        done.push(text);
+                    }
+                    None => prop_assert!(matches!(s.redo(), Err(CommandError::NothingToRedo))),
+                },
+            }
+            prop_assert_eq!(text(&s), done.concat());
+            prop_assert_eq!((s.undo_depth(), s.redo_depth()), (done.len(), undone.len()));
+        }
+    }
+}

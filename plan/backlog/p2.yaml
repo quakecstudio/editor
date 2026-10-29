@@ -1763,6 +1763,8 @@ issues:
   - P2-138
   - P2-146
   - P2-145
+  - P2-147
+  - P2-148
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2977,3 +2979,49 @@ issues:
   verify:
   - cargo test -p qc-sema
   - cargo xtask oracles builtins
+- key: P2-147
+  title: A command session is not Send, so it cannot move to the agent or MCP thread
+  labels:
+  - L5-commands
+  - area:editor
+  - type:feature
+  size: S
+  reqs:
+  - PRIN-3
+  - PRIN-7
+  depends:
+  - P2-12
+  summary: |
+    Found by the P2-R5 readiness review (docs/readiness/p2-r5.md). crates/qs-commands/README.md, "Writing a command", says: "`Command` is `Send + Sync` and `UndoStep` is `Send`, so a `Session<C>` is `Send` when `C` is, and can move to the thread an agent, MCP or ACP server runs on." It is not: `Registry<C>` stores each command as `Box<dyn ErasedCommand<C>>` (crates/qs-commands/src/registry.rs, `Handler::Command`), and the private trait `ErasedCommand<C>` has no `Send` or `Sync` bound, so `Registry<C>` and `Session<C>` are neither `Send` nor `Sync` for any `C`. No test asserts the property, so nothing caught it.
+  environment: |
+    main at 9d99dbf4; a test `const fn assert_send<T: Send>() {}` with `assert_send::<Session<Doc>>()` in crates/qs-commands/src/tests.rs fails to compile with E0277 (the `Send` bound is not met), required through `Handler<Doc>`, `Entry<Doc>` and `Registry<Doc>`
+  deliverable:
+  - 'crates/qs-commands/src/registry.rs: the erased command is `Send + Sync`, so `Registry<C>` is `Send + Sync` and `Session<C>` is `Send` whenever `C` is `Send`, as the README states'
+  - 'crates/qs-commands/src/tests.rs: compile-time assertions of those auto traits'
+  acceptance:
+  - 'A test asserts `Session<C>: Send` and `Registry<C>: Send + Sync` for a `Send` context, fails to compile before the fix and compiles after it'
+  verify:
+  - cargo test -p qs-commands
+- key: P2-148
+  title: Settings commands overwrite hand edits and strip comments in a settings file
+  labels:
+  - L5-commands
+  - area:editor
+  - type:feature
+  size: S
+  reqs:
+  - QA-10
+  depends:
+  - P2-22
+  summary: |
+    Found by the P2-R5 readiness review (docs/readiness/p2-r5.md). `SettingsStore` reads each file once, in `SettingsStore::open`, and `SettingsStore::put` (crates/qs-settings/src/lib.rs) writes the whole in-memory `SettingsFile` back with `toml::to_string`. Two consequences: (1) a change the person makes to `settings.toml` by hand after the store opened is silently replaced by the next `settings.set` or `settings.reset`, or by an undo or redo of one; (2) every write drops the file's comments and formatting, even a `settings.set` to the value the file already has, which the commands report as no change and record no undo step for. The settings files are meant to be edited by hand as well as by command (Zed's model, crates/qs-settings/README.md, "Prior art"), and Zed edits its settings file in place, keeping what it does not change.
+  environment: |
+    main at 9d99dbf4; scratch tests in crates/qs-settings/src/tests.rs: a user file `# my comment\n[log]\nfilter = "warn"\n`, rewritten by hand to `filter = "debug"` after the store opened, then `settings.set appearance.theme light`, writes a file without `debug` in it (the hand edit is replaced by the value read at open); `settings.set log.filter warn` on the unchanged file leaves `[log]\nfilter = "warn"\n` (the comment gone)
+  deliverable:
+  - 'crates/qs-settings: a write changes only the key it sets or removes, in the file as it is on disk when the write happens, keeping the rest of the text, comments included; a file whose contents no longer parse is refused with `SettingsError::Parse` rather than overwritten'
+  - 'crates/qs-settings/README.md: says how hand edits and command changes interact'
+  acceptance:
+  - 'A test edits the user file by hand after the store opened, runs `settings.set` on another key, and finds both the hand edit and the new value in the file; it fails before the fix'
+  - 'A test shows a comment in a settings file survives `settings.set`, `settings.reset`, and an undo and redo of each'
+  verify:
+  - cargo test -p qs-settings
