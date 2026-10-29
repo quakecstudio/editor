@@ -183,6 +183,56 @@ fn the_background_is_filled_with_its_edge_colour() {
     assert_eq!(skin[0], 0);
 }
 
+/// A flood fill case: the skin, its size and the skin after.
+type Case = (Vec<u8>, (usize, usize), Vec<u8>);
+
+// spec REND-4.1: each pixel taken from the ring takes the last neighbour colour, left, right,
+// up then down, that is neither the background nor 255; values from a line-for-line model of
+// id's C
+#[test]
+fn flood_fill_matches_ids_order() {
+    #[rustfmt::skip]
+    let cases: [Case; 5] = [
+        (
+            vec![5, 5, 5, 5, 5, 9, 5, 7, 5, 5, 5, 5],
+            (4, 3),
+            vec![0, 9, 9, 7, 0, 9, 9, 7, 0, 9, 9, 7],
+        ),
+        (vec![5; 8], (4, 2), vec![0; 8]),
+        (
+            vec![5, 5, 5, 5, 5, 5, 5, 5, 3],
+            (3, 3),
+            vec![0, 0, 0, 0, 0, 3, 0, 0, 3],
+        ),
+        // The right edge's step stays in its row.
+        (vec![5, 5, 5, 5, 7, 5], (3, 2), vec![0, 7, 7, 0, 7, 7]),
+        // A queued pixel, marked 255, is never taken as a neighbour colour.
+        (
+            vec![
+                5, 9, 5, 5, 5, 5, 5,
+                5, 5, 5, 7, 5, 5, 5,
+                5, 5, 5, 5, 5, 5, 7,
+                5, 5, 5, 5, 5, 9, 5,
+                5, 5, 5, 5, 5, 7, 5,
+                5, 5, 5, 7, 5, 9, 5,
+            ],
+            (7, 6),
+            vec![
+                9, 9, 7, 7, 7, 7, 7,
+                9, 9, 7, 7, 7, 9, 7,
+                9, 9, 7, 7, 7, 9, 7,
+                9, 9, 7, 7, 7, 9, 5,
+                9, 9, 7, 7, 7, 7, 5,
+                9, 9, 7, 7, 7, 9, 5,
+            ],
+        ),
+    ];
+    for (mut skin, size, expected) in cases {
+        flood_fill_skin(&mut skin, size, 0);
+        assert_eq!(skin, expected, "{size:?}");
+    }
+}
+
 // spec REND-4.1: nothing is filled when the first pixel is the filled colour or 255
 #[test]
 fn a_skin_starting_with_the_filled_colour_or_255_is_kept() {
@@ -328,6 +378,13 @@ fn vertices_are_scaled_turned_and_moved() {
         rotate_for_entity([0.0; 3], [-90.0, 0.0, 0.0], [1.0, 0.0, 0.0]).map(f32::round),
         [0.0, 0.0, 1.0]
     );
+    // Roll 90 about x takes z to -y and y to z.
+    let rolled = |p| rotate_for_entity([0.0; 3], [0.0, 0.0, 90.0], p).map(f32::round);
+    assert_eq!(rolled([0.0, 0.0, 1.0]), [0.0, -1.0, 0.0]);
+    assert_eq!(rolled([0.0, 2.0, 1.0]), [0.0, -1.0, 2.0]);
+    // Pitch 90 about y takes z to x.
+    let pitched = rotate_for_entity([0.0; 3], [90.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
+    assert_eq!(pitched.map(f32::round), [1.0, 0.0, 0.0]);
 }
 
 // spec REND-4.7: ambient is capped at 128, ambient plus shade at 192, torches are 256, and
@@ -337,6 +394,8 @@ fn shade_light_caps_as_r_draw_alias_model() {
     assert_eq!(shade_light(50, false), 0.25);
     assert_eq!(shade_light(100, false), 0.46);
     assert_eq!(shade_light(300, false), 0.32);
+    assert_eq!(shade_light(96, false), 0.48);
+    assert_eq!(shade_light(97, false), 0.475);
     assert_eq!(shade_light(0, true), 1.28);
     let torch = read(&MdlSpec::default(), "progs/flame2.mdl");
     let plain = read(&MdlSpec::default(), "progs/flame3.mdl");
@@ -364,6 +423,8 @@ fn shade_dots_follow_the_yaw_and_clamp() {
     assert_eq!(shade_dots(22.5)[0], 1.26);
     assert_eq!(shade_dots(-22.5)[0], shade_dots(337.5)[0]);
     assert_eq!(shade_dots(-10.0)[0], 1.23);
+    assert_eq!(shade_dots(45.0)[0], 1.34);
+    assert_eq!(shade_dots(360.0 + 45.0)[0], 1.34);
     let model = read(&MdlSpec::default(), "progs/x.mdl");
     let shade = draw(
         &model,
@@ -397,5 +458,6 @@ fn rotating_models_turn_100_degrees_a_second() {
 
 #[test]
 fn a_file_that_is_not_a_model_is_refused() {
-    assert!(AliasModel::read("progs/x.mdl", b"IDPO", &palette()).is_err());
+    let error = AliasModel::read("progs/x.mdl", b"IDPO", &palette()).unwrap_err();
+    assert!(error.to_string().contains("progs/x.mdl"), "{error}");
 }

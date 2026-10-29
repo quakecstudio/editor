@@ -220,8 +220,9 @@ impl AliasModel {
         let Some(frame) = self.frames.get(frame).or_else(|| self.frames.first()) else {
             return 0;
         };
-        // REND-4.4: a NaN interval, the one not above 0 that loads, holds the first pose.
-        if frame.count <= 1 || frame.interval.is_nan() {
+        // REND-4.4: a NaN interval, the one not above 0 that loads, holds the first pose. One
+        // pose is its first at any time, `% 1`, so it needs no test of its own.
+        if frame.interval.is_nan() {
             return frame.first;
         }
         let step = whole(time / f64::from(frame.interval));
@@ -244,13 +245,12 @@ impl AliasModel {
 #[must_use]
 pub fn shade_light(light: i32, torch: bool) -> f32 {
     let ambient = light.min(AMBIENT_CAP);
-    let mut shade = light;
-    if ambient.saturating_add(shade) > SHADE_CAP {
-        shade = SHADE_CAP.saturating_sub(ambient);
-    }
-    if torch {
-        shade = TORCH_LIGHT;
-    }
+    // "if (ambientlight + shadelight > 192) shadelight = 192 - ambientlight"
+    let shade = if torch {
+        TORCH_LIGHT
+    } else {
+        light.min(SHADE_CAP.saturating_sub(ambient))
+    };
     f32_of_i32(shade) / SHADE_SCALE
 }
 
@@ -361,7 +361,7 @@ fn skin_images(
 
 /// `Mod_FloodFillSkin`: the background, the region of `skin`'s first pixel's colour joined to
 /// it, filled with the colours at its edge so mipmapping draws no halo (REND-4.1).
-fn flood_fill_skin(skin: &mut [u8], (width, height): (usize, usize), filled: u8) {
+fn flood_fill_skin(skin: &mut [u8], (width, _height): (usize, usize), filled: u8) {
     let Some(&fill) = skin.first() else { return };
     if fill == filled || fill == TRANSPARENT {
         return;
@@ -391,18 +391,17 @@ fn flood_fill_skin(skin: &mut [u8], (width, height): (usize, usize), filled: u8)
                 _ => {}
             }
         };
-        if x > 0 {
-            step(x.saturating_sub(1), y, &mut fdc);
+        if let Some(left) = x.checked_sub(1) {
+            step(left, y, &mut fdc);
         }
-        if x.saturating_add(1) < width {
-            step(x.saturating_add(1), y, &mut fdc);
+        if let Some(right) = x.checked_add(1).filter(|&r| r < width) {
+            step(right, y, &mut fdc);
         }
-        if y > 0 {
-            step(x, y.saturating_sub(1), &mut fdc);
+        if let Some(up) = y.checked_sub(1) {
+            step(x, up, &mut fdc);
         }
-        if y.saturating_add(1) < height {
-            step(x, y.saturating_add(1), &mut fdc);
-        }
+        // `y < skinheight - 1`: a row past the last is outside the skin, which `step` skips.
+        step(x, y.saturating_add(1), &mut fdc);
         if let Some(p) = y
             .checked_mul(width)
             .and_then(|r| r.checked_add(x))

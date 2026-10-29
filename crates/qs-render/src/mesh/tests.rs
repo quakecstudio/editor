@@ -515,3 +515,20 @@ fn a_placement_of_a_missing_model_is_refused() {
         Err(MeshError::NoWorld)
     ));
 }
+
+// spec REND-2.1: a cycle of no length is not animated
+#[test]
+fn an_empty_cycle_is_not_animated() {
+    let mut map = bsp(&MapSpec::default(), &[]);
+    let cycle = |total| qs_bsp::Animation {
+        total,
+        min: 0,
+        max: 1,
+        next: 0,
+        alternate: None,
+    };
+    map.textures[0].as_mut().unwrap().animation = Some(cycle(0));
+    assert_eq!(MapMesh::build(&map, &palette()).unwrap().animations, [None]);
+    map.textures[0].as_mut().unwrap().animation = Some(cycle(1));
+    assert!(MapMesh::build(&map, &palette()).unwrap().animations[0].is_some());
+}

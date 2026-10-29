@@ -308,25 +308,16 @@ impl MapRenderer {
 
     /// Sets the alias models drawn next, growing their buffer when they need more room.
     pub fn set_models(&mut self, device: &Device, queue: &Queue, models: &ModelFrame) {
-        let bytes: Vec<u8> = models
-            .vertices
-            .iter()
-            .flat_map(|v| {
-                let [x, y, z] = v.position;
-                let [s, t] = v.texture;
-                [x, y, z, s, t, v.shade]
-            })
-            .flat_map(f32::to_ne_bytes)
-            .collect();
+        let bytes = alias_bytes(&models.vertices);
         let needed = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
-        if self.alias.as_ref().is_none_or(|(_, size)| *size < needed) {
+        if let Some(size) = grown(self.alias.as_ref().map(|(_, size)| *size), needed) {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("qs-render alias vertices"),
-                size: needed.max(ALIAS_VERTEX_BYTES),
+                size,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            self.alias = Some((buffer, needed.max(ALIAS_VERTEX_BYTES)));
+            self.alias = Some((buffer, size));
         }
         if let Some((buffer, _)) = &self.alias {
             queue.write_buffer(buffer, 0, &bytes);
@@ -381,6 +372,26 @@ impl MapRenderer {
             }
         }
     }
+}
+
+/// `vertices` as the alias pipeline reads them: position, skin coordinates and shade.
+fn alias_bytes(vertices: &[AliasVertex]) -> Vec<u8> {
+    vertices
+        .iter()
+        .flat_map(|v| {
+            let [x, y, z] = v.position;
+            let [s, t] = v.texture;
+            [x, y, z, s, t, v.shade]
+        })
+        .flat_map(f32::to_ne_bytes)
+        .collect()
+}
+
+/// The size a buffer of `size` bytes, or none yet, grows to for `needed` bytes; `None` when it
+/// holds them already. A buffer is never empty.
+fn grown(size: Option<u64>, needed: u64) -> Option<u64> {
+    let needed = needed.max(ALIAS_VERTEX_BYTES);
+    size.is_none_or(|size| size < needed).then_some(needed)
 }
 
 /// REND-3.3: world textures are filtered `GL_LINEAR_MIPMAP_NEAREST` when smaller and
@@ -498,6 +509,37 @@ mod tests {
 
     use egui_wgpu::wgpu::naga::front::wgsl;
     use egui_wgpu::wgpu::naga::valid::{Capabilities, ValidationFlags, Validator};
+
+    use super::{ALIAS_VERTEX_BYTES, alias_bytes, grown};
+    use crate::alias::AliasVertex;
+
+    #[test]
+    fn alias_vertices_are_six_floats_in_order() {
+        let vertex = AliasVertex {
+            position: [1.0, 2.0, 3.0],
+            texture: [4.0, 5.0],
+            shade: 6.0,
+        };
+        let bytes = alias_bytes(&[vertex, vertex]);
+        assert_eq!(u64::try_from(bytes.len()).unwrap(), 2 * ALIAS_VERTEX_BYTES);
+        let floats: Vec<f32> = bytes
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| f32::from_ne_bytes(*b))
+            .take(6)
+            .collect();
+        assert_eq!(floats, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    }
+
+    #[test]
+    fn the_alias_buffer_grows_only_when_it_must() {
+        assert_eq!(grown(None, 0), Some(ALIAS_VERTEX_BYTES));
+        assert_eq!(grown(None, 100), Some(100));
+        assert_eq!(grown(Some(100), 100), None);
+        assert_eq!(grown(Some(100), 50), None);
+        assert_eq!(grown(Some(100), 101), Some(101));
+    }
 
     const SHADER: &str = include_str!("shader.wgsl");
 
