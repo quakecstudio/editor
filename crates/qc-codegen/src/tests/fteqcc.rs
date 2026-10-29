@@ -162,7 +162,9 @@ fn a_vector_elements_index_is_divided_by_three() {
 // spec FTE-13.7: a store through a subscript by a value is not lowered
 #[test]
 fn a_store_through_a_subscript_by_a_value_is_not_lowered() {
-    let result = compile_fteqcc("float f[3];\nvoid(float i) t = { f[i] = 1; };\n");
+    let result = compile_fteqcc(
+        "void(string e) error = #10;\nfloat f[3];\nvoid(float i) t = { f[i] = 1; };\n",
+    );
     assert!(
         matches!(
             result,
@@ -803,4 +805,55 @@ fn x_is_a_component_of_a_vector_and_a_field_of_an_entity() {
         t[1],
         st(Opcode::LoadF, global(&p, "e"), global(&p, "x"), t[1].c)
     );
+}
+
+// spec FTE-9.4: `.x` and `.z` of an entity's vector field are stored through `v_x` and `v_z`
+#[test]
+fn each_component_of_an_entity_vector_is_its_own_field() {
+    let p =
+        fte_progs(".vector origin;\nentity e;\nvoid() t = { e.origin.x = 1; e.origin.z = 2; };\n");
+    let t = body(&p, "t");
+    assert_eq!((t[0].a, t[0].b), (global(&p, "e"), global(&p, "origin_x")));
+    assert_eq!((t[2].a, t[2].b), (global(&p, "e"), global(&p, "origin_z")));
+}
+
+// spec FTE-2.4: `continue` in a switch in a `do` loop goes to the loop's condition
+#[test]
+fn continue_in_a_switch_in_a_do_loop_belongs_to_the_loop() {
+    let p =
+        fte_progs("float a;\nvoid() t = { do { switch (a) { case 1: continue; } } while (a); };\n");
+    let t = body(&p, "t");
+    let condition = t
+        .iter()
+        .rposition(|s| s.op == u32::from(If.number()))
+        .unwrap();
+    // The `continue` after the switch's GOTO to its tests jumps to the condition.
+    assert_eq!(t[1], st(Goto, i32::try_from(condition).unwrap() - 1, 0, 0));
+}
+
+// spec FTE-13.7: an initialised `var` is no constant, so its subscript calls the getter
+#[test]
+fn a_variable_index_calls_the_getter() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nvar float k = 1;\nfloat a[2];\nfloat g;\n\
+         void() t = { g = a[k]; };\n",
+    );
+    assert!(opcodes(&body(&p, "t")).contains(&u32::from(Call1.number())));
+}
+
+// spec FTE-13.5: an array initialised with fewer values than elements leaves the rest 0
+#[test]
+fn a_short_array_initialiser_leaves_the_rest_zero() {
+    let p = fte_progs("float f[3] = { 1 };\n");
+    assert_eq!(global_words(&p, "f", 3), [1.0_f32.to_bits(), 0, 0]);
+}
+
+// spec FTE-18.4: the first argument of a precache builtin is recorded under FTEQCC too
+#[test]
+fn an_fteqcc_precache_is_recorded() {
+    let compiled = compile_fteqcc(
+        "void(string s) precache_model = #20;\nvoid() t = { precache_model(\"progs/a.mdl\"); };\n",
+    )
+    .unwrap();
+    assert_eq!(compiled.precaches.models.len(), 1);
 }
