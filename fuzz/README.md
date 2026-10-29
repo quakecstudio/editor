@@ -23,6 +23,7 @@ bar of `docs/conventions.md` and `docs/testing.md` requires.
 | `qs-map` | The `.map` reader | No panic on any bytes |
 | `qs-mdl` | The MDL reader | No panic on any bytes |
 | `qs-pak` | The PAK reader | No panic on any bytes |
+| `qs-settings` | A user settings file through `SettingsFile::load` and `SettingsStore::open`, then a `settings.set` or `settings.reset` and its undo (P2-148) | No panic; the store and the reader agree; a refused change leaves the file as it was; an accepted change, and its undo, read back as the store holds them |
 | `qs-wad` | The WAD2 reader | No panic on any bytes |
 | `qs-wav` | The WAV reader | No panic on any bytes |
 | `xtask-vectors` | The VM vector parser | No panic on any bytes |

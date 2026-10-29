@@ -24,12 +24,15 @@ qc-trace = { path = "../crates/qc-trace" }
 qc-types = { path = "../crates/qc-types" }
 qc-vm = { path = "../crates/qc-vm" }
 qs-bsp = { path = "../crates/qs-bsp" }
+qs-commands = { path = "../crates/qs-commands" }
 qs-differential = { path = "../crates/qs-differential" }
 qs-map = { path = "../crates/qs-map" }
 qs-mdl = { path = "../crates/qs-mdl" }
 qs-pak = { path = "../crates/qs-pak" }
+qs-settings = { path = "../crates/qs-settings" }
 qs-wad = { path = "../crates/qs-wad" }
 qs-wav = { path = "../crates/qs-wav" }
+serde_json = { version = "=1.0.151", default-features = false, features = ["std"] }
 
 [[bin]]
 name = "parser"
@@ -97,6 +100,13 @@ bench = false
 [[bin]]
 name = "qs-pak"
 path = "fuzz_targets/qs_pak.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "qs-settings"
+path = "fuzz_targets/qs_settings.rs"
 test = false
 doc = false
 bench = false
