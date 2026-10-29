@@ -31,7 +31,7 @@ const LICENSE_FILE: &str = "LICENSE";
 const LICENSE_MARKERS: [&str; 2] = ["GNU GENERAL PUBLIC LICENSE", "Version 3, 29 June 2007"];
 const SPECS_MANIFEST: &str = "specs/manifest.tsv";
 
-const SOURCE_EXTENSIONS: [&str; 6] = ["rs", "py", "sh", "c", "h", "qc"];
+const SOURCE_EXTENSIONS: [&str; 7] = ["rs", "py", "sh", "c", "h", "qc", "wgsl"];
 const SOURCE_NAMES: [&str; 1] = ["Makefile"];
 const TEXT_EXTENSIONS: [&str; 12] = [
     "md", "toml", "yaml", "yml", "json", "jsonl", "lock", "html", "txt", "tsv", "csv", "hex",

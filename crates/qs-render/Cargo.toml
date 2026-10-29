@@ -1,0 +1,21 @@
+[package]
+name = "qs-render"
+description = "The wgpu renderer: a BSP's world surfaces with their textures and lightmaps, drawn through egui_wgpu paint callbacks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+egui-wgpu = { workspace = true }
+epaint = { workspace = true }
+qs-bsp = { workspace = true }
+
+[dev-dependencies]
+eframe = { workspace = true, features = ["wayland", "wgpu", "x11"] }
+qs-vfs = { workspace = true }
+
+[lints]
+workspace = true

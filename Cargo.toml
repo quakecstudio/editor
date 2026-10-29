@@ -112,6 +112,9 @@ similar_names = "allow"
 [workspace.dependencies]
 cc = { version = "=1.8.0", default-features = false }
 criterion = { version = "=0.8.2", default-features = false }
+eframe = { version = "=0.36.2", default-features = false }
+egui-wgpu = { version = "=0.36.2", default-features = false }
+epaint = { version = "=0.36.2", default-features = false }
 junction = { version = "=2.1.0", default-features = false }
 miniz_oxide = { version = "=0.9.1", default-features = false }
 proptest = { version = "=1.11.0", default-features = false }
@@ -139,7 +142,9 @@ qs-mdl = { path = "crates/qs-mdl" }
 qs-pak = { path = "crates/qs-pak" }
 qs-paths = { path = "crates/qs-paths" }
 qs-porting-example = { path = "crates/qs-porting-example" }
+qs-render = { path = "crates/qs-render" }
 qs-settings = { path = "crates/qs-settings" }
+qs-sim = { path = "crates/qs-sim" }
 qs-vfs = { path = "crates/qs-vfs" }
 qs-wad = { path = "crates/qs-wad" }
 qs-wav = { path = "crates/qs-wav" }

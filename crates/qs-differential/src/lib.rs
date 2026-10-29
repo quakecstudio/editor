@@ -25,7 +25,6 @@
 
 pub mod calls;
 pub mod compare;
-pub mod edict8;
 pub mod generate;
 pub mod host;
 pub mod runner;

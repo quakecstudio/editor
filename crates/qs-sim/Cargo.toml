@@ -1,0 +1,23 @@
+[package]
+name = "qs-sim"
+description = "The preview host's server simulation: a map's entities spawned through the progs, and the world they live in"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qc-builtins = { workspace = true }
+qc-edict = { workspace = true }
+qc-progs = { workspace = true }
+qc-types = { workspace = true }
+qc-vm = { workspace = true }
+qs-porting-example = { workspace = true }
+
+[dev-dependencies]
+qs-bsp = { workspace = true }
+
+[lints]
+workspace = true

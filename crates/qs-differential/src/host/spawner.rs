@@ -6,7 +6,7 @@
 
 //! The [`SpawnHost`] the EDICT-8 port drives when spawning a map (EDICT-8).
 //!
-//! [`Spawner`] connects the pure EDICT-8 port ([`crate::edict8`]) to the running [`Host`]: it
+//! [`Spawner`] connects the pure EDICT-8 port ([`qs_sim::spawn`]) to the running [`Host`]: it
 //! allocates edicts from the edict store (`ED_Alloc`, EDICT-6, and the world for the first
 //! entity, EDICT-4.2), finds fields and functions in the progs (`ED_FindField`,
 //! `ED_FindFunction`), reads and writes fields and globals, makes engine strings, and runs or
@@ -16,7 +16,7 @@
 use qc_progs::Progs;
 use qc_types::{DefType, Slot};
 
-use crate::edict8::{FieldDef, SPAWNFLAGS_SLOT, SpawnError, SpawnHost};
+use qs_sim::spawn::{FieldDef, SPAWNFLAGS_SLOT, SpawnError, SpawnHost};
 
 use super::Host;
 

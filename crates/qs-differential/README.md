@@ -26,7 +26,7 @@ depends on it (`layers.toml`); outside the workspace, the `qc_vm` fuzz target
 
 - `docs/spec/differential.md` DIFF-2: the scenario file (`scenario` module).
 - `docs/spec/edicts.md` EDICT-8: spawning a map's entities, the port of `ED_LoadFromFile`,
-  `ED_ParseEdict`, `ED_ParseEpair` and `COM_Parse` (`edict8` module).
+  `ED_ParseEdict`, `ED_ParseEpair` and `COM_Parse` (`qs_sim::spawn`, which this crate uses).
 - `docs/spec/differential.md` DIFF-3 to DIFF-5 and DIFF-8: the host loop that sets up the map,
   lets the clients enter, runs the server frames and shuts the server down after an error
   (`host` module), driving `qc-vm` with `qc-edict` and the `qc-builtins` mock engine and
