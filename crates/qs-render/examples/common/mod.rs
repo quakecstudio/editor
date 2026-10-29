@@ -48,7 +48,9 @@ impl Sim {
         let frametime = behind.min(LONGEST);
         *behind = 0.0;
         let progs = Progs::read(self.progs).map_err(|e| e.to_string())?;
-        self.world.frame(&progs, frametime).map_err(|e| e.to_string())
+        self.world
+            .frame(&progs, frametime)
+            .map_err(|e| e.to_string())
     }
 
     /// The player enters the game.
@@ -186,6 +188,10 @@ fn index_of(value: f32) -> usize {
 
 /// Reads the map the command line names (`e1m1` by default) from the install that `-basedir`
 /// and `-game` name, the engine's own options, which every other argument is passed on as.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one pass from the command line to a loaded map reads best in the order it runs"
+)]
 pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     let mut map = "e1m1".to_owned();
     let mut engine = Vec::new();

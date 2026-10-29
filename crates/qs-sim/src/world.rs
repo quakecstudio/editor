@@ -159,9 +159,11 @@ impl World {
         call.set_global("frametime", Slot::from_f32(t));
         if let Some(cmd) = player {
             let cmd = call.read_move(CLIENT, &cmd);
-            call.client_think(CLIENT, &cmd, t);
+            call.client_think(CLIENT, &cmd, t)
+                .map_err(WorldError::Frame)?;
         }
-        call.physics(frametime, &clients).map_err(WorldError::Frame)?;
+        call.physics(frametime, &clients)
+            .map_err(WorldError::Frame)?;
         // SV_WriteClientdataToMessage: a fixangle goes to the client, once.
         if player.is_some() && call.float(CLIENT, "fixangle") != 0.0 {
             self.set_angle = Some(call.vector(CLIENT, "angles").map(wire_angle));

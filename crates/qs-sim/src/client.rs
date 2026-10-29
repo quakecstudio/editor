@@ -155,9 +155,14 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// `SV_ClientThink` (PHYS-9.1, PHYS-9.2).
-    pub(crate) fn client_think(&mut self, ent: usize, cmd: &UserCmd, frametime: f32) {
+    pub(crate) fn client_think(
+        &mut self,
+        ent: usize,
+        cmd: &UserCmd,
+        frametime: f32,
+    ) -> Result<(), RunError> {
         if self.movetype(ent) == MoveType::None {
-            return;
+            return Ok(());
         }
         let onground = self.flags(ent) & FL_ONGROUND != 0;
         // DropPunchAngle
@@ -165,7 +170,7 @@ impl SimCall<'_, '_, '_> {
         let len = (len - PUNCH_FADE * frametime).max(0.0);
         self.set_vector(ent, "punchangle", punch.map(|c| c * len));
         if self.float(ent, "health") <= 0.0 {
-            return;
+            return Ok(());
         }
         let v_angle = add(self.vector(ent, "v_angle"), self.vector(ent, "punchangle"));
         let mut angles = self.vector(ent, "angles");
@@ -177,13 +182,13 @@ impl SimCall<'_, '_, '_> {
         self.set_vector(ent, "angles", angles);
         if self.flags(ent) & FL_WATERJUMP != 0 {
             self.water_jump(ent);
-            return;
+            return Ok(());
         }
         if self.float(ent, "waterlevel") >= 2.0 && self.movetype(ent) != MoveType::Noclip {
             self.water_move(ent, cmd, frametime);
-            return;
+            return Ok(());
         }
-        self.air_move(ent, cmd, onground, frametime);
+        self.air_move(ent, cmd, onground, frametime)
     }
 
     /// `SV_WaterJump` (PHYS-9.5).
@@ -200,7 +205,13 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// `SV_AirMove` (PHYS-9.2).
-    fn air_move(&mut self, ent: usize, cmd: &UserCmd, onground: bool, frametime: f32) {
+    fn air_move(
+        &mut self,
+        ent: usize,
+        cmd: &UserCmd,
+        onground: bool,
+        frametime: f32,
+    ) -> Result<(), RunError> {
         let (forward, right, _) = angle_vectors(self.vector(ent, "angles"));
         let mut fmove = cmd.forward;
         let smove = cmd.side;
@@ -212,7 +223,11 @@ impl SimCall<'_, '_, '_> {
         for ((w, f), r) in wishvel.iter_mut().zip(forward).zip(right) {
             *w = f * fmove + r * smove;
         }
-        wishvel[2] = if movetype == MoveType::Walk { 0.0 } else { cmd.up };
+        wishvel[2] = if movetype == MoveType::Walk {
+            0.0
+        } else {
+            cmd.up
+        };
         let (wishdir, mut wishspeed) = normalize(wishvel);
         if wishspeed > MAX_SPEED {
             wishvel = wishvel.map(|c| c * (MAX_SPEED / wishspeed));
@@ -221,36 +236,48 @@ impl SimCall<'_, '_, '_> {
         if movetype == MoveType::Noclip {
             self.set_vector(ent, "velocity", wishvel);
         } else if onground {
-            self.user_friction(ent, frametime);
+            self.user_friction(ent, frametime)?;
             self.accelerate(ent, wishdir, wishspeed, frametime);
         } else {
             self.air_accelerate(ent, wishvel, wishspeed, frametime);
         }
+        Ok(())
     }
 
     /// `SV_UserFriction` (PHYS-9.3).
-    fn user_friction(&mut self, ent: usize, frametime: f32) {
+    fn user_friction(&mut self, ent: usize, frametime: f32) -> Result<(), RunError> {
         let vel = self.vector(ent, "velocity");
         let speed = f64_to_f32_public(f64::from(vel[0] * vel[0] + vel[1] * vel[1]).sqrt());
         if speed == 0.0 {
-            return;
+            return Ok(());
         }
         let origin = self.vector(ent, "origin");
         let x = origin[0] + vel[0] / speed * EDGE_AHEAD;
         let y = origin[1] + vel[1] / speed * EDGE_AHEAD;
         let z = origin[2] + self.vector(ent, "mins")[2];
-        let edge = self
-            .trace(
-                ([x, y, z], [0.0; 3], [0.0; 3], [x, y, z - EDGE_DEPTH]),
-                MoveKind::NoMonsters,
-                ent,
-            )
-            .map(|t| t.fraction == 1.0)
-            .unwrap_or(false);
-        let friction = if edge { FRICTION * EDGE_FRICTION } else { FRICTION };
-        let control = if speed < STOP_SPEED { STOP_SPEED } else { speed };
+        let trace = self.trace(
+            ([x, y, z], [0.0; 3], [0.0; 3], [x, y, z - EDGE_DEPTH]),
+            MoveKind::NoMonsters,
+            ent,
+        )?;
+        #[expect(
+            clippy::float_cmp,
+            reason = "spec PHYS-9.3: id tests trace.fraction == 1.0"
+        )]
+        let edge = trace.fraction == 1.0;
+        let friction = if edge {
+            FRICTION * EDGE_FRICTION
+        } else {
+            FRICTION
+        };
+        let control = if speed < STOP_SPEED {
+            STOP_SPEED
+        } else {
+            speed
+        };
         let newspeed = (speed - frametime * control * friction).max(0.0) / speed;
         self.set_vector(ent, "velocity", vel.map(|c| c * newspeed));
+        Ok(())
     }
 
     /// `SV_Accelerate` (PHYS-9.4).
@@ -261,7 +288,11 @@ impl SimCall<'_, '_, '_> {
             return;
         }
         let accelspeed = (ACCELERATE * frametime * wishspeed).min(addspeed);
-        self.set_vector(ent, "velocity", add(velocity, wishdir.map(|c| c * accelspeed)));
+        self.set_vector(
+            ent,
+            "velocity",
+            add(velocity, wishdir.map(|c| c * accelspeed)),
+        );
     }
 
     /// `SV_AirAccelerate` (PHYS-9.4).
@@ -274,7 +305,11 @@ impl SimCall<'_, '_, '_> {
             return;
         }
         let accelspeed = (ACCELERATE * wishspeed * frametime).min(addspeed);
-        self.set_vector(ent, "velocity", add(velocity, wishveloc.map(|c| c * accelspeed)));
+        self.set_vector(
+            ent,
+            "velocity",
+            add(velocity, wishveloc.map(|c| c * accelspeed)),
+        );
     }
 
     /// `SV_WaterMove` (PHYS-9.5).
@@ -315,7 +350,11 @@ impl SimCall<'_, '_, '_> {
         let (wishvel, _) = normalize(wishvel);
         let accelspeed = (ACCELERATE * wishspeed * frametime).min(addspeed);
         let velocity = self.vector(ent, "velocity");
-        self.set_vector(ent, "velocity", add(velocity, wishvel.map(|c| c * accelspeed)));
+        self.set_vector(
+            ent,
+            "velocity",
+            add(velocity, wishvel.map(|c| c * accelspeed)),
+        );
     }
 
     /// `SV_Physics_Client` for a connected client (PHYS-8.1, PHYS-8.2).
@@ -387,7 +426,11 @@ impl SimCall<'_, '_, '_> {
         };
         let feet = contents(self, mins[2] + 1.0)?;
         if feet <= CONTENTS_WATER {
-            self.set_float(ent, "watertype", f32::from(i16::try_from(feet).unwrap_or(-3)));
+            self.set_float(
+                ent,
+                "watertype",
+                f32::from(i16::try_from(feet).unwrap_or(-3)),
+            );
             self.set_float(ent, "waterlevel", 1.0);
             if contents(self, (mins[2] + maxs[2]) * 0.5)? <= CONTENTS_WATER {
                 self.set_float(ent, "waterlevel", 2.0);
@@ -418,7 +461,11 @@ impl SimCall<'_, '_, '_> {
         for z in 0..18_u8 {
             for i in [-1.0, 0.0, 1.0] {
                 for j in [-1.0, 0.0, 1.0] {
-                    self.set_vector(ent, "origin", [org[0] + i, org[1] + j, org[2] + f32::from(z)]);
+                    self.set_vector(
+                        ent,
+                        "origin",
+                        [org[0] + i, org[1] + j, org[2] + f32::from(z)],
+                    );
                     if !stuck(self)? {
                         return self.link(ent, true);
                     }
@@ -512,7 +559,8 @@ impl SimCall<'_, '_, '_> {
         let mut clip = self.fly_move(ent, frametime, &mut steptrace)?;
         if clip != 0 {
             let origin = self.vector(ent, "origin");
-            if (oldorg[1] - origin[1]).abs() < 0.031_25 && (oldorg[0] - origin[0]).abs() < 0.031_25 {
+            if (oldorg[1] - origin[1]).abs() < 0.031_25 && (oldorg[0] - origin[0]).abs() < 0.031_25
+            {
                 // "stepping up didn't make any progress"
                 clip = self.try_unstick(ent, oldvel)?;
             }

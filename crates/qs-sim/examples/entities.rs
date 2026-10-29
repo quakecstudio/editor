@@ -47,13 +47,13 @@ fn main() -> Result<(), String> {
     }
     let mut out = std::io::stdout().lock();
     for n in 0..frames {
-        if play && n == frames / 2 {
+        if play {
             world.set_command(qs_sim::UserCmd {
-                forward: 200.0,
+                angles: [0.0, 90.0, 0.0],
                 ..qs_sim::UserCmd::default()
             });
         }
-        world.frame(&progs, 0.1).map_err(|e| e.to_string())?;
+        world.frame(&progs, 1.0 / 60.0).map_err(|e| e.to_string())?;
         if let Some((eye, angles)) = world.player_view() {
             writeln!(out, "frame {n}: eye {eye:?} angles {angles:?}").map_err(|e| e.to_string())?;
         }
