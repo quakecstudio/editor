@@ -399,6 +399,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-ide"
+version = "2026.10.0"
+dependencies = [
+ "qc-diag",
+ "qc-engines",
+ "qc-project",
+ "qc-sema",
+ "qc-syntax",
+]
+
+[[package]]
 name = "qc-lexer"
 version = "2026.10.0"
 dependencies = [
@@ -579,6 +590,17 @@ name = "qs-porting-example"
 version = "2026.10.0"
 
 [[package]]
+name = "qs-settings"
+version = "2026.10.0"
+dependencies = [
+ "qs-commands",
+ "schemars",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "qs-tests"
 version = "2026.10.0"
 dependencies = [
@@ -620,6 +642,16 @@ name = "qs-wav"
 version = "2026.10.0"
 dependencies = [
  "proptest",
+]
+
+[[package]]
+name = "quakec-lsp"
+version = "2026.10.0"
+dependencies = [
+ "qc-ide",
+ "qc-project",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1060,6 +1092,8 @@ dependencies = [
  "qs-commands",
  "qs-map",
  "qs-pak",
+ "qs-settings",
+ "quakec-lsp",
  "serde",
  "serde_json",
  "toml",

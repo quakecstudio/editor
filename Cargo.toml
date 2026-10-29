@@ -117,6 +117,7 @@ miniz_oxide = { version = "=0.9.1", default-features = false }
 proptest = { version = "=1.11.0", default-features = false }
 qc-edict = { path = "crates/qc-edict" }
 qc-engines = { path = "crates/qc-engines" }
+qc-ide = { path = "crates/qc-ide" }
 qc-builtins = { path = "crates/qc-builtins" }
 qc-codegen = { path = "crates/qc-codegen" }
 qc-diag = { path = "crates/qc-diag" }
@@ -138,9 +139,11 @@ qs-mdl = { path = "crates/qs-mdl" }
 qs-pak = { path = "crates/qs-pak" }
 qs-paths = { path = "crates/qs-paths" }
 qs-porting-example = { path = "crates/qs-porting-example" }
+qs-settings = { path = "crates/qs-settings" }
 qs-vfs = { path = "crates/qs-vfs" }
 qs-wad = { path = "crates/qs-wad" }
 qs-wav = { path = "crates/qs-wav" }
+quakec-lsp = { path = "apps/lsp" }
 schemars = { version = "=1.2.2", default-features = false }
 serde = { version = "=1.0.229", default-features = false }
 serde_json = { version = "=1.0.151", default-features = false }

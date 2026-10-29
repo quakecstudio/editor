@@ -54,6 +54,9 @@
 //! - `sema-corpus`: resolves id 1.01 and the rerelease through `qc-sema` and
 //!   compares each index with its golden file, and its global definitions with
 //!   the progs.dat an oracle compiler built (P2-54).
+//! - `lsp-corpus`: drives the language server against the rerelease over the
+//!   protocol, every request at a set of probes, and compares the answers with
+//!   their golden file (P2-14).
 //! - `fteqcc-coverage`: parses every `.qc` and `.qh` file under the rerelease
 //!   codebase directories with the vanilla parser and lists every construct it
 //!   rejects, grouped into the classes of
@@ -107,6 +110,7 @@ mod host;
 mod layers;
 mod lex_corpus;
 mod licenses;
+mod lsp_corpus;
 mod map_corpus;
 mod oracles;
 mod parse_corpus;
@@ -126,9 +130,9 @@ use std::process::ExitCode;
 const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixtures | \
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
                      readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
-                     map-corpus | parse-corpus | project-corpus | sema-corpus | differential | \
-                     fteqcc-coverage | fteqcc-full-coverage | fteqcc-profile | codegen-corpus | \
-                     engines | commands>";
+                     map-corpus | parse-corpus | project-corpus | sema-corpus | lsp-corpus | \
+                     differential | fteqcc-coverage | fteqcc-full-coverage | fteqcc-profile | \
+                     codegen-corpus | engines | commands>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;
@@ -193,6 +197,7 @@ fn command(name: &str) -> Option<Command> {
         "fteqcc-profile" => Some(fteqcc_profile::main),
         "fuzz" => Some(fuzz::main),
         "lex-corpus" => Some(lex_corpus::main),
+        "lsp-corpus" => Some(lsp_corpus::main),
         "map-corpus" => Some(map_corpus::main),
         "oracles" => Some(oracles::main),
         "parse-corpus" => Some(parse_corpus::main),
@@ -296,6 +301,7 @@ mod tests {
             "fteqcc-profile",
             "fuzz",
             "lex-corpus",
+            "lsp-corpus",
             "map-corpus",
             "oracles",
             "parse-corpus",

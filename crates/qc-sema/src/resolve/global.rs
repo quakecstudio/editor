@@ -28,7 +28,7 @@ use crate::resolve::{
     MISDECLARED_BUILTINS, Pending, Redeclaration, Resolver, Special, TypeCheck, component_type,
     defaults_agree, diag,
 };
-use crate::symbol::{DefId, DefKind, Definition, FileId, Location};
+use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{FunctionType, Type};
 
 impl<'a> Resolver<'a> {
@@ -186,6 +186,10 @@ impl<'a> Resolver<'a> {
         decl: &DeclFacts<'_>,
     ) -> DefId {
         if let Some(existing) = self.lookup_global(name) {
+            // QC-11.5: a name declared again names the definition it redeclares, unless
+            // FTEQCC replaces that definition below.
+            let at = self.index.redeclarations.len();
+            self.redeclared(location, existing);
             let redeclaration = Redeclaration {
                 existing,
                 name,
@@ -212,6 +216,7 @@ impl<'a> Resolver<'a> {
                 }
                 TypeCheck::Mismatch => return existing,
                 TypeCheck::Replaced => {
+                    self.index.redeclarations.truncate(at);
                     if let Some(defs) = self.globals.get_mut(name) {
                         defs.retain(|d| *d != existing);
                     }
@@ -290,6 +295,13 @@ impl<'a> Resolver<'a> {
             }
         }
         id
+    }
+
+    /// Records that the declaration at `location` declares `def` again (QC-11.5); returns
+    /// `def`.
+    fn redeclared(&mut self, location: Location, def: DefId) -> DefId {
+        self.index.redeclarations.push(Reference { location, def });
+        def
     }
 
     /// The type check of a redeclaration (QC-11.5, FTEF-19.7), with FTEQCC's rules for the
@@ -863,6 +875,7 @@ impl<'a> Resolver<'a> {
                 "incompatible redeclaration. Ignoring replacement of qc function with builtin."
                     .to_owned(),
             );
+            self.redeclared(location, existing);
             return Vec::new();
         }
         let statics = (self.profile.qualifiers() && decl.is_static()).then_some(self.unit);
@@ -928,8 +941,9 @@ impl<'a> Resolver<'a> {
             params: &decl.params,
             array: self.array_of(decl),
         };
+        // QC-11.5: a refused redeclaration still names the definition.
         match self.check_redeclared_type(&redeclaration, false) {
-            TypeCheck::Mismatch => Err(found),
+            TypeCheck::Mismatch => Err(self.redeclared(location, found)),
             TypeCheck::Replaced => {
                 if let Some(defs) = self.globals.get_mut(&decl.name) {
                     defs.retain(|d| *d != found);
@@ -938,7 +952,7 @@ impl<'a> Resolver<'a> {
             }
             TypeCheck::Same | TypeCheck::Ignored => {
                 if self.check_array(&redeclaration, false) {
-                    Err(found)
+                    Err(self.redeclared(location, found))
                 } else {
                     Ok(Some(found))
                 }
