@@ -447,9 +447,9 @@ fn a_placed_model_moves_and_turns_its_corners() {
     assert_eq!(moved[1].light, unmoved[1].light);
     // The first model added gives the bounds.
     assert_eq!(mesh.maxs, [64.0, 32.0, 0.0]);
-    // One batch draws both copies.
-    assert_eq!(mesh.batches.len(), 1);
-    assert_eq!(mesh.batches[0].count, 12);
+    // The world's copy and the entity's are batches of their own (REND-1.11).
+    assert_eq!(mesh.batches.len(), 2);
+    assert_eq!(mesh.batches[0].count, 6);
 }
 
 // spec REND-1.9: pitch turns about y with the sign `R_DrawBrushModel`'s double negation leaves,
@@ -531,4 +531,26 @@ fn an_empty_cycle_is_not_animated() {
     assert_eq!(MapMesh::build(&map, &palette()).unwrap().animations, [None]);
     map.textures[0].as_mut().unwrap().animation = Some(cycle(1));
     assert!(MapMesh::build(&map, &palette()).unwrap().animations[0].is_some());
+}
+
+// spec REND-1.11: the world's faces come before every entity's, in batches of their own
+#[test]
+fn the_world_is_drawn_before_entities() {
+    let world = bsp(&MapSpec::default(), &[]);
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette);
+    let lift = Placement {
+        model: 0,
+        origin: [0.0, 0.0, 5.0],
+        angles: [0.0; 3],
+    };
+    builder.add(&world, &[Placement::WORLD, lift]).unwrap();
+    let mesh = builder.finish();
+    assert_eq!(mesh.batches.len(), 2);
+    let first = &mesh.batches[0];
+    let z = mesh.vertices[mesh.indices[first.first as usize] as usize].position[2];
+    assert_eq!(z, 0.0);
+    let second = &mesh.batches[1];
+    let z = mesh.vertices[mesh.indices[second.first as usize] as usize].position[2];
+    assert_eq!(z, 5.0);
 }

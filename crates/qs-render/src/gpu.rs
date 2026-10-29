@@ -153,11 +153,11 @@ impl MapRenderer {
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     buffers: &[Some(layout_of.clone())],
                 },
-                primitive: wgpu::PrimitiveState::default(),
+                primitive: primitive(),
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: depth,
                     depth_write_enabled: Some(true),
-                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    depth_compare: Some(DEPTH_COMPARE),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -394,6 +394,20 @@ fn grown(size: Option<u64>, needed: u64) -> Option<u64> {
     size.is_none_or(|size| size < needed).then_some(needed)
 }
 
+/// REND-1.11: `glDepthFunc (GL_LEQUAL)`, so of two surfaces at one depth the later drawn,
+/// an entity's over the world's, is seen.
+const DEPTH_COMPARE: wgpu::CompareFunction = wgpu::CompareFunction::LessEqual;
+
+/// REND-1.10: GLQuake's `glCullFace (GL_FRONT)` with `GL_CULL_FACE` on and GL's
+/// counter-clockwise front face: only the side a face is seen from the front is drawn.
+fn primitive() -> wgpu::PrimitiveState {
+    wgpu::PrimitiveState {
+        front_face: wgpu::FrontFace::Ccw,
+        cull_mode: Some(wgpu::Face::Front),
+        ..wgpu::PrimitiveState::default()
+    }
+}
+
 /// REND-3.3: world textures are filtered `GL_LINEAR_MIPMAP_NEAREST` when smaller and
 /// `GL_LINEAR` when larger, and repeat.
 fn world_sampler() -> wgpu::SamplerDescriptor<'static> {
@@ -507,10 +521,26 @@ mod tests {
         reason = "test code: a failed unwrap is a failed test"
     )]
 
+    use egui_wgpu::wgpu;
     use egui_wgpu::wgpu::naga::front::wgsl;
     use egui_wgpu::wgpu::naga::valid::{Capabilities, ValidationFlags, Validator};
 
-    use super::{ALIAS_VERTEX_BYTES, alias_bytes, grown};
+    use super::{ALIAS_VERTEX_BYTES, DEPTH_COMPARE, alias_bytes, grown, primitive};
+
+    // spec REND-1.11: a fragment at the depth already there passes, GL_LEQUAL
+    #[test]
+    fn depth_ties_go_to_the_later_surface() {
+        assert_eq!(DEPTH_COMPARE, wgpu::CompareFunction::LessEqual);
+    }
+
+    // spec REND-1.10: only a face's front is drawn: GL's counter-clockwise front, front culled
+    #[test]
+    fn faces_are_culled_as_glquake_culls_them() {
+        let state = primitive();
+        assert_eq!(state.front_face, wgpu::FrontFace::Ccw);
+        assert_eq!(state.cull_mode, Some(wgpu::Face::Front));
+        assert_eq!(state.topology, wgpu::PrimitiveTopology::TriangleList);
+    }
     use crate::alias::AliasVertex;
 
     #[test]

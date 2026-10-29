@@ -280,7 +280,9 @@ impl<'p> MeshBuilder<'p> {
         let mut placed = vec![None; bsp.faces.len()];
         for placement in placements {
             let model = bsp.models.get(placement.model).ok_or(MeshError::NoWorld)?;
-            if self.bounds.is_none() {
+            // The first model added is the world, drawn before every entity (REND-1.11).
+            let world = self.bounds.is_none();
+            if world {
                 self.bounds = Some((model.mins, model.maxs));
             }
             let numbers = model.firstface..model.firstface.saturating_add(model.numfaces);
@@ -319,6 +321,7 @@ impl<'p> MeshBuilder<'p> {
                     list.push(Polygon {
                         corners: corners(face, bsp),
                         placement: *placement,
+                        world,
                         texinfo: *texinfo,
                         size: [f32_of(texture.width), f32_of(texture.height)],
                         texturemins: face.texturemins,
@@ -374,19 +377,22 @@ impl<'p> MeshBuilder<'p> {
             mins,
             maxs,
         };
-        for (slot, polygons) in self.by_texture.iter().enumerate() {
-            let first = u32_of(mesh.indices.len());
-            for polygon in polygons {
-                polygon.emit(&mut mesh, (width, height));
-            }
-            let count = u32_of(mesh.indices.len()).saturating_sub(first);
-            if count > 0 {
-                mesh.batches.push(Batch {
-                    texture: slot,
-                    surface: self.surfaces.get(slot).copied().unwrap_or(Surface::Lit),
-                    first,
-                    count,
-                });
+        // REND-1.11: the world's batches, then the entities'.
+        for world in [true, false] {
+            for (slot, polygons) in self.by_texture.iter().enumerate() {
+                let first = u32_of(mesh.indices.len());
+                for polygon in polygons.iter().filter(|p| p.world == world) {
+                    polygon.emit(&mut mesh, (width, height));
+                }
+                let count = u32_of(mesh.indices.len()).saturating_sub(first);
+                if count > 0 {
+                    mesh.batches.push(Batch {
+                        texture: slot,
+                        surface: self.surfaces.get(slot).copied().unwrap_or(Surface::Lit),
+                        first,
+                        count,
+                    });
+                }
             }
         }
         mesh
@@ -399,6 +405,8 @@ struct Polygon {
     corners: Vec<[f32; 3]>,
     /// Where its model is drawn.
     placement: Placement,
+    /// Whether it is the world's, drawn first.
+    world: bool,
     texinfo: Texinfo,
     size: [f32; 2],
     texturemins: [i16; 2],

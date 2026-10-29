@@ -59,6 +59,17 @@ texture darkened by the lightmap. The map view and the preview host draw the wor
   `glRotatef (-e->angles[0], 0, 1, 0)`, `glRotatef (e->angles[2], 1, 0, 0)`. A corner is
   therefore turned by roll about x, then by `+angles[0]` about y, then by yaw about z, then
   moved by the origin. Its texture and lightmap coordinates are its own, unmoved.
+- **REND-1.10** Only the front of a face is drawn: `R_SetupGL` sets `glCullFace (GL_FRONT)` and
+  enables `GL_CULL_FACE` when `gl_cull` is set, as it is by default, with GL's
+  counter-clockwise front face, which keeps a polygon whose corners run clockwise on screen, a
+  Quake face seen from the side its plane faces. The world walk and `R_DrawBrushModel` test
+  the side too (`SURF_PLANEBACK`), except that the walk does not for a `SURF_UNDERWATER`
+  surface, which the culling still removes. So a brush entity's face flush against the world's
+  back to back, such as a door's underside on a floor, is never drawn.
+- **REND-1.11** The world is drawn before the entities (`R_DrawWorld`, then
+  `R_DrawEntitiesOnList` in `R_RenderScene`), with `glDepthFunc (GL_LEQUAL)`
+  (`R_Clear`): of a brush entity's face and a world face at the same depth, such as a lowered
+  lift's top flush with the floor, the entity's is seen.
 
 ## REND-2 Moving textures
 
