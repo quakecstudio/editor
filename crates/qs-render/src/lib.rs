@@ -9,12 +9,14 @@
 //! atlas on the CPU; [`MapRenderer`] uploads it and draws it; [`MapCallback`] draws it from
 //! egui; [`Camera`] gives the matrix it is drawn with.
 //!
-//! Implements `docs/spec/render.md` REND-1.
+//! Implements `docs/spec/render.md` REND-1 to REND-3.
 
 mod camera;
 mod gpu;
 mod mesh;
 
 pub use camera::Camera;
-pub use gpu::{MapCallback, MapRenderer};
-pub use mesh::{Batch, Image, MapMesh, MeshError, Palette, Vertex};
+pub use gpu::{MapCallback, MapRenderer, View};
+pub use mesh::{
+    Animation, Batch, GAMMA, Image, MapMesh, MeshError, Palette, Surface, Vertex, frame, mip_levels,
+};

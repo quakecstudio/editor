@@ -273,3 +273,140 @@ fn a_map_with_no_world_model_is_refused() {
     map.models.clear();
     assert_eq!(MapMesh::build(&map, &palette()), Err(MeshError::NoWorld));
 }
+
+// spec REND-2.1: an animated texture is the frame for (int)(time*10) % anim_total, found by
+// following next from the base while the frame is outside min..max
+#[test]
+fn animated_textures_step_ten_times_a_second() {
+    use super::{Animation, frame};
+    // Three frames in a cycle: textures 0, 1 and 2.
+    let cycle = |min, next| {
+        Some(Animation {
+            total: 3,
+            min,
+            max: min + 1,
+            next,
+        })
+    };
+    let animations = [cycle(0, 1), cycle(1, 2), cycle(2, 0), None];
+    assert_eq!(frame(&animations, 0, 0.0), 0);
+    assert_eq!(frame(&animations, 0, 0.15), 1);
+    assert_eq!(frame(&animations, 0, 0.25), 2);
+    assert_eq!(frame(&animations, 0, 0.35), 0);
+    assert_eq!(frame(&animations, 1, 0.25), 2);
+    // A texture with no frames, one outside the list, and a broken cycle stay as they are.
+    assert_eq!(frame(&animations, 3, 0.25), 3);
+    assert_eq!(frame(&animations, 9, 0.25), 9);
+    let broken = [cycle(0, 1), cycle(5, 1)];
+    assert_eq!(frame(&broken, 0, 0.15), 0);
+}
+
+// spec REND-2.2: a turbulent face's texture coordinates are the raw dot products, without the
+// texinfo's offset
+#[test]
+fn a_turbulent_face_keeps_its_raw_coordinates() {
+    let spec = MapSpec {
+        flags: SURF_DRAWTURB,
+        ..MapSpec::default()
+    };
+    let lighting = samples(&[10]);
+    let mut map = bsp(&spec, &lighting);
+    map.texinfo[0].vecs[0][3] = 5.0;
+    let mesh = MapMesh::build(&map, &palette()).unwrap();
+    assert_eq!(mesh.vertices[2].texture, [64.0, 32.0]);
+    assert_eq!(mesh.batches[0].surface, super::Surface::Turbulent);
+}
+
+// spec REND-2.3: a sky is two 128 by 128 layers: the solid one its texture's right half, the
+// alpha one its left half with colour 0 transparent and coloured as the solid layer's average
+#[test]
+fn a_sky_is_a_solid_and_an_alpha_layer() {
+    let spec = MapSpec {
+        flags: SURF_DRAWSKY,
+        ..MapSpec::default()
+    };
+    let lighting = samples(&[10]);
+    let mut map = bsp(&spec, &lighting);
+    // The left half alternates colours 0 and 4 in each row; the right half is all colour 2.
+    let pixels: Vec<u8> = (0..128)
+        .flat_map(|_| {
+            (0..256).map(|x| {
+                if x >= 128 {
+                    2
+                } else if x % 2 == 0 {
+                    0
+                } else {
+                    4
+                }
+            })
+        })
+        .collect();
+    let header = u32::try_from(BSP_MIPTEX_HEADER_SIZE).unwrap();
+    if let Some(Some(texture)) = map.textures.first_mut() {
+        texture.width = 256;
+        texture.height = 128;
+        texture.offsets = [header, 0, 0, 0];
+        texture.pixels = Box::leak(pixels.into_boxed_slice());
+    }
+    let mesh = MapMesh::build(&map, &palette()).unwrap();
+    let [solid, alpha] = mesh.skies[0].as_ref().unwrap();
+    assert_eq!((solid.width, solid.height, alpha.width), (128, 128, 128));
+    assert!(
+        solid
+            .rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|p| *p == [2, 4, 6, 255])
+    );
+    // Colour 0 is transparent and the solid layer's average, colour 4 opaque.
+    assert_eq!(&alpha.rgba[..8], [2, 4, 6, 0, 4, 8, 12, 255]);
+    assert_eq!(mesh.batches[0].surface, super::Surface::Sky);
+    // A texture of any other size has no layers.
+    let mesh = build(&spec, &samples(&[10]));
+    assert!(mesh.skies[0].is_none());
+}
+
+// spec REND-3.1: each palette byte becomes pow((c+1)/256, gamma)*255 + 0.5, kept within 0 to 255
+#[test]
+fn the_palette_is_corrected_by_gamma() {
+    let bytes: Vec<u8> = (0..=255_u8).flat_map(|i| [i, 0, 255]).collect();
+    let palette = Palette::read(&bytes).unwrap();
+    let corrected = palette.with_gamma(super::GAMMA);
+    // pow(1/256, 0.7)*255 + 0.5 = 5.08; pow(129/256, 0.7)*255 + 0.5 = 158.3; 256/256 stays 255.
+    assert_eq!(corrected.rgba(0), [5, 5, 255, 255]);
+    assert_eq!(corrected.rgba(128), [158, 5, 255, 255]);
+    // At gamma 1, 129/256*255 + 0.5 = 128.996, which C's conversion truncates to 128.
+    assert_eq!(palette.with_gamma(1.0).rgba(128), [128, 1, 255, 255]);
+}
+
+// spec REND-3.2: a texture is point-sampled up to powers of two, then each level is the >>2
+// average of each 2 by 2 block, down to 1 by 1; a level of height 1 keeps the bytes it has
+#[test]
+fn mip_levels_follow_gl_resample_and_gl_mipmap() {
+    use super::{Image, mip_levels};
+    // 2 by 2 of grey 0, 10, 20 and 31: one 1 by 1 level of (0+10+20+31)>>2 = 15.
+    let grey = |values: &[u8]| -> Vec<u8> { values.iter().flat_map(|&v| [v, v, v, 255]).collect() };
+    let levels = mip_levels(&Image {
+        width: 2,
+        height: 2,
+        rgba: grey(&[0, 10, 20, 31]),
+    });
+    assert_eq!(levels.len(), 2);
+    assert_eq!(levels[1].rgba, [15, 15, 15, 255]);
+    // 3 by 1 is resampled to 4 by 1 by frac stepping 3*0x10000/4 from its half: 0, 1, 1, 2.
+    let levels = mip_levels(&Image {
+        width: 3,
+        height: 1,
+        rgba: grey(&[1, 2, 3]),
+    });
+    assert_eq!((levels[0].width, levels[0].height), (4, 1));
+    assert_eq!(levels[0].rgba, grey(&[1, 2, 2, 3]));
+    // With height 1 no row is averaged: each level keeps the bytes the buffer starts with.
+    assert_eq!(
+        levels.iter().map(|l| l.width).collect::<Vec<_>>(),
+        [4, 2, 1]
+    );
+    assert_eq!(levels[1].rgba, grey(&[1, 2]));
+    assert_eq!(levels[2].rgba, grey(&[1]));
+}

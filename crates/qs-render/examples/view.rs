@@ -8,13 +8,14 @@
 //! ```
 //!
 //! The map defaults to `e1m1`. W, A, S and D move, Space and C rise and sink, Shift is fast,
-//! and dragging with the mouse looks around.
+//! and dragging with the mouse looks around. `-gamma <g>` is GLQuake's, 0.7 by default, and
+//! `-show water` or `-show sky` starts at the map's first water or sky.
 
 use std::time::Instant;
 
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
-use qs_render::{Camera, MapCallback, MapRenderer};
+use qs_render::{Camera, MapCallback, MapRenderer, View};
 
 mod common;
 
@@ -54,6 +55,7 @@ fn main() -> Result<(), String> {
                 map,
                 camera,
                 triangles,
+                started: Instant::now(),
                 last: Instant::now(),
             }))
         }),
@@ -65,6 +67,7 @@ struct Viewer {
     map: String,
     camera: Camera,
     triangles: usize,
+    started: Instant,
     last: Instant,
 }
 
@@ -97,7 +100,11 @@ impl eframe::App for Viewer {
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
             rect,
             MapCallback {
-                clip_from_world: self.camera.clip_from_world(aspect),
+                view: View {
+                    clip_from_world: self.camera.clip_from_world(aspect),
+                    eye: self.camera.origin,
+                    time: now.duration_since(self.started).as_secs_f32(),
+                },
             },
         ));
         // egui's fonts are not bundled (their licenses are outside deny.toml's), so the stats

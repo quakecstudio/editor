@@ -10,6 +10,10 @@
 
 use qs_bsp::{Bsp, Face, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo};
 
+/// GLQuake's `vid_gamma` on any card but a 3Dfx, "default to 0.7 on non-3dfx hardware"
+/// (REND-3.1).
+pub const GAMMA: f32 = 0.7;
+
 /// The bytes of `gfx/palette.lmp`: 256 colours of three bytes (REND-1.8).
 const PALETTE_BYTES: usize = 768;
 /// `t >>= 7` in `R_BuildLightMap` (REND-1.4).
@@ -66,6 +70,24 @@ impl Palette {
         Ok(Self(colours))
     }
 
+    /// The palette with each byte corrected by `gamma` as `Check_Gamma` corrects it (REND-3.1):
+    /// `pow ((c+1)/256.0, gamma)*255 + 0.5`, kept within 0 to 255. [`GAMMA`] is GLQuake's on
+    /// any card but a 3Dfx.
+    #[must_use]
+    pub fn with_gamma(&self, gamma: f32) -> Self {
+        let correct = |c: u8| {
+            let f = ((f32::from(c) + 1.0) / 256.0).powf(gamma);
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "spec REND-3.1: C's (unsigned char) of a value kept within 0 to 255"
+            )]
+            let byte = (f * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
+            byte
+        };
+        Self(self.0.map(|rgb| rgb.map(correct)))
+    }
+
     /// The colour of index `index`, opaque.
     fn rgba(&self, index: u8) -> [u8; 4] {
         let [r, g, b] = self.0.get(usize::from(index)).copied().unwrap_or_default();
@@ -95,11 +117,38 @@ pub struct Vertex {
     pub light: [f32; 2],
 }
 
+/// How a surface is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Surface {
+    /// Its texture darkened by its lightmap (REND-1).
+    Lit,
+    /// Turbulent: water, slime, lava and teleporters, rippling (REND-2.2).
+    Turbulent,
+    /// The sky's two scrolling layers (REND-2.3).
+    Sky,
+}
+
+/// A texture's frames (REND-2.1): `anim_total`, `anim_min`, `anim_max` and the next frame's
+/// texture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Animation {
+    /// The frames in the cycle.
+    pub total: u32,
+    /// The first frame this texture is.
+    pub min: u32,
+    /// The frame after the last this texture is.
+    pub max: u32,
+    /// The next frame's texture, an index into [`MapMesh::textures`].
+    pub next: usize,
+}
+
 /// The triangles drawn with one texture.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Batch {
     /// The texture, an index into [`MapMesh::textures`].
     pub texture: usize,
+    /// How it is drawn.
+    pub surface: Surface,
     /// The first index into [`MapMesh::indices`].
     pub first: u32,
     /// How many indices it draws.
@@ -117,6 +166,10 @@ pub struct MapMesh {
     pub batches: Vec<Batch>,
     /// The BSP's textures through the palette, a missing one as a 1 by 1 black image.
     pub textures: Vec<Image>,
+    /// For each sky texture, its two layers, the solid one and the alpha one (REND-2.3).
+    pub skies: Vec<Option<[Image; 2]>>,
+    /// Each texture's frames, `None` for one that does not animate (REND-2.1).
+    pub animations: Vec<Option<Animation>>,
     /// Every face's light, one byte repeated in red, green and blue (REND-1.4).
     pub lightmap: Image,
     /// The world model's bounds.
@@ -140,6 +193,7 @@ impl MapMesh {
             .unwrap_or_default();
         let mut atlas = Atlas::new();
         let mut by_texture: Vec<Vec<Polygon>> = vec![Vec::new(); bsp.textures.len()];
+        let mut surfaces = vec![Surface::Lit; bsp.textures.len()];
         for face in faces {
             let Some(texinfo) = bsp.texinfo.get(face.texinfo) else {
                 continue;
@@ -150,8 +204,14 @@ impl MapMesh {
             let Some(Some(texture)) = bsp.textures.get(slot) else {
                 continue;
             };
-            let lit = face.flags & (SURF_DRAWSKY | SURF_DRAWTURB) == 0;
-            let place = if lit {
+            let surface = if face.flags & SURF_DRAWSKY != 0 {
+                Surface::Sky
+            } else if face.flags & SURF_DRAWTURB != 0 {
+                Surface::Turbulent
+            } else {
+                Surface::Lit
+            };
+            let place = if surface == Surface::Lit {
                 atlas.place(face, bsp)?
             } else {
                 atlas.full_bright()
@@ -162,8 +222,11 @@ impl MapMesh {
                 size: [f32_of(texture.width), f32_of(texture.height)],
                 texturemins: face.texturemins,
                 place,
-                lit,
+                surface,
             };
+            if let Some(kind) = surfaces.get_mut(slot) {
+                *kind = surface;
+            }
             if let Some(list) = by_texture.get_mut(slot) {
                 list.push(polygon);
             }
@@ -176,7 +239,31 @@ impl MapMesh {
             textures: bsp
                 .textures
                 .iter()
-                .map(|texture| texture.as_ref().map_or_else(black, |t| image(t, palette)))
+                .zip(&surfaces)
+                .map(|(texture, _)| texture.as_ref().map_or_else(black, |t| image(t, palette)))
+                .collect(),
+            skies: bsp
+                .textures
+                .iter()
+                .zip(&surfaces)
+                .map(|(texture, &surface)| {
+                    (surface == Surface::Sky)
+                        .then(|| sky_layers(texture.as_ref()?, palette))
+                        .flatten()
+                })
+                .collect(),
+            animations: bsp
+                .textures
+                .iter()
+                .map(|texture| {
+                    let animation = texture.as_ref()?.animation?;
+                    Some(Animation {
+                        total: u32::try_from(animation.total).ok().filter(|&t| t > 0)?,
+                        min: u32::try_from(animation.min).ok()?,
+                        max: u32::try_from(animation.max).ok()?,
+                        next: animation.next,
+                    })
+                })
                 .collect(),
             lightmap: atlas.image(),
             mins: world.mins,
@@ -191,6 +278,7 @@ impl MapMesh {
             if count > 0 {
                 mesh.batches.push(Batch {
                     texture: slot,
+                    surface: surfaces.get(slot).copied().unwrap_or(Surface::Lit),
                     first,
                     count,
                 });
@@ -209,8 +297,8 @@ struct Polygon {
     texturemins: [i16; 2],
     /// The face's texel position in the atlas, `light_s` and `light_t`.
     place: [usize; 2],
-    /// Whether it has a lightmap, so its light coordinates follow its surface (REND-1.6).
-    lit: bool,
+    /// How it is drawn; only a lit face's light coordinates follow its surface (REND-1.6).
+    surface: Surface,
 }
 
 impl Polygon {
@@ -220,7 +308,14 @@ impl Polygon {
         for corner in &self.corners {
             let s = dot(corner, self.texinfo.vecs[0]);
             let t = dot(corner, self.texinfo.vecs[1]);
-            let light = if self.lit {
+            let texture = match self.surface {
+                Surface::Lit => [s / self.size[0], t / self.size[1]],
+                // REND-2.2: the raw dot products, without the offset.
+                Surface::Turbulent => [s - self.texinfo.vecs[0][3], t - self.texinfo.vecs[1][3]],
+                // REND-2.3: the sky's coordinates come from the eye, in the shader.
+                Surface::Sky => [0.0, 0.0],
+            };
+            let light = if self.surface == Surface::Lit {
                 [
                     (s - f32::from(self.texturemins[0])
                         + f32_of_usize(self.place[0]) * LIGHTMAP_TEXEL
@@ -237,7 +332,7 @@ impl Polygon {
             };
             mesh.vertices.push(Vertex {
                 position: *corner,
-                texture: [s / self.size[0], t / self.size[1]],
+                texture,
                 light,
             });
         }
@@ -407,6 +502,181 @@ fn image(texture: &qs_bsp::Texture<'_>, palette: &Palette) -> Image {
         } else {
             pixels.iter().flat_map(|&p| palette.rgba(p)).collect()
         },
+    }
+}
+
+/// The side of a sky layer, `R_InitSky`'s 128 by 128.
+const SKY_LAYER: usize = 128;
+
+/// REND-2.3: the sky's solid layer, its texture's right half, and its alpha layer, the left
+/// half with colour 0 transparent and coloured as the solid layer's average, so filtering
+/// draws no dark fringe at a cloud's edge (`R_InitSky`); `None` when it is not 256 by 128.
+fn sky_layers(texture: &qs_bsp::Texture<'_>, palette: &Palette) -> Option<[Image; 2]> {
+    let pixels = texture.mip(0)?;
+    if (texture.width, texture.height) != (256, 128) {
+        return None;
+    }
+    let row = |i: usize| {
+        pixels
+            .get(i.checked_mul(2 * SKY_LAYER)?..)
+            .map(|r| r.iter().take(2 * SKY_LAYER))
+    };
+    let mut solid = Vec::with_capacity(SKY_LAYER * SKY_LAYER * 4);
+    let mut sums = [0_u32; 3];
+    for i in 0..SKY_LAYER {
+        for &p in row(i)?.skip(SKY_LAYER) {
+            let rgba = palette.rgba(p);
+            for (sum, &c) in sums.iter_mut().zip(&rgba) {
+                *sum = sum.saturating_add(u32::from(c));
+            }
+            solid.extend(rgba);
+        }
+    }
+    let count = u32::try_from(SKY_LAYER * SKY_LAYER).ok()?;
+    let [r, g, b] =
+        sums.map(|s| u8::try_from(s.checked_div(count).unwrap_or(0)).unwrap_or(u8::MAX));
+    let mut alpha = Vec::with_capacity(SKY_LAYER * SKY_LAYER * 4);
+    for i in 0..SKY_LAYER {
+        for &p in row(i)?.take(SKY_LAYER) {
+            if p == 0 {
+                alpha.extend([r, g, b, 0]);
+            } else {
+                alpha.extend(palette.rgba(p));
+            }
+        }
+    }
+    let side = u32::try_from(SKY_LAYER).ok()?;
+    let layer = |rgba| Image {
+        width: side,
+        height: side,
+        rgba,
+    };
+    Some([layer(solid), layer(alpha)])
+}
+
+/// The texture `base` is drawn as at `time` seconds (REND-2.1): its frame for
+/// `(int)(time*10) % anim_total`, following `next` from the base through `animations`.
+#[must_use]
+pub fn frame(animations: &[Option<Animation>], base: usize, time: f32) -> usize {
+    let Some(Some(first)) = animations.get(base) else {
+        return base;
+    };
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "spec REND-2.1: GLQuake's (int)(cl.time*10), never negative here"
+    )]
+    let tenths = (time.max(0.0) * 10.0) as u32;
+    let relative = tenths.checked_rem(first.total).unwrap_or(0);
+    let mut texture = base;
+    // GLQuake stops on a cycle longer than 100 with "infinite cycle".
+    for _ in 0..100 {
+        match animations.get(texture) {
+            Some(Some(a)) if a.min > relative || a.max <= relative => texture = a.next,
+            _ => return texture,
+        }
+    }
+    base
+}
+
+/// REND-3.2: the mip levels GLQuake uploads for a world texture: `image` point-sampled up to
+/// powers of two (`GL_ResampleTexture`), then each level the 2 by 2 average of the one above
+/// down to 1 by 1 (`GL_MipMap`), largest first.
+#[must_use]
+pub fn mip_levels(image: &Image) -> Vec<Image> {
+    let (mut width, mut height) = (power_of_two(image.width), power_of_two(image.height));
+    let mut scaled = resample(image, width, height);
+    let mut levels = vec![Image {
+        width,
+        height,
+        rgba: scaled.clone(),
+    }];
+    while width > 1 || height > 1 {
+        mip_map(&mut scaled, width, height);
+        width = (width >> 1).max(1);
+        height = (height >> 1).max(1);
+        let bytes = usize::try_from(width.saturating_mul(height).saturating_mul(4)).unwrap_or(0);
+        levels.push(Image {
+            width,
+            height,
+            rgba: scaled.get(..bytes).map(<[u8]>::to_vec).unwrap_or_default(),
+        });
+    }
+    levels
+}
+
+/// The first power of two that is `n` or more, as `GL_Upload32`'s `scaled_width <<= 1` loop
+/// finds it.
+fn power_of_two(n: u32) -> u32 {
+    n.max(1).checked_next_power_of_two().unwrap_or(n)
+}
+
+/// `GL_ResampleTexture`: each row from `in + inwidth*(i*inheight/outheight)`, and each pixel
+/// from it at `frac>>16`, `frac` starting at half of `fracstep = inwidth*0x10000/outwidth`.
+fn resample(image: &Image, width: u32, height: u32) -> Vec<u8> {
+    if (width, height) == (image.width, image.height) {
+        return image.rgba.clone();
+    }
+    let (in_width, in_height) = (u64::from(image.width), u64::from(image.height));
+    let fracstep = (in_width << 16).checked_div(u64::from(width)).unwrap_or(0);
+    let mut out = Vec::with_capacity(
+        usize::try_from(width.saturating_mul(height))
+            .unwrap_or(0)
+            .saturating_mul(4),
+    );
+    for i in 0..u64::from(height) {
+        let row = in_width.saturating_mul(
+            i.saturating_mul(in_height)
+                .checked_div(u64::from(height))
+                .unwrap_or(0),
+        );
+        let mut frac = fracstep >> 1;
+        for _ in 0..width {
+            let at = usize::try_from(row.saturating_add(frac >> 16).saturating_mul(4))
+                .unwrap_or(usize::MAX);
+            out.extend(
+                image
+                    .rgba
+                    .get(at..at.saturating_add(4))
+                    .unwrap_or(&[0, 0, 0, 255]),
+            );
+            frac = frac.saturating_add(fracstep);
+        }
+    }
+    out
+}
+
+/// `GL_MipMap` on `scaled`, a level `width` by `height`: each output pixel the `>>2` average
+/// of a 2 by 2 block, written from the start; with `height` 1 no row is averaged.
+fn mip_map(scaled: &mut [u8], width: u32, height: u32) {
+    let row = usize::try_from(width).unwrap_or(0).saturating_mul(4);
+    let rows = usize::try_from(height >> 1).unwrap_or(0);
+    let mut out = 0_usize;
+    let mut input = 0_usize;
+    let byte = |buffer: &[u8], at: usize| u16::from(buffer.get(at).copied().unwrap_or(0));
+    for _ in 0..rows {
+        let mut j = 0;
+        while j < row {
+            for c in 0..4 {
+                let at = input.saturating_add(c);
+                // Four bytes sum to at most 1020, which a u16 holds.
+                let sum = [
+                    at,
+                    at.saturating_add(4),
+                    at.saturating_add(row),
+                    at.saturating_add(row).saturating_add(4),
+                ]
+                .into_iter()
+                .fold(0_u16, |sum, i| sum.saturating_add(byte(scaled, i)));
+                if let Some(slot) = scaled.get_mut(out.saturating_add(c)) {
+                    *slot = u8::try_from(sum >> 2).unwrap_or(u8::MAX);
+                }
+            }
+            out = out.saturating_add(4);
+            input = input.saturating_add(8);
+            j = j.saturating_add(8);
+        }
+        input = input.saturating_add(row);
     }
 }
 

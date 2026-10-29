@@ -12,25 +12,27 @@ pub struct Camera {
     pub yaw: f32,
     /// Its pitch in degrees, positive looking down, kept within ±89.
     pub pitch: f32,
-    /// Its vertical field of view in degrees.
-    pub fov_y: f32,
+    /// Its field of view across, in degrees; the height's follows from the image's shape
+    /// (REND-3.4).
+    pub fov_x: f32,
 }
 
-/// The nearest distance drawn, in map units.
+/// The nearest and farthest distances drawn, in map units: `MYgluPerspective (r_refdef.fov_y,
+/// screenaspect, 4, 4096)` in GLQuake's `R_SetupGL` (REND-3.4).
 const NEAR: f32 = 4.0;
-/// The farthest distance drawn, in map units: further than a BSP29 map's 8192-unit extent.
-const FAR: f32 = 16384.0;
+const FAR: f32 = 4096.0;
+/// `fov`, the field of view across, in degrees: `scr_fov = {"fov","90"}` (REND-3.4).
+const FOV_X: f32 = 90.0;
 
 impl Camera {
-    /// A camera at `origin` looking along `yaw`, level, its field of view 74 degrees tall,
-    /// 90 wide at 4:3 as Quake's `fov 90` is.
+    /// A camera at `origin` looking along `yaw`, level, with GLQuake's `fov 90` (REND-3.4).
     #[must_use]
     pub const fn new(origin: [f32; 3], yaw: f32) -> Self {
         Self {
             origin,
             yaw,
             pitch: 0.0,
-            fov_y: 74.0,
+            fov_x: FOV_X,
         }
     }
 
@@ -74,8 +76,11 @@ impl Camera {
             [r[2], u[2], -f[2], 0.0],
             [-dot(r, o), -dot(u, o), dot(f, o), 1.0],
         ];
-        let y = 1.0 / (self.fov_y.to_radians() / 2.0).tan();
-        let x = y / aspect.max(f32::EPSILON);
+        // REND-3.4: `CalcFov`: `x = width/tan(fov_x/360*M_PI)`, `fov_y = 2 atan(height/x)`.
+        let half_x = (self.fov_x.to_radians() / 2.0).tan();
+        let half_y = half_x / aspect.max(f32::EPSILON);
+        let x = 1.0 / half_x;
+        let y = 1.0 / half_y;
         let range = FAR / (NEAR - FAR);
         let projection = [
             [x, 0.0, 0.0, 0.0],
@@ -142,6 +147,22 @@ mod tests {
         assert!(project(&m, [100.0, 0.0, 10.0])[1] > 0.0);
         // Nearer is nearer in depth.
         assert!(project(&m, [50.0, 0.0, 0.0])[2] < ahead[2]);
+    }
+
+    // spec REND-3.4: fov 90 across, the height's from CalcFov, drawn from 4 to 4096 units
+    #[test]
+    fn the_view_is_glquakes_fov_90() {
+        let camera = Camera::new([0.0, 0.0, 0.0], 0.0);
+        // At 2:1 a point 45 degrees to the right is at the edge, and one 1/4 as far up as it is
+        // ahead is at the top: tan(fov_y/2) = tan(45)/2.
+        let m = camera.clip_from_world(2.0);
+        let edge = project(&m, [100.0, -100.0, 0.0]);
+        assert!((edge[0] - 1.0).abs() < 1e-4, "{edge:?}");
+        let top = project(&m, [100.0, 0.0, 50.0]);
+        assert!((top[1] - 1.0).abs() < 1e-4, "{top:?}");
+        // The near plane at 4 is depth 0 and the far plane at 4096 is depth 1.
+        assert!(project(&m, [4.0, 0.0, 0.0])[2].abs() < 1e-4);
+        assert!((project(&m, [4096.0, 0.0, 0.0])[2] - 1.0).abs() < 1e-4);
     }
 
     #[test]
