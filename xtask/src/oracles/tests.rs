@@ -247,6 +247,10 @@ fn every_command_of_cargo_xtask_oracles_runs() {
         assert!(recording.is_err());
     }
     assert!(run(&dir, &words("builtins again"), &fake, &files, &suite).is_err());
+    // The fake qcc writes no progs.dat and the fake root records no codegen outcomes.
+    assert!(!run(&dir, &words("codegen"), &fake, &files, &suite).unwrap());
+    assert!(!run(&dir, &words("codegen --record"), &fake, &files, &suite).unwrap());
+    assert!(run(&dir, &words("codegen again"), &fake, &files, &suite).is_err());
     assert!(run(&dir, &words("id101 nowhere"), &fake, &files, &suite).is_err());
     let codebases = fresh_dir("oracles-commands-codebases");
     assert!(run(&dir, &words("rerelease"), &fake, &files, &suite).is_err());

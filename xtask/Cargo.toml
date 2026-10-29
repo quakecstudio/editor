@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 cc = { workspace = true }
+qc-codegen = { workspace = true }
 miniz_oxide = { workspace = true, features = ["with-alloc"] }
 qc-lexer = { workspace = true }
 qc-lno = { workspace = true }
