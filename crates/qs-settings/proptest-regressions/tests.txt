@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ce9c990d962ad9df4b9a28ab96ec4857b2e935c1874e9385781fc3e3630295d5 # shrinks to theme = None, filter = Some("\u{7f}")
+cc cdcbd503b89ad07055367ded4c07b6c8923024a9406229a6996e56d918809c42 # shrinks to changes = [(false, None, Some("\u{7f}"))]

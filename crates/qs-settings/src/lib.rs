@@ -263,8 +263,12 @@ fn edit(
                 // text, which it writes after every table; a new table goes before them unless
                 // they become its prefix.
                 let mut table = toml_edit::Table::new();
-                let trailing = document.trailing().as_str().unwrap_or_default().to_owned();
+                let mut trailing = document.trailing().as_str().unwrap_or_default().to_owned();
                 if !trailing.is_empty() {
+                    // A last line with no line ending would put the header in its comment.
+                    if !trailing.ends_with('\n') {
+                        trailing.push('\n');
+                    }
                     table.decor_mut().set_prefix(trailing);
                     document.set_trailing("");
                 }
@@ -321,13 +325,36 @@ fn has_comment(decor: &Decor) -> bool {
         .any(|raw| raw.as_str().is_none_or(|text| text.contains('#')))
 }
 
-/// `value`, a setting's value, as TOML.
+/// `value`, a setting's value, as TOML. A string is a basic string on one line, its line
+/// breaks escaped, so a file's line endings can be changed around it without changing it.
 fn toml_value(path: &Path, value: &Value) -> Result<toml_edit::Value, SettingsError> {
-    let value = toml::Value::try_from(value).map_err(|error| SettingsError::write(path, &error))?;
-    value
-        .to_string()
-        .parse()
+    let text = match value {
+        Value::String(text) => basic_string(text),
+        other => toml::Value::try_from(other)
+            .map_err(|error| SettingsError::write(path, &error))?
+            .to_string(),
+    };
+    text.parse()
         .map_err(|error| SettingsError::write(path, &error))
+}
+
+/// `text` as a TOML basic string: `"` and `\` escaped, and every control character, which
+/// TOML 1.0 does not allow unescaped (U+0000 to U+001F and U+007F), as `\uXXXX`.
+fn basic_string(text: &str) -> String {
+    let mut out = String::with_capacity(text.len().saturating_add(2));
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if c.is_control() && u32::from(c) <= 0x7f => {
+                out.push_str(&format!("\\u{:04X}", u32::from(c)));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// The user's settings and, with a project open, the project's, each with the file it is read

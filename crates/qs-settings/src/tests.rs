@@ -402,6 +402,29 @@ fn a_new_table_goes_after_the_comments_that_end_the_file() {
     );
 }
 
+// QA-10 (P2-148): a comment on a last line with no line ending stays a comment: the new
+// table starts on the next line (found by the qs_settings fuzz target).
+#[test]
+fn a_new_table_after_an_unterminated_comment_starts_its_own_line() {
+    let dir = TempDir::new("unterminated");
+    let spec = StoreSpec {
+        user: Some("#"),
+        ..StoreSpec::default()
+    };
+    let (user, _, mut store) = store(&dir, &spec);
+    store
+        .put(Scope::User, Setting::Theme, Some(json!("light")))
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(&user).unwrap(),
+        "#\n[appearance]\ntheme = \"light\"\n"
+    );
+    assert_eq!(
+        SettingsFile::load(&user).unwrap().get(Setting::Theme),
+        Some(json!("light"))
+    );
+}
+
 // QA-10 (P2-148): a file with CRLF line endings keeps them, on every line.
 #[test]
 fn a_crlf_file_keeps_its_line_endings() {
@@ -418,6 +441,26 @@ fn a_crlf_file_keeps_its_line_endings() {
         fs::read_to_string(&user).unwrap(),
         "# Mine.\r\n[log]\r\nfilter = \"warn\"\r\n\r\n[appearance]\r\ntheme = \"light\"\r\n"
     );
+}
+
+// QA-10 (P2-148): a value with a line break, set in a CRLF file, reads back as it was set: it
+// is written escaped on one line (found by the qs_settings fuzz target).
+#[test]
+fn a_line_break_in_a_value_survives_a_crlf_file() {
+    let dir = TempDir::new("crlf-value");
+    let spec = StoreSpec {
+        user: Some("\r\n"),
+        ..StoreSpec::default()
+    };
+    let (user, _, mut store) = store(&dir, &spec);
+    store
+        .put(Scope::User, Setting::LogFilter, Some(json!("a'b\"c\n")))
+        .unwrap();
+    assert_eq!(
+        SettingsFile::load(&user).unwrap().get(Setting::LogFilter),
+        Some(json!("a'b\"c\n"))
+    );
+    assert!(!fs::read_to_string(&user).unwrap().contains("c\r\n"));
 }
 
 // QA-10: the table and name a setting is written under spell its key.
