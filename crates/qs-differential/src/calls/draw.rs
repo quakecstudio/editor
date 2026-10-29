@@ -77,10 +77,9 @@ impl Context {
             }
         }
         for (name, draw) in &self.globals {
-            let Some(&(_, _, ofs)) = program.globals.iter().find(|(n, _, _)| n == name) else {
-                continue;
-            };
-            write_globals(host, ofs, draw);
+            if let Some(&ofs) = program.global_slots.get(name) {
+                write_globals(host, ofs, draw);
+            }
         }
         for (n, draw) in self.parms.iter().enumerate() {
             write_globals(host, n.saturating_mul(3).saturating_add(OFS_PARM0), draw);
@@ -269,8 +268,12 @@ impl<'a, 'p> Drawer<'a, 'p> {
     /// about 1 in 16, 1 in 4 and 1 in 2 of the fields of `self`, `other`, each entity
     /// parameter and, one time in four, the world, and a quarter as many of the variables.
     /// Every eighth round runs with the server loading.
-    pub(super) fn draw(&self, rng: &mut Rng, function: Function, round: u32) -> Context {
-        let own = self.pools(function);
+    pub(super) fn draw(
+        &self,
+        rng: &mut Rng,
+        (function, own): (Function, &Pools),
+        round: u32,
+    ) -> Context {
         let self_edict = self.edict_or_client(rng, 4);
         let other_edict = self.edict_or_client(rng, 2);
         let share = match round % 4 {
@@ -279,7 +282,7 @@ impl<'a, 'p> Drawer<'a, 'p> {
             2 => 16,
             _ => 32,
         };
-        let parms = self.parms(rng, &own, function);
+        let parms = self.parms(rng, own, function);
         let mut edicts = vec![self_edict, other_edict];
         for parm in &parms {
             if let Draw::Entity(edict) = parm {
@@ -295,7 +298,7 @@ impl<'a, 'p> Drawer<'a, 'p> {
         for edict in edicts {
             for (field, def_type) in &self.fields {
                 if rng.below(64) < share
-                    && let Some(draw) = self.value(rng, &own, *def_type)
+                    && let Some(draw) = self.value(rng, own, *def_type)
                 {
                     fields.push((edict, field.clone(), draw));
                 }
@@ -304,7 +307,7 @@ impl<'a, 'p> Drawer<'a, 'p> {
         let mut globals = Vec::new();
         for (name, def_type) in &self.variables {
             if rng.below(256) < share
-                && let Some(draw) = self.value(rng, &own, *def_type)
+                && let Some(draw) = self.value(rng, own, *def_type)
             {
                 globals.push((name.clone(), draw));
             }

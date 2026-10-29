@@ -32,6 +32,8 @@ mod draw;
 
 use draw::{Context, Drawer, Rng};
 
+/// `OFS_RETURN` (VM-14.1): the return value's first slot.
+const OFS_RETURN: usize = 1;
 /// `OFS_PARM0` (VM-14.1): the first parameter slot; parameter `n` starts at `4 + 3n`.
 const OFS_PARM0: usize = 4;
 /// The name `qcc` gives every immediate's definition (QC-25.3); such a definition is not a
@@ -41,8 +43,14 @@ const IMMEDIATE: &[u8] = b"IMMEDIATE";
 /// A value read through its definition's type, comparable across two progs (DIFF-12.3).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Value {
-    /// A float, entity, field or pointer slot, by its bits.
+    /// A float or pointer slot, or an entity or field slot that names none, by its bits.
     Bits(u32),
+    /// An entity, by its edict's number: its bits are the number times the progs' edict size,
+    /// which two progs with other fields do not share (DIFF-12.3).
+    Entity(usize),
+    /// A field, by its name: its bits are the field's slot, which two progs may lay out in
+    /// another order (DIFF-12.3).
+    FieldName(Vec<u8>),
     /// A vector's three slots, by their bits.
     Vector([u32; 3]),
     /// A string, by its text, a progs string or an engine string; `None` when it has none.
@@ -82,6 +90,10 @@ pub enum Difference {
     /// The two progs have the same statements but the calls executed different ones
     /// (DIFF-12.4).
     Statements,
+    /// The value the call returned, read from the return slot's first word (DIFF-12.7).
+    Return(Value, Value),
+    /// The first progs has a QuakeC function of this name and the second has none (DIFF-12.7).
+    Missing,
 }
 
 /// The result of one compiler differential run over two progs (DIFF-12.5).
@@ -237,8 +249,12 @@ pub fn run_calls(
         executed: their_world.setup_executed.clone(),
         total_statements: total,
     };
-    let setup = Outcome::default();
-    if let Some(what) = pair.differ(&their_world, &setup, &our_world, &setup) {
+    if let Some(what) = pair.differ(
+        &their_world,
+        &their_world.setup,
+        &our_world,
+        &our_world.setup,
+    ) {
         report.divergences.push(Divergence {
             function: None,
             round: 0,
@@ -257,14 +273,20 @@ pub fn run_calls(
         if function.first_statement <= 0 {
             continue;
         }
-        // The setup compared the named globals, which name every function (DIFF-12.3), so
-        // the second progs has one of this name.
+        // DIFF-12.7: a function the second progs does not have is a divergence, not a skip.
         let Some(&our_index) = our_world.program.functions.get(name) else {
+            report.divergences.push(Divergence {
+                function: Some(name.to_vec()),
+                round: 0,
+                what: Difference::Missing,
+            });
             continue;
         };
+        // The function's own constants depend on it alone, so they are read once.
+        let pools = drawer.pools(function);
         for round in 0..rounds {
             let mut rng = Rng::new(name, round);
-            let context = drawer.draw(&mut rng, function, round);
+            let context = drawer.draw(&mut rng, (function, &pools), round);
             let theirs = their_world.call(their_index, &context);
             let ours = our_world.call(our_index, &context);
             report.calls = report.calls.saturating_add(1);
@@ -331,8 +353,34 @@ impl Pair {
         if self.same_tables && same_slots(&their_world.host.machine, &our_world.host.machine) {
             return None;
         }
-        state_difference(their_world, our_world)
+        return_difference(their_world, our_world)
+            .or_else(|| state_difference(their_world, our_world))
     }
+}
+
+/// DIFF-12.7: the two calls' return values differ. The return slot's type is not in a version
+/// 6 progs, so its first word is read as each type a function returns in one word, and the
+/// two agree when any reading does: the same bits, the same text, the same edict or the same
+/// function. A vector's other two words are compared only through the state they leave.
+fn return_difference(a: &World<'_, '_, '_>, b: &World<'_, '_, '_>) -> Option<Difference> {
+    let readings = |world: &World<'_, '_, '_>| {
+        [
+            world.global(DefType::Known(Etype::Float), OFS_RETURN),
+            world.global(DefType::Known(Etype::String), OFS_RETURN),
+            world.global(DefType::Known(Etype::Entity), OFS_RETURN),
+            world.global(DefType::Known(Etype::Function), OFS_RETURN),
+        ]
+    };
+    let (theirs, ours) = (readings(a), readings(b));
+    let agree = theirs
+        .iter()
+        .zip(&ours)
+        .any(|(t, o)| t == o && !matches!(t, Value::Text(None) | Value::Function(None)));
+    (!agree).then(|| {
+        let [their_bits, ..] = theirs;
+        let [our_bits, ..] = ours;
+        Difference::Return(their_bits, our_bits)
+    })
 }
 
 /// Whether two machines hold the same bits in every global and in every edict's fields, with
@@ -429,6 +477,8 @@ struct Program<'a, 'p> {
     progs: &'a Progs<'p>,
     /// The named globals, in definition order: name, type and slot.
     globals: Vec<(Vec<u8>, DefType, usize)>,
+    /// The slot of the first named global of each name, for a context to write by name.
+    global_slots: BTreeMap<Vec<u8>, usize>,
     /// The named fields, by name: the type and slot of the first definition of each.
     fields: BTreeMap<Vec<u8>, (DefType, usize)>,
     /// The QuakeC functions, by name: the index of the first of each name.
@@ -450,6 +500,10 @@ impl<'a, 'p> Program<'a, 'p> {
                 globals.push((name, def.def_type(), ofs));
             }
         }
+        let mut global_slots = BTreeMap::new();
+        for (name, _, ofs) in &globals {
+            global_slots.entry(name.clone()).or_insert(*ofs);
+        }
         let mut fields = BTreeMap::new();
         for def in progs.field_defs().iter() {
             if let Some((name, ofs)) = named(&def) {
@@ -467,6 +521,7 @@ impl<'a, 'p> Program<'a, 'p> {
         Self {
             progs,
             globals,
+            global_slots,
             fields,
             functions,
         }
@@ -490,6 +545,9 @@ struct World<'a, 'p, 's> {
     builtins: MockBuiltins<MockEngine>,
     /// The statements the setup executed (DIFF-12.5).
     setup_executed: BTreeSet<i32>,
+    /// How the setup went: the statements and builtins it executed, compared with the other
+    /// progs' setup as two calls are (DIFF-12.1).
+    setup: Outcome,
 }
 
 impl<'a, 'p, 's> World<'a, 'p, 's> {
@@ -507,24 +565,34 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
             host.client_enters(progs, slot)
                 .map_err(|e| CallsError::Setup(e.message()))?;
         }
-        let setup_executed = host
+        let executed: Vec<Executed> = host
             .trace
             .records()
             .iter()
             .filter_map(|record| match record {
-                qc_trace::Record::Step(step) => Some(step.statement),
+                qc_trace::Record::Step(step) => Some(Executed {
+                    function: step.function,
+                    statement: step.statement,
+                    builtin: step.builtin,
+                }),
                 qc_trace::Record::Run { .. }
                 | qc_trace::Record::Exit { .. }
                 | qc_trace::Record::Error { .. }
                 | qc_trace::Record::String { .. } => None,
             })
             .collect();
+        let setup_executed = executed.iter().map(|e| e.statement).collect();
+        host.trace.clear();
         Ok(Self {
             machine: host.machine.clone(),
             builtins: host.builtins.clone(),
             program: Program::new(progs),
             host,
             setup_executed,
+            setup: Outcome {
+                error: None,
+                executed,
+            },
         })
     }
 
@@ -540,6 +608,8 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
     fn call(&mut self, function: i32, context: &Context) -> Outcome {
         self.host.machine.clone_from(&self.machine);
         self.host.builtins.clone_from(&self.builtins);
+        // A call's trace records are never read; dropping them keeps a run's memory flat.
+        self.host.trace.clear();
         context.apply(&mut self.host, &self.program);
         let mut observer = Statements::default();
         let result = self.host.machine.execute_program(
@@ -602,10 +672,32 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
                 slot(ofs.saturating_add(1)).0,
                 slot(ofs.saturating_add(2)).0,
             ]),
-            DefType::Known(
-                Etype::Void | Etype::Float | Etype::Entity | Etype::Field | Etype::Pointer,
-            )
-            | DefType::Unknown(_) => Value::Bits(slot(ofs).0),
+            DefType::Known(Etype::Entity) => {
+                let bits = slot(ofs).0;
+                let size = self.host.machine.edicts().layout().edict_size();
+                usize::try_from(i32::from_ne_bytes(bits.to_ne_bytes()))
+                    .ok()
+                    .zip(usize::try_from(size).ok().filter(|&size| size > 0))
+                    .filter(|(value, size)| value.checked_rem(*size) == Some(0))
+                    .and_then(|(value, size)| value.checked_div(size))
+                    .map_or(Value::Bits(bits), Value::Entity)
+            }
+            DefType::Known(Etype::Field) => {
+                let bits = slot(ofs).0;
+                usize::try_from(bits)
+                    .ok()
+                    .and_then(|slot| {
+                        self.program
+                            .fields
+                            .iter()
+                            .find(|(_, (_, field))| *field == slot)
+                            .map(|(name, _)| name.clone())
+                    })
+                    .map_or(Value::Bits(bits), Value::FieldName)
+            }
+            DefType::Known(Etype::Void | Etype::Float | Etype::Pointer) | DefType::Unknown(_) => {
+                Value::Bits(slot(ofs).0)
+            }
         }
     }
 }

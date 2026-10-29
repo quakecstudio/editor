@@ -526,7 +526,8 @@ fn a_functions_constants_are_its_operands() {
 fn contexts_follow_the_rounds() {
     with_drawer(|drawer, progs| {
         let g = function(progs, b"g");
-        let draw = |round| drawer.draw(&mut Rng::new(b"g", round), g, round);
+        let pools = drawer.pools(g);
+        let draw = |round| drawer.draw(&mut Rng::new(b"g", round), (g, &pools), round);
         let first = draw(0);
         assert!(first.fields.is_empty() && first.globals.is_empty());
         assert!(matches!(
@@ -540,6 +541,132 @@ fn contexts_follow_the_rounds() {
         assert_eq!(draw(15).server, ServerState::Loading);
         assert_eq!(draw(6).server, ServerState::Active);
         let f = function(progs, b"f");
-        assert!(drawer.draw(&mut Rng::new(b"f", 3), f, 3).parms.is_empty());
+        let pools = drawer.pools(f);
+        assert!(
+            drawer
+                .draw(&mut Rng::new(b"f", 3), (f, &pools), 3)
+                .parms
+                .is_empty()
+        );
     });
+}
+
+// spec DIFF-12.7: when the tables differ, a call that returns another value is a divergence,
+// though it leaves every named global and field the same.
+#[test]
+fn a_return_value_that_differs_is_a_divergence() {
+    let (function, what) = first(
+        "float() f = { return 3; };\n",
+        "float() f = { return 4; };\n",
+    );
+    assert_eq!(function.as_deref(), Some("f"));
+    assert_eq!(
+        what,
+        Difference::Return(
+            Value::Bits(3.0_f32.to_bits()),
+            Value::Bits(4.0_f32.to_bits())
+        )
+    );
+}
+
+// spec DIFF-12.7: a return value agrees when any reading of its first word does: a string by
+// its text, though the string tables differ.
+#[test]
+fn a_return_value_agrees_by_any_reading() {
+    let report = run(
+        &compile("string() f = { return \"a\"; };\n", false),
+        &compile(
+            "string() f = { return \"a\"; };\nvoid() g = { dprint(\"b\"); };\n",
+            false,
+        ),
+        2,
+    );
+    assert!(
+        report
+            .divergences
+            .iter()
+            .all(|d| d.function.as_deref() != Some(b"f".as_slice())),
+        "{report:?}"
+    );
+}
+
+// spec DIFF-12.7: a QuakeC function the second progs has only as a builtin is a divergence.
+#[test]
+fn a_function_that_is_a_builtin_in_the_second_is_missing() {
+    let report = run(
+        &compile("void() h = {};\n", false),
+        &compile("void() h = #99;\n", false),
+        1,
+    );
+    assert!(
+        report.divergences.iter().any(
+            |d| d.function.as_deref() == Some(b"h".as_slice()) && d.what == Difference::Missing
+        ),
+        "{report:?}"
+    );
+}
+
+// spec DIFF-12.1: the setups are compared as two calls are, the builtins they call in order
+// before the engine's state.
+#[test]
+fn a_setup_that_calls_other_builtins_is_a_divergence() {
+    let report = run(
+        &compile(
+            "void() worldspawn = { dprint(\"a\"); dprint(\"b\"); };\n",
+            false,
+        ),
+        &compile("void() worldspawn = { dprint(\"a\"); };\n", false),
+        1,
+    );
+    let [divergence] = report.divergences.as_slice() else {
+        panic!("{report:?}");
+    };
+    assert_eq!(divergence.function, None);
+    assert!(
+        matches!(divergence.what, Difference::Builtins(..)),
+        "{divergence:?}"
+    );
+}
+
+// spec DIFF-12.3: an entity reads as its edict's number and a field as its name; a value
+// that names neither reads as its bits.
+#[test]
+fn entities_and_fields_read_by_edict_and_name() {
+    let progs = compile("entity e;\n.float f;\n", false);
+    let progs = Progs::read(&progs).unwrap();
+    let scenario = scenario();
+    let mut world = World::new(&progs, &scenario, WORLD).unwrap();
+    let size = world.host.machine.edicts().layout().edict_size();
+    let entity =
+        |world: &World<'_, '_, '_>| world.global(qc_types::DefType::Known(Etype::Entity), 28);
+    world
+        .host
+        .set_global_slot(28, qc_types::Slot::from_i32(2 * size));
+    assert_eq!(entity(&world), Value::Entity(2));
+    world
+        .host
+        .set_global_slot(28, qc_types::Slot::from_i32(2 * size + 1));
+    assert_eq!(
+        entity(&world),
+        Value::Bits(u32::try_from(2 * size + 1).unwrap())
+    );
+    let (_, (_, slot)) = world
+        .program
+        .fields
+        .iter()
+        .find(|(n, _)| n.as_slice() == b"f")
+        .unwrap();
+    let slot = i32::try_from(*slot).unwrap();
+    world
+        .host
+        .set_global_slot(28, qc_types::Slot::from_i32(slot));
+    assert_eq!(
+        world.global(qc_types::DefType::Known(Etype::Field), 28),
+        Value::FieldName(b"f".to_vec())
+    );
+    world.host.set_global_slot(28, qc_types::Slot::from_i32(-7));
+    assert!(matches!(
+        world.global(qc_types::DefType::Known(Etype::Field), 28),
+        Value::Bits(_)
+    ));
 }

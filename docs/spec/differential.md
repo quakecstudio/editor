@@ -600,7 +600,11 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   definition of each name. The two progs must name the same globals in the same order and the
   same fields, or they differ in their definitions. A value is compared through its
   definition's type: a string by its text (an engine string's, else the progs' string at that
-  offset), a function by its name, a vector by its three slots, anything else by its bits.
+  offset), a function by its name, a vector by its three slots, an entity by its edict's
+  number (its bits divided by the progs' edict size, as two progs with other fields have other
+  edict sizes), a field by the name of the field at its slot (as two progs may lay their fields
+  out in another order), and a float or pointer, or an entity or field value that names none,
+  by its bits.
   When the two progs have the same global and field definitions, functions and strings, two
   worlds whose global and field slots hold the same bits agree without that reading.
 - **DIFF-12.4** When the two progs have the same statements, two calls agree only if they also
@@ -613,6 +617,13 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   with id's `qcc` and with `qc-codegen` with `--opt fold` off and on (QC-27.20), and compares
   `qcc`'s progs with each of the two. `--fast`, which CI runs on every change, makes 32
   rounds; `--full`, which the nightly differential workflow runs, makes 128.
+- **DIFF-12.7** When the two progs' definitions, functions or strings differ, a call's return
+  value is compared too, since the return slot is named by neither. A version 6 progs does not
+  record a function's return type, so the slot's first word is read as a float, a string, an
+  entity and a function, and the two agree when any reading does: the same bits, the same text,
+  the same edict, or the same function. A vector's other two words are compared only through
+  the globals and fields they are stored to. A QuakeC function of the first progs that the
+  second has no QuakeC function of the same name for is a divergence.
 
 ## Test vectors
 

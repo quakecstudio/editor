@@ -91,20 +91,30 @@ fn run(args: &[String]) -> Result<bool, String> {
     let read = |path: &PathBuf| std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()));
     let theirs = read(&options.theirs)?;
     let mut all_ok = true;
+    // Two of our progs with the same bytes have the same report: the run is deterministic.
+    let mut reports: Vec<(Vec<u8>, CodebaseReport)> = Vec::new();
     for path in &options.ours {
         let ours = read(path)?;
-        if ours == theirs {
-            println!("      {}: the same bytes as qcc's", path.display());
-        }
-        let report = run_codebase(&theirs, &ours, options.rounds).map_err(|e| e.to_string())?;
-        all_ok &= print(&options.codebase, path, &report);
+        let report = match reports.iter().find(|(bytes, _)| *bytes == ours) {
+            Some((_, report)) => report.clone(),
+            None => {
+                let report =
+                    run_codebase(&theirs, &ours, options.rounds).map_err(|e| e.to_string())?;
+                reports.push((ours.clone(), report.clone()));
+                report
+            }
+        };
+        all_ok &= print(&options.codebase, path, ours == theirs, &report);
     }
     Ok(all_ok)
 }
 
 /// Prints one pair's report and returns whether it passed (DIFF-12.5).
-fn print(codebase: &str, ours: &std::path::Path, report: &CodebaseReport) -> bool {
+fn print(codebase: &str, ours: &std::path::Path, same: bool, report: &CodebaseReport) -> bool {
     println!("compiler-diff: {codebase}, qcc against {}", ours.display());
+    if same {
+        println!("      the same bytes as qcc's");
+    }
     let mut printed = 0_usize;
     for (name, scenario) in &report.scenarios {
         println!(
