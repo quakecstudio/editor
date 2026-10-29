@@ -680,10 +680,17 @@ impl TypedBody {
 
 /// FTEF-34.9: checks the initialiser `expr` of the global `name` of type `ty` at global scope:
 /// read, cast to `ty`, and "initializer for 'NAME' is not constant" when it is no constant.
-pub(crate) fn check_initialiser(env: &mut dyn Env, expr: &ast::Expr, ty: &Type, name: &str) {
+/// FTEF-34.9: checks a global's initialiser `expr` at global scope, and returns what it folds
+/// to.
+pub(crate) fn check_initialiser(
+    env: &mut dyn Env,
+    expr: &ast::Expr,
+    ty: &Type,
+    name: &str,
+) -> Option<crate::InitialValue> {
     let mut checker = expr::Checker::new(env);
     checker.global = true;
-    checker.initialiser(expr, ty, name);
+    checker.initialiser(expr, ty, name)
 }
 
 /// Whether a value of basic type `from` stored to `to` is converted by opcodes (FTEF-22).

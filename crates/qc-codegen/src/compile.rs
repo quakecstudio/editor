@@ -106,6 +106,8 @@ pub(crate) struct Compiler<'a> {
     /// Whether an operator of two literals is folded into the literal of its value
     /// (`--opt fold`, COMP-5).
     pub(crate) fold: bool,
+    /// The dialect the files are read in, whose lexer reads each literal and builtin number.
+    pub(crate) dialect: Dialect,
 }
 
 impl<'a> Compiler<'a> {
@@ -122,6 +124,7 @@ impl<'a> Compiler<'a> {
             locals_end: 0,
             return_type: ValueType::simple(Etype::Void),
             fold: false,
+            dialect: Dialect::Vanilla,
         }
     }
 
@@ -210,17 +213,29 @@ impl<'a> Compiler<'a> {
             match declarator.initializer() {
                 None => {}
                 Some(ast::Initializer::Value(expr)) => {
-                    let literal = literal_of(&expr).at(expr.syntax().span())?;
-                    self.program
-                        .initialise(place, &literal)
-                        .at(expr.syntax().span())?;
+                    let span = expr.syntax().span();
+                    // A literal is stored as it is (QC-20); under FTEQCC an expression is the
+                    // value the semantic model folded it to (FTEF-34.9).
+                    if let Some(literal) = literal_of(&expr, self.dialect) {
+                        self.program.initialise(place, &literal).at(span)?;
+                    } else {
+                        let value = self.index.initial_values.get(&id).at(span)?;
+                        self.program
+                            .initialise_words(place, value.words())
+                            .at(span)?;
+                    }
                 }
                 Some(ast::Initializer::Body(body)) => {
-                    self.function(declaration, &name, (id, place), FunctionInit::Body(&body))?;
+                    self.function(
+                        (declaration, &declarator),
+                        &name,
+                        (id, place),
+                        FunctionInit::Body(&body),
+                    )?;
                 }
                 Some(ast::Initializer::Builtin(builtin)) => {
                     self.function(
-                        declaration,
+                        (declaration, &declarator),
                         &name,
                         (id, place),
                         FunctionInit::Builtin(&builtin),
@@ -243,7 +258,7 @@ impl<'a> Compiler<'a> {
     /// QC-25.2).
     fn function(
         &mut self,
-        declaration: &ast::Declaration,
+        (declaration, declarator): (&ast::Declaration, &ast::Declarator),
         name: &SyntaxToken,
         (id, place): (DefId, usize),
         init: FunctionInit<'_>,
@@ -259,14 +274,14 @@ impl<'a> Compiler<'a> {
             FunctionInit::Builtin(builtin) => {
                 // QC-13.3: `#n` is builtin `n`; no parameter or local storage is made.
                 let token = builtin.number().at(builtin.syntax().span())?;
-                let number = qc_syntax::builtin_binum(&token.text_lossless(), Dialect::Vanilla)
+                let number = qc_syntax::builtin_binum(&token.text_lossless(), self.dialect)
                     .at(token.span())?;
                 number
                     .checked_neg()
                     .ok_or(Abort::Internal(Internal::TooLarge, token.span()))?
             }
             FunctionInit::Body(body) => {
-                self.parameters(declaration, span)?;
+                self.parameters(declaration, declarator, span)?;
                 let code = operand_index(self.program.statements.len()).at(span)?;
                 if let Some(state) = body.state() {
                     self.state(&state)?;
@@ -322,13 +337,21 @@ impl<'a> Compiler<'a> {
     }
 
     /// The parameters of a body, made at the next globals in order (QC-13.2, QC-13.5): the
-    /// names written in the defining declaration's type.
-    fn parameters(&mut self, declaration: &ast::Declaration, span: Span) -> Lowered<()> {
-        let Some(ast::Type::Function(function)) = declaration.ty() else {
-            return Err(Abort::Internal(Internal::Unlowered, span));
-        };
-        let Some(list) = function.params() else {
-            return Ok(());
+    /// names written in the defining declaration's type, or after the name of FTEQCC's C-style
+    /// definition `float f(float x) { ... }` (FTE-17.1).
+    fn parameters(
+        &mut self,
+        declaration: &ast::Declaration,
+        declarator: &ast::Declarator,
+        span: Span,
+    ) -> Lowered<()> {
+        let list = match (declarator.params(), declaration.ty()) {
+            (Some(list), _) => list,
+            (None, Some(ast::Type::Function(function))) => match function.params() {
+                Some(list) => list,
+                None => return Ok(()),
+            },
+            (None, _) => return Err(Abort::Internal(Internal::Unlowered, span)),
         };
         for param in list.params() {
             if let Some(name) = param.name() {
@@ -343,7 +366,7 @@ impl<'a> Compiler<'a> {
     fn state(&mut self, state: &ast::State) -> Lowered<()> {
         let span = state.syntax().span();
         let frame = state.frame().at(span)?;
-        let literal = literal_of_token(&frame).at(frame.syntax().span())?;
+        let literal = literal_of_token(&frame, self.dialect).at(frame.syntax().span())?;
         let frame_place = self.program.immediate(&literal).at(span)?;
         let next = state.next().at(span)?;
         let next_place = self.declare(&next)?;
@@ -464,7 +487,7 @@ impl<'a> Compiler<'a> {
             match declarator.initializer() {
                 None => {}
                 Some(ast::Initializer::Value(expr)) => {
-                    let literal = literal_of(&expr).at(expr.syntax().span())?;
+                    let literal = literal_of(&expr, self.dialect).at(expr.syntax().span())?;
                     self.program.initialise(place, &literal).at(span)?;
                 }
                 Some(
@@ -488,7 +511,7 @@ impl<'a> Compiler<'a> {
         let span = expr.syntax().span();
         match expr {
             ast::Expr::Literal(literal) => {
-                let value = literal_of_token(literal).at(span)?;
+                let value = literal_of_token(literal, self.dialect).at(span)?;
                 let place = self.program.immediate(&value).at(span)?;
                 self.def_value(place, span)
             }
@@ -879,9 +902,9 @@ fn operand_index(index: usize) -> Result<i32, Internal> {
 }
 
 /// The literal an initialiser is (QC-11.3; QC-27.8 refuses any other).
-fn literal_of(expr: &ast::Expr) -> Option<Literal> {
+fn literal_of(expr: &ast::Expr, dialect: Dialect) -> Option<Literal> {
     match expr {
-        ast::Expr::Literal(literal) => literal_of_token(literal),
+        ast::Expr::Literal(literal) => literal_of_token(literal, dialect),
         ast::Expr::Paren(_)
         | ast::Expr::Name(_)
         | ast::Expr::Not(_)
@@ -900,9 +923,9 @@ fn literal_of(expr: &ast::Expr) -> Option<Literal> {
 
 /// A literal's value as the vanilla lexer reads its text (QC-4 to QC-6); a frame macro
 /// reference is the number the preprocessor wrote in its place (QC-8.5).
-fn literal_of_token(literal: &ast::Literal) -> Option<Literal> {
+fn literal_of_token(literal: &ast::Literal, dialect: Dialect) -> Option<Literal> {
     let token = literal.token()?;
-    let lexed = qc_lexer::lex_with(token.text(), Dialect::Vanilla);
+    let lexed = qc_lexer::lex_with(token.text(), dialect);
     let [token] = lexed.tokens.as_slice() else {
         return None;
     };

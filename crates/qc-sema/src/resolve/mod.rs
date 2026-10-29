@@ -95,6 +95,28 @@ pub struct ModuleIndex {
     pub diagnostics: Vec<FileDiagnostic>,
     /// Each function body's types, by the function's definition (`crate::check`).
     pub bodies: HashMap<DefId, TypedBody>,
+    /// What each global whose initialiser is an expression, not a literal, folds to under an
+    /// FTEQCC profile (FTEF-34.9), which a compiler writes to the global's words.
+    pub initial_values: HashMap<DefId, InitialValue>,
+}
+
+/// The value a global's initialiser folds to (FTEF-34.9, FTEF-26): the words it holds in the
+/// progs' global area, one for a float or an integer and three for a vector.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InitialValue {
+    words: Vec<u32>,
+}
+
+impl InitialValue {
+    pub(crate) const fn new(words: Vec<u32>) -> Self {
+        Self { words }
+    }
+
+    /// The words, in order.
+    #[must_use]
+    pub fn words(&self) -> &[u32] {
+        &self.words
+    }
 }
 
 impl ModuleIndex {

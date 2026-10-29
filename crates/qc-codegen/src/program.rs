@@ -311,6 +311,11 @@ impl Program {
     /// stale word (QC-27.12).
     pub(crate) fn initialise(&mut self, place: usize, literal: &Literal) -> Result<(), Internal> {
         let words = self.literal_words(literal)?;
+        self.initialise_words(place, &words)
+    }
+
+    /// Initialises definition `place` with `words`, the value its initialiser folded to.
+    pub(crate) fn initialise_words(&mut self, place: usize, words: &[u32]) -> Result<(), Internal> {
         let def = self.defs.get_mut(place).ok_or(Internal::NoDefinition)?;
         def.initialized = true;
         let ofs = def.ofs;

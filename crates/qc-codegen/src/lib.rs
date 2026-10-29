@@ -188,6 +188,7 @@ fn compile_lowered(
     let names = Names::new(&index);
     let mut compiler = Compiler::new(&index, &names);
     compiler.fold = options.fold;
+    compiler.dialect = resolve.dialect;
     for (i, unit) in units.iter().enumerate() {
         compiler
             .compile_file(FileId(i), unit.name, unit.parse)
