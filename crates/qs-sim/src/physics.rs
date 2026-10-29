@@ -88,15 +88,15 @@ pub struct Sound {
 }
 
 impl SimCall<'_, '_, '_> {
-    fn movetype(&self, n: usize) -> MoveType {
+    pub(crate) fn movetype(&self, n: usize) -> MoveType {
         MoveType::from_float(self.float(n, "movetype"))
     }
 
-    fn solid(&self, n: usize) -> Solid {
+    pub(crate) fn solid(&self, n: usize) -> Solid {
         Solid::from_float(self.float(n, "solid"))
     }
 
-    fn is_free(&self, n: usize) -> bool {
+    pub(crate) fn is_free(&self, n: usize) -> bool {
         self.context
             .machine_view()
             .edicts()
@@ -104,19 +104,19 @@ impl SimCall<'_, '_, '_> {
             .unwrap_or(true)
     }
 
-    fn run(&mut self, function: i32) -> Result<(), RunError> {
+    pub(crate) fn run(&mut self, function: i32) -> Result<(), RunError> {
         self.context.execute_program(self.sim, function)
     }
 
-    fn function(&self, n: usize, name: &str) -> i32 {
+    pub(crate) fn function(&self, n: usize, name: &str) -> i32 {
         self.entity_raw(n, name)
     }
 
-    fn set_time(&mut self, time: f64) {
+    pub(crate) fn set_time(&mut self, time: f64) {
         self.set_global("time", Slot::from_f32(f64_to_f32_public(time)));
     }
 
-    fn clock(&self) -> f64 {
+    pub(crate) fn clock(&self) -> f64 {
         self.sim.mock.engine().clock
     }
 
@@ -139,9 +139,7 @@ impl SimCall<'_, '_, '_> {
                     // PHYS-8.1: an unconnected slot does nothing.
                     (Some(slot), _) => {
                         if clients.get(slot).copied().unwrap_or(false) {
-                            return Err(self.context.run_error(ErrorKind::Fatal {
-                                message: "client physics is not ported yet".to_owned(),
-                            }));
+                            self.physics_client(n, frametime)?;
                         }
                     }
                     (None, MoveType::Push) => self.physics_pusher(n, frametime)?,
@@ -178,7 +176,7 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// `SV_RunThink`: whether the entity is still in use (PHYS-2.1).
-    fn run_think(&mut self, ent: usize, frametime: f64) -> Result<bool, RunError> {
+    pub(crate) fn run_think(&mut self, ent: usize, frametime: f64) -> Result<bool, RunError> {
         let nextthink = self.float(ent, "nextthink");
         let now = self.clock();
         if nextthink <= 0.0 || f64::from(nextthink) > now + frametime {
@@ -323,7 +321,7 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// `SV_PushEntity` (PHYS-3.6).
-    fn push_entity(&mut self, ent: usize, push: [f32; 3]) -> Result<Trace, RunError> {
+    pub(crate) fn push_entity(&mut self, ent: usize, push: [f32; 3]) -> Result<Trace, RunError> {
         let origin = self.vector(ent, "origin");
         let end = add(origin, push);
         let kind = if self.movetype(ent) == MoveType::FlyMissile {
@@ -367,7 +365,7 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// `SV_Physics_Toss` (PHYS-4).
-    fn physics_toss(&mut self, ent: usize, frametime: f64) -> Result<(), RunError> {
+    pub(crate) fn physics_toss(&mut self, ent: usize, frametime: f64) -> Result<(), RunError> {
         if !self.run_think(ent, frametime)? {
             return Ok(());
         }
@@ -413,7 +411,7 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// `SV_CheckWaterTransition` (PHYS-4.4).
-    fn check_water_transition(&mut self, ent: usize) -> Result<(), RunError> {
+    pub(crate) fn check_water_transition(&mut self, ent: usize) -> Result<(), RunError> {
         let cont = self
             .sim
             .collision
@@ -460,7 +458,7 @@ impl SimCall<'_, '_, '_> {
             let hitsound = self.vector(ent, "velocity")[2] < GRAVITY * HARD_LANDING;
             self.add_gravity(ent, frametime);
             self.check_velocity(ent);
-            self.fly_move(ent, f64_to_f32_public(frametime))?;
+            self.fly_move(ent, f64_to_f32_public(frametime), &mut None)?;
             self.link(ent, true)?;
             if self.flags(ent) & FL_ONGROUND != 0 && hitsound {
                 self.sound(ent, "demon/dland2.wav");
@@ -471,7 +469,7 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// `SV_CheckVelocity` (PHYS-6.3).
-    fn check_velocity(&mut self, ent: usize) {
+    pub(crate) fn check_velocity(&mut self, ent: usize) {
         let velocity = self.vector(ent, "velocity");
         let origin = self.vector(ent, "origin");
         let velocity = velocity.map(|v| {
@@ -487,7 +485,7 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// `SV_AddGravity` (PHYS-6.4).
-    fn add_gravity(&mut self, ent: usize, frametime: f64) {
+    pub(crate) fn add_gravity(&mut self, ent: usize, frametime: f64) {
         let gravity = self
             .progs_field(ent, "gravity")
             .map(Slot::as_f32)
@@ -499,7 +497,12 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// `SV_FlyMove` (PHYS-7): what blocked the move.
-    fn fly_move(&mut self, ent: usize, time: f32) -> Result<i32, RunError> {
+    pub(crate) fn fly_move(
+        &mut self,
+        ent: usize,
+        time: f32,
+        steptrace: &mut Option<Trace>,
+    ) -> Result<i32, RunError> {
         let mut blocked = 0;
         let mut original = self.vector(ent, "velocity");
         let primal = original;
@@ -553,6 +556,8 @@ impl SimCall<'_, '_, '_> {
             }
             if normal[2] == 0.0 {
                 blocked |= 2;
+                // "save for player extrafriction"
+                *steptrace = Some(trace);
             }
             self.impact(ent, hit)?;
             if self.is_free(ent) {

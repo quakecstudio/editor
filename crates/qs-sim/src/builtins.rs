@@ -371,6 +371,15 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
         }
     }
 
+    /// Sets a field to a raw value: a string, function or entity value.
+    pub(crate) fn set_entity_raw(&mut self, n: usize, name: &str, value: i32) {
+        let slot = field_slot(name);
+        self.context
+            .machine()
+            .edicts_mut()
+            .set_field(n, slot, Slot::from_i32(value));
+    }
+
     pub(crate) fn set_entity(&mut self, n: usize, name: &str, ent: usize) {
         let value = self.value_of(ent);
         let slot = field_slot(name);

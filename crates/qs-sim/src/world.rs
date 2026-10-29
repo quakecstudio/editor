@@ -19,7 +19,10 @@ use qc_types::{DefType, Etype, Slot};
 use qc_vm::{Machine, NoObserver, RunError, ServerState};
 use qs_bsp::Bsp;
 
+use qc_builtins::math::f64_to_f32_public;
+
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
+use crate::client::{UserCmd, wire_angle};
 use crate::physics::Sound;
 
 use crate::spawn::{self, FieldDef, LoadError, SPAWNFLAGS_SLOT, SpawnError, SpawnHost};
@@ -32,6 +35,8 @@ const SOLID_BSP: f32 = 4.0;
 const MOVETYPE_PUSH: f32 = 7.0;
 /// The client slots a single-player world has.
 const MAXCLIENTS: usize = 1;
+/// The single player's edict.
+const CLIENT: usize = 1;
 
 /// Why a world could not be made.
 #[derive(Debug)]
@@ -81,6 +86,10 @@ pub struct Entity {
 pub struct World {
     machine: Machine,
     builtins: SimBuiltins,
+    /// The client's command, once it has entered the game (PHYS-9.6, PHYS-10).
+    player: Option<UserCmd>,
+    /// Angles the server set the client's view to, not yet taken.
+    set_angle: Option<[f32; 3]>,
 }
 
 impl World {
@@ -110,6 +119,8 @@ impl World {
         let mut world = Self {
             machine,
             builtins: SimBuiltins::new(engine, map, bsp, files),
+            player: None,
+            set_angle: None,
         };
         let entities = bsp.entities();
         // EDICT-4.1: the world's fields.
@@ -141,9 +152,94 @@ impl World {
     /// [`WorldError::Frame`] when a function the frame runs fails, or the engine stops.
     pub fn frame(&mut self, progs: &Progs<'_>, frametime: f64) -> Result<(), WorldError> {
         let clients = self.builtins.mock.engine().clients_active.clone();
-        SimCall::frame(&mut self.machine, progs, &mut self.builtins)
-            .physics(frametime, &clients)
-            .map_err(WorldError::Frame)
+        let player = self.player;
+        let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+        let t = f64_to_f32_public(frametime);
+        // Host_ServerFrame: frametime, then the clients' moves, then the physics.
+        call.set_global("frametime", Slot::from_f32(t));
+        if let Some(cmd) = player {
+            let cmd = call.read_move(CLIENT, &cmd);
+            call.client_think(CLIENT, &cmd, t);
+        }
+        call.physics(frametime, &clients).map_err(WorldError::Frame)?;
+        // SV_WriteClientdataToMessage: a fixangle goes to the client, once.
+        if player.is_some() && call.float(CLIENT, "fixangle") != 0.0 {
+            self.set_angle = Some(call.vector(CLIENT, "angles").map(wire_angle));
+            call.set_float(CLIENT, "fixangle", 0.0);
+        }
+        Ok(())
+    }
+
+    /// The view angles the server told the client to take since the last call, `svc_setangle`
+    /// (PHYS-10.2).
+    pub fn take_set_angle(&mut self) -> Option<[f32; 3]> {
+        self.set_angle.take()
+    }
+
+    /// The player enters the game, as `SV_ConnectClient` and `Host_Spawn_f` bring a client in
+    /// (PHYS-10): `SetNewParms`, the client's edict cleared and named, then `ClientConnect`
+    /// and `PutClientInServer`.
+    ///
+    /// # Errors
+    ///
+    /// [`WorldError::Frame`] when a function fails.
+    pub fn connect(&mut self, progs: &Progs<'_>) -> Result<(), WorldError> {
+        if let Some(active) = self.builtins.mock.engine_mut().clients_active.first_mut() {
+            *active = true;
+        }
+        let name = self.make_string(b"player".to_vec());
+        let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+        let new_parms = call.global("SetNewParms").as_i32();
+        call.run(new_parms).map_err(WorldError::Frame)?;
+        let parms: Vec<Slot> = (1..=16).map(|n| call.global(&format!("parm{n}"))).collect();
+        let fields = call.context.machine_view().edicts().layout().entityfields();
+        for slot in 0..fields {
+            call.context
+                .machine()
+                .edicts_mut()
+                .set_field(CLIENT, slot, Slot::from_i32(0));
+        }
+        call.set_float(CLIENT, "colormap", 1.0);
+        call.set_float(CLIENT, "team", 1.0);
+        call.set_entity_raw(CLIENT, "netname", name);
+        for (n, parm) in (1..=16).zip(parms) {
+            call.set_global(&format!("parm{n}"), parm);
+        }
+        call.set_time(call.clock());
+        let value = call.value_of(CLIENT);
+        call.set_global("self", Slot::from_i32(value));
+        for entry in ["ClientConnect", "PutClientInServer"] {
+            let function = call.global(entry).as_i32();
+            call.run(function).map_err(WorldError::Frame)?;
+        }
+        self.player = Some(UserCmd::default());
+        Ok(())
+    }
+
+    /// What the player asks for from the next frame on (PHYS-9.6).
+    pub fn set_command(&mut self, cmd: UserCmd) {
+        if self.player.is_some() {
+            self.player = Some(cmd);
+        }
+    }
+
+    /// The player's eye: its `origin + view_ofs`, and its `v_angle`; `None` before it has
+    /// entered the game.
+    #[must_use]
+    pub fn player_view(&self) -> Option<([f32; 3], [f32; 3])> {
+        self.player?;
+        let edicts = self.machine.edicts();
+        let vector = |name: &str| {
+            let first = field_slot(name);
+            [0, 1, 2].map(|i| {
+                edicts
+                    .field(CLIENT, first.saturating_add(i))
+                    .map_or(0.0, Slot::as_f32)
+            })
+        };
+        let [x, y, z] = vector("origin");
+        let [a, b, c] = vector("view_ofs");
+        Some(([x + a, y + b, z + c], vector("v_angle")))
     }
 
     /// The server's time in seconds, `sv.time`.

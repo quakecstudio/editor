@@ -40,16 +40,29 @@ fn main() -> Result<(), String> {
         .unwrap_or_default();
     let files = Box::new(move |name: &str| std::fs::read(root.join(name)).ok());
     let mut world = World::load(&progs, map, &bsp, files).map_err(|e| e.to_string())?;
-    // Server frames of a tenth of a second.
-    for _ in 0..frames {
+    // Server frames of a tenth of a second; with a player when asked for.
+    let play = std::env::var_os("QS_PLAY").is_some();
+    if play {
+        world.connect(&progs).map_err(|e| e.to_string())?;
+    }
+    let mut out = std::io::stdout().lock();
+    for n in 0..frames {
+        if play && n == frames / 2 {
+            world.set_command(qs_sim::UserCmd {
+                forward: 200.0,
+                ..qs_sim::UserCmd::default()
+            });
+        }
         world.frame(&progs, 0.1).map_err(|e| e.to_string())?;
+        if let Some((eye, angles)) = world.player_view() {
+            writeln!(out, "frame {n}: eye {eye:?} angles {angles:?}").map_err(|e| e.to_string())?;
+        }
     }
     let mut models: BTreeMap<String, usize> = BTreeMap::new();
     for entity in world.entities() {
         let count = models.entry(entity.model).or_default();
         *count = count.saturating_add(1);
     }
-    let mut out = std::io::stdout().lock();
     for (model, count) in models {
         writeln!(out, "{count:4}  {model}").map_err(|e| e.to_string())?;
     }

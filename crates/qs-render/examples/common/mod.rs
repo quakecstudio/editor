@@ -32,19 +32,44 @@ pub(crate) struct Sim {
     bsp: Bsp<'static>,
 }
 
-/// GLQuake's `host_maxfps`: the server runs at most 72 frames a second.
+/// `Host_FilterTime`: no frame comes sooner than 1/72 of a second after the last.
 const FRAME: f64 = 1.0 / 72.0;
+/// `Host_FilterTime`'s longest frame.
+const LONGEST: f64 = 0.1;
 
 impl Sim {
-    /// Runs the frames that fit in `seconds` more of real time, carrying the rest in `behind`.
+    /// `Host_FilterTime`: when 1/72 of a second has passed since the last frame, one frame of
+    /// the time that passed, at most 0.1.
     pub(crate) fn advance(&mut self, seconds: f64, behind: &mut f64) -> Result<(), String> {
-        let progs = Progs::read(self.progs).map_err(|e| e.to_string())?;
         *behind += seconds;
-        while *behind >= FRAME {
-            *behind -= FRAME;
-            self.world.frame(&progs, FRAME).map_err(|e| e.to_string())?;
+        if *behind < FRAME {
+            return Ok(());
         }
-        Ok(())
+        let frametime = behind.min(LONGEST);
+        *behind = 0.0;
+        let progs = Progs::read(self.progs).map_err(|e| e.to_string())?;
+        self.world.frame(&progs, frametime).map_err(|e| e.to_string())
+    }
+
+    /// The player enters the game.
+    pub(crate) fn connect(&mut self) -> Result<(), String> {
+        let progs = Progs::read(self.progs).map_err(|e| e.to_string())?;
+        self.world.connect(&progs).map_err(|e| e.to_string())
+    }
+
+    /// What the player asks for from the next frame.
+    pub(crate) fn command(&mut self, cmd: qs_sim::UserCmd) {
+        self.world.set_command(cmd);
+    }
+
+    /// The player's eye, if one is in the game.
+    pub(crate) fn eye(&self) -> Option<[f32; 3]> {
+        self.world.player_view().map(|(eye, _)| eye)
+    }
+
+    /// Angles the server turned the view to.
+    pub(crate) fn set_angle(&mut self) -> Option<[f32; 3]> {
+        self.world.take_set_angle()
     }
 
     /// The server's time.
