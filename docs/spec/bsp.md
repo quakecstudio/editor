@@ -111,7 +111,7 @@ from the first four bytes (SPR-1): a file that is neither `IDPO` nor `IDSP` goes
 | `BSP_VERSION` | 29 | `WinQuake/bspfile.h`, `BSPVERSION` |
 | `BSP_HEADER_LUMPS` | 15 | `WinQuake/bspfile.h`, `HEADER_LUMPS` |
 | `BSP_HEADER_SIZE` | 124 | `WinQuake/bspfile.h`, `sizeof(dheader_t)` |
-| `BSP_LUMP_ENTITIES` to `BSP_LUMP_MODELS` | 0 to 14 | `WinQuake/bspfile.h`, `LUMP_ENTITIES` to `LUMP_MODELS`, in the order of the table |
+| `LumpId::Entities` to `LumpId::Models` | 0 to 14 | `WinQuake/bspfile.h`, `LUMP_ENTITIES` to `LUMP_MODELS`, in the order of the table |
 
 ### Test vectors
 

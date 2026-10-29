@@ -34,7 +34,7 @@ use core::fmt;
 pub use ent::{BSP_ENT_EXTENSION, ent_file_names};
 pub use lit::{
     BSP_LIT_HEADER_SIZE, BSP_LIT_MAGIC, BSP_LIT_VERSION, FoundLit, Lit, LitChoice, LitError,
-    mod_load_lighting,
+    PathId, mod_load_lighting,
 };
 
 /// The version of a BSP29 file, id's `BSPVERSION` (BSP-1.2).
@@ -49,36 +49,106 @@ pub const BSP_HEADER_LUMPS: usize = 15;
 /// Bytes in the header, id's `sizeof(dheader_t)` (BSP-1.1).
 pub const BSP_HEADER_SIZE: usize = 124;
 
-/// `LUMP_ENTITIES`.
-pub const BSP_LUMP_ENTITIES: usize = 0;
-/// `LUMP_PLANES`.
-pub const BSP_LUMP_PLANES: usize = 1;
-/// `LUMP_TEXTURES`.
-pub const BSP_LUMP_TEXTURES: usize = 2;
-/// `LUMP_VERTEXES`.
-pub const BSP_LUMP_VERTEXES: usize = 3;
-/// `LUMP_VISIBILITY`.
-pub const BSP_LUMP_VISIBILITY: usize = 4;
-/// `LUMP_NODES`.
-pub const BSP_LUMP_NODES: usize = 5;
-/// `LUMP_TEXINFO`.
-pub const BSP_LUMP_TEXINFO: usize = 6;
-/// `LUMP_FACES`.
-pub const BSP_LUMP_FACES: usize = 7;
-/// `LUMP_LIGHTING`.
-pub const BSP_LUMP_LIGHTING: usize = 8;
-/// `LUMP_CLIPNODES`.
-pub const BSP_LUMP_CLIPNODES: usize = 9;
-/// `LUMP_LEAFS`.
-pub const BSP_LUMP_LEAFS: usize = 10;
-/// `LUMP_MARKSURFACES`.
-pub const BSP_LUMP_MARKSURFACES: usize = 11;
-/// `LUMP_EDGES`.
-pub const BSP_LUMP_EDGES: usize = 12;
-/// `LUMP_SURFEDGES`.
-pub const BSP_LUMP_SURFEDGES: usize = 13;
-/// `LUMP_MODELS`.
-pub const BSP_LUMP_MODELS: usize = 14;
+/// One of the lumps of the header, in the order of the lump table (BSP-1.1): id's
+/// `LUMP_ENTITIES` to `LUMP_MODELS`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LumpId {
+    /// `LUMP_ENTITIES`.
+    Entities,
+    /// `LUMP_PLANES`.
+    Planes,
+    /// `LUMP_TEXTURES`.
+    Textures,
+    /// `LUMP_VERTEXES`.
+    Vertexes,
+    /// `LUMP_VISIBILITY`.
+    Visibility,
+    /// `LUMP_NODES`.
+    Nodes,
+    /// `LUMP_TEXINFO`.
+    Texinfo,
+    /// `LUMP_FACES`.
+    Faces,
+    /// `LUMP_LIGHTING`.
+    Lighting,
+    /// `LUMP_CLIPNODES`.
+    Clipnodes,
+    /// `LUMP_LEAFS`.
+    Leafs,
+    /// `LUMP_MARKSURFACES`.
+    Marksurfaces,
+    /// `LUMP_EDGES`.
+    Edges,
+    /// `LUMP_SURFEDGES`.
+    Surfedges,
+    /// `LUMP_MODELS`.
+    Models,
+}
+
+impl LumpId {
+    /// Every lump, in the order of the lump table.
+    pub const ALL: [Self; BSP_HEADER_LUMPS] = [
+        Self::Entities,
+        Self::Planes,
+        Self::Textures,
+        Self::Vertexes,
+        Self::Visibility,
+        Self::Nodes,
+        Self::Texinfo,
+        Self::Faces,
+        Self::Lighting,
+        Self::Clipnodes,
+        Self::Leafs,
+        Self::Marksurfaces,
+        Self::Edges,
+        Self::Surfedges,
+        Self::Models,
+    ];
+
+    /// Its place in the lump table.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Entities => 0,
+            Self::Planes => 1,
+            Self::Textures => 2,
+            Self::Vertexes => 3,
+            Self::Visibility => 4,
+            Self::Nodes => 5,
+            Self::Texinfo => 6,
+            Self::Faces => 7,
+            Self::Lighting => 8,
+            Self::Clipnodes => 9,
+            Self::Leafs => 10,
+            Self::Marksurfaces => 11,
+            Self::Edges => 12,
+            Self::Surfedges => 13,
+            Self::Models => 14,
+        }
+    }
+
+    /// Its name in id's messages and the reader's errors.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Entities => "entities",
+            Self::Planes => "planes",
+            Self::Textures => "textures",
+            Self::Vertexes => "vertexes",
+            Self::Visibility => "visibility",
+            Self::Nodes => "nodes",
+            Self::Texinfo => "texinfo",
+            Self::Faces => "faces",
+            Self::Lighting => "lighting",
+            Self::Clipnodes => "clipnodes",
+            Self::Leafs => "leafs",
+            Self::Marksurfaces => "marksurfaces",
+            Self::Edges => "edges",
+            Self::Surfedges => "surfedges",
+            Self::Models => "models",
+        }
+    }
+}
 
 /// Bytes in a plane, `sizeof(dplane_t)` (BSP-3.1).
 pub const BSP_PLANE_SIZE: usize = 20;
@@ -94,10 +164,11 @@ pub const BSP_PLANE_ANYX: i32 = 3;
 pub const BSP_PLANE_ANYY: i32 = 4;
 /// Plane type `PLANE_ANYZ`.
 pub const BSP_PLANE_ANYZ: i32 = 5;
-/// Bytes in a texture's header, `sizeof(miptex_t)` (BSP-4.3).
-pub const BSP_MIPTEX_HEADER_SIZE: usize = 40;
+/// Bytes in a texture's header, `sizeof(miptex_t)` (BSP-4.3): a WAD2 texture's header, which
+/// `qs_wad::MipTexHeader` reads for both.
+pub const BSP_MIPTEX_HEADER_SIZE: usize = qs_wad::WAD_MIPTEX_HEADER_SIZE;
 /// Mip levels per texture, `MIPLEVELS` (BSP-4.5).
-pub const BSP_MIPLEVELS: usize = 4;
+pub const BSP_MIPLEVELS: usize = qs_wad::WAD_MIPLEVELS;
 /// Units of an animation frame, `ANIM_CYCLE` (BSP-4.9).
 pub const BSP_ANIM_CYCLE: i32 = 2;
 /// Bytes in a vertex (BSP-5.1).
@@ -296,33 +367,11 @@ impl BspLoader {
     }
 
     const fn fitz(self) -> bool {
-        matches!(self, Self::FitzQuake)
+        match self {
+            Self::FitzQuake => true,
+            Self::WinQuake | Self::GlQuake => false,
+        }
     }
-}
-
-/// The lump names in id's messages and the reader's errors.
-const LUMP_NAMES: [&str; BSP_HEADER_LUMPS] = [
-    "entities",
-    "planes",
-    "textures",
-    "vertexes",
-    "visibility",
-    "nodes",
-    "texinfo",
-    "faces",
-    "lighting",
-    "clipnodes",
-    "leafs",
-    "marksurfaces",
-    "edges",
-    "surfedges",
-    "models",
-];
-
-/// The name of lump `index`, as the lump table of BSP-1 gives it.
-#[must_use]
-pub fn lump_name(index: usize) -> &'static str {
-    LUMP_NAMES.get(index).copied().unwrap_or("unknown")
 }
 
 /// Why a BSP could not be read.
@@ -339,18 +388,18 @@ pub enum BspError {
     },
     /// A lump's offset or length is negative or runs past the file (BSP-1.6).
     LumpOutOfBounds {
-        /// The lump's index.
-        lump: usize,
+        /// The lump.
+        lump: LumpId,
     },
     /// A lump's length is not a multiple of its element size (BSP-1.4).
     FunnyLumpSize {
-        /// The lump's index.
-        lump: usize,
+        /// The lump.
+        lump: LumpId,
     },
     /// An index names an element that does not exist (BSP-1.8).
     BadIndex {
         /// The lump holding the index.
-        lump: usize,
+        lump: LumpId,
         /// The element holding it.
         element: usize,
     },
@@ -421,12 +470,12 @@ impl BspError {
                 "Mod_LoadBrushModel: {name} has wrong version number ({version} should be {BSP_VERSION})"
             ),
             Self::LumpOutOfBounds { lump } => {
-                format!("{name}: the {} lump runs past the file", lump_name(*lump))
+                format!("{name}: the {} lump runs past the file", lump.name())
             }
             Self::FunnyLumpSize { .. } => format!("MOD_LoadBmodel: funny lump size in {name}"),
             Self::BadIndex { lump, element } => format!(
                 "{name}: {} {element} names an element that does not exist",
-                lump_name(*lump)
+                lump.name()
             ),
             Self::BadTexturesLump => format!("{name}: the textures lump's directory runs past it"),
             Self::BadTexture { index } => {
@@ -718,32 +767,41 @@ pub struct Bsp<'a> {
     pub models: Vec<Model>,
 }
 
-fn le_bytes<const N: usize>(bytes: &[u8], offset: usize) -> [u8; N] {
-    offset
-        .checked_add(N)
-        .and_then(|end| bytes.get(offset..end))
-        .and_then(|slice| <[u8; N]>::try_from(slice).ok())
-        .unwrap_or([0; N])
+/// The `N` bytes at `offset`, or `None` past the end of `bytes`.
+pub(crate) fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8; N]> {
+    bytes.get(offset..offset.checked_add(N)?)?.try_into().ok()
 }
 
+// These read 0 past the end of `bytes`, as the reader always has; `read_array` gives `None`
+// where a caller has to know.
 fn i32_at(bytes: &[u8], offset: usize) -> i32 {
-    i32::from_le_bytes(le_bytes(bytes, offset))
+    read_array(bytes, offset)
+        .map(i32::from_le_bytes)
+        .unwrap_or_default()
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
-    u32::from_le_bytes(le_bytes(bytes, offset))
+    read_array(bytes, offset)
+        .map(u32::from_le_bytes)
+        .unwrap_or_default()
 }
 
 fn i16_at(bytes: &[u8], offset: usize) -> i16 {
-    i16::from_le_bytes(le_bytes(bytes, offset))
+    read_array(bytes, offset)
+        .map(i16::from_le_bytes)
+        .unwrap_or_default()
 }
 
 fn u16_at(bytes: &[u8], offset: usize) -> u16 {
-    u16::from_le_bytes(le_bytes(bytes, offset))
+    read_array(bytes, offset)
+        .map(u16::from_le_bytes)
+        .unwrap_or_default()
 }
 
 fn f32_at(bytes: &[u8], offset: usize) -> f32 {
-    f32::from_le_bytes(le_bytes(bytes, offset))
+    read_array(bytes, offset)
+        .map(f32::from_le_bytes)
+        .unwrap_or_default()
 }
 
 fn vec3_at(bytes: &[u8], offset: usize) -> [f32; 3] {
@@ -756,7 +814,7 @@ fn short3_at(bytes: &[u8], offset: usize) -> [f32; 3] {
 }
 
 /// An index read from a file, which must be in `0..count` (BSP-1.8).
-fn index(value: i64, count: usize, lump: usize, element: usize) -> Result<usize, BspError> {
+fn index(value: i64, count: usize, lump: LumpId, element: usize) -> Result<usize, BspError> {
     usize::try_from(value)
         .ok()
         .filter(|&value| value < count)
@@ -768,7 +826,7 @@ fn range(
     first: i64,
     count: i64,
     len: usize,
-    lump: usize,
+    lump: LumpId,
     element: usize,
 ) -> Result<(usize, usize), BspError> {
     let bad = BspError::BadIndex { lump, element };
@@ -780,14 +838,18 @@ fn range(
     Ok((first, count))
 }
 
+/// The leaf a node's child names: a negative child `c` is leaf `-1 - c` (BSP-7.2); `None`
+/// for a child of 0 or more, which is a node.
+fn leaf_of(child: i32) -> Option<usize> {
+    usize::try_from(child.wrapping_neg().wrapping_sub(1)).ok()
+}
+
 /// A child of a node or clipnode: a node when 0 or more, else a leaf or contents
 /// (BSP-7.2, BSP-11.1).
 fn child_ok(child: i32, nodes: usize, leaves: Option<usize>) -> bool {
     match usize::try_from(child) {
         Ok(node) => node < nodes,
-        Err(_) => leaves.is_none_or(|leaves| {
-            usize::try_from(child.wrapping_neg().wrapping_sub(1)).is_ok_and(|leaf| leaf < leaves)
-        }),
+        Err(_) => leaves.is_none_or(|leaves| leaf_of(child).is_some_and(|leaf| leaf < leaves)),
     }
 }
 
@@ -803,7 +865,7 @@ fn fitz_node_child(child: i32, version: BspVersion, nodes: usize, leaves: usize)
             if usize::from(stored) < nodes {
                 return i32::from(stored);
             }
-            i64::from(u16::MAX).wrapping_sub(i64::from(stored))
+            Some(usize::from(u16::MAX.wrapping_sub(stored)))
         }
         BspVersion::Bsp2Psb | BspVersion::Bsp2 => {
             let first = if version == BspVersion::Bsp2 { 1 } else { 0 };
@@ -811,12 +873,10 @@ fn fitz_node_child(child: i32, version: BspVersion, nodes: usize, leaves: usize)
                 return child;
             }
             // `p = 0xffffffff - p`, stored back in an int: -1 - p.
-            i64::from(child.wrapping_neg().wrapping_sub(1))
+            leaf_of(child)
         }
     };
-    usize::try_from(leaf)
-        .ok()
-        .filter(|&leaf| leaf < leaves)
+    leaf.filter(|&leaf| leaf < leaves)
         .and_then(|leaf| i32::try_from(leaf).ok())
         .map_or(-1, |leaf| leaf.wrapping_neg().wrapping_sub(1))
 }
@@ -903,8 +963,8 @@ struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
-    fn lump(&self, index: usize) -> &'a [u8] {
-        let lump = self.lumps.get(index).copied().unwrap_or_default();
+    fn lump(&self, id: LumpId) -> &'a [u8] {
+        let lump = self.lumps.get(id.index()).copied().unwrap_or_default();
         usize::try_from(lump.fileofs)
             .ok()
             .zip(usize::try_from(lump.filelen).ok())
@@ -916,18 +976,21 @@ impl<'a> Reader<'a> {
     /// (BSP-1.4).
     fn elements(
         &self,
-        index: usize,
+        id: LumpId,
         size: usize,
     ) -> Result<core::slice::ChunksExact<'a, u8>, BspError> {
-        let lump = self.lump(index);
+        let lump = self.lump(id);
         if size == 0 || lump.len().checked_rem(size) != Some(0) {
-            return Err(BspError::FunnyLumpSize { lump: index });
+            return Err(BspError::FunnyLumpSize { lump: id });
         }
         Ok(lump.chunks_exact(size))
     }
 
     const fn bsp2(&self) -> bool {
-        !matches!(self.version, BspVersion::Bsp29)
+        match self.version {
+            BspVersion::Bsp29 => false,
+            BspVersion::Bsp2Psb | BspVersion::Bsp2 => true,
+        }
     }
 }
 
@@ -952,8 +1015,8 @@ impl<'a> Bsp<'a> {
             version => return Err(BspError::WrongVersion { version }),
         };
         let mut lumps = [Lump::default(); BSP_HEADER_LUMPS];
-        for (index, lump) in lumps.iter_mut().enumerate() {
-            let at = index.saturating_mul(8).saturating_add(4);
+        for (id, lump) in LumpId::ALL.into_iter().zip(lumps.iter_mut()) {
+            let at = id.index().saturating_mul(8).saturating_add(4);
             *lump = Lump {
                 fileofs: i32_at(header, at),
                 filelen: i32_at(header, at.saturating_add(4)),
@@ -964,7 +1027,7 @@ impl<'a> Bsp<'a> {
                 .and_then(|(start, len)| start.checked_add(len))
                 .is_some_and(|end| end <= bytes.len());
             if !fits {
-                return Err(BspError::LumpOutOfBounds { lump: index });
+                return Err(BspError::LumpOutOfBounds { lump: id });
             }
         }
         let reader = Reader {
@@ -995,16 +1058,16 @@ impl<'a> Bsp<'a> {
         bsp.mod_load_edges(&reader)?;
         bsp.mod_load_surfedges(&reader)?;
         bsp.mod_load_textures(&reader, loader)?;
-        bsp.lighting = reader.lump(BSP_LUMP_LIGHTING);
+        bsp.lighting = reader.lump(LumpId::Lighting);
         bsp.mod_load_planes(&reader)?;
         bsp.mod_load_texinfo(&reader, loader)?;
         bsp.mod_load_faces(&reader, loader)?;
         bsp.mod_load_marksurfaces(&reader)?;
-        bsp.visibility = reader.lump(BSP_LUMP_VISIBILITY);
+        bsp.visibility = reader.lump(LumpId::Visibility);
         bsp.mod_load_leafs(&reader, loader)?;
         bsp.mod_load_nodes(&reader, loader)?;
         bsp.mod_load_clipnodes(&reader, loader)?;
-        bsp.entity_lump = reader.lump(BSP_LUMP_ENTITIES);
+        bsp.entity_lump = reader.lump(LumpId::Entities);
         bsp.mod_load_submodels(&reader)?;
         Ok(bsp)
     }
@@ -1012,7 +1075,7 @@ impl<'a> Bsp<'a> {
     /// id's `Mod_LoadVertexes` (BSP-5.1).
     fn mod_load_vertexes(&mut self, reader: &Reader<'a>) -> Result<(), BspError> {
         self.vertexes = reader
-            .elements(BSP_LUMP_VERTEXES, BSP_VERTEX_SIZE)?
+            .elements(LumpId::Vertexes, BSP_VERTEX_SIZE)?
             .map(|chunk| vec3_at(chunk, 0))
             .collect();
         Ok(())
@@ -1022,12 +1085,12 @@ impl<'a> Bsp<'a> {
     fn mod_load_edges(&mut self, reader: &Reader<'a>) -> Result<(), BspError> {
         self.edges = if reader.bsp2() {
             reader
-                .elements(BSP_LUMP_EDGES, BSP_BSP2_EDGE_SIZE)?
+                .elements(LumpId::Edges, BSP_BSP2_EDGE_SIZE)?
                 .map(|chunk| [u32_at(chunk, 0), u32_at(chunk, 4)])
                 .collect()
         } else {
             reader
-                .elements(BSP_LUMP_EDGES, BSP_EDGE_SIZE)?
+                .elements(LumpId::Edges, BSP_EDGE_SIZE)?
                 .map(|chunk| [u32::from(u16_at(chunk, 0)), u32::from(u16_at(chunk, 2))])
                 .collect()
         };
@@ -1037,7 +1100,7 @@ impl<'a> Bsp<'a> {
     /// id's `Mod_LoadSurfedges` (BSP-14.2).
     fn mod_load_surfedges(&mut self, reader: &Reader<'a>) -> Result<(), BspError> {
         self.surfedges = reader
-            .elements(BSP_LUMP_SURFEDGES, BSP_SURFEDGE_SIZE)?
+            .elements(LumpId::Surfedges, BSP_SURFEDGE_SIZE)?
             .map(|chunk| i32_at(chunk, 0))
             .collect();
         Ok(())
@@ -1049,7 +1112,7 @@ impl<'a> Bsp<'a> {
         reader: &Reader<'a>,
         loader: BspLoader,
     ) -> Result<(), BspError> {
-        let lump = reader.lump(BSP_LUMP_TEXTURES);
+        let lump = reader.lump(LumpId::Textures);
         if lump.is_empty() {
             return Ok(());
         }
@@ -1080,7 +1143,7 @@ impl<'a> Bsp<'a> {
     /// id's `Mod_LoadPlanes` (BSP-3).
     fn mod_load_planes(&mut self, reader: &Reader<'a>) -> Result<(), BspError> {
         self.planes = reader
-            .elements(BSP_LUMP_PLANES, BSP_PLANE_SIZE)?
+            .elements(LumpId::Planes, BSP_PLANE_SIZE)?
             .map(|chunk| {
                 let normal = vec3_at(chunk, 0);
                 let mut signbits = 0_u8;
@@ -1105,7 +1168,7 @@ impl<'a> Bsp<'a> {
     /// id's `Mod_LoadTexinfo` (BSP-8, BSP-20.7).
     fn mod_load_texinfo(&mut self, reader: &Reader<'a>, loader: BspLoader) -> Result<(), BspError> {
         let mut texinfo = Vec::new();
-        for chunk in reader.elements(BSP_LUMP_TEXINFO, BSP_TEXINFO_SIZE)? {
+        for chunk in reader.elements(LumpId::Texinfo, BSP_TEXINFO_SIZE)? {
             let mut vecs = [[0.0_f32; 4]; 2];
             for (row, axis) in vecs.iter_mut().enumerate() {
                 for (column, value) in axis.iter_mut().enumerate() {
@@ -1141,7 +1204,7 @@ impl<'a> Bsp<'a> {
                     None if slot == slots => {}
                     None => flags |= BSP_TEX_MISSING,
                 }
-            } else if reader.lump(BSP_LUMP_TEXTURES).is_empty() {
+            } else if reader.lump(LumpId::Textures).is_empty() {
                 flags = 0;
             } else {
                 let slot = usize::try_from(miptex)
@@ -1174,7 +1237,7 @@ impl<'a> Bsp<'a> {
             BSP_FACE_SIZE
         };
         let mut faces = Vec::new();
-        for (element, chunk) in reader.elements(BSP_LUMP_FACES, size)?.enumerate() {
+        for (element, chunk) in reader.elements(LumpId::Faces, size)?.enumerate() {
             let (planenum, side, firstedge, numedges, texinfo, styles_at) = if reader.bsp2() {
                 (
                     i64::from(i32_at(chunk, 0)),
@@ -1194,17 +1257,19 @@ impl<'a> Bsp<'a> {
                     12,
                 )
             };
-            let planenum = index(planenum, self.planes.len(), BSP_LUMP_FACES, element)?;
-            let texinfo = index(texinfo, self.texinfo.len(), BSP_LUMP_FACES, element)?;
+            let planenum = index(planenum, self.planes.len(), LumpId::Faces, element)?;
+            let texinfo = index(texinfo, self.texinfo.len(), LumpId::Faces, element)?;
             let (firstedge, numedges) = range(
                 firstedge,
                 numedges,
                 self.surfedges.len(),
-                BSP_LUMP_FACES,
+                LumpId::Faces,
                 element,
             )?;
-            let styles = le_bytes(chunk, styles_at);
+            let styles = read_array(chunk, styles_at).unwrap_or_default();
             let lightofs = i32_at(chunk, styles_at.saturating_add(4));
+            let (texturemins, extents) =
+                self.calc_surface_extents(texinfo, (firstedge, numedges), element, loader)?;
             let mut face = Face {
                 planenum,
                 side,
@@ -1213,12 +1278,11 @@ impl<'a> Bsp<'a> {
                 texinfo,
                 styles,
                 lightofs,
-                texturemins: [0; 2],
-                extents: [0; 2],
+                texturemins,
+                extents,
                 flags: if side == 0 { 0 } else { SURF_PLANEBACK },
-                lightmap_size: [0; 2],
+                lightmap_size: lightmap_size(extents),
             };
-            self.calc_surface_extents(&mut face, element, loader)?;
             self.check_light(&face, element)?;
             let info = self.texinfo.get(texinfo);
             let name = info
@@ -1246,7 +1310,7 @@ impl<'a> Bsp<'a> {
     /// (BSP-14.2, BSP-14.3).
     fn surfedge_vertex(&self, edge: usize, element: usize) -> Result<[f32; 3], BspError> {
         let bad = BspError::BadIndex {
-            lump: BSP_LUMP_FACES,
+            lump: LumpId::Faces,
             element,
         };
         let surfedge = *self.surfedges.get(edge).ok_or(bad.clone())?;
@@ -1276,13 +1340,15 @@ impl<'a> Bsp<'a> {
 
     /// id's `CalcSurfaceExtents` as WinQuake's and GLQuake's x86 builds run it (BSP-9.4,
     /// BSP-9.7, BSP-9.10 to BSP-9.14, BSP-9.17), or QuakeSpasm's as its x86-64 build runs it
-    /// (BSP-20.8 to BSP-20.10).
+    /// (BSP-20.8 to BSP-20.10): the `texturemins` and `extents` of face `element`, whose
+    /// `texinfo` and surfedges `firstedge..firstedge + numedges` are given.
     fn calc_surface_extents(
         &self,
-        face: &mut Face,
+        texinfo: usize,
+        (firstedge, numedges): (usize, usize),
         element: usize,
         loader: BspLoader,
-    ) -> Result<(), BspError> {
+    ) -> Result<([i16; 2], [i16; 2]), BspError> {
         let (mut mins, mut maxs) = if loader.fitz() {
             ([f32::MAX; 2], [f32::MIN; 2])
         } else {
@@ -1290,13 +1356,15 @@ impl<'a> Bsp<'a> {
         };
         let texinfo = self
             .texinfo
-            .get(face.texinfo)
+            .get(texinfo)
             .copied()
             .ok_or(BspError::BadIndex {
-                lump: BSP_LUMP_FACES,
+                lump: LumpId::Faces,
                 element,
             })?;
-        for edge in face.firstedge..face.firstedge.saturating_add(face.numedges) {
+        let mut texturemins = [0; 2];
+        let mut extents = [0; 2];
+        for edge in firstedge..firstedge.saturating_add(numedges) {
             let vertex = self.surfedge_vertex(edge, element)?;
             for (axis, vecs) in texinfo.vecs.iter().enumerate() {
                 let (Some(min), Some(max)) = (mins.get_mut(axis), maxs.get_mut(axis)) else {
@@ -1327,22 +1395,21 @@ impl<'a> Bsp<'a> {
             let max = maxs.get(axis).copied().unwrap_or_default();
             let bmin = x86_double_to_int(f64::from(min / 16.0).floor());
             let bmax = x86_double_to_int(f64::from(max / 16.0).ceil());
-            let texturemins = low_16(bmin.wrapping_mul(16));
-            let extents = low_16(bmax.wrapping_sub(bmin).wrapping_mul(16));
-            if let Some(slot) = face.texturemins.get_mut(axis) {
-                *slot = texturemins;
+            let texturemin = low_16(bmin.wrapping_mul(16));
+            let extent = low_16(bmax.wrapping_sub(bmin).wrapping_mul(16));
+            if let Some(slot) = texturemins.get_mut(axis) {
+                *slot = texturemin;
             }
-            if let Some(slot) = face.extents.get_mut(axis) {
-                *slot = extents;
+            if let Some(slot) = extents.get_mut(axis) {
+                *slot = extent;
             }
             if texinfo.flags & BSP_TEX_SPECIAL == 0
-                && i32::from(extents) > loader.max_surface_extent()
+                && i32::from(extent) > loader.max_surface_extent()
             {
                 return Err(BspError::BadSurfaceExtents);
             }
         }
-        face.lightmap_size = lightmap_size(face.extents);
-        Ok(())
+        Ok((texturemins, extents))
     }
 
     /// Checks that a face's light samples lie in the lighting lump (BSP-10.2).
@@ -1351,7 +1418,7 @@ impl<'a> Bsp<'a> {
             return Ok(());
         }
         let bad = BspError::BadIndex {
-            lump: BSP_LUMP_FACES,
+            lump: LumpId::Faces,
             element,
         };
         let start = usize::try_from(face.lightofs).map_err(|_| bad.clone())?;
@@ -1384,12 +1451,12 @@ impl<'a> Bsp<'a> {
     fn mod_load_marksurfaces(&mut self, reader: &Reader<'a>) -> Result<(), BspError> {
         let values: Vec<u32> = if reader.bsp2() {
             reader
-                .elements(BSP_LUMP_MARKSURFACES, BSP_BSP2_MARKSURFACE_SIZE)?
+                .elements(LumpId::Marksurfaces, BSP_BSP2_MARKSURFACE_SIZE)?
                 .map(|chunk| u32_at(chunk, 0))
                 .collect()
         } else {
             reader
-                .elements(BSP_LUMP_MARKSURFACES, 2)?
+                .elements(LumpId::Marksurfaces, 2)?
                 .map(|chunk| u32::from(u16_at(chunk, 0)))
                 .collect()
         };
@@ -1413,7 +1480,7 @@ impl<'a> Bsp<'a> {
             BspVersion::Bsp2Psb => BSP_2PSB_LEAF_SIZE,
             BspVersion::Bsp2 => BSP_BSP2_LEAF_SIZE,
         };
-        let chunks = reader.elements(BSP_LUMP_LEAFS, size)?;
+        let chunks = reader.elements(LumpId::Leafs, size)?;
         let count = chunks.len();
         if loader.fitz() && reader.version == BspVersion::Bsp29 && count > BSP_FITZ_MAX_LEAFS {
             return Err(BspError::TooManyLeafs { count });
@@ -1443,7 +1510,7 @@ impl<'a> Bsp<'a> {
                 first,
                 count,
                 self.marksurfaces.len(),
-                BSP_LUMP_LEAFS,
+                LumpId::Leafs,
                 element,
             )?;
             let visofs = i32_at(chunk, 4);
@@ -1453,7 +1520,7 @@ impl<'a> Bsp<'a> {
                 index(
                     i64::from(visofs),
                     self.visibility.len(),
-                    BSP_LUMP_LEAFS,
+                    LumpId::Leafs,
                     element,
                 )?;
             }
@@ -1477,7 +1544,7 @@ impl<'a> Bsp<'a> {
                 maxs,
                 firstmarksurface,
                 nummarksurfaces,
-                ambient_level: le_bytes(chunk, ambient_at),
+                ambient_level: read_array(chunk, ambient_at).unwrap_or_default(),
             });
         }
         self.leafs = leafs;
@@ -1489,7 +1556,7 @@ impl<'a> Bsp<'a> {
     /// BSP-20.19).
     fn check_leaf_children(&self, children: [i32; 2], node: usize) -> Result<(), BspError> {
         for child in children {
-            let Ok(leaf) = usize::try_from(child.wrapping_neg().wrapping_sub(1)) else {
+            let Some(leaf) = leaf_of(child) else {
                 continue;
             };
             if let Some(found) = self.leafs.get(leaf)
@@ -1514,7 +1581,7 @@ impl<'a> Bsp<'a> {
             BspVersion::Bsp2Psb => BSP_2PSB_NODE_SIZE,
             BspVersion::Bsp2 => BSP_BSP2_NODE_SIZE,
         };
-        let chunks = reader.elements(BSP_LUMP_NODES, size)?;
+        let chunks = reader.elements(LumpId::Nodes, size)?;
         let count = chunks.len();
         let mut nodes = Vec::with_capacity(count);
         for (element, chunk) in chunks.enumerate() {
@@ -1552,11 +1619,11 @@ impl<'a> Bsp<'a> {
             let planenum = index(
                 i64::from(i32_at(chunk, 0)),
                 self.planes.len(),
-                BSP_LUMP_NODES,
+                LumpId::Nodes,
                 element,
             )?;
             let (firstface, numfaces) =
-                range(first, numfaces, self.faces.len(), BSP_LUMP_NODES, element)?;
+                range(first, numfaces, self.faces.len(), LumpId::Nodes, element)?;
             let children = if loader.fitz() {
                 children
                     .map(|child| fitz_node_child(child, reader.version, count, self.leafs.len()))
@@ -1568,7 +1635,7 @@ impl<'a> Bsp<'a> {
                 .all(|&child| child_ok(child, count, Some(self.leafs.len())))
             {
                 return Err(BspError::BadIndex {
-                    lump: BSP_LUMP_NODES,
+                    lump: LumpId::Nodes,
                     element,
                 });
             }
@@ -1601,7 +1668,7 @@ impl<'a> Bsp<'a> {
         } else {
             BSP_CLIPNODE_SIZE
         };
-        let chunks = reader.elements(BSP_LUMP_CLIPNODES, size)?;
+        let chunks = reader.elements(LumpId::Clipnodes, size)?;
         let count = chunks.len();
         let mut clipnodes = Vec::with_capacity(count);
         for (element, chunk) in chunks.enumerate() {
@@ -1616,12 +1683,12 @@ impl<'a> Bsp<'a> {
             index(
                 i64::from(planenum),
                 self.planes.len(),
-                BSP_LUMP_CLIPNODES,
+                LumpId::Clipnodes,
                 element,
             )?;
             if !children.iter().all(|&child| child_ok(child, count, None)) {
                 return Err(BspError::BadIndex {
-                    lump: BSP_LUMP_CLIPNODES,
+                    lump: LumpId::Clipnodes,
                     element,
                 });
             }
@@ -1634,10 +1701,7 @@ impl<'a> Bsp<'a> {
     /// id's `Mod_LoadSubmodels` with `RadiusFromBounds` (BSP-15).
     fn mod_load_submodels(&mut self, reader: &Reader<'a>) -> Result<(), BspError> {
         let mut models = Vec::new();
-        for (element, chunk) in reader
-            .elements(BSP_LUMP_MODELS, BSP_MODEL_SIZE)?
-            .enumerate()
-        {
+        for (element, chunk) in reader.elements(LumpId::Models, BSP_MODEL_SIZE)?.enumerate() {
             let mins = vec3_at(chunk, 0).map(|value| value - 1.0);
             let maxs = vec3_at(chunk, 12).map(|value| value + 1.0);
             let headnode = [36, 40, 44, 48].map(|at| i32_at(chunk, at));
@@ -1645,7 +1709,7 @@ impl<'a> Bsp<'a> {
                 i64::from(i32_at(chunk, 56)),
                 i64::from(i32_at(chunk, 60)),
                 self.faces.len(),
-                BSP_LUMP_MODELS,
+                LumpId::Models,
                 element,
             )?;
             // Hull 3 is not used (BSP-11.3), so only hulls 0 to 2 must name a node.
@@ -1655,7 +1719,7 @@ impl<'a> Bsp<'a> {
                 && child_ok(hull2, self.clipnodes.len(), None);
             if !heads_ok {
                 return Err(BspError::BadIndex {
-                    lump: BSP_LUMP_MODELS,
+                    lump: LumpId::Models,
                     element,
                 });
             }
@@ -1718,7 +1782,7 @@ impl<'a> Bsp<'a> {
     pub fn leaf_pvs(&self, leaf: usize) -> Result<Vec<u8>, BspError> {
         let row = self.vis_row_size();
         let found = self.leafs.get(leaf).ok_or(BspError::BadIndex {
-            lump: BSP_LUMP_LEAFS,
+            lump: LumpId::Leafs,
             element: leaf,
         })?;
         let Ok(start) = usize::try_from(found.visofs) else {
@@ -1763,8 +1827,7 @@ impl<'a> Bsp<'a> {
                     if child >= 0 {
                         child
                     } else {
-                        usize::try_from(child.wrapping_neg().wrapping_sub(1))
-                            .ok()
+                        leaf_of(child)
                             .and_then(|leaf| self.leafs.get(leaf))
                             .map_or(BSP_CONTENTS_SOLID, |leaf| leaf.contents)
                     }
@@ -1823,16 +1886,18 @@ fn load_texture(
 ) -> Result<Option<Texture<'_>>, BspError> {
     let bad = BspError::BadTexture { index };
     let start = usize::try_from(offset).map_err(|_| bad.clone())?;
-    let header = start
-        .checked_add(BSP_MIPTEX_HEADER_SIZE)
-        .and_then(|end| lump.get(start..end))
+    let header = lump
+        .get(start..)
+        .and_then(|texture| qs_wad::MipTexHeader::parse(texture).ok())
         .ok_or(bad.clone())?;
-    let raw_name = header.get(..16).unwrap_or_default();
-    let name_len = raw_name.iter().position(|&byte| byte == 0).unwrap_or(16);
-    let name = raw_name.get(..name_len).unwrap_or_default().to_vec();
-    let width = u32_at(header, 16);
-    let height = u32_at(header, 20);
-    let offsets = [24, 28, 32, 36].map(|at| u32_at(header, at));
+    // The name ends at its first NUL.
+    let name_len = header
+        .name
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(header.name.len());
+    let name = header.name.get(..name_len).unwrap_or_default().to_vec();
+    let (width, height, offsets) = (header.width, header.height, header.offsets);
     if loader.fitz() {
         return fitz_texture(lump, start, name, width, height, offsets, index);
     }
@@ -1904,13 +1969,27 @@ fn fitz_texture(
     }))
 }
 
-/// The frame a `+` texture's second character names: `(false, n)` for frame `n` of the
-/// primary animation, `(true, n)` of the alternate one (BSP-4.8).
-fn frame_of(name: &[u8]) -> Option<(bool, usize)> {
+/// Which of a texture's two animations a `+` frame belongs to (BSP-4.8).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AnimationSet {
+    /// Frames `+0` to `+9`.
+    Primary,
+    /// Frames `+a` to `+j`.
+    Alternate,
+}
+
+/// The animation and frame a `+` texture's second character names (BSP-4.8).
+fn frame_of(name: &[u8]) -> Option<(AnimationSet, usize)> {
     let character = name.get(1).copied().unwrap_or(0).to_ascii_uppercase();
     match character {
-        b'0'..=b'9' => Some((false, usize::from(character.wrapping_sub(b'0')))),
-        b'A'..=b'J' => Some((true, usize::from(character.wrapping_sub(b'A')))),
+        b'0'..=b'9' => Some((
+            AnimationSet::Primary,
+            usize::from(character.wrapping_sub(b'0')),
+        )),
+        b'A'..=b'J' => Some((
+            AnimationSet::Alternate,
+            usize::from(character.wrapping_sub(b'A')),
+        )),
         _ => None,
     }
 }
@@ -1932,13 +2011,13 @@ fn sequence_animations(textures: &mut [Option<Texture<'_>>]) -> Result<(), BspEr
         let mut altmax = 0_usize;
         let bad = || BspError::BadAnimatingTexture { name: name.clone() };
         match frame_of(&name).ok_or_else(bad)? {
-            (false, frame) => {
+            (AnimationSet::Primary, frame) => {
                 if let Some(slot) = anims.get_mut(frame) {
                     *slot = Some(first);
                 }
                 max = frame.saturating_add(1);
             }
-            (true, frame) => {
+            (AnimationSet::Alternate, frame) => {
                 if let Some(slot) = altanims.get_mut(frame) {
                     *slot = Some(first);
                 }
@@ -1955,11 +2034,10 @@ fn sequence_animations(textures: &mut [Option<Texture<'_>>]) -> Result<(), BspEr
                 continue;
             }
             // id names the first texture of the animation, not the bad one.
-            let (alternate, frame) = frame_of(&candidate.name).ok_or_else(bad)?;
-            let (slots, top) = if alternate {
-                (&mut altanims, &mut altmax)
-            } else {
-                (&mut anims, &mut max)
+            let (set, frame) = frame_of(&candidate.name).ok_or_else(bad)?;
+            let (slots, top) = match set {
+                AnimationSet::Primary => (&mut anims, &mut max),
+                AnimationSet::Alternate => (&mut altanims, &mut altmax),
             };
             if let Some(slot) = slots.get_mut(frame) {
                 *slot = Some(other);
@@ -2090,8 +2168,8 @@ pub fn replace_entities(bytes: &[u8], text: &[u8], loader: BspLoader) -> Result<
     let bsp = Bsp::read(bytes, loader)?;
     let mut entities = text.to_vec();
     entities.push(0);
-    let mut order: Vec<usize> = (0..BSP_HEADER_LUMPS).collect();
-    order.sort_by_key(|&index| bsp.lumps.get(index).map_or(0, |lump| lump.fileofs));
+    let mut order = LumpId::ALL;
+    order.sort_by_key(|id| bsp.lumps.get(id.index()).map_or(0, |lump| lump.fileofs));
     let mut out = bytes.get(..BSP_HEADER_SIZE).unwrap_or_default().to_vec();
     let mut directory = [Lump::default(); BSP_HEADER_LUMPS];
     let reader = Reader {
@@ -2099,21 +2177,21 @@ pub fn replace_entities(bytes: &[u8], text: &[u8], loader: BspLoader) -> Result<
         lumps: bsp.lumps,
         version: bsp.version,
     };
-    for index in order {
+    for id in order {
         while out.len().checked_rem(4) != Some(0) {
             out.push(0);
         }
-        let data = if index == BSP_LUMP_ENTITIES {
+        let data = if id == LumpId::Entities {
             entities.as_slice()
         } else {
-            reader.lump(index)
+            reader.lump(id)
         };
-        let too_big = BspError::LumpOutOfBounds { lump: index };
+        let too_big = BspError::LumpOutOfBounds { lump: id };
         let entry = Lump {
             fileofs: i32::try_from(out.len()).map_err(|_| too_big.clone())?,
             filelen: i32::try_from(data.len()).map_err(|_| too_big.clone())?,
         };
-        if let Some(slot) = directory.get_mut(index) {
+        if let Some(slot) = directory.get_mut(id.index()) {
             *slot = entry;
         }
         out.extend_from_slice(data);

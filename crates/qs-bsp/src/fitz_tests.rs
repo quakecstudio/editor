@@ -612,7 +612,7 @@ fn otherwise_as_glquake() {
     assert_eq!(
         fitz(&spec).unwrap_err(),
         BspError::FunnyLumpSize {
-            lump: BSP_LUMP_VERTEXES
+            lump: LumpId::Vertexes
         }
     );
     let spec = BspSpec {

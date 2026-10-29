@@ -240,6 +240,7 @@ name = "qs-bsp"
 version = "2026.10.0"
 dependencies = [
  "qc-progs",
+ "qs-wad",
 ]
 
 [[package]]

@@ -87,9 +87,7 @@ impl<'a> Lit<'a> {
             expected,
             actual: bytes.len(),
         };
-        let version = bytes
-            .get(4..BSP_LIT_HEADER_SIZE)
-            .and_then(|word| <[u8; 4]>::try_from(word).ok())
+        let version = crate::read_array(bytes, 4)
             .map(i32::from_le_bytes)
             .ok_or(outdated)?;
         if version != BSP_LIT_VERSION {
@@ -140,12 +138,29 @@ pub fn companion_name(bsp_name: &str, extension: &str) -> String {
     format!("{stem}{extension}")
 }
 
-/// Whether QuakeSpasm uses a `.lit` or `.ent` file found in the search path element
-/// `found_path_id` for a BSP found in `bsp_path_id`: not when the file's game directory has
-/// lower priority, a smaller path id, than the BSP's (BSP-18.4, BSP-19.2).
-#[must_use]
-pub const fn companion_applies(bsp_path_id: u32, found_path_id: u32) -> bool {
-    found_path_id >= bsp_path_id
+/// The path id QuakeSpasm gives a game directory on the search path, as its
+/// `COM_AddGameDirectory` does: 1 for the first one added, doubled for each one after, so a
+/// later, higher-priority directory has a larger id; its archives share it (BSP-18.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PathId(u32);
+
+impl PathId {
+    /// The first game directory's id.
+    pub const FIRST: Self = Self(1);
+
+    /// The id of the game directory added after this one's.
+    #[must_use]
+    pub const fn next(self) -> Self {
+        Self(self.0.saturating_mul(2))
+    }
+
+    /// Whether QuakeSpasm uses a `.lit` or `.ent` file found in a search path element of path
+    /// id `found` for a BSP found in this one: not when the file's game directory has lower
+    /// priority, a smaller path id, than the BSP's (BSP-18.4, BSP-19.2).
+    #[must_use]
+    pub const fn admits_companion_from(self, found: Self) -> bool {
+        found.0 >= self.0
+    }
 }
 
 /// A `.lit` file found on the search path for a map: its bytes and the path id of its game
@@ -156,7 +171,7 @@ pub struct FoundLit<'a> {
     /// The file's bytes.
     pub bytes: &'a [u8],
     /// Its game directory's path id.
-    pub path_id: u32,
+    pub path_id: PathId,
 }
 
 /// What a loader does with a map's `.lit` file (BSP-18.6 to BSP-18.8). None of these stops
@@ -222,7 +237,7 @@ impl LitChoice<'_> {
 #[must_use]
 pub fn mod_load_lighting<'a>(
     loader: BspLoader,
-    bsp_path_id: u32,
+    bsp_path_id: PathId,
     lighting_len: usize,
     found: Option<FoundLit<'a>>,
 ) -> LitChoice<'a> {
@@ -233,7 +248,7 @@ pub fn mod_load_lighting<'a>(
     let Some(found) = found else {
         return LitChoice::Missing;
     };
-    if !companion_applies(bsp_path_id, found.path_id) {
+    if !bsp_path_id.admits_companion_from(found.path_id) {
         return LitChoice::LowerPriority;
     }
     match Lit::read(found.bytes, lighting_len) {
