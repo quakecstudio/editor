@@ -12,7 +12,7 @@ use qs_bsp::{
     Model, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo, Texture,
 };
 
-use super::{MapMesh, MeshError, Palette};
+use super::{MapMesh, MeshBuilder, MeshError, Palette, Placement};
 
 /// One face of a test map: a 64 by 32 rectangle in the z = 0 plane, lit by `lighting`.
 struct MapSpec {
@@ -409,4 +409,96 @@ fn mip_levels_follow_gl_resample_and_gl_mipmap() {
     );
     assert_eq!(levels[1].rgba, grey(&[1, 2]));
     assert_eq!(levels[2].rgba, grey(&[1]));
+}
+
+// spec REND-1.9: a brush entity's corners are turned by roll about x, pitch about y and yaw
+// about z, then moved by its origin; its texture coordinates stay its own
+#[test]
+fn a_placed_model_moves_and_turns_its_corners() {
+    let world = bsp(&MapSpec::default(), &[]);
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette);
+    let placed = Placement {
+        model: 0,
+        origin: [100.0, 200.0, 300.0],
+        angles: [0.0, 90.0, 0.0],
+    };
+    builder.add(&world, &[Placement::WORLD, placed]).unwrap();
+    let mesh = builder.finish();
+    let (unmoved, moved) = mesh.vertices.split_at(4);
+    let round = |p: [f32; 3]| p.map(f32::round);
+    // Yaw 90 takes (64, 0, 0) to (0, 64, 0).
+    assert_eq!(round(moved[1].position), [100.0, 264.0, 300.0]);
+    assert_eq!(round(moved[2].position), [68.0, 264.0, 300.0]);
+    assert_eq!(moved[1].texture, unmoved[1].texture);
+    assert_eq!(moved[1].light, unmoved[1].light);
+    // The first model added gives the bounds.
+    assert_eq!(mesh.maxs, [64.0, 32.0, 0.0]);
+    // One batch draws both copies.
+    assert_eq!(mesh.batches.len(), 1);
+    assert_eq!(mesh.batches[0].count, 12);
+}
+
+// spec REND-1.9: pitch turns about y with the sign `R_DrawBrushModel`'s double negation leaves,
+// and roll about x
+#[test]
+fn pitch_and_roll_turn_as_r_rotate_for_entity() {
+    let pitched = Placement {
+        model: 0,
+        origin: [0.0; 3],
+        angles: [90.0, 0.0, 0.0],
+    };
+    // glRotatef (90, 0, 1, 0) takes x to -z.
+    let p = pitched.position([1.0, 0.0, 0.0]).map(f32::round);
+    assert_eq!(p, [0.0, 0.0, -1.0]);
+    let rolled = Placement {
+        angles: [0.0, 0.0, 90.0],
+        ..pitched
+    };
+    // glRotatef (90, 1, 0, 0) takes y to z.
+    assert_eq!(
+        rolled.position([0.0, 1.0, 0.0]).map(f32::round),
+        [0.0, 0.0, 1.0]
+    );
+}
+
+// spec REND-1.9: a second BSP's textures follow the first's, so its animations still name
+// its own frames
+#[test]
+fn a_second_bsps_textures_follow_the_firsts() {
+    let world = bsp(&MapSpec::default(), &[]);
+    let mut other = bsp(&MapSpec::default(), &[]);
+    other.textures[0].as_mut().unwrap().animation = Some(qs_bsp::Animation {
+        total: 1,
+        min: 0,
+        max: 1,
+        next: 0,
+        alternate: None,
+    });
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette);
+    builder.add(&world, &[Placement::WORLD]).unwrap();
+    builder.add(&other, &[Placement::WORLD]).unwrap();
+    let mesh = builder.finish();
+    assert_eq!(mesh.textures.len(), 2);
+    assert_eq!(mesh.animations[1].unwrap().next, 1);
+    assert_eq!(
+        mesh.batches.iter().map(|b| b.texture).collect::<Vec<_>>(),
+        [0, 1]
+    );
+}
+
+#[test]
+fn a_placement_of_a_missing_model_is_refused() {
+    let world = bsp(&MapSpec::default(), &[]);
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette);
+    let missing = Placement {
+        model: 1,
+        ..Placement::WORLD
+    };
+    assert!(matches!(
+        builder.add(&world, &[missing]),
+        Err(MeshError::NoWorld)
+    ));
 }

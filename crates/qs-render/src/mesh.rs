@@ -186,90 +186,193 @@ impl MapMesh {
     /// [`MeshError::NoWorld`] when the BSP has no model, and [`MeshError::AtlasTooLarge`] when
     /// the lightmaps do not fit one texture.
     pub fn build(bsp: &Bsp<'_>, palette: &Palette) -> Result<Self, MeshError> {
-        let world = bsp.models.first().ok_or(MeshError::NoWorld)?;
-        let faces = bsp
-            .faces
-            .get(world.firstface..world.firstface.saturating_add(world.numfaces))
-            .unwrap_or_default();
-        let mut atlas = Atlas::new();
-        let mut by_texture: Vec<Vec<Polygon>> = vec![Vec::new(); bsp.textures.len()];
+        let mut builder = MeshBuilder::new(palette);
+        builder.add(bsp, &[Placement::WORLD])?;
+        Ok(builder.finish())
+    }
+}
+
+/// One model of a BSP, drawn at its entity's origin and angles (REND-1.9): the world is model 0
+/// unmoved, a door or lift a submodel `*n` of the map, a health box model 0 of its own BSP.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Placement {
+    /// The model's number in its BSP.
+    pub model: usize,
+    /// Where it is moved to; its texture coordinates stay its own, so its textures move
+    /// with it.
+    pub origin: [f32; 3],
+    /// How it is turned: pitch, yaw and roll in degrees.
+    pub angles: [f32; 3],
+}
+
+impl Placement {
+    /// The world: model 0, not moved.
+    pub const WORLD: Self = Self {
+        model: 0,
+        origin: [0.0; 3],
+        angles: [0.0; 3],
+    };
+
+    /// Where `corner` of the model is drawn: turned by roll about x, then pitch about y, then
+    /// yaw about z, then moved to the origin, as `R_RotateForEntity` turns it with the pitch
+    /// `R_DrawBrushModel` negates twice (REND-1.9).
+    #[must_use]
+    pub fn position(&self, corner: [f32; 3]) -> [f32; 3] {
+        let [pitch, yaw, roll] = self.angles.map(f32::to_radians);
+        let [x, y, z] = corner;
+        let (y, z) = (
+            y * roll.cos() - z * roll.sin(),
+            y * roll.sin() + z * roll.cos(),
+        );
+        let (x, z) = (
+            x * pitch.cos() + z * pitch.sin(),
+            z * pitch.cos() - x * pitch.sin(),
+        );
+        let (x, y) = (x * yaw.cos() - y * yaw.sin(), x * yaw.sin() + y * yaw.cos());
+        let [dx, dy, dz] = self.origin;
+        [x + dx, y + dy, z + dz]
+    }
+}
+
+/// Builds one [`MapMesh`] from models of one or more BSPs, all their faces' light packed into
+/// one atlas.
+pub struct MeshBuilder<'p> {
+    palette: &'p Palette,
+    atlas: Atlas,
+    textures: Vec<Image>,
+    skies: Vec<Option<[Image; 2]>>,
+    animations: Vec<Option<Animation>>,
+    surfaces: Vec<Surface>,
+    by_texture: Vec<Vec<Polygon>>,
+    bounds: Option<([f32; 3], [f32; 3])>,
+}
+
+impl<'p> MeshBuilder<'p> {
+    /// An empty mesh whose textures are read through `palette`.
+    #[must_use]
+    pub fn new(palette: &'p Palette) -> Self {
+        Self {
+            palette,
+            atlas: Atlas::new(),
+            textures: Vec::new(),
+            skies: Vec::new(),
+            animations: Vec::new(),
+            surfaces: Vec::new(),
+            by_texture: Vec::new(),
+            bounds: None,
+        }
+    }
+
+    /// Adds `bsp`'s textures and each of `placements`' models of it (REND-1, REND-2). The
+    /// first model added gives the mesh its bounds.
+    ///
+    /// # Errors
+    ///
+    /// [`MeshError::NoWorld`] when a placement names a model the BSP does not have, and
+    /// [`MeshError::AtlasTooLarge`] when the lightmaps do not fit one texture.
+    pub fn add(&mut self, bsp: &Bsp<'_>, placements: &[Placement]) -> Result<(), MeshError> {
+        let base = self.textures.len();
         let mut surfaces = vec![Surface::Lit; bsp.textures.len()];
-        for face in faces {
-            let Some(texinfo) = bsp.texinfo.get(face.texinfo) else {
-                continue;
-            };
-            let Some(slot) = texinfo.texture else {
-                continue;
-            };
-            let Some(Some(texture)) = bsp.textures.get(slot) else {
-                continue;
-            };
-            let surface = if face.flags & SURF_DRAWSKY != 0 {
-                Surface::Sky
-            } else if face.flags & SURF_DRAWTURB != 0 {
-                Surface::Turbulent
-            } else {
-                Surface::Lit
-            };
-            let place = if surface == Surface::Lit {
-                atlas.place(face, bsp)?
-            } else {
-                atlas.full_bright()
-            };
-            let polygon = Polygon {
-                corners: corners(face, bsp),
-                texinfo: *texinfo,
-                size: [f32_of(texture.width), f32_of(texture.height)],
-                texturemins: face.texturemins,
-                place,
-                surface,
-            };
-            if let Some(kind) = surfaces.get_mut(slot) {
-                *kind = surface;
+        let mut by_texture: Vec<Vec<Polygon>> = vec![Vec::new(); bsp.textures.len()];
+        // A surface has one lightmap, shared by every entity drawing its model.
+        let mut placed = vec![None; bsp.faces.len()];
+        for placement in placements {
+            let model = bsp.models.get(placement.model).ok_or(MeshError::NoWorld)?;
+            if self.bounds.is_none() {
+                self.bounds = Some((model.mins, model.maxs));
             }
-            if let Some(list) = by_texture.get_mut(slot) {
-                list.push(polygon);
+            let numbers = model.firstface..model.firstface.saturating_add(model.numfaces);
+            for (number, face) in numbers
+                .clone()
+                .zip(bsp.faces.get(numbers).unwrap_or_default())
+            {
+                let Some(texinfo) = bsp.texinfo.get(face.texinfo) else {
+                    continue;
+                };
+                let Some(slot) = texinfo.texture else {
+                    continue;
+                };
+                let Some(Some(texture)) = bsp.textures.get(slot) else {
+                    continue;
+                };
+                let surface = if face.flags & SURF_DRAWSKY != 0 {
+                    Surface::Sky
+                } else if face.flags & SURF_DRAWTURB != 0 {
+                    Surface::Turbulent
+                } else {
+                    Surface::Lit
+                };
+                let place = match placed.get(number).copied().flatten() {
+                    Some(place) => place,
+                    None if surface == Surface::Lit => self.atlas.place(face, bsp)?,
+                    None => self.atlas.full_bright(),
+                };
+                if let Some(slot) = placed.get_mut(number) {
+                    *slot = Some(place);
+                }
+                if let Some(kind) = surfaces.get_mut(slot) {
+                    *kind = surface;
+                }
+                if let Some(list) = by_texture.get_mut(slot) {
+                    list.push(Polygon {
+                        corners: corners(face, bsp),
+                        placement: *placement,
+                        texinfo: *texinfo,
+                        size: [f32_of(texture.width), f32_of(texture.height)],
+                        texturemins: face.texturemins,
+                        place,
+                        surface,
+                    });
+                }
             }
         }
-        let (width, height) = atlas.size();
-        let mut mesh = Self {
-            vertices: Vec::new(),
-            indices: Vec::new(),
-            batches: Vec::new(),
-            textures: bsp
-                .textures
+        let palette = self.palette;
+        self.textures.extend(
+            bsp.textures
                 .iter()
-                .zip(&surfaces)
-                .map(|(texture, _)| texture.as_ref().map_or_else(black, |t| image(t, palette)))
-                .collect(),
-            skies: bsp
-                .textures
+                .map(|texture| texture.as_ref().map_or_else(black, |t| image(t, palette))),
+        );
+        self.skies.extend(
+            bsp.textures
                 .iter()
                 .zip(&surfaces)
                 .map(|(texture, &surface)| {
                     (surface == Surface::Sky)
                         .then(|| sky_layers(texture.as_ref()?, palette))
                         .flatten()
-                })
-                .collect(),
-            animations: bsp
-                .textures
-                .iter()
-                .map(|texture| {
-                    let animation = texture.as_ref()?.animation?;
-                    Some(Animation {
-                        total: u32::try_from(animation.total).ok().filter(|&t| t > 0)?,
-                        min: u32::try_from(animation.min).ok()?,
-                        max: u32::try_from(animation.max).ok()?,
-                        next: animation.next,
-                    })
-                })
-                .collect(),
-            lightmap: atlas.image(),
-            mins: world.mins,
-            maxs: world.maxs,
+                }),
+        );
+        self.animations.extend(bsp.textures.iter().map(|texture| {
+            let animation = texture.as_ref()?.animation?;
+            Some(Animation {
+                total: u32::try_from(animation.total).ok().filter(|&t| t > 0)?,
+                min: u32::try_from(animation.min).ok()?,
+                max: u32::try_from(animation.max).ok()?,
+                next: animation.next.saturating_add(base),
+            })
+        }));
+        self.surfaces.extend(surfaces);
+        self.by_texture.extend(by_texture);
+        Ok(())
+    }
+
+    /// The mesh of everything added.
+    #[must_use]
+    pub fn finish(self) -> MapMesh {
+        let (width, height) = self.atlas.size();
+        let (mins, maxs) = self.bounds.unwrap_or_default();
+        let mut mesh = MapMesh {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            batches: Vec::new(),
+            textures: self.textures,
+            skies: self.skies,
+            animations: self.animations,
+            lightmap: self.atlas.image(),
+            mins,
+            maxs,
         };
-        for (slot, polygons) in by_texture.iter().enumerate() {
+        for (slot, polygons) in self.by_texture.iter().enumerate() {
             let first = u32_of(mesh.indices.len());
             for polygon in polygons {
                 polygon.emit(&mut mesh, (width, height));
@@ -278,13 +381,13 @@ impl MapMesh {
             if count > 0 {
                 mesh.batches.push(Batch {
                     texture: slot,
-                    surface: surfaces.get(slot).copied().unwrap_or(Surface::Lit),
+                    surface: self.surfaces.get(slot).copied().unwrap_or(Surface::Lit),
                     first,
                     count,
                 });
             }
         }
-        Ok(mesh)
+        mesh
     }
 }
 
@@ -292,6 +395,8 @@ impl MapMesh {
 #[derive(Clone, Debug)]
 struct Polygon {
     corners: Vec<[f32; 3]>,
+    /// Where its model is drawn.
+    placement: Placement,
     texinfo: Texinfo,
     size: [f32; 2],
     texturemins: [i16; 2],
@@ -331,7 +436,7 @@ impl Polygon {
                 [0.5 / width, 0.5 / height]
             };
             mesh.vertices.push(Vertex {
-                position: *corner,
+                position: self.placement.position(*corner),
                 texture,
                 light,
             });

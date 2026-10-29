@@ -4,11 +4,12 @@ The wgpu renderer (P5-05, MAP-17): a BSP's world surfaces with their textures an
 drawn as GLQuake draws them, inside egui's render pass through a paint callback (ADR-0003), so
 the map view and the preview host share one renderer.
 
-- **Layer:** L7 UI. It depends on `qs-bsp` (L0), `egui-wgpu` and `epaint`.
+- **Layer:** L7 UI. It depends on `qs-bsp` (L0), `egui-wgpu` and `epaint`; its examples also
+  on `qs-vfs`, `qc-progs` and `qs-sim`.
 - **Spec sections:** REND-1 of [`render.md`](../../docs/spec/render.md).
 - **Ported from:** id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`,
   `WinQuake/gl_rsurf.c` (`BuildSurfaceDisplayList`, `GL_CreateSurfaceLightmap`,
-  `R_BuildLightMap`); `R_AnimateLight`'s value for a style with no light string is from
+  `R_BuildLightMap`, `R_DrawBrushModel`), `WinQuake/gl_rmain.c` (`R_RotateForEntity`); `R_AnimateLight`'s value for a style with no light string is from
   `WinQuake/gl_rlight.c`.
 - **Shipped:** yes.
 
@@ -17,6 +18,8 @@ the map view and the preview host share one renderer.
 - `MapMesh::build(bsp, palette)`: the world model as vertices, a fan of triangles per face,
   batches by texture, the textures through `Palette`, and every face's light in one lightmap
   atlas (REND-1.1 to REND-1.6, REND-1.8).
+- `MeshBuilder`: the same for several models of several BSPs, each `Placement` at its
+  entity's origin and angles, such as a map's doors and lifts and its item boxes (REND-1.9).
 - `MapRenderer::new(device, queue, (format, depth), mesh)`: the mesh on the GPU and its
   pipeline; `set_view` and `draw`.
 - `MapCallback`: an `egui_wgpu` paint callback that draws the `MapRenderer` kept in egui's
@@ -32,7 +35,8 @@ P5-05 and P3-26.
 
 ## Trying it
 
-`examples/view.rs` draws a map from a Quake install, read through the game filesystem:
+`examples/view.rs` draws a map from a Quake install, read through the game filesystem, with
+the brush entities its `progs.dat` spawns through `qs-sim`:
 
 ```bash
 cargo run --release -p qs-render --example view -- -basedir <game root> [-game <dir>] [map]

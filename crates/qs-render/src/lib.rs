@@ -18,5 +18,6 @@ mod mesh;
 pub use camera::Camera;
 pub use gpu::{MapCallback, MapRenderer, View};
 pub use mesh::{
-    Animation, Batch, GAMMA, Image, MapMesh, MeshError, Palette, Surface, Vertex, frame, mip_levels,
+    Animation, Batch, GAMMA, Image, MapMesh, MeshBuilder, MeshError, Palette, Placement, Surface,
+    Vertex, frame, mip_levels,
 };

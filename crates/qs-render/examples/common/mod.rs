@@ -2,8 +2,10 @@
 
 //! What the examples share: reading a map from a Quake install and where to stand in it.
 
+use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader};
-use qs_render::{Camera, GAMMA, MapMesh, Palette, Surface};
+use qs_render::{Camera, GAMMA, MapMesh, MeshBuilder, Palette, Placement, Surface};
+use qs_sim::World;
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
 /// The height of a player's eyes above its origin, `view_ofs` in id's QuakeC `client.qc`.
@@ -59,7 +61,46 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     let name = format!("maps/{map}.bsp");
     let bytes = read(&name)?;
     let bsp = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(&name))?;
-    let mesh = MapMesh::build(&bsp, &palette).map_err(|e| e.to_string())?;
+    let progs_bytes = read("progs.dat")?;
+    let progs = Progs::read(&progs_bytes).map_err(|e| format!("progs.dat: {e}"))?;
+    let world = World::load(
+        &progs,
+        &map,
+        bsp.models.len().saturating_sub(1),
+        bsp.entities(),
+    )
+    .map_err(|e| e.to_string())?;
+    // The world, then each brush entity: a submodel `*n` of the map at its entity's origin,
+    // or model 0 of a BSP of its own, such as a health box.
+    let mut placements = vec![Placement::WORLD];
+    let mut others: Vec<(String, Vec<Placement>)> = Vec::new();
+    for entity in world.entities().into_iter().skip(1) {
+        if let Some(n) = entity.model.strip_prefix('*').and_then(|n| n.parse().ok()) {
+            placements.push(Placement {
+                model: n,
+                origin: entity.origin,
+                angles: entity.angles,
+            });
+        } else if entity.model.ends_with(".bsp") {
+            let placement = Placement {
+                model: 0,
+                origin: entity.origin,
+                angles: entity.angles,
+            };
+            match others.iter_mut().find(|(name, _)| *name == entity.model) {
+                Some((_, list)) => list.push(placement),
+                None => others.push((entity.model, vec![placement])),
+            }
+        }
+    }
+    let mut builder = MeshBuilder::new(&palette);
+    builder.add(&bsp, &placements).map_err(|e| e.to_string())?;
+    for (name, list) in &others {
+        let bytes = read(name)?;
+        let other = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(name))?;
+        builder.add(&other, list).map_err(|e| e.to_string())?;
+    }
+    let mesh = builder.finish();
     let camera = show
         .and_then(|surface| facing(&mesh, surface))
         .or_else(|| start(bsp.entities()))

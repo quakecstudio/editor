@@ -10,8 +10,8 @@ Describes how a BSP's world surfaces are drawn, as implemented by GLQuake's `gl_
 ## REND-1 World surfaces
 
 **Source:** `WinQuake/gl_rsurf.c`, `BuildSurfaceDisplayList`, `GL_CreateSurfaceLightmap`,
-`R_BuildLightMap`, `R_BlendLightmaps` and `GL_BuildLightmaps`; `WinQuake/gl_rlight.c`,
-`R_AnimateLight` (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
+`R_BuildLightMap`, `R_BlendLightmaps`, `GL_BuildLightmaps` and `R_DrawBrushModel`;
+`WinQuake/gl_rmain.c`, `R_RotateForEntity`; `WinQuake/gl_rlight.c`, `R_AnimateLight` (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
 
 GLQuake turns each face of the world model into a polygon with two sets of texture
 coordinates, one for its texture and one for its place in a lightmap texture, and draws the
@@ -52,6 +52,13 @@ texture darkened by the lightmap. The map view and the preview host draw the wor
   (`R_BlendLightmaps`).
 - **REND-1.8** A texture's pixels are indices into the palette, `gfx/palette.lmp`: 256 colours
   of three bytes, red, green and blue. A palette of any other size is refused.
+- **REND-1.9** A brush entity's model (a submodel `*n` of the map, or model 0 of a BSP of its
+  own, such as `maps/b_bh25.bsp`) is drawn with its own faces moved to the entity: `R_DrawBrushModel`
+  negates `angles[0]`, calls `R_RotateForEntity` and negates it back, and `R_RotateForEntity` is
+  `glTranslatef (e->origin)`, `glRotatef (e->angles[1], 0, 0, 1)`,
+  `glRotatef (-e->angles[0], 0, 1, 0)`, `glRotatef (e->angles[2], 1, 0, 0)`. A corner is
+  therefore turned by roll about x, then by `+angles[0]` about y, then by yaw about z, then
+  moved by the origin. Its texture and lightmap coordinates are its own, unmoved.
 
 ## REND-2 Moving textures
 
