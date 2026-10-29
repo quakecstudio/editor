@@ -1277,6 +1277,19 @@ enum Op {
     Redo,
 }
 
+const fn assert_send<T: Send>() {}
+const fn assert_sync<T: Sync>() {}
+
+// PRIN-3: a registry is shared between threads and a session over a `Send` context moves to
+// the thread an agent, MCP or ACP server runs on (README, "Threads"). Checked when the test
+// compiles: without the bounds it is a type error.
+#[test]
+fn a_registry_is_send_and_sync_and_a_session_over_a_send_context_is_send() {
+    assert_send::<Registry<Doc>>();
+    assert_sync::<Registry<Doc>>();
+    assert_send::<Session<Doc>>();
+}
+
 fn op() -> impl Strategy<Value = Op> {
     prop_oneof![
         "[a-z]{0,3}".prop_map(Op::Append),

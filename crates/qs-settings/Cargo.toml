@@ -14,6 +14,7 @@ schemars = { workspace = true, features = ["derive", "std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 toml = { workspace = true, features = ["display", "parse", "serde", "std"] }
+toml_edit = { workspace = true, features = ["display", "parse"] }
 
 [dev-dependencies]
 proptest = { workspace = true, features = ["std"] }

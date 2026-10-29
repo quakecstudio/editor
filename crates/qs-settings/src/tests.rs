@@ -160,17 +160,24 @@ fn a_bad_settings_file_is_an_error() {
 #[test]
 fn a_settings_file_writes_only_what_it_sets() {
     let dir = TempDir::new("save");
-    let path = project_settings_path(dir.path());
-    let mut file = SettingsFile::default();
-    file.save(&path).unwrap();
-    assert_eq!(fs::read_to_string(&path).unwrap(), "");
-    file.put(Setting::Theme, Some(json!("light"))).unwrap();
-    file.save(&path).unwrap();
+    let (_, path, mut store) = store(&dir, &StoreSpec::default());
+    let before = store
+        .put(Scope::Project, Setting::Theme, Some(json!("light")))
+        .unwrap();
+    assert_eq!(before, None);
     assert_eq!(
         fs::read_to_string(&path).unwrap(),
         "[appearance]\ntheme = \"light\"\n"
     );
-    assert_eq!(SettingsFile::load(&path).unwrap(), file);
+    assert_eq!(
+        Some(&SettingsFile::load(&path).unwrap()),
+        store.file(Scope::Project)
+    );
+    let before = store.put(Scope::Project, Setting::Theme, None).unwrap();
+    assert_eq!(before, Some(json!("light")));
+    assert_eq!(fs::read_to_string(&path).unwrap(), "");
+    let mut file = SettingsFile::default();
+    file.put(Setting::Theme, Some(json!("light"))).unwrap();
     file.put(Setting::Theme, None).unwrap();
     file.put(Setting::LogFilter, Some(json!("warn"))).unwrap();
     assert_eq!(file.get(Setting::Theme), None);
@@ -192,11 +199,315 @@ fn a_settings_file_writes_only_what_it_sets() {
         "{error}"
     );
     assert_eq!(file, before);
-    // A file that cannot be written: its directory is a file.
-    let blocked = dir.path().join("blocked");
-    fs::write(&blocked, "").unwrap();
-    let error = file.save(&blocked.join("settings.toml")).unwrap_err();
-    assert!(matches!(error, SettingsError::Write { .. }), "{error:?}");
+}
+
+// QA-10: a file whose directory cannot be written to is an error that changes nothing.
+#[cfg(unix)]
+#[test]
+fn a_settings_file_that_cannot_be_written_is_an_error() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = TempDir::new("locked");
+    let locked = dir.path().join("locked");
+    fs::create_dir(&locked).unwrap();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
+    let path = locked.join("settings.toml");
+    let mut store = SettingsStore::open(path.clone(), None).unwrap();
+    let result = store.put(Scope::User, Setting::Theme, Some(json!("light")));
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+    let error = result.unwrap_err();
+    assert!(
+        matches!(error, SettingsError::Write { path: ref p, .. } if *p == path),
+        "{error:?}"
+    );
+    assert!(error.to_string().starts_with("cannot write "), "{error}");
+    assert_eq!(store.theme(), Theme::Dark);
+    assert!(!path.exists());
+}
+
+// QA-10 (P2-148): a change made to a file by hand after the store opened is kept when a
+// command changes another setting in that file, and the store then reads it.
+#[test]
+fn a_hand_edit_after_the_store_opened_is_kept() {
+    let dir = TempDir::new("hand-edit");
+    let spec = StoreSpec {
+        user: Some("# my comment\n[log]\nfilter = \"warn\"\n"),
+        ..StoreSpec::default()
+    };
+    let (user, _, store) = store(&dir, &spec);
+    let mut s = session(store);
+    fs::write(&user, "# my comment\n[log]\nfilter = \"debug\"\n").unwrap();
+    s.execute(
+        "settings.set",
+        json!({"key": "appearance.theme", "value": "light"}),
+    )
+    .unwrap();
+    let both = "# my comment\n[log]\nfilter = \"debug\"\n\n[appearance]\ntheme = \"light\"\n";
+    assert_eq!(fs::read_to_string(&user).unwrap(), both);
+    assert_eq!(s.context().0.log_filter(), "debug");
+    // Undo and redo change the theme alone.
+    s.undo().unwrap();
+    assert_eq!(
+        fs::read_to_string(&user).unwrap(),
+        "# my comment\n[log]\nfilter = \"debug\"\n"
+    );
+    s.redo().unwrap();
+    assert_eq!(fs::read_to_string(&user).unwrap(), both);
+    // A set to the value the file has by hand, not the one read at open, changes nothing.
+    s.execute(
+        "settings.set",
+        json!({"key": "log.filter", "value": "debug"}),
+    )
+    .unwrap();
+    assert_eq!(s.undo_depth(), 1);
+    assert_eq!(fs::read_to_string(&user).unwrap(), both);
+    // An undo puts back the value the file had when the command ran.
+    fs::write(&user, "[log]\nfilter = \"trace\"\n").unwrap();
+    s.execute(
+        "settings.set",
+        json!({"key": "log.filter", "value": "error"}),
+    )
+    .unwrap();
+    s.undo().unwrap();
+    assert_eq!(
+        fs::read_to_string(&user).unwrap(),
+        "[log]\nfilter = \"trace\"\n"
+    );
+}
+
+/// A settings file written by hand, with a comment in each place one can go.
+const COMMENTED: &str = "\
+# Settings by hand.
+[appearance]
+# The theme I like.
+theme = \"dark\" # for now
+
+# Logging.
+[log]
+filter = \"warn\" # quiet
+# The end.
+";
+
+// QA-10 (P2-148): comments survive settings.set, settings.reset, and an undo and redo of each;
+// a set to the value the file has leaves the file as it was.
+#[test]
+fn comments_survive_set_reset_undo_and_redo() {
+    let dir = TempDir::new("comments");
+    let spec = StoreSpec {
+        user: Some(COMMENTED),
+        ..StoreSpec::default()
+    };
+    let (user, _, store) = store(&dir, &spec);
+    let mut s = session(store);
+    let text = || fs::read_to_string(&user).unwrap();
+    s.execute(
+        "settings.set",
+        json!({"key": "log.filter", "value": "warn"}),
+    )
+    .unwrap();
+    assert_eq!(text(), COMMENTED);
+    let set = COMMENTED.replace("\"warn\" # quiet", "\"debug\" # quiet");
+    s.execute(
+        "settings.set",
+        json!({"key": "log.filter", "value": "debug"}),
+    )
+    .unwrap();
+    assert_eq!(text(), set);
+    s.undo().unwrap();
+    assert_eq!(text(), COMMENTED);
+    s.redo().unwrap();
+    assert_eq!(text(), set);
+    // Reset removes the setting's own line and the comment above it, and keeps the table,
+    // whose header has a comment.
+    let theme_lines = "# The theme I like.\ntheme = \"dark\" # for now\n";
+    let reset = set.replace(theme_lines, "");
+    s.execute("settings.reset", json!({"key": "appearance.theme"}))
+        .unwrap();
+    assert_eq!(text(), reset);
+    s.undo().unwrap();
+    assert_eq!(text(), set.replace(theme_lines, "theme = \"dark\"\n"));
+    s.redo().unwrap();
+    assert_eq!(text(), reset);
+    assert_eq!(
+        Some(&SettingsFile::load(&user).unwrap()),
+        s.context().0.file(Scope::User)
+    );
+}
+
+// QA-10 (P2-148): a setting written as a dotted key or an inline table is changed where it is;
+// a table left empty with no comment on its header is removed.
+#[test]
+fn a_setting_is_changed_where_the_file_writes_it() {
+    let dir = TempDir::new("forms");
+    let spec = StoreSpec {
+        user: Some("appearance = { theme = \"dark\" }\nlog.filter = \"warn\" # quiet\n"),
+        ..StoreSpec::default()
+    };
+    let (user, _, mut store) = store(&dir, &spec);
+    let text = || fs::read_to_string(&user).unwrap();
+    store
+        .put(Scope::User, Setting::Theme, Some(json!("light")))
+        .unwrap();
+    store
+        .put(Scope::User, Setting::LogFilter, Some(json!("debug")))
+        .unwrap();
+    assert_eq!(
+        text(),
+        "appearance = { theme = \"light\" }\nlog.filter = \"debug\" # quiet\n"
+    );
+    store.put(Scope::User, Setting::LogFilter, None).unwrap();
+    store.put(Scope::User, Setting::Theme, None).unwrap();
+    assert_eq!(text(), "appearance = {}\n");
+    fs::write(
+        &user,
+        "[log]\nfilter = \"warn\"\n\n[appearance]\ntheme = \"dark\"\n",
+    )
+    .unwrap();
+    store.put(Scope::User, Setting::LogFilter, None).unwrap();
+    // The blank line that separated the removed table from the next goes with it.
+    assert_eq!(text(), "[appearance]\ntheme = \"dark\"\n");
+    // A file that starts with a blank line keeps it.
+    fs::write(&user, "\n[log]\nfilter = \"warn\"\n").unwrap();
+    store
+        .put(Scope::User, Setting::Theme, Some(json!("light")))
+        .unwrap();
+    assert_eq!(
+        text(),
+        "\n[log]\nfilter = \"warn\"\n\n[appearance]\ntheme = \"light\"\n"
+    );
+}
+
+// QA-10 (P2-148): a new table goes after the comments that end a file, so a file of comments
+// keeps them at its top.
+#[test]
+fn a_new_table_goes_after_the_comments_that_end_the_file() {
+    let dir = TempDir::new("trailing");
+    let spec = StoreSpec {
+        user: Some("# My settings.\n"),
+        ..StoreSpec::default()
+    };
+    let (user, _, mut store) = store(&dir, &spec);
+    store
+        .put(Scope::User, Setting::Theme, Some(json!("light")))
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(&user).unwrap(),
+        "# My settings.\n[appearance]\ntheme = \"light\"\n"
+    );
+    store
+        .put(Scope::User, Setting::LogFilter, Some(json!("warn")))
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(&user).unwrap(),
+        "# My settings.\n[appearance]\ntheme = \"light\"\n\n[log]\nfilter = \"warn\"\n"
+    );
+}
+
+// QA-10 (P2-148): a comment on a last line with no line ending stays a comment: the new
+// table starts on the next line (found by the qs_settings fuzz target).
+#[test]
+fn a_new_table_after_an_unterminated_comment_starts_its_own_line() {
+    let dir = TempDir::new("unterminated");
+    let spec = StoreSpec {
+        user: Some("#"),
+        ..StoreSpec::default()
+    };
+    let (user, _, mut store) = store(&dir, &spec);
+    store
+        .put(Scope::User, Setting::Theme, Some(json!("light")))
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(&user).unwrap(),
+        "#\n[appearance]\ntheme = \"light\"\n"
+    );
+    assert_eq!(
+        SettingsFile::load(&user).unwrap().get(Setting::Theme),
+        Some(json!("light"))
+    );
+}
+
+// QA-10 (P2-148): a file with CRLF line endings keeps them, on every line.
+#[test]
+fn a_crlf_file_keeps_its_line_endings() {
+    let dir = TempDir::new("crlf");
+    let spec = StoreSpec {
+        user: Some("# Mine.\r\n[log]\r\nfilter = \"warn\"\r\n"),
+        ..StoreSpec::default()
+    };
+    let (user, _, mut store) = store(&dir, &spec);
+    store
+        .put(Scope::User, Setting::Theme, Some(json!("light")))
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(&user).unwrap(),
+        "# Mine.\r\n[log]\r\nfilter = \"warn\"\r\n\r\n[appearance]\r\ntheme = \"light\"\r\n"
+    );
+}
+
+// QA-10 (P2-148): a value with a line break, set in a CRLF file, reads back as it was set: it
+// is written escaped on one line (found by the qs_settings fuzz target).
+#[test]
+fn a_line_break_in_a_value_survives_a_crlf_file() {
+    let dir = TempDir::new("crlf-value");
+    let spec = StoreSpec {
+        user: Some("\r\n"),
+        ..StoreSpec::default()
+    };
+    let (user, _, mut store) = store(&dir, &spec);
+    store
+        .put(Scope::User, Setting::LogFilter, Some(json!("a'b\"c\n")))
+        .unwrap();
+    assert_eq!(
+        SettingsFile::load(&user).unwrap().get(Setting::LogFilter),
+        Some(json!("a'b\"c\n"))
+    );
+    assert!(!fs::read_to_string(&user).unwrap().contains("c\r\n"));
+}
+
+// QA-10: the table and name a setting is written under spell its key.
+#[test]
+fn a_setting_is_written_under_its_key() {
+    for setting in Setting::ALL {
+        let (table, name) = setting.place();
+        assert_eq!(format!("{table}.{name}"), setting.key());
+    }
+}
+
+// QA-10 (P2-148): a file that no longer parses, or that writes a table another way, is refused
+// with `Parse` and left as it is, and the store keeps what it held.
+#[test]
+fn a_file_that_no_longer_parses_is_refused_not_overwritten() {
+    let dir = TempDir::new("broken");
+    let spec = StoreSpec {
+        user: Some("[log]\nfilter = \"warn\"\n"),
+        ..StoreSpec::default()
+    };
+    let (user, _, mut store) = store(&dir, &spec);
+    for (text, value) in [
+        ("[log\nfilter = \"debug\"\n", Some(json!("light"))),
+        ("log.colour = 1\n", Some(json!("light"))),
+        ("appearance = [\"dark\"]\n", Some(json!("light"))),
+        ("appearance = [\"dark\"]\n", None),
+    ] {
+        fs::write(&user, text).unwrap();
+        let error = store.put(Scope::User, Setting::Theme, value).unwrap_err();
+        assert!(
+            matches!(error, SettingsError::Parse { ref path, .. } if *path == user),
+            "{text:?}: {error:?}"
+        );
+        assert_eq!(fs::read_to_string(&user).unwrap(), text);
+        assert_eq!(store.log_filter(), "warn");
+        assert_eq!(store.theme(), Theme::Dark);
+    }
+    let error = store
+        .put(Scope::User, Setting::Theme, Some(json!("light")))
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "{}: `appearance` is not written as a table, so it cannot be changed",
+            user.display()
+        )
+    );
 }
 
 // QA-10: every setting is changeable by command, in the user's or the project's file, and the
@@ -422,10 +733,13 @@ fn an_undo_that_cannot_write_its_file_stays_in_line() {
         json!({"key": "log.filter", "value": "warn", "scope": "project"}),
     )
     .unwrap();
-    // Replace the project's settings directory with a file, so the file cannot be written.
-    let settings_dir = project.parent().unwrap().to_path_buf();
-    fs::remove_dir_all(&settings_dir).unwrap();
-    fs::write(&settings_dir, "").unwrap();
+    // Make the file read-only, so it can be read but not written, on every platform.
+    let read_only = |yes: bool| {
+        let mut permissions = fs::metadata(&project).unwrap().permissions();
+        permissions.set_readonly(yes);
+        fs::set_permissions(&project, permissions).unwrap();
+    };
+    read_only(true);
     let error = s.undo().unwrap_err();
     assert!(
         matches!(error, CommandError::UndoFailed { .. }),
@@ -433,13 +747,19 @@ fn an_undo_that_cannot_write_its_file_stays_in_line() {
     );
     assert_eq!(s.undo_depth(), 1);
     assert_eq!(s.context().0.log_filter(), "warn");
-    fs::remove_file(&settings_dir).unwrap();
+    assert!(fs::read_to_string(&project).unwrap().contains("warn"));
+    read_only(false);
     s.undo().unwrap();
     assert_eq!(
         s.context().0.value(Setting::LogFilter),
         (json!("info"), Source::Default)
     );
-    assert_eq!(fs::read_to_string(&project).unwrap(), "");
+    assert_eq!(
+        SettingsFile::load(&project)
+            .unwrap()
+            .get(Setting::LogFilter),
+        None
+    );
 }
 
 // QA-10: a log filter is written and read back exactly, whatever characters it holds.
@@ -471,13 +791,44 @@ proptest! {
     #[test]
     fn a_settings_file_round_trips(theme in theme(), filter in proptest::option::of(".*")) {
         let dir = TempDir::new("round-trip");
-        let path = dir.path().join("settings.toml");
+        let (path, _, mut store) = store(&dir, &StoreSpec::default());
         let file = SettingsFile {
             appearance: crate::Appearance { theme },
-            log: crate::Log { filter },
+            log: crate::Log { filter: filter.clone() },
         };
-        file.save(&path).unwrap();
+        store
+            .put(Scope::User, Setting::Theme, theme.map(|t| serde_json::to_value(t).unwrap()))
+            .unwrap();
+        store.put(Scope::User, Setting::LogFilter, filter.map(Value::from)).unwrap();
+        prop_assert_eq!(store.file(Scope::User), Some(&file));
         prop_assert_eq!(SettingsFile::load(&path).unwrap(), file);
+    }
+
+    // TEST-4, QA-10 (P2-148): whatever changes a commented file is given, each comment not on
+    // a removed setting's lines stays, and the file reads back as the store holds it.
+    #[test]
+    fn changes_keep_the_comments(
+        changes in proptest::collection::vec(
+            (proptest::bool::ANY, theme(), proptest::option::of(".*")),
+            0..8,
+        ),
+    ) {
+        let dir = TempDir::new("keep-comments");
+        let spec = StoreSpec { user: Some(COMMENTED), ..StoreSpec::default() };
+        let (path, _, mut store) = store(&dir, &spec);
+        for (theme_change, theme, filter) in changes {
+            if theme_change {
+                let value = theme.map(|t| serde_json::to_value(t).unwrap());
+                store.put(Scope::User, Setting::Theme, value).unwrap();
+            } else {
+                store.put(Scope::User, Setting::LogFilter, filter.map(Value::from)).unwrap();
+            }
+            let text = fs::read_to_string(&path).unwrap();
+            for comment in ["# Settings by hand.\n", "# Logging.\n", "# The end.\n"] {
+                prop_assert!(text.contains(comment), "{comment:?} gone from {text:?}");
+            }
+            prop_assert_eq!(Some(&SettingsFile::load(&path).unwrap()), store.file(Scope::User));
+        }
     }
 
     // TEST-4, QA-10: the value a file is given is the value it then holds, for every setting.

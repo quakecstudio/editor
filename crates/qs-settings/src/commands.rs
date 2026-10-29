@@ -178,8 +178,7 @@ fn change<C: HasSettings + 'static>(
     after: Option<Value>,
 ) -> Result<Outcome<Entry, C>, SettingsError> {
     let store = context.settings();
-    let before = store.file(scope).and_then(|file| file.get(setting));
-    store.put(scope, setting, after)?;
+    let before = store.put(scope, setting, after)?;
     let now = store.file(scope).and_then(|file| file.get(setting));
     let entry = Entry::of(store, setting);
     if now == before {
@@ -204,14 +203,16 @@ struct Change {
 
 impl<C: HasSettings + 'static> UndoStep<C> for Change {
     fn undo(&mut self, context: &mut C) -> Result<(), BoxError> {
-        Ok(context
+        context
             .settings()
-            .put(self.scope, self.setting, self.before.clone())?)
+            .put(self.scope, self.setting, self.before.clone())?;
+        Ok(())
     }
 
     fn redo(&mut self, context: &mut C) -> Result<(), BoxError> {
-        Ok(context
+        context
             .settings()
-            .put(self.scope, self.setting, self.after.clone())?)
+            .put(self.scope, self.setting, self.after.clone())?;
+        Ok(())
     }
 }

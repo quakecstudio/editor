@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use toml_edit::{Decor, DocumentMut, Item, TableLike};
 
 pub use commands::{Entry, HasSettings, register};
 pub use error::SettingsError;
@@ -101,6 +102,14 @@ impl Setting {
         }
     }
 
+    /// The table a file keeps it in and its name in that table: `("appearance", "theme")`.
+    const fn place(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Theme => ("appearance", "theme"),
+            Self::LogFilter => ("log", "filter"),
+        }
+    }
+
     /// What it does, for the reference and `settings.list`.
     #[must_use]
     pub const fn summary(self) -> &'static str {
@@ -171,26 +180,12 @@ impl SettingsFile {
     /// The file cannot be read, or is not a settings file: unknown keys and values of the
     /// wrong type are refused, so a typo is not silently ignored.
     pub fn load(path: &Path) -> Result<Self, SettingsError> {
-        let text = match fs::read_to_string(path) {
-            Ok(text) => text,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Self::default()),
-            Err(error) => return Err(SettingsError::read(path, error)),
-        };
-        toml::from_str(&text).map_err(|error| SettingsError::parse(path, &error))
+        Self::parse(path, &read_text(path)?)
     }
 
-    /// Writes the file to `path`, making its directory.
-    ///
-    /// # Errors
-    ///
-    /// The directory or the file cannot be written.
-    pub fn save(&self, path: &Path) -> Result<(), SettingsError> {
-        let text =
-            toml::to_string(self).map_err(|error| SettingsError::write_toml(path, &error))?;
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir).map_err(|error| SettingsError::write(path, error))?;
-        }
-        fs::write(path, text).map_err(|error| SettingsError::write(path, error))
+    /// The settings `text`, the contents of the file at `path`, sets.
+    fn parse(path: &Path, text: &str) -> Result<Self, SettingsError> {
+        toml::from_str(text).map_err(|error| SettingsError::parse(path, &error))
     }
 
     /// What the file sets `setting` to, if anything.
@@ -227,8 +222,147 @@ impl SettingsFile {
     }
 }
 
+/// The text of the file at `path`; empty when there is none.
+fn read_text(path: &Path) -> Result<String, SettingsError> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(text),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(String::new()),
+        Err(error) => Err(SettingsError::read(path, error)),
+    }
+}
+
+/// Writes `text` to the file at `path`, making its directory.
+fn write_text(path: &Path, text: &str) -> Result<(), SettingsError> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(|error| SettingsError::write(path, &error))?;
+    }
+    fs::write(path, text).map_err(|error| SettingsError::write(path, &error))
+}
+
+/// `text`, the file at `path`, with `setting` set to `value`, or removed for `None`, and the
+/// rest of it as it was, comments included.
+///
+/// A value keeps the comment after it on its line. A new table goes at the end of the file,
+/// after any comments there. A `[table]` a removal leaves empty is removed too, unless a comment
+/// is attached to its header. A file with CRLF line endings keeps them.
+fn edit(
+    path: &Path,
+    text: &str,
+    setting: Setting,
+    value: Option<&Value>,
+) -> Result<String, SettingsError> {
+    let mut document: DocumentMut = text
+        .parse()
+        .map_err(|error| SettingsError::parse_edit(path, &error))?;
+    let (table_name, name) = setting.place();
+    match value {
+        Some(value) => {
+            let mut value = toml_value(path, value)?;
+            if !document.contains_key(table_name) {
+                // toml_edit keeps the comments after the last item as the document's trailing
+                // text, which it writes after every table; a new table goes before them unless
+                // they become its prefix.
+                let mut table = toml_edit::Table::new();
+                let mut trailing = document.trailing().as_str().unwrap_or_default().to_owned();
+                if !trailing.is_empty() {
+                    // A last line with no line ending would put the header in its comment.
+                    if !trailing.ends_with('\n') {
+                        trailing.push('\n');
+                    }
+                    table.decor_mut().set_prefix(trailing);
+                    document.set_trailing("");
+                }
+                document.insert(table_name, Item::Table(table));
+            }
+            let item = document.entry(table_name).or_insert_with(toml_edit::table);
+            let table = table_like(path, table_name, item)?;
+            if let Some(old) = table.get_mut(name).and_then(Item::as_value_mut) {
+                *value.decor_mut() = old.decor().clone();
+                *old = value;
+            } else {
+                table.insert(name, Item::Value(value));
+            }
+        }
+        None => {
+            if let Some(item) = document.get_mut(table_name) {
+                table_like(path, table_name, item)?.remove(name);
+            }
+            if let Some(Item::Table(table)) = document.get(table_name)
+                && table.is_empty()
+                && !has_comment(table.decor())
+            {
+                document.remove(table_name);
+            }
+        }
+    }
+    let mut written = document.to_string();
+    // Removing the first table leaves the blank line that separated it from the next.
+    if !text.starts_with(['\r', '\n']) {
+        written = written.trim_start_matches(['\r', '\n']).to_owned();
+    }
+    if text.contains("\r\n") {
+        written = written.replace("\r\n", "\n").replace('\n', "\r\n");
+    }
+    Ok(written)
+}
+
+/// The table `name` of the file at `path`, refused when it is written another way (as an
+/// array, which TOML reads as the table's fields in order).
+fn table_like<'a>(
+    path: &Path,
+    name: &str,
+    item: &'a mut Item,
+) -> Result<&'a mut dyn TableLike, SettingsError> {
+    item.as_table_like_mut()
+        .ok_or_else(|| SettingsError::not_a_table(path, name))
+}
+
+/// Whether the space around a table's header holds a comment.
+fn has_comment(decor: &Decor) -> bool {
+    [decor.prefix(), decor.suffix()]
+        .into_iter()
+        .flatten()
+        .any(|raw| raw.as_str().is_none_or(|text| text.contains('#')))
+}
+
+/// `value`, a setting's value, as TOML. A string is a basic string on one line, its line
+/// breaks escaped, so a file's line endings can be changed around it without changing it.
+fn toml_value(path: &Path, value: &Value) -> Result<toml_edit::Value, SettingsError> {
+    let text = match value {
+        Value::String(text) => basic_string(text),
+        other => toml::Value::try_from(other)
+            .map_err(|error| SettingsError::write(path, &error))?
+            .to_string(),
+    };
+    text.parse()
+        .map_err(|error| SettingsError::write(path, &error))
+}
+
+/// `text` as a TOML basic string: `"` and `\` escaped, and every control character, which
+/// TOML 1.0 does not allow unescaped (U+0000 to U+001F and U+007F), as `\uXXXX`.
+fn basic_string(text: &str) -> String {
+    let mut out = String::with_capacity(text.len().saturating_add(2));
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if c.is_control() && u32::from(c) <= 0x7f => {
+                out.push_str(&format!("\\u{:04X}", u32::from(c)));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// The user's settings and, with a project open, the project's, each with the file it is read
 /// from and written to.
+///
+/// Each file is read when the store opens and again whenever a setting in it is changed, so a
+/// change by hand made in between is kept: [`SettingsStore::put`] edits the file as it is then,
+/// changing only the one setting.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SettingsStore {
     user_path: PathBuf,
@@ -296,18 +430,24 @@ impl SettingsStore {
         }
     }
 
-    /// Sets `setting` in the file of `scope`, or unsets it for `None`, and writes the file.
+    /// Sets `setting` in the file of `scope`, or unsets it for `None`, and gives the value
+    /// the file had for it.
+    ///
+    /// The file is read again and only that setting's line is changed, so the rest of the text,
+    /// comments and changes made by hand included, stays as it is; the store then holds what
+    /// the file now sets. A file that already has the value is not written.
     ///
     /// # Errors
     ///
-    /// No project is open for [`Scope::Project`], the value is not of the setting's type, or
-    /// the file cannot be written. Nothing changes when it fails.
+    /// No project is open for [`Scope::Project`], the file cannot be read or is no longer a
+    /// settings file ([`SettingsError::Parse`]), the value is not of the setting's type, or
+    /// the file cannot be written. Neither the file nor the store changes when it fails.
     pub fn put(
         &mut self,
         scope: Scope,
         setting: Setting,
         value: Option<Value>,
-    ) -> Result<(), SettingsError> {
+    ) -> Result<Option<Value>, SettingsError> {
         let (path, file) = match scope {
             Scope::User => (&self.user_path, &mut self.user),
             Scope::Project => match &mut self.project {
@@ -315,11 +455,16 @@ impl SettingsStore {
                 None => return Err(SettingsError::NoProject),
             },
         };
-        let mut changed = file.clone();
+        let text = read_text(path)?;
+        let mut changed = SettingsFile::parse(path, &text)?;
+        let before = changed.get(setting);
         changed.put(setting, value)?;
-        changed.save(path)?;
+        let after = changed.get(setting);
+        if after != before {
+            write_text(path, &edit(path, &text, setting, after.as_ref())?)?;
+        }
         *file = changed;
-        Ok(())
+        Ok(before)
     }
 }
 

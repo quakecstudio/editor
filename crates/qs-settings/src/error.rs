@@ -23,7 +23,7 @@ pub enum SettingsError {
     Parse {
         /// The file.
         path: PathBuf,
-        /// What TOML's parser says.
+        /// What is wrong: what TOML's parser says, or which table is not written as one.
         message: String,
     },
     /// A settings file, or its directory, cannot be written.
@@ -59,14 +59,21 @@ impl SettingsError {
         }
     }
 
-    pub(crate) fn write(path: &Path, error: io::Error) -> Self {
-        Self::Write {
+    pub(crate) fn parse_edit(path: &Path, error: &toml_edit::TomlError) -> Self {
+        Self::Parse {
             path: path.to_path_buf(),
-            message: error.to_string(),
+            message: error.message().to_owned(),
         }
     }
 
-    pub(crate) fn write_toml(path: &Path, error: &toml::ser::Error) -> Self {
+    pub(crate) fn not_a_table(path: &Path, name: &str) -> Self {
+        Self::Parse {
+            path: path.to_path_buf(),
+            message: format!("`{name}` is not written as a table, so it cannot be changed"),
+        }
+    }
+
+    pub(crate) fn write(path: &Path, error: &impl fmt::Display) -> Self {
         Self::Write {
             path: path.to_path_buf(),
             message: error.to_string(),
