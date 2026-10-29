@@ -275,22 +275,39 @@ fn relative(path: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// The spec files, sorted: every `docs/spec/*.md` except `README.md` and `_`-prefixed
-/// templates.
+/// The spec files, sorted: every `.md` in `docs/spec` and its subdirectories, such as
+/// `docs/spec/engine/`, except `README.md` and `_`-prefixed templates.
 fn spec_files() -> Vec<PathBuf> {
     let dir = repo_root().join("docs/spec");
-    let mut files: Vec<PathBuf> = fs::read_dir(&dir)
-        .expect("docs/spec is readable")
-        .map(|entry| entry.expect("docs/spec entry is readable").path())
-        .filter(|path| {
+    let mut files = Vec::new();
+    let mut dirs = vec![dir];
+    while let Some(dir) = dirs.pop() {
+        for entry in fs::read_dir(&dir).expect("docs/spec is readable") {
+            let path = entry.expect("docs/spec entry is readable").path();
             let name = path.file_name().unwrap_or_default().to_string_lossy();
-            path.extension().is_some_and(|ext| ext == "md")
+            if path.is_dir() {
+                if name != "vectors" {
+                    dirs.push(path);
+                }
+            } else if path.extension().is_some_and(|ext| ext == "md")
                 && name != "README.md"
                 && !name.starts_with('_')
-        })
-        .collect();
+            {
+                files.push(path);
+            }
+        }
+    }
     files.sort();
     files
+}
+
+/// A spec file's name in `requirements.tsv`: its path under `docs/spec`, such as `vm.md` or
+/// `engine/world.md`.
+fn spec_name(path: &Path) -> String {
+    path.strip_prefix(repo_root().join("docs/spec"))
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -315,7 +332,7 @@ fn repo_statements() -> Vec<Statement> {
     let mut statements = Vec::new();
     for path in spec_files() {
         let text = fs::read_to_string(&path).expect("spec file is readable");
-        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        let name = spec_name(&path);
         statements.extend(parse_spec(&name, &text).unwrap_or_else(|e| panic!("{e}")));
     }
     statements

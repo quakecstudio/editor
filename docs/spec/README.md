@@ -50,7 +50,8 @@ statement to be cited (TEST-3 in [`../testing.md`](../testing.md)).
 
 `crates/qs-tests/tests/it/spec_coverage.rs` checks, on every `cargo test`:
 
-- Every active statement in `docs/spec/*.md` (all but `README.md` and `_`-prefixed templates)
+- Every active statement in `docs/spec/*.md` and its subdirectories, such as
+  `docs/spec/engine/` (all but `README.md` and `_`-prefixed templates),
   is cited by a line starting `// spec <ID>` in the test code of a Rust file under
   `crates/`, `apps/` or `xtask/` (whose oracle module tests the oracles' C through the built
   oracle; its `fixtures/` cite statements of their own), or is listed in
@@ -135,5 +136,6 @@ Each section holds, in this order:
 | `VM` | [`vm.md`](vm.md) | QC virtual machine execution: opcodes, calls, the local stack, errors | [#26](https://github.com/quakecstudio/editor/issues/26) |
 | `WAD` | [`wad2.md`](wad2.md) | WAD2 archives: header, directory, lump lookup, the lumps the engine reads | [#29](https://github.com/quakecstudio/editor/issues/29) |
 | `WAV` | [`wav.md`](wav.md) | WAV sounds: chunks, the header and loop points `GetWavinfo` reads, what `S_LoadSound` plays | [#235](https://github.com/quakecstudio/editor/issues/235) |
+| `WORLD` | [`engine/world.md`](engine/world.md) | World collision: the hulls of brush models and boxes, point contents, a line through a hull, clipping a move to an entity, area nodes, linking entities and touching triggers, and moving a box through the world, as `world.c` does | [#236](https://github.com/quakecstudio/editor/issues/236) |
 
 A new spec registers its prefix here in the PR that adds it.

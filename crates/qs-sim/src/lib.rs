@@ -5,6 +5,7 @@
 //!
 //! Implements `docs/spec/edicts.md` EDICT-4.1, EDICT-8 and EDICT-11.4.
 
+pub mod collision;
 pub mod spawn;
 mod world;
 
