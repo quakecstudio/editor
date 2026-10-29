@@ -795,9 +795,10 @@ fn the_ground_check_reads_the_corners_and_the_centre() {
     // The centre over the hole, a corner on the floor above it: ground.
     assert_eq!(bottom_of(&well(20.0), "6 0 24", SMALL), 1.0);
     assert_eq!(bottom_of(&well(20.0), "0 6 24", SMALL), 1.0);
-    // 18 exactly.
-    assert_eq!(bottom_of(&well(18.0), "12 0 24", SMALL), 1.0);
-    assert_eq!(bottom_of(&well(18.5), "12 0 24", SMALL), 0.0);
+    // Standing as droptofloor leaves it, 1/32 up, the centre ends 1/32 above the floor and the
+    // corner 1/32 above the hole's: 18 exactly.
+    assert_eq!(bottom_of(&well(18.0), "12 0 24.03125", SMALL), 1.0);
+    assert_eq!(bottom_of(&well(18.5), "12 0 24.03125", SMALL), 0.0);
 }
 
 // spec MOVE-2.2: a step pushed down from 18 above lands up to 18 below: a stair down
@@ -965,6 +966,8 @@ fn chase_order_follows_the_draw_and_the_distance() {
     assert_eq!(swap_chase(plain, "200 30 30"), [30.0, 0.0]);
     assert_eq!(swap_chase(swapped, "200 30 30"), [20.0, 10.0]);
     assert_eq!(swap_chase(plain, "40 200 30"), [20.0, 10.0]);
+    // As far off on both: x first.
+    assert_eq!(swap_chase(plain, "220 200 30"), [30.0, 0.0]);
 }
 
 // spec MOVE-4.1: olddir is ideal_yaw cut to the 45 below it
@@ -1041,4 +1044,20 @@ fn the_maps_names_are_engine_strings() {
     let world = world(source, &entity("namer", "0 0 0", ""));
     assert_eq!(world.float(2, "frags"), 1.0);
     assert_eq!(world.float(2, "health"), 1.0);
+}
+
+// spec MOVE-5.1: a flyer off the ground still moves toward its goal
+#[test]
+fn a_flying_chaser_moves() {
+    let source = "void() goal = { marker = self; };\n\
+        void() glider = { setsize(self, '-16 -16 -24', '16 16 32'); setorigin(self, self.origin); \
+        self.goalentity = marker; self.frags = 7; movetogoal(10); self.health = self.frags; };\n";
+    let keys = "\"flags\" \"1\"\n\"ideal_yaw\" \"0\"\n\"yaw_speed\" \"360\"\n";
+    let entities = [
+        entity("goal", "500 0 100", ""),
+        entity("glider", "20 0 100", keys),
+    ]
+    .concat();
+    let world = world(source, &entities);
+    assert_eq!(world.vector(3, "origin")[0], 30.0);
 }
