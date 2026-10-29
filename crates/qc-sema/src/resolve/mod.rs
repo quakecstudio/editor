@@ -108,6 +108,9 @@ pub struct ModuleIndex {
     /// The type each named type a definition is written with stands for, when it is another:
     /// a typedef's, or an enum's base type (FTEF-7.2, FTEF-19.10).
     pub aliases: HashMap<Type, Type>,
+    /// The definitions FTEQCC holds constant, `def->constant` (FTEF-19.3): an initialised
+    /// global that is no `var`, an enum's item, a function.
+    pub constants: HashSet<DefId>,
 }
 
 /// A struct's or union's layout as FTEQCC places it (FTEF-6.13): the words it takes and where

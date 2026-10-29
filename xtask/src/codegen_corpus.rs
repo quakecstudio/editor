@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `cargo xtask codegen-corpus <dir>...`: compiles every module of each codebase with
-//! `qc-codegen` under the FTEQCC profile (P2-07, COMP-3), as `fteqcc-profile` opens them, and
-//! fails on the first module that does not compile, printing why at its file and line.
+//! `qc-codegen` under the FTEQCC profile (P2-07, COMP-3), as `fteqcc-profile` opens them,
+//! printing for each module that does not compile its first problem at its file and line, and
+//! fails when any does not.
 
 use std::fs;
 use std::path::{Path, PathBuf};

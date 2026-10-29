@@ -100,3 +100,32 @@ fn enum_values_are_recorded() {
     assert_eq!(words("B"), [4.0_f32.to_bits()]);
     assert_eq!(words("D"), [1]);
 }
+
+// spec FTEF-19.3: an initialised global is a constant unless `var` makes it a variable
+#[test]
+fn constants_are_recorded() {
+    let i = index("float a = 1;\nvar float b = 1;\nfloat c;\nenum { E };\n");
+    assert!(i.constants.contains(&def(&i, "a")));
+    assert!(!i.constants.contains(&def(&i, "b")));
+    assert!(!i.constants.contains(&def(&i, "c")));
+    assert!(i.constants.contains(&def(&i, "E")));
+}
+
+// spec FTEF-6.13: a bitfield and a narrow integer are left out of a struct's members, even at
+// the start of a word
+#[test]
+fn bitfields_and_narrow_members_are_left_out() {
+    let i = index(
+        "typedef struct { int b : 3; float f; } B;\nB bb;\n\
+         typedef struct { __int8 c; float g; } N;\nN nn;\n",
+    );
+    let names = |ty: &str| -> Vec<String> {
+        i.structs[&named(ty)]
+            .members
+            .iter()
+            .map(|m| m.name.clone())
+            .collect()
+    };
+    assert_eq!(names("B"), ["f"]);
+    assert_eq!(names("N"), ["g"]);
+}

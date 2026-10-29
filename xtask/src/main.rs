@@ -69,7 +69,7 @@
 //!   then checks the vanilla profile rejects each extension; `--warnings` prints
 //!   each warning too.
 //! - `codegen-corpus`: compiles every module of each codebase with `qc-codegen` under the
-//!   FTEQCC profile (P2-07) and fails on the first module that does not compile.
+//!   FTEQCC profile (P2-07) and fails when any module does not compile.
 //! - `engines`: fetches the fact sources of the engine-target database pinned in
 //!   `crates/qc-engines/sources.toml` by checksum and writes `crates/qc-engines/src/tables.rs`
 //!   from them (P2-04); `engines --check` fails when the checked-in tables differ.

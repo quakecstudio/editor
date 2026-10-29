@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use qc_diag::{Code, Diagnostic, Span};
 use qc_progs::Function;
 use qc_progs::opcode::Opcode;
-use qc_sema::{DefId, FileDiagnostic, FileId, ModuleIndex};
+use qc_sema::{DefId, FileDiagnostic, FileId, FunctionType, ModuleIndex};
 use qc_syntax::ast::{self, AstNode};
 use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{Dialect, Parse, SyntaxToken};
@@ -29,7 +29,7 @@ use crate::Internal;
 use crate::names::Names;
 use crate::ops::{self, Operator};
 use crate::precache::Precaches;
-use crate::program::{Literal, OFS_PARM0, OFS_RETURN, Program, ValueType, operand};
+use crate::program::{self, Literal, OFS_PARM0, OFS_RETURN, Program, ValueType, operand};
 
 mod arrays;
 
@@ -87,8 +87,22 @@ enum ValueKind {
 enum Target {
     /// `STORE_*` into the global.
     Value(Value),
-    /// `STOREP_*` through the pointer at `ofs` to a field of type `inner`.
-    Field { ofs: u32, inner: ValueType },
+    /// `STOREP_*` through the pointer at `ofs` to a field of type `inner`, and the field's
+    /// value when the store reads it.
+    Field {
+        ofs: u32,
+        inner: ValueType,
+        read: Option<Value>,
+    },
+}
+
+/// Whether a store reads its target's value first: `x op= e`, `++x` and `x++` do, `=` does not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Current {
+    /// The target's value is read once, before the stored value.
+    Read,
+    /// Nothing is read.
+    Unread,
 }
 
 /// The compiler's state while it lowers a module.
@@ -253,7 +267,9 @@ impl<'a> Compiler<'a> {
                     let span = expr.syntax().span();
                     // A literal is stored as it is (QC-20); under FTEQCC an expression is the
                     // value the semantic model folded it to (FTEF-34.9).
-                    if let Some(literal) = literal_of(&expr, self.dialect) {
+                    if let Some(word) = self.integer_literal(place, &expr) {
+                        self.program.initialise_words(place, &[word]).at(span)?;
+                    } else if let Some(literal) = literal_of(&expr, self.dialect) {
                         self.program.initialise(place, &literal).at(span)?;
                     } else {
                         let value = self.index.initial_values.get(&id).at(span)?;
@@ -579,7 +595,14 @@ impl<'a> Compiler<'a> {
                         && self.type_of(&self.def_value(place, span)?).etype() == Etype::Vector =>
                 {
                     let base = self.def_value(place, span)?.ofs;
-                    for (i, element) in (0_u32..3).zip(aggregate.elements()) {
+                    let elements: Vec<ast::Expr> = aggregate.elements().collect();
+                    if elements.len() != 3 || aggregate.syntax().children().count() != 3 {
+                        return Err(Abort::Internal(
+                            Internal::Unsupported,
+                            aggregate.syntax().span(),
+                        ));
+                    }
+                    for (i, element) in (0_u32..3).zip(elements) {
                         let value = self.expr(&element)?;
                         let at = element.syntax().span();
                         if self.type_of(&value).etype() != Etype::Float {
@@ -674,7 +697,7 @@ impl<'a> Compiler<'a> {
         let ValueType::Of(ty) = &def.ty else {
             return None;
         };
-        if !def.initialized {
+        if !self.constant(place) {
             return None;
         }
         let word = self.program.word(def.ofs);
@@ -687,6 +710,41 @@ impl<'a> Compiler<'a> {
             CScalar::Uint => Some(word as f32),
             _ => None,
         }
+    }
+
+    /// FTE-15.8: a number literal initialising an `int` or `unsigned` global is the integer
+    /// it converts to, C's conversion of the float the lexer reads (`QCC_SupplyConversion` of a
+    /// constant), not the float's bits.
+    fn integer_literal(&self, place: usize, expr: &ast::Expr) -> Option<u32> {
+        let ValueType::Of(ty) = &self.program.def(place)?.ty else {
+            return None;
+        };
+        let Some(Literal::Float(value)) = literal_of(expr, self.dialect) else {
+            return None;
+        };
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "spec FTE-15.8: the conversion is C's (int) or (unsigned) of the float"
+        )]
+        match ty.fteqcc_scalar()? {
+            CScalar::Integer => Some(u32::from_ne_bytes((value as i32).to_ne_bytes())),
+            CScalar::Uint => Some(value as u32),
+            _ => None,
+        }
+    }
+
+    /// Whether the definition at `place` is a constant with its value, as
+    /// `QCC_SRef_EvalConst` reads one: a literal, or an initialised definition the model holds
+    /// constant (FTEF-19.3).
+    fn constant(&self, place: usize) -> bool {
+        self.program.def(place).is_some_and(|def| {
+            def.initialized
+                && def.count.is_none()
+                && def.id.map_or(def.name == "IMMEDIATE", |id| {
+                    self.index.constants.contains(&id)
+                })
+        })
     }
 
     /// Ends the innermost loop or switch: its `break`s go to the next statement, and a loop's
@@ -896,8 +954,8 @@ impl<'a> Compiler<'a> {
             .any(|t| t.kind() == qc_syntax::SyntaxKind::MinusMinus);
         let inc = self.float_literal(if decrement { -1.0 } else { 1.0 }, span)?;
         let mut old = None;
-        self.store(&target, span, |compiler| {
-            let current = compiler.expr(&target)?;
+        self.store(&target, span, Current::Read, |compiler, current| {
+            let current = current.at(span)?;
             let ty = compiler.type_of(&current);
             if ty.etype() != Etype::Float {
                 return Self::mismatch(Operator::Add, span);
@@ -946,8 +1004,8 @@ impl<'a> Compiler<'a> {
                     1.0
                 };
                 let inc = self.float_literal(step, span)?;
-                self.store(&operand, span, |compiler| {
-                    let current = compiler.expr(&operand)?;
+                self.store(&operand, span, Current::Read, |compiler, current| {
+                    let current = current.at(span)?;
                     compiler.operate(Operator::Add, &current, &inc, (span, span))
                 })
             }
@@ -1061,8 +1119,8 @@ impl<'a> Compiler<'a> {
             ast::BinaryOp::BitXorAssign => {
                 let lhs = binary.lhs().at(span)?;
                 let rhs = binary.rhs().at(span)?;
-                return self.store(&lhs, op_span, |compiler| {
-                    let left = compiler.expr(&lhs)?;
+                return self.store(&lhs, op_span, Current::Read, |compiler, left| {
+                    let left = left.at(span)?;
                     let right = compiler.expr(&rhs)?;
                     compiler.xor(&left, &right, (op_span, span))
                 });
@@ -1375,7 +1433,9 @@ impl<'a> Compiler<'a> {
     /// QC-27.11), then the value, then `STORE_*` or `STOREP_*` by the two basic types. The
     /// value of the assignment is the value stored (QC-17.6, QC-17.7).
     fn assign(&mut self, lhs: &ast::Expr, rhs: &ast::Expr, op_span: Span) -> Lowered<Value> {
-        self.store(lhs, op_span, |compiler| compiler.expr(rhs))
+        self.store(lhs, op_span, Current::Unread, |compiler, _| {
+            compiler.expr(rhs)
+        })
     }
 
     /// FTEQCC's `x OP= e` (FTE-8.1): `x = x OP e`, the operator's row chosen as for `x OP e`;
@@ -1386,8 +1446,8 @@ impl<'a> Compiler<'a> {
         (lhs, rhs): (&ast::Expr, &ast::Expr),
         (op_span, span): (Span, Span),
     ) -> Lowered<Value> {
-        self.store(lhs, op_span, |compiler| {
-            let left = compiler.expr(lhs)?;
+        self.store(lhs, op_span, Current::Read, |compiler, left| {
+            let left = left.at(op_span)?;
             let right = compiler.expr(rhs)?;
             compiler.operate(operator, &left, &right, (op_span, span))
         })
@@ -1399,8 +1459,8 @@ impl<'a> Compiler<'a> {
         (lhs, rhs): (&ast::Expr, &ast::Expr),
         (op_span, span): (Span, Span),
     ) -> Lowered<Value> {
-        self.store(lhs, op_span, |compiler| {
-            let left = compiler.expr(lhs)?;
+        self.store(lhs, op_span, Current::Read, |compiler, left| {
+            let left = left.at(op_span)?;
             let right = compiler.expr(rhs)?;
             let masked = compiler.operate(Operator::BitAnd, &left, &right, (op_span, span))?;
             compiler.operate(Operator::Sub, &left, &masked, (op_span, span))
@@ -1408,66 +1468,77 @@ impl<'a> Compiler<'a> {
     }
 
     /// Stores the value `value` computes in `lhs` (QC-17): the target read first, then the
-    /// value, then the store of the row the two types select.
+    /// value, then the store of the row the two types select. With [`Current::Read`] the
+    /// target's value is read once and given to `value`, as FTEQCC reads a reference once for
+    /// `x op= e`, `++x` and `x++` (`QCC_RefToDef`).
     fn store(
         &mut self,
         lhs: &ast::Expr,
         op_span: Span,
-        value: impl FnOnce(&mut Self) -> Lowered<Value>,
+        current: Current,
+        value: impl FnOnce(&mut Self, Option<Value>) -> Lowered<Value>,
     ) -> Lowered<Value> {
         let span = lhs.syntax().span();
+        let reads = current == Current::Read;
         let target = match unparenthesized(lhs) {
             Some(ast::Expr::Field(field)) => {
-                let base = match self.member(&field, true, span)? {
-                    Member::Done(member) => {
-                        let value = value(self)?;
-                        self.store_to(&member, &value, op_span)?;
-                        return Ok(value);
+                if let Some(which) = self.component_selector(&field)
+                    && let Some(target) =
+                        self.entity_component(&field.base().at(span)?, which, reads, span)?
+                {
+                    target
+                } else {
+                    match self.member(&field, true, span)? {
+                        Member::Done(member) => Target::Value(member),
+                        Member::Base(base) => match self.component(&base, &field, span)? {
+                            Some(component) => Target::Value(component),
+                            None => self.field_target(&base, &field, reads, span)?,
+                        },
                     }
-                    Member::Base(base) => base,
-                };
-                if let Some(component) = self.component(&base, &field, span)? {
-                    let value = value(self)?;
-                    self.store_to(&component, &value, op_span)?;
-                    return Ok(value);
-                }
-                let loaded = self.load_field(&base, &field, span)?;
-                let inner = self.type_of(&loaded);
-                // QC-17.3: the field's load becomes `ADDRESS`, a pointer to the field.
-                if let Some(last) = self.program.statements.last_mut() {
-                    last.op = u32::from(Opcode::Address.number());
-                }
-                Target::Field {
-                    ofs: loaded.ofs,
-                    inner,
                 }
             }
             Some(ast::Expr::Index(index)) => {
                 let base = index.base().at(span)?;
-                match self.array_named(&base)? {
-                    Some(array) => {
-                        let at = index.index().at(span)?;
-                        Target::Value(self.element(&array, &at, None, true)?)
-                    }
-                    None => Target::Value(self.expr(lhs)?),
+                let at = index.index().at(span)?;
+                if let Some(array) = self.array_named(&base)? {
+                    Target::Value(self.element(&array, &at, None, true)?)
+                } else if let Some(which) = self.vector_index(&at)
+                    && let Some(target) = self.entity_component(&base, which, reads, span)?
+                {
+                    target
+                } else {
+                    Target::Value(self.expr(lhs)?)
                 }
             }
             _ => Target::Value(self.expr(lhs)?),
         };
-        let value = value(self)?;
-        if let Target::Value(to) = &target {
-            self.store_to(to, &value, op_span)?;
-            return Ok(value);
-        }
-        let b = self.type_of(&value).etype();
-        let (a, to, inner) = match &target {
-            Target::Value(v) => (self.type_of(v).etype(), v.ofs, None),
-            Target::Field { ofs, inner } => (Etype::Pointer, *ofs, Some(inner.etype())),
+        let (target, read) = match target {
+            Target::Value(to) => {
+                let read = reads.then(|| to.clone());
+                (Target::Value(to), read)
+            }
+            Target::Field { ofs, inner, read } => (
+                Target::Field {
+                    ofs,
+                    inner,
+                    read: None,
+                },
+                read,
+            ),
         };
-        let Some(row) = ops::select(Operator::Assign, a, b, None) else {
+        let value = value(self, read)?;
+        let (to, inner) = match &target {
+            Target::Value(to) => {
+                self.store_to(to, &value, op_span)?;
+                return Ok(value);
+            }
+            Target::Field { ofs, inner, .. } => (*ofs, inner.etype()),
+        };
+        let b = self.type_of(&value).etype();
+        let Some(row) = ops::select(Operator::Assign, Etype::Pointer, b, None) else {
             return Self::mismatch(Operator::Assign, op_span);
         };
-        if inner.is_some_and(|inner| inner != b) {
+        if inner != b {
             return Self::mismatch(Operator::Assign, op_span);
         }
         self.program.emit(
@@ -1476,6 +1547,122 @@ impl<'a> Compiler<'a> {
             operand(to).at(op_span)?,
         );
         Ok(value)
+    }
+
+    /// `e.f` as a store's target: the field's load made `ADDRESS` (QC-17.3, QC-27.11), and with
+    /// `reads` the field loaded again from the same entity for the value the store reads.
+    fn field_target(
+        &mut self,
+        base: &Value,
+        field: &ast::FieldExpr,
+        reads: bool,
+        span: Span,
+    ) -> Lowered<Target> {
+        let loaded = self.load_field(base, field, span)?;
+        let inner = self.type_of(&loaded);
+        // QC-17.3: the field's load becomes `ADDRESS`, a pointer to the field.
+        if let Some(last) = self.program.statements.last_mut() {
+            last.op = u32::from(Opcode::Address.number());
+        }
+        let read = if reads {
+            Some(self.load_field(base, field, span)?)
+        } else {
+            None
+        };
+        Ok(Target::Field {
+            ofs: loaded.ofs,
+            inner,
+            read,
+        })
+    }
+
+    /// The component `v.x`, `v.y` or `v.z` selects under FTEQCC (FTE-9.1), 0 to 2.
+    fn component_selector(&self, field: &ast::FieldExpr) -> Option<u32> {
+        if !self.dialect.has_fteqcc_extensions() {
+            return None;
+        }
+        let Some(ast::Expr::Name(name)) = field.field() else {
+            return None;
+        };
+        match name.name()?.text_lossless().as_str() {
+            "x" => Some(0),
+            "y" => Some(1),
+            "z" => Some(2),
+            _ => None,
+        }
+    }
+
+    /// The component a constant vector index `[0]` to `[2]` selects under FTEQCC (FTE-13.2).
+    fn vector_index(&self, at: &ast::Expr) -> Option<u32> {
+        if !self.dialect.has_fteqcc_extensions() {
+            return None;
+        }
+        let Some(Literal::Float(i)) = literal_of(at, self.dialect) else {
+            return None;
+        };
+        (0_u32..3).find(|&c| {
+            u16::try_from(c).is_ok_and(|small| f32::from(small).to_bits() == i.to_bits())
+        })
+    }
+
+    /// FTE-9.4: a store to component `which` of an entity's vector field, `e.v.x` or `e.v[0]`,
+    /// stores through `ADDRESS` of the component's own field, `v_x` (QC-11.12), and with
+    /// `reads` its value is loaded by `LOAD_F`; `None` when `base` is no entity's vector field.
+    fn entity_component(
+        &mut self,
+        base: &ast::Expr,
+        which: u32,
+        reads: bool,
+        span: Span,
+    ) -> Lowered<Option<Target>> {
+        let base = match base {
+            ast::Expr::Paren(paren) => paren.expr().at(span)?,
+            other => other.clone(),
+        };
+        let ast::Expr::Field(field) = &base else {
+            return Ok(None);
+        };
+        let Some(ast::Expr::Name(name)) = field.field() else {
+            return Ok(None);
+        };
+        let id = self.def_of(&name.name().at(span)?)?;
+        let place = self.program.get_def(self.index, id).at(span)?;
+        let is_vector_field = self
+            .program
+            .def(place)
+            .and_then(|d| d.ty.field_inner())
+            .is_some_and(|inner| inner.etype() == Etype::Vector);
+        if !is_vector_field {
+            return Ok(None);
+        }
+        let suffix = ["_x", "_y", "_z"]
+            .get(usize::try_from(which).map_err(|_| Abort::Internal(Internal::TooLarge, span))?)
+            .at(span)?;
+        let component = program::component(self.index, id, suffix).at(span)?;
+        let component = self.program.get_def(self.index, component).at(span)?;
+        let component = self.program.def(component).at(span)?.ofs;
+        let entity = self.expr(&field.base().at(span)?)?;
+        let ofs = self
+            .program
+            .emit_result(Opcode::Address, entity.ofs, component, Etype::Pointer)
+            .at(span)?;
+        let read = if reads {
+            let read = self
+                .program
+                .emit_result(Opcode::LoadF, entity.ofs, component, Etype::Float)
+                .at(span)?;
+            Some(Value {
+                ofs: read,
+                kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
+            })
+        } else {
+            None
+        };
+        Ok(Some(Target::Field {
+            ofs,
+            inner: ValueType::simple(Etype::Float),
+            read,
+        }))
     }
 
     /// Stores `value` in the definition or temporary `to` by the `STORE_*` row of their types.
@@ -1517,13 +1704,12 @@ impl<'a> Compiler<'a> {
         // than parameters leave the rest as the parameter slots hold them, and an argument past
         // the last parameter is read and ignored ("too many parameters ... will be ignored").
         let fteqcc = self.dialect.has_fteqcc_extensions();
+        if fteqcc {
+            return self.fteqcc_call(&callee, &function, name.as_deref(), &args, span);
+        }
         for arg in &args {
             let arg_span = arg.syntax().span();
             if fixed.is_some_and(|n| count >= n) {
-                if fteqcc {
-                    self.expr(arg)?;
-                    continue;
-                }
                 return Self::error(Code::E0304, "too many parameters".to_owned(), arg_span);
             }
             let value = self.expr(arg)?;
@@ -1532,8 +1718,7 @@ impl<'a> Compiler<'a> {
             {
                 self.precaches.record(name, &self.program, value.ofs);
             }
-            if !fteqcc
-                && let Some(param) = fixed.and_then(|_| function.params.get(count))
+            if let Some(param) = fixed.and_then(|_| function.params.get(count))
                 && self.type_of(&value) != ValueType::Of(param.clone())
             {
                 return Self::error(
@@ -1552,7 +1737,7 @@ impl<'a> Compiler<'a> {
             count = count.saturating_add(1);
         }
         // QC-18.8: `if (!PR_Check(")"))` skips the count check of a call with no arguments.
-        if !fteqcc && !args.is_empty() && fixed.is_some_and(|n| count != n) {
+        if !args.is_empty() && fixed.is_some_and(|n| count != n) {
             return Self::error(Code::E0305, "too few parameters".to_owned(), span);
         }
         let Some(op) = ops::call_opcode(count) else {
@@ -1575,6 +1760,64 @@ enum Member {
     Base(Value),
 }
 
+impl Compiler<'_> {
+    /// A call under FTEQCC (FTE-18.4): every argument is read first, a call's value copied out
+    /// of the return global before the next argument runs, then each copied to its parameter
+    /// slot and `CALLn` made, so a call in an argument overwrites no slot. The semantic model
+    /// has judged the call (FTEF-32.3): fewer arguments than parameters leave the rest as the
+    /// slots hold them, and an argument past the last parameter is read and ignored.
+    fn fteqcc_call(
+        &mut self,
+        callee: &Value,
+        function: &FunctionType,
+        name: Option<&str>,
+        args: &[ast::Expr],
+        span: Span,
+    ) -> Lowered<Value> {
+        let fixed = (!function.variadic).then_some(function.params.len());
+        let mut values = Vec::with_capacity(args.len());
+        for (i, arg) in args.iter().enumerate() {
+            let arg_span = arg.syntax().span();
+            let mut value = self.expr(arg)?;
+            let later = i.saturating_add(1) < args.len();
+            if later && matches!(value.kind, ValueKind::Return) {
+                let ty = self.type_of(&value);
+                let temp = self.program.allocate(ty.words()).at(arg_span)?;
+                let copy = Value {
+                    ofs: temp,
+                    kind: ValueKind::Temp(ty),
+                };
+                self.store_to(&copy, &value, arg_span)?;
+                value = copy;
+            }
+            values.push((value, arg_span));
+        }
+        let passed = fixed.map_or(values.len(), |n| n.min(values.len()));
+        for (slot, (value, arg_span)) in values.iter().take(passed).enumerate() {
+            if slot == 0
+                && let Some(name) = name
+            {
+                self.precaches.record(name, &self.program, value.ofs);
+            }
+            let to = parm_slot(slot).at(*arg_span)?;
+            self.program.emit(
+                Opcode::StoreV,
+                operand(value.ofs).at(*arg_span)?,
+                operand(to).at(*arg_span)?,
+            );
+        }
+        let Some(op) = ops::call_opcode(passed) else {
+            return Self::error(Code::E0307, "More than eight parameters".to_owned(), span);
+        };
+        self.program.emit(op, operand(callee.ofs).at(span)?, 0);
+        self.return_type = ValueType::Of(function.ret.clone());
+        Ok(Value {
+            ofs: OFS_RETURN,
+            kind: ValueKind::Return,
+        })
+    }
+}
+
 /// What initialises a function.
 #[derive(Clone, Copy)]
 enum FunctionInit<'t> {
@@ -1584,13 +1827,13 @@ enum FunctionInit<'t> {
     Builtin(&'t ast::Builtin),
 }
 
-/// `expr` with any parentheses around it taken off, when it is a field access: the statement
-/// `qcc` makes an address is the last one emitted, which for `(e.f)` is still the field's load
-/// (QC-17.3).
+/// `expr` with any parentheses around it taken off, when it is a field access or a subscript:
+/// the statement `qcc` makes an address is the last one emitted, which for `(e.f)` is still the
+/// field's load (QC-17.3).
 fn unparenthesized(expr: &ast::Expr) -> Option<ast::Expr> {
     match expr {
         ast::Expr::Paren(paren) => paren.expr().and_then(|inner| unparenthesized(&inner)),
-        ast::Expr::Field(_) => Some(expr.clone()),
+        ast::Expr::Field(_) | ast::Expr::Index(_) => Some(expr.clone()),
         ast::Expr::Literal(_)
         | ast::Expr::Name(_)
         | ast::Expr::Not(_)
@@ -1598,7 +1841,6 @@ fn unparenthesized(expr: &ast::Expr) -> Option<ast::Expr> {
         | ast::Expr::Call(_)
         | ast::Expr::Postfix(_)
         | ast::Expr::Ternary(_)
-        | ast::Expr::Index(_)
         | ast::Expr::Unary(_)
         | ast::Expr::Cast(_)
         | ast::Expr::Vector(_)

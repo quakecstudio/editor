@@ -603,14 +603,39 @@ fn c_style_parameters_are_the_functions_first_locals() {
 
 // spec FTEF-32.3: under FTEQCC an argument past the last parameter is read and ignored, and
 // fewer arguments leave the rest
+// spec FTE-18.4: every argument is read before any is stored to its slot
 #[test]
 fn extra_arguments_are_read_and_dropped() {
     let p = fte_progs("void(float x) f = {};\nfloat a;\nvoid() t = { f(a, a + 1); f(); };\n");
     let t = body(&p, "t");
     assert_eq!(
         opcodes(&t),
-        ops(&[StoreV, AddF, Call1, Opcode::Call0, Done])
+        ops(&[AddF, StoreV, Call1, Opcode::Call0, Done])
     );
+    assert_eq!(t[1], st(StoreV, global(&p, "a"), 4, 0));
+}
+
+// spec FTE-18.4: a call's value is copied out of the return global before a later argument
+// calls again, so neither call overwrites the other's slot
+#[test]
+fn a_call_in_an_argument_is_copied_before_the_next() {
+    let p = fte_progs(
+        "float(float x) g = { return x; };\nvoid(float x, float y) f = {};\n\
+         void() t = { f(g(1), g(2)); };\n",
+    );
+    let g = global(&p, "g");
+    let t = body(&p, "t");
+    assert_eq!(
+        opcodes(&t),
+        ops(&[
+            StoreV, Call1, StoreF, StoreV, Call1, StoreV, StoreV, Call2, Done
+        ])
+    );
+    assert_eq!(t[1], st(Call1, g, 0, 0));
+    let copy = t[2].b;
+    assert_eq!(t[2], st(StoreF, 1, copy, 0));
+    assert_eq!(t[5], st(StoreV, copy, 4, 0));
+    assert_eq!(t[6], st(StoreV, 1, 7, 0));
 }
 
 // spec FTE-22.3: a name used before its definition is read is made where it is first used
@@ -620,5 +645,162 @@ fn a_name_used_before_its_definition_is_made_there() {
     assert_eq!(
         body(&p, "t")[0],
         st(StoreF, immediate(&p, 1.0), global(&p, "later"), 0)
+    );
+}
+
+// spec FTE-9.4: a store to an entity's vector field's component goes through ADDRESS of the
+// component's field; `+=` reads it first by LOAD_F
+#[test]
+fn an_entity_vectors_component_is_stored_through_its_field() {
+    let p = fte_progs(
+        ".vector origin;\nentity e;\nvoid() t = { e.origin.y = 5; e.origin[2] += 1; };\n",
+    );
+    let (e, y, z) = (
+        global(&p, "e"),
+        global(&p, "origin_y"),
+        global(&p, "origin_z"),
+    );
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(Opcode::Address, e, y, t[0].c));
+    assert_eq!(t[1], st(Opcode::StorepF, immediate(&p, 5.0), t[0].c, 0));
+    assert_eq!(t[2], st(Opcode::Address, e, z, t[2].c));
+    assert_eq!(t[3], st(Opcode::LoadF, e, z, t[3].c));
+    assert_eq!(t[4], st(AddF, t[3].c, immediate(&p, 1.0), t[4].c));
+    assert_eq!(t[5], st(Opcode::StorepF, t[4].c, t[2].c, 0));
+}
+
+// spec QC-17.3: `e.f += x` reads the entity once, loading the field again after its ADDRESS
+#[test]
+fn a_compound_store_to_a_field_reads_the_entity_once() {
+    let p = fte_progs(".float health;\nentity() find = #1;\nvoid() t = { find().health += 1; };\n");
+    let t = body(&p, "t");
+    assert_eq!(
+        opcodes(&t),
+        ops(&[
+            Opcode::Call0,
+            Opcode::Address,
+            Opcode::LoadF,
+            AddF,
+            Opcode::StorepF,
+            Done
+        ])
+    );
+}
+
+// spec FTE-13.6: a named constant index is a constant index too
+#[test]
+fn a_named_constant_index_is_the_elements_global() {
+    let p = fte_progs(
+        "const float SLOT = 1;\nfloat a[3];\nfloat g;\nvoid() t = { a[SLOT] = 4; g = a[SLOT]; };\n",
+    );
+    let (a, g) = (global(&p, "a"), global(&p, "g"));
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(StoreF, immediate(&p, 4.0), a + 1, 0),
+            st(StoreF, a + 1, g, 0),
+            st(Done, 0, 0, 0)
+        ]
+    );
+}
+
+// spec FTE-13.8: every subscript of one array calls the one getter
+#[test]
+fn an_arrays_subscripts_share_its_getter() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nfloat f[2];\nfloat g;\n\
+         void(float i) t = { g = f[i]; g = f[i + 1]; };\n",
+    );
+    let getters = p
+        .global_defs
+        .iter()
+        .filter(|d| string(&p, d.s_name) == "ArrayGet*f")
+        .count();
+    assert_eq!(getters, 1);
+}
+
+// spec FTE-13.8: four slots are halved with no skipping test
+#[test]
+fn a_getter_of_four_slots_has_no_skip() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nfloat f[4];\nfloat r;\nvoid(float i) t = { r = f[i]; };\n",
+    );
+    assert_eq!(body(&p, "ArrayGet*f").len(), 2 + 12 + 2 + 2);
+}
+
+// spec FTE-15.8: an integer global initialised by a number holds the integer
+// spec FTE-15.7: an integer constant read as a float is its value converted
+#[test]
+fn an_integer_constant_holds_its_integer() {
+    let p = fte_progs(
+        "const __uint32 U = 3;\nconst int I = -2;\nfloat g;\nvoid() t = { g = U; g = I; };\n",
+    );
+    assert_eq!(global_words(&p, "U", 1), [3]);
+    assert_eq!(
+        global_words(&p, "I", 1),
+        [u32::from_ne_bytes((-2_i32).to_ne_bytes())]
+    );
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, immediate(&p, 3.0), global(&p, "g"), 0));
+    assert_eq!(t[1], st(StoreF, immediate(&p, -2.0), global(&p, "g"), 0));
+}
+
+// spec FTE-2.4: `continue` in a switch in a loop goes to the loop, not the switch
+#[test]
+fn continue_in_a_switch_belongs_to_the_loop() {
+    let p = fte_progs("float a;\nvoid() t = { while (a) { switch (a) { case 1: continue; } } };\n");
+    let t = body(&p, "t");
+    // IFNOT a, the switch's GOTO to its tests, then the `continue`'s GOTO to the loop's top.
+    assert_eq!(t[2], st(Goto, -2, 0, 0));
+}
+
+// spec FTE-13.1: a local `vector v = {x, y, z}` stores each element to its component
+#[test]
+fn a_local_vector_initialiser_stores_its_components() {
+    let p = fte_progs("void() t = { vector v = {1, 2, 3}; };\n");
+    let v = global(&p, "v");
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(StoreF, immediate(&p, 1.0), v, 0),
+            st(StoreF, immediate(&p, 2.0), v + 1, 0),
+            st(StoreF, immediate(&p, 3.0), v + 2, 0),
+            st(Done, 0, 0, 0)
+        ]
+    );
+}
+
+// spec FTE-19.4: `--x` stores `x - 1`; `~v` is `'-1 -1 -1' - v`
+#[test]
+fn prefix_decrement_and_vector_not() {
+    let p = fte_progs("float a;\nvector v, w;\nvoid() t = { --a; w = ~v; };\n");
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(AddF, global(&p, "a"), immediate(&p, -1.0), t[0].c));
+    let minus = super::immediate_vector(&p, [-1.0; 3]);
+    assert_eq!(t[2], st(SubV, minus, global(&p, "v"), t[2].c));
+}
+
+// spec FTE-19.1: each `op=` stores its operator's result back
+#[test]
+fn each_compound_assignment_uses_its_operator() {
+    let p = fte_progs("float a, b;\nvoid() t = { a -= b; a *= b; a /= b; a &= b; a |= b; };\n");
+    assert_eq!(
+        opcodes(&body(&p, "t")),
+        ops(&[
+            SubF, StoreF, MulF, StoreF, DivF, StoreF, BitAnd, StoreF, BitOr, StoreF, Done
+        ])
+    );
+}
+
+// spec FTE-9.1: `v.x` is the first word; on an entity, `.x` is a field named `x`
+#[test]
+fn x_is_a_component_of_a_vector_and_a_field_of_an_entity() {
+    let p =
+        fte_progs(".float x;\nentity e;\nvector v;\nfloat a;\nvoid() t = { a = v.x; a = e.x; };\n");
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, global(&p, "v"), global(&p, "a"), 0));
+    assert_eq!(
+        t[1],
+        st(Opcode::LoadF, global(&p, "e"), global(&p, "x"), t[1].c)
     );
 }

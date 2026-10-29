@@ -243,6 +243,9 @@ impl Resolver<'_> {
             if let Some(ArrayDim::Sized(count)) = self.facts.get(i).and_then(|f| f.array) {
                 self.index.arrays.insert(DefId(i), count);
             }
+            if self.facts.get(i).is_some_and(|f| f.constant) {
+                self.index.constants.insert(DefId(i));
+            }
             pending.push(def.ty.clone());
         }
         for (id, constant) in &self.integer_items {

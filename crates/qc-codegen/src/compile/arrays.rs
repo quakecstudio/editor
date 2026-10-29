@@ -47,10 +47,8 @@ pub(super) struct Array {
 pub(super) struct Getter {
     /// The getter's definition.
     place: usize,
-    /// The array it reads.
+    /// The array it reads; the getter's statements come from where the array is declared.
     array: Array,
-    /// Where the array is declared, which the getter's statements come from.
-    location: Location,
 }
 
 impl Compiler<'_> {
@@ -114,7 +112,15 @@ impl Compiler<'_> {
         let span = index.syntax().span();
         let (word, ty) = member.unwrap_or((0, array.elem.clone()));
         let at = self.expr(index)?;
-        if let Some(Literal::Float(i)) = self.literal_of(&at) {
+        let constant = match at.kind {
+            ValueKind::Def(place)
+                if self.constant(place) && self.type_of(&at).etype() == Etype::Float =>
+            {
+                Some(f32::from_bits(self.program.word(at.ofs)))
+            }
+            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Return => None,
+        };
+        if let Some(i) = constant {
             let element = element_number(i, array.count).at(span)?;
             let ofs = element
                 .checked_mul(array.words)
@@ -207,7 +213,6 @@ impl Compiler<'_> {
         }
         let def = self.program.def(array.place).at(span)?;
         let name = format!("ArrayGet*{}", def.name);
-        let location = array.location;
         let ValueType::Of(elem) = &array.elem else {
             return Err(Abort::Internal(Internal::Unsupported, span));
         };
@@ -224,7 +229,6 @@ impl Compiler<'_> {
         self.getters.push(Getter {
             place,
             array: array.clone(),
-            location,
         });
         Ok(place)
     }
@@ -232,7 +236,7 @@ impl Compiler<'_> {
     /// `QCC_PR_EmitArrayGetFunction` for each getter made, after every file (FTE-13.8).
     pub(crate) fn emit_getters(&mut self) -> Result<(), (Internal, FileId, Span)> {
         for getter in std::mem::take(&mut self.getters) {
-            let file = getter.location.file;
+            let file = getter.array.location.file;
             match self.emit_getter(&getter) {
                 Ok(()) => {}
                 Err(Abort::Internal(internal, at)) => return Err((internal, file, at)),
@@ -250,7 +254,7 @@ impl Compiler<'_> {
     /// `error(sprintf(...))`, or `error("bounds check failed\n")` without a `sprintf`; then
     /// the last word returned, and `DONE`.
     fn emit_getter(&mut self, getter: &Getter) -> Lowered<()> {
-        let Location { file, span } = getter.location;
+        let Location { file, span } = getter.array.location;
         self.file = file;
         self.program.origin = Some((file, span.start));
         let array = &getter.array;
@@ -529,6 +533,9 @@ impl Compiler<'_> {
             && let Some(shape) = self.index.structs.get(t).cloned()
         {
             let aggregate = ast::AggregateInit::cast(item.clone()).at(span)?;
+            if aggregate.syntax().children().count() > shape.members.len() {
+                return Err(Abort::Internal(Internal::Unsupported, span));
+            }
             for (member, value) in shape.members.iter().zip(aggregate.syntax().children()) {
                 if member.count != 1 {
                     return Err(Abort::Internal(Internal::Unsupported, span));

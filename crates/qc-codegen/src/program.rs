@@ -118,6 +118,8 @@ pub(crate) struct Def {
     pub(crate) initialized: bool,
     /// An array's elements, `arraysize`; `None` for no array (FTE-13.5).
     pub(crate) count: Option<u32>,
+    /// The semantic model's definition it is; `None` for a literal and one the compiler makes.
+    pub(crate) id: Option<DefId>,
 }
 
 /// A literal's value as `qcc`'s lexer reads it (QC-4 to QC-6).
@@ -290,6 +292,7 @@ impl Program {
             scope: definition.owner,
             initialized: false,
             count,
+            id: Some(id),
         });
         self.places.insert(id, place);
         // FTE-13.5: an array takes its elements' words in turn, a vector array's with no
@@ -356,6 +359,7 @@ impl Program {
             scope: None,
             initialized: false,
             count: None,
+            id: None,
         });
         Ok(place)
     }
@@ -401,6 +405,7 @@ impl Program {
             scope: None,
             initialized: true,
             count: None,
+            id: None,
         });
         let words = self.literal_words(literal)?;
         self.set_words(ofs, &words)?;
@@ -475,7 +480,7 @@ pub(crate) fn operand(ofs: u32) -> Result<i32, Internal> {
 /// the component's name in the vector's scope, the first with that name that is a global or
 /// belongs to the same function (QC-12.2), which the semantic model made with the vector or
 /// before it (QC-11.7).
-fn component(index: &ModuleIndex, vector: DefId, suffix: &str) -> Option<DefId> {
+pub(crate) fn component(index: &ModuleIndex, vector: DefId, suffix: &str) -> Option<DefId> {
     let base = index.def(vector)?;
     let name = format!("{}{suffix}", base.name);
     index

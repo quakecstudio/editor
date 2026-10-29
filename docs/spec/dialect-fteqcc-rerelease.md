@@ -236,6 +236,11 @@ only entity-field access); a vector has no members. The rerelease applies `.z` d
 - **FTE-9.3** Progs encoding: a vector's three floats are consecutive globals (QC-21), so
   `v.x`, `v.y` and `v.z` are the global at the vector's offset, offset plus one and offset
   plus two; no new opcode is used.
+- **FTE-9.4** A store to a component of an entity's vector field, `e.v.x = f` or `e.v[0] = f`,
+  stores through `ADDRESS` of the component's own field `v_x` (QC-11.12) with `STOREP_F`; a
+  compound assignment or increment reads it first by `LOAD_F` of that field. The component is
+  never a copy of the loaded vector. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`
+  (`fieldarrayindex`, `type_floatfield`).
 
 ## FTE-10 `const` declarations
 
@@ -417,6 +422,9 @@ Vanilla `qcc` has no `enum`; the word is read as a name and is "not a type" (QC-
 - **FTE-15.7** An `enum : int` item read where the vanilla opcodes take a float is the float
   its value converts to, C's `(float)` of the integer (`QCC_SupplyConversion` of a constant
   makes the converted constant). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_SupplyConversion`.
+- **FTE-15.8** A number literal initialising an `int` or `unsigned` global is the integer C's
+  conversion of the float gives (`QCC_SupplyConversion` of a constant), not the float's bits.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_SupplyConversion`.
 
 ## FTE-16 `#pragma` directive
 
@@ -536,6 +544,12 @@ name (QC-10.3), and nothing follows the name.
 - **FTE-18.3** A parameter's type is read by `QCC_PR_ParseType`, so it may be a type name the
   program defined, such as the named enum (FTE-15.4) of `float GetUpgradeAmount(UpgradeType
   Type)` (`rerelease-mg3/mg3_upgrades.qc`).
+- **FTE-18.4** A call reads every argument before it stores any to a parameter slot, a call's
+  value among them copied out of the return global to a temporary when another argument
+  follows (`QCC_PR_ParseFunctionCall` collects the arguments as references, which
+  `QCC_PR_GenerateFunctionCallRef` copies to the slots); so a call in an argument overwrites
+  no slot an earlier argument filled, and an argument past the last parameter is read and
+  ignored. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`.
 
 ## FTE-19 Further operators
 
