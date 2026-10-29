@@ -23,6 +23,7 @@
 //! Tests. It builds on the L1 VM crates and the L0 formats below them, and nothing depends on
 //! it (`layers.toml`).
 
+pub mod calls;
 pub mod compare;
 pub mod edict8;
 pub mod generate;

@@ -5,7 +5,9 @@
 # compared statement by statement (DIFF-9) and their statement coverage
 # measured (DIFF-11). The full run enforces zero divergences on every codebase
 # and reports coverage without gating on it (ADR-0013); the fast subset (id
-# 1.01) runs on every change in the Test Assets (linux) job of ci.yml.
+# 1.01) runs on every change in the Test Assets (linux) job of ci.yml. It also
+# runs the compiler differential's nightly run (P2-09, DIFF-12,
+# `cargo xtask compiler-diff --full`).
 #
 # It does not run on pull requests or in the merge queue, and is not a required
 # check (docs/ci.md): the full corpus takes minutes and the fast subset already
@@ -85,3 +87,7 @@ jobs:
       # statement coverage (TEST-6, ADR-0013).
       - name: Run the full differential VM suite
         run: cargo xtask differential --full
+      # P2-09: the compiler differential's nightly run, 128 rounds of calls to every function
+      # of id 1.01 as qcc and qc-codegen (fold off and on) compile it (DIFF-12).
+      - name: Run the full compiler differential
+        run: cargo xtask compiler-diff --full

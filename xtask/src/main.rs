@@ -94,6 +94,7 @@ mod bench;
 mod ci;
 mod codegen_corpus;
 mod commands;
+mod compiler_diff;
 mod contrast;
 mod conventions;
 mod corpus;
@@ -131,8 +132,8 @@ const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixture
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
                      readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
                      map-corpus | parse-corpus | project-corpus | sema-corpus | lsp-corpus | \
-                     differential | fteqcc-coverage | fteqcc-full-coverage | fteqcc-profile | \
-                     codegen-corpus | engines | commands>";
+                     differential | compiler-diff | fteqcc-coverage | fteqcc-full-coverage | \
+                     fteqcc-profile | codegen-corpus | engines | commands>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;
@@ -189,6 +190,7 @@ fn command(name: &str) -> Option<Command> {
         "bench" => Some(bench::main),
         "codegen-corpus" => Some(codegen_corpus::main),
         "commands" => Some(commands::main),
+        "compiler-diff" => Some(compiler_diff::main),
         "corpus" => Some(corpus::main),
         "differential" => Some(differential::main),
         "engines" => Some(engines::main),
@@ -294,6 +296,7 @@ mod tests {
         for name in [
             "assets",
             "bench",
+            "compiler-diff",
             "corpus",
             "differential",
             "fteqcc-coverage",

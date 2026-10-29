@@ -17,7 +17,8 @@ all the same (no panics, every value checked), because the differential suite is
 
 Tests. It builds on the L1 crates (`qc-vm`, `qc-edict`, `qc-builtins`, `qc-trace`), the L0
 formats below them (`qc-progs`, `qc-types`) and the L1 porting example
-(`qs-porting-example`, for the EXAMPLE-1 string escapes EDICT-8.2 reuses). No workspace crate
+(`qs-porting-example`, for the EXAMPLE-1 string escapes EDICT-8.2 reuses); its tests also
+compile programs with the L4 `qc-codegen` and the L3 `qc-sema` (dev-dependencies). No workspace crate
 depends on it (`layers.toml`); outside the workspace, the `qc_vm` fuzz target
 (`fuzz/fuzz_targets/qc_vm.rs`) uses `qs_differential::generate`, `run_scenario` and `compare`.
 
@@ -44,6 +45,13 @@ depends on it (`layers.toml`); outside the workspace, the `qc_vm` fuzz target
   injected so the logic is unit-tested without the C oracle. The `differential` binary
   (`src/bin/differential.rs`) supplies the real oracle subprocess; `cargo xtask differential`
   and CI build the oracles and corpus progs and run it.
+- `docs/spec/differential.md` DIFF-12: the compiler differential (P2-09, `calls` module). Two
+  progs of one codebase, `qcc`'s and `qc-codegen`'s, are set up as each scenario's world in
+  `qc-vm`, every function is called in rounds of drawn contexts (`calls::draw`), and each pair
+  of calls is compared through the definitions' names and types: the ending, the builtins, the
+  named globals and fields, the mock engine and, for the same statements, the statements run.
+  The `compiler-diff` binary (`src/bin/compiler-diff.rs`) runs it on progs files;
+  `cargo xtask compiler-diff` compiles id 1.01 three ways and runs it.
 
 ## Tests
 
@@ -58,6 +66,13 @@ classless entity, each tokenizer error), each citing the statement it pins. The 
 end-to-end tests that run a scenario through `run_scenario` and check the trace it writes: a
 map spawn, the settle frames, a server frame, a client entering, a refused progs, and a bad
 entity lump, citing EDICT-8 and DIFF-3 to DIFF-5.
+
+The compiler differential's tests (`src/calls/tests.rs`) compile small programs with
+`qc-codegen` over a `defs.qc` written from the system globals and fields: a program with
+`--opt fold` off and on agrees though its statements and globals differ, and each kind of
+difference of DIFF-12.3 and DIFF-12.4 (a global, a field, a string by its text, a function by
+its name, a vector, the ending, the builtins, the engine, a freed edict, the definitions, the
+statements run, the setup) is reported, citing DIFF-12.
 
 The comparator has unit tests that build trace values directly: two agreeing traces compare
 equal, a seeded opcode bug and a value difference are each reported at the first differing

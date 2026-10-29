@@ -60,8 +60,7 @@ QCD-4.7). The precache lists `qcc -copy` reads are kept beside the progs (QC-26)
 
 Under FTEQCC it lowers what the six rerelease codebases use, on the vanilla opcodes, which is
 all the rerelease needs (FTE-1.1); FTE's extended format and the rest of FTEQCC are not
-lowered, and neither is a store through an array subscript by a value (FTE-13.7). The
-compiler differential job on the vanilla corpus with traces is P2-09.
+lowered, and neither is a store through an array subscript by a value (FTE-13.7).
 `cargo xtask codegen-corpus <dir>...` compiles codebases under the FTEQCC profile.
 
 ## Tests
@@ -73,6 +72,10 @@ compiler differential job on the vanilla corpus with traces is P2-09.
 - `cargo xtask oracles id101 <dir>` compiles id's QuakeC 1.01 with this crate: the progs.dat is
   id's `qcc`'s, byte for byte (410,616 bytes), and the scenarios the VM oracle runs on it leave
   the records `qcc`'s does.
+- `cargo xtask compiler-diff` (P2-09, `docs/spec/differential.md` DIFF-12) compiles id 1.01
+  with id's `qcc` and with this crate, `--opt fold` off and on, and calls every function of
+  each progs in `qc-vm` from the differential scenarios' worlds: no divergence, and at least
+  90% of `qcc`'s statements executed.
 - `cargo xtask oracles codegen` compiles the hand-written programs of
   `xtask/src/oracles/codegen/cases.rs` and 300 generated ones with both compilers: the two
   progs must be the same bytes, or both refused with `qcc`'s message among ours, but for the

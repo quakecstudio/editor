@@ -161,7 +161,7 @@ fn check_ours(
     theirs: &[u8],
     their_scenarios: &Path,
 ) -> Result<bool, String> {
-    let compiled = match codegen::compile_codebase(codebase) {
+    let compiled = match codegen::compile_codebase(codebase, qc_codegen::Options::default()) {
         Ok(compiled) => compiled,
         Err(e) => {
             println!(

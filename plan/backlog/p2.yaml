@@ -293,7 +293,7 @@ issues:
   - P2-06
   - P1-13
   deliverable:
-  - 'tests/compiler-diff: compiles each vanilla corpus codebase with our compiler and with oracle qcc, runs scripted function calls in qc-vm on both outputs, compares traces'
+  - '`cargo xtask compiler-diff` (xtask/src/compiler_diff.rs) with the `compiler-diff` binary and `calls` module of crates/qs-differential (docs/spec/differential.md DIFF-12): compiles each vanilla corpus codebase with our compiler and with oracle qcc, runs scripted function calls in qc-vm on both outputs, compares traces. The project keeps cross-crate tests in crates/qs-tests and oracle runs in xtask (CONV-11), so no tests/compiler-diff directory'
   acceptance:
   - Zero behavioural divergences on the vanilla corpus, with `--opt fold` off and on (QC-27.20, P2-08)
   - At least 90% of statements executed per corpus codebase
@@ -439,26 +439,6 @@ issues:
   - Every .qc and .qh file of Nuclide, FreeCS, Copper and Arcane Dimensions parses with no ERROR or MISSING nodes, or the file and the construct are listed in the repo README as not covered
   verify:
   - tree-sitter test and the corpus check in that repo's CI
-- key: P2-16
-  title: Package editor integrations for VS Code, Zed and Neovim
-  labels:
-  - apps
-  - area:language
-  - type:feature
-  size: M
-  reqs:
-  - LANG-9
-  - LANG-8
-  depends:
-  - P2-14
-  - P2-15
-  deliverable:
-  - VS Code extension and Zed extension wrapping quakec-lsp and the grammar; Neovim setup documented
-  acceptance:
-  - Go-to-definition works in each editor on the rerelease
-  - Not published to any marketplace until the legal review (P4-22) signs off
-  verify:
-  - Recorded manual test per editor attached
 - key: P2-17
   title: Build the app shell and layout
   labels:
@@ -1643,7 +1623,6 @@ issues:
   - P2-13
   - P2-14
   - P2-15
-  - P2-16
   - P2-17
   - P2-18
   - P2-19

@@ -166,6 +166,13 @@ impl TraceBuilder {
         }
     }
 
+    /// Drops the records so far, pending strings included, for a run whose records are not
+    /// kept (DIFF-12.7).
+    pub(crate) fn clear(&mut self) {
+        self.records.clear();
+        self.pending_strings.clear();
+    }
+
     /// The records so far, for a test to inspect (TRACE-4).
     #[must_use]
     pub fn records(&self) -> &[Record] {
