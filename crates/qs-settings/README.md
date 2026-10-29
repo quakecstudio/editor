@@ -56,7 +56,9 @@ again each time a command changes a setting in it, so:
   the comment lines just above it (for a setting on the file's first line, written as a dotted
   key, those are the file's opening comments); a `[table]` it leaves empty is removed too,
   unless a comment is attached to its header (an inline table stays, as `appearance = {}`). A
-  file with CRLF line endings keeps them.
+  file with CRLF line endings keeps them; one that mixes CRLF and LF lines is written with CRLF
+  throughout, the one change to lines the command does not touch. A UTF-8 byte order mark at
+  the start of the file stays.
 - A command that sets a value the file already has does not write the file at all, and records
   no undo step. An undo puts back the value the file had when the command ran.
 - A file that no longer parses, or that writes a settings table as something other than a table

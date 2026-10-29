@@ -244,13 +244,17 @@ fn write_text(path: &Path, text: &str) -> Result<(), SettingsError> {
 ///
 /// A value keeps the comment after it on its line. A new table goes at the end of the file,
 /// after any comments there. A `[table]` a removal leaves empty is removed too, unless a comment
-/// is attached to its header. A file with CRLF line endings keeps them.
+/// is attached to its header. A file with any CRLF line ending is written with CRLF throughout;
+/// a byte order mark stays.
 fn edit(
     path: &Path,
     text: &str,
     setting: Setting,
     value: Option<&Value>,
 ) -> Result<String, SettingsError> {
+    let (bom, text) = text
+        .strip_prefix(BOM)
+        .map_or(("", text), |rest| (BOM, rest));
     let mut document: DocumentMut = text
         .parse()
         .map_err(|error| SettingsError::parse_edit(path, &error))?;
@@ -300,11 +304,15 @@ fn edit(
     if !text.starts_with(['\r', '\n']) {
         written = written.trim_start_matches(['\r', '\n']).to_owned();
     }
+    // toml_edit writes every line break as `\n`.
     if text.contains("\r\n") {
         written = written.replace("\r\n", "\n").replace('\n', "\r\n");
     }
-    Ok(written)
+    Ok(format!("{bom}{written}"))
 }
+
+/// The UTF-8 byte order mark some editors start a file with.
+const BOM: &str = "\u{feff}";
 
 /// The table `name` of the file at `path`, refused when it is written another way (as an
 /// array, which TOML reads as the table's fields in order).

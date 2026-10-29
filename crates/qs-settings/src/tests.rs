@@ -905,3 +905,100 @@ fn reading_settings_leaves_the_history_and_the_files_alone() {
     assert_eq!((s.undo_depth(), s.redo_depth()), (0, 1));
     assert!(!user.exists() && !project.exists());
 }
+
+// QA-10 (P2-R5 re-review): a file saved with a UTF-8 byte order mark, as Windows Notepad
+// once did, is read, and an edit keeps the mark and the rest of the text.
+#[test]
+fn a_byte_order_mark_is_read_and_kept() {
+    let dir = TempDir::new("bom");
+    let spec = StoreSpec {
+        user: Some("\u{feff}# Mine.\n[appearance]\ntheme = \"dark\"\n"),
+        ..StoreSpec::default()
+    };
+    let (user, _, mut store) = store(&dir, &spec);
+    assert_eq!(store.value(Setting::Theme), (json!("dark"), Source::User));
+    store
+        .put(Scope::User, Setting::Theme, Some(json!("light")))
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(&user).unwrap(),
+        "\u{feff}# Mine.\n[appearance]\ntheme = \"light\"\n"
+    );
+}
+
+// QA-10 (P2-R5 re-review): a file with both line endings is written with CRLF throughout, as
+// the README says, not with the LF toml_edit writes.
+#[test]
+fn a_mixed_line_ending_file_is_written_with_crlf() {
+    let dir = TempDir::new("mixed");
+    let spec = StoreSpec {
+        user: Some("# Windows.\r\n# Unix.\n[log]\nfilter = \"warn\"\n"),
+        ..StoreSpec::default()
+    };
+    let (user, _, mut store) = store(&dir, &spec);
+    store
+        .put(Scope::User, Setting::LogFilter, Some(json!("debug")))
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(&user).unwrap(),
+        "# Windows.\r\n# Unix.\r\n[log]\r\nfilter = \"debug\"\r\n"
+    );
+}
+
+// QA-10 (P2-R5 re-review): a table header written with a quoted name is the same table.
+#[test]
+fn a_quoted_table_name_is_edited_in_place() {
+    let dir = TempDir::new("quoted");
+    let spec = StoreSpec {
+        user: Some("[\"appearance\"]\ntheme = \"dark\"\n"),
+        ..StoreSpec::default()
+    };
+    let (user, _, mut store) = store(&dir, &spec);
+    store
+        .put(Scope::User, Setting::Theme, Some(json!("light")))
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(&user).unwrap(),
+        "[\"appearance\"]\ntheme = \"light\"\n"
+    );
+}
+
+// QA-10 (P2-R5 re-review): a filter with a tab, DEL and C1 controls reads back from the file as
+// it was set.
+#[test]
+fn control_characters_in_a_filter_read_back_from_the_file() {
+    let dir = TempDir::new("controls");
+    let (user, _, mut store) = store(&dir, &StoreSpec::default());
+    let filter = "info\t\u{7f}\u{85}\u{9f}\u{2028}end";
+    store
+        .put(Scope::User, Setting::LogFilter, Some(json!(filter)))
+        .unwrap();
+    assert_eq!(
+        SettingsFile::load(&user).unwrap().get(Setting::LogFilter),
+        Some(json!(filter))
+    );
+    assert_eq!(fs::read_to_string(&user).unwrap().lines().count(), 2);
+}
+
+// QA-10 (P2-R5 re-review): the first change to a project's settings makes its
+// `.quakec-studio` directory.
+#[test]
+fn the_first_project_setting_makes_its_directory() {
+    let dir = TempDir::new("project-dir");
+    let (_, project, mut store) = store(&dir, &StoreSpec::default());
+    assert!(!project.parent().unwrap().exists());
+    assert_eq!(
+        store
+            .put(Scope::Project, Setting::Theme, Some(json!("light")))
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        fs::read_to_string(&project).unwrap(),
+        "[appearance]\ntheme = \"light\"\n"
+    );
+    assert_eq!(
+        store.value(Setting::Theme),
+        (json!("light"), Source::Project)
+    );
+}
