@@ -335,3 +335,17 @@ lines = 98
 branches = 84
 mutation = 100
 spec = 100
+
+[crates.qs-commands]
+readiness = "P2-R5"
+lines = 97
+branches = 92
+mutation = 100
+spec = 100
+
+[crates.qs-settings]
+readiness = "P2-R5"
+lines = 94
+branches = 91
+mutation = 100
+spec = 100
