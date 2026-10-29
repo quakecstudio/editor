@@ -11,6 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use proptest::prelude::*;
 use qs_commands::{CommandError, Registry, Session};
 use serde_json::{Value, json};
 
@@ -323,4 +324,233 @@ fn the_settings_reference_is_up_to_date() {
     for setting in Setting::ALL {
         assert!(written.contains(setting.key()));
     }
+}
+
+// Readiness review (P2-R5, TEST-9): adversarial cases.
+
+// QA-10: `null` is not a value of either setting; unsetting is `settings.reset`.
+#[test]
+fn settings_set_refuses_null_and_values_of_the_wrong_type() {
+    let dir = TempDir::new("null");
+    let (user, _, store) = store(&dir, &StoreSpec::default());
+    let mut s = session(store);
+    for (key, value) in [
+        ("appearance.theme", json!(null)),
+        ("appearance.theme", json!("Dark")),
+        ("appearance.theme", json!(["dark"])),
+        ("log.filter", json!(null)),
+        ("log.filter", json!(3)),
+        ("log.filter", json!({"info": true})),
+    ] {
+        let result = s.execute("settings.set", json!({"key": key, "value": value}));
+        assert!(
+            matches!(&result, Err(CommandError::Failed { error, .. })
+                if error.to_string().starts_with(&format!("invalid value for {key}"))),
+            "{key} {value}: {result:?}"
+        );
+    }
+    assert!(!user.exists());
+    assert_eq!(s.undo_depth(), 0);
+}
+
+// QA-10: the schema refuses a scope that is neither file, a missing value and unknown fields.
+#[test]
+fn settings_commands_refuse_malformed_arguments() {
+    let dir = TempDir::new("args");
+    let (user, _, store) = store(&dir, &StoreSpec::default());
+    let mut s = session(store);
+    for (id, params) in [
+        (
+            "settings.set",
+            json!({"key": "log.filter", "value": "warn", "scope": "workspace"}),
+        ),
+        ("settings.set", json!({"key": "log.filter"})),
+        (
+            "settings.set",
+            json!({"key": "log.filter", "value": "warn", "extra": 1}),
+        ),
+        (
+            "settings.reset",
+            json!({"key": "log.filter", "scope": "User"}),
+        ),
+        ("settings.get", json!({})),
+        ("settings.list", json!({"key": "log.filter"})),
+    ] {
+        let result = s.execute(id, params.clone());
+        assert!(
+            matches!(result, Err(CommandError::InvalidParams { .. })),
+            "{id} {params}: {result:?}"
+        );
+    }
+    assert!(!user.exists());
+}
+
+// QA-10: a file that is not UTF-8, a TOML syntax error and a table where a value belongs are
+// refused when the store opens, the project's as well as the user's.
+#[test]
+fn a_malformed_file_is_refused_when_the_store_opens() {
+    let dir = TempDir::new("malformed");
+    let path = dir.path().join("settings.toml");
+    fs::write(&path, [0xff, 0xfe, b'\n']).unwrap();
+    assert!(matches!(
+        SettingsFile::load(&path),
+        Err(SettingsError::Read { .. })
+    ));
+    for text in ["appearance.theme = ", "[appearance.theme]\n", "log = 1\n"] {
+        fs::write(&path, text).unwrap();
+        assert!(
+            matches!(SettingsFile::load(&path), Err(SettingsError::Parse { .. })),
+            "{text:?}"
+        );
+    }
+    let user = dir.path().join("user.toml");
+    assert!(matches!(
+        SettingsStore::open(user, Some(path)),
+        Err(SettingsError::Parse { .. })
+    ));
+}
+
+// QA-10: an undo whose file cannot be written fails, changes nothing in memory, and stays in
+// line to be tried again once the file can be written.
+#[test]
+fn an_undo_that_cannot_write_its_file_stays_in_line() {
+    let dir = TempDir::new("unwritable");
+    let (_, project, store) = store(&dir, &StoreSpec::default());
+    let mut s = session(store);
+    s.execute(
+        "settings.set",
+        json!({"key": "log.filter", "value": "warn", "scope": "project"}),
+    )
+    .unwrap();
+    // Replace the project's settings directory with a file, so the file cannot be written.
+    let settings_dir = project.parent().unwrap().to_path_buf();
+    fs::remove_dir_all(&settings_dir).unwrap();
+    fs::write(&settings_dir, "").unwrap();
+    let error = s.undo().unwrap_err();
+    assert!(
+        matches!(error, CommandError::UndoFailed { .. }),
+        "{error:?}"
+    );
+    assert_eq!(s.undo_depth(), 1);
+    assert_eq!(s.context().0.log_filter(), "warn");
+    fs::remove_file(&settings_dir).unwrap();
+    s.undo().unwrap();
+    assert_eq!(
+        s.context().0.value(Setting::LogFilter),
+        (json!("info"), Source::Default)
+    );
+    assert_eq!(fs::read_to_string(&project).unwrap(), "");
+}
+
+// QA-10: a log filter is written and read back exactly, whatever characters it holds.
+#[test]
+fn a_log_filter_with_awkward_characters_round_trips() {
+    let dir = TempDir::new("awkward");
+    let (user, _, store) = store(&dir, &StoreSpec::default());
+    let mut s = session(store);
+    let filter = "info,qc_sema=debug,\"quoted\"\\back\ttab\u{1}\u{e9}";
+    s.execute(
+        "settings.set",
+        json!({"key": "log.filter", "value": filter}),
+    )
+    .unwrap();
+    let reread = SettingsStore::open(user, None).unwrap();
+    assert_eq!(reread.log_filter(), filter);
+}
+
+fn theme() -> impl Strategy<Value = Option<Theme>> {
+    prop_oneof![
+        Just(None),
+        Just(Some(Theme::Dark)),
+        Just(Some(Theme::Light))
+    ]
+}
+
+proptest! {
+    // TEST-4, QA-10: a settings file is written and read back unchanged, whatever it sets.
+    #[test]
+    fn a_settings_file_round_trips(theme in theme(), filter in proptest::option::of(".*")) {
+        let dir = TempDir::new("round-trip");
+        let path = dir.path().join("settings.toml");
+        let file = SettingsFile {
+            appearance: crate::Appearance { theme },
+            log: crate::Log { filter },
+        };
+        file.save(&path).unwrap();
+        prop_assert_eq!(SettingsFile::load(&path).unwrap(), file);
+    }
+
+    // TEST-4, QA-10: the value a file is given is the value it then holds, for every setting.
+    #[test]
+    fn a_put_value_is_the_value_got(theme in theme(), filter in proptest::option::of(".*")) {
+        let mut file = SettingsFile::default();
+        let theme = theme.map(|t| serde_json::to_value(t).unwrap());
+        let filter = filter.map(Value::from);
+        file.put(Setting::Theme, theme.clone()).unwrap();
+        file.put(Setting::LogFilter, filter.clone()).unwrap();
+        prop_assert_eq!(file.get(Setting::Theme), theme);
+        prop_assert_eq!(file.get(Setting::LogFilter), filter);
+    }
+}
+
+// docs/testing.md, L5 note (schema test): each settings command is listed with an object
+// schema whose `key` names exactly the settings and whose `scope` names exactly the two files.
+#[test]
+fn every_settings_command_has_its_schema() {
+    let dir = TempDir::new("schema");
+    let (_, _, store) = store(&dir, &StoreSpec::default());
+    let s = session(store);
+    let consts = |schema: &Value, def: &str| -> Vec<String> {
+        schema["$defs"][def]["oneOf"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["const"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let keys: Vec<String> = Setting::ALL.iter().map(|s| s.key().to_owned()).collect();
+    for (id, required) in [
+        ("settings.list", json!(null)),
+        ("settings.get", json!(["key"])),
+        ("settings.set", json!(["key", "value"])),
+        ("settings.reset", json!(["key"])),
+    ] {
+        let info = s.registry().get(id).unwrap();
+        let schema = info.params();
+        assert_eq!(schema["type"], "object", "{id}");
+        assert_eq!(schema["additionalProperties"], json!(false), "{id}");
+        assert_eq!(schema["required"], required, "{id}");
+        if id != "settings.list" {
+            assert_eq!(
+                schema["properties"]["key"]["$ref"], "#/$defs/Setting",
+                "{id}"
+            );
+            assert_eq!(consts(schema, "Setting"), keys, "{id}");
+        }
+        if id == "settings.set" || id == "settings.reset" {
+            assert_eq!(schema["properties"]["scope"]["default"], "user", "{id}");
+            assert_eq!(consts(schema, "Scope"), ["user", "project"], "{id}");
+        }
+    }
+}
+
+// docs/testing.md, L5 note (undo test): the reading commands leave no undo step and write no
+// file, and keep the redo history.
+#[test]
+fn reading_settings_leaves_the_history_and_the_files_alone() {
+    let dir = TempDir::new("read");
+    let (user, project, store) = store(&dir, &StoreSpec::default());
+    let mut s = session(store);
+    s.execute(
+        "settings.set",
+        json!({"key": "log.filter", "value": "warn"}),
+    )
+    .unwrap();
+    s.undo().unwrap();
+    fs::remove_file(&user).unwrap();
+    s.execute("settings.list", json!({})).unwrap();
+    s.execute("settings.get", json!({"key": "log.filter"}))
+        .unwrap();
+    assert_eq!((s.undo_depth(), s.redo_depth()), (0, 1));
+    assert!(!user.exists() && !project.exists());
 }

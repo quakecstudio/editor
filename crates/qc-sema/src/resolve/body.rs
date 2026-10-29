@@ -398,7 +398,9 @@ impl<'a> Resolver<'a> {
             written: &written,
             locals: &[],
         };
-        check_initialiser(&mut env, &expr, &ty, &decl.name);
+        if let Some(value) = check_initialiser(&mut env, &expr, &ty, &decl.name) {
+            self.index.initial_values.insert(owner, value);
+        }
     }
 
     /// A definition the attribute `alias(TARGET)` gives (FTEF-21.9): `QCC_PR_GetDef (NULL,

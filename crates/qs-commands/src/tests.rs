@@ -1032,3 +1032,298 @@ proptest! {
         prop_assert!(CommandId::new(&text).is_err());
     }
 }
+
+// Readiness review (P2-R5, TEST-9): adversarial cases.
+
+/// Parameters whose deserialiser panics, as a buggy hand-written `Deserialize` might.
+#[derive(JsonSchema)]
+struct PanickingParams {}
+
+impl<'de> Deserialize<'de> for PanickingParams {
+    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
+        panic!("the parameters' deserialiser panicked")
+    }
+}
+
+/// Output whose serialiser panics.
+struct PanickingOutput;
+
+impl serde::Serialize for PanickingOutput {
+    fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+        panic!("the output's serialiser panicked")
+    }
+}
+
+struct BadParams;
+
+impl Command<Doc> for BadParams {
+    const ID: &'static str = "review.bad_params";
+    const SUMMARY: &'static str = "Takes parameters that panic when read.";
+    type Params = PanickingParams;
+    type Output = ();
+    type Error = TestError;
+
+    fn run(&self, _: &mut Doc, _: PanickingParams) -> Result<Outcome<(), Doc>, TestError> {
+        Ok(Outcome::unchanged(()))
+    }
+}
+
+struct BadSerialise;
+
+impl Command<Doc> for BadSerialise {
+    const ID: &'static str = "review.bad_serialise";
+    const SUMMARY: &'static str = "Appends w and returns output that panics when serialised.";
+    type Params = NoParams;
+    type Output = PanickingOutput;
+    type Error = TestError;
+
+    fn run(
+        &self,
+        context: &mut Doc,
+        _: NoParams,
+    ) -> Result<Outcome<PanickingOutput, Doc>, TestError> {
+        context.text.push('w');
+        Ok(Outcome::undoable(PanickingOutput, Truncate::new("w")))
+    }
+}
+
+/// The test session with the review's commands registered as well.
+fn review_session() -> Session<Doc> {
+    let mut registry = Registry::new();
+    registry.register(Append).unwrap();
+    registry.register(Len).unwrap();
+    registry.register(BadParams).unwrap();
+    registry.register(BadSerialise).unwrap();
+    Session::new(Doc::default(), registry)
+}
+
+// PRIN-7: a panic while the arguments are deserialised is inside the guard too.
+#[test]
+fn a_panicking_params_deserialiser_is_caught() {
+    let mut s = review_session();
+    append(&mut s, "a");
+    let error = s.execute("review.bad_params", json!({})).unwrap_err();
+    match error {
+        CommandError::Panicked { command, message } => {
+            assert_eq!(command.as_str(), "review.bad_params");
+            assert_eq!(message, "the parameters' deserialiser panicked");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(s.undo_depth(), 0);
+    append(&mut s, "b");
+    assert_eq!(text(&s), "ab");
+}
+
+// PRIN-7: a panic while the output is serialised is caught; the change is not recorded, since
+// the guard cannot tell how far the command got, and the history is cleared.
+#[test]
+fn a_panicking_output_serialiser_is_caught_and_clears_the_history() {
+    let mut s = review_session();
+    append(&mut s, "a");
+    s.undo().unwrap();
+    assert_eq!(s.redo_depth(), 1);
+    let error = s.execute("review.bad_serialise", json!({})).unwrap_err();
+    assert!(
+        matches!(&error, CommandError::Panicked { message, .. }
+            if message == "the output's serialiser panicked"),
+        "{error:?}"
+    );
+    assert_eq!((s.undo_depth(), s.redo_depth()), (0, 0));
+    assert_eq!(text(&s), "w");
+    assert_eq!(s.execute("doc.len", json!({})).unwrap(), json!(1));
+}
+
+// The guard table: arguments that are not an object are refused for the built-ins as well, and
+// leave the history alone.
+#[test]
+fn a_builtin_refuses_arguments_that_are_not_an_object() {
+    let mut s = review_session();
+    append(&mut s, "a");
+    for id in BUILTIN_IDS {
+        for params in [json!(null), json!([]), json!("x"), json!(0), json!(true)] {
+            let error = s.execute(id, params.clone()).unwrap_err();
+            assert!(
+                matches!(&error, CommandError::ParamsNotObject { command } if command.as_str() == id),
+                "{id} {params}: {error:?}"
+            );
+        }
+        let error = s.execute(id, json!({"extra": 1})).unwrap_err();
+        assert!(
+            matches!(error, CommandError::InvalidParams { .. }),
+            "{id}: {error:?}"
+        );
+    }
+    assert_eq!((s.undo_depth(), s.redo_depth(), text(&s)), (1, 0, "a"));
+}
+
+// PRIN-3: `edit.undo` and `edit.redo` run through `execute` report the command they walked
+// back and forth, and an empty history is an error, not a no-op.
+#[test]
+fn undo_and_redo_by_id_name_the_command_and_refuse_an_empty_history() {
+    let mut s = review_session();
+    assert!(matches!(
+        s.execute("edit.undo", json!({})),
+        Err(CommandError::NothingToUndo)
+    ));
+    assert!(matches!(
+        s.execute("edit.redo", json!({})),
+        Err(CommandError::NothingToRedo)
+    ));
+    append(&mut s, "abc");
+    assert_eq!(
+        s.execute("edit.undo", json!({})).unwrap(),
+        json!({"command": "doc.append"})
+    );
+    assert_eq!(text(&s), "");
+    // A read between undo and redo keeps the redo history.
+    s.execute("doc.len", json!({})).unwrap();
+    assert_eq!(
+        s.execute("edit.redo", json!({})).unwrap(),
+        json!({"command": "doc.append"})
+    );
+    assert_eq!(text(&s), "abc");
+    assert!(matches!(
+        s.execute("edit.redo", json!({})),
+        Err(CommandError::NothingToRedo)
+    ));
+}
+
+// Lookup by id is exact: case, a trailing dot, whitespace or a prefix name no command.
+#[test]
+fn lookup_is_exact() {
+    let mut s = review_session();
+    for id in [
+        "Doc.append",
+        "doc.append.",
+        " doc.append",
+        "doc.appen",
+        "doc",
+    ] {
+        assert!(s.registry().get(id).is_none(), "{id}");
+    }
+    let error = s.execute("Doc.append", json!({"text": "x"})).unwrap_err();
+    assert!(
+        matches!(&error, CommandError::Unknown { id } if id == "Doc.append"),
+        "{error:?}"
+    );
+    assert_eq!(text(&s), "");
+}
+
+// The id grammar's limits: one byte over MAX_ID_LEN, a multi-byte character that fits by
+// characters but not by bytes, and segments starting with a digit or `_`.
+#[test]
+fn ids_just_past_the_limits_are_rejected() {
+    let over = "a".repeat(MAX_ID_LEN + 1);
+    assert_eq!(
+        CommandId::new(&over),
+        Err(IdError::TooLong {
+            len: MAX_ID_LEN + 1
+        })
+    );
+    let wide = format!("{}é", "a".repeat(MAX_ID_LEN - 1));
+    assert_eq!(
+        CommandId::new(&wide),
+        Err(IdError::TooLong {
+            len: MAX_ID_LEN + 1
+        })
+    );
+    assert_eq!(
+        CommandId::new("a.1b"),
+        Err(IdError::BadSegmentStart { found: '1' })
+    );
+    assert_eq!(
+        CommandId::new("_a"),
+        Err(IdError::BadSegmentStart { found: '_' })
+    );
+    assert_eq!(CommandId::new("a."), Err(IdError::EmptySegment));
+    assert_eq!(CommandId::new("."), Err(IdError::EmptySegment));
+}
+
+// The reference: a command whose id is `commands` shares the anchor of `# Commands`, so its row
+// links to `commands-1`.
+#[test]
+fn a_command_named_commands_links_past_the_title() {
+    struct Named;
+    impl Command<Doc> for Named {
+        const ID: &'static str = "commands";
+        const SUMMARY: &'static str = "Shares the title's anchor.";
+        type Params = NoParams;
+        type Output = ();
+        type Error = TestError;
+        fn run(&self, _: &mut Doc, _: NoParams) -> Result<Outcome<(), Doc>, TestError> {
+            Ok(Outcome::unchanged(()))
+        }
+    }
+    let mut registry = Registry::<Doc>::new();
+    registry.register(Named).unwrap();
+    let markdown = registry.markdown();
+    assert!(
+        markdown.contains("| [`commands`](#commands-1) |"),
+        "{markdown}"
+    );
+    assert!(
+        markdown.contains("| [`commands.list`](#commandslist) |"),
+        "{markdown}"
+    );
+}
+
+/// One step of a session in the history property.
+#[derive(Clone, Debug)]
+enum Op {
+    Append(String),
+    Read,
+    Undo,
+    Redo,
+}
+
+fn op() -> impl Strategy<Value = Op> {
+    prop_oneof![
+        "[a-z]{0,3}".prop_map(Op::Append),
+        Just(Op::Read),
+        Just(Op::Undo),
+        Just(Op::Redo),
+    ]
+}
+
+proptest! {
+    // TEST-4, PRIN-3: the session's history behaves as two stacks of changes. After any run of
+    // changes, reads, undos and redos, the text is the model's, both depths are the model's,
+    // and an undo or redo with an empty stack is an error that changes nothing.
+    #[test]
+    fn the_history_matches_a_two_stack_model(ops in proptest::collection::vec(op(), 0..40)) {
+        let mut s = session(SessionSpec::default());
+        let mut done: Vec<String> = Vec::new();
+        let mut undone: Vec<String> = Vec::new();
+        for op in ops {
+            match op {
+                Op::Append(text) => {
+                    append(&mut s, &text);
+                    done.push(text);
+                    undone.clear();
+                }
+                Op::Read => {
+                    s.execute("doc.len", json!({})).unwrap();
+                }
+                Op::Undo => match done.pop() {
+                    Some(text) => {
+                        let command = s.undo().unwrap();
+                        prop_assert_eq!(command.as_str(), "doc.append");
+                        undone.push(text);
+                    }
+                    None => prop_assert!(matches!(s.undo(), Err(CommandError::NothingToUndo))),
+                },
+                Op::Redo => match undone.pop() {
+                    Some(text) => {
+                        let command = s.redo().unwrap();
+                        prop_assert_eq!(command.as_str(), "doc.append");
+                        done.push(text);
+                    }
+                    None => prop_assert!(matches!(s.redo(), Err(CommandError::NothingToRedo))),
+                },
+            }
+            prop_assert_eq!(text(&s), done.concat());
+            prop_assert_eq!((s.undo_depth(), s.redo_depth()), (done.len(), undone.len()));
+        }
+    }
+}

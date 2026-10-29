@@ -14,11 +14,14 @@
 //! (QC-16 to QC-19): an operator's operands select its opcode by their basic types, a call's
 //! arguments must have its parameters' types.
 
+use std::collections::HashMap;
+
 use qc_diag::{Code, Diagnostic, Span};
 use qc_progs::Function;
 use qc_progs::opcode::Opcode;
-use qc_sema::{DefId, FileDiagnostic, FileId, ModuleIndex};
+use qc_sema::{DefId, FileDiagnostic, FileId, FunctionType, ModuleIndex};
 use qc_syntax::ast::{self, AstNode};
+use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{Dialect, Parse, SyntaxToken};
 use qc_types::Etype;
 
@@ -26,7 +29,9 @@ use crate::Internal;
 use crate::names::Names;
 use crate::ops::{self, Operator};
 use crate::precache::Precaches;
-use crate::program::{Literal, OFS_PARM0, OFS_RETURN, Program, ValueType, operand};
+use crate::program::{self, Literal, OFS_PARM0, OFS_RETURN, Program, ValueType, operand};
+
+mod arrays;
 
 /// Why a declaration's code stopped: an error in the program, which abandons the declaration
 /// as `PR_ParseError` does (QC-24.2), or a construct the compiler cannot lower.
@@ -82,8 +87,22 @@ enum ValueKind {
 enum Target {
     /// `STORE_*` into the global.
     Value(Value),
-    /// `STOREP_*` through the pointer at `ofs` to a field of type `inner`.
-    Field { ofs: u32, inner: ValueType },
+    /// `STOREP_*` through the pointer at `ofs` to a field of type `inner`, and the field's
+    /// value when the store reads it.
+    Field {
+        ofs: u32,
+        inner: ValueType,
+        read: Option<Value>,
+    },
+}
+
+/// Whether a store reads its target's value first: `x op= e`, `++x` and `x++` do, `=` does not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Current {
+    /// The target's value is read once, before the stored value.
+    Read,
+    /// Nothing is read.
+    Unread,
 }
 
 /// The compiler's state while it lowers a module.
@@ -106,6 +125,27 @@ pub(crate) struct Compiler<'a> {
     /// Whether an operator of two literals is folded into the literal of its value
     /// (`--opt fold`, COMP-5).
     pub(crate) fold: bool,
+    /// The dialect the files are read in, whose lexer reads each literal and builtin number.
+    pub(crate) dialect: Dialect,
+    /// The compiler flags of the file being compiled, each from the byte it holds from
+    /// (FTEF-21.1).
+    flags: Vec<(usize, qc_syntax::CompilerFlags)>,
+    /// The loops and switches the statement is in, innermost last, with the jumps their
+    /// `break` and `continue` statements left to patch.
+    jumps: Vec<Jumps>,
+    /// The array getters made so far, emitted after every file (FTE-13.8).
+    getters: Vec<arrays::Getter>,
+    /// Each file's `s_file`, which a getter's function record takes from its array's file.
+    s_files: HashMap<FileId, i32>,
+}
+
+/// One loop or switch: the `GOTO`s of its `break`s, and of its `continue`s for a loop.
+#[derive(Debug, Default)]
+struct Jumps {
+    breaks: Vec<usize>,
+    continues: Vec<usize>,
+    /// Whether it is a loop, which `continue` belongs to; a switch passes it on.
+    is_loop: bool,
 }
 
 impl<'a> Compiler<'a> {
@@ -122,6 +162,11 @@ impl<'a> Compiler<'a> {
             locals_end: 0,
             return_type: ValueType::simple(Etype::Void),
             fold: false,
+            dialect: Dialect::Vanilla,
+            flags: Vec::new(),
+            jumps: Vec::new(),
+            getters: Vec::new(),
+            s_files: HashMap::new(),
         }
     }
 
@@ -135,16 +180,25 @@ impl<'a> Compiler<'a> {
         parse: &Parse,
     ) -> Result<(), (Internal, FileId, Span)> {
         self.file = file;
+        self.flags = parse.flags().to_vec();
         self.s_file = self
             .program
             .copy_string(name.as_bytes())
             .map_err(|i| (i, file, Span::new(0, 0)))?;
+        self.s_files.insert(file, self.s_file);
         let Some(tree) = parse.tree() else {
             return Ok(());
         };
-        for declaration in tree.declarations() {
+        for item in tree.items() {
             self.scope = None;
-            match self.declaration(&declaration) {
+            let result = if let Some(declaration) = ast::Declaration::cast(item.clone()) {
+                self.declaration(&declaration)
+            } else if let Some(enumeration) = ast::EnumDecl::cast(item) {
+                self.enumeration(&enumeration)
+            } else {
+                Ok(())
+            };
+            match result {
                 Ok(()) => {}
                 Err(Abort::Error(diagnostic)) => {
                     self.errors.push(FileDiagnostic { file, diagnostic });
@@ -210,29 +264,66 @@ impl<'a> Compiler<'a> {
             match declarator.initializer() {
                 None => {}
                 Some(ast::Initializer::Value(expr)) => {
-                    let literal = literal_of(&expr).at(expr.syntax().span())?;
-                    self.program
-                        .initialise(place, &literal)
-                        .at(expr.syntax().span())?;
+                    let span = expr.syntax().span();
+                    // A literal is stored as it is (QC-20); under FTEQCC an expression is the
+                    // value the semantic model folded it to (FTEF-34.9).
+                    if let Some(word) = self.integer_literal(place, &expr) {
+                        self.program.initialise_words(place, &[word]).at(span)?;
+                    } else if let Some(literal) = literal_of(&expr, self.dialect) {
+                        self.program.initialise(place, &literal).at(span)?;
+                    } else {
+                        let value = self.index.initial_values.get(&id).at(span)?;
+                        self.program
+                            .initialise_words(place, value.words())
+                            .at(span)?;
+                    }
                 }
                 Some(ast::Initializer::Body(body)) => {
-                    self.function(declaration, &name, (id, place), FunctionInit::Body(&body))?;
+                    self.function(
+                        (declaration, &declarator),
+                        &name,
+                        (id, place),
+                        FunctionInit::Body(&body),
+                    )?;
                 }
                 Some(ast::Initializer::Builtin(builtin)) => {
                     self.function(
-                        declaration,
+                        (declaration, &declarator),
                         &name,
                         (id, place),
                         FunctionInit::Builtin(&builtin),
                     )?;
                 }
                 Some(ast::Initializer::Aggregate(aggregate)) => {
-                    return Err(Abort::Internal(
-                        Internal::Unsupported,
-                        aggregate.syntax().span(),
-                    ));
+                    let span = aggregate.syntax().span();
+                    let def = self.program.def(place).at(span)?;
+                    let (ty, count) = (def.ty.clone(), def.count);
+                    let words = self.aggregate_words(&ty, count, &aggregate)?;
+                    self.program.initialise_words(place, &words).at(span)?;
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// FTE-15.5: an `enum`'s items, each a constant global made in turn and initialised with
+    /// its value.
+    fn enumeration(&mut self, enumeration: &ast::EnumDecl) -> Lowered<()> {
+        let span = enumeration.syntax().span();
+        if enumeration.declarators().next().is_some() {
+            return Err(Abort::Internal(Internal::Unsupported, span));
+        }
+        for item in enumeration.enumerators() {
+            let name = item
+                .child_tokens()
+                .find(|t| t.kind() == qc_syntax::SyntaxKind::Name)
+                .at(item.span())?;
+            let place = self.declare(&name)?;
+            let id = self.def_of(&name)?;
+            let value = self.index.initial_values.get(&id).at(name.span())?;
+            self.program
+                .initialise_words(place, value.words())
+                .at(name.span())?;
         }
         Ok(())
     }
@@ -243,7 +334,7 @@ impl<'a> Compiler<'a> {
     /// QC-25.2).
     fn function(
         &mut self,
-        declaration: &ast::Declaration,
+        (declaration, declarator): (&ast::Declaration, &ast::Declarator),
         name: &SyntaxToken,
         (id, place): (DefId, usize),
         init: FunctionInit<'_>,
@@ -259,14 +350,14 @@ impl<'a> Compiler<'a> {
             FunctionInit::Builtin(builtin) => {
                 // QC-13.3: `#n` is builtin `n`; no parameter or local storage is made.
                 let token = builtin.number().at(builtin.syntax().span())?;
-                let number = qc_syntax::builtin_binum(&token.text_lossless(), Dialect::Vanilla)
+                let number = qc_syntax::builtin_binum(&token.text_lossless(), self.dialect)
                     .at(token.span())?;
                 number
                     .checked_neg()
                     .ok_or(Abort::Internal(Internal::TooLarge, token.span()))?
             }
             FunctionInit::Body(body) => {
-                self.parameters(declaration, span)?;
+                self.parameters(declaration, declarator, span)?;
                 let code = operand_index(self.program.statements.len()).at(span)?;
                 if let Some(state) = body.state() {
                     self.state(&state)?;
@@ -322,13 +413,21 @@ impl<'a> Compiler<'a> {
     }
 
     /// The parameters of a body, made at the next globals in order (QC-13.2, QC-13.5): the
-    /// names written in the defining declaration's type.
-    fn parameters(&mut self, declaration: &ast::Declaration, span: Span) -> Lowered<()> {
-        let Some(ast::Type::Function(function)) = declaration.ty() else {
-            return Err(Abort::Internal(Internal::Unlowered, span));
-        };
-        let Some(list) = function.params() else {
-            return Ok(());
+    /// names written in the defining declaration's type, or after the name of FTEQCC's C-style
+    /// definition `float f(float x) { ... }` (FTE-17.1).
+    fn parameters(
+        &mut self,
+        declaration: &ast::Declaration,
+        declarator: &ast::Declarator,
+        span: Span,
+    ) -> Lowered<()> {
+        let list = match (declarator.params(), declaration.ty()) {
+            (Some(list), _) => list,
+            (None, Some(ast::Type::Function(function))) => match function.params() {
+                Some(list) => list,
+                None => return Ok(()),
+            },
+            (None, _) => return Err(Abort::Internal(Internal::Unlowered, span)),
         };
         for param in list.params() {
             if let Some(name) = param.name() {
@@ -343,7 +442,7 @@ impl<'a> Compiler<'a> {
     fn state(&mut self, state: &ast::State) -> Lowered<()> {
         let span = state.syntax().span();
         let frame = state.frame().at(span)?;
-        let literal = literal_of_token(&frame).at(frame.syntax().span())?;
+        let literal = literal_of_token(&frame, self.dialect).at(frame.syntax().span())?;
         let frame_place = self.program.immediate(&literal).at(span)?;
         let next = state.next().at(span)?;
         let next_place = self.declare(&next)?;
@@ -385,30 +484,37 @@ impl<'a> Compiler<'a> {
                 // QC-14.5: the condition, `IFNOT` past the loop, the body, `GOTO` back.
                 let top = self.program.statements.len();
                 let condition = self.expr(&w.condition().at(span)?)?;
-                let test = self
-                    .program
-                    .emit(Opcode::IfNot, operand(condition.ofs).at(span)?, 0);
+                let test = self.unless(&condition, span)?;
+                self.jumps.push(Jumps {
+                    is_loop: true,
+                    ..Jumps::default()
+                });
                 self.statement(&w.body().at(span)?)?;
                 let back = branch(self.program.statements.len(), top).at(span)?;
                 self.program.emit(Opcode::Goto, back, 0);
                 self.patch_b(test, span)?;
+                self.end_jumps(top, span)?;
             }
             ast::Stmt::Do(d) => {
                 // QC-14.6: the body, the condition, `IF` back to the body.
                 let top = self.program.statements.len();
+                self.jumps.push(Jumps {
+                    is_loop: true,
+                    ..Jumps::default()
+                });
                 self.statement(&d.body().at(span)?)?;
+                let test_at = self.program.statements.len();
                 let condition = self.expr(&d.condition().at(span)?)?;
+                let (op, tested) = self.test(&condition, true, span)?;
                 let back = branch(self.program.statements.len(), top).at(span)?;
-                self.program
-                    .emit(Opcode::If, operand(condition.ofs).at(span)?, back);
+                self.program.emit(op, operand(tested).at(span)?, back);
+                self.end_jumps(test_at, span)?;
             }
             ast::Stmt::Local(local) => self.local(local)?,
             ast::Stmt::If(i) => {
                 // QC-14.4: `IFNOT` past the statement; with `else`, a `GOTO` past the other.
                 let condition = self.expr(&i.condition().at(span)?)?;
-                let test = self
-                    .program
-                    .emit(Opcode::IfNot, operand(condition.ofs).at(span)?, 0);
+                let test = self.unless(&condition, span)?;
                 self.statement(&i.then_branch().at(span)?)?;
                 if let Some(otherwise) = i.else_branch() {
                     let skip = self.program.emit(Opcode::Goto, 0, 0);
@@ -426,12 +532,20 @@ impl<'a> Compiler<'a> {
                 // QC-14.9: any expression, its statements emitted.
                 self.expr(&e.expr().at(span)?)?;
             }
-            ast::Stmt::For(_)
-            | ast::Stmt::Switch(_)
-            | ast::Stmt::Break(_)
-            | ast::Stmt::Continue(_)
-            | ast::Stmt::Empty(_)
-            | ast::Stmt::Label(_)
+            ast::Stmt::Break(_) => {
+                let jump = self.program.emit(Opcode::Goto, 0, 0);
+                let jumps = self.jumps.last_mut().at(span)?;
+                jumps.breaks.push(jump);
+            }
+            ast::Stmt::Continue(_) => {
+                let jump = self.program.emit(Opcode::Goto, 0, 0);
+                let jumps = self.jumps.iter_mut().rev().find(|j| j.is_loop).at(span)?;
+                jumps.continues.push(jump);
+            }
+            ast::Stmt::Empty(_) => {}
+            ast::Stmt::Switch(switch) => self.switch(switch, span)?,
+            ast::Stmt::For(f) => self.for_loop(f, span)?,
+            ast::Stmt::Label(_)
             | ast::Stmt::Goto(_)
             | ast::Stmt::Loop(_)
             | ast::Stmt::Thinktime(_)
@@ -463,9 +577,44 @@ impl<'a> Compiler<'a> {
             let place = self.declare(&name)?;
             match declarator.initializer() {
                 None => {}
+                // Under FTEQCC a local's initialiser is its first store, made each time the
+                // function runs (FTEF-32.4); `qcc` initialises the global once (QC-11.10).
+                Some(ast::Initializer::Value(expr)) if self.dialect.has_fteqcc_extensions() => {
+                    let to = self.def_value(place, span)?;
+                    let value = self.expr(&expr)?;
+                    self.store_to(&to, &value, expr.syntax().span())?;
+                }
                 Some(ast::Initializer::Value(expr)) => {
-                    let literal = literal_of(&expr).at(expr.syntax().span())?;
+                    let literal = literal_of(&expr, self.dialect).at(expr.syntax().span())?;
                     self.program.initialise(place, &literal).at(span)?;
+                }
+                // FTE-13.1: `vector v = {x, y, z};`, each element stored to its component in
+                // turn, as `QCC_PR_ParseInitializerType` stores an aggregate's elements.
+                Some(ast::Initializer::Aggregate(aggregate))
+                    if self.dialect.has_fteqcc_extensions()
+                        && self.type_of(&self.def_value(place, span)?).etype() == Etype::Vector =>
+                {
+                    let base = self.def_value(place, span)?.ofs;
+                    let elements: Vec<ast::Expr> = aggregate.elements().collect();
+                    if elements.len() != 3 || aggregate.syntax().children().count() != 3 {
+                        return Err(Abort::Internal(
+                            Internal::Unsupported,
+                            aggregate.syntax().span(),
+                        ));
+                    }
+                    for (i, element) in (0_u32..3).zip(elements) {
+                        let value = self.expr(&element)?;
+                        let at = element.syntax().span();
+                        if self.type_of(&value).etype() != Etype::Float {
+                            return Self::mismatch(Operator::Assign, at);
+                        }
+                        let component = base.checked_add(i).at(at)?;
+                        self.program.emit(
+                            Opcode::StoreF,
+                            operand(value.ofs).at(at)?,
+                            operand(component).at(at)?,
+                        );
+                    }
                 }
                 Some(
                     ast::Initializer::Body(_)
@@ -488,17 +637,26 @@ impl<'a> Compiler<'a> {
         let span = expr.syntax().span();
         match expr {
             ast::Expr::Literal(literal) => {
-                let value = literal_of_token(literal).at(span)?;
+                let value = literal_of_token(literal, self.dialect).at(span)?;
                 let place = self.program.immediate(&value).at(span)?;
                 self.def_value(place, span)
             }
             ast::Expr::Name(name) => {
                 let token = name.name().at(span)?;
                 let id = self.def_of(&token)?;
-                let place = self
-                    .program
-                    .place(id)
-                    .ok_or(Abort::Internal(Internal::Unallocated, span))?;
+                // Under FTEQCC a name may be used before the definition it names is read, in a
+                // second autoprototyping pass (FTE-22.3); it is made where it is first used.
+                let place = match self.program.place(id) {
+                    Some(place) => place,
+                    None if self.dialect.has_fteqcc_extensions() => {
+                        self.program.get_def(self.index, id).at(span)?
+                    }
+                    None => return Err(Abort::Internal(Internal::Unallocated, span)),
+                };
+                if let Some(float) = self.integer_constant(place) {
+                    let place = self.program.immediate(&Literal::Float(float)).at(span)?;
+                    return self.def_value(place, span);
+                }
                 self.def_value(place, span)
             }
             ast::Expr::Paren(paren) => self.expr(&paren.expr().at(span)?),
@@ -521,14 +679,381 @@ impl<'a> Compiler<'a> {
             ast::Expr::Binary(binary) => self.binary(binary, span),
             ast::Expr::Field(field) => self.field(field, span),
             ast::Expr::Call(call) => self.call(call, span),
-            ast::Expr::Postfix(_)
-            | ast::Expr::Ternary(_)
-            | ast::Expr::Index(_)
-            | ast::Expr::Unary(_)
-            | ast::Expr::Cast(_)
-            | ast::Expr::Vector(_)
-            | ast::Expr::Sizeof(_) => Err(Abort::Internal(Internal::Unsupported, span)),
+            ast::Expr::Postfix(postfix) => self.postfix(postfix, span),
+            ast::Expr::Unary(unary) => self.unary(unary, span),
+            ast::Expr::Index(index) => self.index(index, span),
+            ast::Expr::Ternary(ternary) => self.ternary(ternary, span),
+            ast::Expr::Cast(_) | ast::Expr::Vector(_) | ast::Expr::Sizeof(_) => {
+                Err(Abort::Internal(Internal::Unsupported, span))
+            }
         }
+    }
+
+    /// FTE-15.7: an initialised integer constant, an `enum : int`'s item, read where the
+    /// vanilla opcodes take a float: the float its value converts to, `QCC_SupplyConversion`
+    /// of a constant.
+    fn integer_constant(&self, place: usize) -> Option<f32> {
+        let def = self.program.def(place)?;
+        let ValueType::Of(ty) = &def.ty else {
+            return None;
+        };
+        if !self.constant(place) {
+            return None;
+        }
+        let word = self.program.word(def.ofs);
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "spec FTE-15.7: the conversion is C's (float) of the integer"
+        )]
+        match ty.fteqcc_scalar()? {
+            CScalar::Integer => Some(i32::from_ne_bytes(word.to_ne_bytes()) as f32),
+            CScalar::Uint => Some(word as f32),
+            _ => None,
+        }
+    }
+
+    /// FTE-15.8: a number literal initialising an `int` or `unsigned` global is the integer
+    /// it converts to, C's conversion of the float the lexer reads (`QCC_SupplyConversion` of a
+    /// constant), not the float's bits.
+    fn integer_literal(&self, place: usize, expr: &ast::Expr) -> Option<u32> {
+        let ValueType::Of(ty) = &self.program.def(place)?.ty else {
+            return None;
+        };
+        let Some(Literal::Float(value)) = literal_of(expr, self.dialect) else {
+            return None;
+        };
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "spec FTE-15.8: the conversion is C's (int) or (unsigned) of the float"
+        )]
+        match ty.fteqcc_scalar()? {
+            CScalar::Integer => Some(u32::from_ne_bytes((value as i32).to_ne_bytes())),
+            CScalar::Uint => Some(value as u32),
+            _ => None,
+        }
+    }
+
+    /// Whether the definition at `place` is a constant with its value, as
+    /// `QCC_SRef_EvalConst` reads one: a literal, or an initialised definition the model holds
+    /// constant (FTEF-19.3).
+    fn constant(&self, place: usize) -> bool {
+        self.program.def(place).is_some_and(|def| {
+            def.initialized
+                && def.count.is_none()
+                && def.id.map_or(def.name == "IMMEDIATE", |id| {
+                    self.index.constants.contains(&id)
+                })
+        })
+    }
+
+    /// Ends the innermost loop or switch: its `break`s go to the next statement, and a loop's
+    /// `continue`s to `again`.
+    fn end_jumps(&mut self, again: usize, span: Span) -> Lowered<()> {
+        let jumps = self.jumps.pop().at(span)?;
+        let end = self.program.statements.len();
+        for (list, to) in [(jumps.breaks, end), (jumps.continues, again)] {
+            for at in list {
+                let offset = branch(at, to).at(span)?;
+                if let Some(s) = self.program.statements.get_mut(at) {
+                    s.a = offset;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// FTEQCC's `for (init; condition; step) body` (FTE-2.1): the initialiser, then the
+    /// condition with `IFNOT` past the loop, the body, the step, `GOTO` back to the condition;
+    /// `continue` goes to the step.
+    fn for_loop(&mut self, f: &ast::ForStmt, span: Span) -> Lowered<()> {
+        if let Some(init) = f.init() {
+            self.clause(&init, span)?;
+        }
+        let top = self.program.statements.len();
+        let test = match f.condition() {
+            Some(condition) => {
+                let condition = self.clause(&condition, span)?.at(span)?;
+                Some(self.unless(&condition, span)?)
+            }
+            None => None,
+        };
+        self.jumps.push(Jumps {
+            is_loop: true,
+            ..Jumps::default()
+        });
+        self.statement(&f.body().at(span)?)?;
+        let step_at = self.program.statements.len();
+        if let Some(step) = f.step() {
+            self.clause(&step, span)?;
+        }
+        let back = branch(self.program.statements.len(), top).at(span)?;
+        self.program.emit(Opcode::Goto, back, 0);
+        if let Some(test) = test {
+            self.patch_b(test, span)?;
+        }
+        self.end_jumps(step_at, span)
+    }
+
+    /// A `for` header clause: its expressions in turn and a local declaration (FTEF-16.9);
+    /// the value of the last expression, the condition's.
+    fn clause(&mut self, clause: &qc_syntax::SyntaxNode, span: Span) -> Lowered<Option<Value>> {
+        let mut last = None;
+        for item in clause.children() {
+            if let Some(local) = ast::LocalDecl::cast(item.clone()) {
+                self.local(&local)?;
+            } else {
+                last = Some(self.expr(&ast::Expr::cast(item).at(span)?)?);
+            }
+        }
+        Ok(last)
+    }
+
+    /// FTEQCC's `switch (e) { case v: ... default: ... }` (FTE-3.1) on the vanilla opcodes: the
+    /// value read once, `GOTO` past the body to the tests, the body with its labels, then each
+    /// `case` tested in order by `EQ_*` of the value's type (a range `case a .. b:` by
+    /// `GE_F`, `LE_F` and `AND`) with `IF` to the label, and `GOTO` to `default:` or past the
+    /// switch; `break` goes past it.
+    fn switch(&mut self, switch: &ast::SwitchStmt, span: Span) -> Lowered<()> {
+        let value = self.expr(&switch.scrutinee().at(span)?)?;
+        let to_tests = self.program.emit(Opcode::Goto, 0, 0);
+        self.jumps.push(Jumps::default());
+        let mut cases: Vec<(ast::CaseLabel, usize)> = Vec::new();
+        let block = switch.block().at(span)?;
+        for node in block.syntax().children() {
+            if let Some(label) = ast::CaseLabel::cast(node.clone()) {
+                cases.push((label, self.program.statements.len()));
+            } else if let Some(statement) = ast::Stmt::cast(node) {
+                self.statement(&statement)?;
+            }
+        }
+        let past_tests = self.program.emit(Opcode::Goto, 0, 0);
+        let tests = self.program.statements.len();
+        self.set_goto(to_tests, tests, span)?;
+        let mut default = None;
+        for (label, at) in &cases {
+            let label_span = label.syntax().span();
+            let Some(case) = label.value() else {
+                default = Some(*at);
+                continue;
+            };
+            let low = self.expr(&case)?;
+            let hit = match label.range_end() {
+                Some(end) => {
+                    let high = self.expr(&end)?;
+                    let spans = (label_span, label_span);
+                    let above = self.operate(Operator::Ge, &value, &low, spans)?;
+                    let below = self.operate(Operator::Le, &value, &high, spans)?;
+                    self.operate(Operator::And, &above, &below, spans)?
+                }
+                None => self.operate(Operator::Eq, &value, &low, (label_span, label_span))?,
+            };
+            let to = branch(self.program.statements.len(), *at).at(label_span)?;
+            self.program
+                .emit(Opcode::If, operand(hit.ofs).at(label_span)?, to);
+        }
+        let fallback = self.program.emit(Opcode::Goto, 0, 0);
+        let end = self.program.statements.len();
+        self.set_goto(fallback, default.unwrap_or(end), span)?;
+        self.set_goto(past_tests, end, span)?;
+        self.end_jumps(end, span)
+    }
+
+    /// Points the `GOTO` at statement `at` at statement `to`.
+    fn set_goto(&mut self, at: usize, to: usize, span: Span) -> Lowered<()> {
+        let offset = branch(at, to).at(span)?;
+        if let Some(s) = self.program.statements.get_mut(at) {
+            s.a = offset;
+        }
+        Ok(())
+    }
+
+    /// A jump taken when `condition` is false, its target patched later; returns its index.
+    fn unless(&mut self, condition: &Value, span: Span) -> Lowered<usize> {
+        let (op, tested) = self.test(condition, false, span)?;
+        Ok(self.program.emit(op, operand(tested).at(span)?, 0))
+    }
+
+    /// The opcode and operand of a jump taken when `condition` is `when`: `IF` or `IFNOT` of
+    /// its word (QC-14.4); under FTEQCC with `ifvector` on, a vector is tested by `NOT_V` first,
+    /// so every component counts (`QCC_Generate_OP_IFNOT`, FTEF-23.10).
+    fn test(&mut self, condition: &Value, when: bool, span: Span) -> Lowered<(Opcode, u32)> {
+        let flags = qc_syntax::CompilerFlags::at(&self.flags, span.start);
+        let vector = self.type_of(condition).etype() == Etype::Vector;
+        if self.dialect.has_fteqcc_extensions()
+            && vector
+            && flags.has(qc_preproc::FteFlag::Ifvector)
+        {
+            let not = self
+                .program
+                .emit_result(Opcode::NotV, condition.ofs, 0, Etype::Float)
+                .at(span)?;
+            return Ok((if when { Opcode::IfNot } else { Opcode::If }, not));
+        }
+        Ok((if when { Opcode::If } else { Opcode::IfNot }, condition.ofs))
+    }
+
+    /// FTEQCC's `c ? a : b` and `c ?: b` (FTE-8.1, FTEF-30.3): the condition tested, the first
+    /// arm (the condition itself for `?:`) stored to a temporary of its size, `GOTO` past the
+    /// last arm, which is stored to the same temporary; the arms must have one basic type.
+    fn ternary(&mut self, ternary: &ast::TernaryExpr, span: Span) -> Lowered<Value> {
+        let condition = self.expr(&ternary.condition().at(span)?)?;
+        let (middle, last) = ternary.arms();
+        let test = self.unless(&condition, span)?;
+        let first = match middle {
+            Some(middle) => self.expr(&middle)?,
+            None => condition,
+        };
+        let ty = self.type_of(&first);
+        let (words, store) = if ty.etype() == Etype::Vector {
+            (3, Opcode::StoreV)
+        } else {
+            (1, Opcode::StoreF)
+        };
+        let result = self.program.allocate(words).at(span)?;
+        self.program.emit(
+            store,
+            operand(first.ofs).at(span)?,
+            operand(result).at(span)?,
+        );
+        let skip = self.program.emit(Opcode::Goto, 0, 0);
+        self.patch_b(test, span)?;
+        let second = self.expr(&last.at(span)?)?;
+        if self.type_of(&second).etype() != ty.etype() {
+            return Self::error(Code::E0302, "type mismatch for ?".to_owned(), span);
+        }
+        self.program.emit(
+            store,
+            operand(second.ofs).at(span)?,
+            operand(result).at(span)?,
+        );
+        let past = branch(skip, self.program.statements.len()).at(span)?;
+        if let Some(s) = self.program.statements.get_mut(skip) {
+            s.a = past;
+        }
+        Ok(Value {
+            ofs: result,
+            kind: ValueKind::Temp(ty),
+        })
+    }
+
+    /// The float literal `value`'s global (QC-20).
+    fn float_literal(&mut self, value: f32, span: Span) -> Lowered<Value> {
+        let place = self.program.immediate(&Literal::Float(value)).at(span)?;
+        self.def_value(place, span)
+    }
+
+    /// FTEQCC's `x++` and `x--` (FTE-5.1): the old value copied to a temporary, then `x` stored
+    /// as the temporary plus or minus 1 (`ADD_F` with the constant `inc`, as `QCC_RefToDef`'s
+    /// post-increment does); the value is the old one.
+    fn postfix(&mut self, postfix: &ast::PostfixExpr, span: Span) -> Lowered<Value> {
+        let target = postfix.operand().at(span)?;
+        let decrement = postfix
+            .syntax()
+            .child_tokens()
+            .any(|t| t.kind() == qc_syntax::SyntaxKind::MinusMinus);
+        let inc = self.float_literal(if decrement { -1.0 } else { 1.0 }, span)?;
+        let mut old = None;
+        self.store(&target, span, Current::Read, |compiler, current| {
+            let current = current.at(span)?;
+            let ty = compiler.type_of(&current);
+            if ty.etype() != Etype::Float {
+                return Self::mismatch(Operator::Add, span);
+            }
+            let temp = compiler.program.allocate(1).at(span)?;
+            compiler.program.emit(
+                Opcode::StoreF,
+                operand(current.ofs).at(span)?,
+                operand(temp).at(span)?,
+            );
+            let copy = Value {
+                ofs: temp,
+                kind: ValueKind::Temp(ty),
+            };
+            old = Some(copy.clone());
+            compiler.operate(Operator::Add, &copy, &inc, (span, span))
+        })?;
+        old.at(span)
+    }
+
+    /// A prefix operator (FTE-5.1): `-x` is `0 - x`, `SUB_F` or `SUB_V` from a zero literal as
+    /// FTEQCC writes it; `+x` is `x`; `++x` and `--x` store `x` plus or minus 1 and are the new
+    /// value.
+    fn unary(&mut self, unary: &ast::UnaryExpr, span: Span) -> Lowered<Value> {
+        let operand = unary.operand().at(span)?;
+        match unary.op().at(span)? {
+            ast::UnaryOp::Neg => {
+                let value = self.expr(&operand)?;
+                let zero = match self.type_of(&value).etype() {
+                    Etype::Vector => {
+                        let place = self
+                            .program
+                            .immediate(&Literal::Vector([0.0; 3]))
+                            .at(span)?;
+                        self.def_value(place, span)?
+                    }
+                    _ => self.float_literal(0.0, span)?,
+                };
+                self.operate(Operator::Sub, &zero, &value, (span, span))
+            }
+            ast::UnaryOp::Plus => self.expr(&operand),
+            op @ (ast::UnaryOp::PreIncrement | ast::UnaryOp::PreDecrement) => {
+                let step = if op == ast::UnaryOp::PreDecrement {
+                    -1.0
+                } else {
+                    1.0
+                };
+                let inc = self.float_literal(step, span)?;
+                self.store(&operand, span, Current::Read, |compiler, current| {
+                    let current = current.at(span)?;
+                    compiler.operate(Operator::Add, &current, &inc, (span, span))
+                })
+            }
+            // FTEQCC's `~x` on the vanilla opcodes, `-1 - x` (`OP_BITNOT_F`'s emulation).
+            ast::UnaryOp::BitNot => {
+                let value = self.expr(&operand)?;
+                let minus_one = match self.type_of(&value).etype() {
+                    Etype::Vector => {
+                        let place = self
+                            .program
+                            .immediate(&Literal::Vector([-1.0; 3]))
+                            .at(span)?;
+                        self.def_value(place, span)?
+                    }
+                    _ => self.float_literal(-1.0, span)?,
+                };
+                self.operate(Operator::Sub, &minus_one, &value, (span, span))
+            }
+            ast::UnaryOp::AddressOf | ast::UnaryOp::Deref | ast::UnaryOp::AsString => {
+                Err(Abort::Internal(Internal::Unsupported, span))
+            }
+        }
+    }
+
+    /// A vector's component by a constant index, `v[0]` to `v[2]` (FTE-13.2): the component's
+    /// word of the vector, a field's vector loaded first by `LOAD_V`.
+    fn index(&mut self, index: &ast::IndexExpr, span: Span) -> Lowered<Value> {
+        let base_expr = index.base().at(span)?;
+        let at = index.index().at(span)?;
+        if let Some(array) = self.array_named(&base_expr)? {
+            return self.element(&array, &at, None, false);
+        }
+        let base = self.expr(&base_expr)?;
+        if self.type_of(&base).etype() != Etype::Vector {
+            return Err(Abort::Internal(Internal::Unsupported, span));
+        }
+        let Some(Literal::Float(i)) = literal_of(&at, self.dialect) else {
+            return Err(Abort::Internal(Internal::Unsupported, span));
+        };
+        let offset = [0.0_f32, 1.0, 2.0]
+            .iter()
+            .position(|c| c.to_bits() == i.to_bits())
+            .and_then(|o| u32::try_from(o).ok())
+            .ok_or(Abort::Internal(Internal::Unsupported, span))?;
+        Ok(Value {
+            ofs: base.ofs.checked_add(offset).at(span)?,
+            kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
+        })
     }
 
     fn def_value(&self, place: usize, span: Span) -> Lowered<Value> {
@@ -563,18 +1088,50 @@ impl<'a> Compiler<'a> {
             ast::BinaryOp::Gt => Operator::Gt,
             ast::BinaryOp::And => Operator::And,
             ast::BinaryOp::Or => Operator::Or,
-            ast::BinaryOp::Rem
-            | ast::BinaryOp::BitXor
-            | ast::BinaryOp::Shl
-            | ast::BinaryOp::Shr
-            | ast::BinaryOp::AddAssign
+            ast::BinaryOp::AddAssign
             | ast::BinaryOp::SubAssign
             | ast::BinaryOp::MulAssign
             | ast::BinaryOp::DivAssign
             | ast::BinaryOp::BitAndAssign
-            | ast::BinaryOp::BitOrAssign
-            | ast::BinaryOp::BitClearAssign
-            | ast::BinaryOp::BitXorAssign
+            | ast::BinaryOp::BitOrAssign => {
+                let operator = match binary.op().at(span)? {
+                    ast::BinaryOp::AddAssign => Operator::Add,
+                    ast::BinaryOp::SubAssign => Operator::Sub,
+                    ast::BinaryOp::MulAssign => Operator::Mul,
+                    ast::BinaryOp::DivAssign => Operator::Div,
+                    ast::BinaryOp::BitAndAssign => Operator::BitAnd,
+                    _ => Operator::BitOr,
+                };
+                let lhs = binary.lhs().at(span)?;
+                let rhs = binary.rhs().at(span)?;
+                return self.compound(operator, (&lhs, &rhs), (op_span, span));
+            }
+            ast::BinaryOp::BitClearAssign => {
+                let lhs = binary.lhs().at(span)?;
+                let rhs = binary.rhs().at(span)?;
+                return self.clear_bits((&lhs, &rhs), (op_span, span));
+            }
+            ast::BinaryOp::BitXor => {
+                let left = self.expr(&binary.lhs().at(span)?)?;
+                let right = self.expr(&binary.rhs().at(span)?)?;
+                return self.xor(&left, &right, (op_span, span));
+            }
+            ast::BinaryOp::BitXorAssign => {
+                let lhs = binary.lhs().at(span)?;
+                let rhs = binary.rhs().at(span)?;
+                return self.store(&lhs, op_span, Current::Read, |compiler, left| {
+                    let left = left.at(span)?;
+                    let right = compiler.expr(&rhs)?;
+                    compiler.xor(&left, &right, (op_span, span))
+                });
+            }
+            ast::BinaryOp::Rem => {
+                let left = self.expr(&binary.lhs().at(span)?)?;
+                let right = self.expr(&binary.rhs().at(span)?)?;
+                return self.modulo(&left, &right, (op_span, span));
+            }
+            ast::BinaryOp::Shl
+            | ast::BinaryOp::Shr
             | ast::BinaryOp::ShlAssign
             | ast::BinaryOp::ShrAssign
             | ast::BinaryOp::Comma
@@ -586,15 +1143,57 @@ impl<'a> Compiler<'a> {
         };
         let left = self.expr(&binary.lhs().at(span)?)?;
         let right = self.expr(&binary.rhs().at(span)?)?;
+        self.operate(operator, &left, &right, (op_span, span))
+    }
+
+    /// FTEQCC's `a ^ b` on the vanilla opcodes (FTE-19.7), `OP_BITXOR_F`'s emulation:
+    /// `(a & ~b) | (b & ~a)`, each `~` as `-1 - x`.
+    fn xor(&mut self, left: &Value, right: &Value, spans: (Span, Span)) -> Lowered<Value> {
+        let span = spans.1;
+        if self.type_of(left).etype() != Etype::Float || self.type_of(right).etype() != Etype::Float
+        {
+            return Err(Abort::Internal(Internal::Unsupported, spans.0));
+        }
+        let minus_one = self.float_literal(-1.0, span)?;
+        let not_b = self.operate(Operator::Sub, &minus_one, right, spans)?;
+        let a_only = self.operate(Operator::BitAnd, left, &not_b, spans)?;
+        let not_a = self.operate(Operator::Sub, &minus_one, left, spans)?;
+        let b_only = self.operate(Operator::BitAnd, right, &not_a, spans)?;
+        self.operate(Operator::BitOr, &a_only, &b_only, spans)
+    }
+
+    /// The row of `operator` for the two operands' types, folded under `--opt fold`, else
+    /// emitted into a temporary (QC-16.1).
+    fn operate(
+        &mut self,
+        operator: Operator,
+        left: &Value,
+        right: &Value,
+        (op_span, span): (Span, Span),
+    ) -> Lowered<Value> {
         // The types are read after both operands, as `PR_Expression` reads them: a call in the
         // right operand retypes the return value the left one may be (QC-18.6).
-        let a = self.type_of(&left).etype();
-        let b = self.type_of(&right).etype();
+        let a = self.type_of(left).etype();
+        let b = self.type_of(right).etype();
         let Some(row) = ops::select(operator, a, b, None) else {
+            if self.dialect.has_fteqcc_extensions()
+                && matches!(operator, Operator::And | Operator::Or)
+            {
+                return self.any_logic(operator, left, right, op_span);
+            }
+            // FTE-19.9: `v / f` is `OP_DIV_VF`'s emulation, `v * (1 / f)`.
+            if self.dialect.has_fteqcc_extensions()
+                && operator == Operator::Div
+                && (a, b) == (Etype::Vector, Etype::Float)
+            {
+                let one = self.float_literal(1.0, span)?;
+                let reciprocal = self.operate(Operator::Div, &one, right, (op_span, span))?;
+                return self.operate(Operator::Mul, left, &reciprocal, (op_span, span));
+            }
             return Self::mismatch(operator, op_span);
         };
         if self.fold
-            && let Some(value) = self.folded(row.opcode, &left, &right).at(span)?
+            && let Some(value) = self.folded(row.opcode, left, right).at(span)?
         {
             return Ok(value);
         }
@@ -605,6 +1204,42 @@ impl<'a> Compiler<'a> {
         Ok(Value {
             ofs,
             kind: ValueKind::Temp(ValueType::simple(row.c)),
+        })
+    }
+
+    /// FTEQCC's `&&` and `||` of operands that are not both floats, `OP_AND_ANY` and
+    /// `OP_OR_ANY` on the vanilla opcodes (FTE-19.10): a vector is first its dot product with itself under
+    /// `vectorlogic`, then `AND_F` or `OR_F` of the two words.
+    fn any_logic(
+        &mut self,
+        operator: Operator,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> Lowered<Value> {
+        let flags = qc_syntax::CompilerFlags::at(&self.flags, span.start);
+        let truth = |compiler: &mut Self, value: &Value| -> Lowered<u32> {
+            if compiler.type_of(value).etype() == Etype::Vector
+                && flags.has(qc_preproc::FteFlag::Vectorlogic)
+            {
+                return compiler
+                    .program
+                    .emit_result(Opcode::MulV, value.ofs, value.ofs, Etype::Float)
+                    .at(span);
+            }
+            Ok(value.ofs)
+        };
+        let a = truth(self, left)?;
+        let b = truth(self, right)?;
+        let op = if operator == Operator::And {
+            Opcode::And
+        } else {
+            Opcode::Or
+        };
+        let ofs = self.program.emit_result(op, a, b, Etype::Float).at(span)?;
+        Ok(Value {
+            ofs,
+            kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
         })
     }
 
@@ -682,14 +1317,90 @@ impl<'a> Compiler<'a> {
     /// A field access `e.f` (QC-16.1, QC-16.6): the entity, the field, then `LOAD_*` by the
     /// field's type into a temporary of that type.
     fn field(&mut self, field: &ast::FieldExpr, span: Span) -> Lowered<Value> {
+        let base = match self.member(field, false, span)? {
+            Member::Done(value) => return Ok(value),
+            Member::Base(base) => base,
+        };
+        match self.component(&base, field, span)? {
+            Some(component) => Ok(component),
+            None => self.load_field(&base, field, span),
+        }
+    }
+
+    /// The member forms of `base.name` FTEQCC adds (FTE-13.9, FTE-14.5): an array's `length`,
+    /// a member of an array's element, `a[i].m`, or a member of a struct value; else the base
+    /// read for an entity's field or a vector's component.
+    fn member(&mut self, field: &ast::FieldExpr, writing: bool, span: Span) -> Lowered<Member> {
+        let base_expr = field.base().at(span)?;
+        let name = match field.field() {
+            Some(ast::Expr::Name(name)) if self.dialect.has_fteqcc_extensions() => {
+                name.name().map(|t| t.text_lossless())
+            }
+            _ => None,
+        };
+        if let Some(name) = &name {
+            if let ast::Expr::Index(index) = &base_expr
+                && let Some(array) = self.array_named(&index.base().at(span)?)?
+                && let Some(member) = self.member_of(&array.elem, name)
+            {
+                let at = index.index().at(span)?;
+                return self
+                    .element(&array, &at, Some(member), writing)
+                    .map(Member::Done);
+            }
+            if name == "length"
+                && let Some(array) = self.array_named(&base_expr)?
+            {
+                return self.length(&array, span).map(Member::Done);
+            }
+        }
+        let base = self.expr(&base_expr)?;
+        if let Some(name) = &name
+            && let Some((word, ty)) = self.member_of(&self.type_of(&base), name)
+        {
+            return Ok(Member::Done(Value {
+                ofs: base.ofs.checked_add(word).at(span)?,
+                kind: ValueKind::Temp(ty),
+            }));
+        }
+        Ok(Member::Base(base))
+    }
+
+    /// FTEQCC's `v.x`, `v.y` and `v.z` of a vector `v` (FTE-9.1): the component's word.
+    /// `None` when the base is no vector or the selector no component's name.
+    fn component(
+        &self,
+        base: &Value,
+        field: &ast::FieldExpr,
+        span: Span,
+    ) -> Lowered<Option<Value>> {
+        if !self.dialect.has_fteqcc_extensions() || self.type_of(base).etype() != Etype::Vector {
+            return Ok(None);
+        }
+        let Some(ast::Expr::Name(name)) = field.field() else {
+            return Ok(None);
+        };
+        let offset = match name.name().map(|t| t.text_lossless()).as_deref() {
+            Some("x") => 0,
+            Some("y") => 1,
+            Some("z") => 2,
+            _ => return Ok(None),
+        };
+        Ok(Some(Value {
+            ofs: base.ofs.checked_add(offset).at(span)?,
+            kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
+        }))
+    }
+
+    /// `e.f` of the entity `base` already read: `LOAD_*` by the field's type.
+    fn load_field(&mut self, base: &Value, field: &ast::FieldExpr, span: Span) -> Lowered<Value> {
         let op_span = field
             .syntax()
             .child_tokens()
             .find(|t| t.kind() == qc_syntax::SyntaxKind::Dot)
             .map_or(span, |t| t.span());
-        let base = self.expr(&field.base().at(span)?)?;
         let selector = self.expr(&field.field().at(span)?)?;
-        let a = self.type_of(&base).etype();
+        let a = self.type_of(base).etype();
         let field_type = self.type_of(&selector);
         let b = field_type.etype();
         let Some(inner) = field_type.field_inner() else {
@@ -722,32 +1433,112 @@ impl<'a> Compiler<'a> {
     /// QC-27.11), then the value, then `STORE_*` or `STOREP_*` by the two basic types. The
     /// value of the assignment is the value stored (QC-17.6, QC-17.7).
     fn assign(&mut self, lhs: &ast::Expr, rhs: &ast::Expr, op_span: Span) -> Lowered<Value> {
+        self.store(lhs, op_span, Current::Unread, |compiler, _| {
+            compiler.expr(rhs)
+        })
+    }
+
+    /// FTEQCC's `x OP= e` (FTE-8.1): `x = x OP e`, the operator's row chosen as for `x OP e`;
+    /// `&~=` clears bits, `x - (x & e)` on the vanilla opcodes.
+    fn compound(
+        &mut self,
+        operator: Operator,
+        (lhs, rhs): (&ast::Expr, &ast::Expr),
+        (op_span, span): (Span, Span),
+    ) -> Lowered<Value> {
+        self.store(lhs, op_span, Current::Read, |compiler, left| {
+            let left = left.at(op_span)?;
+            let right = compiler.expr(rhs)?;
+            compiler.operate(operator, &left, &right, (op_span, span))
+        })
+    }
+
+    /// `x &~= e`: `x - (x & e)`.
+    fn clear_bits(
+        &mut self,
+        (lhs, rhs): (&ast::Expr, &ast::Expr),
+        (op_span, span): (Span, Span),
+    ) -> Lowered<Value> {
+        self.store(lhs, op_span, Current::Read, |compiler, left| {
+            let left = left.at(op_span)?;
+            let right = compiler.expr(rhs)?;
+            let masked = compiler.operate(Operator::BitAnd, &left, &right, (op_span, span))?;
+            compiler.operate(Operator::Sub, &left, &masked, (op_span, span))
+        })
+    }
+
+    /// Stores the value `value` computes in `lhs` (QC-17): the target read first, then the
+    /// value, then the store of the row the two types select. With [`Current::Read`] the
+    /// target's value is read once and given to `value`, as FTEQCC reads a reference once for
+    /// `x op= e`, `++x` and `x++` (`QCC_RefToDef`).
+    fn store(
+        &mut self,
+        lhs: &ast::Expr,
+        op_span: Span,
+        current: Current,
+        value: impl FnOnce(&mut Self, Option<Value>) -> Lowered<Value>,
+    ) -> Lowered<Value> {
         let span = lhs.syntax().span();
+        let reads = current == Current::Read;
         let target = match unparenthesized(lhs) {
             Some(ast::Expr::Field(field)) => {
-                let loaded = self.field(&field, span)?;
-                let inner = self.type_of(&loaded);
-                // QC-17.3: the field's load becomes `ADDRESS`, a pointer to the field.
-                if let Some(last) = self.program.statements.last_mut() {
-                    last.op = u32::from(Opcode::Address.number());
+                if let Some(which) = self.component_selector(&field)
+                    && let Some(target) =
+                        self.entity_component(&field.base().at(span)?, which, reads, span)?
+                {
+                    target
+                } else {
+                    match self.member(&field, true, span)? {
+                        Member::Done(member) => Target::Value(member),
+                        Member::Base(base) => match self.component(&base, &field, span)? {
+                            Some(component) => Target::Value(component),
+                            None => self.field_target(&base, &field, reads, span)?,
+                        },
+                    }
                 }
-                Target::Field {
-                    ofs: loaded.ofs,
-                    inner,
+            }
+            Some(ast::Expr::Index(index)) => {
+                let base = index.base().at(span)?;
+                let at = index.index().at(span)?;
+                if let Some(array) = self.array_named(&base)? {
+                    Target::Value(self.element(&array, &at, None, true)?)
+                } else if let Some(which) = self.vector_index(&at)
+                    && let Some(target) = self.entity_component(&base, which, reads, span)?
+                {
+                    target
+                } else {
+                    Target::Value(self.expr(lhs)?)
                 }
             }
             _ => Target::Value(self.expr(lhs)?),
         };
-        let value = self.expr(rhs)?;
-        let b = self.type_of(&value).etype();
-        let (a, to, inner) = match &target {
-            Target::Value(v) => (self.type_of(v).etype(), v.ofs, None),
-            Target::Field { ofs, inner } => (Etype::Pointer, *ofs, Some(inner.etype())),
+        let (target, read) = match target {
+            Target::Value(to) => {
+                let read = reads.then(|| to.clone());
+                (Target::Value(to), read)
+            }
+            Target::Field { ofs, inner, read } => (
+                Target::Field {
+                    ofs,
+                    inner,
+                    read: None,
+                },
+                read,
+            ),
         };
-        let Some(row) = ops::select(Operator::Assign, a, b, None) else {
+        let value = value(self, read)?;
+        let (to, inner) = match &target {
+            Target::Value(to) => {
+                self.store_to(to, &value, op_span)?;
+                return Ok(value);
+            }
+            Target::Field { ofs, inner, .. } => (*ofs, inner.etype()),
+        };
+        let b = self.type_of(&value).etype();
+        let Some(row) = ops::select(Operator::Assign, Etype::Pointer, b, None) else {
             return Self::mismatch(Operator::Assign, op_span);
         };
-        if inner.is_some_and(|inner| inner != b) {
+        if inner != b {
             return Self::mismatch(Operator::Assign, op_span);
         }
         self.program.emit(
@@ -756,6 +1547,141 @@ impl<'a> Compiler<'a> {
             operand(to).at(op_span)?,
         );
         Ok(value)
+    }
+
+    /// `e.f` as a store's target: the field's load made `ADDRESS` (QC-17.3, QC-27.11), and with
+    /// `reads` the field loaded again from the same entity for the value the store reads.
+    fn field_target(
+        &mut self,
+        base: &Value,
+        field: &ast::FieldExpr,
+        reads: bool,
+        span: Span,
+    ) -> Lowered<Target> {
+        let loaded = self.load_field(base, field, span)?;
+        let inner = self.type_of(&loaded);
+        // QC-17.3: the field's load becomes `ADDRESS`, a pointer to the field.
+        if let Some(last) = self.program.statements.last_mut() {
+            last.op = u32::from(Opcode::Address.number());
+        }
+        let read = if reads {
+            Some(self.load_field(base, field, span)?)
+        } else {
+            None
+        };
+        Ok(Target::Field {
+            ofs: loaded.ofs,
+            inner,
+            read,
+        })
+    }
+
+    /// The component `v.x`, `v.y` or `v.z` selects under FTEQCC (FTE-9.1), 0 to 2.
+    fn component_selector(&self, field: &ast::FieldExpr) -> Option<u32> {
+        if !self.dialect.has_fteqcc_extensions() {
+            return None;
+        }
+        let Some(ast::Expr::Name(name)) = field.field() else {
+            return None;
+        };
+        match name.name()?.text_lossless().as_str() {
+            "x" => Some(0),
+            "y" => Some(1),
+            "z" => Some(2),
+            _ => None,
+        }
+    }
+
+    /// The component a constant vector index `[0]` to `[2]` selects under FTEQCC (FTE-13.2).
+    fn vector_index(&self, at: &ast::Expr) -> Option<u32> {
+        if !self.dialect.has_fteqcc_extensions() {
+            return None;
+        }
+        let Some(Literal::Float(i)) = literal_of(at, self.dialect) else {
+            return None;
+        };
+        (0_u32..3).find(|&c| {
+            u16::try_from(c).is_ok_and(|small| f32::from(small).to_bits() == i.to_bits())
+        })
+    }
+
+    /// FTE-9.4: a store to component `which` of an entity's vector field, `e.v.x` or `e.v[0]`,
+    /// stores through `ADDRESS` of the component's own field, `v_x` (QC-11.12), and with
+    /// `reads` its value is loaded by `LOAD_F`; `None` when `base` is no entity's vector field.
+    fn entity_component(
+        &mut self,
+        base: &ast::Expr,
+        which: u32,
+        reads: bool,
+        span: Span,
+    ) -> Lowered<Option<Target>> {
+        let base = match base {
+            ast::Expr::Paren(paren) => paren.expr().at(span)?,
+            other => other.clone(),
+        };
+        let ast::Expr::Field(field) = &base else {
+            return Ok(None);
+        };
+        let Some(ast::Expr::Name(name)) = field.field() else {
+            return Ok(None);
+        };
+        let id = self.def_of(&name.name().at(span)?)?;
+        let place = self.program.get_def(self.index, id).at(span)?;
+        let is_vector_field = self
+            .program
+            .def(place)
+            .and_then(|d| d.ty.field_inner())
+            .is_some_and(|inner| inner.etype() == Etype::Vector);
+        if !is_vector_field {
+            return Ok(None);
+        }
+        let suffix = ["_x", "_y", "_z"]
+            .get(usize::try_from(which).map_err(|_| Abort::Internal(Internal::TooLarge, span))?)
+            .at(span)?;
+        let component = program::component(self.index, id, suffix).at(span)?;
+        let component = self.program.get_def(self.index, component).at(span)?;
+        let component = self.program.def(component).at(span)?.ofs;
+        let entity = self.expr(&field.base().at(span)?)?;
+        let ofs = self
+            .program
+            .emit_result(Opcode::Address, entity.ofs, component, Etype::Pointer)
+            .at(span)?;
+        let read = if reads {
+            let read = self
+                .program
+                .emit_result(Opcode::LoadF, entity.ofs, component, Etype::Float)
+                .at(span)?;
+            Some(Value {
+                ofs: read,
+                kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
+            })
+        } else {
+            None
+        };
+        Ok(Some(Target::Field {
+            ofs,
+            inner: ValueType::simple(Etype::Float),
+            read,
+        }))
+    }
+
+    /// Stores `value` in the definition or temporary `to` by the `STORE_*` row of their types.
+    fn store_to(&mut self, to: &Value, value: &Value, span: Span) -> Lowered<()> {
+        let ty = self.type_of(to);
+        if ty == self.type_of(value) && self.copy_struct(&ty, value.ofs, to.ofs, span)? {
+            return Ok(());
+        }
+        let a = self.type_of(to).etype();
+        let b = self.type_of(value).etype();
+        let Some(row) = ops::select(Operator::Assign, a, b, None) else {
+            return Self::mismatch(Operator::Assign, span);
+        };
+        self.program.emit(
+            row.opcode,
+            operand(value.ofs).at(span)?,
+            operand(to.ofs).at(span)?,
+        );
+        Ok(())
     }
 
     /// `PR_ParseFunctionCall` (QC-18): each argument evaluated and copied with `STORE_V` to
@@ -774,6 +1700,13 @@ impl<'a> Compiler<'a> {
         let fixed = (!function.variadic).then_some(function.params.len());
         let mut count = 0_usize;
         let args: Vec<ast::Expr> = call.args().map(|a| a.args().collect()).unwrap_or_default();
+        // Under FTEQCC the semantic model has judged the call (FTEF-32.3): fewer arguments
+        // than parameters leave the rest as the parameter slots hold them, and an argument past
+        // the last parameter is read and ignored ("too many parameters ... will be ignored").
+        let fteqcc = self.dialect.has_fteqcc_extensions();
+        if fteqcc {
+            return self.fteqcc_call(&callee, &function, name.as_deref(), &args, span);
+        }
         for arg in &args {
             let arg_span = arg.syntax().span();
             if fixed.is_some_and(|n| count >= n) {
@@ -819,6 +1752,72 @@ impl<'a> Compiler<'a> {
     }
 }
 
+/// What [`Compiler::member`] made of a member access.
+enum Member {
+    /// The member's value.
+    Done(Value),
+    /// No member form: the base, read.
+    Base(Value),
+}
+
+impl Compiler<'_> {
+    /// A call under FTEQCC (FTE-18.4): every argument is read first, a call's value copied out
+    /// of the return global before the next argument runs, then each copied to its parameter
+    /// slot and `CALLn` made, so a call in an argument overwrites no slot. The semantic model
+    /// has judged the call (FTEF-32.3): fewer arguments than parameters leave the rest as the
+    /// slots hold them, and an argument past the last parameter is read and ignored.
+    fn fteqcc_call(
+        &mut self,
+        callee: &Value,
+        function: &FunctionType,
+        name: Option<&str>,
+        args: &[ast::Expr],
+        span: Span,
+    ) -> Lowered<Value> {
+        let fixed = (!function.variadic).then_some(function.params.len());
+        let mut values = Vec::with_capacity(args.len());
+        for (i, arg) in args.iter().enumerate() {
+            let arg_span = arg.syntax().span();
+            let mut value = self.expr(arg)?;
+            let later = i.saturating_add(1) < args.len();
+            if later && matches!(value.kind, ValueKind::Return) {
+                let ty = self.type_of(&value);
+                let temp = self.program.allocate(ty.words()).at(arg_span)?;
+                let copy = Value {
+                    ofs: temp,
+                    kind: ValueKind::Temp(ty),
+                };
+                self.store_to(&copy, &value, arg_span)?;
+                value = copy;
+            }
+            values.push((value, arg_span));
+        }
+        let passed = fixed.map_or(values.len(), |n| n.min(values.len()));
+        for (slot, (value, arg_span)) in values.iter().take(passed).enumerate() {
+            if slot == 0
+                && let Some(name) = name
+            {
+                self.precaches.record(name, &self.program, value.ofs);
+            }
+            let to = parm_slot(slot).at(*arg_span)?;
+            self.program.emit(
+                Opcode::StoreV,
+                operand(value.ofs).at(*arg_span)?,
+                operand(to).at(*arg_span)?,
+            );
+        }
+        let Some(op) = ops::call_opcode(passed) else {
+            return Self::error(Code::E0307, "More than eight parameters".to_owned(), span);
+        };
+        self.program.emit(op, operand(callee.ofs).at(span)?, 0);
+        self.return_type = ValueType::Of(function.ret.clone());
+        Ok(Value {
+            ofs: OFS_RETURN,
+            kind: ValueKind::Return,
+        })
+    }
+}
+
 /// What initialises a function.
 #[derive(Clone, Copy)]
 enum FunctionInit<'t> {
@@ -828,13 +1827,13 @@ enum FunctionInit<'t> {
     Builtin(&'t ast::Builtin),
 }
 
-/// `expr` with any parentheses around it taken off, when it is a field access: the statement
-/// `qcc` makes an address is the last one emitted, which for `(e.f)` is still the field's load
-/// (QC-17.3).
+/// `expr` with any parentheses around it taken off, when it is a field access or a subscript:
+/// the statement `qcc` makes an address is the last one emitted, which for `(e.f)` is still the
+/// field's load (QC-17.3).
 fn unparenthesized(expr: &ast::Expr) -> Option<ast::Expr> {
     match expr {
         ast::Expr::Paren(paren) => paren.expr().and_then(|inner| unparenthesized(&inner)),
-        ast::Expr::Field(_) => Some(expr.clone()),
+        ast::Expr::Field(_) | ast::Expr::Index(_) => Some(expr.clone()),
         ast::Expr::Literal(_)
         | ast::Expr::Name(_)
         | ast::Expr::Not(_)
@@ -842,7 +1841,6 @@ fn unparenthesized(expr: &ast::Expr) -> Option<ast::Expr> {
         | ast::Expr::Call(_)
         | ast::Expr::Postfix(_)
         | ast::Expr::Ternary(_)
-        | ast::Expr::Index(_)
         | ast::Expr::Unary(_)
         | ast::Expr::Cast(_)
         | ast::Expr::Vector(_)
@@ -879,9 +1877,9 @@ fn operand_index(index: usize) -> Result<i32, Internal> {
 }
 
 /// The literal an initialiser is (QC-11.3; QC-27.8 refuses any other).
-fn literal_of(expr: &ast::Expr) -> Option<Literal> {
+fn literal_of(expr: &ast::Expr, dialect: Dialect) -> Option<Literal> {
     match expr {
-        ast::Expr::Literal(literal) => literal_of_token(literal),
+        ast::Expr::Literal(literal) => literal_of_token(literal, dialect),
         ast::Expr::Paren(_)
         | ast::Expr::Name(_)
         | ast::Expr::Not(_)
@@ -900,9 +1898,9 @@ fn literal_of(expr: &ast::Expr) -> Option<Literal> {
 
 /// A literal's value as the vanilla lexer reads its text (QC-4 to QC-6); a frame macro
 /// reference is the number the preprocessor wrote in its place (QC-8.5).
-fn literal_of_token(literal: &ast::Literal) -> Option<Literal> {
+fn literal_of_token(literal: &ast::Literal, dialect: Dialect) -> Option<Literal> {
     let token = literal.token()?;
-    let lexed = qc_lexer::lex_with(token.text(), Dialect::Vanilla);
+    let lexed = qc_lexer::lex_with(token.text(), dialect);
     let [token] = lexed.tokens.as_slice() else {
         return None;
     };

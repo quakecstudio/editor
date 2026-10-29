@@ -366,6 +366,7 @@ dependencies = [
  "qc-diag",
  "qc-lexer",
  "qc-lno",
+ "qc-preproc",
  "qc-progs",
  "qc-sema",
  "qc-syntax",
@@ -594,6 +595,7 @@ version = "2026.10.0"
 name = "qs-settings"
 version = "2026.10.0"
 dependencies = [
+ "proptest",
  "qs-commands",
  "schemars",
  "serde",

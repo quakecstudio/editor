@@ -12,6 +12,7 @@ use qc_diag::{Code, Span};
 use qc_preproc::{FteFlag, Op, TargetFormat};
 use qc_syntax::ast::{self, AstNode as _, Negation};
 
+use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
 use crate::check::flow::{Finding, Step};
@@ -673,7 +674,12 @@ impl Checker<'_> {
     }
 
     /// FTEF-34.9: the initialiser `expr` of the global `name` of type `ty`, read at global scope.
-    pub(super) fn initialiser(&mut self, expr: &ast::Expr, ty: &Type, name: &str) {
+    pub(super) fn initialiser(
+        &mut self,
+        expr: &ast::Expr,
+        ty: &Type,
+        name: &str,
+    ) -> Option<crate::InitialValue> {
         let checked = self.initialiser_value(expr, ty, name);
         if let Some((message, span)) = self.pending.take()
             && checked.is_ok()
@@ -689,6 +695,7 @@ impl Checker<'_> {
             self.env
                 .report(Code::E0203, span, format!("\"{token}\" is not a type"));
         }
+        checked.ok().flatten().and_then(Constant::initial_value)
     }
 
     /// FTEF-19.62: `QCC_PR_ParseDefArray`'s size: `QCC_SRef_EvalConst` of the expression, an
@@ -733,15 +740,21 @@ impl Checker<'_> {
         Ok(())
     }
 
-    fn initialiser_value(&mut self, expr: &ast::Expr, ty: &Type, name: &str) -> Result<(), Fatal> {
+    /// The initialiser read and cast to the global's type, and what it folds to.
+    fn initialiser_value(
+        &mut self,
+        expr: &ast::Expr,
+        ty: &Type,
+        name: &str,
+    ) -> Result<Option<Constant>, Fatal> {
         let value = self.value(Some(expr.clone()))?;
         if value.ty == Type::Unknown {
-            return Ok(());
+            return Ok(None);
         }
         let span = expr.syntax().span();
         let value = self.cast_to(&value, ty, span)?;
         self.constant_initialiser(&value, name, span);
-        Ok(())
+        Ok(value.known())
     }
 
     /// "initializer for 'NAME' is not constant" when `value` is no constant: neither one the
