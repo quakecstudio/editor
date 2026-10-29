@@ -1,0 +1,21 @@
+[package]
+name = "qs-layout"
+description = "The workbench layout: which panels are shown and their sizes, kept across restarts, and the commands that change it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qs-commands = { workspace = true }
+schemars = { workspace = true, features = ["derive", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
+toml = { workspace = true, features = ["display", "parse", "serde", "std"] }
+
+[dev-dependencies]
+serde_json = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

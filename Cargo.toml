@@ -117,6 +117,7 @@ egui-wgpu = { version = "=0.36.2", default-features = false }
 epaint = { version = "=0.36.2", default-features = false }
 junction = { version = "=2.1.0", default-features = false }
 miniz_oxide = { version = "=0.9.1", default-features = false }
+muda = { version = "=0.21.2", default-features = false }
 proptest = { version = "=1.11.0", default-features = false }
 qc-edict = { path = "crates/qc-edict" }
 qc-engines = { path = "crates/qc-engines" }
@@ -136,6 +137,7 @@ qc-types = { path = "crates/qc-types" }
 qc-vm = { path = "crates/qc-vm" }
 qs-bsp = { path = "crates/qs-bsp" }
 qs-commands = { path = "crates/qs-commands" }
+qs-layout = { path = "crates/qs-layout" }
 qs-log = { path = "crates/qs-log" }
 qs-map = { path = "crates/qs-map" }
 qs-mdl = { path = "crates/qs-mdl" }

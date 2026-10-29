@@ -25,8 +25,9 @@ const ASSET_EXTENSIONS: [&str; 24] = [
 ];
 
 /// The licenses an asset may carry: GPL-3.0-or-later itself and licenses whose
-/// works may be distributed with a GPL-3.0-or-later program.
-pub(crate) const ASSET_LICENSES: [&str; 7] = [
+/// works may be distributed with a GPL-3.0-or-later program. A row may also join them with
+/// ` AND `, for a file whose parts carry different licenses.
+pub(crate) const ASSET_LICENSES: [&str; 9] = [
     "GPL-3.0-or-later",
     "GPL-2.0-or-later",
     "CC0-1.0",
@@ -34,7 +35,16 @@ pub(crate) const ASSET_LICENSES: [&str; 7] = [
     "CC-BY-SA-4.0",
     "MIT",
     "Apache-2.0",
+    "OFL-1.1",
+    "ISC",
 ];
+
+/// Whether `license` is one of [`ASSET_LICENSES`], or several joined with ` AND `.
+fn license_accepted(license: &str) -> bool {
+    license
+        .split(" AND ")
+        .all(|part| ASSET_LICENSES.contains(&part))
+}
 
 /// One row of the attribution table.
 #[derive(Debug, PartialEq, Eq)]
@@ -77,7 +87,7 @@ pub(crate) fn check(root: &Path, files: &[String]) -> Result<Report, String> {
                 .problems
                 .push(format!("{at}: author or source is empty"));
         }
-        if !ASSET_LICENSES.contains(&entry.license.as_str()) {
+        if !license_accepted(&entry.license) {
             report.problems.push(format!(
                 "{at}: license {:?} is not one of {}",
                 entry.license,
@@ -238,6 +248,17 @@ mod tests {
         let found = problems("license", rows, &["art/a.png"]);
         assert_eq!(found.len(), 1);
         assert!(found[0].contains("CC-BY-NC-4.0"), "{found:?}");
+    }
+
+    #[test]
+    fn licenses_joined_with_and_pass_only_when_each_does() {
+        let rows = "| `art/a.ttf` | x | y | ISC AND MIT |\n| `art/b.ttf` | x | y | OFL-1.1 |\n";
+        assert!(problems("and", rows, &["art/a.ttf", "art/b.ttf"]).is_empty());
+        for license in ["ISC AND CC-BY-NC-4.0", "ISC OR MIT", "ISC AND", ""] {
+            let rows = format!("| `art/a.ttf` | x | y | {license} |\n");
+            let found = problems("and-bad", &rows, &["art/a.ttf"]);
+            assert!(!found.is_empty(), "{license:?} passed");
+        }
     }
 
     #[test]

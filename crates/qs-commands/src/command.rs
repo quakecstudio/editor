@@ -86,6 +86,15 @@ impl<O, C> Outcome<O, C> {
         }
     }
 
+    /// A command whose change is not one of the edits undo walks back through, such as showing
+    /// a panel: like [`Outcome::unchanged`], it leaves the undo and redo history as they are.
+    pub const fn outside_history(output: O) -> Self {
+        Self {
+            output,
+            effect: Effect::Unchanged,
+        }
+    }
+
     /// A command that changed `context`; `step` undoes and redoes the change.
     pub fn undoable(output: O, step: impl UndoStep<C>) -> Self {
         Self {

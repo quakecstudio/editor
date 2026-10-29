@@ -26,6 +26,8 @@ use crate::{
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Doc {
     text: String,
+    /// How many times `doc.mark` ran.
+    marks: usize,
 }
 
 /// What the test session starts with.
@@ -47,6 +49,7 @@ fn session(spec: SessionSpec) -> Session<Doc> {
     Session::new(
         Doc {
             text: spec.text.to_owned(),
+            ..Doc::default()
         },
         registry,
     )
@@ -150,6 +153,22 @@ impl Command<Doc> for Len {
 
     fn run(&self, context: &mut Doc, _: NoParams) -> Result<Outcome<usize, Doc>, TestError> {
         Ok(Outcome::unchanged(context.text.len()))
+    }
+}
+
+/// Counts a mark on the document, a change undo does not walk back through.
+struct Mark;
+
+impl Command<Doc> for Mark {
+    const ID: &'static str = "doc.mark";
+    const SUMMARY: &'static str = "Marks the document, outside the history.";
+    type Params = NoParams;
+    type Output = ();
+    type Error = TestError;
+
+    fn run(&self, context: &mut Doc, _: NoParams) -> Result<Outcome<(), Doc>, TestError> {
+        context.marks += 1;
+        Ok(Outcome::outside_history(()))
     }
 }
 
@@ -502,6 +521,32 @@ fn output_that_is_not_json_is_an_error_but_the_change_can_be_undone() {
 }
 
 // Undo and redo (PRIN-3).
+
+// PRIN-3: a change made outside the history records no undo step and leaves the history
+// alone, so undo takes back the edit before it
+#[test]
+fn a_change_outside_the_history_is_passed_by() {
+    let mut registry = Registry::new();
+    registry.register(Append).unwrap();
+    registry.register(Mark).unwrap();
+    let mut session = Session::new(Doc::default(), registry);
+    session
+        .execute("doc.append", json!({ "text": "ab" }))
+        .unwrap();
+    session.execute("doc.mark", json!({})).unwrap();
+    assert_eq!(session.undo().unwrap().as_str(), "doc.append");
+    assert_eq!(
+        (session.context().text.as_str(), session.context().marks),
+        ("", 1)
+    );
+    // A change outside the history keeps the redo history too.
+    session.execute("doc.mark", json!({})).unwrap();
+    assert_eq!(session.redo().unwrap().as_str(), "doc.append");
+    assert_eq!(
+        (session.context().text.as_str(), session.context().marks),
+        ("ab", 2)
+    );
+}
 
 #[test]
 fn undo_and_redo_walk_the_history() {

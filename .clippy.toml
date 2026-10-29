@@ -19,6 +19,7 @@ absolute-paths-allowed-crates = [
     "epaint",
     "junction",
     "miniz_oxide",
+    "muda",
     "proptest",
     "schemars",
     "serde",

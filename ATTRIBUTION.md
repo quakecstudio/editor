@@ -5,7 +5,8 @@ and `.wad`: files that cannot carry an SPDX header) has one row below saying who
 it came from and its license. `cargo xtask attribution` fails when an asset has no row, when a
 row names a file that is not in the repository, when a path is listed twice, when the author or
 source is empty, or when the license is not one of these SPDX identifiers: `GPL-3.0-or-later`,
-`GPL-2.0-or-later`, `CC0-1.0`, `CC-BY-4.0`, `CC-BY-SA-4.0`, `MIT`, `Apache-2.0`. Adding another
+`GPL-2.0-or-later`, `CC0-1.0`, `CC-BY-4.0`, `CC-BY-SA-4.0`, `MIT`, `Apache-2.0`, `OFL-1.1`,
+`ISC`, or several of them joined with ` AND ` for a file whose parts differ. Adding another
 license is a PR that changes this list and `ASSET_LICENSES` in `xtask/src/attribution.rs`,
 after checking that it may be distributed with a GPL-3.0-or-later program.
 
@@ -25,3 +26,7 @@ Format: one row per file, the path in backticks relative to the repository root.
 | `docs/design/mockups/source/assets/engine-scene.svg` | QuakeC Studio contributors | Drawing made for the mockups | GPL-3.0-or-later |
 | `docs/design/mockups/source/assets/map-3d.svg` | QuakeC Studio contributors | Drawing made for the mockups | GPL-3.0-or-later |
 | `docs/design/mockups/source/assets/map-top.svg` | QuakeC Studio contributors | Drawing made for the mockups | GPL-3.0-or-later |
+| `apps/desktop/assets/fonts/IBMPlexSans-Regular.ttf` | IBM Corp. | IBM/plex release `@ibm/plex-sans@1.1.0`, `ibm-plex-sans.zip` (sha256 `fb365d910566e6d199cc2c15579a7dd9a267128e18431a394ed81f1970c69200`); license in `apps/desktop/assets/fonts/IBMPlexSans-OFL.txt` | OFL-1.1 |
+| `apps/desktop/assets/fonts/IBMPlexSans-SemiBold.ttf` | IBM Corp. | IBM/plex release `@ibm/plex-sans@1.1.0`, `ibm-plex-sans.zip`; license in `apps/desktop/assets/fonts/IBMPlexSans-OFL.txt` | OFL-1.1 |
+| `apps/desktop/assets/fonts/JetBrainsMono-Regular.ttf` | The JetBrains Mono Project Authors | JetBrains/JetBrainsMono release `v2.304`, `JetBrainsMono-2.304.zip` (sha256 `6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf`); license in `apps/desktop/assets/fonts/JetBrainsMono-OFL.txt` | OFL-1.1 |
+| `apps/desktop/assets/fonts/lucide.ttf` | Lucide Icons and Contributors; Cole Bemis for the icons derived from Feather | lucide-icons/lucide release `1.57.0`, `lucide-font-1.57.0.zip` (sha256 `297023825c613e950345aa2c1b941788538497b7be0fc88d5b0dca23f85bacee`); license in `apps/desktop/assets/fonts/Lucide-LICENSE.txt` | ISC AND MIT |
