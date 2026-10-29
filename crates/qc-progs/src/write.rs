@@ -10,10 +10,8 @@ use core::fmt;
 use qc_types::Slot;
 
 use crate::records::{
-    Def, Format, Function, Header, PROGS_HEADER_CRC, PROGS_STRING_ALIGN, Statement,
+    Def, Format, Function, Header, PROGS_HEADER_CRC, PROGS_STRING_ALIGN, Record, Statement,
 };
-#[cfg(feature = "fte")]
-use crate::records::{PROGS_FTE_SECONDARY16, PROGS_FTE_SECONDARY32};
 use crate::{Layout, Progs, TableId};
 
 #[cfg(test)]
@@ -218,13 +216,15 @@ pub fn write(file: &ProgsFile) -> Result<Vec<u8>, WriteError> {
         Some(layout) => place_in_layout(&mut out, &mut encoded, layout),
         None => place_in_qcc_order(&mut out, &mut encoded, file)?,
     }
-    let offset = |table: TableId| -> Result<i32, WriteError> {
-        let raw = encoded
+    let raw_offset = |table: TableId| {
+        encoded
             .iter()
             .find(|entry| entry.table == table)
             .and_then(|entry| entry.offset)
-            .unwrap_or_default();
-        i32::try_from(raw).map_err(|_| WriteError::TooLarge { table })
+            .unwrap_or_default()
+    };
+    let offset = |table: TableId| -> Result<i32, WriteError> {
+        i32::try_from(raw_offset(table)).map_err(|_| WriteError::TooLarge { table })
     };
     let count = |table: TableId, len: usize| -> Result<i32, WriteError> {
         i32::try_from(len).map_err(|_| WriteError::TooLarge { table })
@@ -260,14 +260,7 @@ pub fn write(file: &ProgsFile) -> Result<Vec<u8>, WriteError> {
         .flat_map(|v| v.to_le_bytes())
         .collect();
     #[cfg(feature = "fte")]
-    if let Some(secondaryversion) = secondary_version(file.format) {
-        let raw_offset = |table| {
-            encoded
-                .iter()
-                .find(|entry: &&Encoded| entry.table == table)
-                .and_then(|entry| entry.offset)
-                .unwrap_or_default()
-        };
+    if let Some(secondaryversion) = file.format.secondary_version() {
         let numbodylessfuncs =
             u32::try_from(file.fte.bodyless_functions.len()).map_err(|_| WriteError::TooLarge {
                 table: TableId::BodylessFunctions,
@@ -288,15 +281,6 @@ pub fn write(file: &ProgsFile) -> Result<Vec<u8>, WriteError> {
         *slot = byte;
     }
     Ok(out)
-}
-
-#[cfg(feature = "fte")]
-const fn secondary_version(format: Format) -> Option<i32> {
-    match format {
-        Format::V6 => None,
-        Format::Fte16 => Some(PROGS_FTE_SECONDARY16),
-        Format::Fte32 => Some(PROGS_FTE_SECONDARY32),
-    }
 }
 
 /// PROGS-22.1: the tables in the source file's order with its bytes between them; an empty
@@ -361,26 +345,26 @@ fn encode_tables(file: &ProgsFile) -> Result<Vec<Encoded>, WriteError> {
     let format = file.format;
     let mut statements = Vec::new();
     for (index, statement) in file.statements.iter().enumerate() {
-        encode_statement(&mut statements, statement, format)
+        statement
+            .encode(&mut statements, format)
             .ok_or(WriteError::StatementOutOfRange { index })?;
     }
     let defs = |table: TableId, defs: &[Def]| -> Result<Vec<u8>, WriteError> {
         let mut bytes = Vec::new();
         for (index, def) in defs.iter().enumerate() {
-            encode_def(&mut bytes, def, format)
+            def.encode(&mut bytes, format)
                 .ok_or(WriteError::DefOutOfRange { table, index })?;
         }
         Ok(bytes)
     };
     let mut functions = Vec::new();
     for function in &file.functions {
-        encode_function(&mut functions, function);
+        function.encode(&mut functions, format);
     }
-    let globals: Vec<u8> = file
-        .globals
-        .iter()
-        .flat_map(|slot| slot.to_le_bytes())
-        .collect();
+    let mut globals = Vec::new();
+    for slot in &file.globals {
+        slot.encode(&mut globals, format);
+    }
     let entry = |table, bytes| Encoded {
         table,
         bytes,
@@ -413,7 +397,10 @@ fn encode_tables(file: &ProgsFile) -> Result<Vec<Encoded>, WriteError> {
                     statements: file.statements.len(),
                 });
             }
-            let bytes = lines.iter().flat_map(|line| line.to_le_bytes()).collect();
+            let mut bytes = Vec::new();
+            for line in lines {
+                line.encode(&mut bytes, format);
+            }
             tables.push(entry(TableId::LineNumbers, bytes));
         }
         let mut names = Vec::new();
@@ -427,63 +414,4 @@ fn encode_tables(file: &ProgsFile) -> Result<Vec<Encoded>, WriteError> {
         tables.push(entry(TableId::BodylessFunctions, names));
     }
     Ok(tables)
-}
-
-fn encode_statement(out: &mut Vec<u8>, statement: &Statement, format: Format) -> Option<()> {
-    match format {
-        Format::V6 => {
-            out.extend(u16::try_from(statement.op).ok()?.to_le_bytes());
-            for operand in [statement.a, statement.b, statement.c] {
-                out.extend(i16::try_from(operand).ok()?.to_le_bytes());
-            }
-        }
-        #[cfg(feature = "fte")]
-        Format::Fte16 => {
-            out.extend(u16::try_from(statement.op).ok()?.to_le_bytes());
-            for operand in [statement.a, statement.b, statement.c] {
-                out.extend(u16::try_from(operand).ok()?.to_le_bytes());
-            }
-        }
-        #[cfg(feature = "fte")]
-        Format::Fte32 => {
-            out.extend(statement.op.to_le_bytes());
-            for operand in [statement.a, statement.b, statement.c] {
-                out.extend(operand.to_le_bytes());
-            }
-        }
-    }
-    Some(())
-}
-
-fn encode_def(out: &mut Vec<u8>, def: &Def, format: Format) -> Option<()> {
-    match format {
-        Format::V6 => {
-            out.extend(u16::try_from(def.type_bits).ok()?.to_le_bytes());
-            out.extend(u16::try_from(def.ofs).ok()?.to_le_bytes());
-        }
-        #[cfg(feature = "fte")]
-        Format::Fte16 => return encode_def(out, def, Format::V6),
-        #[cfg(feature = "fte")]
-        Format::Fte32 => {
-            out.extend(def.type_bits.to_le_bytes());
-            out.extend(def.ofs.to_le_bytes());
-        }
-    }
-    out.extend(def.s_name.to_le_bytes());
-    Some(())
-}
-
-fn encode_function(out: &mut Vec<u8>, function: &Function) {
-    for field in [
-        function.first_statement,
-        function.parm_start,
-        function.locals,
-        function.profile,
-        function.s_name,
-        function.s_file,
-        function.numparms,
-    ] {
-        out.extend(field.to_le_bytes());
-    }
-    out.extend(function.parm_size);
 }

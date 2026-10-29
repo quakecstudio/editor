@@ -20,10 +20,7 @@ use crate::records::{
     Statement,
 };
 #[cfg(feature = "fte")]
-use crate::records::{
-    FteHeader, PROGS_FTE_HEADER_SIZE, PROGS_FTE_LINE_SIZE, PROGS_FTE_SECONDARY16,
-    PROGS_FTE_SECONDARY32, PROGS_VERSION_FTE,
-};
+use crate::records::{FteHeader, PROGS_FTE_HEADER_SIZE, PROGS_FTE_LINE_SIZE, PROGS_VERSION_FTE};
 use crate::{Layout, LayoutTable, TableId};
 
 #[cfg(test)]
@@ -733,11 +730,12 @@ fn fte_layout(bytes: &[u8], format: Format) -> Result<(Format, Option<FteHeader>
         len: bytes.len(),
         needed: PROGS_FTE_HEADER_SIZE,
     })?;
-    let format = match fte.secondaryversion {
-        PROGS_FTE_SECONDARY16 => Format::Fte16,
-        PROGS_FTE_SECONDARY32 => Format::Fte32,
-        secondaryversion => return Err(ReadError::UnsupportedFteLayout { secondaryversion }),
-    };
+    let format = [Format::Fte16, Format::Fte32]
+        .into_iter()
+        .find(|format| format.secondary_version() == Some(fte.secondaryversion))
+        .ok_or(ReadError::UnsupportedFteLayout {
+            secondaryversion: fte.secondaryversion,
+        })?;
     if fte.blockscompressed != 0 {
         return Err(ReadError::Compressed {
             blockscompressed: fte.blockscompressed,
