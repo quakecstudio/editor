@@ -319,9 +319,13 @@ fn type_names_are_definitions() {
     // A local of a type the model does not know is never a type mismatch, and a local named
     // like the type shadows it (FTE-22.1).
     assert_eq!(all_codes(&index), Vec::<Code>::new());
-    // FTEF-19.20: a name no type has is "not a type", and the local is not made.
+    // spec FTEF-19.74: a statement `T x;` of a name no type has is the expression `T`, an unknown
+    // value, then `x` where the `;` belongs; the local is not made.
     let unknown = fte_index_of("void() f = { poseInfo p; float p; };\n");
-    assert_eq!(all_codes(&unknown), [Code::E0203]);
+    assert_eq!(
+        all_codes(&unknown),
+        [Code::E0301, Code::W0205, Code::W0313, Code::E0204]
+    );
 }
 
 // spec FTE-21.1: the names a local's initialiser uses are resolved, a value or an aggregate.

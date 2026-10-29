@@ -311,9 +311,6 @@ pub(crate) struct Parser<'a> {
     /// The labels read since the end of the last function, FTEQCC's `pr_labels`
     /// (FTEF-18.23).
     labels: Vec<String>,
-    /// The `goto`s read since the end of the last function, FTEQCC's `pr_gotos`, each with
-    /// the span of its label name (FTEF-18.24).
-    gotos: Vec<(String, Span)>,
     /// How many function bodies the current token is in, `pr_scope` set when one is.
     bodies: usize,
     /// How many blocks the current token is in.
@@ -422,7 +419,6 @@ impl<'a> Parser<'a> {
             muted: false,
             useful: false,
             labels: Vec::new(),
-            gotos: Vec::new(),
             depth: 0,
             too_deep: false,
             bodies: 0,
@@ -1983,26 +1979,8 @@ impl<'a> Parser<'a> {
             self.state();
         }
         self.block(true);
-        self.end_function_labels();
-        self.finish_node();
-    }
-
-    /// The end of a function, a function defined inside another included (FTEF-18.24): each
-    /// `goto` read since the last end must name a label read since then, or it is "Goto
-    /// statement with no matching label"; then FTEQCC forgets both (`num_gotos = 0;` and
-    /// `if (num_labels) num_labels = 0;` in `QCC_PR_ParseImmediateStatements`).
-    fn end_function_labels(&mut self) {
-        for (name, span) in std::mem::take(&mut self.gotos) {
-            if !self.labels.contains(&name) {
-                // Not a parse error: it abandons nothing, so it mutes nothing.
-                self.errors.push(Diagnostic {
-                    code: Code::E0308,
-                    message: format!("Goto statement with no matching label \"{name}\""),
-                    span,
-                });
-            }
-        }
         self.labels.clear();
+        self.finish_node();
     }
 
     /// `[frame, next]` (QC-13.6), or under FTEQCC its expressions and frame cycles

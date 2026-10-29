@@ -212,7 +212,7 @@ pub enum Code {
     E0306,
     /// "More than eight parameters": nine or more arguments (QCD-4.7).
     E0307,
-    /// "Goto statement with no matching label \"NAME\"" (QCD-4.8).
+    /// "Goto statement with no matching label \"NAME\"" (QCD-4.81).
     E0308,
     /// "Type mismatch: TYPE, should be void()" (QCD-4.9).
     E0309,
@@ -548,7 +548,7 @@ pub enum Code {
     /// "Result of comparison is constant", "Parameter offsets for && are the same" and "Parameters
     /// for || are the same" (QCD-7.81).
     W0239,
-    /// "'OP' type mismatch: A with B" (QCD-7.82).
+    /// "type mismatch: A NAME to B TARGET" (QCD-7.114).
     W0240,
     /// "Assignment to const" and "Assignment to constant NAME" (QCD-7.83).
     W0241,

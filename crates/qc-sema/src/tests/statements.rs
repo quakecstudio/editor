@@ -747,3 +747,205 @@ fn global_calls_store_their_arguments() {
     );
     assert_eq!(at(fte, "z()"), [unable("CALL0")]);
 }
+
+/// Each diagnostic of `source` with its line, counted from 1.
+fn lined(source: &str) -> Vec<(u32, String)> {
+    let mut db = Db::new();
+    db.set_dialect(Dialect::Fteqcc);
+    db.set_file(FILE, PathBuf::from("t.qc"), source.as_bytes().to_vec());
+    db.analyze_module(&ModuleInput {
+        compiled: vec![FILE],
+        command_line: CommandLine::new::<&str>(&[]),
+        ..ModuleInput::default()
+    })
+    .diagnostics()
+    .map(|d| {
+        let before = source.get(..d.diagnostic.span.start).unwrap_or_default();
+        let line = u32::try_from(before.matches('\n').count())
+            .unwrap()
+            .saturating_add(1);
+        (line, d.diagnostic.message.clone())
+    })
+    .collect()
+}
+
+/// The cases of [`gotos_find_their_labels_at_the_function_s_end`], each with the pinned
+/// FTEQCC's messages and their lines.
+const GOTOS_CASES: &[(&str, &[(u32, &str)])] = &[
+    ("void() f = { if (0) { goto nowhere; } };\n", &[]),
+    ("void() f = { if (0) goto nowhere; else return; };\n", &[]),
+    ("void() f = { if (1) {} else goto nowhere; };\n", &[]),
+    (
+        "void() f = { goto nowhere; };\n",
+        &[(1, "Goto statement with no matching label \"nowhere\"")],
+    ),
+    ("void() f = { if (0) { goto a; } a: return; };\n", &[]),
+    ("void() f = { if (0) { a: return; } goto a; };\n", &[]),
+    (
+        "float() f = {\n\tgoto x;\n\tgoto y;\n\tif (0) continue;\n\twhile (1) break;\n\tcontinue;\n\n};\nvoid() g = { goto z; };\n",
+        &[
+            (8, "Goto statement with no matching label \"x\""),
+            (9, "Goto statement with no matching label \"z\""),
+        ],
+    ),
+    (
+        "float a;\nvoid() f = { goto top;\na = 1;\ntop:\na = 2; };\n",
+        &[(3, "f: contains unreachable code (line 3)")],
+    ),
+    (
+        "float a;\nvoid() g = { top: a = 1; };\nvoid() f = { goto top; };\n",
+        &[(3, "Goto statement with no matching label \"top\"")],
+    ),
+    (
+        "float a;\nvoid() f = { goto out; void() h = { out: a = 1; }; };\n",
+        &[(2, "f: contains unreachable code (line 2)")],
+    ),
+    (
+        "float a;\nvoid() f = { goto out; void() h = { a = 1; }; out: a = 2; };\n",
+        &[(2, "Goto statement with no matching label \"out\"")],
+    ),
+    (
+        "float a;\nvoid() f = { top: a = 1; void() h = { a = 2; }; goto top; };\n",
+        &[(2, "Goto statement with no matching label \"top\"")],
+    ),
+    (
+        "const float K = 0;\nvoid() f = { if (K) goto nowhere; };\n",
+        &[],
+    ),
+    (
+        "void() f = { while (0) goto nowhere; };\n",
+        &[(1, "Goto statement with no matching label \"nowhere\"")],
+    ),
+    (
+        "void() f = { goto nowhere; continue; };\n",
+        &[(1, "Goto statement with no matching label \"nowhere\"")],
+    ),
+    (
+        "float a;\nvoid() f = { goto out; void() h = { goto in; a = 1; }; in: a = 2; };\n",
+        &[(2, "Goto statement with no matching label \"out\"")],
+    ),
+    (
+        "float a;\nvoid() f = { void() h = { goto in; a = 1; }; in: a = 2; };\n",
+        &[(2, "Goto statement with no matching label \"in\"")],
+    ),
+    (
+        "float a;\nvoid() f = { void() h = { in: a = 1; }; goto in; };\n",
+        &[(2, "Goto statement with no matching label \"in\"")],
+    ),
+    (
+        "float a;\nvoid() f = { goto x; void() h = { x: a = 1; void() k = { a = 3; }; }; };\n",
+        &[(2, "f: contains unreachable code (line 2)")],
+    ),
+    (
+        "float a;\nvoid() f = { goto nowhere; void() h = { a = 1; }; };\n",
+        &[(2, "Goto statement with no matching label \"nowhere\"")],
+    ),
+    (
+        "void() f = {\n\treturn;\n\tlocal float a = 1;\n};\n",
+        &[(3, "f: contains unreachable code (line 3)")],
+    ),
+    (
+        "void() f = {\n\treturn;\n\n\tprint(\"x\");\n\tprint(\"y\");\n};\n",
+        &[(4, "Unknown value \"print\".")],
+    ),
+    (
+        "float() f = {\n\tif (1) return 1;\n\tlocal float x;\n\tx = 2;\n};\n",
+        &[(5, "f: not all control paths return a value")],
+    ),
+];
+
+// spec FTEF-34.12: the first `goto` generated with no label read since the last function's end
+// is fatal at the function's `}`; a stripped arm's `goto` is not checked, and a function defined
+// inside another checks the gotos and labels read since the last end, then forgets them
+// spec QCD-4.81: E0308 "Goto statement with no matching label \"NAME\"" at the closing brace
+// spec FTEF-34.13: unreachable code is reported at its own line
+#[test]
+fn gotos_find_their_labels_at_the_function_s_end() {
+    for (source, expected) in GOTOS_CASES {
+        let expected: Vec<(u32, String)> = expected
+            .iter()
+            .map(|&(line, m)| (line, m.to_owned()))
+            .collect();
+        assert_eq!(lined(source), expected, "{source}");
+    }
+}
+
+/// The cases of [`a_constant_condition_picks_its_arm_at_global_scope`], each with the pinned
+/// FTEQCC's messages and their lines.
+const GLOBAL_TERNARIES_CASES: &[(&str, &[(u32, &str)])] = &[
+    (
+        "float y; float q = __NULL__ ?: y;\n",
+        &[(1, "initializer for 'q' is not constant")],
+    ),
+    ("float y; string q = \"a\" ?: \"b\";\n", &[]),
+    ("float y; string q = \"\" ?: \"b\";\n", &[]),
+    ("float y; float ff = 2; float q = ff ?: y;\n", &[]),
+    ("float x; float y; float q = sizeof(x) ?: y;\n", &[]),
+    (
+        "float y; float q = 1 ? y : 2;\n",
+        &[(1, "initializer for 'q' is not constant")],
+    ),
+    ("float y; float q = 0 ? y : 2;\n", &[]),
+    ("float y; float q = 1 ?: y;\n", &[]),
+    (
+        "float y; float q = 0 ?: y;\n",
+        &[(1, "initializer for 'q' is not constant")],
+    ),
+    ("float y; float q = -0.0 ? 3 : y;\n", &[]),
+    (
+        "float y; float q = -0.0 ?: y;\n",
+        &[(1, "initializer for 'q' is not constant")],
+    ),
+    (
+        "float y; vector q = 0 ? y : 2;\n",
+        &[(1, "Implicit cast from float to vector")],
+    ),
+    ("float y; float q = 1i ? 2 : \"x\";\n", &[]),
+    (
+        "float y; float q = 0 ? y + 1 : 2;\n",
+        &[(1, "Unable to generate statements at global scope (ADD_F).")],
+    ),
+    (
+        "float y; float q = y ? 1 : 2;\n",
+        &[
+            (1, "Unable to generate statements at global scope (IFNOT)."),
+            (
+                1,
+                "Unable to generate statements at global scope (STORE_F).",
+            ),
+            (1, "Unable to generate statements at global scope (GOTO)."),
+            (
+                1,
+                "Unable to generate statements at global scope (STORE_F).",
+            ),
+            (1, "initializer for 'q' is not constant"),
+        ],
+    ),
+];
+
+// spec FTEF-30.15: at global scope a constant condition picks its arm with no statement, `?:` by
+// its truth and `? :` by its first word
+#[test]
+fn a_constant_condition_picks_its_arm_at_global_scope() {
+    for (source, expected) in GLOBAL_TERNARIES_CASES {
+        let expected: Vec<(u32, String)> = expected
+            .iter()
+            .map(|&(line, m)| (line, m.to_owned()))
+            .collect();
+        assert_eq!(lined(source), expected, "{source}");
+    }
+}
+
+// spec FTEF-34.14: the profile's own text for a program FTEQCC refuses too: `typedef ;` at its own
+// line, and `(T *)` of a name that is no type as a type
+#[test]
+fn programs_both_refuse_keep_this_profile_s_text() {
+    assert_eq!(
+        lined("typedef ;\n"),
+        [(1, "typedef defines no types".to_owned())]
+    );
+    assert_eq!(
+        lined("void() f = { local float y = (T *)0; };\n"),
+        [(1, "\"T\" is not a type".to_owned())]
+    );
+}

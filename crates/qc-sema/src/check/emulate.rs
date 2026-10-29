@@ -17,8 +17,8 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
 use crate::check::fold::{Folded, fold};
-use crate::check::opcodes::row;
-use crate::check::{Constness, Value};
+use crate::check::opcodes::{Assoc, row};
+use crate::check::{Constness, Sym, Value};
 use crate::ty::Type;
 
 /// `QCTARGVER_FTE_DEF` and `QCTARGVER_FTE_MAX`: the FTE revisions `badopcode` suggests.
@@ -93,12 +93,16 @@ impl Checker<'_> {
         span: Span,
     ) -> Result<Value, Fatal> {
         let result = replaced(op);
-        if lhs.constness == Constness::Opaque || rhs.constness == Constness::Opaque {
+        // A function's definition is a constant FTEQCC folds no opcode of (FTEF-26.12).
+        let opaque =
+            |value: &Value| value.constness == Constness::Opaque && !value.ty.is_function();
+        if opaque(lhs) || opaque(rhs) {
             self.emitted = self.emitted.saturating_add(1);
             // Its value decides no folding or emulation; the comparison warnings read no value.
             if self.env.target_at(span.start).valid(op) {
                 self.compare(op, lhs, rhs, span);
             }
+            let result = self.statement_temps(op, lhs, rhs, result);
             return Ok(Value {
                 constness: Constness::Opaque,
                 ..result
@@ -120,9 +124,37 @@ impl Checker<'_> {
         if target.valid(op) {
             self.compare(op, lhs, rhs, span);
             self.generate(op, span);
-            return Ok(result);
+            return Ok(self.statement_temps(op, lhs, rhs, result));
         }
-        self.emulate(op, lhs, rhs, span, result)
+        let emulated = self.emulate(op, lhs, rhs, span, result)?;
+        // A refused opcode is still the statement it was (`badopcode`), its result a temporary.
+        if emulated.temp.is_none() && emulated.known().is_none() && emulated.sym == Sym::Temp {
+            return Ok(self.statement_temps(op, lhs, rhs, emulated));
+        }
+        Ok(emulated)
+    }
+
+    /// FTEF-27.16: a statement frees its operands' temporaries, then takes one for its result,
+    /// which a store, a jump or a `void` opcode has none of.
+    fn statement_temps(&mut self, op: Op, lhs: &Value, rhs: &Value, result: Value) -> Value {
+        for offset in [lhs.temp, rhs.temp].into_iter().flatten() {
+            self.env.temps().free(offset);
+        }
+        let Some(row) = row(op) else {
+            return result;
+        };
+        let words = match row.types[2].etype() {
+            Etype::Void => return result,
+            Etype::Vector => 3,
+            Etype::Int64 | Etype::Uint64 | Etype::Double => 2,
+            _ => 1,
+        };
+        if row.assoc == Assoc::Right {
+            return result;
+        }
+        let temp = Some(self.env.temps().take(words));
+        self.last_temp = temp;
+        Value { temp, ..result }
     }
 
     /// FTEF-34.9: the store a value of basic type `etype` is copied by, `OP_STORE_*`.
@@ -222,7 +254,9 @@ impl Checker<'_> {
                 let ty = match op {
                     Op::EqU | Op::NeU => Type::Named("__uint32".into()),
                     Op::EqU64 | Op::NeU64 => Type::Named("__uint64".into()),
-                    Op::EqFld
+                    // FTEF-31.18: `OP_CONV_FU` as `OP_CONV_FTOI` is an `int`.
+                    Op::ConvFu
+                    | Op::EqFld
                     | Op::EqI
                     | Op::NeFld
                     | Op::NeI
@@ -292,7 +326,7 @@ impl Checker<'_> {
             Op::ConvItof | Op::StoreIf => (
                 &["itof"],
                 Code::W0237,
-                format!("itof emulation: denormals are unsafe {}", value.label()),
+                format!("itof emulation: denormals are unsafe {}", value.at_offset()),
             ),
             Op::ConvFtoi | Op::StoreFi => (
                 &["ftoi"],
@@ -302,7 +336,7 @@ impl Checker<'_> {
             Op::ConvUf => (
                 &["utof", "quake_utof", "itof", "quake_itof"],
                 Code::W0238,
-                format!("utof emulation: will break if {} is big", value.label()),
+                format!("utof emulation: will break if {} is big", value.at_offset()),
             ),
             _ => return Ok(result),
         };
@@ -328,6 +362,70 @@ impl Checker<'_> {
             _ => {}
         }
         Ok(result)
+    }
+
+    /// FTEF-27.15: `OP_LSHIFT_I`, `OP_RSHIFT_I` and `OP_RSHIFT_U` on a target without them, by
+    /// their helper functions when the module defines them, else as a product or quotient by a
+    /// power of 2; a signed right shift tests the sign and shifts a negative value flipped.
+    fn shift(
+        &mut self,
+        op: Op,
+        lhs: &Value,
+        rhs: &Value,
+        span: Span,
+        result: Value,
+    ) -> Result<Value, Fatal> {
+        let (helper, divide) = match op {
+            Op::LshiftI => ("LShiftInt", Op::MulI),
+            Op::RshiftI => {
+                let target = self.env.target_at(span.start);
+                (
+                    "RShiftInt",
+                    if target.valid(Op::DivU) {
+                        Op::DivU
+                    } else {
+                        Op::DivI
+                    },
+                )
+            }
+            _ => ("RShiftUInt", Op::DivU),
+        };
+        if self.env.defines(helper) {
+            return Ok(result);
+        }
+        // A shift by a constant is a product or quotient by `QCC_MakeIntConst(1<<n)`; by
+        // a variable, by `2 *^ n`.
+        let factor = match rhs.known() {
+            Some(shift) => {
+                let power = 1_i32.checked_shl(shift.u()).unwrap_or(0);
+                Value::constant(Constant::int(power))
+            }
+            None => self.emit(Op::PowI, &Value::unknown(), rhs, span)?,
+        };
+        if op == Op::RshiftI {
+            // `OP_LT_I` against `QCC_MakeFloatConst(0)`, the negative form by `~`, and
+            // the positive form a plain statement of the division.
+            // `QCC_Generate_OP_IFNOT` jumps past the negative form, which a
+            // `QCC_Generate_OP_GOTO` ends (FTEF-27.15).
+            let zero = Value::constant(Constant::float(0.0));
+            self.emit(Op::LtI, lhs, &zero, span)?;
+            self.generate(Op::IfnotI, span);
+            let flipped = self.emit(Op::BitnotI, lhs, &Value::unknown(), span)?;
+            let shifted = self.emit(divide, &flipped, &factor, span)?;
+            // The positive form shifts into the temporary the negative form made.
+            let negative = self.emit(Op::BitnotI, &shifted, &Value::unknown(), span)?;
+            self.generate(Op::Goto, span);
+            self.simple_statement(divide, span)?;
+            return Ok(Value {
+                ty: result.ty,
+                ..negative
+            });
+        }
+        let shifted = self.emit(divide, lhs, &factor, span)?;
+        Ok(Value {
+            ty: result.ty,
+            ..shifted
+        })
     }
 
     /// FTEF-27.3: a string or entity offset.
@@ -393,48 +491,7 @@ impl Checker<'_> {
                 self.emit(Op::SubI, lhs, rhs, span)?;
                 Ok(result)
             }
-            Op::LshiftI | Op::RshiftI | Op::RshiftU => {
-                let (helper, divide) = match op {
-                    Op::LshiftI => ("LShiftInt", Op::MulI),
-                    Op::RshiftI => {
-                        let target = self.env.target_at(span.start);
-                        (
-                            "RShiftInt",
-                            if target.valid(Op::DivU) {
-                                Op::DivU
-                            } else {
-                                Op::DivI
-                            },
-                        )
-                    }
-                    _ => ("RShiftUInt", Op::DivU),
-                };
-                if self.env.defines(helper) {
-                    return Ok(result);
-                }
-                // A shift by a constant is a product or quotient by `QCC_MakeIntConst(1<<n)`; by
-                // a variable, by `2 *^ n`.
-                let factor = match rhs.known() {
-                    Some(shift) => {
-                        let power = 1_i32.checked_shl(shift.u()).unwrap_or(0);
-                        Value::constant(Constant::int(power))
-                    }
-                    None => self.emit(Op::PowI, &Value::unknown(), rhs, span)?,
-                };
-                if op == Op::RshiftI {
-                    // `OP_LT_I` against `QCC_MakeFloatConst(0)`, the negative form by `~`, and
-                    // the positive form a plain statement of the division.
-                    let zero = Value::constant(Constant::float(0.0));
-                    self.emit(Op::LtI, lhs, &zero, span)?;
-                    let flipped = self.emit(Op::BitnotI, lhs, &Value::unknown(), span)?;
-                    let shifted = self.emit(divide, &flipped, &factor, span)?;
-                    self.emit(Op::BitnotI, &shifted, &Value::unknown(), span)?;
-                    self.simple_statement(divide, span)?;
-                } else {
-                    self.emit(divide, lhs, &factor, span)?;
-                }
-                Ok(result)
-            }
+            Op::LshiftI | Op::RshiftI | Op::RshiftU => self.shift(op, lhs, rhs, span, result),
             Op::LshiftF | Op::RshiftF => {
                 let (int_op, what) = if op == Op::LshiftF {
                     (Op::LshiftI, "OP_LSHIFT_F*")

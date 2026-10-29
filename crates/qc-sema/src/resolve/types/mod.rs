@@ -25,7 +25,7 @@ use crate::check::etype::Etype;
 use crate::lower::{RawDecl, TypeKind};
 use crate::resolve::{MAX_TYPEDEF_DEPTH, Resolver, TABLE_TYPES};
 use crate::symbol::Location;
-use crate::ty::{SimpleType, Type};
+use crate::ty::{FunctionType, SimpleType, Type};
 
 impl Resolver<'_> {
     /// The name of a type: FTEF-19.9 compares a `typedef` with the one of the same name before
@@ -219,7 +219,8 @@ impl Resolver<'_> {
         }
         match ty.fteqcc_kind() {
             Kind::Integer | Kind::Uint | Kind::Int64 | Kind::Uint64 => true,
-            Kind::Opaque => ty.fteqcc_scalar().is_none() && matches!(ty, Type::Named(_)),
+            // Every C scalar has a kind of its own, so an opaque type is a program's or unknown.
+            Kind::Opaque => matches!(ty, Type::Named(_)),
             Kind::Void
             | Kind::String
             | Kind::Float
@@ -401,13 +402,6 @@ impl Resolver<'_> {
         if matches!(name, "__variant" | "variant") {
             return plain(Etype::Variant);
         }
-        // FTEF-2.12: an 8- or 16-bit integer is `ev_bitfld`, read, stored and cast as its
-        // `parentclass`, `int` or `uint` (`QCC_TryEvaluateCast`, `QCC_LoadFromPointer`).
-        match ty.fteqcc_scalar() {
-            Some(CScalar::Int8 | CScalar::Int16) => return plain(Etype::Integer),
-            Some(CScalar::Uint8 | CScalar::Uint16) => return plain(Etype::Uint),
-            _ => {}
-        }
         if let Some(base) = self.named(&self.strict_enums, name) {
             return Some(Shape {
                 etype: Etype::Enum,
@@ -497,18 +491,6 @@ impl Resolver<'_> {
 }
 
 impl Resolver<'_> {
-    /// Whether two values' types are the same to the comparison warning (FTEF-28.2): the same
-    /// basic type, or either a `variant` or a type the model does not follow. FTEQCC compares
-    /// more (`typecmp_lax` reads what a field, a pointer or a function holds), but the pinned
-    /// FTEQCC gives no warning for a `.float` compared with a `.vector`, nor for a `float()` with
-    /// a `void()`, so the model compares no further.
-    pub(in crate::resolve) fn lax_same_value(&self, a: &Type, b: &Type) -> bool {
-        let (Some(sa), Some(sb)) = (self.shape(a), self.shape(b)) else {
-            return true;
-        };
-        sa.etype == sb.etype || sa.etype == Etype::Variant || sb.etype == Etype::Variant
-    }
-
     /// `typecmp_lax` (`qcc_pr_lex.c`), whether `a` and `b` are one type to a conditional's arms
     /// and a store (FTEF-30.3, FTEF-29.7): of one basic type and size, or one a `variant` with
     /// nothing held, and what a field, a pointer or a function holds the same in turn; a
@@ -551,14 +533,21 @@ impl Resolver<'_> {
             (Type::Field(x), Type::Field(y)) | (Type::Pointer(x), Type::Pointer(y)) => {
                 self.typecmp_lax_within(x, y, depth)
             }
+            // `typecmp_lax` compares the parameters both have (`minargs`), any more one has
+            // being `optional`, and not whether either takes `...` (FTEF-30.14).
             (Type::Function(x), Type::Function(y)) => {
-                x.variadic == y.variadic
-                    && x.params.len() == y.params.len()
-                    && self.typecmp_lax_within(&x.ret, &y.ret, depth)
+                let both = x.params.len().min(y.params.len());
+                let optional_rest = |f: &FunctionType| {
+                    (both..f.params.len())
+                        .all(|at| f.labels.0.get(at).is_some_and(|label| label.optional))
+                };
+                self.typecmp_lax_within(&x.ret, &y.ret, depth)
                     && x.params
                         .iter()
                         .zip(&y.params)
                         .all(|(p, q)| self.same_param(p, q, depth))
+                    && optional_rest(x)
+                    && optional_rest(y)
             }
             // What one holds against nothing the other holds.
             (Type::Field(_) | Type::Pointer(_) | Type::Function(_), _)
@@ -671,7 +660,6 @@ impl Resolver<'_> {
 fn builtin_type(name: &str) -> Option<Type> {
     let simple = match name {
         "void" => SimpleType::Void,
-        "float" => SimpleType::Float,
         "vector" => SimpleType::Vector,
         "string" => SimpleType::String,
         "entity" => SimpleType::Entity,

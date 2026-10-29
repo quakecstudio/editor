@@ -465,12 +465,16 @@ fn an_accessors_base_is_checked() {
 fn a_casts_type_name_is_a_type() {
     for (source, code) in [
         ("void() g = { (T *)0; };", Code::E0203),
-        ("void() g = { (T)0; };", Code::E0203),
         ("void() g = { local float x = sizeof(T *); };", Code::E0203),
         ("void() g = { local float x = sizeof(T); };", Code::E0301),
     ] {
         assert_eq!(errors(source, &[]), [code], "{source}");
     }
+    // FTEF-16.15: a lone name that is no type is a value in parentheses, here an unknown one.
+    assert_eq!(
+        errors("void() g = { (T)0; };", &[]),
+        [Code::E0301, Code::E0204]
+    );
     let sizeof_s = "struct S { float a; }; void() g = { local float x = sizeof(s); };";
     assert_eq!(errors(sizeof_s, &["-Fcaseinsens"]), []);
     assert_eq!(errors(sizeof_s, &[]), [Code::E0301]);
@@ -1091,7 +1095,7 @@ fn a_bodys_types_last_to_their_block() {
     assert!(!errors("void() g = { { typedef float t; } t x; };", &[]).is_empty());
     assert_eq!(
         errors("void() g = { { struct S { float a; }; } S x; };", &[]),
-        [Code::E0203]
+        [Code::E0301, Code::E0204]
     );
     for source in [
         "void() g = { typedef struct S { float a; } T; }; S y;",

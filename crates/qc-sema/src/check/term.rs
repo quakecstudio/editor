@@ -19,8 +19,10 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::member;
 use crate::check::pointer::{Pointee, int, opaque_int};
+use crate::check::reference::{expected_after, in_definition};
 use crate::check::truth::Test;
 use crate::check::{Constness, Reference, Value};
+use crate::symbol::DefId;
 use crate::ty::{SimpleType, Type};
 
 /// `VMWORDSIZE`: the bytes of a word, by which `sizeof` counts a type of whole words.
@@ -175,6 +177,7 @@ impl Checker<'_> {
         let updated = self.bit_copy(&updated, operand, span)?;
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
+        self.freed_again(operand, span);
         // `QCC_StoreSRefToRef` folds the store into the operand, which is the value, read-only.
         Ok(Value {
             readonly: true,
@@ -220,11 +223,88 @@ impl Checker<'_> {
         }
     }
 
+    /// FTEF-16.15: `(x)` of a name that is no type is the value in parentheses, and what the
+    /// parser read as the cast's operand follows it: `- e` is a subtraction, `(args)` a call,
+    /// `[i]` an index the value does not take, and anything else "Expected punctuation" and
+    /// the end of the expression.
+    fn parenthesised(
+        &mut self,
+        cast: &ast::CastExpr,
+        def: DefId,
+        token: &qc_syntax::SyntaxToken,
+    ) -> Checked {
+        let value = self.def_value(def, token, false);
+        let operand = cast.operand();
+        let start = operand
+            .as_ref()
+            .map_or_else(|| cast.syntax().span(), |o| o.syntax().span());
+        let negated = match &operand {
+            Some(ast::Expr::Unary(unary)) if unary.op() == Some(UnaryOp::Neg) => {
+                Some(self.value(unary.operand())?)
+            }
+            // `QCC_PR_IncludeChunk` splits a negative number after a value into `-` and the
+            // number.
+            Some(ast::Expr::Literal(literal)) if literal.syntax().text().starts_with(b"-") => {
+                let literal = self.value(operand.clone())?;
+                literal.known().map(|c| {
+                    Value::constant(match c.ty {
+                        ConstType::Float => Constant::float(-c.f()),
+                        _ => Constant::int(c.i().wrapping_neg()),
+                    })
+                })
+            }
+            _ => None,
+        };
+        if let Some(rhs) = negated {
+            let at = Span::new(start.start, start.start.saturating_add(1));
+            return Ok(self
+                .operator_at(ast::BinaryOp::Sub, at, &value, &rhs)?
+                .unwrap_or_else(Value::unknown));
+        }
+        match operand {
+            Some(ast::Expr::Paren(_)) if !value.ty.is_function() => {
+                self.fatal(Code::E0256, start, "not a function".to_owned())
+            }
+            Some(other @ (ast::Expr::Vector(_) | ast::Expr::Literal(_) | ast::Expr::Name(_))) => {
+                let found = first_token(other.syntax())
+                    .map(|t| t.text_lossless())
+                    .unwrap_or_default();
+                if !matches!(other, ast::Expr::Vector(_)) {
+                    self.env
+                        .report(Code::W0205, start, "Expected punctuation".to_owned());
+                }
+                let expected = expected_after(cast.syntax());
+                // FTEF-18.38: in a definition's value the value ends at the token.
+                if expected == ";" && in_definition(cast.syntax()) {
+                    if self.stray.is_none() {
+                        self.stray = Some((start, found));
+                    }
+                    return Ok(value);
+                }
+                if matches!(other, ast::Expr::Vector(_)) {
+                    self.statement_before(cast.syntax(), Some(ast::Expr::Cast(cast.clone())));
+                }
+                self.fatal(
+                    Code::E0204,
+                    start,
+                    format!("expected {expected}, found {found}"),
+                )
+            }
+            _ => Ok(Value::unknown()),
+        }
+    }
+
     /// FTEF-30.6: `(TYPE)e`, `QCC_EvaluateCast(e, TYPE, false)`: refused only as "Cannot cast",
     /// a fatal error, and converted by the cast's opcodes, an entity and a float by
     /// `OP_CONV_ITOF` and `OP_CONV_FTOI`. `(vector){x, y, z}` is the vector constructor.
     pub(super) fn cast(&mut self, cast: &ast::CastExpr) -> Checked {
         let span = cast.syntax().span();
+        if let Some(ty) = cast.ty()
+            && let Some(def) = self.env.reference(ty.syntax().span().start)
+            && let Some(token) = first_token(ty.syntax())
+        {
+            return self.parenthesised(cast, def, &token);
+        }
         let to = cast
             .ty()
             .and_then(|ty| self.env.written_type(ty.syntax().span().start));
@@ -250,7 +330,10 @@ impl Checker<'_> {
         if operand.ty == Type::Unknown {
             return Ok(Value::of(to));
         }
-        if self.env.explicit_cast(operand.source(), &to, span) {
+        if self
+            .env
+            .explicit_cast(self.cast_source(&operand), &to, span)
+        {
             return Err(Fatal);
         }
         // FTEF-23.8: a cast to a boolean is its logical truth, of the boolean's parent type.
@@ -294,7 +377,7 @@ impl Checker<'_> {
                 self.etype_of(&value.ty),
                 Some(Etype::Float | Etype::Integer)
             );
-            if !numeric && self.env.cast(value.source(), &float, span) {
+            if !numeric && self.env.cast(self.cast_source(&value), &float, span) {
                 return Err(Fatal);
             }
             components.push(Some(if numeric {
@@ -498,4 +581,12 @@ fn opaque_uint() -> Value {
         constness: Constness::Opaque,
         ..Value::constant(Constant::uint(0))
     }
+}
+
+/// The first token of `node` that is no trivia.
+fn first_token(node: &qc_syntax::SyntaxNode) -> Option<qc_syntax::SyntaxToken> {
+    node.descendants_with_tokens().find_map(|e| match e {
+        qc_syntax::SyntaxElement::Token(t) if !t.kind().is_trivia() => Some(t),
+        qc_syntax::SyntaxElement::Token(_) | qc_syntax::SyntaxElement::Node(_) => None,
+    })
 }

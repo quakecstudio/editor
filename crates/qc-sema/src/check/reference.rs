@@ -29,8 +29,12 @@ impl Checker<'_> {
         let Some(expr) = expr else {
             return Ok(Value::unknown());
         };
-        let reference = self.expr(&expr)?;
-        self.read(reference, expr.syntax().span())
+        // `match` rather than `?`, which keeps the frame every nested expression adds small
+        // (QC-27.15).
+        match self.expr(&expr) {
+            Ok(reference) => self.read(reference, expr.syntax().span()),
+            Err(fatal) => Err(fatal),
+        }
     }
 
     /// FTEF-31.1: `QCC_RefToDef`, what a reference names, read: an array named bare is its
@@ -99,8 +103,12 @@ impl Checker<'_> {
                 // Emitted, or on a target without it as `QCC_PR_StatementFlags` replaces it:
                 // `OP_LOAD_I` and `OP_LOAD_P` as `OP_LOAD_F`, `OP_LOAD_I64` as two plain
                 // `OP_LOAD_FLD`s (FTEF-27.9, FTEF-27.11).
-                self.emit(load, &Value::unknown(), &Value::unknown(), span)?;
-                Ok(value)
+                // The value read is the load's temporary (FTEF-27.16).
+                let loaded = self.emit(load, &Value::unknown(), &Value::unknown(), span)?;
+                Ok(Value {
+                    temp: loaded.temp,
+                    ..value
+                })
             }
             Reference::ArrayHead(_) => {
                 let address = self.address_of(value, span)?;
@@ -151,11 +159,9 @@ impl Checker<'_> {
                 };
                 let op = if float_index { Op::LoadpC } else { Op::LoadpU8 };
                 let string = Value::of(Type::Simple(SimpleType::String));
-                let loaded = self.emit(op, &string, &index, span)?;
-                Ok(Value {
-                    ty: value.ty,
-                    ..loaded
-                })
+                // FTEF-31.18: the load's own type, an emulated `OP_LOADP_U8`'s the `__uint32` of
+                // its last shift.
+                self.emit(op, &string, &index, span)
             }
         }
     }
@@ -598,7 +604,7 @@ impl Checker<'_> {
                 // FTEF-18.38: in a definition's value the value ends before the `[`.
                 if expected_after(index.syntax()) == ";" && in_definition(index.syntax()) {
                     if self.stray.is_none() {
-                        self.stray = Some(span);
+                        self.stray = Some((span, "[".to_owned()));
                     }
                     return Ok(base);
                 }
@@ -806,6 +812,20 @@ impl Checker<'_> {
                         ..Value::of(Type::Simple(SimpleType::Float))
                     });
                 }
+                // FTEF-31.17: the cast keeps the symbol, so the first field, at offset 0, is a
+                // null constant (`QCC_SRef_IsNull`), which casts to any type with no warning.
+                Some(Etype::Field)
+                    if operand.reference == Reference::Global
+                        && operand
+                            .sym
+                            .def()
+                            .is_some_and(|def| self.env.first_field(def)) =>
+                {
+                    return Ok(Value {
+                        ty: Type::Simple(SimpleType::Float),
+                        ..Value::constant(Constant::float(0.0))
+                    });
+                }
                 Some(Etype::String | Etype::Field | Etype::Entity | Etype::Function) => {
                     return Ok(Value::of(Type::Simple(SimpleType::Float)));
                 }
@@ -956,7 +976,7 @@ impl Checker<'_> {
 }
 
 /// Whether `node` is in the value of a definition, local or global, with no statement between.
-fn in_definition(node: &qc_syntax::SyntaxNode) -> bool {
+pub(super) fn in_definition(node: &qc_syntax::SyntaxNode) -> bool {
     node.ancestors()
         .map(|ancestor| ancestor.kind())
         .find(|&k| {

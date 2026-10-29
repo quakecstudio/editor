@@ -15,7 +15,7 @@ use crate::cast::{Cast, Kind, Source, Supply};
 use crate::check::constant::{Constant, unquoted};
 use crate::check::etype::Etype;
 use crate::check::{
-    Constness, CvarValue, Env, FunctionFacts, ParamFacts, PathList, Shape, StructMemberFacts,
+    Constness, CvarValue, Env, FunctionFacts, ParamFacts, PathList, Shape, StructMemberFacts, Temps,
 };
 use crate::lower::{ArrayDim, LiteralValue, RawLocal, top_level_kind};
 use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
@@ -108,6 +108,10 @@ impl BodyEnv<'_, '_> {
 }
 
 impl Env for BodyEnv<'_, '_> {
+    fn temps(&mut self) -> &mut Temps {
+        &mut self.resolver.temps
+    }
+
     fn reference(&self, at: usize) -> Option<DefId> {
         self.uses.get(&at).copied()
     }
@@ -189,6 +193,19 @@ impl Env for BodyEnv<'_, '_> {
 
     fn definition(&self, def: DefId) -> Option<&Definition> {
         self.resolver.index.def(def)
+    }
+
+    fn first_field(&self, def: DefId) -> bool {
+        self.resolver
+            .index
+            .defs
+            .iter()
+            .position(|d| d.kind == DefKind::Field)
+            .is_some_and(|first| first == def.0)
+    }
+
+    fn strict_enum(&self, ty: &Type) -> bool {
+        matches!(ty, Type::Named(name) if self.resolver.named(&self.resolver.strict_enums, name).is_some())
     }
 
     fn is_array(&self, def: DefId) -> bool {
@@ -361,6 +378,7 @@ impl Env for BodyEnv<'_, '_> {
         if !self.constant(def) {
             return Constness::Variable;
         }
+
         if let Some(constant) = self.resolver.integer_items.get(&def) {
             return Constness::Known(*constant);
         }
@@ -513,10 +531,6 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.struct_of_no_size(ty)
     }
 
-    fn lax_same(&self, a: &Type, b: &Type) -> bool {
-        self.resolver.lax_same_value(a, b)
-    }
-
     fn typecmp_lax(&self, a: &Type, b: &Type) -> bool {
         self.resolver.typecmp_lax(a, b)
     }
@@ -540,6 +554,13 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.settle(span.start);
         let location = self.resolver.at(self.file, span);
         let flags = CompilerFlags::at(self.flags, span.start);
+        let from = match source {
+            Source::Typed(from) => from.clone(),
+            Source::Literal(literal) => literal.ty.value_type(),
+        };
+        if let Some(refused) = self.resolver.strict_enum_cast(&from, to, location, flags) {
+            return refused;
+        }
         let to = self.resolver.resolved_deep(to, MAX_TYPEDEF_DEPTH);
         // FTEF-23.8: a cast to a boolean is its logical truth, with no message.
         if matches!(to.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat)) {

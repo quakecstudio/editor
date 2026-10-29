@@ -148,9 +148,10 @@ impl Parser<'_> {
                 .nth(1)
                 .is_some_and(|t| matches!(t.kind, K::Semicolon | K::Comma | K::Eq | K::LBracket)),
             // `QCC_PR_ParseType` with `silentfail` returns no type for a token that is no name,
-            // so `static;` and `const *x;` are an `int`'s definitions (FTEF-19.21).
-            Some(K::Semicolon | K::Star | K::LParen | K::LBracket) => true,
-            _ => false,
+            // so `static;` and `const *x;` are an `int`'s definitions (FTEF-19.21), and `var =
+            // 1;` one whose name `QCC_PR_ParseName` refuses, "\"=\" - not a name" (FTEF-19.73).
+            Some(K::Dot | K::DotDot) | None => false,
+            Some(_) => true,
         }
     }
 
@@ -1763,14 +1764,11 @@ impl Parser<'_> {
         self.finish_node();
     }
 
-    /// `goto name;` (FTEF-18.23), whose label is looked for at the end of the function
-    /// (FTEF-18.24).
+    /// `goto name;` (FTEF-18.23), whose label the check stage looks for at the end of the
+    /// function (FTEF-34.12).
     pub(super) fn goto_stmt(&mut self) {
         self.start_node(K::GotoStmt);
         self.bump_as(K::GotoKw);
-        if let Some(tok) = self.current().filter(|t| t.kind == K::Name) {
-            self.gotos.push((tok.text.clone(), tok.span));
-        }
         self.name();
         self.end_statement();
         self.finish_node();

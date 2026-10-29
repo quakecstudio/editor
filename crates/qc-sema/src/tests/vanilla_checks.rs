@@ -34,6 +34,21 @@ fn body(statement: &str) -> Vec<(Code, String)> {
     .collect()
 }
 
+/// The diagnostics of the vanilla program `source`.
+fn vanilla(source: &str) -> Vec<(Code, String)> {
+    let mut db = Db::new();
+    db.set_dialect(Dialect::Vanilla);
+    db.set_file(FILE, PathBuf::from("t.qc"), source.as_bytes().to_vec());
+    db.analyze_module(&ModuleInput {
+        compiled: vec![FILE],
+        command_line: CommandLine::new::<&str>(&[]),
+        ..ModuleInput::default()
+    })
+    .diagnostics()
+    .map(|d| (d.diagnostic.code, d.diagnostic.message.clone()))
+    .collect()
+}
+
 fn d(code: Code, message: &str) -> (Code, String) {
     (code, message.to_owned())
 }
@@ -68,7 +83,7 @@ fn operators_take_their_rows_types() {
     }
 }
 
-// spec QC-16.7: rows match by basic types alone, an assignment's two sides must be of one basic
+// spec QC-16.8: rows match by basic types alone, an assignment's two sides must be of one basic
 // type and `.` takes an entity and a field
 #[test]
 fn basic_types_decide_the_row() {
@@ -153,4 +168,94 @@ fn variadic_types_are_never_the_same() {
         analyze("void(...) va = {};\nvoid(void(...) f) h = {};\nvoid() g = { h(va); };\n"),
         [d(Code::E0306, "type mismatch on parm 0")]
     );
+}
+
+/// The cases of [`expressions_as_qcc_reports_them`], each with the pinned `qcc`'s messages.
+const EXPRESSIONS_AS_QCC_REPORTS_THEM_CASES: &[(&str, &[&str])] = &[
+    ("x = v * s;", &["type mismatch for *"]),
+    ("x = v / x;", &["type mismatch for /"]),
+    ("x = s + x;", &["type mismatch for +"]),
+    ("x = s - x;", &["type mismatch for -"]),
+    ("x = v == x;", &["type mismatch for =="]),
+    ("x = v != x;", &["type mismatch for !="]),
+    ("x = v <= x;", &["type mismatch for <="]),
+    ("x = v >= x;", &["type mismatch for >="]),
+    ("x = v < x;", &["type mismatch for <"]),
+    ("x = v > x;", &["type mismatch for >"]),
+    ("x = v && x;", &["type mismatch for ="]),
+    ("x = v || x;", &["type mismatch for ="]),
+    ("x = v & x;", &["type mismatch for &"]),
+    ("x = v | x;", &["type mismatch for |"]),
+    ("x = x * x;", &[]),
+    ("v = v - v;", &[]),
+    ("x = s == s;", &[]),
+    ("x = e1 != e1;", &[]),
+    ("x = f2 == f2;", &[]),
+    ("return;", &[]),
+    ("{ x = v / x; }", &["type mismatch for /"]),
+    ("while (x) x = v / x;", &["type mismatch for /"]),
+    ("do x = v / x; while (x);", &["type mismatch for /"]),
+    ("x = (v / x);", &["type mismatch for /"]),
+    ("x = e1.vf;", &["type mismatch for ="]),
+    ("x = e1.ff;", &[]),
+    ("x = e1.x;", &["type mismatch for ."]),
+    ("x = f2(1, 2);", &["too many parameters"]),
+    ("x = f2();", &[]),
+    ("f8(1,2,3,4,5,6,7,8,9);", &["too many parameters"]),
+    ("x = f2(v);", &["type mismatch on parm 0"]),
+    ("x = x(1);", &["not a function"]),
+    ("if (x) x = v / x; else x = 1;", &["type mismatch for /"]),
+    ("if (x) x = 1; else x = v / x;", &["type mismatch for /"]),
+    ("x = x / x;", &[]),
+    ("x = x <= x;", &[]),
+    ("x = x >= x;", &[]),
+    ("x = x < x;", &[]),
+    ("x = x > x;", &[]),
+    ("x = x && x;", &[]),
+    ("x = x || x;", &[]),
+    ("x = x & x;", &[]),
+    ("x = x | x;", &[]),
+    ("x = e1 || x;", &["type mismatch for ="]),
+    ("x = s || x;", &["type mismatch for ="]),
+    ("x = x || s;", &["type mismatch for ||"]),
+    ("x = x || v;", &["type mismatch for ||"]),
+    ("x = (v);", &["type mismatch for ="]),
+    ("x = (x);", &[]),
+    ("v = e1.vf;", &[]),
+    ("s = e1.fs;", &[]),
+    ("e1 = e1.fe;", &[]),
+    ("e1.fthink = f8;", &[]),
+    ("x = e1.f2;", &["type mismatch for ."]),
+    ("x = x.ff;", &["type mismatch for ."]),
+    ("va(1,2,3,4,5,6,7,8);", &[]),
+    ("va(1,2,3,4,5,6,7,8,9);", &["More than eight parameters"]),
+    ("f8(1,2,3,4,5,6,7,8);", &[]),
+    ("f8(1,2,3,4,5,6,7);", &["too few parameters"]),
+    ("return x / v;", &["type mismatch for /"]),
+    ("x = nope.ff;", &["Unknown value \"nope\""]),
+    ("x = e1.nope;", &["Unknown value \"nope\""]),
+    ("x = e1.fvo;", &[]),
+];
+
+// spec QC-16.1: each operator, statement and call as the pinned `qcc` reports it
+// spec QC-16.8: a `.void` field read is a float
+#[test]
+fn expressions_as_qcc_reports_them() {
+    const DEFS: &str = "float x; vector v; string s; entity e1; .vector vf; .float ff; .void() fthink; .string fs; .entity fe; .void fvo; float(float a) f2 = { return a; }; void(float a, float b, float c, float d, float e, float f, float g, float h) f8 = {}; void(...) va = {};";
+    for (statement, expected) in EXPRESSIONS_AS_QCC_REPORTS_THEM_CASES {
+        let found: Vec<String> = vanilla(&format!("{DEFS}\nvoid() g = {{ {statement} }};\n"))
+            .into_iter()
+            .map(|(_, m)| m)
+            .collect();
+        assert_eq!(found, *expected, "{statement}");
+    }
+}
+
+// spec QC-16.1: `qcc` checks no `return`'s value against the function's type
+#[test]
+fn a_return_value_is_not_checked() {
+    for statement in ["return v;", "return;", "return x;", "return s;"] {
+        let source = format!("float x; vector v; string s;\nfloat() h = {{ {statement} }};\n");
+        assert_eq!(vanilla(&source), [], "{statement}");
+    }
 }

@@ -13,6 +13,7 @@ use qc_preproc::Op;
 use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::c_scalar::CScalar;
 
+use crate::DefId;
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
@@ -180,19 +181,47 @@ impl Checker<'_> {
         })
     }
 
+    /// FTEF-24.16: the member a class's scope names at `at`, as the global `CLASS::name` a call
+    /// makes with the entity as `self` (`REF_NONVIRTUAL`).
+    fn member_global(&self, base: &Value, at: usize, scope: &str) -> Option<Value> {
+        let def = self.env.reference(at)?;
+        let member = self.member_global_of(base, def)?;
+        let field = format!("{scope}::{}", self.env.definition(def)?.name);
+        Some(Value::field_of(base, field, member.ty, Some(def)))
+    }
+
+    /// FTEF-24.16: a class's member `def` as the global `CLASS::name`, its class's name
+    /// written, called with the entity as `self`.
+    fn member_global_of(&self, base: &Value, def: DefId) -> Option<Value> {
+        let member = self.env.definition(def)?;
+        let class = self.env.definition(member.member_of?)?;
+        let field = format!("{}::{}", class.name, member.name);
+        let ty = match &member.ty {
+            Type::Field(held) => held.as_ref().clone(),
+            other => other.clone(),
+        };
+        Some(Value::field_of(base, field, ty, Some(def)))
+    }
+
     /// FTEF-24.1: an entity's field, `QCC_PR_ParseField`: the selector, or the expression in
     /// parentheses after `.`, must be a field, whose value is what the field holds; anything else
     /// is "NAME is not a field", or "NAME is not a field of class CLASS" on a class's value.
     fn entity_field(&mut self, base: &Value, selector: &ast::Expr) -> Checked {
         let field = match selector {
-            ast::Expr::Name(name) => {
-                let Some(token) = name.name() else {
+            ast::Expr::Name(name_ref) => {
+                let Some(token) = name_ref.name() else {
                     return Ok(Value::unknown());
                 };
                 let name = token.text_lossless();
+                let at = token.span().start;
+                // FTEF-24.16: `e.CLASS::name` names the member function's global.
+                if let Some(scope) = name_ref.scope()
+                    && let Some(member) = self.member_global(base, at, &scope.text_lossless())
+                {
+                    return Ok(member);
+                }
                 // A class's member is a field of its type (`QCC_PR_ParseEntClass`), looked up
                 // as `CLASS::NAME` in the base's class and its parents first (FTEF-24.6).
-                let at = token.span().start;
                 if let Some(member) = self.env.class_member(&base.ty, &name, at)
                     && let Some(def) = self.env.definition(member)
                 {
@@ -222,6 +251,12 @@ impl Checker<'_> {
                 // `QCC_GetSRefName` of the value: a definition's name, `IMMEDIATE`, or a
                 // temporary's type.
                 let value = self.expr_of(paren.expr())?;
+                // FTEF-24.16: `e.(CLASS::name)` names the member function's global.
+                if let Some(def) = value.sym.def()
+                    && let Some(member) = self.member_global_of(base, def)
+                {
+                    return Ok(member);
+                }
                 let span = selector.syntax().span();
                 let label = value.label();
                 (value.ty, label, span, value.sym.def())

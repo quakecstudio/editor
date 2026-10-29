@@ -12,8 +12,10 @@ use qc_diag::{Code, Span};
 use qc_preproc::Op;
 use qc_syntax::ast::{self, AstNode as _};
 
+use crate::DefKind;
 use crate::check::assign::{lexed_string, string_bytes};
 use crate::check::constant::Constant;
+use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::reference::expected_after;
@@ -45,7 +47,7 @@ impl Checker<'_> {
             && let Some(token) = name.name()
             && self.env.reference(token.span().start).is_none()
             && let Some(value) =
-                self.intrinsic(&token.text_lossless(), &args, written.clone(), span)?
+                self.intrinsic(&token.text_lossless(), &args, written.clone(), call)?
         {
             return Ok(value);
         }
@@ -61,17 +63,30 @@ impl Checker<'_> {
         }
         let callee = self.expr_of(call.callee())?;
         let callee_span = call.callee().map_or(span, |c| c.syntax().span());
-        let method = match &callee.reference {
-            Reference::Field(field) => {
-                field.field.contains("::")
-                    || field
-                        .def
-                        .and_then(|def| self.env.definition(def))
-                        .is_some_and(|d| d.member_of.is_some())
-            }
-            _ => false,
+        // A method's call is made with its object as `self` (`newself`), a member function named
+        // bare in another with `this`. A non-virtual one names its definition, `CLASS::name`
+        // (`QCC_RefToDef`), where a field's read, a virtual method's included, is a temporary
+        // named by its type (FTEF-32.11).
+        let member_def = match &callee.reference {
+            Reference::Field(field) => field.def,
+            _ => callee.sym.def(),
         };
-        let func = self.read(callee, callee_span)?;
+        let member = member_def
+            .and_then(|def| self.env.definition(def))
+            .and_then(|d| Some((d.member_of?, d)));
+        let method = member.is_some();
+        let method_name = match &callee.reference {
+            Reference::Field(field) if field.field.contains("::") => Some(field.field.clone()),
+            _ => member
+                .filter(|(_, d)| d.kind != DefKind::Field)
+                .and_then(|(class, d)| {
+                    Some(format!("{}::{}", self.env.definition(class)?.name, d.name))
+                }),
+        };
+        let mut func = self.read(callee, callee_span)?;
+        if method_name.is_some() {
+            func.name = method_name;
+        }
         if func.ty == Type::Unknown {
             for arg in &args {
                 self.value(Some(arg.clone()))?;
@@ -98,22 +113,26 @@ impl Checker<'_> {
         let Some(function) = function else {
             // A `variant` takes any arguments, and no argument left empty (FTEF-32.9).
             let slots = call.args().map(|list| list.slots()).unwrap_or_default();
+            let mut values = Vec::new();
             for (at, slot) in slots.iter().enumerate() {
                 let Some(arg) = slot else {
                     return self.missing_argument(at, &slots, span);
                 };
-                self.value(Some(arg.clone()))?;
+                values.push(self.value(Some(arg.clone()))?);
             }
+            // Each argument is stored by its own size, then the call made (FTEF-34.9).
+            self.generate_call(&values, span);
             return Ok(Value::of(Type::Named("__variant".into())));
         };
-        if !method && function.params.is_empty() && !function.variadic {
+        // `!t->num_parms`, which counts no `...` (FTEF-32.10).
+        if !method && function.params.is_empty() {
             if name == "spawn"
                 && let Some(list) = call.args()
                 && let Some(value) = self.spawn(&list, &args)?
             {
                 return Ok(value);
             }
-            if let Some(value) = self.intrinsic(&name, &args, written, span)? {
+            if let Some(value) = self.intrinsic(&name, &args, written, call)? {
                 return Ok(value);
             }
         }
@@ -197,7 +216,10 @@ impl Checker<'_> {
             let returned = Value::of(reference.ty.clone());
             self.store_reference(reference, &returned, span)?;
         }
-        Ok(Value::of(function.ret.clone()))
+        Ok(Value {
+            returned: true,
+            ..Value::of(function.ret.clone())
+        })
     }
 
     /// FTEF-32.9: an argument left empty where no parameter takes it: the expression read
@@ -326,7 +348,7 @@ impl Checker<'_> {
         self.generate(call, span);
     }
 
-    /// FTEF-32.2: the intrinsics a call of a function with no parameters stands for, by the
+    /// FTEF-32.10: the intrinsics a call of a function with no parameters stands for, by the
     /// function's name: `_`, which takes only a string immediate; `random` and `randomv`, whose
     /// arguments are made floats; `alloca`, whose size is made an integer, rounded up to words and
     /// pushed by `OP_PUSH`, a plain statement; `va_arg`; and
@@ -336,12 +358,19 @@ impl Checker<'_> {
         name: &str,
         args: &[ast::Expr],
         written: Option<Type>,
-        span: Span,
+        call: &ast::CallExpr,
     ) -> Result<Option<Value>, Fatal> {
+        let span = call.syntax().span();
         let string = || Value::of(Type::Simple(SimpleType::String));
         // `QCC_PR_Expression` reads their first argument whatever follows the `(`.
         if args.is_empty() && matches!(name, "alloca" | "used_sound" | "used_model") {
             let message = "\")\" - not a name".to_owned();
+            return self.fatal(Code::E0201, span, message).map(Some);
+        }
+        // `!QCC_PR_CheckToken(")")` takes the `)` of `entnum()` and `autocvar()`, so the call's
+        // argument is read from what follows it (FTEF-32.12).
+        if args.is_empty() && matches!(name, "entnum" | "autocvar") {
+            let message = format!("\"{}\" - not a name", expected_after(call.syntax()));
             return self.fatal(Code::E0201, span, message).map(Some);
         }
         match name {
@@ -364,7 +393,7 @@ impl Checker<'_> {
                 }
                 Ok(Some(Value::of(Type::Simple(SimpleType::Vector))))
             }
-            "entnum" if !args.is_empty() => {
+            "entnum" => {
                 // `(e / 1i) / (nextent(world) / 1i)`, by the `nextent` builtin.
                 let entity = self.value(args.first().cloned())?;
                 let one = Value::constant(Constant::int(1));
@@ -434,7 +463,16 @@ impl Checker<'_> {
             }
             // FTEF-17.17: `autocvar(name, default[, "description"])` is the global
             // `autocvar_name`, of the default's type and given its value.
-            "autocvar" if args.len() >= 2 => {
+            "autocvar" => {
+                // FTEF-32.12: a name, a `,`, the default, and at most a description.
+                if args.len() < 2 || args.len() > 3 {
+                    let message = if args.len() < 2 {
+                        "expected ,, found )"
+                    } else {
+                        "expected ), found ,"
+                    };
+                    return self.fatal(Code::E0204, span, message.to_owned()).map(Some);
+                }
                 let Some(ast::Expr::Name(name)) = args.first() else {
                     return Ok(None);
                 };
@@ -629,8 +667,18 @@ impl Checker<'_> {
             Some(etype) => self.converted(value, etype, span)?,
             None => value.clone(),
         };
+        // `QCC_ShouldConvert` of 0 returns the value with its own type, as an `int` stays for a
+        // function or a pointer (FTEF-28.4).
+        let unconverted = match (self.etype_of(&value.ty), self.etype_of(to)) {
+            (Some(from), Some(to)) => from != to && conversion_opcodes(from, to).is_empty(),
+            _ => false,
+        };
         Ok(Value {
-            ty: to.clone(),
+            ty: if unconverted {
+                value.ty.clone()
+            } else {
+                to.clone()
+            },
             ..converted
         })
     }

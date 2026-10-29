@@ -263,12 +263,12 @@ impl<'a> Resolver<'a> {
             // FTEF-6.9: the width is `QCC_PR_IntConstExpr()`'s, whose names are values and
             // whose literal is an integer ("Value is not an integer constant").
             self.resolve_uses(file, None, &member.width_uses);
-            // An unknown name is no constant either.
-            let unknown_width = matches!(
+            // A name is a constant only if it names one (FTEF-6.30).
+            let variable_width = matches!(
                 &member.width_const,
-                Some(IntConst::Name(name)) if self.lookup_global(name).is_none()
+                Some(IntConst::Name(name)) if !self.names_constant(name)
             );
-            if !member.width_integer || unknown_width {
+            if !member.width_integer || variable_width {
                 self.report(
                     Code::E0262,
                     location,
@@ -316,6 +316,12 @@ impl<'a> Resolver<'a> {
         }
     }
 
+    /// Whether the global `name` is a constant (`QCC_PR_IntConstExpr` reads a constant's value).
+    fn names_constant(&self, name: &str) -> bool {
+        self.lookup_global(name)
+            .is_some_and(|def| self.facts.get(def.0).is_some_and(|f| f.constant))
+    }
+
     /// FTEF-6.17: each array size of a struct member, `QCC_PR_IntConstExpr()`, is an integer
     /// constant, a name the module defines among them, and no 0. Returns whether one was
     /// reported, a fatal error.
@@ -332,8 +338,13 @@ impl<'a> Resolver<'a> {
                     self.report(Code::E0262, location, message);
                     return true;
                 }
-                IntConst::Name(name) if self.lookup_global(name).is_none() => {
-                    self.report(Code::E0301, location, format!("Unknown value \"{name}\"."));
+                // FTEF-6.30: an unknown name is defined a global `variant` as it is read, a
+                // variable no constant.
+                IntConst::Name(name) if !self.names_constant(name) => {
+                    if self.lookup_global(name).is_none() {
+                        self.report(Code::E0301, location, format!("Unknown value \"{name}\"."));
+                        self.define_variant(name, None, location);
+                    }
                     let message = "Value is not an integer constant".to_owned();
                     self.report(Code::E0262, location, message);
                     return true;

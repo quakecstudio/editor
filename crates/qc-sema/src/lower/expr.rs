@@ -57,6 +57,9 @@ pub enum UseKind {
     /// A name that may be a type's, in a `sizeof` (FTEF-18.12): the operand FTEQCC tries as a
     /// type first (FTEF-19.38).
     TypeOrValue,
+    /// A cast's type that is a lone name (FTEF-16.15): a type, or else, when the name is a value
+    /// in scope, that value in parentheses, which the check stage reads on.
+    CastName,
     /// A field named among `spawn`'s arguments (FTEF-17.20), which the check stage looks up in
     /// the class first: the definition of the name, if any, and no error when there is none.
     NamedField,
@@ -276,7 +279,24 @@ fn lower_call(call: &ast::CallExpr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
 /// profile (FTEF-22), then the operand and any aggregate initialiser's elements as values.
 fn lower_cast(cast: &ast::CastExpr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
     if let Some(ty) = cast.ty() {
+        let before = uses.len();
         type_uses(&ty, cx, uses);
+        // FTEF-16.15: a lone name, `(x)`, written as the whole type.
+        let lone = ty
+            .syntax()
+            .descendants_with_tokens()
+            .filter(|e| match e {
+                qc_syntax::SyntaxElement::Token(t) => !t.kind().is_trivia(),
+                qc_syntax::SyntaxElement::Node(_) => false,
+            })
+            .count()
+            == 1;
+        if lone
+            && uses.len() == before.saturating_add(1)
+            && let Some(use_) = uses.last_mut()
+        {
+            use_.kind = UseKind::CastName;
+        }
         if cx.fte
             && let Some(ast::Expr::Literal(literal)) = cast.operand()
             && let Type::Named(name) = cx.ty(&ty)

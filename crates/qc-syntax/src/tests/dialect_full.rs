@@ -540,6 +540,21 @@ fn a_qualifier_may_leave_the_type_out() {
     }
 }
 
+// spec FTEF-19.73: after a qualifier any token that is no name or field type leaves the type out,
+// and is then the name `QCC_PR_ParseName` refuses
+#[test]
+fn a_qualifier_before_no_type_or_name_wants_a_name() {
+    for source in [
+        "var = 1;\n",
+        "const 5;\n",
+        "noref = 1;\n",
+        "typedef 1 x;\n",
+        "void() f = { static = 2; };\n",
+    ] {
+        assert_eq!(fte_errors(source), [Code::E0201], "{source}");
+    }
+}
+
 // spec FTEF-15.2: a function returns any type and may be initialised with a value.
 #[test]
 fn function_return_types_and_values_parse() {

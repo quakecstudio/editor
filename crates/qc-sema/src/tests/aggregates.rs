@@ -395,3 +395,40 @@ fn a_trailing_comma_after_every_member() {
     assert!(messages(&format!("{defs}S st = {{ 1, 2 }};")).is_empty());
     assert!(messages("union U { float a; float b; };\nU u = { 1, };").is_empty());
 }
+
+// spec FTEF-6.30: a member's size or width that names a variable is no integer constant, and an
+// unknown name read there is a global `variant`
+#[test]
+fn a_member_size_names_a_constant() {
+    let not_integer = d(Code::E0262, "Value is not an integer constant");
+    for source in [
+        "float y; struct S { int a : y; };",
+        "float y; struct S { float a[y]; };",
+    ] {
+        assert_eq!(
+            messages(source),
+            std::slice::from_ref(&not_integer),
+            "{source}"
+        );
+    }
+    assert_eq!(
+        messages(
+            "const int k = 3; enum { E = 2 }; struct S { int a : k; float b[k]; int c : E; };"
+        ),
+        []
+    );
+    for source in [
+        "struct S { float a[A]; }; float u = A;",
+        "struct S { int a : A; }; float u = A;",
+    ] {
+        let mut found = messages(source);
+        found.sort();
+        let mut expected = vec![
+            d(Code::E0301, "Unknown value \"A\"."),
+            not_integer.clone(),
+            d(Code::E0214, "initializer for 'u' is not constant"),
+        ];
+        expected.sort();
+        assert_eq!(found, expected, "{source}");
+    }
+}

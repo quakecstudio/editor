@@ -233,6 +233,7 @@ impl<'a> Resolver<'a> {
             let location = self.at(file, *span);
             self.check_type_names(ty, &body.typedefs, span.start, location);
         }
+        let mut bare_reported: Option<usize> = None;
         for local in &body.locals {
             self.settle(local.span.start);
             let location = self.at(file, local.span);
@@ -242,6 +243,30 @@ impl<'a> Resolver<'a> {
                     location,
                     "Fields and functions must be global".to_owned(),
                 );
+                continue;
+            }
+            // FTEF-19.74: `T x;` with `T` no type is the expression `T`, then `x` where the
+            // statement wants its `;`.
+            if let Some((name, type_span)) = &local.bare_type
+                && self.profile.fteqcc_diagnostics()
+                && self
+                    .unknown_type_name(&local.ty, &body.typedefs, local.span.start)
+                    .is_some()
+            {
+                if bare_reported != Some(type_span.start) {
+                    bare_reported = Some(type_span.start);
+                    let type_location = self.at(file, *type_span);
+                    if self.lookup_in_scope(scope, name).is_none() {
+                        let message = format!("Unknown value \"{name}\".");
+                        self.report(Code::E0301, type_location, message);
+                        self.define_variant(name, Some(scope.owner), type_location);
+                    }
+                    let found = &local.name;
+                    self.report(Code::W0205, location, "Expected punctuation".to_owned());
+                    let message = "Statement does not do anything".to_owned();
+                    self.report(Code::W0313, type_location, message);
+                    self.report(Code::E0204, location, format!("expected ;, found {found}"));
+                }
                 continue;
             }
             // FTEF-19.20: a type name no type has is "not a type", and no local is made.
@@ -344,6 +369,14 @@ impl<'a> Resolver<'a> {
         let Some(expr) = value.syntax.clone() else {
             return;
         };
+        let checked = match &value.kind {
+            ValueKind::Name(source) => self.converted_variable(source, &decl.ty),
+            ValueKind::Cast(cast) => self.cast_checked(cast),
+            _ => true,
+        };
+        if !checked {
+            return;
+        }
         let written = value.written_types.clone();
         let Some(owner) = self.lookup_global(&decl.name) else {
             return;
@@ -555,6 +588,20 @@ impl<'a> Resolver<'a> {
                     self.check_type_names(&ty, &typedefs, use_.span.start, location);
                     Found::Nothing
                 }
+                // FTEF-16.15: `QCC_PR_ParseType` finds no type of the name, so `(x)` is the
+                // value in parentheses, which the check stage reads with what follows.
+                (_, UseKind::CastName) => {
+                    let ty = Type::Named(use_.name.as_str().into());
+                    let typedefs = self.body_typedefs.clone();
+                    if self
+                        .unknown_type_name(&ty, &typedefs, use_.span.start)
+                        .is_none()
+                    {
+                        Found::Nothing
+                    } else {
+                        self.resolve_value(scope, &use_.name, false)
+                    }
+                }
                 (_, UseKind::Member) => self.resolve_member(scope, use_),
                 (_, UseKind::NamedField) => {
                     let def = match scope {
@@ -644,24 +691,11 @@ impl<'a> Resolver<'a> {
                     };
                     self.report(Code::E0301, location, message);
                     // FTEF-19.69: `QCC_PR_GetSRef(type_variant, name, pr_scope, true, ...)`
-                    // defines the name in the function, which its later uses find and the
-                    // check stage reads as a `variant`.
-                    if let Some(scope) = scope
-                        && use_.scope.is_none()
-                        && self.profile.fteqcc_diagnostics()
-                    {
-                        let id = self.push_def(Definition {
-                            name: use_.name.clone(),
-                            ty: Type::Named("__variant".into()),
-                            kind: DefKind::Local,
-                            location,
-                            owner: Some(scope.owner),
-                            initialized: false,
-                            member_of: None,
-                            generated: true,
-                        });
+                    // defines the name in the function, or at global scope a global (FTEF-19.71),
+                    // which its later uses find and the check stage reads as a `variant`.
+                    if use_.scope.is_none() && self.profile.fteqcc_diagnostics() {
+                        let id = self.define_variant(&use_.name, scope.map(|s| s.owner), location);
                         if let Some(f) = self.fact_mut(id) {
-                            f.referenced = true;
                             f.scope_start = Some(use_.span.start);
                         }
                         self.use_defs.insert(use_.span.start, id);
@@ -669,6 +703,34 @@ impl<'a> Resolver<'a> {
                 }
             }
         }
+    }
+
+    /// FTEF-19.69, FTEF-19.71: the `variant` `QCC_PR_GetSRef(type_variant, name, pr_scope,
+    /// true, ...)` defines for an unknown name, a local of the function `owner` or a global.
+    pub(in crate::resolve) fn define_variant(
+        &mut self,
+        name: &str,
+        owner: Option<DefId>,
+        location: Location,
+    ) -> DefId {
+        let id = self.push_def(Definition {
+            name: name.to_owned(),
+            ty: Type::Named("__variant".into()),
+            kind: if owner.is_some() {
+                DefKind::Local
+            } else {
+                DefKind::Global
+            },
+            location,
+            owner,
+            initialized: false,
+            member_of: None,
+            generated: true,
+        });
+        if let Some(f) = self.fact_mut(id) {
+            f.referenced = true;
+        }
+        id
     }
 
     /// FTEF-19.61: `QCC_PR_ParseDefs`'s checks of a local's qualifiers, as of a global's:

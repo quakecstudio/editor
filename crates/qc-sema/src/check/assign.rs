@@ -8,7 +8,7 @@
 //! (FTEF-29).
 
 use qc_diag::{Code, Span};
-use qc_preproc::Op;
+use qc_preproc::{FteFlag, Op};
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{SyntaxKind, SyntaxNode};
@@ -274,6 +274,13 @@ impl Checker<'_> {
                 }
             }
         };
+        // FTEF-29.13: a store to a definition is its `OP_STORE_*`, unless it folds into the
+        // statement that made the value's temporary (`opt_assignments`).
+        let folded = stored.temp.is_some() && stored.temp == self.last_temp;
+        if matches!(kind, Assign::Store) && lhs.reference == Reference::Global && !folded {
+            let store = Checker::store_op(self.etype(&target));
+            self.emit(store, &stored, &Value::unknown(), span)?;
+        }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
         if lhs.readonly {
             let message = format!("Assignment to constant {}", lhs.label());
@@ -286,6 +293,9 @@ impl Checker<'_> {
         let stored = self.bit_copy(&stored, &packed, span)?;
         self.store_reference(&lhs, &stored, span)?;
         self.not_an_lvalue(&lhs, span);
+        if matches!(kind, Assign::Compound(..)) {
+            self.freed_again(&lhs, span);
+        }
         Ok(Value {
             ty: lhs.ty,
             readonly: true,
@@ -356,8 +366,13 @@ impl Checker<'_> {
         if matches!(lhs.reference, Reference::Field(_)) && updates_in_place {
             return Ok(None);
         }
-        // `lhsd = QCC_RefToDef(lhsr, false)`: the left side read.
-        self.read(lhs.clone(), span)?;
+        // `lhsd = QCC_RefToDef(lhsr, false)`: the left side read, which for a string's character
+        // is the load's own type (FTEF-31.18).
+        let read = self.read(lhs.clone(), span)?;
+        let (to, read_ty) = match lhs.reference {
+            Reference::Character(_) => (self.etype(&read.ty).unwrap_or(to), read.ty.clone()),
+            _ => (to, lhs.ty.clone()),
+        };
         let find = |from: Etype| {
             ops.iter().copied().find(|&op| {
                 row(op).is_some_and(|r| r.types[1].etype() == from && r.types[0].etype() == to)
@@ -366,20 +381,23 @@ impl Checker<'_> {
         let (op, rhs) = match find(from) {
             Some(op) => (op, rhs.clone()),
             None => {
-                let cast = self.cast_to(rhs, &lhs.ty, span)?;
+                let cast = self.cast_to(rhs, &read_ty, span)?;
                 let Some(op) = self.etype(&cast.ty).and_then(find) else {
                     // FTEF-24.11: the types' own names. An array's address is `T*`
                     // (`QCC_PR_PointerType`), and a cast to the type the value has already
                     // leaves the value's.
                     let left = if lhs.is_array_head() {
-                        self.env.type_name(&lhs.ty)
+                        self.env.type_name(&read_ty)
                     } else {
-                        self.own_name(&lhs.ty)
+                        self.own_name(&read_ty)
                     };
-                    let right = if rhs.ty == lhs.ty {
+                    // A cast that keeps a type of its own, `OP_CONV_FU`'s, names that one.
+                    let right = if rhs.ty == read_ty {
                         self.own_name(&rhs.ty)
-                    } else {
+                    } else if cast.ty == read_ty {
                         left.clone()
+                    } else {
+                        self.own_name(&cast.ty)
                     };
                     let message = format!(
                         "Type mismatch on assignment. {left} {spelling} {right} is not supported"
@@ -389,7 +407,12 @@ impl Checker<'_> {
                 (op, cast)
             }
         };
-        let value = self.emit(op, lhs, &rhs, span)?;
+        // The opcode reads the value read, `lhsd`, and frees its temporary (FTEF-27.16).
+        let read = Value {
+            ty: read_ty.clone(),
+            ..read
+        };
+        let value = self.emit(op, &read, &rhs, span)?;
         let flags = self.env.flags_at(span.start);
         let supply = Source::Typed(&value.ty).supply_for_assignment(&lhs.ty, flags);
         let message = || {
@@ -423,12 +446,17 @@ impl Checker<'_> {
     /// then the conversion opcodes it emits (FTEF-27.8); the value cast is a `to`, under `lax`
     /// too.
     pub(super) fn cast_to(&mut self, value: &Value, to: &Type, span: Span) -> Checked {
-        if self.env.cast(value.source(), to, span) {
+        if self.env.cast(self.cast_source(value), to, span) {
             return Err(Fatal);
         }
         let converted = self.convert_to(value, to, span)?;
         // FTEF-23.8: a value cast to a boolean is of the boolean's parent type.
         if matches!(to.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat)) {
+            return Ok(converted);
+        }
+        // FTEF-31.18: a float cast to an unsigned integer is what `OP_CONV_FU` gives, which
+        // `QCC_TryEvaluateCast` does not recast.
+        if self.etype(&value.ty) == Some(Etype::Float) && self.etype(to) == Some(Etype::Uint) {
             return Ok(converted);
         }
         Ok(Value {
@@ -447,11 +475,7 @@ impl Checker<'_> {
             Some(CScalar::BFloat) => Some(Type::Simple(SimpleType::Float)),
             _ => None,
         };
-        if let Some(parent) = parent
-            && !matches!(
-                value.ty.fteqcc_scalar(),
-                Some(CScalar::Bool | CScalar::BFloat)
-            )
+        if let Some(parent) = parent.clone()
             && let Some((op, zero)) = self.etype(&value.ty).and_then(|e| Test::Truth.opcode(e))
         {
             let zero = Value {
@@ -459,6 +483,14 @@ impl Checker<'_> {
                 ..zero.map_or_else(Value::unknown, Value::constant)
             };
             let truth = self.emit(op, value, &zero, span)?;
+            return self.convert_to(&truth, &parent, span);
+        }
+        // `t == ev_void && flag_laxcasts`: "cast to boolean", then `OP_NE_F` (FTEF-23.11).
+        if let Some(parent) = parent
+            && self.etype(&value.ty) == Some(Etype::Void)
+            && self.env.flags_at(span.start).has(FteFlag::Laxcasts)
+        {
+            let truth = self.test(Test::Truth, value, span, "cast to boolean")?;
             return self.convert_to(&truth, &parent, span);
         }
         // FTEF-19.55: a float or an integer cast to a vector is multiplied by `'1 1 1'`
@@ -598,6 +630,11 @@ impl Checker<'_> {
             constness: Constness::Variable,
             ..self.read(operand.clone(), span)?
         };
+        // FTEF-29.13: a value the postfix gives is the old one, copied to a temporary first.
+        if !discarded && operand.reference == Reference::Global {
+            let store = Checker::store_op(self.etype(&operand.ty));
+            self.emit(store, &old, &Value::unknown(), span)?;
+        }
         // `switch(ref->cast->type)`: a bitfield, or an 8- or 16-bit integer, is `ev_bitfld`,
         // which only a discarded value steps, by the type it is read as.
         let narrow = matches!(
@@ -647,6 +684,7 @@ impl Checker<'_> {
         let updated = self.bit_copy(&updated, operand, span)?;
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
+        self.freed_again(operand, span);
         Ok(())
     }
 
@@ -659,6 +697,17 @@ impl Checker<'_> {
                 lhs.label()
             );
             self.env.report(Code::E0325, span, message);
+        }
+    }
+
+    /// FTEF-29.12: a compound assignment or an increment of an array named bare, after
+    /// [`Checker::not_an_lvalue`]: `QCC_PR_DiscardRef` has freed the head it read, which is then
+    /// freed again, "INTERNAL: over-freed refcount to NAME" (`QCC_FreeTemp`).
+    /// A struct's member array frees its offset constants too, which the model does not follow.
+    pub(super) fn freed_again(&mut self, lhs: &Value, span: Span) {
+        if lhs.reference == Reference::ArrayHead(None) {
+            let message = format!("INTERNAL: over-freed refcount to {}", lhs.label());
+            self.env.report(Code::W0319, span, message);
         }
     }
 
@@ -679,7 +728,7 @@ impl Checker<'_> {
             let stray = self.stray.take();
             checked?;
             // FTEF-18.38: the definition ends at the `[`, which starts a statement of its own.
-            if let Some(span) = stray {
+            if let Some((span, _)) = stray {
                 let message = "Missing semicolon at end of definition".to_owned();
                 self.env.report(Code::W0203, span, message);
                 let message = "Statement does not do anything".to_owned();

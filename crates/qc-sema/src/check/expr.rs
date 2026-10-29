@@ -12,6 +12,7 @@ use qc_diag::{Code, Span};
 use qc_preproc::FteFlag;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 
+use crate::cast::Source;
 use crate::check::assign::assign_spelling;
 use crate::check::constant::{Constant, unquoted};
 use crate::check::convert::{Choice, Operand, choose_opcode};
@@ -22,7 +23,7 @@ use crate::check::opcodes::{OpType, candidates, row};
 use crate::check::flow::Layout;
 use crate::check::{Constness, Env, FunctionFacts, Reference, Sym, TypedBody, Value};
 use crate::symbol::{DefId, DefKind};
-use crate::ty::{SimpleType, Type};
+use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
 
 /// The checker of one body.
 pub(super) struct Checker<'e> {
@@ -45,12 +46,21 @@ pub(super) struct Checker<'e> {
     /// Whether the checker reads an initialiser at global scope, where no statement may be
     /// generated (`!pr_scope`, FTEF-34.9).
     pub(super) global: bool,
+    /// Whether the body is a function defined inside another, whose `goto`s the enclosing
+    /// function's check looks for labels (FTEF-34.12).
+    pub(super) nested: bool,
+    /// Where each line's first statement starts, for a warning FTEQCC gives at a statement's
+    /// line (`statements[st].linenum`, FTEF-34.6).
+    pub(super) line_starts: std::collections::BTreeMap<u32, qc_diag::Span>,
     /// A token the statement does not take, found where an expression ended early, reported
     /// once the statement has read the expression it has (FTEF-24.10).
     pub(super) pending: Option<(String, qc_diag::Span)>,
-    /// The `[` a definition's value ended before, reported once the definition has read the
-    /// value it has (FTEF-18.38).
-    pub(super) stray: Option<qc_diag::Span>,
+    /// The token a definition's value ended before, `[` or what follows a value in parentheses,
+    /// reported once the definition has read the value it has (FTEF-18.38, FTEF-16.15).
+    pub(super) stray: Option<(qc_diag::Span, String)>,
+    /// The temporary the last statement emitted made, which a store of it folds into
+    /// (`opt_assignments`, FTEF-30.3).
+    pub(super) last_temp: Option<u32>,
 }
 
 /// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which nothing more of the
@@ -73,8 +83,21 @@ impl<'e> Checker<'e> {
             layout: Layout::default(),
             emitted: 0,
             global: false,
+            nested: false,
+            line_starts: std::collections::BTreeMap::new(),
             pending: None,
             stray: None,
+            last_temp: None,
+        }
+    }
+
+    /// What a cast reads `value` as: a constant as its literal, but a strict enum's value as
+    /// of its enum, whose null constant casts to no other type (FTEF-19.10).
+    pub(super) fn cast_source<'v>(&self, value: &'v Value) -> Source<'v> {
+        if self.env.strict_enum(&value.ty) {
+            Source::Typed(&value.ty)
+        } else {
+            value.source()
         }
     }
 
@@ -95,10 +118,14 @@ impl<'e> Checker<'e> {
 
     /// The value of `expr`, its type recorded.
     pub(super) fn expr(&mut self, expr: &ast::Expr) -> Checked {
-        let value = self.term(expr)?;
-        let span = expr.syntax().span();
-        self.types.insert((span.start, span.end), value.ty.clone());
-        Ok(value)
+        // `match` rather than `?`, which keeps the frame every nested expression adds small
+        // (QC-27.15).
+        let checked = self.term(expr);
+        if let Ok(value) = &checked {
+            let span = expr.syntax().span();
+            self.types.insert((span.start, span.end), value.ty.clone());
+        }
+        checked
     }
 
     /// The value of `expr` by its kind. Each kind is its own method, so that the frame a nested
@@ -232,6 +259,17 @@ impl<'e> Checker<'e> {
             }
             return Value::unknown();
         };
+        self.def_value(def, &token, scoped)
+    }
+
+    /// The value of the definition `def` named by `token`, `::`-scoped or not
+    /// ([`Checker::name`]).
+    pub(super) fn def_value(
+        &mut self,
+        def: DefId,
+        token: &qc_syntax::SyntaxToken,
+        scoped: bool,
+    ) -> Value {
         let array = self.env.is_array(def);
         let constness = self.env.constness(def);
         let Some(ty) = self.env.definition(def).map(|def| def.ty.clone()) else {
@@ -270,13 +308,8 @@ impl<'e> Checker<'e> {
             },
             constness,
             name: Some(name),
-            // A function's definition is no constant symbol to the comparison warnings: `ff != vf`
-            // of two functions gives none (FTEF-28.1).
-            sym: Sym::Def(
-                def,
-                constness != Constness::Variable && !ty.is_function(),
-                0,
-            ),
+            // `sym->constant`, which a function's and a field's definition are (FTEF-28.4).
+            sym: Sym::Def(def, self.env.constant(def), 0),
             // `QCC_DefToRef`: `!!def.sym->constant || def.sym->temp`.
             readonly: self.env.constant(def),
             text: self.env.string_text(def).map(|t| t.as_str().into()),
@@ -305,6 +338,20 @@ impl<'e> Checker<'e> {
         let Some(op) = binary.op() else {
             return Ok(None);
         };
+        let span = binary
+            .op_token()
+            .map_or_else(|| binary.syntax().span(), |t| t.span());
+        self.operator_at(op, span, lhs, rhs)
+    }
+
+    /// [`Checker::operator`] of the operator `op` at `span`.
+    pub(super) fn operator_at(
+        &mut self,
+        op: BinaryOp,
+        span: Span,
+        lhs: &Value,
+        rhs: &Value,
+    ) -> Result<Option<Value>, Fatal> {
         let Some(spelling) = binary_spelling(op) else {
             return Ok(None);
         };
@@ -326,9 +373,6 @@ impl<'e> Checker<'e> {
         let Some(opcode) = row(choice.op()) else {
             return Ok(None);
         };
-        let span = binary
-            .op_token()
-            .map_or_else(|| binary.syntax().span(), |t| t.span());
         if let Choice::Mismatch(_) = choice {
             self.mismatch(spelling, lhs, rhs, span);
         }
@@ -358,11 +402,29 @@ impl<'e> Checker<'e> {
             let kept = row.etype() == operand.etype || row == OpType::Variant;
             Value {
                 constness: constness(value, operand, row),
-                sym: if kept { value.sym } else { Sym::Temp },
-                ty: if kept {
-                    value.ty.clone()
+                // A null constant is cast with no statement, `QCC_MakeIntConst(0)` of the
+                // row's type, still a constant (FTEF-28.4).
+                sym: if kept || value.null() {
+                    value.sym
                 } else {
-                    row.value_type()
+                    Sym::Temp
+                },
+                ty: match row {
+                    _ if kept => value.ty.clone(),
+                    // `type_function`, a `void()`, and `type_field`, a `.void` (FTEF-28.4).
+                    OpType::Function if value.null() => Type::Function(
+                        FunctionType {
+                            ret: Type::Simple(SimpleType::Void),
+                            params: Vec::new(),
+                            variadic: false,
+                            labels: ParamLabels::default(),
+                        }
+                        .into(),
+                    ),
+                    OpType::Field if value.null() => {
+                        Type::Field(Type::Simple(SimpleType::Void).into())
+                    }
+                    _ => row.value_type(),
                 },
                 ..value.clone()
             }
@@ -404,7 +466,10 @@ impl<'e> Checker<'e> {
             );
             self.env.report(Code::W0232, span, message);
         }
-        if self.env.cast(value.source(), &row.value_type(), span) {
+        if self
+            .env
+            .cast(self.cast_source(value), &row.value_type(), span)
+        {
             return Err(Fatal);
         }
         // FTEF-27.8: the cast emits its conversion opcodes, which are folded, emitted or

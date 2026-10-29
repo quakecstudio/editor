@@ -507,7 +507,7 @@ fn a_bitfield_read_is_extended() {
     let extended = [
         helper("MulInt", "int*int"),
         d(Code::E0320, MUL_I),
-        d(Code::E0125, "itof emulation: denormals are unsafe __int32"),
+        d(Code::E0125, "itof emulation: denormals are unsafe temp_0"),
         helper("SubInt", "~int"),
         d(Code::E0320, SUB_I),
         helper("DivInt", "int/int"),
@@ -926,4 +926,25 @@ fn an_emulated_unsigned_operator_stays_unsigned() {
     let source = "#pragma target fte_5768\n__uint64 ul; float f; void() g = { if (ul & (1u << \
                   0u)) f = 1; f = ul & (2u - 1u) ? 1 : 0; };\n";
     assert_eq!(diags(source), []);
+}
+
+// spec FTEF-27.16: a statement's result is a temporary named by its offset, the first free one of
+// its size, which the emulation warnings name
+#[test]
+fn temporaries_are_named_by_their_offset() {
+    let itof = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "string s; float x, i, q; int ii; __int8 c8; vector v; __double d;\n\
+             void() g = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .filter(|m| m.starts_with("itof emulation"))
+        .collect()
+    };
+    let unsafe_ = |name: &str| format!("itof emulation: denormals are unsafe {name}");
+    assert_eq!(itof("x = c8;"), [unsafe_("temp_0")]);
+    assert_eq!(itof("s[i] += x;"), [unsafe_("temp_1")]);
+    assert_eq!(itof("q = (__bfloat)d;"), [unsafe_("temp_0")]);
+    assert_eq!(itof("x = ii;"), [unsafe_("ii")]);
 }

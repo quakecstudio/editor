@@ -477,7 +477,11 @@ pub(super) fn raw_value(expr: &ast::Expr, cx: Cx<'_>) -> RawValue {
         ast::Expr::Literal(literal) => string_len(literal),
         _ => None,
     };
-    let syntax = matches!(kind, ValueKind::Other | ValueKind::Indexed(_)).then(|| expr.clone());
+    let syntax = matches!(
+        kind,
+        ValueKind::Other | ValueKind::Indexed(_) | ValueKind::Name(_) | ValueKind::Cast(_)
+    )
+    .then(|| expr.clone());
     let written_types = match &syntax {
         Some(expr) => super::body::written_types(expr.syntax(), cx),
         None => Vec::new(),

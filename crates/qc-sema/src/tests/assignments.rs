@@ -202,7 +202,7 @@ fn lax(statement: &str) -> Vec<(Code, String)> {
 // type, which the store warns of, naming a field `base.field`
 // spec FTEF-29.7: the store of a value of another type warns "type mismatch"
 // spec QCD-7.85: W0243 for an implicit mismatch under lax
-// spec QCD-7.82: W0240 for the store's type mismatch
+// spec QCD-7.114: W0240 for the store's type mismatch
 #[test]
 fn a_lax_mismatch_is_stored() {
     assert_eq!(
@@ -376,10 +376,13 @@ fn a_compound_mismatch_names_the_types_own_names() {
 fn a_compound_assignment_to_an_array_adds_to_its_address() {
     assert_eq!(
         fte("arr += 1;"),
-        of(&[(
-            Code::E0325,
-            "left operand must be an l-value (did you mean arr[0]?)"
-        )])
+        of(&[
+            (
+                Code::E0325,
+                "left operand must be an l-value (did you mean arr[0]?)"
+            ),
+            (Code::W0319, "INTERNAL: over-freed refcount to arr"),
+        ])
     );
 }
 
@@ -475,4 +478,68 @@ fn a_null_constant_of_any_type_casts_as_null() {
          entity e;\nvoid() g = { s = z; s = zi; e = zi; };\n",
     );
     assert_eq!(found, []);
+}
+
+// spec FTEF-29.7: a `void*` or `variant*` stored into a pointer, or from one, a `variant` either
+// way, and a pointer whose type `typecmp_lax` takes, store with no "type mismatch"
+#[test]
+fn untyped_pointers_and_variants_store_silently() {
+    let found = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nstruct S {{ float a; }}; struct T {{ float a; }}; \
+             class A : entity {{ float m; }}; class B : A {{ float n; }};\n\
+             float *pf; void *pv; __variant *pvar; void **ppv; S *ps; T *pt; A *pa; B *pb; \
+             float **ppf; int **ppi; float q; __variant vv; entity e1;\n\
+             void() g = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    for quiet in [
+        "pf = pv;",
+        "pf = pvar;",
+        "pv = pf;",
+        "pvar = pf;",
+        "ps = pt;",
+        "pa = pb;",
+        "pb = pa;",
+        "q = vv;",
+        "vv = q;",
+        "vv = e1;",
+        "e1 = vv;",
+    ] {
+        assert!(found(quiet).is_empty(), "{quiet}");
+    }
+    assert_eq!(
+        found("ppf = ppi;"),
+        ["Implicit cast from __int32** to float**"]
+    );
+    assert_eq!(found("pf = ppv;"), ["Implicit cast from void** to float*"]);
+}
+
+// spec FTEF-29.12: a compound assignment or increment of an array named bare frees its head a
+// second time
+#[test]
+fn an_array_head_updated_is_freed_twice() {
+    let found = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "#pragma target fte\nfloat *pf; float farr[3]; float q;\n\
+             void() g = {{ local float la[2]; {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let lvalue = |name: &str| format!("left operand must be an l-value (did you mean {name}[0]?)");
+    let freed = |name: &str| format!("INTERNAL: over-freed refcount to {name}");
+    for statement in ["farr += 1;", "farr++;", "++farr;", "farr--;"] {
+        assert_eq!(
+            found(statement),
+            [lvalue("farr"), freed("farr")],
+            "{statement}"
+        );
+    }
+    assert_eq!(found("la++;"), [lvalue("la"), freed("la")]);
+    assert_eq!(found("farr = pf;"), [lvalue("farr")]);
 }

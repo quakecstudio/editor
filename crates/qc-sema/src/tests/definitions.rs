@@ -796,7 +796,7 @@ fn enum_values() {
             "enum - y is not a compile-time constant".to_owned()
         )
     );
-    assert_eq!(fte("enum { A = y };\n"), [Code::E0301]);
+    assert_eq!(fte("enum { A = y };\n"), [Code::E0301, Code::E0228]);
     assert_eq!(
         fte_only("enum : vector { A };\n"),
         (
@@ -1072,13 +1072,14 @@ fn type_names_must_be_types() {
     );
     // A body's typedef is a type for the locals after it in that body only.
     assert_eq!(fte("void() g = { typedef float t; t x; };\n"), []);
+    // FTEF-19.74: before the typedef, `t x;` is the expression `t`.
     assert_eq!(
         fte("void() g = { t x; typedef float t; };\n"),
-        [Code::E0203]
+        [Code::E0301, Code::W0205, Code::W0313, Code::E0204]
     );
     assert_eq!(
         fte("void() g = { typedef float t; };\nvoid() h = { t x; };\n"),
-        [Code::E0203]
+        [Code::E0301, Code::W0205, Code::W0313, Code::E0204]
     );
     // Vanilla has its own parse error for a name that is no type (QCD-3.3).
     assert_eq!(vanilla("float x;\n"), []);

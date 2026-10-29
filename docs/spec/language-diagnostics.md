@@ -239,10 +239,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (QC-18.8).
 - **QCD-4.6** `E0306` "type mismatch on parm N": argument N, counting from 0, has the wrong
   type (QC-18.8).
-- **QCD-4.8** `E0308` "Goto statement with no matching label "NAME"": under an FTEQCC
-  profile, a `goto` whose label is not among those read since the last function's end by the
-  end of its function, at the label name, FTEQCC's error of the same text
-  (`dialect-fteqcc.md`, FTEF-18.24).
+- **QCD-4.8** **Withdrawn** (#84): it placed `E0308` at the label name of each `goto` with no
+  label, replaced by QCD-4.81.
 - **QCD-4.7** `E0307` "More than eight parameters": nine or more arguments to a variadic
   function (QC-18.2).
 - **QCD-4.9** `E0309` "Type mismatch: TYPE, should be void()": under an FTEQCC profile, a state
@@ -339,7 +337,7 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (FTEF-32.6); not a fatal error.
 - **QCD-4.46** `E0340` "_() intrinsic accepts only a string immediate", "type mismatch on parm N"
   and "Argument to used_sound intrinsic was not a string immediate.": an intrinsic's argument
-  refused (FTEF-32.2); fatal but for the last.
+  refused (FTEF-32.10); fatal but for the last.
 - **QCD-4.47** `E0342` "Case statements may not use formulas": a `case` value that generates
   code (FTEF-34.5); a fatal error.
 - **QCD-4.48** `E0343` "Bad switch type": a `switch` of a type no comparison takes, without
@@ -354,7 +352,7 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-4.52** `E0346` "va_arg() intrinsic only works inside varadic functions" (FTEF-32.7); a
   fatal error.
 - **QCD-4.53** `E0347` "the nextent builtin is not defined": `entnum` with no `nextent`
-  (FTEF-32.2); a fatal error.
+  (FTEF-32.10); a fatal error.
 - **QCD-4.54** `E0348` "Accessor NAME has no get function" (FTEF-10.7); a fatal error.
 - **QCD-4.55** `E0349` "Accessor has no set function" (FTEF-10.7); a fatal error.
 - **QCD-4.56** `E0352` "Duplicated default case": a `switch` with a second `default`
@@ -408,6 +406,10 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-4.80** `E0379` "virtual keyword on member that is not a function", "inline keyword on
   member that is not a function" and "inline keyword on function prototype or virtual function":
   a class member's word that only a member function takes (FTEF-9.20).
+- **QCD-4.81** `E0308` "Goto statement with no matching label "NAME"": under an FTEQCC
+  profile, the first `goto` generated whose label is not among those read since the last
+  function's end, at the function's closing `}`, a fatal error that ends the function's checks
+  (`dialect-fteqcc.md`, FTEF-34.12).
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -709,9 +711,8 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   and "Parameters for || are the same": under an FTEQCC profile, a comparison or logic opcode
   emitted on constants or on one operand twice (FTEF-28.1), at the operator.
   `WARN_CONSTANTCOMPARISON`, F319.
-- **QCD-7.82** `W0240` "'OP' type mismatch: A with B": a comparison emitted on operands of
-  different basic types (FTEF-28.2); and "type mismatch: A NAME to B TARGET", a value stored that
-  keeps a type the target's is not (FTEF-29.7). `WARN_STRICTTYPEMISMATCH`, F307.
+- **QCD-7.82** **Withdrawn** (#84): it gave `W0240` a comparison's "'OP' type mismatch: A with B",
+  which FTEQCC never reports (FTEF-28.3); replaced by QCD-7.114.
 - **QCD-7.83** `W0241` "Assignment to const" and "Assignment to constant NAME": under an FTEQCC
   profile, an assignment to a read-only reference (FTEF-29.1, FTEF-29.3), at the operator.
   `WARN_ASSIGNMENTTOCONSTANT`, Q106.
@@ -782,6 +783,8 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.113** `W0320` "Function returning function. Is this what you meant? (suggestion: use
   typedefs)": a parameter list after the name of a definition of an inline function type
   (FTEF-19.67).
+- **QCD-7.114** `W0240` "type mismatch: A NAME to B TARGET": a value stored that keeps a type the
+  target's is not (FTEF-29.7). `WARN_STRICTTYPEMISMATCH`, F307.
 
 ## QCD-8 Preprocessor errors
 

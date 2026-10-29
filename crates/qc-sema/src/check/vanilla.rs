@@ -284,6 +284,11 @@ impl Vanilla<'_> {
             {
                 Ok(Some(held.as_ref().clone()))
             }
+            // QC-16.8: a `.void` field's `type_c` is `ev_void`, which the row loop does not
+            // compare, so the first `.` row is taken, a float's (`PR_Expression`).
+            (Some(Basic::Entity), Type::Field(held)) if Basic::of(held) == Some(Basic::Void) => {
+                Ok(Some(Type::Simple(SimpleType::Float)))
+            }
             (None, _) => Ok(None),
             _ => self.mismatch(".", span),
         }

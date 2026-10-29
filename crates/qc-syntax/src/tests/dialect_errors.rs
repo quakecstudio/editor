@@ -80,7 +80,6 @@ fn input_cut_off_at_the_end() {
 #[test]
 fn not_a_type() {
     for source in [
-        "typedef 1 x;\n",
         "typedef for x;\n",
         "goto x;\n",
         "void(1) f;\n",

@@ -53,8 +53,8 @@ strings and `case` labels in nested blocks; and FTEF-18: expression initialisers
 bodies inside function bodies, state headers of expressions and frame cycles, sequences of
 expressions, labels and `goto`, `return =`, `if !`, `__until` loops, case ranges, `?:` with no
 middle, `sizeof`, functions returning functions and `..T` fields, with FTEQCC's "Duplicate
-label" warning `W0312`, "Goto statement with no matching label" error `E0308` and "Statement
-does not do anything" warning `W0313` (FTEF-18.23 to FTEF-18.25; QCD-4.8, QCD-7.29,
+label" warning `W0312` and "Statement
+does not do anything" warning `W0313` (FTEF-18.23, FTEF-18.25; QCD-7.29,
 QCD-7.30). FTEQCC knows every type name when it parses; this
 parser runs before names are known, so it tells a declaration or a cast from an expression by
 the shape of the tokens (FTEF-15.1, FTEF-16.1, FTEF-16.2). Under `qccx` an `@` before a term is a unary
