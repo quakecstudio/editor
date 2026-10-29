@@ -11,7 +11,7 @@
 use qc_builtins::math::{anglemod, f64_to_f32_public, float_to_int, int_to_f32_public};
 use qc_vm::{Builtins as _, RunError};
 
-use crate::builtins::{FL_ONGROUND, SimCall, parm_float};
+use crate::builtins::{FL_ONGROUND, SimCall, Vm, parm_float};
 use crate::collision::{CONTENTS_EMPTY, CONTENTS_SOLID, MoveKind, Trace};
 
 /// `STEPSIZE` (MOVE-1.3, MOVE-2.2).
@@ -191,7 +191,11 @@ impl SimCall<'_, '_, '_> {
     /// `SV_StepDirection` (MOVE-3).
     fn step_direction(&mut self, ent: usize, yaw: f32, dist: f32) -> Result<bool, RunError> {
         self.set_float(ent, "ideal_yaw", yaw);
-        self.sim.mock.call(CHANGEYAW, self.context)?;
+        match &mut self.context {
+            Vm::Builtin(context) => self.sim.mock.call(CHANGEYAW, context)?,
+            // No step is taken outside a builtin.
+            Vm::Frame { .. } => {}
+        }
         let step = step(yaw, dist);
         let oldorigin = self.vector(ent, "origin");
         if self.movestep(ent, step, false)? {
@@ -302,7 +306,7 @@ impl SimCall<'_, '_, '_> {
     pub(crate) fn move_to_goal(&mut self) -> Result<(), RunError> {
         let ent = self.self_edict();
         let goal = self.entity(ent, "goalentity");
-        let dist = parm_float(self.context, 0);
+        let dist = parm_float(&self.context, 0);
         if self.flags(ent) & (FL_ONGROUND | FL_FLY | FL_SWIM) == 0 {
             return self.set_return(0.0);
         }
@@ -321,8 +325,8 @@ impl SimCall<'_, '_, '_> {
     /// `PF_walkmove` (WORLD-8.6, BUILTIN-15.1, BUILTIN-15.2).
     pub(crate) fn walkmove(&mut self) -> Result<(), RunError> {
         let ent = self.self_edict();
-        let yaw = parm_float(self.context, 0);
-        let dist = parm_float(self.context, 1);
+        let yaw = parm_float(&self.context, 0);
+        let dist = parm_float(&self.context, 1);
         if self.flags(ent) & (FL_ONGROUND | FL_FLY | FL_SWIM) == 0 {
             return self.set_return(0.0);
         }

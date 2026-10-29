@@ -439,17 +439,27 @@ fn a_placed_model_moves_and_turns_its_corners() {
     builder.add(&world, &[Placement::WORLD, placed]).unwrap();
     let mesh = builder.finish();
     let (unmoved, moved) = mesh.vertices.split_at(4);
-    let round = |p: [f32; 3]| p.map(f32::round);
+    // The entity's vertices are its model's; its matrix moves them.
+    assert_eq!(moved[1].position, unmoved[1].position);
+    assert_eq!(mesh.models, [Placement::WORLD, placed]);
+    let m = mesh.models[1].matrix();
+    let apply = |[x, y, z]: [f32; 3]| {
+        [0, 1, 2].map(|r| (m[0][r] * x + m[1][r] * y + m[2][r] * z + m[3][r]).round())
+    };
     // Yaw 90 takes (64, 0, 0) to (0, 64, 0).
-    assert_eq!(round(moved[1].position), [100.0, 264.0, 300.0]);
-    assert_eq!(round(moved[2].position), [68.0, 264.0, 300.0]);
+    assert_eq!(apply(moved[1].position), [100.0, 264.0, 300.0]);
+    assert_eq!(apply(moved[2].position), [68.0, 264.0, 300.0]);
+    assert_eq!(
+        apply(moved[2].position),
+        placed.position(moved[2].position).map(f32::round)
+    );
     assert_eq!(moved[1].texture, unmoved[1].texture);
     assert_eq!(moved[1].light, unmoved[1].light);
     // The first model added gives the bounds.
     assert_eq!(mesh.maxs, [64.0, 32.0, 0.0]);
-    // One batch draws both copies.
-    assert_eq!(mesh.batches.len(), 1);
-    assert_eq!(mesh.batches[0].count, 12);
+    // The world's copy and the entity's are batches of their own (REND-1.11).
+    assert_eq!(mesh.batches.len(), 2);
+    assert_eq!(mesh.batches[0].count, 6);
 }
 
 // spec REND-1.9: pitch turns about y with the sign `R_DrawBrushModel`'s double negation leaves,
@@ -531,4 +541,38 @@ fn an_empty_cycle_is_not_animated() {
     assert_eq!(MapMesh::build(&map, &palette()).unwrap().animations, [None]);
     map.textures[0].as_mut().unwrap().animation = Some(cycle(1));
     assert!(MapMesh::build(&map, &palette()).unwrap().animations[0].is_some());
+}
+
+// spec REND-1.11: the world's faces come before every entity's, in batches of their own
+#[test]
+fn the_world_is_drawn_before_entities() {
+    let world = bsp(&MapSpec::default(), &[]);
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette);
+    let lift = Placement {
+        model: 0,
+        origin: [0.0, 0.0, 5.0],
+        angles: [0.0; 3],
+    };
+    builder.add(&world, &[Placement::WORLD, lift]).unwrap();
+    let mesh = builder.finish();
+    assert_eq!(mesh.batches.len(), 2);
+    assert_eq!(mesh.batches[0].model, 0);
+    assert_eq!(mesh.batches[1].model, 1);
+    assert!(mesh.batches[0].first < mesh.batches[1].first);
+    assert_eq!(mesh.models[1].matrix()[3], [0.0, 0.0, 5.0, 1.0]);
+}
+
+// spec REND-1.12: gl_zfix draws a brush entity 1/32 back on every axis, angles as they are
+#[test]
+fn zfix_moves_an_entity_back_a_32nd() {
+    let lift = Placement {
+        model: 3,
+        origin: [10.0, 20.0, -66.0],
+        angles: [0.0, 90.0, 0.0],
+    };
+    let fixed = lift.zfixed();
+    assert_eq!(fixed.origin, [9.968_75, 19.968_75, -66.031_25]);
+    assert_eq!(fixed.angles, lift.angles);
+    assert_eq!(fixed.model, 3);
 }

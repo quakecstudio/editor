@@ -33,9 +33,9 @@ the map view and the preview host share one renderer.
 
 Lightstyles do not animate (every style is drawn at the value of a style with no light
 string, REND-1.4); dynamic lights, sprites, particles, the view model, player colours and
-`.lit` files are not drawn; BSP2 batching limits and picking are not done. Entities stay
-where they spawned: server frames, which move them, are `qs-sim`'s. They are the rest of
-P5-05 and P3-26.
+`.lit` files are not drawn; BSP2 batching limits and picking are not done. These are the rest
+of P5-05. Each model has its own matrix (`MapRenderer::set_placements`), so the viewer draws
+doors and lifts where `qs-sim`'s server frames move them.
 
 ## Trying it
 

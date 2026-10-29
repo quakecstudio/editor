@@ -12,14 +12,16 @@ use qc_builtins::math::{f64_to_f32_public, float_to_int, int_to_f32_public};
 use qc_builtins::mock::ModelBounds;
 use qc_builtins::{Engine, MockBuiltins, MockEngine};
 use qc_edict::system::{field_by_name, global_by_name};
+use qc_progs::Progs;
 use qc_types::{EntityRef, PROGS_OFS_RETURN, Slot, ofs_parm};
-use qc_vm::{Builtins, Context, ErrorKind, RunError};
+use qc_vm::{Builtins, Context, ErrorKind, Machine, NoObserver, RunError, ServerState};
 use qs_bsp::{Bsp, BspLoader};
 use qs_mdl::Sprite;
 
 use crate::collision::{
     Body, Collision, CollisionError, Host, MoveKind, Solid, Trace, link_edict, sv_move,
 };
+use crate::physics::Sound;
 
 /// `setorigin`.
 const SETORIGIN: u32 = 2;
@@ -63,6 +65,8 @@ pub struct SimBuiltins {
     pub(crate) mock: MockBuiltins<MockEngine>,
     /// The world's collision.
     pub(crate) collision: Collision,
+    /// The sounds the server started, oldest first (PHYS-4.4, PHYS-5.1).
+    pub(crate) sounds: Vec<Sound>,
     files: ModelFiles,
 }
 
@@ -89,6 +93,7 @@ impl SimBuiltins {
         Self {
             mock,
             collision: Collision::new(map),
+            sounds: Vec::new(),
             files,
         }
     }
@@ -136,13 +141,13 @@ impl Builtins for SimBuiltins {
             // WORLD-8.1: the mock sets the fields; the world links.
             SETORIGIN | SETMODEL | SETSIZE => {
                 self.mock.call(number, context)?;
-                let ent = parm_edict(context, 0)?;
+                let ent = parm_edict(&Vm::Builtin(context), 0)?;
                 SimCall::new(context, self).link(ent, false)
             }
             // WORLD-8.3: ED_Free unlinks.
             REMOVE | MAKESTATIC => {
                 self.mock.call(number, context)?;
-                let ent = parm_edict(context, 0)?;
+                let ent = parm_edict(&Vm::Builtin(context), 0)?;
                 self.collision.unlink(ent);
                 Ok(())
             }
@@ -160,13 +165,13 @@ impl Builtins for SimBuiltins {
             WALKMOVE => SimCall::new(context, self).walkmove(),
             MOVETOGOAL => SimCall::new(context, self).move_to_goal(),
             CHECKBOTTOM => {
-                let ent = parm_edict(context, 0)?;
+                let ent = parm_edict(&Vm::Builtin(context), 0)?;
                 let mut call = SimCall::new(context, self);
                 let bottom = call.bottom(ent)?;
                 call.set_return(if bottom { 1.0 } else { 0.0 })
             }
             POINTCONTENTS => {
-                let p = parm_vector(context, 0);
+                let p = parm_vector(&Vm::Builtin(context), 0);
                 let mut call = SimCall::new(context, self);
                 let contents = call
                     .sim
@@ -184,16 +189,93 @@ impl Builtins for SimBuiltins {
     }
 }
 
-/// One builtin call: the VM's context and the server's builtins, which together answer the
+/// The VM a call runs on: a builtin's context, whose runs nest in the caller's, or the
+/// machine itself, at the top of a server frame.
+pub(crate) enum Vm<'c, 'a, 'p> {
+    /// Inside a builtin.
+    Builtin(&'c mut Context<'a, 'p>),
+    /// In the server frame, between runs.
+    Frame {
+        machine: &'c mut Machine,
+        progs: &'c Progs<'p>,
+    },
+}
+
+impl Vm<'_, '_, '_> {
+    pub(crate) fn machine_view(&self) -> &Machine {
+        match self {
+            Self::Builtin(context) => context.machine_view(),
+            Self::Frame { machine, .. } => machine,
+        }
+    }
+
+    pub(crate) fn machine(&mut self) -> &mut Machine {
+        match self {
+            Self::Builtin(context) => context.machine(),
+            Self::Frame { machine, .. } => machine,
+        }
+    }
+
+    pub(crate) fn progs(&self) -> &Progs<'_> {
+        match self {
+            Self::Builtin(context) => context.progs(),
+            Self::Frame { progs, .. } => progs,
+        }
+    }
+
+    /// `PR_ExecuteProgram (function)`: nested in a builtin, or a run of its own in the frame.
+    pub(crate) fn execute_program(
+        &mut self,
+        sim: &mut SimBuiltins,
+        function: i32,
+    ) -> Result<(), RunError> {
+        match self {
+            Self::Builtin(context) => context.execute_program(sim, function),
+            Self::Frame { machine, progs } => {
+                machine.execute_program(progs, ServerState::Active, sim, &mut NoObserver, function)
+            }
+        }
+    }
+
+    /// An error the engine raises, with the current stack inside a builtin.
+    pub(crate) fn run_error(&self, kind: ErrorKind) -> RunError {
+        match self {
+            Self::Builtin(context) => context.run_error(kind),
+            Self::Frame { .. } => RunError {
+                kind,
+                function: 0,
+                statement: -1,
+                trace: Vec::new(),
+            },
+        }
+    }
+}
+
+/// One call into the server: the VM and the server's builtins, which together answer the
 /// world's queries (`Host`).
 pub(crate) struct SimCall<'c, 'a, 'p> {
-    pub(crate) context: &'c mut Context<'a, 'p>,
+    pub(crate) context: Vm<'c, 'a, 'p>,
     pub(crate) sim: &'c mut SimBuiltins,
 }
 
 impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
     pub(crate) fn new(context: &'c mut Context<'a, 'p>, sim: &'c mut SimBuiltins) -> Self {
-        Self { context, sim }
+        Self {
+            context: Vm::Builtin(context),
+            sim,
+        }
+    }
+
+    /// A call at the top of a server frame.
+    pub(crate) fn frame(
+        machine: &'c mut Machine,
+        progs: &'c Progs<'p>,
+        sim: &'c mut SimBuiltins,
+    ) -> Self {
+        Self {
+            context: Vm::Frame { machine, progs },
+            sim,
+        }
     }
 
     /// A world error as the run's error: id's `Sys_Error`, or the error a touch raised.
@@ -224,7 +306,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
     // ---- fields and globals ----
 
     pub(crate) fn float(&self, n: usize, name: &str) -> f32 {
-        field(self.context, n, name).map_or(0.0, Slot::as_f32)
+        field(&self.context, n, name).map_or(0.0, Slot::as_f32)
     }
 
     pub(crate) fn vector(&self, n: usize, name: &str) -> [f32; 3] {
@@ -237,10 +319,23 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
         })
     }
 
+    /// A field's value as an int: a function, a string or an entity value.
+    pub(crate) fn entity_raw(&self, n: usize, name: &str) -> i32 {
+        field(&self.context, n, name).map_or(0, Slot::as_i32)
+    }
+
+    /// Field `name` of the progs, not of the system set, when the progs has one:
+    /// `GetEdictFieldValue` (PHYS-6.4).
+    pub(crate) fn progs_field(&self, n: usize, name: &str) -> Option<Slot> {
+        let def = self.context.progs().ed_find_field(name.as_bytes())?;
+        let slot = usize::try_from(def.ofs).ok()?;
+        self.context.machine_view().edicts().field(n, slot)
+    }
+
     /// The edict an entity field names, id's `PROG_TO_EDICT`; the world for any value that
     /// is not an edict.
     pub(crate) fn entity(&self, n: usize, name: &str) -> usize {
-        let value = field(self.context, n, name).map_or(0, Slot::as_i32);
+        let value = field(&self.context, n, name).map_or(0, Slot::as_i32);
         self.edict_of(value)
     }
 
@@ -274,6 +369,15 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
         for (i, v) in value.into_iter().enumerate() {
             edicts.set_field(n, first.saturating_add(i), Slot::from_f32(v));
         }
+    }
+
+    /// Sets a field to a raw value: a string, function or entity value.
+    pub(crate) fn set_entity_raw(&mut self, n: usize, name: &str, value: i32) {
+        let slot = field_slot(name);
+        self.context
+            .machine()
+            .edicts_mut()
+            .set_field(n, slot, Slot::from_i32(value));
     }
 
     pub(crate) fn set_entity(&mut self, n: usize, name: &str, ent: usize) {
@@ -335,10 +439,10 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
 
     /// `PF_traceline` (WORLD-8.4, BUILTIN-14.1, BUILTIN-14.2).
     fn traceline(&mut self) -> Result<(), RunError> {
-        let v1 = parm_vector(self.context, 0);
-        let v2 = parm_vector(self.context, 1);
-        let kind = float_to_int(parm_float(self.context, 2));
-        let pass = parm_edict(self.context, 3)?;
+        let v1 = parm_vector(&self.context, 0);
+        let v2 = parm_vector(&self.context, 1);
+        let kind = float_to_int(parm_float(&self.context, 2));
+        let pass = parm_edict(&self.context, 3)?;
         let trace = self.trace((v1, [0.0; 3], [0.0; 3], v2), MoveKind::from_int(kind), pass)?;
         let truth = |b: bool| Slot::from_f32(if b { 1.0 } else { 0.0 });
         self.set_global("trace_allsolid", truth(trace.allsolid));
@@ -429,7 +533,7 @@ impl Host for SimCall<'_, '_, '_> {
             size: self.vector(n, "size"),
             flags: self.flags(n),
             owner: Some(self.entity(n, "owner")),
-            touch: field(self.context, n, "touch").map_or(0, Slot::as_i32),
+            touch: field(&self.context, n, "touch").map_or(0, Slot::as_i32),
         })
     }
 
@@ -439,7 +543,7 @@ impl Host for SimCall<'_, '_, '_> {
     }
 
     fn touch(&mut self, trigger: usize, other: usize) -> Result<(), CollisionError> {
-        let function = field(self.context, trigger, "touch").map_or(0, Slot::as_i32);
+        let function = field(&self.context, trigger, "touch").map_or(0, Slot::as_i32);
         let old_self = self.global("self");
         let old_other = self.global("other");
         let trigger_value = self.value_of(trigger);
@@ -460,21 +564,21 @@ pub(crate) fn field_slot(name: &str) -> usize {
     field_by_name(name).map_or(0, |var| var.slot)
 }
 
-fn field(context: &Context<'_, '_>, n: usize, name: &str) -> Option<Slot> {
-    context.machine_view().edicts().field(n, field_slot(name))
+fn field(vm: &Vm<'_, '_, '_>, n: usize, name: &str) -> Option<Slot> {
+    vm.machine_view().edicts().field(n, field_slot(name))
 }
 
-fn parm(context: &Context<'_, '_>, n: u16) -> Slot {
+fn parm(context: &Vm<'_, '_, '_>, n: u16) -> Slot {
     ofs_parm(n)
         .and_then(|slot| context.machine_view().global(i32::from(slot)).ok())
         .unwrap_or(Slot::from_i32(0))
 }
 
-pub(crate) fn parm_float(context: &Context<'_, '_>, n: u16) -> f32 {
+pub(crate) fn parm_float(context: &Vm<'_, '_, '_>, n: u16) -> f32 {
     parm(context, n).as_f32()
 }
 
-pub(crate) fn parm_vector(context: &Context<'_, '_>, n: u16) -> [f32; 3] {
+pub(crate) fn parm_vector(context: &Vm<'_, '_, '_>, n: u16) -> [f32; 3] {
     let first = ofs_parm(n).map_or(0, i32::from);
     [0, 1, 2].map(|i| {
         context
@@ -485,7 +589,7 @@ pub(crate) fn parm_vector(context: &Context<'_, '_>, n: u16) -> [f32; 3] {
 }
 
 /// Parameter `n` as an edict, `G_EDICT`: an error for a value that is not one.
-fn parm_edict(context: &Context<'_, '_>, n: u16) -> Result<usize, RunError> {
+fn parm_edict(context: &Vm<'_, '_, '_>, n: u16) -> Result<usize, RunError> {
     let value = parm(context, n).as_i32();
     context
         .machine_view()

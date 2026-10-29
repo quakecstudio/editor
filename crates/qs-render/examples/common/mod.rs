@@ -21,6 +21,63 @@ pub(crate) struct Loaded {
     pub(crate) mesh: MapMesh,
     pub(crate) models: Models,
     pub(crate) camera: Camera,
+    pub(crate) sim: Sim,
+}
+
+/// The map's server: its world, and the progs and map it runs on, kept for the life of the
+/// viewer.
+pub(crate) struct Sim {
+    world: World,
+    progs: &'static [u8],
+    bsp: Bsp<'static>,
+}
+
+/// `Host_FilterTime`: no frame comes sooner than 1/72 of a second after the last.
+const FRAME: f64 = 1.0 / 72.0;
+/// `Host_FilterTime`'s longest frame.
+const LONGEST: f64 = 0.1;
+
+impl Sim {
+    /// `Host_FilterTime`: when 1/72 of a second has passed since the last frame, one frame of
+    /// the time that passed, at most 0.1.
+    pub(crate) fn advance(&mut self, seconds: f64, behind: &mut f64) -> Result<(), String> {
+        *behind += seconds;
+        if *behind < FRAME {
+            return Ok(());
+        }
+        let frametime = behind.min(LONGEST);
+        *behind = 0.0;
+        let progs = Progs::read(self.progs).map_err(|e| e.to_string())?;
+        self.world
+            .frame(&progs, frametime)
+            .map_err(|e| e.to_string())
+    }
+
+    /// The player enters the game.
+    pub(crate) fn connect(&mut self) -> Result<(), String> {
+        let progs = Progs::read(self.progs).map_err(|e| e.to_string())?;
+        self.world.connect(&progs).map_err(|e| e.to_string())
+    }
+
+    /// What the player asks for from the next frame.
+    pub(crate) fn command(&mut self, cmd: qs_sim::UserCmd) {
+        self.world.set_command(cmd);
+    }
+
+    /// The player's eye, if one is in the game.
+    pub(crate) fn eye(&self) -> Option<[f32; 3]> {
+        self.world.player_view().map(|(eye, _)| eye)
+    }
+
+    /// Angles the server turned the view to.
+    pub(crate) fn set_angle(&mut self) -> Option<[f32; 3]> {
+        self.world.take_set_angle()
+    }
+
+    /// The server's time.
+    pub(crate) fn time(&self) -> f64 {
+        self.world.time()
+    }
 }
 
 /// The alias models the map's entities show.
@@ -30,16 +87,55 @@ pub(crate) struct Models {
     models: Vec<(String, AliasModel, usize)>,
     /// Every model's skin images.
     pub(crate) skins: Vec<Image>,
-    /// Each entity: its model's index in `models`, and what it is drawn with.
-    entities: Vec<(usize, AliasEntity)>,
+    /// Each entity: its number, its model's index in `models`, and what it is drawn with.
+    entities: Vec<(usize, usize, AliasEntity)>,
+    /// The entity each of the mesh's models stands for, `None` for the world (REND-1.9).
+    brushes: Vec<Option<usize>>,
+    /// Each mesh model's matrix as the server last had it.
+    placed: Vec<[[f32; 4]; 4]>,
+    /// QuakeSpasm's `gl_zfix` (REND-1.12): on unless `-nozfix` asks for GLQuake's flicker.
+    zfix: bool,
 }
 
 impl Models {
+    /// Each entity's place, frame and skin as the server has them now, and the light below it.
+    pub(crate) fn update(&mut self, sim: &Sim) {
+        let now = sim.world.entities();
+        self.placed = self
+            .brushes
+            .iter()
+            .map(|entity| {
+                let found = entity.and_then(|n| now.iter().find(|e| e.number == n));
+                found
+                    .map_or(Placement::WORLD, |e| {
+                        let placed = Placement {
+                            model: 0,
+                            origin: e.origin,
+                            angles: e.angles,
+                        };
+                        if self.zfix { placed.zfixed() } else { placed }
+                    })
+                    .matrix()
+            })
+            .collect();
+        for (number, _, entity) in &mut self.entities {
+            if let Some(e) = now.iter().find(|e| e.number == *number) {
+                if e.origin.map(f32::to_bits) != entity.origin.map(f32::to_bits) {
+                    entity.light = light_point(&sim.bsp, e.origin);
+                }
+                entity.origin = e.origin;
+                entity.angles = e.angles;
+                entity.frame = index_of(e.frame);
+                entity.skin = index_of(e.skin);
+            }
+        }
+    }
+
     /// Every entity's triangles at `time` seconds, an `EF_ROTATE` model turned as the client
     /// turns it (REND-4.9).
     pub(crate) fn frame(&self, time: f64) -> ModelFrame {
         let mut out = ModelFrame::default();
-        for (index, entity) in &self.entities {
+        for (_, index, entity) in &self.entities {
             let Some((_, model, first_skin)) = self.models.get(*index) else {
                 continue;
             };
@@ -62,6 +158,11 @@ impl Models {
             });
         }
         out
+    }
+
+    /// Each mesh model's matrix now, the world's first.
+    pub(crate) fn placements(&self) -> Vec<[[f32; 4]; 4]> {
+        self.placed.clone()
     }
 
     /// The number of entities drawn with an alias model.
@@ -87,10 +188,17 @@ fn index_of(value: f32) -> usize {
 
 /// Reads the map the command line names (`e1m1` by default) from the install that `-basedir`
 /// and `-game` name, the engine's own options, which every other argument is passed on as.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one pass from the command line to a loaded map reads best in the order it runs"
+)]
 pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     let mut map = "e1m1".to_owned();
     let mut engine = Vec::new();
     let mut show = None;
+    // `-at x y z yaw`: where the camera starts, looking a little down.
+    let mut at: Option<[f32; 4]> = None;
+    let mut zfix = true;
     let mut gamma = GAMMA;
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
@@ -100,6 +208,11 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
                 .next()
                 .and_then(|g| g.parse().ok())
                 .ok_or("-gamma takes a number")?;
+        } else if arg == "-nozfix" {
+            zfix = false;
+        } else if arg == "-at" {
+            let mut next = || rest.next().and_then(|v| v.parse::<f32>().ok());
+            at = Some([next(), next(), next(), next()].map(|v| v.unwrap_or(0.0)));
         } else if arg == "-show" {
             show = match rest.next().map(String::as_str) {
                 Some("water") => Some(Surface::Turbulent),
@@ -128,8 +241,8 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     let name = format!("maps/{map}.bsp");
     let bytes = read(&name)?;
     let bsp = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(&name))?;
-    let progs_bytes = read("progs.dat")?;
-    let progs = Progs::read(&progs_bytes).map_err(|e| format!("progs.dat: {e}"))?;
+    let progs_bytes: &'static [u8] = Vec::leak(read("progs.dat")?);
+    let progs = Progs::read(progs_bytes).map_err(|e| format!("progs.dat: {e}"))?;
     // The world reads the other models the progs precaches, such as the health boxes, from the
     // same search path.
     let files = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
@@ -144,7 +257,8 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     // The world, then each brush entity: a submodel `*n` of the map at its entity's origin,
     // or model 0 of a BSP of its own, such as a health box.
     let mut placements = vec![Placement::WORLD];
-    let mut others: Vec<(String, Vec<Placement>)> = Vec::new();
+    let mut brushes = vec![None];
+    let mut others: Vec<(String, Vec<(Placement, usize)>)> = Vec::new();
     let mut models = Models::default();
     for entity in world.entities().into_iter().skip(1) {
         if entity.model.ends_with(".mdl") {
@@ -164,6 +278,7 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
                 }
             };
             models.entities.push((
+                entity.number,
                 index,
                 AliasEntity {
                     origin: entity.origin,
@@ -181,38 +296,60 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
                 origin: entity.origin,
                 angles: entity.angles,
             });
+            brushes.push(Some(entity.number));
         } else if entity.model.ends_with(".bsp") {
             let placement = Placement {
                 model: 0,
                 origin: entity.origin,
                 angles: entity.angles,
             };
+            let placed = (placement, entity.number);
             match others.iter_mut().find(|(name, _)| *name == entity.model) {
-                Some((_, list)) => list.push(placement),
-                None => others.push((entity.model, vec![placement])),
+                Some((_, list)) => list.push(placed),
+                None => others.push((entity.model, vec![placed])),
             }
         }
     }
     let mut builder = MeshBuilder::new(&palette);
     builder.add(&bsp, &placements).map_err(|e| e.to_string())?;
+    brushes.extend(
+        others
+            .iter()
+            .flat_map(|(_, list)| list.iter().map(|(_, n)| Some(*n))),
+    );
+    models.brushes = brushes;
+    models.zfix = zfix;
     for (name, list) in &others {
         let bytes = read(name)?;
         let other = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(name))?;
-        builder.add(&other, list).map_err(|e| e.to_string())?;
+        let list: Vec<Placement> = list.iter().map(|(p, _)| *p).collect();
+        builder.add(&other, &list).map_err(|e| e.to_string())?;
     }
     let mesh = builder.finish();
-    let camera = show
-        .and_then(|surface| facing(&mesh, surface))
+    let placed = at.map(|[x, y, z, yaw]| {
+        let mut camera = Camera::new([x, y, z], yaw);
+        camera.turn(0.0, 30.0);
+        camera
+    });
+    let camera = placed
+        .or_else(|| show.and_then(|surface| facing(&mesh, surface)))
         .or_else(|| start(bsp.entities()))
         .unwrap_or_else(|| {
             let [a, b, c] = mesh.mins;
             let [x, y, z] = mesh.maxs;
             Camera::new([(a + x) / 2.0, (b + y) / 2.0, (c + z) / 2.0], 0.0)
         });
+    let bsp_bytes: &'static [u8] = Vec::leak(bytes.clone());
+    let sim = Sim {
+        world,
+        progs: progs_bytes,
+        bsp: Bsp::read(bsp_bytes, BspLoader::default()).map_err(|e| e.message(&name))?,
+    };
     Ok(Loaded {
         map,
         mesh,
         models,
+        sim,
         camera,
     })
 }

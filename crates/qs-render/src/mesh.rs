@@ -22,6 +22,9 @@ const PALETTE_BYTES: usize = 768;
 const LIGHT_SHIFT: u32 = 7;
 /// A style's value while no light string is set for it (REND-1.4).
 pub(crate) const UNSET_STYLE: u32 = 256;
+/// QuakeSpasm's `DIST_EPSILON`, `(0.03125)`, by which `gl_zfix` moves a brush entity
+/// (REND-1.12).
+const ZFIX: f32 = 0.031_25;
 /// The world units of one lightmap texel, `light_s*16` (REND-1.3).
 const LIGHTMAP_TEXEL: f32 = 16.0;
 /// The atlas's width in texels; its height grows with the faces it holds.
@@ -166,6 +169,8 @@ pub struct Batch {
     pub first: u32,
     /// How many indices it draws.
     pub count: u32,
+    /// The model it draws, an index into [`MapMesh::models`]: 0 for the world.
+    pub model: usize,
 }
 
 /// A BSP's world model ready for the GPU (REND-1).
@@ -189,6 +194,9 @@ pub struct MapMesh {
     pub mins: [f32; 3],
     /// The world model's bounds.
     pub maxs: [f32; 3],
+    /// Each model's placement when the mesh was built, the world first; a model's vertices
+    /// are its own, drawn moved by its placement's matrix (REND-1.9).
+    pub models: Vec<Placement>,
 }
 
 impl MapMesh {
@@ -226,6 +234,32 @@ impl Placement {
         angles: [0.0; 3],
     };
 
+    /// The placement QuakeSpasm's `gl_zfix` draws: the origin moved by -1/32 on every axis
+    /// (REND-1.12), so a brush entity flush with the world is drawn just behind it.
+    #[must_use]
+    pub fn zfixed(&self) -> Self {
+        Self {
+            origin: self.origin.map(|v| v - ZFIX),
+            ..*self
+        }
+    }
+
+    /// The column-major matrix that moves a model's vertex to where [`Self::position`] puts it.
+    #[must_use]
+    pub fn matrix(&self) -> [[f32; 4]; 4] {
+        let o = self.position([0.0; 3]);
+        let column = |axis: [f32; 3]| {
+            let p = self.position(axis);
+            [p[0] - o[0], p[1] - o[1], p[2] - o[2], 0.0]
+        };
+        [
+            column([1.0, 0.0, 0.0]),
+            column([0.0, 1.0, 0.0]),
+            column([0.0, 0.0, 1.0]),
+            [o[0], o[1], o[2], 1.0],
+        ]
+    }
+
     /// Where `corner` of the model is drawn: turned by roll about x, then pitch about y, then
     /// yaw about z, then moved to the origin, as `R_RotateForEntity` turns it with the pitch
     /// `R_DrawBrushModel` negates twice (REND-1.9).
@@ -247,6 +281,7 @@ pub struct MeshBuilder<'p> {
     surfaces: Vec<Surface>,
     by_texture: Vec<Vec<Polygon>>,
     bounds: Option<([f32; 3], [f32; 3])>,
+    models: Vec<Placement>,
 }
 
 impl<'p> MeshBuilder<'p> {
@@ -262,6 +297,7 @@ impl<'p> MeshBuilder<'p> {
             surfaces: Vec::new(),
             by_texture: Vec::new(),
             bounds: None,
+            models: Vec::new(),
         }
     }
 
@@ -280,9 +316,12 @@ impl<'p> MeshBuilder<'p> {
         let mut placed = vec![None; bsp.faces.len()];
         for placement in placements {
             let model = bsp.models.get(placement.model).ok_or(MeshError::NoWorld)?;
+            // The first model added is the world, drawn before every entity (REND-1.11).
             if self.bounds.is_none() {
                 self.bounds = Some((model.mins, model.maxs));
             }
+            let index = self.models.len();
+            self.models.push(*placement);
             let numbers = model.firstface..model.firstface.saturating_add(model.numfaces);
             for (number, face) in numbers
                 .clone()
@@ -318,7 +357,7 @@ impl<'p> MeshBuilder<'p> {
                 if let Some(list) = by_texture.get_mut(slot) {
                     list.push(Polygon {
                         corners: corners(face, bsp),
-                        placement: *placement,
+                        model: index,
                         texinfo: *texinfo,
                         size: [f32_of(texture.width), f32_of(texture.height)],
                         texturemins: face.texturemins,
@@ -373,20 +412,25 @@ impl<'p> MeshBuilder<'p> {
             lightmap: self.atlas.image(),
             mins,
             maxs,
+            models: self.models.clone(),
         };
-        for (slot, polygons) in self.by_texture.iter().enumerate() {
-            let first = u32_of(mesh.indices.len());
-            for polygon in polygons {
-                polygon.emit(&mut mesh, (width, height));
-            }
-            let count = u32_of(mesh.indices.len()).saturating_sub(first);
-            if count > 0 {
-                mesh.batches.push(Batch {
-                    texture: slot,
-                    surface: self.surfaces.get(slot).copied().unwrap_or(Surface::Lit),
-                    first,
-                    count,
-                });
+        // REND-1.11: the world's batches, then each entity's.
+        for model in 0..self.models.len() {
+            for (slot, polygons) in self.by_texture.iter().enumerate() {
+                let first = u32_of(mesh.indices.len());
+                for polygon in polygons.iter().filter(|p| p.model == model) {
+                    polygon.emit(&mut mesh, (width, height));
+                }
+                let count = u32_of(mesh.indices.len()).saturating_sub(first);
+                if count > 0 {
+                    mesh.batches.push(Batch {
+                        texture: slot,
+                        surface: self.surfaces.get(slot).copied().unwrap_or(Surface::Lit),
+                        first,
+                        count,
+                        model,
+                    });
+                }
             }
         }
         mesh
@@ -397,8 +441,8 @@ impl<'p> MeshBuilder<'p> {
 #[derive(Clone, Debug)]
 struct Polygon {
     corners: Vec<[f32; 3]>,
-    /// Where its model is drawn.
-    placement: Placement,
+    /// Its model, an index into [`MapMesh::models`].
+    model: usize,
     texinfo: Texinfo,
     size: [f32; 2],
     texturemins: [i16; 2],
@@ -438,7 +482,7 @@ impl Polygon {
                 [0.5 / width, 0.5 / height]
             };
             mesh.vertices.push(Vertex {
-                position: self.placement.position(*corner),
+                position: *corner,
                 texture,
                 light,
             });
