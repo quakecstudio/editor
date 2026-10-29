@@ -646,3 +646,51 @@ fn add([a, b, c]: [f32; 3], [x, y, z]: [f32; 3]) -> [f32; 3] {
 fn ma([a, b, c]: [f32; 3], scale: f32, [x, y, z]: [f32; 3]) -> [f32; 3] {
     [a + scale * x, b + scale * y, c + scale * z]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{MoveType, add, clip_velocity, cross, is_zero};
+
+    // spec PHYS-6.2: out is in less normal * dot * overbounce, components within 0.1 of 0
+    // made 0; bit 1 for a floor, bit 2 for a wall
+    #[test]
+    fn clip_velocity_slides_off_the_plane() {
+        assert_eq!(
+            clip_velocity([100.0, 50.0, -200.0], [0.0, 0.0, 1.0], 1.0),
+            ([100.0, 50.0, 0.0], 1)
+        );
+        assert_eq!(
+            clip_velocity([100.0, 50.0, -200.0], [-1.0, 0.0, 0.0], 1.5),
+            ([-50.0, 50.0, -200.0], 2)
+        );
+        let ([x, y, z], bits) = clip_velocity([100.0, 0.05, 0.0], [0.6, 0.0, -0.8], 1.0);
+        assert!(
+            (x - 64.0).abs() < 1e-4 && (z - 48.0).abs() < 1e-4,
+            "{x} {z}"
+        );
+        assert_eq!((y, bits), (0.0, 0));
+        // 0.1 itself is kept, either side.
+        assert_eq!(
+            clip_velocity([0.1, -0.1, 0.099], [0.0, 0.0, 1.0], 1.0),
+            ([0.1, -0.1, 0.0], 1)
+        );
+    }
+
+    // spec PHYS-7.3: two planes leave the velocity along their crease, their cross product
+    #[test]
+    fn vector_helpers() {
+        assert_eq!(cross([1.0, 2.0, 3.0], [4.0, 5.0, 6.0]), [-3.0, 6.0, -3.0]);
+        assert_eq!(add([1.0, 2.0, 3.0], [4.0, 5.0, 6.0]), [5.0, 7.0, 9.0]);
+        assert!(is_zero([0.0, -0.0, 0.0]));
+        assert!(!is_zero([0.0, 0.0, 1.0]));
+    }
+
+    // spec PHYS-1.2: the movetype is read as id's switch on its int
+    #[test]
+    fn movetypes_from_their_floats() {
+        assert_eq!(MoveType::from_float(-0.0), MoveType::None);
+        assert_eq!(MoveType::from_float(9.0), MoveType::FlyMissile);
+        assert_eq!(MoveType::from_float(10.0), MoveType::Bounce);
+        assert_eq!(MoveType::from_float(-1.0), MoveType::Other(-1.0));
+    }
+}

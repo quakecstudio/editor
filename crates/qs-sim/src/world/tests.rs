@@ -1141,7 +1141,7 @@ fn force_retouch_touches_every_frame() {
         setorigin(self, self.origin); };\n";
     let entities = [entity("pad", "0 0 50", ""), entity("block", "4 0 50", "")].concat();
     let mut run = run_on(&ledge(), source, &entities);
-    run.frames(4, 0.1).unwrap();
+    run.frames(6, 0.1).unwrap();
     assert_eq!(run.world.float(2, "frags"), 2.0);
 }
 
@@ -1338,7 +1338,7 @@ fn impacts_touch_both_ways() {
 }
 
 /// A pusher: the box BSP moving up at 100, thinking at `stop`, with a rider on it.
-fn lift(spec: &MapSpec, stop: &str, rider_z: &str, more: &str) -> Running {
+fn lift(spec: &MapSpec, velocity: &str, stop: &str, rider_z: &str, more: &str) -> Running {
     let crate_box = MapSpec {
         planes: vec![
             plane([0.0, 0.0, 1.0], 10.0, 2),
@@ -1353,10 +1353,12 @@ fn lift(spec: &MapSpec, stop: &str, rider_z: &str, more: &str) -> Running {
          void() lift_stop = {{ self.velocity = '0 0 0'; self.frags = self.ltime; }};\n\
          void() lift_blocked = {{ self.health = self.health + 1; }};\n\
          void() lift = {{ self.solid = 4; self.movetype = 7; setmodel(self, \"maps/b_box.bsp\"); \
-         setorigin(self, self.origin); self.velocity = '0 0 100'; self.think = lift_stop; \
+         setorigin(self, self.origin); self.velocity = '{velocity}'; self.think = lift_stop; \
          self.nextthink = {stop}; self.blocked = lift_blocked; }};\n\
          void() rider = {{ self.solid = 3; self.movetype = 4; {PLAYER_SIZE} \
          setorigin(self, self.origin); droptofloor(); }};\n\
+         void() stuck = {{ self.solid = 3; self.movetype = 4; self.flags = 512; {PLAYER_SIZE} \
+         setorigin(self, self.origin); }};\n\
          void() beam = {{ self.solid = 2; setsize(self, '-20 -20 -4', '20 20 4'); \
          setorigin(self, self.origin); }};\n"
     );
@@ -1380,7 +1382,7 @@ fn lift(spec: &MapSpec, stop: &str, rider_z: &str, more: &str) -> Running {
 // spec PHYS-3.4: a moved entity loses FL_ONGROUND and is pushed by the same move
 #[test]
 fn a_lift_carries_its_rider() {
-    let mut run = lift(&ledge(), "0.3", "200", "");
+    let mut run = lift(&ledge(), "0 0 100", "0.3", "200", "");
     let before = run.world.vector(3, "origin")[2];
     assert!((before - 84.031_25).abs() < 1e-3, "{before}");
     run.frames(5, 0.1).unwrap();
@@ -1398,7 +1400,13 @@ fn a_lift_carries_its_rider() {
 #[test]
 fn a_blocked_lift_goes_back() {
     // The rider's head is at 116; the beam's underside 1.5 above it.
-    let mut run = lift(&ledge(), "5", "200", &entity("beam", "300 0 121.5", ""));
+    let mut run = lift(
+        &ledge(),
+        "0 0 100",
+        "5",
+        "200",
+        &entity("beam", "300 0 121.5", ""),
+    );
     let rider = run.world.vector(3, "origin");
     run.frames(2, 0.1).unwrap();
     let w = &run.world;
@@ -1920,12 +1928,21 @@ fn walls_slow_the_player_facing_them() {
 fn a_player_stuck_on_a_step_is_pushed_free() {
     let mut run = pushed(
         &ledge_over(50.0),
-        "116.03125 0 -25.96875",
+        "116.03125 100 -25.96875",
         "-100 30 -100",
         "512",
     );
     let y = moved(&mut run, UserCmd::default(), 1, 0.001).vector(P, "origin")[1];
-    assert!(y > 4.0 && y < 6.0, "{y}");
+    assert!(y > 104.0 && y < 106.0, "{y}");
+    // Going the other way only the fourth push, 2 toward -y, frees it.
+    let mut run = pushed(
+        &ledge_over(50.0),
+        "116.03125 100 -25.96875",
+        "-100 -30 -100",
+        "512",
+    );
+    let y = moved(&mut run, UserCmd::default(), 1, 0.001).vector(P, "origin")[1];
+    assert!(y > 94.0 && y < 96.0, "{y}");
     let mut run = pushed(
         &ledge_over(50.0),
         "116.03125 0 -25.96875",
@@ -1958,4 +1975,405 @@ fn a_player_in_solid_is_unstuck() {
     assert!(close(origin[2], 24.0), "{origin:?}");
     let (origin, _) = stuck("50 0 -100", "0 0 0");
     assert_eq!(origin, [50.0, 0.0, -100.0]);
+}
+
+/// The ledge turned to face y: the floor for y below 100, the pit past it.
+fn ledge_y(pit: f32) -> MapSpec {
+    let mut spec = ledge_over(pit);
+    for n in [0, 3] {
+        let dist = spec.planes[n].dist;
+        spec.planes[n] = plane([0.0, 1.0, 0.0], dist, 1);
+    }
+    spec
+}
+
+// spec PHYS-9.6: the moves arrive as whole numbers; a button bit sets only its own button
+// spec PHYS-9.2: the wish adds the side move along the right; noclip takes the bounded wish
+#[test]
+fn moves_arrive_whole_and_sideways() {
+    let mut run = player(
+        &ledge(),
+        "setorigin(self, '0 0 200'); self.movetype = 8;",
+        "",
+        "",
+    );
+    let cmd = UserCmd {
+        forward: 100.9,
+        side: 30.9,
+        up: 50.9,
+        buttons: 1,
+        ..UserCmd::default()
+    };
+    let w = moved(&mut run, cmd, 1, 0.1);
+    let [x, y, z] = w.vector(P, "velocity");
+    assert!(
+        close(x, 100.0) && close(y, -30.0) && close(z, 50.0),
+        "{x} {y} {z}"
+    );
+    assert_eq!((w.float(P, "button0"), w.float(P, "button2")), (1.0, 0.0));
+    let mut run = player(
+        &ledge(),
+        "setorigin(self, '0 0 200'); self.movetype = 8;",
+        "",
+        "",
+    );
+    let w = moved(&mut run, forward(1000.0), 1, 0.1);
+    assert!(close(w.vector(P, "velocity")[0], 320.0));
+    // Side steps on the ground.
+    let mut run = standing(&ledge(), "0 0 24.03125", "0 0 0", "");
+    let cmd = UserCmd {
+        side: 100.0,
+        ..UserCmd::default()
+    };
+    assert!(close(
+        moved(&mut run, cmd, 1, 0.1).vector(P, "velocity")[1],
+        -100.0
+    ));
+}
+
+// spec PHYS-9.2: a backward move is only cut while teleport_time is ahead
+// spec PHYS-9.4: acceleration adds the wish less the speed already along it
+#[test]
+fn acceleration_counts_the_speed_already_made() {
+    let mut run = standing(
+        &ledge(),
+        "0 0 24.03125",
+        "0 0 0",
+        "self.teleport_time = 0.5;",
+    );
+    assert!(close(
+        moved(&mut run, forward(-200.0), 1, 0.1).vector(P, "velocity")[0],
+        -200.0
+    ));
+    // 100 less friction is 60; 140 more makes the wish.
+    let mut run = standing(&ledge(), "0 0 24.03125", "100 0 0", "");
+    assert!(close(
+        moved(&mut run, forward(200.0), 1, 0.1).vector(P, "velocity")[0],
+        200.0
+    ));
+}
+
+// spec PHYS-9.3: the edge is looked for 16 ahead along the horizontal velocity, both axes,
+// and the speed counts both
+#[test]
+fn edge_friction_looks_along_the_velocity() {
+    let speed = |spec: &MapSpec, origin: &str, velocity: &str| {
+        let mut run = standing(spec, origin, velocity, "");
+        let [x, y, _] = moved(&mut run, UserCmd::default(), 1, 0.1).vector(P, "velocity");
+        (x * x + y * y).sqrt()
+    };
+    // 9.6 ahead of 86 is short of the edge; 16 would not be.
+    assert!(close(
+        speed(&ledge_over(100.0), "86 0 24.03125", "60 80 0"),
+        60.0
+    ));
+    assert!(close(
+        speed(&ledge_over(100.0), "95 0 24.03125", "60 80 0"),
+        20.0
+    ));
+    assert!(close(
+        speed(&ledge_y(100.0), "0 86 24.03125", "80 60 0"),
+        60.0
+    ));
+    assert!(close(
+        speed(&ledge_y(100.0), "0 95 24.03125", "80 60 0"),
+        20.0
+    ));
+}
+
+// spec PHYS-9.5: a swim wish is bounded to 320 before its 0.7, sideways along the right, and
+// the step is sv_accelerate * wishspeed * frametime
+#[test]
+fn swimming_bounds_and_steps() {
+    let put = "setorigin(self, '0 0 30'); self.waterlevel = 2;";
+    let mut run = player(&pool(), put, "", "");
+    let w = moved(&mut run, forward(1000.0), 1, 0.1);
+    let [x, y, z] = w.vector(P, "velocity");
+    assert!(
+        close(x, 224.0) && close(y, 0.0) && close(z, 0.0),
+        "{x} {y} {z}"
+    );
+    let mut run = player(&pool(), put, "", "");
+    let cmd = UserCmd {
+        side: 100.0,
+        ..UserCmd::default()
+    };
+    assert!(close(
+        moved(&mut run, cmd, 1, 0.1).vector(P, "velocity")[1],
+        -70.0
+    ));
+    let mut run = player(&pool(), put, "", "");
+    assert!(close(
+        moved(&mut run, forward(100.0), 1, 0.01).vector(P, "velocity")[0],
+        7.0
+    ));
+}
+
+// spec PHYS-8.4: the feet are tested 1 above mins and the middle halfway up the box
+#[test]
+fn water_is_tested_at_the_feet_and_the_middle() {
+    let level = |z: &str| {
+        let put = format!("setorigin(self, '0 0 {z}'); self.health = 0;");
+        let mut run = player(&pool(), &put, "", "");
+        moved(&mut run, UserCmd::default(), 1, 0.1).float(P, "waterlevel")
+    };
+    // The feet 0.5 below the water's floor, 1 above them in it.
+    assert_eq!(level("23.5"), 2.0);
+    // The middle at 37, in the water; 8.5 up would not be.
+    assert_eq!(level("33"), 2.0);
+}
+
+// spec PHYS-8.2: a MOVETYPE_NONE client that is not freed goes on to PlayerPostThink
+#[test]
+fn a_still_client_runs_its_post_think() {
+    let more = "void() PlayerPostThink = { self.ammo_rockets = 1; };
+";
+    let mut run = player(&ledge(), "self.movetype = 0;", "", more);
+    assert_eq!(
+        moved(&mut run, UserCmd::default(), 1, 0.1).float(P, "ammo_rockets"),
+        1.0
+    );
+}
+
+// spec PHYS-8.5: the slowing is 1 + d for d the facing's dot with the wall's normal plus 0.5,
+// and only along the wall
+#[test]
+fn wall_friction_scales_with_the_facing() {
+    let mut run = pushed(&ledge_over(50.0), "120 0 -25.96875", "-100 100 0", "512");
+    let cmd = UserCmd {
+        angles: [0.0, 135.0, 0.0],
+        ..UserCmd::default()
+    };
+    let w = moved(&mut run, cmd, 1, 0.1);
+    let [x, y, _] = w.vector(P, "velocity");
+    let d = 0.5 - core::f32::consts::FRAC_1_SQRT_2;
+    assert!(close(y, 100.0 * (1.0 + d)), "{y}");
+    assert!(close(x, 0.0), "{x}");
+}
+
+// spec PHYS-8.3: a step that cleared its wall is not slowed by it; the push down is 18 less
+// the old vertical speed's move, and a step down that lands does not set FL_ONGROUND
+#[test]
+fn steps_down_by_the_old_speed() {
+    let mut run = pushed(&ledge_over(10.0), "120 0 14.03125", "-200 100 0", "512");
+    let cmd = UserCmd {
+        angles: [0.0, 180.0, 0.0],
+        ..UserCmd::default()
+    };
+    assert!(close(
+        moved(&mut run, cmd, 1, 0.1).vector(P, "velocity")[1],
+        100.0
+    ));
+    // With no fall the push down ends 1/1000 short of the floor below the step: no step.
+    let mut run = pushed(
+        &ledge_over(50.0),
+        "116.03125 100 -25.96875",
+        "-100 30 0",
+        "512",
+    );
+    let y = moved(&mut run, UserCmd::default(), 1, 0.001).vector(P, "origin")[1];
+    assert!(close(y, 100.03), "{y}");
+    // Level after gravity, the first move finds no floor; the step lands without the flag.
+    let mut run = pushed(&ledge_over(10.0), "120 0 14.03125", "-200 0 80", "512");
+    let w = moved(&mut run, UserCmd::default(), 1, 0.1);
+    assert!(
+        close(w.vector(P, "origin")[2], 24.031_25),
+        "{:?}",
+        w.vector(P, "origin")
+    );
+    assert_eq!(w.float(P, "flags"), 0.0);
+}
+
+// spec PHYS-3.1: a think due within the frame stops the move at it; a still pusher's clock
+// runs on
+#[test]
+fn pushers_move_to_their_think() {
+    let mut run = lift(&ledge(), "0 0 100", "0.25", "200", "");
+    run.frames(3, 0.1).unwrap();
+    assert!(
+        close(run.world.vector(2, "origin")[2], 75.0),
+        "{:?}",
+        run.world.vector(2, "origin")
+    );
+    assert!(close(run.world.float(2, "frags"), 0.25));
+    let mut run = lift(&ledge(), "0 0 0", "0.25", "200", "");
+    run.frames(3, 0.1).unwrap();
+    assert!(close(run.world.float(2, "ltime"), 0.25));
+    assert!(close(run.world.float(2, "frags"), 0.25));
+}
+
+// spec PHYS-3.3: what rides the pusher goes down with it, without the overlap test
+// spec PHYS-3.4: a ridden stepping monster loses FL_ONGROUND and so falls
+#[test]
+fn a_lift_takes_its_rider_down() {
+    let mut run = lift(&ledge(), "0 0 -100", "5", "200", "");
+    let before = run.world.vector(3, "origin")[2];
+    run.frames(1, 0.1).unwrap();
+    let after = run.world.vector(3, "origin")[2];
+    assert!(close(after, before - 10.0), "{before} {after}");
+}
+
+// spec PHYS-3.3: an entity apart from the pusher's moved box on any side is not pushed, even
+// stuck in the world
+#[test]
+fn a_lift_leaves_what_it_does_not_touch() {
+    let mut run = lift(
+        &ledge(),
+        "0 0 100",
+        "5",
+        "200",
+        &entity("stuck", "250 0 -10", ""),
+    );
+    run.frames(1, 0.1).unwrap();
+    assert_eq!(run.world.vector(4, "origin"), [250.0, 0.0, -10.0]);
+}
+
+// spec PHYS-4.3: a bouncer lands once the bounce leaves it rising slower than 60
+#[test]
+fn a_slow_bounce_lands() {
+    let source = format!(
+        "void() ball = {{ self.movetype = 10; self.solid = 2; {PLAYER_SIZE} \
+         setorigin(self, self.origin); }};\n"
+    );
+    let mut run = run_on(&ledge(), &source, &entity("ball", "50 0 25", ""));
+    run.frames(1, 0.1).unwrap();
+    assert_eq!(run.world.float(2, "flags"), 512.0);
+    assert_eq!(run.world.vector(2, "velocity"), [0.0; 3]);
+}
+
+// spec PHYS-4.4: going into liquid from empty, or out of it, makes the splash; staying makes
+// none
+// spec PHYS-5.1: a stepping monster checks the water every frame
+#[test]
+fn one_splash_going_in() {
+    let source = format!(
+        "void() monster = {{ self.movetype = 4; self.solid = 3; {PLAYER_SIZE} \
+         setorigin(self, self.origin); }};\n"
+    );
+    let mut run = run_on(&pool(), &source, &entity("monster", "0 0 60", ""));
+    run.frames(10, 0.1).unwrap();
+    let splashes = run
+        .world
+        .take_sounds()
+        .iter()
+        .filter(|s| s.sample == "misc/h2ohit1.wav")
+        .count();
+    assert_eq!(splashes, 1);
+}
+
+// spec PHYS-5.1: flying or swimming monsters do not fall; landing makes the sound only from a
+// fall faster than 80, and only on landing
+#[test]
+fn falls_and_their_sound() {
+    let source = format!(
+        "void() monster = {{ self.movetype = 4; self.solid = 3; {PLAYER_SIZE} \
+         setorigin(self, self.origin); }};\n"
+    );
+    let entities = [
+        entity("monster", "0 0 200", "\"flags\" \"1\"\n"),
+        entity("monster", "60 0 200", "\"flags\" \"2\"\n"),
+        entity("monster", "-60 0 25", ""),
+        entity("monster", "-200 0 1000", ""),
+    ]
+    .concat();
+    let mut run = run_on(&ledge(), &source, &entities);
+    for n in 2..6 {
+        if n == 5 {
+            run.world.machine.edicts_mut().set_field(
+                n,
+                field_slot("velocity") + 2,
+                Slot::from_f32(-400.0),
+            );
+        }
+    }
+    run.frames(1, 0.1).unwrap();
+    let w = &run.world;
+    assert_eq!(w.vector(2, "origin")[2], 200.0);
+    assert_eq!(w.vector(3, "origin")[2], 200.0);
+    assert_eq!(w.float(4, "flags"), 512.0);
+    assert!(run.world.take_sounds().is_empty());
+}
+
+// spec PHYS-2.1: a think due exactly at the frame's end runs in it
+#[test]
+fn a_think_at_the_frames_end_runs() {
+    let source = "void() thought = { self.frags = time; };\n\
+        void() thinker = { self.think = thought; self.nextthink = self.ammo_shells; };\n";
+    let mut run = run_on(
+        &ledge(),
+        source,
+        &entity("thinker", "0 0 0", "\"ammo_shells\" \"1.25\"\n"),
+    );
+    run.frames(1, 0.25).unwrap();
+    assert_eq!(run.world.float(2, "frags"), 1.25);
+}
+
+// spec PHYS-1.2: a freed edict is skipped
+// spec PHYS-1.1: StartFrame runs with time the server's
+#[test]
+fn freed_edicts_rest_and_time_is_set() {
+    let source = "void() gone = { remove(self); };\n\
+        void() rock = { self.movetype = 6; self.think = gone; self.nextthink = time + 0.05; };\n\
+        void() StartFrame = { marker.frags = time; };\n\
+        void() worldspawn = { marker = spawn(); };\n";
+    let mut run = run_on(&ledge(), source, &entity("rock", "0 0 200", ""));
+    run.frames(1, 0.1).unwrap();
+    let rested = run.world.vector(3, "origin");
+    run.frames(2, 0.1).unwrap();
+    assert_eq!(run.world.vector(3, "origin"), rested);
+    assert!(
+        close(run.world.float(2, "frags"), 1.2),
+        "{}",
+        run.world.float(2, "frags")
+    );
+}
+
+/// Walls at x = 100 and y = 100 meeting in a corner over a floor at 0; for the player's hull
+/// 116, 116 and 24.
+fn corner() -> MapSpec {
+    MapSpec {
+        planes: vec![
+            plane([1.0, 0.0, 0.0], 100.0, 0),
+            plane([0.0, 1.0, 0.0], 100.0, 1),
+            plane([0.0, 0.0, 1.0], 0.0, 2),
+            plane([1.0, 0.0, 0.0], 116.0, 0),
+            plane([0.0, 1.0, 0.0], 116.0, 1),
+            plane([0.0, 0.0, 1.0], 24.0, 2),
+        ],
+        nodes: vec![node(0, [1, -1]), node(1, [2, -1]), node(2, [-2, -1])],
+        leafs: vec![CONTENTS_SOLID, CONTENTS_EMPTY],
+        clipnodes: vec![
+            ClipNode {
+                planenum: 3,
+                children: [1, CONTENTS_SOLID],
+            },
+            ClipNode {
+                planenum: 4,
+                children: [2, CONTENTS_SOLID],
+            },
+            ClipNode {
+                planenum: 5,
+                children: [CONTENTS_EMPTY, CONTENTS_SOLID],
+            },
+        ],
+    }
+}
+
+// spec PHYS-7.3: into a corner no single plane's clip fits both, so the velocity goes along
+// their crease
+#[test]
+fn a_slide_into_a_corner_follows_the_crease() {
+    let source = format!(
+        "void() monster = {{ self.movetype = 4; self.solid = 3; {PLAYER_SIZE} \
+         self.velocity = '-300 -300 0'; setorigin(self, self.origin); }};\n"
+    );
+    let mut run = run_on(&corner(), &source, &entity("monster", "130 130 300", ""));
+    run.frames(1, 0.1).unwrap();
+    let [vx, vy, vz] = run.world.vector(2, "velocity");
+    assert!(
+        close(vx, 0.0) && close(vy, 0.0) && close(vz, -80.0),
+        "{vx} {vy} {vz}"
+    );
+    let [x, y, _] = run.world.vector(2, "origin");
+    assert!(close(x, 116.031_25) && close(y, 116.031_25), "{x} {y}");
 }

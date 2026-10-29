@@ -593,7 +593,26 @@ fn add([a, b, c]: [f32; 3], [x, y, z]: [f32; 3]) -> [f32; 3] {
 
 #[cfg(test)]
 mod tests {
-    use super::{calc_roll, wire_angle, wire_short};
+    use super::{angle_vectors, calc_roll, wire_angle, wire_short};
+
+    fn near(got: [f32; 3], want: [f32; 3]) -> bool {
+        got.iter().zip(want).all(|(g, w)| (g - w).abs() < 1e-5)
+    }
+
+    // spec PHYS-9.2: forward and right come from the angles as AngleVectors gives them
+    #[test]
+    fn angle_vectors_of_pitch_yaw_and_roll() {
+        let (forward, right, up) = angle_vectors([30.0, 45.0, 60.0]);
+        assert!(
+            near(forward, [0.612_372_4, 0.612_372_4, -0.5]),
+            "{forward:?}"
+        );
+        assert!(
+            near(right, [0.047_367_17, -0.659_739_6, -0.75]),
+            "{right:?}"
+        );
+        assert!(near(up, [0.789_149_1, -0.435_595_7, 0.433_012_7]), "{up:?}");
+    }
 
     // spec PHYS-9.6: angles go as (int)f*256/360 in a byte, read back signed; moves as the
     // int kept to 16 bits
