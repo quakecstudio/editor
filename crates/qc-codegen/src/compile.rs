@@ -108,6 +108,9 @@ pub(crate) struct Compiler<'a> {
     pub(crate) fold: bool,
     /// The dialect the files are read in, whose lexer reads each literal and builtin number.
     pub(crate) dialect: Dialect,
+    /// The compiler flags of the file being compiled, each from the byte it holds from
+    /// (FTEF-21.1).
+    flags: Vec<(usize, qc_syntax::CompilerFlags)>,
 }
 
 impl<'a> Compiler<'a> {
@@ -125,6 +128,7 @@ impl<'a> Compiler<'a> {
             return_type: ValueType::simple(Etype::Void),
             fold: false,
             dialect: Dialect::Vanilla,
+            flags: Vec::new(),
         }
     }
 
@@ -138,6 +142,7 @@ impl<'a> Compiler<'a> {
         parse: &Parse,
     ) -> Result<(), (Internal, FileId, Span)> {
         self.file = file;
+        self.flags = parse.flags().to_vec();
         self.s_file = self
             .program
             .copy_string(name.as_bytes())
@@ -408,9 +413,7 @@ impl<'a> Compiler<'a> {
                 // QC-14.5: the condition, `IFNOT` past the loop, the body, `GOTO` back.
                 let top = self.program.statements.len();
                 let condition = self.expr(&w.condition().at(span)?)?;
-                let test = self
-                    .program
-                    .emit(Opcode::IfNot, operand(condition.ofs).at(span)?, 0);
+                let test = self.unless(&condition, span)?;
                 self.statement(&w.body().at(span)?)?;
                 let back = branch(self.program.statements.len(), top).at(span)?;
                 self.program.emit(Opcode::Goto, back, 0);
@@ -421,17 +424,15 @@ impl<'a> Compiler<'a> {
                 let top = self.program.statements.len();
                 self.statement(&d.body().at(span)?)?;
                 let condition = self.expr(&d.condition().at(span)?)?;
+                let (op, tested) = self.test(&condition, true, span)?;
                 let back = branch(self.program.statements.len(), top).at(span)?;
-                self.program
-                    .emit(Opcode::If, operand(condition.ofs).at(span)?, back);
+                self.program.emit(op, operand(tested).at(span)?, back);
             }
             ast::Stmt::Local(local) => self.local(local)?,
             ast::Stmt::If(i) => {
                 // QC-14.4: `IFNOT` past the statement; with `else`, a `GOTO` past the other.
                 let condition = self.expr(&i.condition().at(span)?)?;
-                let test = self
-                    .program
-                    .emit(Opcode::IfNot, operand(condition.ofs).at(span)?, 0);
+                let test = self.unless(&condition, span)?;
                 self.statement(&i.then_branch().at(span)?)?;
                 if let Some(otherwise) = i.else_branch() {
                     let skip = self.program.emit(Opcode::Goto, 0, 0);
@@ -575,11 +576,80 @@ impl<'a> Compiler<'a> {
             ast::Expr::Postfix(postfix) => self.postfix(postfix, span),
             ast::Expr::Unary(unary) => self.unary(unary, span),
             ast::Expr::Index(index) => self.index(index, span),
-            ast::Expr::Ternary(_)
-            | ast::Expr::Cast(_)
-            | ast::Expr::Vector(_)
-            | ast::Expr::Sizeof(_) => Err(Abort::Internal(Internal::Unsupported, span)),
+            ast::Expr::Ternary(ternary) => self.ternary(ternary, span),
+            ast::Expr::Cast(_) | ast::Expr::Vector(_) | ast::Expr::Sizeof(_) => {
+                Err(Abort::Internal(Internal::Unsupported, span))
+            }
         }
+    }
+
+    /// A jump taken when `condition` is false, its target patched later; returns its index.
+    fn unless(&mut self, condition: &Value, span: Span) -> Lowered<usize> {
+        let (op, tested) = self.test(condition, false, span)?;
+        Ok(self.program.emit(op, operand(tested).at(span)?, 0))
+    }
+
+    /// The opcode and operand of a jump taken when `condition` is `when`: `IF` or `IFNOT` of
+    /// its word (QC-14.4); under FTEQCC with `ifvector` on, a vector is tested by `NOT_V` first,
+    /// so every component counts (`QCC_Generate_OP_IFNOT`, FTEF-23.10).
+    fn test(&mut self, condition: &Value, when: bool, span: Span) -> Lowered<(Opcode, u32)> {
+        let flags = qc_syntax::CompilerFlags::at(&self.flags, span.start);
+        let vector = self.type_of(condition).etype() == Etype::Vector;
+        if self.dialect.has_fteqcc_extensions()
+            && vector
+            && flags.has(qc_preproc::FteFlag::Ifvector)
+        {
+            let not = self
+                .program
+                .emit_result(Opcode::NotV, condition.ofs, 0, Etype::Float)
+                .at(span)?;
+            return Ok((if when { Opcode::IfNot } else { Opcode::If }, not));
+        }
+        Ok((if when { Opcode::If } else { Opcode::IfNot }, condition.ofs))
+    }
+
+    /// FTEQCC's `c ? a : b` and `c ?: b` (FTE-8.1, FTEF-30.3): the condition tested, the first
+    /// arm (the condition itself for `?:`) stored to a temporary of its size, `GOTO` past the
+    /// last arm, which is stored to the same temporary; the arms must have one basic type.
+    fn ternary(&mut self, ternary: &ast::TernaryExpr, span: Span) -> Lowered<Value> {
+        let condition = self.expr(&ternary.condition().at(span)?)?;
+        let (middle, last) = ternary.arms();
+        let test = self.unless(&condition, span)?;
+        let first = match middle {
+            Some(middle) => self.expr(&middle)?,
+            None => condition,
+        };
+        let ty = self.type_of(&first);
+        let (words, store) = if ty.etype() == Etype::Vector {
+            (3, Opcode::StoreV)
+        } else {
+            (1, Opcode::StoreF)
+        };
+        let result = self.program.allocate(words).at(span)?;
+        self.program.emit(
+            store,
+            operand(first.ofs).at(span)?,
+            operand(result).at(span)?,
+        );
+        let skip = self.program.emit(Opcode::Goto, 0, 0);
+        self.patch_b(test, span)?;
+        let second = self.expr(&last.at(span)?)?;
+        if self.type_of(&second).etype() != ty.etype() {
+            return Self::error(Code::E0302, "type mismatch for ?".to_owned(), span);
+        }
+        self.program.emit(
+            store,
+            operand(second.ofs).at(span)?,
+            operand(result).at(span)?,
+        );
+        let past = branch(skip, self.program.statements.len()).at(span)?;
+        if let Some(s) = self.program.statements.get_mut(skip) {
+            s.a = past;
+        }
+        Ok(Value {
+            ofs: result,
+            kind: ValueKind::Temp(ty),
+        })
     }
 
     /// The float literal `value`'s global (QC-20).
