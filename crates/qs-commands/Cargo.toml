@@ -1,0 +1,21 @@
+[package]
+name = "qs-commands"
+description = "The QuakeC Studio command engine: one registry of commands with stable ids, JSON Schema parameters, undo steps and a panic guard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+schemars = { workspace = true, features = ["derive", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+tracing = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

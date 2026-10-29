@@ -93,7 +93,8 @@ jobs:
   # 40094712627 (2026-10-24) qc-preproc (1451 mutants) took 3 h 40 min and
   # qc-syntax (1401) 1 h 47 min, while qc-lexer (494) and qc-project (262)
   # took about 12 minutes each, half of it the runner's setup and the baseline
-  # build that every shard pays again. A crate not listed is one shard; a crate
+  # build that every shard pays again. qc-sema (about 4000 mutants) ran past
+  # 3 h 30 min on one runner in run 40805476712 (2026-10-29). A crate not listed is one shard; a crate
   # named by its directory is looked up by its last component.
   crates:
     name: Readiness crates
@@ -106,7 +107,7 @@ jobs:
       - id: list
         run: |
           matrix=$(jq -cn --arg crates "$CRATES" '
-            {"qc-preproc": 10, "qc-syntax": 4} as $shards
+            {"qc-preproc": 10, "qc-sema": 10, "qc-syntax": 4} as $shards
             | [$crates | splits("\\s+") | select(. != "")]
             | map(. as $crate
                   | ($shards[$crate | sub("/+$"; "") | sub(".*/"; "")] // 1) as $count

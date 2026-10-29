@@ -21,6 +21,7 @@ qc-sema = { workspace = true }
 qc-syntax = { workspace = true }
 qc-trace = { workspace = true }
 qc-types = { workspace = true }
+qs-commands = { workspace = true }
 qs-map = { workspace = true }
 qs-pak = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }

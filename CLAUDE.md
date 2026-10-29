@@ -111,6 +111,7 @@ cargo xtask attribution                   # every asset is listed in ATTRIBUTION
 cargo xtask oracles                       # build the oracles from id's sources, run the VM vectors and the builtin differential (network, C compiler)
 cargo xtask fuzz qc-progs --time 10m      # one fuzz target (nightly, cargo-fuzz); no target runs all
 cargo xtask engines [--check]             # regenerate (or check) the engine-target tables from their pinned sources (network)
+cargo xtask commands [--check]            # regenerate (or check) docs/commands.md from the command registry
 
 scripts/refresh-specs.sh --verify         # cached specs match specs/manifest.tsv (offline)
 scripts/refresh-specs.sh                  # refresh specs/ from the origins
@@ -238,6 +239,7 @@ after its `code-review` self-review is recorded in the PR body (`work-issue`), e
 | Design and approved mockups | `docs/design/` |
 | Decisions | `docs/adr/` (template `0000-template.md`) |
 | Engine behaviour specs | `docs/spec/` (index `requirements.tsv`, baseline `coverage-baseline.tsv`) |
+| Command reference (generated) | `docs/commands.md`, from `crates/qs-commands` |
 | Cached public specs | `specs/` (roster `specs/manifest.tsv`) |
 | Porting process | `docs/porting.md`; worked example `crates/qs-porting-example/` |
 | Rust conventions | `docs/conventions.md` |

@@ -29,7 +29,7 @@ pub(crate) enum Step {
 }
 
 /// The steps, cheapest first.
-pub(crate) const STEPS: [Step; 17] = [
+pub(crate) const STEPS: [Step; 19] = [
     Step::Cargo(&["fmt", "--all", "--check"]),
     Step::Program("plan", "python3", &["plan/check.py"]),
     Step::Program(
@@ -72,6 +72,21 @@ pub(crate) const STEPS: [Step; 17] = [
         "--workspace",
         "--all-features",
     ]),
+    // P2-12: the command guard catches a panic in a release build, whose profile sets
+    // `panic = "unwind"` (CONV-6). Test targets ignore the profile's `panic` setting, so a
+    // release binary is what proves it.
+    Step::Cargo(&[
+        "run",
+        "--locked",
+        "-p",
+        "qs-commands",
+        "--profile",
+        "release",
+        "--example",
+        "release_guard",
+    ]),
+    // P2-12: docs/commands.md is the registry's reference, regenerated, not edited.
+    Step::Xtask("commands"),
     Step::Xtask("clippy-fixtures"),
     Step::Cargo(&[
         "deny",
@@ -263,6 +278,8 @@ mod tests {
             "cargo fmt --all --check",
             "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
             "cargo nextest run --locked --workspace --all-features",
+            "cargo run --locked -p qs-commands --profile release --example release_guard",
+            "cargo xtask commands",
             "cargo xtask conventions",
             "cargo xtask adr",
             "cargo xtask clippy-fixtures",
@@ -383,6 +400,8 @@ mod tests {
                 "licenses",
                 "attribution",
                 "contrast",
+                "run",
+                "commands",
                 "clippy-fixtures",
                 "deny-fixtures",
                 "fuzz-build",
