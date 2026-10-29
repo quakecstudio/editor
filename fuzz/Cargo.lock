@@ -264,6 +264,7 @@ dependencies = [
  "qc-vm",
  "qs-map",
  "qs-porting-example",
+ "qs-sim",
 ]
 
 [[package]]
@@ -322,6 +323,18 @@ dependencies = [
  "serde_json",
  "toml",
  "toml_edit",
+]
+
+[[package]]
+name = "qs-sim"
+version = "2026.10.0"
+dependencies = [
+ "qc-builtins",
+ "qc-edict",
+ "qc-progs",
+ "qc-types",
+ "qc-vm",
+ "qs-porting-example",
 ]
 
 [[package]]
