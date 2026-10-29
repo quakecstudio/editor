@@ -62,12 +62,29 @@ pub(crate) struct Models {
     pub(crate) skins: Vec<Image>,
     /// Each entity: its number, its model's index in `models`, and what it is drawn with.
     entities: Vec<(usize, usize, AliasEntity)>,
+    /// The entity each of the mesh's models stands for, `None` for the world (REND-1.9).
+    brushes: Vec<Option<usize>>,
+    /// Each mesh model's matrix as the server last had it.
+    placed: Vec<[[f32; 4]; 4]>,
 }
 
 impl Models {
     /// Each entity's place, frame and skin as the server has them now, and the light below it.
     pub(crate) fn update(&mut self, sim: &Sim) {
         let now = sim.world.entities();
+        self.placed = self
+            .brushes
+            .iter()
+            .map(|entity| {
+                let found = entity.and_then(|n| now.iter().find(|e| e.number == n));
+                found.map_or(Placement::WORLD, |e| Placement {
+                    model: 0,
+                    origin: e.origin,
+                    angles: e.angles,
+                })
+                .matrix()
+            })
+            .collect();
         for (number, _, entity) in &mut self.entities {
             if let Some(e) = now.iter().find(|e| e.number == *number) {
                 if e.origin.map(f32::to_bits) != entity.origin.map(f32::to_bits) {
@@ -108,6 +125,11 @@ impl Models {
             });
         }
         out
+    }
+
+    /// Each mesh model's matrix now, the world's first.
+    pub(crate) fn placements(&self) -> Vec<[[f32; 4]; 4]> {
+        self.placed.clone()
     }
 
     /// The number of entities drawn with an alias model.
@@ -190,7 +212,8 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     // The world, then each brush entity: a submodel `*n` of the map at its entity's origin,
     // or model 0 of a BSP of its own, such as a health box.
     let mut placements = vec![Placement::WORLD];
-    let mut others: Vec<(String, Vec<Placement>)> = Vec::new();
+    let mut brushes = vec![None];
+    let mut others: Vec<(String, Vec<(Placement, usize)>)> = Vec::new();
     let mut models = Models::default();
     for entity in world.entities().into_iter().skip(1) {
         if entity.model.ends_with(".mdl") {
@@ -228,24 +251,29 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
                 origin: entity.origin,
                 angles: entity.angles,
             });
+            brushes.push(Some(entity.number));
         } else if entity.model.ends_with(".bsp") {
             let placement = Placement {
                 model: 0,
                 origin: entity.origin,
                 angles: entity.angles,
             };
+            let placed = (placement, entity.number);
             match others.iter_mut().find(|(name, _)| *name == entity.model) {
-                Some((_, list)) => list.push(placement),
-                None => others.push((entity.model, vec![placement])),
+                Some((_, list)) => list.push(placed),
+                None => others.push((entity.model, vec![placed])),
             }
         }
     }
     let mut builder = MeshBuilder::new(&palette);
     builder.add(&bsp, &placements).map_err(|e| e.to_string())?;
+    brushes.extend(others.iter().flat_map(|(_, list)| list.iter().map(|(_, n)| Some(*n))));
+    models.brushes = brushes;
     for (name, list) in &others {
         let bytes = read(name)?;
         let other = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(name))?;
-        builder.add(&other, list).map_err(|e| e.to_string())?;
+        let list: Vec<Placement> = list.iter().map(|(p, _)| *p).collect();
+        builder.add(&other, &list).map_err(|e| e.to_string())?;
     }
     let mesh = builder.finish();
     let camera = show

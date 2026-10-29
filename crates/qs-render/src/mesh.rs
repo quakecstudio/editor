@@ -166,6 +166,8 @@ pub struct Batch {
     pub first: u32,
     /// How many indices it draws.
     pub count: u32,
+    /// The model it draws, an index into [`MapMesh::models`]: 0 for the world.
+    pub model: usize,
 }
 
 /// A BSP's world model ready for the GPU (REND-1).
@@ -189,6 +191,9 @@ pub struct MapMesh {
     pub mins: [f32; 3],
     /// The world model's bounds.
     pub maxs: [f32; 3],
+    /// Each model's placement when the mesh was built, the world first; a model's vertices
+    /// are its own, drawn moved by its placement's matrix (REND-1.9).
+    pub models: Vec<Placement>,
 }
 
 impl MapMesh {
@@ -226,6 +231,22 @@ impl Placement {
         angles: [0.0; 3],
     };
 
+    /// The column-major matrix that moves a model's vertex to where [`Self::position`] puts it.
+    #[must_use]
+    pub fn matrix(&self) -> [[f32; 4]; 4] {
+        let o = self.position([0.0; 3]);
+        let column = |axis: [f32; 3]| {
+            let p = self.position(axis);
+            [p[0] - o[0], p[1] - o[1], p[2] - o[2], 0.0]
+        };
+        [
+            column([1.0, 0.0, 0.0]),
+            column([0.0, 1.0, 0.0]),
+            column([0.0, 0.0, 1.0]),
+            [o[0], o[1], o[2], 1.0],
+        ]
+    }
+
     /// Where `corner` of the model is drawn: turned by roll about x, then pitch about y, then
     /// yaw about z, then moved to the origin, as `R_RotateForEntity` turns it with the pitch
     /// `R_DrawBrushModel` negates twice (REND-1.9).
@@ -247,6 +268,7 @@ pub struct MeshBuilder<'p> {
     surfaces: Vec<Surface>,
     by_texture: Vec<Vec<Polygon>>,
     bounds: Option<([f32; 3], [f32; 3])>,
+    models: Vec<Placement>,
 }
 
 impl<'p> MeshBuilder<'p> {
@@ -262,6 +284,7 @@ impl<'p> MeshBuilder<'p> {
             surfaces: Vec::new(),
             by_texture: Vec::new(),
             bounds: None,
+            models: Vec::new(),
         }
     }
 
@@ -281,10 +304,11 @@ impl<'p> MeshBuilder<'p> {
         for placement in placements {
             let model = bsp.models.get(placement.model).ok_or(MeshError::NoWorld)?;
             // The first model added is the world, drawn before every entity (REND-1.11).
-            let world = self.bounds.is_none();
-            if world {
+            if self.bounds.is_none() {
                 self.bounds = Some((model.mins, model.maxs));
             }
+            let index = self.models.len();
+            self.models.push(*placement);
             let numbers = model.firstface..model.firstface.saturating_add(model.numfaces);
             for (number, face) in numbers
                 .clone()
@@ -320,8 +344,7 @@ impl<'p> MeshBuilder<'p> {
                 if let Some(list) = by_texture.get_mut(slot) {
                     list.push(Polygon {
                         corners: corners(face, bsp),
-                        placement: *placement,
-                        world,
+                        model: index,
                         texinfo: *texinfo,
                         size: [f32_of(texture.width), f32_of(texture.height)],
                         texturemins: face.texturemins,
@@ -376,12 +399,13 @@ impl<'p> MeshBuilder<'p> {
             lightmap: self.atlas.image(),
             mins,
             maxs,
+            models: self.models.clone(),
         };
-        // REND-1.11: the world's batches, then the entities'.
-        for world in [true, false] {
+        // REND-1.11: the world's batches, then each entity's.
+        for model in 0..self.models.len() {
             for (slot, polygons) in self.by_texture.iter().enumerate() {
                 let first = u32_of(mesh.indices.len());
-                for polygon in polygons.iter().filter(|p| p.world == world) {
+                for polygon in polygons.iter().filter(|p| p.model == model) {
                     polygon.emit(&mut mesh, (width, height));
                 }
                 let count = u32_of(mesh.indices.len()).saturating_sub(first);
@@ -391,6 +415,7 @@ impl<'p> MeshBuilder<'p> {
                         surface: self.surfaces.get(slot).copied().unwrap_or(Surface::Lit),
                         first,
                         count,
+                        model,
                     });
                 }
             }
@@ -403,10 +428,8 @@ impl<'p> MeshBuilder<'p> {
 #[derive(Clone, Debug)]
 struct Polygon {
     corners: Vec<[f32; 3]>,
-    /// Where its model is drawn.
-    placement: Placement,
-    /// Whether it is the world's, drawn first.
-    world: bool,
+    /// Its model, an index into [`MapMesh::models`].
+    model: usize,
     texinfo: Texinfo,
     size: [f32; 2],
     texturemins: [i16; 2],
@@ -446,7 +469,7 @@ impl Polygon {
                 [0.5 / width, 0.5 / height]
             };
             mesh.vertices.push(Vertex {
-                position: self.placement.position(*corner),
+                position: *corner,
                 texture,
                 light,
             });

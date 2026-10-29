@@ -44,6 +44,8 @@ struct View {
 @group(1) @binding(1) var surface_sampler: sampler;
 // The sky's alpha layer; for any other surface, its texture again.
 @group(1) @binding(2) var sky_alpha: texture_2d<f32>;
+// The model's matrix: where a brush entity stands now (REND-1.9); the world's moves nothing.
+@group(2) @binding(0) var<uniform> model: mat4x4<f32>;
 
 struct In {
     @location(0) position: vec3<f32>,
@@ -61,10 +63,11 @@ struct Out {
 @vertex
 fn vertex(input: In) -> Out {
     var out: Out;
-    out.clip = view.clip_from_world * vec4<f32>(input.position, POINT);
+    let world = model * vec4<f32>(input.position, POINT);
+    out.clip = view.clip_from_world * world;
     out.texture = input.texture;
     out.light = input.light;
-    out.world = input.position;
+    out.world = world.xyz;
     return out;
 }
 

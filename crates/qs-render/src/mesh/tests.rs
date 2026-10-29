@@ -439,10 +439,20 @@ fn a_placed_model_moves_and_turns_its_corners() {
     builder.add(&world, &[Placement::WORLD, placed]).unwrap();
     let mesh = builder.finish();
     let (unmoved, moved) = mesh.vertices.split_at(4);
-    let round = |p: [f32; 3]| p.map(f32::round);
+    // The entity's vertices are its model's; its matrix moves them.
+    assert_eq!(moved[1].position, unmoved[1].position);
+    assert_eq!(mesh.models, [Placement::WORLD, placed]);
+    let m = mesh.models[1].matrix();
+    let apply = |[x, y, z]: [f32; 3]| {
+        [0, 1, 2].map(|r| (m[0][r] * x + m[1][r] * y + m[2][r] * z + m[3][r]).round())
+    };
     // Yaw 90 takes (64, 0, 0) to (0, 64, 0).
-    assert_eq!(round(moved[1].position), [100.0, 264.0, 300.0]);
-    assert_eq!(round(moved[2].position), [68.0, 264.0, 300.0]);
+    assert_eq!(apply(moved[1].position), [100.0, 264.0, 300.0]);
+    assert_eq!(apply(moved[2].position), [68.0, 264.0, 300.0]);
+    assert_eq!(
+        apply(moved[2].position),
+        placed.position(moved[2].position).map(f32::round)
+    );
     assert_eq!(moved[1].texture, unmoved[1].texture);
     assert_eq!(moved[1].light, unmoved[1].light);
     // The first model added gives the bounds.
@@ -547,10 +557,8 @@ fn the_world_is_drawn_before_entities() {
     builder.add(&world, &[Placement::WORLD, lift]).unwrap();
     let mesh = builder.finish();
     assert_eq!(mesh.batches.len(), 2);
-    let first = &mesh.batches[0];
-    let z = mesh.vertices[mesh.indices[first.first as usize] as usize].position[2];
-    assert_eq!(z, 0.0);
-    let second = &mesh.batches[1];
-    let z = mesh.vertices[mesh.indices[second.first as usize] as usize].position[2];
-    assert_eq!(z, 5.0);
+    assert_eq!(mesh.batches[0].model, 0);
+    assert_eq!(mesh.batches[1].model, 1);
+    assert!(mesh.batches[0].first < mesh.batches[1].first);
+    assert_eq!(mesh.models[1].matrix()[3], [0.0, 0.0, 5.0, 1.0]);
 }

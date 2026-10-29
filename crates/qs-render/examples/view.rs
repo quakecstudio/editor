@@ -126,6 +126,7 @@ impl eframe::App for Viewer {
                     time: time.as_secs_f32(),
                 },
                 models: self.models.frame(self.sim.time()),
+                placements: self.models.placements(),
             },
         ));
         // egui's fonts are not bundled (their licenses are outside deny.toml's), so the stats

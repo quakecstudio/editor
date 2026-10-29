@@ -8,7 +8,7 @@ use egui_wgpu::wgpu::{self, BindGroup, Buffer, Device, Queue, RenderPipeline, Te
 use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
 
 use crate::alias::AliasVertex;
-use crate::mesh::{Animation, Batch, Image, MapMesh, Surface, frame, mip_levels};
+use crate::mesh::{Animation, Batch, Image, MapMesh, Placement, Surface, frame, mip_levels};
 
 /// The bytes of a [`crate::mesh::Vertex`] on the GPU: position, texture and light coordinates.
 const VERTEX_BYTES: u64 = 7 * 4;
@@ -36,7 +36,16 @@ pub struct MapRenderer {
     /// This frame's alias triangles, and how many vertices the buffer holds.
     alias: Option<(Buffer, u64)>,
     alias_draws: Vec<AliasDraw>,
+    /// Each model's matrix, one every [`MODEL_STRIDE`] bytes, the world's first (REND-1.9).
+    models: Buffer,
+    model_group: BindGroup,
+    model_count: usize,
 }
+
+/// The bytes between two models' matrices: the dynamic offset alignment every device allows.
+const MODEL_STRIDE: u64 = 256;
+/// The bytes of one model's matrix.
+const MATRIX_BYTES: u64 = 16 * 4;
 
 /// One run of a frame's alias vertices, drawn with one skin image.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,11 +137,49 @@ impl MapRenderer {
             // layer at 2 (REND-2.3).
             entries: &[texture_entry(0), sampler_entry(1), texture_entry(2)],
         });
+        let model_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("qs-render model"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: true,
+                    min_binding_size: wgpu::BufferSize::new(MATRIX_BYTES),
+                },
+                count: None,
+            }],
+        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("qs-render world"),
-            bind_group_layouts: &[Some(&shared_layout), Some(&texture_layout)],
+            bind_group_layouts: &[
+                Some(&shared_layout),
+                Some(&texture_layout),
+                Some(&model_layout),
+            ],
             immediate_size: 0,
         });
+        let model_count = mesh.models.len().max(1);
+        let models = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("qs-render models"),
+            size: MODEL_STRIDE.saturating_mul(u64::try_from(model_count).unwrap_or(1)),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let model_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("qs-render model"),
+            layout: &model_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &models,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(MATRIX_BYTES),
+                }),
+            }],
+        });
+        let placed: Vec<[[f32; 4]; 4]> = mesh.models.iter().map(Placement::matrix).collect();
+        queue.write_buffer(&models, 0, &model_bytes(&placed));
         let world_vertex = wgpu::VertexBufferLayout {
             array_stride: VERTEX_BYTES,
             step_mode: wgpu::VertexStepMode::Vertex,
@@ -303,7 +350,21 @@ impl MapRenderer {
             skins,
             alias: None,
             alias_draws: Vec::new(),
+            models,
+            model_group,
+            model_count,
         }
+    }
+
+    /// Moves the models to `matrices`, the world's first, as the entities stand now
+    /// (REND-1.9); a matrix past the mesh's models is left out.
+    pub fn set_placements(&self, queue: &Queue, matrices: &[[[f32; 4]; 4]]) {
+        let take = matrices.len().min(self.model_count);
+        queue.write_buffer(
+            &self.models,
+            0,
+            &model_bytes(matrices.get(..take).unwrap_or(&[])),
+        );
     }
 
     /// Sets the alias models drawn next, growing their buffer when they need more room.
@@ -353,6 +414,7 @@ impl MapRenderer {
             ) {
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(1, texture, &[]);
+                pass.set_bind_group(2, &self.model_group, &[model_offset(batch.model)]);
                 pass.draw_indexed(
                     batch.first..batch.first.saturating_add(batch.count),
                     0,
@@ -365,6 +427,8 @@ impl MapRenderer {
         };
         pass.set_pipeline(&self.alias_pipeline);
         pass.set_vertex_buffer(0, buffer.slice(..));
+        // Alias vertices are already where they are drawn: the world's matrix.
+        pass.set_bind_group(2, &self.model_group, &[0]);
         for draw in &self.alias_draws {
             if let Some(skin) = self.skins.get(draw.skin) {
                 pass.set_bind_group(1, skin, &[]);
@@ -372,6 +436,31 @@ impl MapRenderer {
             }
         }
     }
+}
+
+/// Each matrix at its [`MODEL_STRIDE`], column by column.
+fn model_bytes(matrices: &[[[f32; 4]; 4]]) -> Vec<u8> {
+    let stride = usize::try_from(MODEL_STRIDE).unwrap_or(256);
+    let mut bytes = vec![0; matrices.len().saturating_mul(stride)];
+    for (chunk, matrix) in bytes.chunks_mut(stride).zip(matrices) {
+        let floats: Vec<u8> = matrix
+            .iter()
+            .flatten()
+            .flat_map(|v| v.to_ne_bytes())
+            .collect();
+        for (b, f) in chunk.iter_mut().zip(floats) {
+            *b = f;
+        }
+    }
+    bytes
+}
+
+/// The dynamic offset of model `model`'s matrix.
+fn model_offset(model: usize) -> u32 {
+    u32::try_from(model)
+        .ok()
+        .and_then(|m| m.checked_mul(u32::try_from(MODEL_STRIDE).unwrap_or(256)))
+        .unwrap_or(0)
 }
 
 /// `vertices` as the alias pipeline reads them: position, skin coordinates and shade.
@@ -484,6 +573,8 @@ pub struct MapCallback {
     pub view: View,
     /// The alias models it shows.
     pub models: ModelFrame,
+    /// Each of the mesh's models' matrices, the world's first.
+    pub placements: Vec<[[f32; 4]; 4]>,
 }
 
 impl CallbackTrait for MapCallback {
@@ -498,6 +589,9 @@ impl CallbackTrait for MapCallback {
         if let Some(renderer) = resources.get_mut::<MapRenderer>() {
             renderer.set_view(queue, &self.view);
             renderer.set_models(device, queue, &self.models);
+            if !self.placements.is_empty() {
+                renderer.set_placements(queue, &self.placements);
+            }
         }
         Vec::new()
     }
