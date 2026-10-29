@@ -51,7 +51,10 @@ impl CommandInfo {
 
 /// A command with its type erased, so commands with different parameter, output and error
 /// types share one registry. Implemented for every [`Command`].
-pub(crate) trait ErasedCommand<C> {
+///
+/// It is `Send + Sync`, as [`Command`] is, so a [`Registry`] is `Send + Sync` and a session
+/// over a `Send` context is `Send`.
+pub(crate) trait ErasedCommand<C>: Send + Sync {
     /// Deserialises `params`, runs the command and serialises its output.
     fn invoke(
         &self,
