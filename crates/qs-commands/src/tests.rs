@@ -1290,6 +1290,40 @@ fn a_registry_is_send_and_sync_and_a_session_over_a_send_context_is_send() {
     assert_send::<Session<Doc>>();
 }
 
+// PRIN-3 (P2-R5 re-review): a session moved to another thread runs, undoes and redoes there,
+// and one registry is read from several threads at once.
+#[test]
+fn a_session_runs_on_another_thread_and_a_registry_is_shared() {
+    let mut session = session(SessionSpec { text: "a" });
+    let session = std::thread::spawn(move || {
+        session
+            .execute("doc.append", json!({ "text": "bc" }))
+            .unwrap();
+        session.undo().unwrap();
+        session.redo().unwrap();
+        session
+    })
+    .join()
+    .unwrap();
+    assert_eq!(session.context().text, "abc");
+    let registry = session.registry();
+    let ids: Vec<Vec<String>> = std::thread::scope(|scope| {
+        let readers: Vec<_> = (0..4)
+            .map(|_| {
+                scope.spawn(|| {
+                    registry
+                        .commands()
+                        .map(|c| c.id().as_str().to_owned())
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        readers.into_iter().map(|r| r.join().unwrap()).collect()
+    });
+    assert!(ids.iter().all(|list| list == &ids[0]));
+    assert!(ids[0].iter().any(|id| id == "doc.append"));
+}
+
 fn op() -> impl Strategy<Value = Op> {
     prop_oneof![
         "[a-z]{0,3}".prop_map(Op::Append),

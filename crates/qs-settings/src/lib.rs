@@ -138,38 +138,34 @@ fn json<T: Serialize>(value: T) -> Value {
 }
 
 /// `[appearance]` of a settings file.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Appearance {
     /// The colour theme.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub theme: Option<Theme>,
 }
 
 /// `[log]` of a settings file.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Log {
     /// The log's `RUST_LOG`-style filter.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub filter: Option<String>,
 }
 
-/// One settings file: the settings it sets, each left out when it does not.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+/// One settings file: the settings it sets. It is read with serde and written by editing its
+/// text in place ([`SettingsStore::put`]), never serialised whole.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SettingsFile {
     /// Appearance.
-    #[serde(default, skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub appearance: Appearance,
     /// Logging.
-    #[serde(default, skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub log: Log,
-}
-
-/// Whether a table sets nothing, so the file leaves it out.
-fn is_default<T: Default + PartialEq>(table: &T) -> bool {
-    *table == T::default()
 }
 
 impl SettingsFile {
@@ -244,13 +240,17 @@ fn write_text(path: &Path, text: &str) -> Result<(), SettingsError> {
 ///
 /// A value keeps the comment after it on its line. A new table goes at the end of the file,
 /// after any comments there. A `[table]` a removal leaves empty is removed too, unless a comment
-/// is attached to its header. A file with CRLF line endings keeps them.
+/// is attached to its header. A file with any CRLF line ending is written with CRLF throughout;
+/// a byte order mark stays.
 fn edit(
     path: &Path,
     text: &str,
     setting: Setting,
     value: Option<&Value>,
 ) -> Result<String, SettingsError> {
+    let (bom, text) = text
+        .strip_prefix(BOM)
+        .map_or(("", text), |rest| (BOM, rest));
     let mut document: DocumentMut = text
         .parse()
         .map_err(|error| SettingsError::parse_edit(path, &error))?;
@@ -300,11 +300,15 @@ fn edit(
     if !text.starts_with(['\r', '\n']) {
         written = written.trim_start_matches(['\r', '\n']).to_owned();
     }
+    // toml_edit writes every line break as `\n`.
     if text.contains("\r\n") {
         written = written.replace("\r\n", "\n").replace('\n', "\r\n");
     }
-    Ok(written)
+    Ok(format!("{bom}{written}"))
 }
+
+/// The UTF-8 byte order mark some editors start a file with.
+const BOM: &str = "\u{feff}";
 
 /// The table `name` of the file at `path`, refused when it is written another way (as an
 /// array, which TOML reads as the table's fields in order).
