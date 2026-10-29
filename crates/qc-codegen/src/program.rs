@@ -319,7 +319,7 @@ impl Program {
         let def = self.defs.get_mut(place).ok_or(Internal::NoDefinition)?;
         def.initialized = true;
         let ofs = def.ofs;
-        self.set_words(ofs, &words)
+        self.set_words(ofs, words)
     }
 
     /// The words `literal` is stored as; a string's text is copied to the string table.
