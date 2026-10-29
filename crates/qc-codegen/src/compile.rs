@@ -547,10 +547,15 @@ impl<'a> Compiler<'a> {
             ast::Expr::Name(name) => {
                 let token = name.name().at(span)?;
                 let id = self.def_of(&token)?;
-                let place = self
-                    .program
-                    .place(id)
-                    .ok_or(Abort::Internal(Internal::Unallocated, span))?;
+                // Under FTEQCC a name may be used before the definition it names is read, in a
+                // second autoprototyping pass (FTE-22.3); it is made where it is first used.
+                let place = match self.program.place(id) {
+                    Some(place) => place,
+                    None if self.dialect.has_fteqcc_extensions() => {
+                        self.program.get_def(self.index, id).at(span)?
+                    }
+                    None => return Err(Abort::Internal(Internal::Unallocated, span)),
+                };
                 self.def_value(place, span)
             }
             ast::Expr::Paren(paren) => self.expr(&paren.expr().at(span)?),
@@ -724,10 +729,24 @@ impl<'a> Compiler<'a> {
                     compiler.operate(Operator::Add, &current, &inc, (span, span))
                 })
             }
-            ast::UnaryOp::BitNot
-            | ast::UnaryOp::AddressOf
-            | ast::UnaryOp::Deref
-            | ast::UnaryOp::AsString => Err(Abort::Internal(Internal::Unsupported, span)),
+            // FTEQCC's `~x` on the vanilla opcodes, `-1 - x` (`OP_BITNOT_F`'s emulation).
+            ast::UnaryOp::BitNot => {
+                let value = self.expr(&operand)?;
+                let minus_one = match self.type_of(&value).etype() {
+                    Etype::Vector => {
+                        let place = self
+                            .program
+                            .immediate(&Literal::Vector([-1.0; 3]))
+                            .at(span)?;
+                        self.def_value(place, span)?
+                    }
+                    _ => self.float_literal(-1.0, span)?,
+                };
+                self.operate(Operator::Sub, &minus_one, &value, (span, span))
+            }
+            ast::UnaryOp::AddressOf | ast::UnaryOp::Deref | ast::UnaryOp::AsString => {
+                Err(Abort::Internal(Internal::Unsupported, span))
+            }
         }
     }
 
