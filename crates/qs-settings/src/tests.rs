@@ -324,3 +324,135 @@ fn the_settings_reference_is_up_to_date() {
         assert!(written.contains(setting.key()));
     }
 }
+
+// Readiness review (P2-R5, TEST-9): adversarial cases.
+
+// QA-10: `null` is not a value of either setting; unsetting is `settings.reset`.
+#[test]
+fn settings_set_refuses_null_and_values_of_the_wrong_type() {
+    let dir = TempDir::new("null");
+    let (user, _, store) = store(&dir, &StoreSpec::default());
+    let mut s = session(store);
+    for (key, value) in [
+        ("appearance.theme", json!(null)),
+        ("appearance.theme", json!("Dark")),
+        ("appearance.theme", json!(["dark"])),
+        ("log.filter", json!(null)),
+        ("log.filter", json!(3)),
+        ("log.filter", json!({"info": true})),
+    ] {
+        let result = s.execute("settings.set", json!({"key": key, "value": value}));
+        assert!(
+            matches!(&result, Err(CommandError::Failed { error, .. })
+                if error.to_string().starts_with(&format!("invalid value for {key}"))),
+            "{key} {value}: {result:?}"
+        );
+    }
+    assert!(!user.exists());
+    assert_eq!(s.undo_depth(), 0);
+}
+
+// QA-10: the schema refuses a scope that is neither file, a missing value and unknown fields.
+#[test]
+fn settings_commands_refuse_malformed_arguments() {
+    let dir = TempDir::new("args");
+    let (user, _, store) = store(&dir, &StoreSpec::default());
+    let mut s = session(store);
+    for (id, params) in [
+        (
+            "settings.set",
+            json!({"key": "log.filter", "value": "warn", "scope": "workspace"}),
+        ),
+        ("settings.set", json!({"key": "log.filter"})),
+        (
+            "settings.set",
+            json!({"key": "log.filter", "value": "warn", "extra": 1}),
+        ),
+        (
+            "settings.reset",
+            json!({"key": "log.filter", "scope": "User"}),
+        ),
+        ("settings.get", json!({})),
+        ("settings.list", json!({"key": "log.filter"})),
+    ] {
+        let result = s.execute(id, params.clone());
+        assert!(
+            matches!(result, Err(CommandError::InvalidParams { .. })),
+            "{id} {params}: {result:?}"
+        );
+    }
+    assert!(!user.exists());
+}
+
+// QA-10: a file that is not UTF-8, a TOML syntax error and a table where a value belongs are
+// refused when the store opens, the project's as well as the user's.
+#[test]
+fn a_malformed_file_is_refused_when_the_store_opens() {
+    let dir = TempDir::new("malformed");
+    let path = dir.path().join("settings.toml");
+    fs::write(&path, [0xff, 0xfe, b'\n']).unwrap();
+    assert!(matches!(
+        SettingsFile::load(&path),
+        Err(SettingsError::Read { .. })
+    ));
+    for text in ["appearance.theme = ", "[appearance.theme]\n", "log = 1\n"] {
+        fs::write(&path, text).unwrap();
+        assert!(
+            matches!(SettingsFile::load(&path), Err(SettingsError::Parse { .. })),
+            "{text:?}"
+        );
+    }
+    let user = dir.path().join("user.toml");
+    assert!(matches!(
+        SettingsStore::open(user, Some(path)),
+        Err(SettingsError::Parse { .. })
+    ));
+}
+
+// QA-10: an undo whose file cannot be written fails, changes nothing in memory, and stays in
+// line to be tried again once the file can be written.
+#[test]
+fn an_undo_that_cannot_write_its_file_stays_in_line() {
+    let dir = TempDir::new("unwritable");
+    let (_, project, store) = store(&dir, &StoreSpec::default());
+    let mut s = session(store);
+    s.execute(
+        "settings.set",
+        json!({"key": "log.filter", "value": "warn", "scope": "project"}),
+    )
+    .unwrap();
+    // Replace the project's settings directory with a file, so the file cannot be written.
+    let settings_dir = project.parent().unwrap().to_path_buf();
+    fs::remove_dir_all(&settings_dir).unwrap();
+    fs::write(&settings_dir, "").unwrap();
+    let error = s.undo().unwrap_err();
+    assert!(
+        matches!(error, CommandError::UndoFailed { .. }),
+        "{error:?}"
+    );
+    assert_eq!(s.undo_depth(), 1);
+    assert_eq!(s.context().0.log_filter(), "warn");
+    fs::remove_file(&settings_dir).unwrap();
+    s.undo().unwrap();
+    assert_eq!(
+        s.context().0.value(Setting::LogFilter),
+        (json!("info"), Source::Default)
+    );
+    assert_eq!(fs::read_to_string(&project).unwrap(), "");
+}
+
+// QA-10: a log filter is written and read back exactly, whatever characters it holds.
+#[test]
+fn a_log_filter_with_awkward_characters_round_trips() {
+    let dir = TempDir::new("awkward");
+    let (user, _, store) = store(&dir, &StoreSpec::default());
+    let mut s = session(store);
+    let filter = "info,qc_sema=debug,\"quoted\"\\back\ttab\u{1}\u{e9}";
+    s.execute(
+        "settings.set",
+        json!({"key": "log.filter", "value": filter}),
+    )
+    .unwrap();
+    let reread = SettingsStore::open(user, None).unwrap();
+    assert_eq!(reread.log_filter(), filter);
+}
