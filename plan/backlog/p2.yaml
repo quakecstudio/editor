@@ -3020,8 +3020,11 @@ issues:
   deliverable:
   - 'crates/qs-settings: a write changes only the key it sets or removes, in the file as it is on disk when the write happens, keeping the rest of the text, comments included; a file whose contents no longer parse is refused with `SettingsError::Parse` rather than overwritten'
   - 'crates/qs-settings/README.md: says how hand edits and command changes interact'
+  - 'fuzz/fuzz_targets/qs_settings.rs: arbitrary bytes as a settings file through `SettingsFile::load` and `SettingsStore::open`, then a `settings.set` on the store, run by `cargo xtask fuzz` and the Fuzz workflow (TEST-5: the settings file is a decoder that reads files, and the P2-R5 review found no fuzz target for it)'
   acceptance:
   - 'A test edits the user file by hand after the store opened, runs `settings.set` on another key, and finds both the hand edit and the new value in the file; it fails before the fix'
   - 'A test shows a comment in a settings file survives `settings.set`, `settings.reset`, and an undo and redo of each'
+  - 'The `qs-settings` fuzz target runs in the Fuzz workflow with no finding'
   verify:
   - cargo test -p qs-settings
+  - cargo xtask fuzz qs-settings --time 10m
