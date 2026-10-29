@@ -44,12 +44,31 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     Ok(ok)
 }
 
-/// The mode `args` name: `fast` for none or `--fast`, `full` for `--full`.
-fn mode(args: &[String]) -> Result<&'static str, String> {
+/// How many rounds of calls the binary makes (DIFF-12.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mode {
+    /// The CI subset, 32 rounds.
+    Fast,
+    /// The nightly run, 128 rounds.
+    Full,
+}
+
+impl Mode {
+    /// The value of the binary's `--mode`.
+    const fn arg(self) -> &'static str {
+        match self {
+            Self::Fast => "fast",
+            Self::Full => "full",
+        }
+    }
+}
+
+/// The mode `args` name: fast for none or `--fast`, full for `--full`.
+fn mode(args: &[String]) -> Result<Mode, String> {
     match args {
-        [] => Ok("fast"),
-        [flag] if flag == "--fast" => Ok("fast"),
-        [flag] if flag == "--full" => Ok("full"),
+        [] => Ok(Mode::Fast),
+        [flag] if flag == "--fast" => Ok(Mode::Fast),
+        [flag] if flag == "--full" => Ok(Mode::Full),
         _ => Err("usage: cargo xtask compiler-diff [--fast | --full]".to_owned()),
     }
 }
@@ -78,7 +97,7 @@ fn write(path: &Path, bytes: &[u8]) -> Result<(), String> {
 }
 
 /// Runs the `compiler-diff` binary on `qcc`'s progs against each of ours.
-fn run_suite(root: &Path, mode: &str, id: &str, progs: &[PathBuf; 3]) -> Result<bool, String> {
+fn run_suite(root: &Path, mode: Mode, id: &str, progs: &[PathBuf; 3]) -> Result<bool, String> {
     let [qcc, ours, folded] = progs;
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let status = Command::new(cargo)
@@ -93,7 +112,7 @@ fn run_suite(root: &Path, mode: &str, id: &str, progs: &[PathBuf; 3]) -> Result<
             "compiler-diff",
             "--",
             "--mode",
-            mode,
+            mode.arg(),
             "--codebase",
             id,
             "--theirs",
@@ -120,7 +139,7 @@ mod tests {
 
     use qc_codegen::Options;
 
-    use super::{mode, write_progs};
+    use super::{Mode, mode, write_progs};
     use crate::exec::{Fake, Reply};
     use crate::oracles::codegen;
     use crate::oracles::testing::{fake_oracles, fresh_dir};
@@ -162,9 +181,11 @@ mod tests {
     #[test]
     fn the_mode_is_fast_unless_full_is_asked_for() {
         let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-        assert_eq!(mode(&args(&[])).unwrap(), "fast");
-        assert_eq!(mode(&args(&["--fast"])).unwrap(), "fast");
-        assert_eq!(mode(&args(&["--full"])).unwrap(), "full");
+        assert_eq!(mode(&args(&[])).unwrap(), Mode::Fast);
+        assert_eq!(mode(&args(&["--fast"])).unwrap(), Mode::Fast);
+        assert_eq!(mode(&args(&["--full"])).unwrap(), Mode::Full);
+        assert_eq!(Mode::Fast.arg(), "fast");
+        assert_eq!(Mode::Full.arg(), "full");
         assert!(mode(&args(&["--slow"])).is_err());
         assert!(mode(&args(&["--fast", "--full"])).is_err());
     }
