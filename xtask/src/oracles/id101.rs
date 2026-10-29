@@ -18,7 +18,7 @@ use qc_progs::Progs;
 use qc_progs::crc::crc_block;
 use qc_trace::{Record, decode, encode};
 
-use super::{Oracles, sha256};
+use super::{Oracles, codegen, sha256};
 
 /// The SHA-256 of the progs.dat id's qcc writes for QuakeC 1.01 (corpus `id-1.01`, Quake-Tools
 /// at the commit in `oracles/sources.toml`), recorded from the first build of these oracles.
@@ -148,7 +148,77 @@ pub(crate) fn check(oracles: &Oracles, codebase: &Path) -> Result<bool, String> 
     for (name, text) in SCENARIOS {
         ok &= run_scenario(oracles, &scenarios, name, text, &progs)?;
     }
+    ok &= check_ours(oracles, codebase, &progs, &scenarios)?;
     Ok(ok)
+}
+
+/// The compiler differential on id 1.01 (P2-06): `qc-codegen` compiles the codebase, its
+/// progs.dat must be the bytes qcc wrote, and each scenario run on it must leave the records
+/// qcc's leaves (`qc-trace`'s, the header's progs CRC aside).
+fn check_ours(
+    oracles: &Oracles,
+    codebase: &Path,
+    theirs: &[u8],
+    their_scenarios: &Path,
+) -> Result<bool, String> {
+    let compiled = match codegen::compile_codebase(codebase) {
+        Ok(compiled) => compiled,
+        Err(e) => {
+            println!(
+                "FAIL  qc-codegen did not compile {}:\n{e}",
+                codebase.display()
+            );
+            return Ok(false);
+        }
+    };
+    let ours = codegen::bytes(&compiled)?;
+    let mut ok = true;
+    if ours == theirs {
+        println!(
+            "ok    qc-codegen's progs.dat is qcc's, byte for byte ({} bytes)",
+            ours.len()
+        );
+    } else {
+        ok = false;
+        println!("FAIL  qc-codegen's progs.dat differs from qcc's:");
+        for difference in codebase_differences(&ours, theirs)? {
+            println!("      {difference}");
+        }
+    }
+    let work = oracles.work.join("id-1.01").join("ours");
+    let scenarios = work.join("scenarios");
+    fs::create_dir_all(&scenarios).map_err(|e| e.to_string())?;
+    fs::write(work.join("progs.dat"), &ours).map_err(|e| e.to_string())?;
+    fs::write(scenarios.join("small-map.ent"), ENTITIES).map_err(|e| e.to_string())?;
+    for (name, text) in SCENARIOS {
+        if !run_scenario(oracles, &scenarios, name, text, &ours)? {
+            ok = false;
+            continue;
+        }
+        let records = |dir: &Path| -> Result<Vec<Record>, String> {
+            let path = dir.join(format!("{name}.a.trace"));
+            let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+            Ok(decode(&bytes)
+                .map_err(|e| format!("{}: {e:?}", path.display()))?
+                .records)
+        };
+        if records(&scenarios)? == records(their_scenarios)? {
+            println!("ok    scenario {name}: qc-codegen's progs leaves the records qcc's leaves");
+        } else {
+            ok = false;
+            println!("FAIL  scenario {name}: qc-codegen's progs leaves other records than qcc's");
+        }
+    }
+    Ok(ok)
+}
+
+/// [`codegen::differences`], or the reason the two do not load.
+fn codebase_differences(ours: &[u8], theirs: &[u8]) -> Result<Vec<String>, String> {
+    let mut found = codegen::differences(ours, theirs)?;
+    if found.is_empty() {
+        found.push("the bytes differ outside the tables".to_owned());
+    }
+    Ok(found)
 }
 
 fn run_scenario(
@@ -343,21 +413,47 @@ mod tests {
         let (bytes, copied) = compile(&oracles, &codebase).unwrap();
         assert_eq!(bytes, progs());
         assert_eq!(copied, 2, "the files, not the subdirectory");
-        // This progs is not the one id's qcc writes, so the check fails on its digest; the
-        // scenarios still run, two runs each.
+        // This progs is not the one id's qcc writes, so the check fails on its digest and on
+        // qc-codegen's progs, which is not the fake's; the scenarios still run, two runs each,
+        // on qcc's progs and on ours.
         assert!(!check(&oracles, &codebase).unwrap());
         let seen = fake.seen.lock().unwrap();
         assert_eq!(
             seen.iter()
                 .filter(|line| line.starts_with("vm-oracle scenario "))
                 .count(),
-            4
+            8
         );
+        for scenarios in ["id-1.01/scenarios", "id-1.01/ours/scenarios"] {
+            assert!(oracles.work.join(scenarios).join("small-map.ent").is_file());
+        }
+        let ours = fs::read(oracles.work.join("id-1.01/ours/progs.dat")).unwrap();
         assert!(
-            oracles
-                .work
-                .join("id-1.01/scenarios/small-map.ent")
-                .is_file()
+            qc_progs::Progs::read_with(
+                &ours,
+                &qc_progs::ReadOptions {
+                    check_header_crc: false
+                }
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_codebase_qc_codegen_refuses_fails_the_check() {
+        let dir = fresh_dir("id101-refused");
+        let codebase = codebase(&dir, true);
+        fs::write(codebase.join("world.qc"), "void() main = { x = 1; };\n").unwrap();
+        let fake = Fake::new(tools(progs(), trace(&progs(), false)));
+        let oracles = fake_oracles(&dir.join("work"), &fake);
+        assert!(!check(&oracles, &codebase).unwrap());
+        let seen = fake.seen.lock().unwrap();
+        assert_eq!(
+            seen.iter()
+                .filter(|line| line.starts_with("vm-oracle scenario "))
+                .count(),
+            4,
+            "ours is not traced"
         );
     }
 

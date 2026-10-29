@@ -118,6 +118,7 @@ proptest = { version = "=1.11.0", default-features = false }
 qc-edict = { path = "crates/qc-edict" }
 qc-engines = { path = "crates/qc-engines" }
 qc-builtins = { path = "crates/qc-builtins" }
+qc-codegen = { path = "crates/qc-codegen" }
 qc-diag = { path = "crates/qc-diag" }
 qc-lexer = { path = "crates/qc-lexer" }
 qc-lno = { path = "crates/qc-lno" }

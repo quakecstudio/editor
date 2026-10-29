@@ -1743,6 +1743,7 @@ issues:
   - P2-117
   - P2-118
   - P2-119
+  - P2-120
   - P2-121
   - P2-122
   - P2-123
@@ -2499,6 +2500,28 @@ issues:
   verify:
   - cargo test -p qc-syntax -p qc-sema
   - cargo xtask oracles builtins
+- key: P2-120
+  title: Name a function's parameters as id's qcc does after a parameter of function type
+  labels:
+  - L3-semantics
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-4
+  summary: |
+    id's qcc names a body's parameters from `pr_parm_names`, which `PR_ParseType` writes for every function type it reads, a parameter's own function type included, so the names of a parameter of function type that has parameters overwrite the outer list's first names. The semantic model (`qc_sema::lower`, `collect_params`) names each parameter as the defining declaration writes it, so `float r; void(float b, void(float q) cb) f = { r = b; };` resolves, where id's qcc reports `Unknown value "b"` (the body's parameters are `q` and `cb`), and `r = q` is refused where qcc compiles it.
+  environment: |
+    feat/62-qc-codegen; found by the self-review of P2-06 against the pinned id qcc built by `cargo xtask oracles build`
+  depends:
+  - P2-117
+  deliverable:
+  - 'crates/qc-sema (`lower.rs`, `collect_params`) and docs/spec/language.md QC-13.2 (withdrawn for a new statement): `PR_ParseType` (`qcc/pr_lex.c`, id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73) runs `strcpy (pr_parm_names[new.num_parms], name);` after `type = PR_ParseType ();` has read the parameter''s type, and `PR_ParseImmediateStatements` defines `PR_GetDef (type->parm_types[i], pr_parm_names[i], pr_scope, true)`; crates/qc-codegen (`Compiler::parameters`) takes the same names'
+  acceptance:
+  - 'Under the vanilla profile a body''s parameters have the names id''s qcc gives them after a parameter of function type with parameters, recorded as cases of the compiler differential (`cargo xtask oracles codegen`); each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-sema -p qc-codegen
+  - cargo xtask oracles codegen
 - key: P2-122
   title: Read FTEQCC's cast flags in the semantic model's casts
   labels:
