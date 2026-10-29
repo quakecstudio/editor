@@ -1327,9 +1327,17 @@ impl<'a> Compiler<'a> {
         let fixed = (!function.variadic).then_some(function.params.len());
         let mut count = 0_usize;
         let args: Vec<ast::Expr> = call.args().map(|a| a.args().collect()).unwrap_or_default();
+        // Under FTEQCC the semantic model has judged the call (FTEF-32.3): fewer arguments
+        // than parameters leave the rest as the parameter slots hold them, and an argument past
+        // the last parameter is read and ignored ("too many parameters ... will be ignored").
+        let fteqcc = self.dialect.has_fteqcc_extensions();
         for arg in &args {
             let arg_span = arg.syntax().span();
             if fixed.is_some_and(|n| count >= n) {
+                if fteqcc {
+                    self.expr(arg)?;
+                    continue;
+                }
                 return Self::error(Code::E0304, "too many parameters".to_owned(), arg_span);
             }
             let value = self.expr(arg)?;
@@ -1338,7 +1346,8 @@ impl<'a> Compiler<'a> {
             {
                 self.precaches.record(name, &self.program, value.ofs);
             }
-            if let Some(param) = fixed.and_then(|_| function.params.get(count))
+            if !fteqcc
+                && let Some(param) = fixed.and_then(|_| function.params.get(count))
                 && self.type_of(&value) != ValueType::Of(param.clone())
             {
                 return Self::error(
@@ -1357,7 +1366,7 @@ impl<'a> Compiler<'a> {
             count = count.saturating_add(1);
         }
         // QC-18.8: `if (!PR_Check(")"))` skips the count check of a call with no arguments.
-        if !args.is_empty() && fixed.is_some_and(|n| count != n) {
+        if !fteqcc && !args.is_empty() && fixed.is_some_and(|n| count != n) {
             return Self::error(Code::E0305, "too few parameters".to_owned(), span);
         }
         let Some(op) = ops::call_opcode(count) else {
