@@ -543,6 +543,88 @@ measures and reports coverage.
   (`first_statement` above 0), or `numstatements` for the last; a statement before the first
   QC function belongs to none.
 
+## DIFF-12 The compiler differential
+
+**Source:** this project. The requirement is COMP-4 (`plan/requirements.yaml`), verbatim:
+"Correctness = same globals and edicts as id's VM running qcc output; byte-identical output not
+a goal". The oracle compiler is id's `qcc` (COMP-7).
+
+The compiler differential (P2-09, [#65](https://github.com/quakecstudio/editor/issues/65)) runs
+two progs compiled from one codebase, the first by id's `qcc` and the second by `qc-codegen`, in
+`qc-vm` with the mock engine of this page, and compares what they do. Both run in QuakeC
+Studio's VM, so it tests the compiler, not the VM: the VM differential (DIFF-1 to DIFF-11) is
+what holds `qc-vm` to id's. A scenario's frames reach only part of a progs (DIFF-11, ADR-0013),
+so instead every QuakeC function is called directly, many times, from a world the scenario sets
+up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) and
+`cargo xtask compiler-diff`.
+
+### Behaviour
+
+- **DIFF-12.1** Each progs is loaded (DIFF-3.1) and set up as a world for each scenario of the
+  VM differential's corpus set (`qs-differential`'s `runner::scenarios`): the map's entities
+  are spawned and the settle frames run (DIFF-3), and the scenario's clients enter (DIFF-4); no
+  scenario frame runs. A progs that is refused, or a setup that ends in an error in either
+  progs, stops the run with an error. The two worlds are then compared as DIFF-12.3 compares
+  two calls; a difference there is the run's one divergence, and no function is called.
+- **DIFF-12.2** Every function of the first progs with a body (`first_statement` above 0) is
+  called in `rounds` rounds, each from the world as the setup left it, through
+  `PR_ExecuteProgram` (EDICT-9.1). The second progs' call is to its function of the same name.
+  Round `r` of the function named `n` draws its context with SplitMix64 seeded by the FNV-1a
+  hash of `n` followed by `r` as four little-endian bytes, so a run is deterministic
+  (DIFF-1.4). The context is drawn from the first progs' world and written into each world by
+  name:
+  - `self` is a client one time in four and `other` one time in two, else an edict in use;
+  - each parameter by the type of its definition: a vector for a three-slot parameter, an
+    entity, a string, else a float;
+  - with a share by `r % 4` of 0, 1 in 16, 1 in 4 and 1 in 2, each float, vector, entity or
+    string field of `self`, `other`, each entity parameter and, one time in four, the world;
+    and with a quarter of that share each float or string global named in the definitions whose
+    value in the progs is 0;
+  - the server is loading (VM-12.2, BUILTIN-10.1) when `r % 8` is 7, else active.
+
+  An entity is an edict in use, a client one time in three. A string is a new engine string
+  (EDICT-13.1) with a text taken half the time from the string constants the called function's
+  statements name and half from every string constant of the progs with `""`, `"player"` and
+  `"1"`. A float is a third of the time a float constant the called function's statements name,
+  a third one of the progs' (a float global whose value is not 0), and otherwise a whole number
+  from -1 to 10, a product of two powers of two up to 2^23, a 24-bit mask, a whole number below
+  1000, a fraction in thousandths, or a negative whole number above -1000. A constant is a
+  global slot that a definition of type float or string names and whose value in the progs is
+  not 0; the called function's statements are those of DIFF-11.3.
+- **DIFF-12.3** Two calls agree when they end the same way (both return, or both stop with the
+  same run error message), call the same builtins in the same order, leave the mock engine in
+  the same state (precaches, lightstyles, buffers, command buffer, engine strings, the random
+  source), and leave the same values in every named global and in every named field of every
+  edict in use, with the same edicts free. A named global is a global definition whose name is
+  not empty and not `IMMEDIATE`, taken in definition order; a named field is the first field
+  definition of each name. The two progs must name the same globals in the same order and the
+  same fields, or they differ in their definitions. A value is compared through its
+  definition's type: a string by its text (an engine string's, else the progs' string at that
+  offset), a function by its name, a vector by its three slots, an entity by its edict's
+  number (its bits divided by the progs' edict size, as two progs with other fields have other
+  edict sizes), a field by the name of the field at its slot (as two progs may lay their fields
+  out in another order), and a float or pointer, or an entity or field value that names none,
+  by its bits.
+  When the two progs have the same global and field definitions, functions and strings, two
+  worlds whose global and field slots hold the same bits agree without that reading.
+- **DIFF-12.4** When the two progs have the same statements, two calls agree only if they also
+  execute the same statements in the same order (each with its function and builtin).
+- **DIFF-12.5** The coverage of a codebase is the number of distinct statements of the first
+  progs executed by its setups and calls in any scenario, divided by `numstatements - 1`
+  (DIFF-11.1). A codebase passes with no divergence between the two progs and a coverage of at
+  least 90% (TEST-6).
+- **DIFF-12.6** `cargo xtask compiler-diff` compiles each vanilla corpus codebase (`id-1.01`)
+  with id's `qcc` and with `qc-codegen` with `--opt fold` off and on (QC-27.20), and compares
+  `qcc`'s progs with each of the two. `--fast`, which CI runs on every change, makes 32
+  rounds; `--full`, which the nightly differential workflow runs, makes 128.
+- **DIFF-12.7** When the two progs' definitions, functions or strings differ, a call's return
+  value is compared too, since the return slot is named by neither. A version 6 progs does not
+  record a function's return type, so the slot's first word is read as a float, a string, an
+  entity and a function, and the two agree when any reading does: the same bits, the same text,
+  the same edict, or the same function. A vector's other two words are compared only through
+  the globals and fields they are stored to. A QuakeC function of the first progs that the
+  second has no QuakeC function of the same name for is a divergence.
+
 ## Test vectors
 
 ### Scenario numbers

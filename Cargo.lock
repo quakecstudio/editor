@@ -2180,6 +2180,10 @@ name = "qs-bench"
 version = "2026.10.0"
 dependencies = [
  "criterion",
+ "qc-codegen",
+ "qc-progs",
+ "qc-project",
+ "qc-sema",
 ]
 
 [[package]]
@@ -2206,8 +2210,10 @@ name = "qs-differential"
 version = "2026.10.0"
 dependencies = [
  "qc-builtins",
+ "qc-codegen",
  "qc-edict",
  "qc-progs",
+ "qc-sema",
  "qc-trace",
  "qc-types",
  "qc-vm",

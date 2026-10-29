@@ -15,7 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::repo;
+use crate::{corpus, repo};
 
 /// The document that holds the budget table.
 pub(crate) const BUDGETS_DOC: &str = "docs/perf-budgets.md";
@@ -26,6 +26,9 @@ const TABLE_END: &str = "<!-- /perf-budgets -->";
 /// The criterion group the benchmarks belong to.
 const GROUP: &str = "budgets";
 const DEFAULT_HISTORY: &str = "target/bench/history.json";
+/// The corpus codebase `id1_recompile` edits and rebuilds (P2-11), fetched into the asset cache
+/// and named to the benchmark by `QS_BENCH_ID1`.
+const ID1: &str = "id-1.01";
 const CRITERION_HOME: &str = "target/xtask/bench/criterion";
 /// A run more than this much slower than the baseline is a regression.
 const REGRESSION_RATIO: f64 = 1.10;
@@ -163,7 +166,8 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     }
     let budgets = parse_budgets(&repo::read(root, BUDGETS_DOC)?)?;
     let criterion_home = root.join(CRITERION_HOME);
-    run_benchmarks(root, &criterion_home)?;
+    let id1 = fetch_id1(root)?;
+    run_benchmarks(root, &criterion_home, &id1)?;
     let mut results = Vec::new();
     for budget in &budgets {
         let sample = read_sample(&criterion_home, &budget.name)?;
@@ -308,7 +312,17 @@ fn parse_duration(text: &str) -> Option<f64> {
     (nanos.is_finite() && nanos > 0.0).then_some(nanos)
 }
 
-fn run_benchmarks(root: &Path, criterion_home: &Path) -> Result<(), String> {
+/// Fetches id 1.01 into the asset cache, which a second run reads offline, and returns its
+/// directory.
+fn fetch_id1(root: &Path) -> Result<PathBuf, String> {
+    if !corpus::main(root, &["fetch".to_owned(), ID1.to_owned()])? {
+        return Err(format!("cannot fetch {ID1} for id1_recompile"));
+    }
+    let cache = corpus::asset_cache().ok_or("no asset cache: set QS_TEST_ASSETS")?;
+    Ok(cache.join("codebase").join(ID1))
+}
+
+fn run_benchmarks(root: &Path, criterion_home: &Path, id1: &Path) -> Result<(), String> {
     if criterion_home.exists() {
         fs::remove_dir_all(criterion_home)
             .map_err(|error| format!("cannot clear {}: {error}", criterion_home.display()))?;
@@ -324,6 +338,7 @@ fn run_benchmarks(root: &Path, criterion_home: &Path) -> Result<(), String> {
             GROUP,
         ])
         .env("CRITERION_HOME", criterion_home)
+        .env("QS_BENCH_ID1", id1)
         .current_dir(root)
         .status()
         .map_err(|error| format!("cannot run cargo bench: {error}"))?;

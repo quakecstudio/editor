@@ -111,6 +111,7 @@ cargo xtask attribution                   # every asset is listed in ATTRIBUTION
 cargo xtask oracles                       # build the oracles from id's sources, run the VM vectors and the builtin differential (network, C compiler)
 cargo xtask fuzz qc-progs --time 10m      # one fuzz target (nightly, cargo-fuzz); no target runs all
 cargo xtask engines [--check]             # regenerate (or check) the engine-target tables from their pinned sources (network)
+cargo xtask compiler-diff [--full]       # the compiler differential: qcc against qc-codegen on id 1.01 (corpus, oracles)
 cargo xtask commands [--check]            # regenerate (or check) docs/commands.md from the command registry
 
 scripts/refresh-specs.sh --verify         # cached specs match specs/manifest.tsv (offline)

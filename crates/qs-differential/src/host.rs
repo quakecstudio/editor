@@ -138,46 +138,59 @@ pub fn run_scenario(
 ) -> Result<RunOutput, RunRefused> {
     // DIFF-3.1: load the progs with the header CRC checked (PROGS-3).
     let progs = Progs::read(progs_bytes).map_err(|e| RunRefused::Progs(e.to_string()))?;
-    let maxclients = usize::try_from(scenario.maxclients).unwrap_or(0);
-    let machine = Machine::new(&progs, maxclients).map_err(|e| RunRefused::Edict(e.to_string()))?;
-    // DIFF-3.2: the trace header, written after loading and before the first run (TRACE-1.3).
-    let trace =
-        TraceBuilder::new(&machine, &progs).map_err(|e| RunRefused::Trace(e.to_string()))?;
-
-    let submodels = usize::try_from(scenario.submodels).unwrap_or(0);
-    let mut engine = MockEngine::new(&scenario.map, submodels, scenario.seed);
-    for model in &scenario.models {
-        if let Ok(name) = core::str::from_utf8(&model.name) {
-            engine.model_bounds.push((
-                name.to_owned(),
-                MockModelBounds {
-                    mins: model.mins,
-                    maxs: model.maxs,
-                },
-            ));
-        }
-    }
-    for cvar in &scenario.cvars {
-        if let (Ok(name), Ok(text)) = (
-            core::str::from_utf8(&cvar.name),
-            core::str::from_utf8(&cvar.text),
-        ) {
-            engine.cvars.set(name, text);
-        }
-    }
-
-    let mut host = Host {
-        machine,
-        builtins: MockBuiltins::with_engine(engine),
-        trace,
-        scenario,
-        entered: vec![false; maxclients],
-    };
+    let mut host = Host::new(scenario, &progs)?;
     let ended = host.run(&progs, entities);
     Ok(RunOutput {
         trace: host.trace.finish(),
         ended,
     })
+}
+
+impl<'s> Host<'s> {
+    /// The server for `scenario` with `progs` loaded, before the map (DIFF-3.1, DIFF-3.2): the
+    /// VM, the trace header and the mock engine with the scenario's models and settings.
+    ///
+    /// # Errors
+    ///
+    /// [`RunRefused`] when the progs cannot back an edict store or a trace header.
+    pub(crate) fn new(scenario: &'s Scenario, progs: &Progs<'_>) -> Result<Self, RunRefused> {
+        let maxclients = usize::try_from(scenario.maxclients).unwrap_or(0);
+        let machine =
+            Machine::new(progs, maxclients).map_err(|e| RunRefused::Edict(e.to_string()))?;
+        // DIFF-3.2: the trace header, written after loading and before the first run (TRACE-1.3).
+        let trace =
+            TraceBuilder::new(&machine, progs).map_err(|e| RunRefused::Trace(e.to_string()))?;
+
+        let submodels = usize::try_from(scenario.submodels).unwrap_or(0);
+        let mut engine = MockEngine::new(&scenario.map, submodels, scenario.seed);
+        for model in &scenario.models {
+            if let Ok(name) = core::str::from_utf8(&model.name) {
+                engine.model_bounds.push((
+                    name.to_owned(),
+                    MockModelBounds {
+                        mins: model.mins,
+                        maxs: model.maxs,
+                    },
+                ));
+            }
+        }
+        for cvar in &scenario.cvars {
+            if let (Ok(name), Ok(text)) = (
+                core::str::from_utf8(&cvar.name),
+                core::str::from_utf8(&cvar.text),
+            ) {
+                engine.cvars.set(name, text);
+            }
+        }
+
+        Ok(Host {
+            machine,
+            builtins: MockBuiltins::with_engine(engine),
+            trace,
+            scenario,
+            entered: vec![false; maxclients],
+        })
+    }
 }
 
 /// The whole running server: the VM, the mock engine, the trace and the scenario (DIFF-1.2).
@@ -222,7 +235,11 @@ impl Host<'_> {
     }
 
     /// DIFF-3: set up the map, spawn its entities and run the settle frames.
-    fn start_map(&mut self, progs: &Progs<'_>, entities: &[u8]) -> Result<(), LoadError> {
+    pub(crate) fn start_map(
+        &mut self,
+        progs: &Progs<'_>,
+        entities: &[u8],
+    ) -> Result<(), LoadError> {
         // DIFF-3.2: deathmatch becomes 0 when coop is non-zero; the skill is clamped to 0..3.
         let coop = self.setting("coop");
         let skill = clamp_skill(self.setting("skill"));
@@ -270,7 +287,7 @@ impl Host<'_> {
     }
 
     /// DIFF-4.1: a client slot's player enters, id's `SV_ConnectClient` then `Host_Spawn_f`.
-    fn client_enters(&mut self, progs: &Progs<'_>, slot: u32) -> Result<(), RunError> {
+    pub(crate) fn client_enters(&mut self, progs: &Progs<'_>, slot: u32) -> Result<(), RunError> {
         let slot_index = usize::try_from(slot).unwrap_or(usize::MAX);
         let edict = slot_index.saturating_add(1);
 

@@ -922,3 +922,23 @@ groups:
     - No network call unless the user enabled update checks
     verify:
     - Update test against a fake release feed
+  - key: P2-16
+    title: Package editor integrations for VS Code, Zed and Neovim
+    labels:
+    - apps
+    - area:language
+    - type:feature
+    size: M
+    reqs:
+    - LANG-9
+    - LANG-8
+    depends:
+    - P2-14
+    - P2-15
+    deliverable:
+    - VS Code extension and Zed extension wrapping quakec-lsp and the grammar; Neovim setup documented
+    acceptance:
+    - Go-to-definition works in each editor on the rerelease
+    - Not published to any marketplace until the legal review (P4-22) signs off
+    verify:
+    - Recorded manual test per editor attached

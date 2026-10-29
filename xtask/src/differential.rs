@@ -61,7 +61,7 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
 
 /// The asset cache root (`$QS_TEST_ASSETS`, else the default under the cache directory), where
 /// `cargo xtask corpus build` wrote the progs.
-fn asset_root() -> Result<std::path::PathBuf, String> {
+pub(crate) fn asset_root() -> Result<std::path::PathBuf, String> {
     use std::path::PathBuf;
     if let Some(dir) = std::env::var_os("QS_TEST_ASSETS").filter(|v| !v.is_empty()) {
         return Ok(PathBuf::from(dir));
