@@ -315,6 +315,43 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   subscript to its array-access helper over vanilla opcodes (it does not use a version 7
   feature for the rerelease, FTE-1.1). The exact lowering is fixed by P2-06 and recorded in
   this section's vectors then.
+- **FTE-13.5** An array of `N` elements of `T` takes `N` times `T`'s words in consecutive
+  globals from the definition's offset; a vector array makes no `_x`, `_y` or `_z`
+  definitions. An aggregate initialiser writes element `k` at word `k` times the element's
+  words, each value a literal (a frame macro is its number). A literal never shares an
+  array's word as it shares an initialised constant's (QC-20.2). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`,
+  `QCC_PR_ParseInitializerType`.
+- **FTE-13.6** A subscript by a constant whole number `i` within the array is the global at
+  the array's offset plus `i` times the element's words, with no statement: `QCC_RefNeedsCalls`
+  returns false when `QCC_SRef_EvalConst(ref->index)` ("can short it"). A constant index
+  outside the array, which FTEQCC warns of and reads anyway (WARN_BOUNDS), is not lowered.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`, `QCC_RefNeedsCalls`.
+- **FTE-13.7** A subscript by a float value on the vanilla opcodes, which have no `LOADA`,
+  `GLOAD` or `FETCH_GBL`, calls the array's getter, `ArrayGet*NAME` of type `T(float)`
+  (`QCC_LoadFromArray`, `accel` 0). The index is in words: `MUL_F` by the element's words when
+  they are not 1 (`else if (t->size != 1)`), then `ADD_F` of a struct member's word (an `ADD_F`
+  of 0 is left out here). The argument is stored with `STORE_F` to the first parameter and
+  `CALL1` made; a vector array's index is divided by 3 first (`OP_DIV_F ... 3`); a value of
+  more than one word is read a word at a time, the index plus `w` for word `w`, each result
+  stored with `STORE_F` to a temporary. A store through a subscript by a value needs the
+  array's setter (`ArraySet*NAME`), which is not lowered. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_LoadFromArray`,
+  `QCC_PR_ParseRefArrayPointer`.
+- **FTE-13.8** A getter is made at the first subscript that needs it and emitted after every
+  file (`QCC_PR_EmitArrayGetFunction` from `qccmain.c`'s loop over `ArrayGet*` definitions):
+  its parameter `__indexg`; with bound checks on (`boundchecks` is a default flag) `IF` of
+  `__indexg < 0` to the bounds error; then `QCC_PR_ArrayRecurseDivideRegular` over the slots
+  (the elements times their words, or a vector array's elements with a stride of 3): one slot
+  `min` is `LT __indexg, min+1`, `IFNOT` over the next statement and `RETURN` of its word; more
+  are halved at `mid = min + (max-min)/2`, and when more than four remain a `LT __indexg,
+  mid+1` with `IFNOT` past the lower half. The bounds error calls `error` with
+  `sprintf("bounds check failed (0 <= %g < %g is false)\n", __indexg, slots)` when the program
+  defines `sprintf`, else with `"bounds check failed\n"`; then the last slot is returned and
+  `DONE` ends the function. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_EmitArrayGetFunction`,
+  `QCC_PR_ArrayRecurseDivideRegular`.
+- **FTE-13.9** `name.length` is lowered as a float immediate of the element count. FTEQCC makes
+  it an `int` constant (`QCC_MakeIntConst(arraysize)`), which the vanilla opcodes take only
+  converted to a float, so the value read is the same; a deliberate divergence in the
+  immediate's type. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
 
 ## FTE-14 `typedef struct` and member access
 
@@ -337,6 +374,17 @@ Vanilla `qcc` has `void`, `float`, `vector`, `string` and `entity` only (QC-10.1
 - **FTE-14.4** Progs encoding: a struct value occupies the sum of its fields' sizes in
   consecutive globals; field access is a fixed offset. No version 7 feature is used for the
   rerelease (FTE-1.1); the exact layout is fixed by P2-06 and recorded then.
+- **FTE-14.5** A struct value takes its layout's words (FTEF-6.13), and `v.f` is the global at
+  `v`'s offset plus the member's word, read and stored with no statement of its own; an array
+  element's member `a[i].f` is the element's word plus the member's (FTE-13.6, FTE-13.7).
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
+- **FTE-14.6** A struct value stored to another of its type is copied a word group at a time,
+  `STORE_V` for each three words and `STORE_F` for the rest. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreToRef`.
+- **FTE-14.7** A struct's aggregate initialiser `{ a, b }` writes each member's value at its
+  word in order, an array of structs one brace group per element (FTE-13.5). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseInitializerType`.
 
 ## FTE-15 `enum`
 
@@ -361,6 +409,14 @@ Vanilla `qcc` has no `enum`; the word is read as a name and is "not a type" (QC-
   makes it a type (`enumtype = QCC_PR_NewType(name, basetype->type, true);`). The rerelease
   declares `enum UpgradeType { ... }` and `float GetUpgradeAmount(UpgradeType Type)`
   (`rerelease-mg3/defs.qc`, `rerelease-mg3/mg3_upgrades.qc`).
+- **FTE-15.5** Each item of an `enum` is a constant global made in the order the items are
+  written and initialised with the item's value. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseEnum`.
+- **FTE-15.6** A named enum's type stands for its base type, and a typedef's name for its type,
+  so a parameter `UpgradeType t` is a float: `QCC_PR_NewType(name, basetype->type, true)`.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseEnum`.
+- **FTE-15.7** An `enum : int` item read where the vanilla opcodes take a float is the float
+  its value converts to, C's `(float)` of the integer (`QCC_SupplyConversion` of a constant
+  makes the converted constant). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_SupplyConversion`.
 
 ## FTE-16 `#pragma` directive
 
@@ -525,6 +581,16 @@ and sets flags with `self.flags &~= FL_ONGROUND` and `other.flags (+) FL_INSHELT
   newtype, false);`. A parenthesis that does not open a type is a parenthesised expression,
   as in vanilla. This profile parses before names are known, so it takes a cast at a `(`
   followed by a type keyword or `.`; the rerelease casts to no type a program defines.
+- **FTE-19.7** `a ^ b` of floats on the vanilla opcodes is `OP_BITXOR_F`'s emulation, `(a & ~b)
+  | (b & ~a)`: `BITNOT_F b`, `BITAND_F a, ~b`, `BITNOT_F a`, `BITAND_F b, ~a`, `BITOR_F`, each
+  `~x` as `OP_BITNOT_F`'s emulation `-1 - x`; `a ^= b` stores it to `a`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags`.
+- **FTE-19.8** `a % b` of floats on the vanilla opcodes is `OP_MOD_F`'s emulation: a `CALL2` of
+  the program's `mod(a, b)` when it defines one (`QCC_PR_EmulationFunc(mod)`), else `a - b *
+  (a/b | a/b)`, `DIV_F`, `BITOR_F` of the quotient with itself, `MUL_F` and `SUB_F`.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`.
+- **FTE-19.9** `v / f` of a vector and a float is `OP_DIV_VF`'s emulation, `v * (1 / f)`:
+  `DIV_F 1, f` then `MUL_VF`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`.
 
 ## FTE-20 Further literals
 

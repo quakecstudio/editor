@@ -23,20 +23,26 @@ QCD-4.7). The precache lists `qcc -copy` reads are kept beside the progs (QC-26)
 - **Spec sections:** QC-13 to QC-22, QC-25, QC-26 and the code-generation divergences of QC-27
   (QC-27.11 to QC-27.13, QC-27.17 to QC-27.20) of
   [`language.md`](../../docs/spec/language.md); QCD-4.2 to QCD-4.7 of
-  [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md).
+  [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md); under the FTEQCC
+  profile the rerelease subset of
+  [`dialect-fteqcc-rerelease.md`](../../docs/spec/dialect-fteqcc-rerelease.md) (FTE-2, FTE-3,
+  FTE-5, FTE-8, FTE-9, FTE-13 to FTE-15, FTE-17, FTE-19 and FTE-22) on the vanilla opcodes.
 - **Ported from:** id-Software/Quake-Tools@`c0d1b91c74eb654365ac7755bc837e497caaca73`,
   `qcc/pr_comp.c` (`PR_CompileFile`, `PR_ParseDefs`, `PR_ParseImmediateStatements`,
   `PR_ParseState`, `PR_ParseStatement`, `PR_Expression`, `PR_Term`, `PR_ParseValue`,
   `PR_ParseFunctionCall`, `PR_ParseImmediate`, `PR_GetDef`'s allocation, `PR_Statement`,
   `pr_opcodes`, `PrecacheSound`, `PrecacheModel`, `PrecacheFile`) and `qcc/qcc.c` (`InitData`,
   `PR_BeginCompilation`, `CopyString`, `PR_WriteProgdefs`, `WriteData`), function by function
-  as [`docs/spec/inventory-l4.md`](../../docs/spec/inventory-l4.md) lists.
+  as [`docs/spec/inventory-l4.md`](../../docs/spec/inventory-l4.md) lists; and
+  fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`, `engine/qclib/qcc_pr_comp.c`
+  (`QCC_LoadFromArray`, `QCC_PR_ParseRefArrayPointer`, `QCC_PR_EmitArrayGetFunction`,
+  `QCC_PR_ArrayRecurseDivideRegular`), behaviour only, under ADR-0017.
 - **Shipped:** yes.
 
 ## Public shape
 
-- `compile_module(db, input, name_of, options)`: compiles a module of a `qc_sema::Db` under the vanilla
-  profile, each file named in the progs as `name_of` says (the name `progs.src` lists it by,
+- `compile_module(db, input, name_of, options)`: compiles a module of a `qc_sema::Db` under its
+  dialect, vanilla or FTEQCC, each file named in the progs as `name_of` says (the name `progs.src` lists it by,
   QC-27.17); a preprocessor, parser, semantic or compiler error stops it, with every
   diagnostic at a span of its source file.
 - `compile(units, options)`: the same for files already preprocessed, each a `Unit` of a name
@@ -47,14 +53,16 @@ QCD-4.7). The precache lists `qcc -copy` reads are kept beside the progs (QC-26)
 - `Compiled`: the `qc_progs::ProgsFile`, the text of `progdefs.h`, its CRC, the precache lists,
   the `.lno` line map (`qc_lno::LnoFile`, QC-27.19) and the warnings. `qc_progs::write` writes
   the progs and `LnoFile::write` the line map.
-- `CompileError`: the diagnostics, an FTEQCC dialect (the FTEQCC subset is P2-07's), or an
-  `Internal` construct the semantic model should have refused.
+- `CompileError`: the diagnostics, a dialect it does not compile (GMQCC), or an `Internal`
+  construct the semantic model should have refused or the compiler does not lower.
 
 ## What it is not, yet
 
-The FTEQCC subset and FTE's extended format (P2-07), `.lno` line maps and constant folding
-(P2-08) are later issues; the compiler differential job on the vanilla corpus with traces is
-P2-09. Only the vanilla dialect compiles.
+Under FTEQCC it lowers what the six rerelease codebases use, on the vanilla opcodes, which is
+all the rerelease needs (FTE-1.1); FTE's extended format and the rest of FTEQCC are not
+lowered, and neither is a store through an array subscript by a value (FTE-13.7). The
+compiler differential job on the vanilla corpus with traces is P2-09.
+`cargo xtask codegen-corpus <dir>...` compiles codebases under the FTEQCC profile.
 
 ## Tests
 

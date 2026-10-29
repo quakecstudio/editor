@@ -116,6 +116,8 @@ pub(crate) struct Def {
     /// Whether it has been initialised so far (QC-11.5): set where the initialiser is met, so a
     /// literal only reuses a constant initialised before it (QC-20.2).
     pub(crate) initialized: bool,
+    /// An array's elements, `arraysize`; `None` for no array (FTE-13.5).
+    pub(crate) count: Option<u32>,
 }
 
 /// A literal's value as `qcc`'s lexer reads it (QC-4 to QC-6).
@@ -269,24 +271,46 @@ impl Program {
             return Ok(place);
         }
         let definition = index.def(id).ok_or(Internal::NoDefinition)?;
-        let ty = ty.unwrap_or_else(|| ValueType::Of(definition.ty.clone()));
+        // FTE-15.6: a typedef's or an enum's name stands for its type; a struct keeps its name,
+        // by which its layout is found.
+        let written = &definition.ty;
+        let ty = ty.unwrap_or_else(|| {
+            ValueType::Of(match index.aliases.get(written) {
+                Some(alias) if !index.structs.contains_key(written) => alias.clone(),
+                _ => written.clone(),
+            })
+        });
         let ofs = self.next_global()?;
         let place = self.defs.len();
+        let count = index.arrays.get(&id).copied();
         self.defs.push(Def {
             name: definition.name.clone(),
             ty: ty.clone(),
             ofs,
             scope: definition.owner,
             initialized: false,
+            count,
         });
         self.places.insert(id, place);
+        // FTE-13.5: an array takes its elements' words in turn, a vector array's with no
+        // component definitions; FTE-14.5: a struct takes its layout's words.
+        if let Some(count) = count {
+            if ty.field_inner().is_some() {
+                return Err(Internal::Unsupported);
+            }
+            let words = type_words(index, &ty)
+                .checked_mul(count)
+                .ok_or(Internal::TooLarge)?;
+            self.allocate(words)?;
+            return Ok(place);
+        }
         if ty.etype() == Etype::Vector {
             for suffix in COMPONENTS {
                 let component = component(index, id, suffix).ok_or(Internal::NoDefinition)?;
                 self.get_def_typed(index, component, None)?;
             }
         } else {
-            self.allocate(ty.words())?;
+            self.allocate(type_words(index, &ty))?;
         }
         if let Some(inner) = ty.field_inner() {
             self.set_words(ofs, &[self.size_fields])?;
@@ -314,6 +338,28 @@ impl Program {
         self.initialise_words(place, &words)
     }
 
+    /// Makes a definition the compiler generates, `name` of type `ty` in the next `words`
+    /// globals, that the program names nowhere: an array's getter (FTE-13.8) or its index
+    /// parameter.
+    pub(crate) fn generated(
+        &mut self,
+        name: &str,
+        ty: ValueType,
+        words: u32,
+    ) -> Result<usize, Internal> {
+        let ofs = self.allocate(words)?;
+        let place = self.defs.len();
+        self.defs.push(Def {
+            name: name.to_owned(),
+            ty,
+            ofs,
+            scope: None,
+            initialized: false,
+            count: None,
+        });
+        Ok(place)
+    }
+
     /// Initialises definition `place` with `words`, the value its initialiser folded to.
     pub(crate) fn initialise_words(&mut self, place: usize, words: &[u32]) -> Result<(), Internal> {
         let def = self.defs.get_mut(place).ok_or(Internal::NoDefinition)?;
@@ -323,7 +369,7 @@ impl Program {
     }
 
     /// The words `literal` is stored as; a string's text is copied to the string table.
-    fn literal_words(&mut self, literal: &Literal) -> Result<Vec<u32>, Internal> {
+    pub(crate) fn literal_words(&mut self, literal: &Literal) -> Result<Vec<u32>, Internal> {
         Ok(match literal {
             Literal::Float(value) => vec![value.to_bits()],
             Literal::Vector(v) => v.iter().map(|c| c.to_bits()).collect(),
@@ -340,10 +386,9 @@ impl Program {
     /// table (QC-20.4, QC-20.5).
     pub(crate) fn immediate(&mut self, literal: &Literal) -> Result<usize, Internal> {
         let ty = literal.ty();
-        let found = self
-            .defs
-            .iter()
-            .position(|d| d.initialized && d.ty == ty && self.holds(d.ofs, literal));
+        let found = self.defs.iter().position(|d| {
+            d.initialized && d.count.is_none() && d.ty == ty && self.holds(d.ofs, literal)
+        });
         if let Some(place) = found {
             return Ok(place);
         }
@@ -355,6 +400,7 @@ impl Program {
             ofs,
             scope: None,
             initialized: true,
+            count: None,
         });
         let words = self.literal_words(literal)?;
         self.set_words(ofs, &words)?;
@@ -409,6 +455,14 @@ impl Program {
             c: operand(c)?,
         });
         Ok(c)
+    }
+}
+
+/// The words a value of `ty` takes: a struct's layout's (FTE-14.5), else `type_size`.
+pub(crate) fn type_words(index: &ModuleIndex, ty: &ValueType) -> u32 {
+    match ty {
+        ValueType::Of(t) => index.structs.get(t).map_or_else(|| ty.words(), |s| s.words),
+        ValueType::FloatField => ty.words(),
     }
 }
 

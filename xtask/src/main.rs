@@ -68,6 +68,8 @@
 //!   rerelease codebase under the FTEQCC profile (P2-03) and fails on any error,
 //!   then checks the vanilla profile rejects each extension; `--warnings` prints
 //!   each warning too.
+//! - `codegen-corpus`: compiles every module of each codebase with `qc-codegen` under the
+//!   FTEQCC profile (P2-07) and fails on the first module that does not compile.
 //! - `engines`: fetches the fact sources of the engine-target database pinned in
 //!   `crates/qc-engines/sources.toml` by checksum and writes `crates/qc-engines/src/tables.rs`
 //!   from them (P2-04); `engines --check` fails when the checked-in tables differ.
@@ -125,8 +127,8 @@ const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixture
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
                      readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
                      map-corpus | parse-corpus | project-corpus | sema-corpus | differential | \
-                     fteqcc-coverage | fteqcc-full-coverage | fteqcc-profile | engines | \
-                     commands>";
+                     fteqcc-coverage | fteqcc-full-coverage | fteqcc-profile | codegen-corpus | \
+                     engines | commands>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;

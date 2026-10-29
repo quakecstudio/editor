@@ -198,6 +198,13 @@ fn compile_lowered(
                 internal,
             })?;
     }
+    compiler
+        .emit_getters()
+        .map_err(|(internal, file, span)| CompileError::Internal {
+            file,
+            span,
+            internal,
+        })?;
     if !compiler.errors.is_empty() {
         return Err(CompileError::Diagnostics(compiler.errors));
     }
