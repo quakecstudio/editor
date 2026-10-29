@@ -48,9 +48,10 @@ impl Plane {
     /// `DotProduct (normal, p) - dist` (WORLD-2.1).
     #[must_use]
     pub fn distance(&self, p: [f32; 3]) -> f32 {
+        // Types 0 to 2 are the axes `p` has; any other is a general plane.
         match usize::try_from(self.kind).ok().and_then(|axis| p.get(axis)) {
-            Some(&value) if self.kind < 3 => value - self.dist,
-            _ => {
+            Some(&value) => value - self.dist,
+            None => {
                 let [a, b, c] = self.normal;
                 let [x, y, z] = p;
                 a * x + b * y + c * z - self.dist

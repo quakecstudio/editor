@@ -628,7 +628,6 @@ fn area_nodes_split_the_world_in_halves() {
     let collision = Collision::new(&bsp(&MapSpec::default()));
     let area = collision.area();
     assert_eq!(area.len(), 31);
-    assert!(!area.is_empty());
     // The world is 2000 by 1500: the first split is on x at 0.
     assert_eq!(area.split(0), Some((0, 0.0, [1, 16])));
     // Child 0 is x 0 to 1000 by 1500: split on y at -250.
@@ -1292,4 +1291,230 @@ fn solid_values_read_as_id_compares_them() {
     assert_eq!(MoveKind::from_int(0), MoveKind::Normal);
     assert_eq!(MoveKind::from_int(7), MoveKind::Normal);
     assert_eq!(CollisionError::BadNode("x").to_string(), "x");
+}
+
+// spec WORLD-2.1: a plane of type 0 to 2 reads that coordinate of the point, whatever its
+// normal says; any other type the dot product, z included
+#[test]
+fn a_planes_type_picks_how_it_is_read() {
+    let crooked = MapSpec {
+        planes: vec![plane([0.0, 1.0, 0.0], 0.0, 0)],
+        ..MapSpec::default()
+    };
+    let collision = Collision::new(&bsp(&crooked));
+    // Type 0 reads x, though the normal is y.
+    assert_eq!(
+        collision.true_point_contents([1.0, -5.0, 0.0]).unwrap(),
+        CONTENTS_EMPTY
+    );
+    assert_eq!(
+        collision.true_point_contents([-1.0, 5.0, 0.0]).unwrap(),
+        CONTENTS_SOLID
+    );
+    let tilted = MapSpec {
+        planes: vec![plane([0.0, 0.6, 0.8], 10.0, 4)],
+        ..MapSpec::default()
+    };
+    let collision = Collision::new(&bsp(&tilted));
+    assert_eq!(
+        collision.true_point_contents([0.0, 0.0, 12.5]).unwrap(),
+        CONTENTS_EMPTY
+    );
+    assert_eq!(
+        collision.true_point_contents([0.0, 0.0, 12.4]).unwrap(),
+        CONTENTS_SOLID
+    );
+    assert_eq!(
+        collision.true_point_contents([0.0, 5.0, 9.0]).unwrap(),
+        CONTENTS_EMPTY
+    );
+}
+
+// spec WORLD-3.3: a line starting on a plane and going behind it is a crossing, not wholly
+// behind; one ending on it from behind crosses too
+// spec WORLD-3.4: from on the plane the crossing is an epsilon before the start, kept at 0
+#[test]
+fn lines_with_an_end_on_a_plane() {
+    let from_floor = trace_world(&MapSpec::default(), 0, [0.0, 0.0, 0.0], [0.0, 0.0, -1.0]);
+    assert_eq!(from_floor.fraction, 0.0);
+    assert_eq!(from_floor.endpos, [0.0, 0.0, 0.0]);
+    assert!(!from_floor.startsolid && !from_floor.allsolid);
+    assert_eq!(from_floor.plane.normal, [0.0, 0.0, 1.0]);
+    let up_to_floor = trace_world(&MapSpec::default(), 0, [0.0, 0.0, -1.0], [0.0, 0.0, 0.0]);
+    assert!(up_to_floor.startsolid && !up_to_floor.allsolid && up_to_floor.inopen);
+}
+
+// spec WORLD-3.4: the crossing point moves along every axis of the line
+// spec WORLD-3.5: past a node the line goes on from the crossing, as its share of the move
+#[test]
+fn crossings_keep_the_whole_line() {
+    let slanted = trace_world(
+        &MapSpec::default(),
+        0,
+        [5.0, -2.0, 1.03125],
+        [15.0, 6.0, -0.96875],
+    );
+    assert_eq!(slanted.fraction, 0.5);
+    assert_eq!(slanted.endpos, [10.0, 2.0, 0.03125]);
+    let spec = MapSpec {
+        planes: vec![
+            plane([0.0, 0.0, 1.0], 10.0, 2),
+            plane([0.0, 0.0, 1.0], 0.0, 2),
+        ],
+        nodes: vec![node(0, [-2, 1]), node(1, [-2, -1])],
+        ..MapSpec::default()
+    };
+    let to_floor = trace_world(&spec, 0, [0.0, 0.0, 20.0], [0.0, 0.0, -20.0]);
+    assert!(
+        (to_floor.fraction - 0.499_218_75).abs() < 1e-5,
+        "{}",
+        to_floor.fraction
+    );
+    assert!((to_floor.endpos[2] - 0.031_25).abs() < 1e-4);
+}
+
+// spec WORLD-3.6: the plane is negated on every axis when it is hit from behind
+#[test]
+fn a_wall_hit_from_behind() {
+    // Solid where x >= 0.
+    let wall = MapSpec {
+        planes: vec![plane([1.0, 0.0, 0.0], 0.0, 0)],
+        nodes: vec![node(0, [-1, -2])],
+        ..MapSpec::default()
+    };
+    let hit = trace_world(&wall, 0, [-1.03125, 0.0, 0.0], [0.96875, 0.0, 0.0]);
+    assert_eq!(hit.plane.normal, [-1.0, 0.0, 0.0]);
+    assert_eq!(hit.endpos, [-0.03125, 0.0, 0.0]);
+    let sloped = MapSpec {
+        planes: vec![plane([0.6, 0.8, 0.0], 0.0, 3)],
+        nodes: vec![node(0, [-1, -2])],
+        ..MapSpec::default()
+    };
+    let hit = trace_world(&sloped, 0, [-3.0, -4.0, 0.0], [3.0, 4.0, 0.0]);
+    assert_eq!(hit.plane.normal, [-0.6, -0.8, 0.0]);
+}
+
+// spec WORLD-7.4: of two hits at the same fraction, the first in the list stays
+#[test]
+fn a_tie_keeps_the_first_hit() {
+    let twin = Body {
+        origin: [100.0, 0.0, 50.0],
+        ..body()
+    };
+    let host = host_with(vec![twin, twin]);
+    assert_eq!(moved(&host, ACROSS, MoveKind::Normal, None).ent, Some(1));
+}
+
+// spec WORLD-7.1: the move's bounds take the moving box's size on each axis, from either
+// end, so an entity overlapping the start or the side of the path is clipped
+#[test]
+fn move_bounds_hold_the_whole_box() {
+    let boxed = |host: &TestHost, from: [f32; 3], to: [f32; 3]| {
+        sv_move(
+            host,
+            (from, [-16.0; 3], [16.0; 3], to),
+            MoveKind::Normal,
+            None,
+        )
+        .unwrap()
+    };
+    let behind = Body {
+        origin: [-20.0, 0.0, 50.0],
+        ..body()
+    };
+    let host = host_with(vec![behind]);
+    let trace = boxed(&host, [0.0, 0.0, 50.0], [200.0, 0.0, 50.0]);
+    assert!(trace.startsolid);
+    assert_eq!(trace.ent, Some(1));
+    let ahead_of_back = Body {
+        origin: [220.0, 0.0, 50.0],
+        ..body()
+    };
+    let host = host_with(vec![ahead_of_back]);
+    let trace = boxed(&host, [200.0, 0.0, 50.0], [0.0, 0.0, 50.0]);
+    assert!(trace.startsolid);
+    for side in [-20.0, 20.0] {
+        let beside = Body {
+            origin: [100.0, side, 50.0],
+            ..body()
+        };
+        let host = host_with(vec![beside]);
+        let trace = boxed(&host, [0.0, 0.0, 50.0], [200.0, 0.0, 50.0]);
+        assert_eq!(trace.ent, Some(1), "{side}");
+    }
+    // A missile meets a monster on the other side of its path too.
+    let monster = Body {
+        flags: FL_MONSTER,
+        origin: [100.0, -30.0, 50.0],
+        ..body()
+    };
+    let host = host_with(vec![monster]);
+    assert_eq!(moved(&host, ACROSS, MoveKind::Missile, None).ent, Some(1));
+}
+
+// spec WORLD-6.5: a box whose edge is exactly on a node's plane is linked in that node
+#[test]
+fn a_box_on_a_split_stays_in_the_node() {
+    let east_edge = Body {
+        origin: [17.0, 0.0, 0.0],
+        ..body()
+    };
+    let west_edge = Body {
+        origin: [-17.0, 0.0, 0.0],
+        ..body()
+    };
+    let host = host_with(vec![east_edge, west_edge]);
+    assert_eq!(host.bodies[1].absmin[0], 0.0);
+    assert_eq!(host.bodies[2].absmax[0], 0.0);
+    assert_eq!(host.collision.area().link_of(1), Some((0, false)));
+    assert_eq!(host.collision.area().link_of(2), Some((0, false)));
+}
+
+// spec WORLD-6.4: each axis's sign bit picks that axis's corner
+#[test]
+fn every_axis_has_its_sign_bit() {
+    let on_y = super::Plane {
+        normal: [0.6, -0.8, 0.0],
+        dist: 0.0,
+        kind: 3,
+    };
+    // Bit 1: the far corner takes the mins on y. Box x 0 to 1, y 0 to 1: far (1, 0), 0.6 in
+    // front; near (0, 1), -0.8 behind.
+    assert_eq!(box_on_plane_side(([0.0; 3], [1.0, 1.0, 0.0]), &on_y, 2), 3);
+    // With no bits the far corner is (1, 1), -0.2, not in front, and the near (0, 0), on the
+    // plane, not behind: no side at all, which the wrong bits can give.
+    assert_eq!(box_on_plane_side(([0.0; 3], [1.0, 1.0, 0.0]), &on_y, 0), 0);
+    let on_z = super::Plane {
+        normal: [0.0, 0.6, -0.8],
+        dist: 0.0,
+        kind: 4,
+    };
+    assert_eq!(box_on_plane_side(([0.0; 3], [0.0, 1.0, 1.0]), &on_z, 4), 3);
+    assert_eq!(box_on_plane_side(([0.0; 3], [0.0, 1.0, 1.0]), &on_z, 0), 0);
+}
+
+// spec WORLD-1.2: another BSP's model 0 takes a model index of its own, with its own hulls
+#[test]
+fn a_second_bsp_is_its_own_brush_model() {
+    let mut collision = Collision::new(&bsp(&MapSpec::default()));
+    let raised = MapSpec {
+        planes: vec![
+            plane([0.0, 0.0, 1.0], 50.0, 2),
+            plane([0.0, 0.0, 1.0], 74.0, 2),
+        ],
+        ..MapSpec::default()
+    };
+    collision.add_brush(5, &bsp(&raised));
+    let model = *collision.model(5.0).unwrap();
+    assert_eq!(model.set, 1);
+    let hull = collision.sets()[model.set].hull(0, model.heads);
+    assert_eq!(
+        hull.point_contents(hull.first, [0.0, 0.0, 49.0]).unwrap(),
+        CONTENTS_SOLID
+    );
+    assert!(collision.model(4.0).is_none());
+    // Below the list's end it replaces the index and keeps the rest.
+    collision.add_brush(1, &bsp(&raised));
+    assert_eq!(collision.model(1.0).unwrap().set, 2);
+    assert_eq!(collision.model(5.0).unwrap().set, 1);
 }

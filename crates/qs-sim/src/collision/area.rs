@@ -118,15 +118,9 @@ impl Area {
     }
 
     /// The number of area nodes.
-    #[must_use]
-    pub const fn len(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) const fn len(&self) -> usize {
         self.nodes.len()
-    }
-
-    /// Whether there are no area nodes; never, once made.
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
     }
 
     /// Node `node`'s axis (0 for x, 1 for y), distance and children, or `None` for a leaf.
@@ -581,11 +575,10 @@ fn clip_to_links<H: Host + ?Sized>(
         )?;
         // WORLD-7.4
         if trace.allsolid || trace.startsolid || trace.fraction < clip.trace.fraction {
+            // The clip names the entity already: its trace was clipped or started in solid
+            // (WORLD-4.1), since all solid starts in solid (WORLD-3.1).
             let startsolid = clip.trace.startsolid;
-            clip.trace = Trace {
-                ent: Some(number),
-                ..trace
-            };
+            clip.trace = trace;
             if startsolid {
                 clip.trace.startsolid = true;
             }
