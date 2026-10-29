@@ -70,6 +70,14 @@ texture darkened by the lightmap. The map view and the preview host draw the wor
   `R_DrawEntitiesOnList` in `R_RenderScene`), with `glDepthFunc (GL_LEQUAL)`
   (`R_Clear`): of a brush entity's face and a world face at the same depth, such as a lowered
   lift's top flush with the floor, the entity's is seen.
+- **REND-1.12** GLQuake draws such a pair as it rasterizes them, so where their depths differ
+  by rounding they flicker. QuakeSpasm (`sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`,
+  `Quake/r_brush.c`, `R_DrawBrushModel`) has the option `gl_zfix`, off by default
+  (`Quake/gl_rmain.c`, `cvar_t gl_zfix = {"gl_zfix", "0", CVAR_NONE}`), which before
+  `R_RotateForEntity` moves the entity's origin by `-DIST_EPSILON` on each axis and after it
+  moves it back, `DIST_EPSILON` being `(0.03125)` (`Quake/quakedef.h`). The renderer offers the
+  same; the viewer turns it on unless asked for GLQuake's drawing, since it removes a visible
+  flicker the map's author did not intend.
 
 ## REND-2 Moving textures
 

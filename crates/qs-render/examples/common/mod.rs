@@ -66,6 +66,8 @@ pub(crate) struct Models {
     brushes: Vec<Option<usize>>,
     /// Each mesh model's matrix as the server last had it.
     placed: Vec<[[f32; 4]; 4]>,
+    /// QuakeSpasm's `gl_zfix` (REND-1.12): on unless `-nozfix` asks for GLQuake's flicker.
+    zfix: bool,
 }
 
 impl Models {
@@ -77,12 +79,16 @@ impl Models {
             .iter()
             .map(|entity| {
                 let found = entity.and_then(|n| now.iter().find(|e| e.number == n));
-                found.map_or(Placement::WORLD, |e| Placement {
-                    model: 0,
-                    origin: e.origin,
-                    angles: e.angles,
-                })
-                .matrix()
+                found
+                    .map_or(Placement::WORLD, |e| {
+                        let placed = Placement {
+                            model: 0,
+                            origin: e.origin,
+                            angles: e.angles,
+                        };
+                        if self.zfix { placed.zfixed() } else { placed }
+                    })
+                    .matrix()
             })
             .collect();
         for (number, _, entity) in &mut self.entities {
@@ -159,6 +165,9 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     let mut map = "e1m1".to_owned();
     let mut engine = Vec::new();
     let mut show = None;
+    // `-at x y z yaw`: where the camera starts, looking a little down.
+    let mut at: Option<[f32; 4]> = None;
+    let mut zfix = true;
     let mut gamma = GAMMA;
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
@@ -168,6 +177,11 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
                 .next()
                 .and_then(|g| g.parse().ok())
                 .ok_or("-gamma takes a number")?;
+        } else if arg == "-nozfix" {
+            zfix = false;
+        } else if arg == "-at" {
+            let mut next = || rest.next().and_then(|v| v.parse::<f32>().ok());
+            at = Some([next(), next(), next(), next()].map(|v| v.unwrap_or(0.0)));
         } else if arg == "-show" {
             show = match rest.next().map(String::as_str) {
                 Some("water") => Some(Surface::Turbulent),
@@ -267,8 +281,13 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     }
     let mut builder = MeshBuilder::new(&palette);
     builder.add(&bsp, &placements).map_err(|e| e.to_string())?;
-    brushes.extend(others.iter().flat_map(|(_, list)| list.iter().map(|(_, n)| Some(*n))));
+    brushes.extend(
+        others
+            .iter()
+            .flat_map(|(_, list)| list.iter().map(|(_, n)| Some(*n))),
+    );
     models.brushes = brushes;
+    models.zfix = zfix;
     for (name, list) in &others {
         let bytes = read(name)?;
         let other = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(name))?;
@@ -276,8 +295,13 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
         builder.add(&other, &list).map_err(|e| e.to_string())?;
     }
     let mesh = builder.finish();
-    let camera = show
-        .and_then(|surface| facing(&mesh, surface))
+    let placed = at.map(|[x, y, z, yaw]| {
+        let mut camera = Camera::new([x, y, z], yaw);
+        camera.turn(0.0, 30.0);
+        camera
+    });
+    let camera = placed
+        .or_else(|| show.and_then(|surface| facing(&mesh, surface)))
         .or_else(|| start(bsp.entities()))
         .unwrap_or_else(|| {
             let [a, b, c] = mesh.mins;

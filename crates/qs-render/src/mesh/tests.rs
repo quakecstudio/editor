@@ -562,3 +562,17 @@ fn the_world_is_drawn_before_entities() {
     assert!(mesh.batches[0].first < mesh.batches[1].first);
     assert_eq!(mesh.models[1].matrix()[3], [0.0, 0.0, 5.0, 1.0]);
 }
+
+// spec REND-1.12: gl_zfix draws a brush entity 1/32 back on every axis, angles as they are
+#[test]
+fn zfix_moves_an_entity_back_a_32nd() {
+    let lift = Placement {
+        model: 3,
+        origin: [10.0, 20.0, -66.0],
+        angles: [0.0, 90.0, 0.0],
+    };
+    let fixed = lift.zfixed();
+    assert_eq!(fixed.origin, [9.968_75, 19.968_75, -66.031_25]);
+    assert_eq!(fixed.angles, lift.angles);
+    assert_eq!(fixed.model, 3);
+}
