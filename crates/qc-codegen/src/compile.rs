@@ -111,6 +111,18 @@ pub(crate) struct Compiler<'a> {
     /// The compiler flags of the file being compiled, each from the byte it holds from
     /// (FTEF-21.1).
     flags: Vec<(usize, qc_syntax::CompilerFlags)>,
+    /// The loops and switches the statement is in, innermost last, with the jumps their
+    /// `break` and `continue` statements left to patch.
+    jumps: Vec<Jumps>,
+}
+
+/// One loop or switch: the `GOTO`s of its `break`s, and of its `continue`s for a loop.
+#[derive(Debug, Default)]
+struct Jumps {
+    breaks: Vec<usize>,
+    continues: Vec<usize>,
+    /// Whether it is a loop, which `continue` belongs to; a switch passes it on.
+    is_loop: bool,
 }
 
 impl<'a> Compiler<'a> {
@@ -129,6 +141,7 @@ impl<'a> Compiler<'a> {
             fold: false,
             dialect: Dialect::Vanilla,
             flags: Vec::new(),
+            jumps: Vec::new(),
         }
     }
 
@@ -414,19 +427,30 @@ impl<'a> Compiler<'a> {
                 let top = self.program.statements.len();
                 let condition = self.expr(&w.condition().at(span)?)?;
                 let test = self.unless(&condition, span)?;
+                self.jumps.push(Jumps {
+                    is_loop: true,
+                    ..Jumps::default()
+                });
                 self.statement(&w.body().at(span)?)?;
                 let back = branch(self.program.statements.len(), top).at(span)?;
                 self.program.emit(Opcode::Goto, back, 0);
                 self.patch_b(test, span)?;
+                self.end_jumps(top, span)?;
             }
             ast::Stmt::Do(d) => {
                 // QC-14.6: the body, the condition, `IF` back to the body.
                 let top = self.program.statements.len();
+                self.jumps.push(Jumps {
+                    is_loop: true,
+                    ..Jumps::default()
+                });
                 self.statement(&d.body().at(span)?)?;
+                let test_at = self.program.statements.len();
                 let condition = self.expr(&d.condition().at(span)?)?;
                 let (op, tested) = self.test(&condition, true, span)?;
                 let back = branch(self.program.statements.len(), top).at(span)?;
                 self.program.emit(op, operand(tested).at(span)?, back);
+                self.end_jumps(test_at, span)?;
             }
             ast::Stmt::Local(local) => self.local(local)?,
             ast::Stmt::If(i) => {
@@ -450,12 +474,20 @@ impl<'a> Compiler<'a> {
                 // QC-14.9: any expression, its statements emitted.
                 self.expr(&e.expr().at(span)?)?;
             }
-            ast::Stmt::For(_)
-            | ast::Stmt::Switch(_)
-            | ast::Stmt::Break(_)
-            | ast::Stmt::Continue(_)
-            | ast::Stmt::Empty(_)
-            | ast::Stmt::Label(_)
+            ast::Stmt::Break(_) => {
+                let jump = self.program.emit(Opcode::Goto, 0, 0);
+                let jumps = self.jumps.last_mut().at(span)?;
+                jumps.breaks.push(jump);
+            }
+            ast::Stmt::Continue(_) => {
+                let jump = self.program.emit(Opcode::Goto, 0, 0);
+                let jumps = self.jumps.iter_mut().rev().find(|j| j.is_loop).at(span)?;
+                jumps.continues.push(jump);
+            }
+            ast::Stmt::Empty(_) => {}
+            ast::Stmt::Switch(switch) => self.switch(switch, span)?,
+            ast::Stmt::For(f) => self.for_loop(f, span)?,
+            ast::Stmt::Label(_)
             | ast::Stmt::Goto(_)
             | ast::Stmt::Loop(_)
             | ast::Stmt::Thinktime(_)
@@ -586,6 +618,122 @@ impl<'a> Compiler<'a> {
                 Err(Abort::Internal(Internal::Unsupported, span))
             }
         }
+    }
+
+    /// Ends the innermost loop or switch: its `break`s go to the next statement, and a loop's
+    /// `continue`s to `again`.
+    fn end_jumps(&mut self, again: usize, span: Span) -> Lowered<()> {
+        let jumps = self.jumps.pop().at(span)?;
+        let end = self.program.statements.len();
+        for (list, to) in [(jumps.breaks, end), (jumps.continues, again)] {
+            for at in list {
+                let offset = branch(at, to).at(span)?;
+                if let Some(s) = self.program.statements.get_mut(at) {
+                    s.a = offset;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// FTEQCC's `for (init; condition; step) body` (FTE-2.1): the initialiser, then the
+    /// condition with `IFNOT` past the loop, the body, the step, `GOTO` back to the condition;
+    /// `continue` goes to the step.
+    fn for_loop(&mut self, f: &ast::ForStmt, span: Span) -> Lowered<()> {
+        if let Some(init) = f.init() {
+            self.clause(&init, span)?;
+        }
+        let top = self.program.statements.len();
+        let test = match f.condition().and_then(ast::Expr::cast) {
+            Some(condition) => {
+                let condition = self.expr(&condition)?;
+                Some(self.unless(&condition, span)?)
+            }
+            None => None,
+        };
+        self.jumps.push(Jumps {
+            is_loop: true,
+            ..Jumps::default()
+        });
+        self.statement(&f.body().at(span)?)?;
+        let step_at = self.program.statements.len();
+        if let Some(step) = f.step() {
+            self.clause(&step, span)?;
+        }
+        let back = branch(self.program.statements.len(), top).at(span)?;
+        self.program.emit(Opcode::Goto, back, 0);
+        if let Some(test) = test {
+            self.patch_b(test, span)?;
+        }
+        self.end_jumps(step_at, span)
+    }
+
+    /// A `for` header clause: a local declaration or an expression.
+    fn clause(&mut self, clause: &qc_syntax::SyntaxNode, span: Span) -> Lowered<()> {
+        if let Some(local) = ast::LocalDecl::cast(clause.clone()) {
+            return self.local(&local);
+        }
+        let expr = ast::Expr::cast(clause.clone()).at(span)?;
+        self.expr(&expr).map(drop)
+    }
+
+    /// FTEQCC's `switch (e) { case v: ... default: ... }` (FTE-3.1) on the vanilla opcodes: the
+    /// value read once, `GOTO` past the body to the tests, the body with its labels, then each
+    /// `case` tested in order by `EQ_*` of the value's type (a range `case a .. b:` by
+    /// `GE_F`, `LE_F` and `AND`) with `IF` to the label, and `GOTO` to `default:` or past the
+    /// switch; `break` goes past it.
+    fn switch(&mut self, switch: &ast::SwitchStmt, span: Span) -> Lowered<()> {
+        let value = self.expr(&switch.scrutinee().at(span)?)?;
+        let to_tests = self.program.emit(Opcode::Goto, 0, 0);
+        self.jumps.push(Jumps::default());
+        let mut cases: Vec<(ast::CaseLabel, usize)> = Vec::new();
+        let block = switch.block().at(span)?;
+        for node in block.syntax().children() {
+            if let Some(label) = ast::CaseLabel::cast(node.clone()) {
+                cases.push((label, self.program.statements.len()));
+            } else if let Some(statement) = ast::Stmt::cast(node) {
+                self.statement(&statement)?;
+            }
+        }
+        let past_tests = self.program.emit(Opcode::Goto, 0, 0);
+        let tests = self.program.statements.len();
+        self.set_goto(to_tests, tests, span)?;
+        let mut default = None;
+        for (label, at) in &cases {
+            let label_span = label.syntax().span();
+            let Some(case) = label.value() else {
+                default = Some(*at);
+                continue;
+            };
+            let low = self.expr(&case)?;
+            let hit = match label.range_end() {
+                Some(end) => {
+                    let high = self.expr(&end)?;
+                    let spans = (label_span, label_span);
+                    let above = self.operate(Operator::Ge, &value, &low, spans)?;
+                    let below = self.operate(Operator::Le, &value, &high, spans)?;
+                    self.operate(Operator::And, &above, &below, spans)?
+                }
+                None => self.operate(Operator::Eq, &value, &low, (label_span, label_span))?,
+            };
+            let to = branch(self.program.statements.len(), *at).at(label_span)?;
+            self.program
+                .emit(Opcode::If, operand(hit.ofs).at(label_span)?, to);
+        }
+        let fallback = self.program.emit(Opcode::Goto, 0, 0);
+        let end = self.program.statements.len();
+        self.set_goto(fallback, default.unwrap_or(end), span)?;
+        self.set_goto(past_tests, end, span)?;
+        self.end_jumps(end, span)
+    }
+
+    /// Points the `GOTO` at statement `at` at statement `to`.
+    fn set_goto(&mut self, at: usize, to: usize, span: Span) -> Lowered<()> {
+        let offset = branch(at, to).at(span)?;
+        if let Some(s) = self.program.statements.get_mut(at) {
+            s.a = offset;
+        }
+        Ok(())
     }
 
     /// A jump taken when `condition` is false, its target patched later; returns its index.
