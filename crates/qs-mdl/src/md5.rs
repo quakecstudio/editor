@@ -15,6 +15,8 @@ mod tests;
 use core::fmt;
 use std::collections::BTreeMap;
 
+use crate::cursor::read_array;
+
 /// The four bytes a mesh file starts with, which pick the MD5 loader (MD5-2.1).
 pub const MD5_MAGIC: [u8; 4] = *b"MD5V";
 
@@ -438,10 +440,7 @@ impl Md5Mesh {
     /// Any [`Md5Error`] of MD5-1 and MD5-2.
     pub fn read(bytes: &[u8]) -> Result<Self, Md5Error> {
         // One 32-bit comparison, which coverage-guided fuzzers can solve.
-        let magic = bytes
-            .get(..4)
-            .and_then(|word| <[u8; 4]>::try_from(word).ok())
-            .map(u32::from_le_bytes);
+        let magic = read_array(bytes, 0).map(u32::from_le_bytes);
         if magic != Some(u32::from_le_bytes(MD5_MAGIC)) {
             return Err(Md5Error::NotMd5);
         }

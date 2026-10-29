@@ -477,9 +477,11 @@ impl MipTexHeader {
 
 /// The signed little-endian 32-bit integer at `offset`, or 0 past the end of `bytes`.
 fn le_i32(bytes: &[u8], offset: usize) -> i32 {
-    let word = bytes
-        .get(offset..offset.saturating_add(4))
-        .and_then(|word| <[u8; 4]>::try_from(word).ok())
-        .unwrap_or_default();
-    i32::from_le_bytes(word)
+    read_array(bytes, offset).map_or(0, i32::from_le_bytes)
 }
+
+/// The `N` bytes at `offset`, or `None` past the end of `bytes`.
+fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8; N]> {
+    bytes.get(offset..offset.checked_add(N)?)?.try_into().ok()
+}
+

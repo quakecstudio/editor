@@ -54,12 +54,14 @@ impl core::error::Error for ReadError {}
 /// that `offset + 4` is within the slice, so the `get` never returns `None`; this returns 0 if
 /// it ever did, which no caller relies on.
 fn read_u32(bytes: &[u8], offset: usize) -> u32 {
-    let word = offset
-        .checked_add(4)
-        .and_then(|end| bytes.get(offset..end))
-        .and_then(|slice| <[u8; 4]>::try_from(slice).ok());
-    word.map_or(0, u32::from_le_bytes)
+    read_array(bytes, offset).map_or(0, u32::from_le_bytes)
 }
+
+/// The `N` bytes at `offset`, or `None` past the end of `bytes`.
+fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8; N]> {
+    bytes.get(offset..offset.checked_add(N)?)?.try_into().ok()
+}
+
 
 impl LnoFile {
     /// Reads a `.lno` file from `bytes` (LNO-5).
@@ -154,8 +156,7 @@ fn read_i32_table(bytes: &[u8], offset: usize, count: usize) -> Vec<i32> {
             .checked_mul(4)
             .and_then(|delta| offset.checked_add(delta));
         let value = start
-            .and_then(|start| start.checked_add(4).and_then(|end| bytes.get(start..end)))
-            .and_then(|slice| <[u8; 4]>::try_from(slice).ok())
+            .and_then(|start| read_array(bytes, start))
             .map_or(0, i32::from_le_bytes);
         out.push(value);
     }

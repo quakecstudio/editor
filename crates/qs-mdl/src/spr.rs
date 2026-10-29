@@ -13,6 +13,8 @@ mod tests;
 
 use core::fmt;
 
+use crate::cursor::{Cursor, le_i32};
+
 /// The four bytes a sprite starts with, id's `IDSPRITEHEADER` (SPR-1.2).
 pub const SPR_MAGIC: [u8; 4] = *b"IDSP";
 
@@ -243,15 +245,16 @@ impl<'a> Sprite<'a> {
                 numframes: header.numframes,
             });
         };
-        let mut pos = SPR_HEADER_SIZE;
+        let mut cursor = Cursor::new(bytes, SPR_HEADER_SIZE, |offset| SprError::Truncated {
+            offset,
+        });
         let mut frames = Vec::new();
         for _ in 0..count {
-            let frame_type = le_i32(bytes, pos).ok_or(SprError::Truncated { offset: pos })?;
-            pos = pos.saturating_add(4);
+            let frame_type = cursor.int()?;
             let entry = if frame_type == SPR_SINGLE {
-                SpriteFrameEntry::Single(mod_load_sprite_frame(bytes, &mut pos)?)
+                SpriteFrameEntry::Single(mod_load_sprite_frame(&mut cursor)?)
             } else {
-                SpriteFrameEntry::Group(mod_load_sprite_group(bytes, &mut pos, frame_type)?)
+                SpriteFrameEntry::Group(mod_load_sprite_group(&mut cursor, frame_type)?)
             };
             frames.push(entry);
         }
@@ -272,19 +275,17 @@ impl<'a> Sprite<'a> {
     }
 }
 
-/// Reads one frame at `*pos` and moves `*pos` past its pixels, id's `Mod_LoadSpriteFrame`.
+/// Reads one frame and moves the cursor past its pixels, id's `Mod_LoadSpriteFrame`.
 ///
 /// Implements SPR-2.2 and SPR-2.4.
 fn mod_load_sprite_frame<'a>(
-    bytes: &'a [u8],
-    pos: &mut usize,
+    cursor: &mut Cursor<'a, SprError>,
 ) -> Result<SpriteFrame<'a>, SprError> {
-    let start = *pos;
-    let truncated = SprError::Truncated { offset: start };
-    let header = start
-        .checked_add(SPR_FRAME_HEADER_SIZE)
-        .and_then(|end| bytes.get(start..end))
-        .ok_or(truncated)?;
+    // A frame cut short is reported at its start.
+    let truncated = SprError::Truncated {
+        offset: cursor.pos(),
+    };
+    let header = cursor.take(SPR_FRAME_HEADER_SIZE).map_err(|_| truncated)?;
     let word = |index: usize| le_i32(header, index.saturating_mul(4)).unwrap_or_default();
     let (width, height) = (word(2), word(3));
     let bad_size = SprError::BadFrameSize { width, height };
@@ -293,10 +294,7 @@ fn mod_load_sprite_frame<'a>(
     }
     let size = width.checked_mul(height).ok_or(bad_size)?;
     let size = usize::try_from(size).map_err(|_| bad_size)?;
-    let pixels_start = start.saturating_add(SPR_FRAME_HEADER_SIZE);
-    let end = pixels_start.checked_add(size).ok_or(truncated)?;
-    let pixels = bytes.get(pixels_start..end).ok_or(truncated)?;
-    *pos = end;
+    let pixels = cursor.take(size).map_err(|_| truncated)?;
     Ok(SpriteFrame {
         origin: [word(0), word(1)],
         width,
@@ -305,43 +303,25 @@ fn mod_load_sprite_frame<'a>(
     })
 }
 
-/// Reads one frame group at `*pos` and moves `*pos` past it, id's `Mod_LoadSpriteGroup`.
+/// Reads one frame group and moves the cursor past it, id's `Mod_LoadSpriteGroup`.
 ///
 /// Implements SPR-2.5 to SPR-2.8.
 fn mod_load_sprite_group<'a>(
-    bytes: &'a [u8],
-    pos: &mut usize,
+    cursor: &mut Cursor<'a, SprError>,
     frame_type: i32,
 ) -> Result<SpriteGroup<'a>, SprError> {
-    let numframes = le_i32(bytes, *pos).ok_or(SprError::Truncated { offset: *pos })?;
+    let numframes = cursor.int()?;
     let Ok(count @ 1..) = usize::try_from(numframes) else {
         return Err(SprError::InvalidGroupCount { numframes });
     };
-    *pos = pos.saturating_add(4);
-    let mut intervals = Vec::new();
-    for _ in 0..count {
-        let bits = le_i32(bytes, *pos).ok_or(SprError::Truncated { offset: *pos })?;
-        let interval = f32::from_bits(bits.cast_unsigned());
-        // SPR-2.6: id's test is `interval <= 0.0`, so NaN passes.
-        if interval <= 0.0 {
-            return Err(SprError::BadInterval { interval });
-        }
-        intervals.push(interval);
-        *pos = pos.saturating_add(4);
-    }
+    let intervals = cursor.intervals(count, |interval| SprError::BadInterval { interval })?;
     let mut frames = Vec::new();
     for _ in 0..count {
-        frames.push(mod_load_sprite_frame(bytes, pos)?);
+        frames.push(mod_load_sprite_frame(cursor)?);
     }
     Ok(SpriteGroup {
         frame_type,
         intervals,
         frames,
     })
-}
-
-/// The signed little-endian 32-bit integer at `offset`, or `None` past the end of `bytes`.
-fn le_i32(bytes: &[u8], offset: usize) -> Option<i32> {
-    let word = bytes.get(offset..offset.checked_add(4)?)?;
-    Some(i32::from_le_bytes(<[u8; 4]>::try_from(word).ok()?))
 }
