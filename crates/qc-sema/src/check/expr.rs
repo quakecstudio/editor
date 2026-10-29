@@ -118,10 +118,14 @@ impl<'e> Checker<'e> {
 
     /// The value of `expr`, its type recorded.
     pub(super) fn expr(&mut self, expr: &ast::Expr) -> Checked {
-        let value = self.term(expr)?;
-        let span = expr.syntax().span();
-        self.types.insert((span.start, span.end), value.ty.clone());
-        Ok(value)
+        // `match` rather than `?`, which keeps the frame every nested expression adds small
+        // (QC-27.15).
+        let checked = self.term(expr);
+        if let Ok(value) = &checked {
+            let span = expr.syntax().span();
+            self.types.insert((span.start, span.end), value.ty.clone());
+        }
+        checked
     }
 
     /// The value of `expr` by its kind. Each kind is its own method, so that the frame a nested

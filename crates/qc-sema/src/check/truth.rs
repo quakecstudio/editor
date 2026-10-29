@@ -161,71 +161,110 @@ impl Checker<'_> {
     /// warn "Type mismatch on ternary operator: A vs B", and two it does not are the fatal error
     /// "Ternary operator with mismatching types".
     pub(super) fn ternary(&mut self, ternary: &ast::TernaryExpr) -> Checked {
+        // Only the arms' reads recurse, each with `match` rather than `?`, and what is done with
+        // each is a function of its own, so that a nested ternary's frame stays small (QC-27.15).
         let span = ternary.syntax().span();
-        let condition = self.value(ternary.condition())?;
         let (middle, last) = ternary.arms();
-        // FTEF-30.15: at global scope a constant condition picks its arm, the other read and
-        // dropped, with no jump and no store (`if (pr_scope) eval = NULL;`).
+        #[expect(
+            clippy::question_mark,
+            reason = "QC-27.15: `?` adds a copy of the value to the frame each nested ternary adds"
+        )]
+        let condition = match self.value(ternary.condition()) {
+            Ok(condition) => condition,
+            Err(fatal) => return Err(fatal),
+        };
         if self.global
             && let Some(constant) = condition.known()
         {
-            return match middle {
-                None if constant.truth() => {
-                    self.value(last)?;
-                    Ok(condition)
-                }
-                None => self.value(last),
-                Some(middle) if constant.i() != 0 => {
-                    let value = self.value(Some(middle))?;
-                    self.value(last)?;
-                    Ok(value)
-                }
-                Some(middle) => {
-                    self.value(Some(middle))?;
-                    self.value(last)
-                }
-            };
+            return self.constant_ternary(condition, constant, middle, last);
         }
-        self.branch(&condition, Jump::IfNot, span)?;
+        let kept = match middle {
+            None => self.condition_arm(condition, span),
+            Some(middle) => {
+                let tested = self.test_condition(&condition, span);
+                drop(condition);
+                let before = self.emitted;
+                match tested.and_then(|()| self.value(Some(middle))) {
+                    Ok(value) => self.middle_arm(value, before, span),
+                    Err(fatal) => Err(fatal),
+                }
+            }
+        };
+        let Ok((kept, kept_null)) = kept else {
+            return Err(Fatal);
+        };
+        self.generate(Op::Goto, span);
+        let before = self.emitted;
+        match self.value(last) {
+            Ok(other) => self.last_arm(kept, kept_null, other, before, span),
+            Err(fatal) => Err(fatal),
+        }
+    }
+
+    /// The `IFNOT` (or `IF` of a vector under `ifvector`) that skips the first arm.
+    #[inline(never)]
+    fn test_condition(&mut self, condition: &Value, span: Span) -> Result<(), Fatal> {
+        self.branch(condition, Jump::IfNot, span)?;
         // `QCC_Generate_OP_IFNOT` of a vector under `ifvector` tests `!v` by `OP_IF_I`.
         let vector = self.etype_of(&condition.ty) == Some(Etype::Vector)
             && self.env.flags_at(span.start).has(FteFlag::Ifvector);
         self.generate(if vector { Op::IfI } else { Op::IfnotI }, span);
-        let (kept, kept_null) = match middle {
-            None => {
-                let null = condition.known().is_some_and(Constant::null);
-                // `(r.cast->size>=3)?OP_STORE_V:OP_STORE_F`, after the `IFNOT`.
-                let words = self.env.layout(&condition.ty).map_or(1, |l| l.words);
-                let op = if words >= 3 { Op::StoreV } else { Op::StoreF };
-                self.clobber_returned(Some(op), &condition, span)?;
-                self.arm_store(Some(op), &condition, self.emitted, span)?;
-                (condition, null)
-            }
-            Some(middle) => {
-                let before = self.emitted;
-                let value = self.value(Some(middle))?;
-                let value = self.stored_arm(value, span)?;
-                let null = value.known().is_some_and(Constant::null);
-                // `switch(r.cast->size)`: the first arm is stored by its size, and one of more
-                // than three words is "oversized ternary result" (FTEF-30.10).
-                let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
-                let op = match words {
-                    3 => Some(Op::StoreV),
-                    2 => Some(Op::StoreI64),
-                    0 | 1 => Some(Op::StoreF),
-                    _ => {
-                        let message = "oversized ternary result".to_owned();
-                        return self.fatal(Code::E0370, span, message);
-                    }
-                };
-                self.clobber_returned(op, &value, span)?;
-                self.arm_store(op, &value, before, span)?;
-                (value, null)
+        Ok(())
+    }
+
+    /// `c ?: b`: the condition stored as the first arm, and whether it is a null.
+    #[inline(never)]
+    fn condition_arm(&mut self, condition: Value, span: Span) -> Result<(Value, bool), Fatal> {
+        self.test_condition(&condition, span)?;
+        let null = condition.known().is_some_and(Constant::null);
+        // `(r.cast->size>=3)?OP_STORE_V:OP_STORE_F`, after the `IFNOT`.
+        let words = self.env.layout(&condition.ty).map_or(1, |l| l.words);
+        let op = if words >= 3 { Op::StoreV } else { Op::StoreF };
+        self.clobber_returned(Some(op), &condition, span)?;
+        self.arm_store(Some(op), &condition, self.emitted, span)?;
+        Ok((condition, null))
+    }
+
+    /// The middle arm read since `before` emitted statements, stored by its size, and whether it
+    /// is a null.
+    #[inline(never)]
+    fn middle_arm(
+        &mut self,
+        value: Value,
+        before: usize,
+        span: Span,
+    ) -> Result<(Value, bool), Fatal> {
+        let value = self.stored_arm(value, span)?;
+        let null = value.known().is_some_and(Constant::null);
+        // `switch(r.cast->size)`: the first arm is stored by its size, and one of more than three
+        // words is "oversized ternary result" (FTEF-30.10).
+        let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
+        let op = match words {
+            3 => Some(Op::StoreV),
+            2 => Some(Op::StoreI64),
+            0 | 1 => Some(Op::StoreF),
+            _ => {
+                let message = "oversized ternary result".to_owned();
+                self.fatal(Code::E0370, span, message)?;
+                return Err(Fatal);
             }
         };
-        self.generate(Op::Goto, span);
-        let before = self.emitted;
-        let other = self.value(last)?;
+        self.clobber_returned(op, &value, span)?;
+        self.arm_store(op, &value, before, span)?;
+        Ok((value, null))
+    }
+
+    /// The last arm read since `before` emitted statements, stored by its type, after the arms'
+    /// types are compared.
+    #[inline(never)]
+    fn last_arm(
+        &mut self,
+        kept: Value,
+        kept_null: bool,
+        other: Value,
+        before: usize,
+        span: Span,
+    ) -> Checked {
         let other = self.stored_arm(other, span)?;
         // `QCC_StoreToSRef` by the last arm's type, a double's, struct's or enum's word by word
         // with plain statements.
@@ -234,6 +273,35 @@ impl Checker<'_> {
             etype => Some(Self::store_op(etype)),
         };
         self.compare_then_store(kept, kept_null, other, op, before, span)
+    }
+
+    /// FTEF-30.15: at global scope a constant condition picks its arm, the other read and
+    /// dropped, with no jump and no store (`if (pr_scope) eval = NULL;`); a function of its own
+    /// so that the nested ternary's frame stays small.
+    #[inline(never)]
+    fn constant_ternary(
+        &mut self,
+        condition: Value,
+        constant: Constant,
+        middle: Option<ast::Expr>,
+        last: Option<ast::Expr>,
+    ) -> Checked {
+        match middle {
+            None if constant.truth() => {
+                self.value(last)?;
+                Ok(condition)
+            }
+            None => self.value(last),
+            Some(middle) if constant.i() != 0 => {
+                let value = self.value(Some(middle))?;
+                self.value(last)?;
+                Ok(value)
+            }
+            Some(middle) => {
+                self.value(Some(middle))?;
+                self.value(last)
+            }
+        }
     }
 
     /// The arms' types compared, then the last arm stored (FTEF-30.3); a function of its own so

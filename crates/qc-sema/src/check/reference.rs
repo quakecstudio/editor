@@ -29,8 +29,12 @@ impl Checker<'_> {
         let Some(expr) = expr else {
             return Ok(Value::unknown());
         };
-        let reference = self.expr(&expr)?;
-        self.read(reference, expr.syntax().span())
+        // `match` rather than `?`, which keeps the frame every nested expression adds small
+        // (QC-27.15).
+        match self.expr(&expr) {
+            Ok(reference) => self.read(reference, expr.syntax().span()),
+            Err(fatal) => Err(fatal),
+        }
     }
 
     /// FTEF-31.1: `QCC_RefToDef`, what a reference names, read: an array named bare is its
