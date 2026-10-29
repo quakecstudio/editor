@@ -545,6 +545,11 @@ jobs:
           cargo xtask sema-corpus \
             "$QS_TEST_ASSETS/codebase/id-1.01=$QS_TEST_ASSETS/progs/id-1.01/progs.dat" \
             "$QS_TEST_ASSETS/codebase/rerelease=$QS_TEST_ASSETS/progs/rerelease/progs.dat"
+      # P2-14: the language server, driven over the protocol against the rerelease, gives the
+      # answers its golden file records (docs/spec/vectors/lsp/rerelease.txt).
+      - name: Drive the language server against the rerelease
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: cargo xtask lsp-corpus "$QS_TEST_ASSETS/codebase/rerelease"
       # P1-13 (FND-8, QA-1): the fast differential subset. Runs id 1.01 end to end
       # in the VM oracle (restored above) and QuakeC Studio's runner and fails on any
       # divergence that DIFF-10.1 does not list (DIFF-10.3). This is the differential VM

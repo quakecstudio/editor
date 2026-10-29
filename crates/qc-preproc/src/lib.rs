@@ -276,6 +276,9 @@ struct Macro {
     /// Under FTEQCC, `cnst->evil`: the body holds a directive (FTEF-14.46), so FTEQCC gives no
     /// "is not a macro parameter" warning for it (FTEF-14.61).
     evil: bool,
+    /// The text a module's define gives, whose tokens are at no file's bytes, so each token is
+    /// spelled from it (PRJ-5.4); `None` for a macro a file defines.
+    spelled: Option<Rc<str>>,
 }
 
 /// Whether a macro's parameter list ends in `...`, taking the arguments after the named ones
@@ -988,6 +991,8 @@ pub struct Preprocessor<L> {
     /// How many times a macro has been defined or undefined, so a text lexed under
     /// `macroinstrings` is lexed again after it (FTEF-12.12).
     macro_edits: u64,
+    /// The module's defines (PRJ-5.4), defined again at each restart.
+    defines: Vec<(String, String)>,
 }
 
 /// The path with `.` removed and `..` folded into the component before it, so one file has
@@ -1032,7 +1037,46 @@ impl<L: Loader> Preprocessor<L> {
             include_dirs: Vec::new(),
             working_dir: PathBuf::new(),
             macro_edits: 0,
+            defines: Vec::new(),
         }
+    }
+
+    /// Gives the module's defines, `NAME` and its body, defined before the first file and again
+    /// before the second autoprototyping pass (PRJ-5.4), as FTEQCC's `-D` options are. Each is a
+    /// macro of no file; under FTEQCC its body is the text, else the text's tokens.
+    #[must_use]
+    pub fn with_defines(mut self, defines: &[(String, String)]) -> Self {
+        self.defines = defines.to_vec();
+        self.define_module_names();
+        self
+    }
+
+    /// Defines [`Self::with_defines`]'s names (PRJ-5.4).
+    fn define_module_names(&mut self) {
+        let nowhere = FileId(u32::MAX);
+        for (name, value) in self.defines.clone() {
+            let body = if self.dialect.has_fteqcc_extensions() {
+                let at = FileSpan {
+                    file: nowhere,
+                    span: Span::new(0, 0),
+                };
+                Body::Text(Rc::new(fte_macro::Text::made(value.as_bytes(), at)))
+            } else {
+                let tokens = qc_lexer::lex(value.as_bytes()).tokens;
+                Body::Tokens(tokens.into_iter().map(|t| (nowhere, t)).collect())
+            };
+            let mac = Macro {
+                params: None,
+                variadic: Variadic::No,
+                body,
+                file: nowhere,
+                name_span: Span::new(0, 0),
+                evil: false,
+                spelled: Some(value.as_str().into()),
+            };
+            self.macros.insert(name, Rc::new(mac));
+        }
+        self.macros_changed();
     }
 
     /// How a text is lexed from here: in the dialect and, under FTEQCC, with the compiler flags
@@ -1060,7 +1104,8 @@ impl<L: Loader> Preprocessor<L> {
     /// between the passes clears them. In an FTEQCC dialect it also clears the include
     /// directories but the module's, the `#pragma once` marks and F303's setting
     /// (`QCC_PR_CloseProcessor`), keeping the count of open sides, and under FTEQCC, not GMQCC,
-    /// defines `FTEQCC` and `__FTEQCC__` again (FTEF-14.48, FTEF-14.49, PRJ-5.15).
+    /// defines `FTEQCC` and `__FTEQCC__` again (FTEF-14.48, FTEF-14.49, PRJ-5.15). The module's
+    /// defines are defined again in every dialect (PRJ-5.4).
     /// The files are then preprocessed again in order.
     pub fn restart(&mut self) {
         self.macros.clear();
@@ -1068,6 +1113,7 @@ impl<L: Loader> Preprocessor<L> {
         if self.dialect.has_fteqcc_extensions() {
             self.fte_default_properties();
         }
+        self.define_module_names();
     }
 
     /// `qcc_targetformat` as the files read so far leave it: the command line's, then each
@@ -1750,6 +1796,7 @@ impl<L: Loader> Preprocessor<L> {
             file,
             name_span: *name_span,
             evil: false,
+            spelled: None,
         };
         self.macros.insert(name.clone(), Rc::new(mac));
     }
@@ -1990,7 +2037,11 @@ impl<L: Loader> Preprocessor<L> {
                     kind: token.kind.clone(),
                     span: here,
                     expansion: Some(id),
-                    spelling: None,
+                    spelling: mac
+                        .spelled
+                        .as_ref()
+                        .and_then(|text| text.get(token.span.range()))
+                        .map(str::to_owned),
                     follows,
                 },
                 hide: hide.clone(),

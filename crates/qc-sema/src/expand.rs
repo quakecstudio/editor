@@ -41,6 +41,9 @@ pub struct ModuleInput {
     pub autoproto: Option<bool>,
     /// The module's include directories (PRJ-5.2), FTEQCC's `-I` options (FTEF-14.49).
     pub include_dirs: Vec<PathBuf>,
+    /// The module's defines, each name and its body, defined before the first file
+    /// (PRJ-5.4); none by default.
+    pub defines: Vec<(String, String)>,
     /// FTEQCC's command line, whose `-W`, `-F` and `-K` options set the warnings and compiler
     /// flags the module is read with (FTEF-14.72); none by default.
     pub command_line: CommandLine,
@@ -84,11 +87,16 @@ impl ModuleInput {
     }
 
     /// The input for `module`: its file graph's ([`Self::from_graph`]) with its include
-    /// directories.
+    /// directories and its defines (PRJ-5.4).
     #[must_use]
     pub fn from_module(module: &Module) -> Self {
         Self {
             include_dirs: module.include_dirs.clone(),
+            defines: module
+                .defines
+                .iter()
+                .map(|d| (d.name.clone(), d.value.clone()))
+                .collect(),
             ..Self::from_graph(&module.graph)
         }
     }
@@ -300,6 +308,7 @@ pub(crate) fn preprocess(
         .with_dialect(dialect)
         .with_command_line(input.command_line.clone())
         .with_include_dirs(&input.include_dirs)
+        .with_defines(&input.defines)
         .with_working_dir(&input.dir);
     let (mut pass, prelude) = run(&mut pp, files, input);
     // FTEF-14.72: the command line's `-Fautoproto` sets `autoprototype` before the first pass.
