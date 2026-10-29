@@ -12,11 +12,14 @@
 //! sets (the model list, `setmodel`'s `modelindex`) without the engine's physics: the server
 //! frames that drop monsters to the floor and run their thinks are the rest of P3-24.
 
-use qc_builtins::{MockBuiltins, MockEngine};
+use qc_builtins::MockEngine;
 use qc_edict::system::{field_by_name, global_by_name};
 use qc_progs::Progs;
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::{Machine, NoObserver, RunError, ServerState};
+use qs_bsp::Bsp;
+
+use crate::builtins::{ModelFiles, SimBuiltins};
 
 use crate::spawn::{self, FieldDef, LoadError, SPAWNFLAGS_SLOT, SpawnError, SpawnHost};
 
@@ -70,17 +73,18 @@ pub struct Entity {
     pub skin: f32,
 }
 
-/// A map's world: the VM with its entities spawned.
+/// A map's world: the VM with its entities spawned, linked in the world's collision.
 pub struct World {
     machine: Machine,
-    builtins: MockBuiltins<MockEngine>,
+    builtins: SimBuiltins,
 }
 
 impl World {
-    /// The world of `map` with the entities of `entities`, its BSP's entity lump, spawned
-    /// through `progs`, as `SV_SpawnServer` makes it for single player: the world's fields,
-    /// then the globals, then the entities (EDICT-4.1, EDICT-11.4, EDICT-8). `submodels` is the
-    /// BSP's model count less the world.
+    /// The world of the map `map`, read from `bsp`, with the entities of its entity lump
+    /// spawned through `progs`, as `SV_SpawnServer` makes it for single player: the world's
+    /// fields, then the globals, then the entities (EDICT-4.1, EDICT-11.4, EDICT-8). The
+    /// builtins link each entity in the world's collision (WORLD-8); `files` reads the other
+    /// models the progs precaches.
     ///
     /// # Errors
     ///
@@ -89,19 +93,21 @@ impl World {
     pub fn load(
         progs: &Progs<'_>,
         map: &str,
-        submodels: usize,
-        entities: &[u8],
+        bsp: &Bsp<'_>,
+        files: ModelFiles,
     ) -> Result<Self, WorldError> {
         let machine =
             Machine::new(progs, MAXCLIENTS).map_err(|e| WorldError::Progs(e.to_string()))?;
+        let submodels = bsp.models.len().saturating_sub(1);
         let mut engine = MockEngine::new(map, submodels, 0);
         engine.clock = MAP_START_TIME;
         engine.server_active = false;
         engine.clients_active = vec![false; MAXCLIENTS];
         let mut world = Self {
             machine,
-            builtins: MockBuiltins::with_engine(engine),
+            builtins: SimBuiltins::new(engine, map, bsp, files),
         };
+        let entities = bsp.entities();
         // EDICT-4.1: the world's fields.
         let model = world.make_string(format!("maps/{map}.bsp").into_bytes());
         world.set_field(0, field_slot("model"), Slot::from_i32(model));
@@ -119,7 +125,7 @@ impl World {
             progs,
         };
         spawn::load_from_file(&mut spawner, entities, false, 1).map_err(WorldError::Spawn)?;
-        world.builtins.engine_mut().server_active = true;
+        world.builtins.mock.engine_mut().server_active = true;
         Ok(world)
     }
 
@@ -137,7 +143,7 @@ impl World {
                     .map_or(0.0, Slot::as_f32)
             })
         };
-        let precache = &self.builtins.engine().model_precache;
+        let precache = &self.builtins.mock.engine().model_precache;
         (0..edicts.num_edicts())
             .filter(|&n| edicts.is_free(n) == Some(false))
             .filter_map(|n| {
@@ -156,7 +162,7 @@ impl World {
     }
 
     fn make_string(&mut self, text: Vec<u8>) -> i32 {
-        self.builtins.engine_mut().strings.make(text)
+        self.builtins.mock.engine_mut().strings.make(text)
     }
 
     fn set_field(&mut self, edict: usize, field: usize, value: Slot) {
@@ -204,7 +210,7 @@ impl SpawnHost for Spawner<'_, '_> {
             // EDICT-4.2: the map's first entity goes into edict 0 without clearing it.
             return Ok(0);
         }
-        let clock = self.world.builtins.engine().clock;
+        let clock = self.world.builtins.mock.engine().clock;
         self.world
             .machine
             .edicts_mut()
@@ -274,7 +280,12 @@ impl SpawnHost for Spawner<'_, '_> {
     }
 
     fn free(&mut self, edict: usize) {
-        let clock = self.world.builtins.engine().clock;
+        let clock = self.world.builtins.mock.engine().clock;
+        // WORLD-8.3: ED_Free unlinks.
+        self.world.builtins.collision.unlink(edict);
         self.world.machine.edicts_mut().free(edict, clock);
     }
 }
+
+#[cfg(test)]
+mod tests;

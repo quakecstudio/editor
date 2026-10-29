@@ -138,6 +138,13 @@ impl Context<'_, '_> {
         self.machine
     }
 
+    /// The machine, read only: for a builtin that reads edicts or globals while it holds
+    /// other state of its own borrowed.
+    #[must_use]
+    pub fn machine_view(&self) -> &Machine {
+        self.machine
+    }
+
     /// The loaded progs.
     #[must_use]
     pub fn progs(&self) -> &Progs<'_> {

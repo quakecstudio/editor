@@ -5,8 +5,13 @@
 //!
 //! Implements `docs/spec/edicts.md` EDICT-4.1, EDICT-8 and EDICT-11.4.
 
+mod builtins;
+#[cfg(test)]
+mod fixtures;
 pub mod collision;
+mod movement;
 pub mod spawn;
 mod world;
 
+pub use builtins::{ModelFiles, SimBuiltins};
 pub use world::{Entity, World, WorldError};

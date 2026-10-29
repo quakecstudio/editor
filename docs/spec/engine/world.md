@@ -213,6 +213,39 @@ from `start` to `end`. `type` is `MOVE_NORMAL` (0), `MOVE_NOMONSTERS` (1) or `MO
 - **WORLD-7.6** `SV_TestEntityPosition (ent)` is the world when `SV_Move (origin, mins, maxs,
   origin, MOVE_NORMAL, ent)` starts in solid, else none.
 
+## WORLD-8 The world builtins on the engine
+
+**Source:** `WinQuake/pr_cmds.c`, `PF_setorigin`, `SetMinMaxSize`, `PF_setsize`,
+`PF_setmodel`, `PF_traceline`, `PF_droptofloor`, `PF_walkmove`, `PF_checkbottom`,
+`PF_pointcontents`; `WinQuake/pr_edict.c`, `ED_Free`.
+
+The builtins of BUILTIN-9, BUILTIN-14 and BUILTIN-15 do what those sections say; these
+statements are what each asks of the world.
+
+### Behaviour
+
+- **WORLD-8.1** `setorigin` links the entity without touching triggers (WORLD-6). `setsize`
+  and `setmodel` set `mins`, `maxs` and `size` through `SetMinMaxSize` and then link it the
+  same way; `SetMinMaxSize` ignores its `rotate` argument ("FIXME: implement rotation
+  properly again"), so the bounds are used as given.
+- **WORLD-8.2** `setmodel` takes its bounds from the server's model for the entry: a brush
+  model's `mins` and `maxs` as BSP-15.4 loads them, for the map, its submodels `*n` and any
+  other BSP precached; an alias model's (MDL-1.7); a sprite's (SPR-1.7); and zero for entry 0.
+  A precached BSP other than the map is a brush model the world clips against (WORLD-1.2).
+- **WORLD-8.3** `ED_Free` unlinks the entity before it frees it, so `remove`, `makestatic` and
+  the spawning of EDICT-8 take a freed entity out of the area.
+- **WORLD-8.4** `traceline (v1, v2, nomonsters, forent)` is `SV_Move` of a point with
+  `(int)nomonsters` as the kind and `forent` as the `passedict`, and writes the trace to the
+  `trace_*` globals, `trace_ent` the world when the trace names no entity.
+- **WORLD-8.5** `droptofloor` moves `self`'s box from `origin` to 256 below (`MOVE_NORMAL`,
+  ignoring `self`); when that hits nothing or is all in solid it returns 0, else `origin`
+  becomes the end, `self` is linked without touching triggers, `flags` gains `FL_ONGROUND`,
+  `groundentity` becomes the entity hit, and it returns 1.
+- **WORLD-8.6** `walkmove (yaw, dist)` is MOVE-2 with `relink` set, of the step of MOVE-3.1, for
+  `self` when its `flags` has one of `FL_ONGROUND`, `FL_FLY` and `FL_SWIM`; it saves `self`
+  before the step and restores it after, since a touch may change it. `checkbottom (e)` is
+  MOVE-1 and `pointcontents (v)` is WORLD-2.2.
+
 ## Constants
 
 | Name | Value | Source |
@@ -229,3 +262,4 @@ from `start` to `end`. `type` is `MOVE_NORMAL` (0), `MOVE_NOMONSTERS` (1) or `MO
 | `WORLD_CONTENTS_CURRENT_0`, `_CURRENT_DOWN` | -9, -14 | `WinQuake/bspfile.h` |
 | `WORLD_FL_MONSTER`, `WORLD_FL_ITEM` | 32, 256 | `WinQuake/server.h` |
 | `WORLD_MOVE_NORMAL`, `_NOMONSTERS`, `_MISSILE` | 0, 1, 2 | `WinQuake/world.h` |
+| `WORLD_DROP_DEPTH` | 256 | `WinQuake/pr_cmds.c`, `end[2] -= 256` in `PF_droptofloor` |
