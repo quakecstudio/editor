@@ -2,9 +2,9 @@
 
 //! Crash-safe logging for QuakeC Studio (QA-7).
 //!
-//! [`init`] installs a [`tracing`] subscriber that writes to `<logs>/quakec-studio.log` in the
-//! per-OS log directory from [`qs_paths`], and a panic hook that writes a crash record next to
-//! it. Every crate logs through the ordinary `tracing` macros.
+//! [`init`] installs a [`tracing`] subscriber that writes to `<logs>/quakec-studio.log`, or the
+//! file a [`LogConfig`] names, in the per-OS log directory from [`qs_paths`], and a panic hook
+//! that writes a crash record next to it. Every crate logs through the ordinary `tracing` macros.
 //!
 //! - **Crash-safe.** Each event is written to the operating system in one unbuffered append, so
 //!   nothing is held in a buffer when the process dies. A panic writes
@@ -42,7 +42,7 @@ pub use crate::panic::install_panic_hook;
 pub use crate::redact::{SOURCE_FIELD_NAMES, SourceText};
 use crate::writer::RotatingFile;
 
-/// The log file's name without its extension.
+/// The default log file's name without its extension, the IDE's.
 pub const LOG_FILE_STEM: &str = "quakec-studio";
 
 /// The directives used when `RUST_LOG` is unset or empty.
@@ -53,6 +53,10 @@ pub const DEFAULT_DIRECTIVES: &str = "info";
 pub struct LogConfig {
     /// The directory for the log file and crash records.
     pub dir: PathBuf,
+    /// The log file's name without its extension, [`LOG_FILE_STEM`] by default. Each process
+    /// that logs to one directory takes its own, since two processes rotating one file would
+    /// lose events.
+    pub file_stem: String,
     /// The largest a log file may grow before it is rotated, in bytes.
     pub max_file_bytes: u64,
     /// How many rotated files are kept besides the current one.
@@ -64,11 +68,13 @@ pub struct LogConfig {
 }
 
 impl LogConfig {
-    /// Logs to `dir` with the default limits: 5 MiB files, four rotated files kept, `info`.
+    /// Logs to `dir/quakec-studio.log` with the default limits: 5 MiB files, four rotated
+    /// files kept, `info`.
     #[must_use]
     pub fn new(dir: PathBuf) -> Self {
         Self {
             dir,
+            file_stem: LOG_FILE_STEM.to_owned(),
             max_file_bytes: 5_242_880,
             max_files: 4,
             directives: DEFAULT_DIRECTIVES.to_owned(),
@@ -163,7 +169,7 @@ pub fn subscriber(config: &LogConfig) -> Result<impl Subscriber + Send + Sync + 
             })?;
     let file = RotatingFile::open(
         &config.dir,
-        LOG_FILE_STEM,
+        &config.file_stem,
         config.max_file_bytes,
         config.max_files,
     )

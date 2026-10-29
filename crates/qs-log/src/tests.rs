@@ -223,6 +223,29 @@ fn events_rotate_into_numbered_files() {
 }
 
 #[test]
+fn a_named_file_is_written_and_rotated() {
+    let dir = TestDir::new("named");
+    let config = LogConfig {
+        file_stem: "quakec-lsp".to_owned(),
+        max_file_bytes: 60,
+        max_files: 1,
+        ..config(dir.path(), "info")
+    };
+    with_default(subscriber(&config).unwrap(), || {
+        info!(target: "qs", "first");
+        info!(target: "qs", "second");
+    });
+    let read = |name: &str| fs::read_to_string(dir.path().join(name)).unwrap();
+    assert!(read("quakec-lsp.log").contains("second"));
+    assert!(read("quakec-lsp.1.log").contains("first"));
+    assert!(!dir.path().join("quakec-studio.log").exists());
+    assert_eq!(
+        LogConfig::new(dir.path().to_path_buf()).file_stem,
+        LOG_FILE_STEM
+    );
+}
+
+#[test]
 fn bad_directives_are_an_error() {
     let dir = TestDir::new("bad-directives");
     let Err(err) = subscriber(&config(dir.path(), "qs_vm=loud")) else {

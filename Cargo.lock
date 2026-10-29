@@ -2366,6 +2366,8 @@ version = "2026.10.0"
 dependencies = [
  "qc-ide",
  "qc-project",
+ "qs-log",
+ "qs-paths",
  "serde",
  "serde_json",
 ]
