@@ -492,3 +492,65 @@ proptest! {
         prop_assert_eq!(file.get(Setting::LogFilter), filter);
     }
 }
+
+// docs/testing.md, L5 note (schema test): each settings command is listed with an object
+// schema whose `key` names exactly the settings and whose `scope` names exactly the two files.
+#[test]
+fn every_settings_command_has_its_schema() {
+    let dir = TempDir::new("schema");
+    let (_, _, store) = store(&dir, &StoreSpec::default());
+    let s = session(store);
+    let consts = |schema: &Value, def: &str| -> Vec<String> {
+        schema["$defs"][def]["oneOf"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["const"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let keys: Vec<String> = Setting::ALL.iter().map(|s| s.key().to_owned()).collect();
+    for (id, required) in [
+        ("settings.list", json!(null)),
+        ("settings.get", json!(["key"])),
+        ("settings.set", json!(["key", "value"])),
+        ("settings.reset", json!(["key"])),
+    ] {
+        let info = s.registry().get(id).unwrap();
+        let schema = info.params();
+        assert_eq!(schema["type"], "object", "{id}");
+        assert_eq!(schema["additionalProperties"], json!(false), "{id}");
+        assert_eq!(schema["required"], required, "{id}");
+        if id != "settings.list" {
+            assert_eq!(
+                schema["properties"]["key"]["$ref"], "#/$defs/Setting",
+                "{id}"
+            );
+            assert_eq!(consts(schema, "Setting"), keys, "{id}");
+        }
+        if id == "settings.set" || id == "settings.reset" {
+            assert_eq!(schema["properties"]["scope"]["default"], "user", "{id}");
+            assert_eq!(consts(schema, "Scope"), ["user", "project"], "{id}");
+        }
+    }
+}
+
+// docs/testing.md, L5 note (undo test): the reading commands leave no undo step and write no
+// file, and keep the redo history.
+#[test]
+fn reading_settings_leaves_the_history_and_the_files_alone() {
+    let dir = TempDir::new("read");
+    let (user, project, store) = store(&dir, &StoreSpec::default());
+    let mut s = session(store);
+    s.execute(
+        "settings.set",
+        json!({"key": "log.filter", "value": "warn"}),
+    )
+    .unwrap();
+    s.undo().unwrap();
+    fs::remove_file(&user).unwrap();
+    s.execute("settings.list", json!({})).unwrap();
+    s.execute("settings.get", json!({"key": "log.filter"}))
+        .unwrap();
+    assert_eq!((s.undo_depth(), s.redo_depth()), (0, 1));
+    assert!(!user.exists() && !project.exists());
+}
