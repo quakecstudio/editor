@@ -89,7 +89,7 @@ fn decode_bsp(
     data: &[u8],
     decoded: &mut Decoded,
 ) -> Result<(), String> {
-    let name = file.name.as_slice();
+    let name = file.name();
     let bsp = Bsp::read(data, BspLoader::default()).map_err(|error| error.to_string())?;
     let entities = MapFile::parse(bsp.entities()).map_err(|error| format!("entities: {error}"))?;
     if entities.to_bytes() != bsp.entities() {
@@ -105,7 +105,7 @@ fn decode_bsp(
         Some(lit) => Some((
             vfs.read(&lit)
                 .map_err(|error| format!("{lit_name}: {error}"))?,
-            path_id(lit.element),
+            path_id(lit.element()),
         )),
         None => None,
     };
@@ -115,7 +115,7 @@ fn decode_bsp(
     });
     let choice = mod_load_lighting(
         BspLoader::default(),
-        path_id(file.element),
+        path_id(file.element()),
         bsp.lighting.len(),
         found,
     );
@@ -141,7 +141,7 @@ fn decode(
     data: &[u8],
     decoded: &mut Decoded,
 ) -> Result<(), String> {
-    let name = file.name.as_slice();
+    let name = file.name();
     let lower = name.to_ascii_lowercase();
     if lower.ends_with(b".bsp") {
         decode_bsp(vfs, path_ids, file, data, decoded)?;
@@ -219,15 +219,15 @@ fn main() -> Result<(), String> {
             Ok(data) => {
                 files = files.saturating_add(1);
                 bytes = bytes.saturating_add(u64::try_from(data.len()).unwrap_or(u64::MAX));
-                digest = fnv1a(fnv1a(digest, &file.name), &data);
+                digest = fnv1a(fnv1a(digest, file.name()), &data);
                 if let Err(error) = decode(&vfs, &path_ids, &file, &data, &mut decoded) {
                     failed = failed.saturating_add(1);
-                    println!("failed: {}: {error}", file.name.escape_ascii());
+                    println!("failed: {}: {error}", file.name().escape_ascii());
                 }
             }
             Err(error) => {
                 failed = failed.saturating_add(1);
-                println!("failed: {}: {error}", file.name.escape_ascii());
+                println!("failed: {}: {error}", file.name().escape_ascii());
             }
         }
     }

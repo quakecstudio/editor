@@ -619,7 +619,12 @@ fn files_lists_every_element() {
     let files = vfs.files();
     let names: Vec<(usize, String)> = files
         .iter()
-        .map(|file| (file.element, String::from_utf8(file.name.clone()).unwrap()))
+        .map(|file| {
+            (
+                file.element(),
+                String::from_utf8(file.name().to_vec()).unwrap(),
+            )
+        })
         .collect();
     let expect = [
         (0, "e.txt"),

@@ -334,4 +334,3 @@ fn le_i32(bytes: &[u8], offset: usize) -> Option<i32> {
 fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8; N]> {
     bytes.get(offset..offset.checked_add(N)?)?.try_into().ok()
 }
-

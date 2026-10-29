@@ -29,6 +29,27 @@ pub struct DirEntry {
     pub kind: EntryKind,
 }
 
+/// The entry of `entries` named `name` of kind `kind`, as FS-3.7 matches a game directory or
+/// an archive: one with exactly that name, else the first in name order that matches it ASCII
+/// case-insensitively, so a path keeps the name on disk.
+#[must_use]
+pub fn find_entry(mut entries: Vec<DirEntry>, name: &str, kind: EntryKind) -> Option<DirEntry> {
+    entries.retain(|entry| entry.kind == kind);
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    let index = entries
+        .iter()
+        .position(|entry| entry.name == name)
+        .or_else(|| {
+            entries.iter().position(|entry| {
+                entry
+                    .name
+                    .to_str()
+                    .is_some_and(|entry_name| entry_name.eq_ignore_ascii_case(name))
+            })
+        })?;
+    entries.into_iter().nth(index)
+}
+
 /// The host filesystem: opening files and listing directories.
 ///
 /// [`StdFs`] is the real one. The search path only reads through this trait, so tests can
@@ -120,18 +141,7 @@ pub(crate) fn resolve<H: HostFs + ?Sized>(
         } else {
             EntryKind::Dir
         };
-        let mut entries = host.read_dir(&path).ok()?;
-        entries.retain(|entry| entry.kind == want);
-        entries.sort_by(|a, b| a.name.cmp(&b.name));
-        let exact = entries.iter().find(|entry| entry.name == component);
-        let found = exact.or_else(|| {
-            entries.iter().find(|entry| {
-                entry
-                    .name
-                    .to_str()
-                    .is_some_and(|name| name.eq_ignore_ascii_case(component))
-            })
-        })?;
+        let found = find_entry(host.read_dir(&path).ok()?, component, want)?;
         path.push(&found.name);
     }
     if count == 0 || components.last().is_some_and(|&c| c == "." || c == "..") {

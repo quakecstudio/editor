@@ -426,7 +426,6 @@ fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8; N]> {
     bytes.get(offset..offset.checked_add(N)?)?.try_into().ok()
 }
 
-
 /// A memory length as a file length; `usize` is at most 64 bits on every target.
 fn len_u64(len: usize) -> u64 {
     u64::try_from(len).unwrap_or(u64::MAX)

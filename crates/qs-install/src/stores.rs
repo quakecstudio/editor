@@ -8,9 +8,7 @@ use qs_paths::Platform;
 use qs_vfs::EntryKind;
 
 use crate::vdf::{self, Value};
-use crate::{
-    Finder, GOG_QUAKE_ENHANCED_ID, GOG_QUAKE_ID, InstallFs, Registry, Source, manifest_name,
-};
+use crate::{Finder, GOG_QUAKE_IDS, InstallFs, Registry, Source, manifest_name};
 
 /// Steam's registry key on Windows, holding `SteamPath`.
 const STEAM_KEY: &str = r"HKEY_CURRENT_USER\Software\Valve\Steam";
@@ -31,7 +29,7 @@ impl<F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'_, F, R> {
             }
         }
         if self.platform == Platform::Windows {
-            for id in [GOG_QUAKE_ID, GOG_QUAKE_ENHANCED_ID] {
+            for id in GOG_QUAKE_IDS {
                 if let Some(path) = self.registry.string(&format!(r"{GOG_KEY}\{id}"), "path") {
                     let path = path.trim_end_matches(['\\', '/']);
                     if !path.is_empty() {
@@ -66,20 +64,13 @@ impl<F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'_, F, R> {
             roots.push(PathBuf::from(path));
         }
         roots.extend(self.stores.steam().iter().cloned());
-        let mut libraries: Vec<PathBuf> = Vec::new();
-        let mut seen = Vec::new();
+        let mut candidates = Vec::new();
         for root in roots {
-            let mut candidates = vec![root.clone()];
-            candidates.extend(self.library_folders(&root));
-            for library in candidates {
-                let canonical = self.fs.canonical(&library);
-                if !seen.contains(&canonical) {
-                    seen.push(canonical);
-                    libraries.push(library);
-                }
-            }
+            let libraries = self.library_folders(&root);
+            candidates.push(root);
+            candidates.extend(libraries);
         }
-        libraries
+        self.first_of_each_folder(candidates, PathBuf::as_path)
     }
 
     /// The library paths in a Steam client folder's `libraryfolders.vdf`: in `config/`
@@ -92,11 +83,7 @@ impl<F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'_, F, R> {
         ];
         let mut paths = Vec::new();
         for [dir, name] in files {
-            let Some(text) = self
-                .child(root, dir, EntryKind::Dir)
-                .and_then(|dir| self.child(&dir, name, EntryKind::File))
-                .and_then(|file| self.read_text(&file))
-            else {
+            let Some(text) = self.read_child_text(root, dir, name) else {
                 continue;
             };
             let Some(folders) = vdf::parse(&text).and_then(|value| {
@@ -155,7 +142,7 @@ impl<F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'_, F, R> {
             .filter(|entry| entry.kind == EntryKind::Dir)
             .map(|entry| library.join(entry.name))
             .filter(|folder| {
-                [GOG_QUAKE_ID, GOG_QUAKE_ENHANCED_ID].iter().any(|id| {
+                GOG_QUAKE_IDS.iter().any(|id| {
                     self.child(folder, &format!("goggame-{id}.info"), EntryKind::File)
                         .is_some()
                 })
@@ -166,11 +153,7 @@ impl<F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'_, F, R> {
     /// The install paths Heroic records for Quake and Quake Enhanced in
     /// `gog_store/installed.json`: `{"installed": [{"appName": ..., "install_path": ...}]}`.
     fn heroic_games(&self, heroic: &Path) -> Vec<PathBuf> {
-        let Some(text) = self
-            .child(heroic, "gog_store", EntryKind::Dir)
-            .and_then(|dir| self.child(&dir, "installed.json", EntryKind::File))
-            .and_then(|file| self.read_text(&file))
-        else {
+        let Some(text) = self.read_child_text(heroic, "gog_store", "installed.json") else {
             return Vec::new();
         };
         let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
@@ -184,7 +167,7 @@ impl<F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'_, F, R> {
             .filter(|game| {
                 game.get("appName")
                     .and_then(serde_json::Value::as_str)
-                    .is_some_and(|id| id == GOG_QUAKE_ID || id == GOG_QUAKE_ENHANCED_ID)
+                    .is_some_and(|id| GOG_QUAKE_IDS.contains(&id))
             })
             .filter_map(|game| game.get("install_path").and_then(serde_json::Value::as_str))
             .filter(|path| !path.is_empty())

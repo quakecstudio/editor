@@ -103,18 +103,19 @@ fn tokenize(text: &str) -> Option<Vec<Token>> {
 pub(crate) fn parse(text: &str) -> Option<Value> {
     let tokens = tokenize(text)?;
     let mut iter = tokens.into_iter();
-    let pairs = parse_block(&mut iter, 0, false)?;
+    let pairs = parse_block(&mut iter, 0)?;
     Some(Value::Block(pairs))
 }
 
 fn parse_block(
     tokens: &mut impl Iterator<Item = Token>,
     depth: usize,
-    nested: bool,
 ) -> Option<Vec<(String, Value)>> {
     if depth > MAX_DEPTH {
         return None;
     }
+    // A nested block ends at its `}`, the top-level one at the end of the file.
+    let nested = depth > 0;
     let mut pairs = Vec::new();
     loop {
         let key = match tokens.next() {
@@ -125,7 +126,7 @@ fn parse_block(
         };
         let value = match tokens.next()? {
             Token::Text(value) => Value::Str(value),
-            Token::Open => Value::Block(parse_block(tokens, depth.saturating_add(1), true)?),
+            Token::Open => Value::Block(parse_block(tokens, depth.saturating_add(1))?),
             Token::Close => return None,
         };
         pairs.push((key, value));

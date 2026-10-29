@@ -62,7 +62,6 @@ fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8; N]> {
     bytes.get(offset..offset.checked_add(N)?)?.try_into().ok()
 }
 
-
 impl LnoFile {
     /// Reads a `.lno` file from `bytes` (LNO-5).
     ///
