@@ -38,11 +38,7 @@ const CHASE_SLACK: f32 = 10.0;
 const TURN_TOLERANCE: (f32, f32) = (45.0, 315.0);
 
 impl SimCall<'_, '_, '_> {
-    fn point(
-        &self,
-        (from, to): ([f32; 3], [f32; 3]),
-        ent: usize,
-    ) -> Result<Trace, RunError> {
+    fn point(&self, (from, to): ([f32; 3], [f32; 3]), ent: usize) -> Result<Trace, RunError> {
         self.trace((from, [0.0; 3], [0.0; 3], to), MoveKind::NoMonsters, ent)
     }
 
@@ -77,7 +73,10 @@ impl SimCall<'_, '_, '_> {
         let middle = [(mins[0] + maxs[0]) * 0.5, (mins[1] + maxs[1]) * 0.5];
         let top = mins[2];
         let floor = top - 2.0 * STEPSIZE;
-        let centre = self.point(([middle[0], middle[1], top], [middle[0], middle[1], floor]), ent)?;
+        let centre = self.point(
+            ([middle[0], middle[1], top], [middle[0], middle[1], floor]),
+            ent,
+        )?;
         if is_whole(centre.fraction) {
             return Ok(false);
         }
@@ -211,7 +210,11 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// `SV_NewChaseDir` (MOVE-4).
-    #[expect(clippy::float_cmp, reason = "spec MOVE-4.2: id compares the headings as floats")]
+    #[expect(
+        clippy::float_cmp,
+        clippy::float_cmp_const,
+        reason = "spec MOVE-4.2: id compares the headings as floats"
+    )]
     fn new_chase_dir(&mut self, actor: usize, enemy: usize, dist: f32) -> Result<(), RunError> {
         let ideal = self.float(actor, "ideal_yaw");
         let olddir = anglemod(int_to_f32_public(
@@ -290,9 +293,10 @@ impl SimCall<'_, '_, '_> {
     fn close_enough(&self, ent: usize, goal: usize, dist: f32) -> bool {
         let (gmin, gmax) = (self.vector(goal, "absmin"), self.vector(goal, "absmax"));
         let (emin, emax) = (self.vector(ent, "absmin"), self.vector(ent, "absmax"));
-        gmin.iter().zip(gmax).zip(emin.iter().zip(emax)).all(|((&gn, gx), (&en, ex))| {
-            gn <= ex + dist && gx >= en - dist
-        })
+        gmin.iter()
+            .zip(gmax)
+            .zip(emin.iter().zip(emax))
+            .all(|((&gn, gx), (&en, ex))| gn <= ex + dist && gx >= en - dist)
     }
 
     /// `SV_MoveToGoal`, builtin `movetogoal` (MOVE-5).
@@ -346,7 +350,10 @@ fn step(yaw: f32, dist: f32) -> [f32; 3] {
 }
 
 /// `fraction == 1`.
-#[expect(clippy::float_cmp, reason = "spec MOVE-1.2: id tests trace.fraction == 1.0")]
+#[expect(
+    clippy::float_cmp,
+    reason = "spec MOVE-1.2: id tests trace.fraction == 1.0"
+)]
 fn is_whole(fraction: f32) -> bool {
     fraction == 1.0
 }

@@ -2,12 +2,6 @@
 
 //! Test maps: a BSP built from a spec of its planes, nodes, leaves and clipnodes.
 
-#![expect(
-    clippy::unwrap_used,
-    clippy::arithmetic_side_effects,
-    reason = "test code: a failed unwrap or overflow is a failed test"
-)]
-
 use qs_bsp::{
     BSP_HEADER_LUMPS, BSP_MAX_MAP_HULLS, BSP_NUM_AMBIENTS, Bsp, BspVersion, ClipNode, Leaf, Lump,
     Model, Node, Plane,

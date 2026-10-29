@@ -5,12 +5,14 @@
     clippy::expect_used,
     clippy::indexing_slicing,
     clippy::arithmetic_side_effects,
+    clippy::panic,
     reason = "test code: a failed unwrap, index or overflow is a failed test"
 )]
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
+use qc_builtins::mock::Rng;
 use qc_codegen::{Options, compile_module};
 use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
 use qc_progs::Progs;
@@ -90,8 +92,13 @@ fn compile(source: &str) -> Vec<u8> {
         input.compiled.push(FileId(i));
     }
     let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
-    let compiled = compile_module(&mut db, &input, |id| names[id.0].clone(), Options::default())
-        .unwrap_or_else(|e| panic!("{source:?} did not compile: {e:?}"));
+    let compiled = compile_module(
+        &mut db,
+        &input,
+        |id| names[id.0].clone(),
+        Options::default(),
+    )
+    .unwrap_or_else(|e| panic!("{source:?} did not compile: {e:?}"));
     qc_progs::write(&compiled.progs).unwrap()
 }
 
@@ -129,10 +136,15 @@ fn ledge() -> MapSpec {
 /// The world of `source`'s progs on the ledge, with `entities` after the worldspawn, reading
 /// model files from `files`.
 fn world_with(source: &str, entities: &str, files: Vec<(String, Vec<u8>)>) -> World {
+    world_on(&ledge(), source, entities, files)
+}
+
+/// The world of `source`'s progs on the map `spec`.
+fn world_on(spec: &MapSpec, source: &str, entities: &str, files: Vec<(String, Vec<u8>)>) -> World {
     let progs_bytes = compile(source);
     let progs = Progs::read(&progs_bytes).unwrap();
     let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{entities}");
-    let mut map = bsp(&ledge());
+    let mut map = bsp(spec);
     map.entity_lump = Box::leak(lump.into_bytes().into_boxed_slice());
     let read = Box::new(move |name: &str| {
         files
@@ -498,7 +510,10 @@ fn sprite_file(width: i32, height: i32) -> Vec<u8> {
 #[test]
 fn precached_models_bring_their_bounds_and_hulls() {
     let crate_box = MapSpec {
-        planes: vec![plane([0.0, 0.0, 1.0], 10.0, 2), plane([0.0, 0.0, 1.0], 34.0, 2)],
+        planes: vec![
+            plane([0.0, 0.0, 1.0], 10.0, 2),
+            plane([0.0, 0.0, 1.0], 34.0, 2),
+        ],
         nodes: vec![node(0, [-2, -1])],
         ..MapSpec::default()
     };
@@ -569,4 +584,126 @@ fn movetogoal_steps_toward_the_goal() {
     assert_eq!(world.vector(4, "origin")[0], 60.0);
     // Not on the ground: 0 returned, nothing moved.
     assert_eq!(world.vector(5, "origin")[0], 20.0);
+}
+
+/// A pillar: floor at z = 0 within 20 of the origin on x and y, nothing around it; for the
+/// player's hull, within 36 at 24.
+fn pillar() -> MapSpec {
+    let axial = |kind: i32, dist: f32| {
+        let mut normal = [0.0; 3];
+        normal[usize::try_from(kind).unwrap()] = 1.0;
+        plane(normal, dist, kind)
+    };
+    MapSpec {
+        planes: vec![
+            axial(0, 20.0),
+            axial(0, -20.0),
+            axial(1, 20.0),
+            axial(1, -20.0),
+            axial(2, 0.0),
+            axial(0, 36.0),
+            axial(0, -36.0),
+            axial(1, 36.0),
+            axial(1, -36.0),
+            axial(2, 24.0),
+        ],
+        nodes: vec![
+            node(0, [-2, 1]),
+            node(1, [2, -2]),
+            node(2, [-2, 3]),
+            node(3, [4, -2]),
+            node(4, [-2, -1]),
+        ],
+        leafs: vec![CONTENTS_SOLID, CONTENTS_EMPTY],
+        // The player's hull: the walls 16 further out, the floor 24 up.
+        clipnodes: vec![
+            ClipNode {
+                planenum: 5,
+                children: [CONTENTS_EMPTY, 1],
+            },
+            ClipNode {
+                planenum: 6,
+                children: [2, CONTENTS_EMPTY],
+            },
+            ClipNode {
+                planenum: 7,
+                children: [CONTENTS_EMPTY, 3],
+            },
+            ClipNode {
+                planenum: 8,
+                children: [4, CONTENTS_EMPTY],
+            },
+            ClipNode {
+                planenum: 9,
+                children: [CONTENTS_EMPTY, CONTENTS_SOLID],
+            },
+        ],
+    }
+}
+
+/// A goal and a chaser that steps `speed` toward it with `movetogoal`.
+fn chase_source() -> String {
+    format!(
+        "void() goal = {{ marker = self; }};\n\
+         void() chaser = {{ {PLAYER_SIZE} setorigin(self, self.origin); droptofloor(); \
+         self.goalentity = marker; self.yaw_speed = 360; movetogoal(self.speed); }};\n"
+    )
+}
+
+fn chase(spec: &MapSpec, goal: &str, chaser: &str, keys: &str) -> World {
+    let entities = [entity("goal", goal, ""), entity("chaser", chaser, keys)].concat();
+    world_on(spec, &chase_source(), &entities, Vec::new())
+}
+
+const EAST: &str = "\"ideal_yaw\" \"0\"\n\"speed\" \"10\"\n";
+
+// spec MOVE-4.1: the headings toward the goal are its sides on x and y beyond 10
+// spec MOVE-4.3: when the goal is further off on y than on x, y is tried first
+#[test]
+fn a_blocked_chaser_turns_toward_the_goal() {
+    // East of x = 80 the corner hangs over the pit, so the step toward ideal_yaw 0 fails.
+    let world = chase(&ledge(), "80 100 30", "80 0 30", EAST);
+    let [x, y, _] = world.vector(3, "origin");
+    assert_eq!((x, y), (80.0, 10.0));
+    assert_eq!(world.float(3, "ideal_yaw"), 90.0);
+}
+
+// spec MOVE-4.2: a goal off on both axes is tried on id's diagonal first
+#[test]
+fn a_chaser_takes_the_diagonal() {
+    let world = chase(&ledge(), "-200 200 30", "80 0 30", EAST);
+    assert_eq!(world.float(3, "ideal_yaw"), 135.0);
+    let [x, y, _] = world.vector(3, "origin");
+    assert!(
+        (x - 72.928_93).abs() < 1e-3 && (y - 7.071_07).abs() < 1e-3,
+        "{x} {y}"
+    );
+}
+
+// spec MOVE-4.4: with no heading toward the goal, the eight headings are tried in the order a
+// rand() picks
+#[test]
+fn the_search_order_follows_rand() {
+    let world = chase(&ledge(), "80 0 30", "80 0 30", EAST);
+    // Seed 0: movetogoal's draw, the swap's, then the order's.
+    let mut rng = Rng::new(0);
+    let _ = (rng.next_rand(), rng.next_rand());
+    let ascending = rng.next_rand() & 1 != 0;
+    let y = world.vector(3, "origin")[1];
+    assert_eq!(y, if ascending { 10.0 } else { -10.0 });
+}
+
+// spec MOVE-4.5: when nothing succeeds ideal_yaw goes back to olddir, and an actor not on
+// ground gets FL_PARTIALGROUND
+#[test]
+fn a_chaser_that_cannot_move() {
+    let keys = "\"ideal_yaw\" \"100\"\n\"speed\" \"30\"\n";
+    let world = chase(&pillar(), "0 0 30", "0 0 30", keys);
+    // olddir is (int)(100/45)*45.
+    assert_eq!(world.float(3, "ideal_yaw"), 90.0);
+    let [x, y, _] = world.vector(3, "origin");
+    assert_eq!((x, y), (0.0, 0.0));
+    assert_eq!(world.float(3, "flags"), 512.0);
+    let world = chase(&pillar(), "10 0 30", "10 0 30", keys);
+    assert_eq!(world.float(3, "flags"), 512.0 + 1024.0);
 }

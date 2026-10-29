@@ -130,13 +130,17 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     let bsp = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(&name))?;
     let progs_bytes = read("progs.dat")?;
     let progs = Progs::read(&progs_bytes).map_err(|e| format!("progs.dat: {e}"))?;
-    let world = World::load(
-        &progs,
-        &map,
-        bsp.models.len().saturating_sub(1),
-        bsp.entities(),
-    )
-    .map_err(|e| e.to_string())?;
+    // The world reads the other models the progs precaches, such as the health boxes, from the
+    // same search path.
+    let files = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
+    let read_file = Box::new(move |name: &str| {
+        files
+            .load(name.as_bytes())
+            .ok()
+            .flatten()
+            .map(LoadedFile::into_bytes)
+    });
+    let world = World::load(&progs, &map, &bsp, read_file).map_err(|e| e.to_string())?;
     // The world, then each brush entity: a submodel `*n` of the map at its entity's origin,
     // or model 0 of a BSP of its own, such as a health box.
     let mut placements = vec![Placement::WORLD];

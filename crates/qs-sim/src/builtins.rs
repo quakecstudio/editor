@@ -8,15 +8,18 @@
 //! The server's builtins: `qc-builtins`' for the engine state it keeps, and the world builtins
 //! on this crate's collision (WORLD-8) and movement (MOVE).
 
+use qc_builtins::math::{f64_to_f32_public, float_to_int, int_to_f32_public};
 use qc_builtins::mock::ModelBounds;
-use qc_builtins::{MockBuiltins, MockEngine};
+use qc_builtins::{Engine, MockBuiltins, MockEngine};
 use qc_edict::system::{field_by_name, global_by_name};
 use qc_types::{EntityRef, PROGS_OFS_RETURN, Slot, ofs_parm};
 use qc_vm::{Builtins, Context, ErrorKind, RunError};
 use qs_bsp::{Bsp, BspLoader};
 use qs_mdl::Sprite;
 
-use crate::collision::{Body, Collision, CollisionError, Host, MoveKind, Solid, sv_move};
+use crate::collision::{
+    Body, Collision, CollisionError, Host, MoveKind, Solid, Trace, link_edict, sv_move,
+};
 
 /// `setorigin`.
 const SETORIGIN: u32 = 2;
@@ -167,7 +170,11 @@ impl Builtins for SimBuiltins {
             POINTCONTENTS => {
                 let p = parm_vector(context, 0);
                 let mut call = SimCall::new(context, self);
-                let contents = call.sim.collision.point_contents(p).map_err(|e| call.error(e))?;
+                let contents = call
+                    .sim
+                    .collision
+                    .point_contents(p)
+                    .map_err(|e| call.error(e))?;
                 call.set_return(f32::from(i16::try_from(contents).unwrap_or(i16::MIN)))
             }
             _ => self.mock.call(number, context),
@@ -203,7 +210,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
 
     /// `SV_LinkEdict (ent, touch)`.
     pub(crate) fn link(&mut self, ent: usize, touch: bool) -> Result<(), RunError> {
-        crate::collision::link_edict(self, ent, touch).map_err(|e| self.error(e))
+        link_edict(self, ent, touch).map_err(|e| self.error(e))
     }
 
     /// `SV_Move`, ignoring `pass`.
@@ -212,7 +219,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
         line: ([f32; 3], [f32; 3], [f32; 3], [f32; 3]),
         kind: MoveKind,
         pass: usize,
-    ) -> Result<crate::collision::Trace, RunError> {
+    ) -> Result<Trace, RunError> {
         sv_move(self, line, kind, Some(pass)).map_err(|e| self.error(e))
     }
 
@@ -249,7 +256,10 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
 
     pub(crate) fn value_of(&self, n: usize) -> i32 {
         let size = self.context.machine_view().edicts().layout().edict_size();
-        i32::try_from(n).ok().and_then(|n| n.checked_mul(size)).unwrap_or(0)
+        i32::try_from(n)
+            .ok()
+            .and_then(|n| n.checked_mul(size))
+            .unwrap_or(0)
     }
 
     pub(crate) fn set_float(&mut self, n: usize, name: &str, value: f32) {
@@ -279,11 +289,11 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
 
     /// `(int)flags`.
     pub(crate) fn flags(&self, n: usize) -> i32 {
-        qc_builtins::math::float_to_int(self.float(n, "flags"))
+        float_to_int(self.float(n, "flags"))
     }
 
     pub(crate) fn set_flags(&mut self, n: usize, flags: i32) {
-        self.set_float(n, "flags", qc_builtins::math::int_to_f32_public(flags));
+        self.set_float(n, "flags", int_to_f32_public(flags));
     }
 
     pub(crate) fn global(&self, name: &str) -> Slot {
@@ -320,7 +330,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
 
     /// One draw of the engine's random source, id's `rand()`.
     pub(crate) fn rand(&mut self) -> u32 {
-        qc_builtins::Engine::next_rand(self.sim.mock.engine_mut())
+        Engine::next_rand(self.sim.mock.engine_mut())
     }
 
     // ---- the world builtins (WORLD-8) ----
@@ -329,7 +339,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
     fn traceline(&mut self) -> Result<(), RunError> {
         let v1 = parm_vector(self.context, 0);
         let v2 = parm_vector(self.context, 1);
-        let kind = qc_builtins::math::float_to_int(parm_float(self.context, 2));
+        let kind = float_to_int(parm_float(self.context, 2));
         let pass = parm_edict(self.context, 3)?;
         let trace = self.trace((v1, [0.0; 3], [0.0; 3], v2), MoveKind::from_int(kind), pass)?;
         let truth = |b: bool| Slot::from_f32(if b { 1.0 } else { 0.0 });
@@ -367,9 +377,17 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
         let origin = self.vector(ent, "origin");
         let [x, y, z] = origin;
         let end = [x, y, z - DROP_DEPTH];
-        let line = (origin, self.vector(ent, "mins"), self.vector(ent, "maxs"), end);
+        let line = (
+            origin,
+            self.vector(ent, "mins"),
+            self.vector(ent, "maxs"),
+            end,
+        );
         let trace = self.trace(line, MoveKind::Normal, ent)?;
-        #[expect(clippy::float_cmp, reason = "spec WORLD-8.5: id tests trace.fraction == 1")]
+        #[expect(
+            clippy::float_cmp,
+            reason = "spec WORLD-8.5: id tests trace.fraction == 1"
+        )]
         let missed = trace.fraction == 1.0;
         if missed || trace.allsolid {
             return self.set_return(0.0);
@@ -395,7 +413,10 @@ impl Host for SimCall<'_, '_, '_> {
     fn body(&self, n: usize) -> Option<Body> {
         let edicts = self.context.machine_view().edicts();
         let free = edicts.is_free(n)?;
-        #[expect(clippy::float_cmp, reason = "spec WORLD-1.4: id tests movetype == MOVETYPE_PUSH")]
+        #[expect(
+            clippy::float_cmp_const,
+            reason = "spec WORLD-1.4: id tests movetype == MOVETYPE_PUSH"
+        )]
         let pusher = self.float(n, "movetype") == MOVETYPE_PUSH;
         Some(Body {
             free,
@@ -427,7 +448,7 @@ impl Host for SimCall<'_, '_, '_> {
         let other_value = self.value_of(other);
         self.set_global("self", Slot::from_i32(trigger_value));
         self.set_global("other", Slot::from_i32(other_value));
-        let time = qc_builtins::math::f64_to_f32_public(self.sim.mock.engine().clock);
+        let time = f64_to_f32_public(self.sim.mock.engine().clock);
         self.set_global("time", Slot::from_f32(time));
         let result = self.context.execute_program(self.sim, function);
         self.set_global("self", old_self);
