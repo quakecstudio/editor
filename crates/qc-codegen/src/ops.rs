@@ -10,7 +10,7 @@
 //! result. `PR_Expression` takes the first row of an operator's spelling and walks on through
 //! the rows of the same spelling until one has the operands' types exactly, comparing only the
 //! basic type of each (`type_a != op->type_a->type->type`), so two function types or two field
-//! types always agree (QC-16.7, QC-17.6). The rows below are id's, in id's order, for the
+//! types always agree (QC-16.8, QC-17.6). The rows below are id's, in id's order, for the
 //! spellings an expression can reach.
 
 use qc_progs::opcode::Opcode;

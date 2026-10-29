@@ -142,7 +142,7 @@ fn a_qcc_that_disagrees_with_the_recording_fails_the_check() {
     let fake = Fake::new(qcc(None, "t.qc:1:something else\n"));
     let oracles = fake_oracles(&dir.join("work"), &fake);
     assert!(!check(&root(), &oracles, false).unwrap());
-    let seen = fake.seen.borrow();
+    let seen = fake.seen.lock().unwrap();
     let cases = all_cases();
     assert_eq!(
         seen.iter().filter(|l| l.starts_with("qcc")).count(),

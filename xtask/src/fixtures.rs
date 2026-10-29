@@ -374,7 +374,7 @@ mod tests {
         let fake = Fake::new(clippy_that_agrees);
         let report = clippy(&root(), &fake).unwrap();
         assert_eq!(report.problems, Vec::<String>::new());
-        assert_eq!(report.passed.len(), fake.seen.borrow().len());
+        assert_eq!(report.passed.len(), fake.seen.lock().unwrap().len());
         let work = root().join("target/xtask/clippy-fixtures");
         assert!(work.join(".clippy.toml").is_file());
         assert!(

@@ -122,7 +122,7 @@ const FLAG_PROGRAMS: &[&str] = &[
     "#pragma flag enable assumeint\nenum { A, B };\nstring s = B;\n",
     "enum { A, B };\nstring s = B;\n",
     "extern \"C\" { enum { A, B }; }\nstring s = B;\n",
-    // FTEF-17.13: a pointer is compared by what it points to.
+    // FTEF-17.21: a pointer is compared by what it points to.
     "float a;\nextern \"C\" { float *a; }\n",
     "extern \"C\" { float *a; }\nfloat a;\n",
     "extern \"C\" { float *a; }\nextern \"C\" { float *a; }\n",

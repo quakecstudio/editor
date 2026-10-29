@@ -21,6 +21,8 @@ mod fte_directive;
 mod fte_keywords;
 mod fte_line;
 mod fte_macro;
+mod fte_opcodes;
+mod fte_ops;
 mod fte_options;
 mod fte_pragma;
 pub(crate) mod fte_tables;
@@ -37,6 +39,8 @@ pub use fte_directive::{
 };
 pub use fte_keywords::{Enabled, Keyword, KeywordEdit, Keywords};
 pub use fte_line::{fte_directive_end, relex_from};
+pub use fte_opcodes::OpcodeTarget;
+pub use fte_ops::Op;
 pub use fte_options::CommandLine;
 pub use fte_pragma::FlagSettings;
 pub use fte_tables::{FteFlag, TargetFormat, is_opcode_name};
@@ -166,6 +170,14 @@ pub struct FileOutput {
     /// index of the first token after it and the change, which sets only what the pragma names
     /// (FTEF-20.1).
     pub keywords: Vec<(usize, KeywordEdit)>,
+    /// In an FTEQCC dialect, the output target and the opcodes it has where the file starts, at
+    /// token 0, and after each `#pragma TARGET` and `#pragma opcode`: the index of the first token
+    /// after it and the target from there on (FTEF-25), which the check stage reads.
+    pub targets: Vec<(usize, OpcodeTarget)>,
+    /// In an FTEQCC dialect, where FTEQCC's messages say a token is: from the token at each
+    /// index on, the file's name, `s_filen`, and how far `pr_source_line` is from the token's
+    /// line, which `#pragma file` and `#pragma line` change (FTEF-14.32, FTEF-14.43).
+    pub places: Vec<(usize, Vec<u8>, i64)>,
 }
 
 /// The macros defined, searched by name as FTEQCC's `compconstantstable` is (FTEF-14.73): by the
@@ -1096,6 +1108,7 @@ impl<L: Loader> Preprocessor<L> {
             // command line is read.
             self.fte.flags.prioritise();
             self.fte.target = self.command_line.target();
+            self.fte.opcodes = self.command_line.opcode_target();
         }
         self
     }
@@ -1249,6 +1262,7 @@ impl<L: Loader> Preprocessor<L> {
             run.out
                 .keywords
                 .push((0, KeywordEdit::whole(self.fte.keywords())));
+            run.out.targets.push((0, self.fte.opcodes));
         }
         let file = self.add_source(&mut run, path.clone(), bytes, start);
         let cursor = self.cursor(file, path, name, start.text_start());
@@ -2218,6 +2232,20 @@ impl<L: Loader> Preprocessor<L> {
             | TokenKind::Vector(_)
             | TokenKind::String(_)
             | TokenKind::Punct(_) => {}
+        }
+        if carry && tok.expansion.is_none() {
+            let at = tok.span.span.start;
+            let name = Self::fte_file_name(run).to_vec();
+            let line = i64::from(self.fte_line(run, tok.span.file, at));
+            let delta = line.saturating_sub(i64::from(self.line(tok.span.file, at)));
+            if run
+                .out
+                .places
+                .last()
+                .is_none_or(|(_, known, by)| *known != name || *by != delta)
+            {
+                run.out.places.push((run.out.tokens.len(), name, delta));
+            }
         }
         run.out.tokens.push(tok);
     }

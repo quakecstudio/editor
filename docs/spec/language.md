@@ -479,14 +479,21 @@ specified as: simpletype ( type name {,type name} )", "A field type is specified
   be the whole parameter list: `void(float a, ...)` is an error, `"..." is not a type`.
 - **QC-10.5** A function type cannot return a function: after `T(...)` the type ends, so
   `void()()` is not a type.
-- **QC-10.6** Two function or field types are the same type when they have the same return
-  or field type, the same parameter count and the same parameter types; parameter names do
-  not matter (`PR_FindType` interns them).
+- **QC-10.6** **Withdrawn** (P2-136, #587): it said two function types with the same return
+  type, parameter count and parameter types are one type, but `PR_FindType` never finds a
+  variadic type again. Replaced by QC-10.10.
 - **QC-10.7** A variable of type `void` may be declared; it occupies one word.
 - **QC-10.8** A function type with more than eight parameters is accepted by id's `qcc`,
   which writes past `parm_types[8]`; QC-27.7 makes it an error.
 - **QC-10.9** There is no `int`, array, struct, pointer or `const` type in the source
   language. The compiler uses a pointer type internally for field stores (QC-17.3).
+- **QC-10.10** Two function or field types are the same type when they have the same return
+  or field type, the same parameter count and the same parameter types; parameter names do
+  not matter (`PR_FindType` interns them). A variadic function type, `num_parms` -1, is never
+  found again: `PR_FindType`'s loop `for (i=0 ; i< type->num_parms ; i++)` ends at once, and
+  `if (i == type->num_parms)` is then false, so each `T(...)` written is a type of its own and
+  a function type holding one is too. So `void(...) va; void(...) va;` is "Type mismatch on
+  redeclaration of va", and an argument of such a type matches no parameter.
 
 ### Constants
 
@@ -831,9 +838,10 @@ equal the operands' types exactly; if none does, it is an error, "type mismatch 
 - **QC-16.2** There is no `vector / float`, no ordering of vectors, strings or entities, no
   equality of fields, and no `&&`, `||`, `&` or `|` on anything but floats: `if (e && a)`
   with an entity `e` is an error, "type mismatch for &&".
-- **QC-16.3** **Withdrawn** (P2-06, #62): it said two function operands of `==` must have the
-  same function type, but `PR_Expression` compares only the operands' basic types, so any two
-  functions compare. Replaced by QC-16.7.
+- **QC-16.3** **Withdrawn** (P2-136, #587): it said two function operands of `==` must have
+  the same function type, but `PR_Expression` compares only the basic types
+  (`type_a != op->type_a->type->type`), so `f1 == g` of two function types is taken. Replaced by
+  QC-16.7.
 - **QC-16.4** `!` accepts float, vector, string, entity and function operands and emits
   `NOT_F`, `NOT_V`, `NOT_S`, `NOT_ENT` or `NOT_FNC`; a field operand is an error, "type
   mismatch for !". The result is a float.
@@ -844,15 +852,19 @@ equal the operands' types exactly; if none does, it is an error, "type mismatch 
   world entity; `EQ_S` compares string contents. The VM spec states the full rules.
 - **QC-16.6** A field access `e.f` reads the field `f` of entity `e`. On the left of `=` it
   becomes a store into the field (QC-17.3).
-- **QC-16.7** An operator's row is chosen by its operands' basic types alone (`etype_t`):
-  `PR_Expression` walks the rows of the spelling `while (type_a != op->type_a->type->type ||
-  type_b != op->type_b->type->type || (type_c != ev_void && type_c != op->type_c->type->type))`.
-  So two functions of different types compare with `EQ_FNC` and `NE_FNC`: `r = g == h;` with
-  `void() g` and `float(float x) h` is `EQ_FNC g, h, t`. A field access's row must also have the
-  basic type of what the field holds (`type_c`), but for a field of `void`, where `type_c` is
-  `ev_void` and turns that test off: `e.vf` with `.void vf` takes the first row, `LOAD_F`, and
-  keeps its float type (`if (type_c != ev_void) e->type = e2->type->aux_type;`). `e.a` with a
-  `float a` is "type mismatch for .", as is `a.fl` with a `float a`.
+- **QC-16.7** **Withdrawn** (#84): it said `.` refuses a field of `void`; the field's `type_c` of
+  `ev_void` is not compared, and QC-16.8 replaces it.
+- **QC-16.8** A row matches by the operands' basic types alone (`type_a != op->type_a->type->type
+  || type_b != ...`): two functions of any types are `EQ_FNC`'s, and an assignment's target and
+  value must be of one basic type among float, vector, string, entity, field and function
+  (`STORE_*`, and `STOREP_*` for a field of an entity, whose value must be of the field's type);
+  any other is "type mismatch for =". `.` takes an entity and a field, its row the one whose
+  result is the field's type; a `.void` field's `type_c` is `ev_void`, which the loop does not
+  compare (`type_c != ev_void && ...`), so the first row is taken and the value is a float:
+  `x = e.fv;` of a `.void fv` is no error. Anything else is "type mismatch for .". Each mismatch
+  is `PR_ParseError`, which ends the statement. Source:
+  id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73, `qcc/pr_comp.c`,
+  `PR_Expression`.
 
 ### Test vectors
 
@@ -863,9 +875,9 @@ equal the operands' types exactly; if none does, it is an error, "type mismatch 
 | `a = v < v;` | `type mismatch for <` | QC-16.2 |
 | `a = fl == fl;` with `.float fl` | `type mismatch for ==` | QC-16.2 |
 | `if (e && a) a = 1;` with `entity e` | `type mismatch for &&` | QC-16.2 |
-| `if (g == g) g();` with `void() g` | `EQ_FNC g, g, t`; `IFNOT t, +2`; `CALL0 g` | QC-16.1 |
-| `r = g == h;` with `void() g` and `float(float x) h` | `EQ_FNC g, h, t`; `STORE_F t, r` | QC-16.7 |
-| `a = e.a;` with `float a` and `entity e` | `type mismatch for .` | QC-16.7 |
+| `if (g == g) g();` with `void() g` | `EQ_FNC g, g, t`; `IFNOT t, +2`; `CALL0 g` | QC-16.7 |
+| `r = g == h;` with `void() g` and `float(float x) h` | `EQ_FNC g, h, t`; `STORE_F t, r` | QC-16.8 |
+| `a = e.a;` with `float a` and `entity e` | `type mismatch for .` | QC-16.8 |
 | `a = s == "x"; a = e != world; a = !s; a = !e; a = !v;` | `EQ_S`, `NE_E`, `NOT_S`, `NOT_ENT`, `NOT_V` | QC-16.1, QC-16.4 |
 
 ## QC-17 Assignment
@@ -876,7 +888,7 @@ equal the operands' types exactly; if none does, it is an error, "type mismatch 
 ### Behaviour
 
 - **QC-17.1** **Withdrawn** (P2-06, #62): it said `x = e` requires `x` and `e` to have the same
-  type, but the store's row is chosen by basic types (QC-16.7), so two fields or two functions
+  type, but the store's row is chosen by basic types (QC-16.8), so two fields or two functions
   of different types are assigned. Replaced by QC-17.6.
 - **QC-17.2** id's `qcc` does not check that the left side can be assigned: `5 = a;` stores
   into the literal's global, `f() = 3` into the return slot and `(a + b) = 3` into a
@@ -891,7 +903,7 @@ equal the operands' types exactly; if none does, it is an error, "type mismatch 
   name, the earlier load is rewritten and the name's definition is retyped as a pointer:
   `e.fl; a = 2;` emits `ADDRESS e, fl, t` and `STOREP_F 2, a`. QC-27.11 diverges.
 - **QC-17.5** There are no compound assignments (QC-7.4).
-- **QC-17.6** `x = e` requires `x` and `e` to have the same basic type (QC-16.7) and emits
+- **QC-17.6** `x = e` requires `x` and `e` to have the same basic type (QC-16.8) and emits
   `STORE_F`, `STORE_V`, `STORE_S`, `STORE_ENT`, `STORE_FLD` or `STORE_FNC` by it, with `e` as
   operand a and `x` as operand b: `fa = fb;` with `.float fa` and `.vector fb` is
   `STORE_FLD fb, fa`. Its value is `e`, so `a = b = c` stores `c` into `b` and then `c` into
@@ -925,9 +937,10 @@ equal the operands' types exactly; if none does, it is an error, "type mismatch 
 
 ### Behaviour
 
-- **QC-18.1** **Withdrawn** (P2-06, #62): it said fewer arguments than a fixed parameter list
-  is "too few parameters", but `PR_ParseFunctionCall` counts the arguments only when there is
-  one, so a call with none is never too few. Replaced by QC-18.8.
+- **QC-18.1** **Withdrawn** (P2-136, #587): it said fewer arguments than a fixed parameter list
+  is "too few parameters", but `PR_ParseFunctionCall` checks the count only when the call has an
+  argument (`if (!PR_Check(")")) { ... }`), so `f1()` of a `void(float x) f1` is taken. Replaced by
+  QC-18.8.
 - **QC-18.2** A variadic function (QC-10.4) takes up to eight arguments of any types; nine or
   more is an error, "More than eight parameters".
 - **QC-18.3** Each argument is evaluated and immediately copied to its parameter slot with
@@ -946,21 +959,19 @@ equal the operands' types exactly; if none does, it is an error, "type mismatch 
   a single global area."
 - **QC-18.7** A call through a field, `e.th()`, loads the function from the field and calls
   the loaded value.
-- **QC-18.8** `f(a1, ..., an)` requires `f` to have a function type, else "not a function",
-  checked before the arguments are read. For a fixed parameter list, an argument beyond the
-  parameters is "too many parameters", raised before the argument is parsed; with at least one
-  argument, fewer than the parameters is "too few parameters"; a call with no arguments is not
-  counted, since the count is checked inside `if (!PR_Check(")")) { ... }`: id 1.01 calls
-  `droptofloor()`, which it declares `float(float yaw, float dist)`. An argument whose type is
-  not exactly the parameter's, `e->type != t->parm_types[arg]` on the types `PR_FindType`
-  interns (QC-10.6), is "type mismatch on parm N", counting from 0; a vector field's component
-  is no `.float` (QC-11.12).
+- **QC-18.8** `f(a1, ..., an)` requires `f` to have a function type, else "not a function". With
+  at least one argument and a fixed parameter list, an argument past the last parameter is an
+  error, "too many parameters" (raised before it is parsed), an argument whose type is not
+  exactly the parameter's is "type mismatch on parm N", counting from 0, and fewer arguments
+  than parameters "too few parameters"; a call with none is checked for no count. Each is
+  `PR_ParseError`, which ends the statement.
 - **QC-18.9** The return value's global has the type of the last call made when an operator
   reads its operands' types, after both are parsed: `qcc` keeps one `def_ret` and retypes it at
   each call (`def_ret.type = t->aux_type;`). With `float() g` and `vector() h`, `g() + h()` adds
   two vectors, `ADD_V`, and `h() * g()` multiplies two floats, `MUL_F`.
 
 ### Constants
+
 
 The slots are `PROGS_OFS_RETURN` and `PROGS_OFS_PARM0` in [`progs.md`](progs.md); `qcc/qcc.h`
 defines the same `OFS_RETURN` and `OFS_PARM0`, and `InitData` puts slot `i` at
@@ -976,10 +987,11 @@ defines the same `OFS_RETURN` and `OFS_PARM0`, and `InitData` puts slot `i` at
 | `g(1,2,3,4,5,6,7,8,9);` with `void(...) g` | `More than eight parameters` | QC-18.2 |
 | `g(1, 2);` with `void(float a) g` | `too many parameters` | QC-18.8 |
 | `g(1);` with `void(float a, float b) g` | `too few parameters` | QC-18.8 |
-| `g();` with `float(float a, float b) g` | `CALL0 g` | QC-18.8 |
 | `g("x");` with `void(float a) g` | `type mismatch on parm 0` | QC-18.8 |
-| `g(fv_x);` with `.vector fv` and `void(.float x) g` | `type mismatch on parm 0` | QC-18.8 |
 | `a();` with `float a` | `not a function` | QC-18.8 |
+| `g();` with `void(float a) g` | none: no count is checked with no argument | QC-18.8 |
+| `g();` with `float(float a, float b) g` | `CALL0 g` | QC-18.8 |
+| `g(fv_x);` with `.vector fv` and `void(.float x) g` | `type mismatch on parm 0` | QC-18.8 |
 | `v = g() + h(); a = h() * g();` with `float() g` and `vector() h` | `CALL0 g`; `CALL0 h`; `ADD_V return, return, t`; `STORE_V t, v`; `CALL0 h`; `CALL0 g`; `MUL_F return, return, u`; `STORE_F u, a` | QC-18.9 |
 | `e.th();` with `.void() th` | `INDIRECT e, th, t`; `CALL0 t` | QC-18.7 |
 

@@ -57,6 +57,7 @@
 //! (`docs/spec/inventory-l3.md`).
 
 pub mod cast;
+mod check;
 pub mod db;
 pub mod expand;
 pub mod lower;
@@ -68,6 +69,7 @@ pub mod ty;
 #[cfg(test)]
 mod tests;
 
+pub use check::TypedBody;
 pub use db::{Db, ModuleAnalysis, QueryCounts};
 pub use expand::{ModuleInput, OriginMap};
 pub use lower::{

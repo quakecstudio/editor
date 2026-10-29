@@ -616,7 +616,7 @@ impl<'a> Compiler<'a> {
         let Some(inner) = field_type.field_inner() else {
             return Self::mismatch(Operator::Dot, op_span);
         };
-        // QC-16.7: `type_c == ev_void` turns the result's check off, so a field of `void`
+        // QC-16.8: `type_c == ev_void` turns the result's check off, so a field of `void`
         // takes the first row, `LOAD_F`.
         let c = Some(inner.etype()).filter(|&c| c != Etype::Void);
         let Some(row) = ops::select(Operator::Dot, a, b, c) else {

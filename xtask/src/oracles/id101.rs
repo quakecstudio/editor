@@ -316,10 +316,10 @@ mod tests {
         reason = "test code: a failed unwrap is a failed test"
     )]
 
-    use std::cell::Cell;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::process::Command;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     use qc_progs::crc::crc_block;
     use qc_progs::{ProgsFile, Statement, write};
@@ -417,7 +417,7 @@ mod tests {
         // qc-codegen's progs, which is not the fake's; the scenarios still run, two runs each,
         // on qcc's progs and on ours.
         assert!(!check(&oracles, &codebase).unwrap());
-        let seen = fake.seen.borrow();
+        let seen = fake.seen.lock().unwrap();
         assert_eq!(
             seen.iter()
                 .filter(|line| line.starts_with("vm-oracle scenario "))
@@ -447,7 +447,7 @@ mod tests {
         let fake = Fake::new(tools(progs(), trace(&progs(), false)));
         let oracles = fake_oracles(&dir.join("work"), &fake);
         assert!(!check(&oracles, &codebase).unwrap());
-        let seen = fake.seen.borrow();
+        let seen = fake.seen.lock().unwrap();
         assert_eq!(
             seen.iter()
                 .filter(|line| line.starts_with("vm-oracle scenario "))
@@ -485,11 +485,11 @@ mod tests {
         let dir = fresh_dir("id101-runs");
         let work = dir.join("work");
         fs::create_dir_all(&work).unwrap();
-        let runs = Cell::new(0_u32);
+        let runs = AtomicU32::new(0);
         let differs = Fake::new(|command: &Command| {
-            runs.set(runs.get() + 1);
+            let run = runs.fetch_add(1, Ordering::SeqCst);
             Reply {
-                files: vec![(last_arg(command), trace(&progs(), runs.get() == 2))],
+                files: vec![(last_arg(command), trace(&progs(), run == 1))],
                 ..Reply::default()
             }
         });

@@ -31,6 +31,7 @@ mod recovery;
 mod reviewer;
 mod statements;
 mod tree_api;
+mod type_declarations;
 
 use std::fmt::Write as _;
 

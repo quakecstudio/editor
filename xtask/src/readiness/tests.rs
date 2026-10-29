@@ -7,6 +7,9 @@
     reason = "test code: a failed unwrap, index or sum is a failed test"
 )]
 
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use super::*;
 use crate::exec::{Fake, Reply};
 use crate::ratchet::judge;
@@ -840,7 +843,7 @@ fn coverage_reads_the_report_cargo_llvm_cov_writes() {
     assert_eq!(score, self::score(2, 4));
     let lines = coverage(&root(), &target, Check::Lines, &tools).unwrap();
     assert_eq!(lines.passed, lines.total, "every line of the fixture runs");
-    let seen = fake.seen.borrow();
+    let seen = fake.seen.lock().unwrap();
     assert!(
         seen[0].starts_with(&format!("cargo +{NIGHTLY} llvm-cov")),
         "{}",
@@ -865,9 +868,9 @@ fn proptest_envs(command: &Command) -> BTreeMap<String, String> {
 #[test]
 fn coverage_runs_property_tests_on_a_fixed_seed() {
     let report = recorded("branches", "llvm-cov.json");
-    let envs = std::cell::RefCell::new(Vec::new());
+    let envs = Mutex::new(Vec::new());
     let fake = Fake::new(|command: &Command| {
-        envs.borrow_mut().push(proptest_envs(command));
+        envs.lock().unwrap().push(proptest_envs(command));
         Reply {
             files: vec![(
                 after(command, "--output-path").unwrap(),
@@ -885,7 +888,7 @@ fn coverage_runs_property_tests_on_a_fixed_seed() {
         ("PROPTEST_RNG_ALGORITHM".to_owned(), "cc".to_owned()),
         ("PROPTEST_RNG_SEED".to_owned(), "461".to_owned()),
     ]);
-    assert_eq!(*envs.borrow(), [fixed.clone(), fixed]);
+    assert_eq!(*envs.lock().unwrap(), [fixed.clone(), fixed]);
 }
 
 #[test]
@@ -919,16 +922,16 @@ fn an_inherited_proptest_setting_is_removed_and_others_kept() {
 #[test]
 fn mutation_keeps_proptests_random_seed() {
     let outcomes = recorded("mutation", "outcomes.json");
-    let envs = std::cell::RefCell::new(None);
+    let envs = Mutex::new(None);
     let fake = Fake::new(|command: &Command| {
         if !has_arg(command, "-vV") {
-            envs.replace(Some(proptest_envs(command)));
+            *envs.lock().unwrap() = Some(proptest_envs(command));
         }
         mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
     });
     let tools = tools(&fake, "mutation-random-seed");
     mutation(&root(), &fixture("mutation"), None, &tools).unwrap();
-    assert_eq!(envs.borrow().as_ref(), Some(&BTreeMap::new()));
+    assert_eq!(envs.lock().unwrap().as_ref(), Some(&BTreeMap::new()));
 }
 
 #[test]
@@ -986,7 +989,7 @@ fn mutation_reads_the_outcomes_cargo_mutants_writes() {
         let fake = Fake::new(reply(code));
         let score = mutation(&root(), &target, None, &tools(&fake, "mutation-reads")).unwrap();
         assert_eq!(score.total, 2);
-        let line = fake.seen.borrow()[1].clone();
+        let line = fake.seen.lock().unwrap()[1].clone();
         assert!(line.contains("--copy-vcs=true"), "{line}");
         assert!(line.contains("--jobs "), "{line}");
         // The fixture is its own workspace, without the `mutants` profile.
@@ -1001,25 +1004,23 @@ fn mutation_reads_the_outcomes_cargo_mutants_writes() {
 #[test]
 fn mutation_builds_a_member_incrementally_with_the_mutants_profile() {
     let outcomes = recorded("mutation", "outcomes.json");
-    let incremental = std::cell::RefCell::new(None);
+    let incremental = Mutex::new(None);
     let fake = Fake::new(|command: &Command| {
         if !has_arg(command, "-vV") {
-            incremental.replace(
-                command
-                    .get_envs()
-                    .find(|(key, _)| *key == "CARGO_INCREMENTAL")
-                    .and_then(|(_, value)| value.map(|value| value.to_string_lossy().into_owned())),
-            );
+            *incremental.lock().unwrap() = command
+                .get_envs()
+                .find(|(key, _)| *key == "CARGO_INCREMENTAL")
+                .and_then(|(_, value)| value.map(|value| value.to_string_lossy().into_owned()));
         }
         mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
     });
     let target = resolve(&root(), "qs-porting-example").unwrap();
     mutation(&root(), &target, None, &tools(&fake, "mutation-member")).unwrap();
-    let line = fake.seen.borrow()[1].clone();
+    let line = fake.seen.lock().unwrap()[1].clone();
     assert!(line.contains("--profile mutants "), "{line}");
     assert!(line.contains("--minimum-test-timeout 10 "), "{line}");
     // Without incremental builds, every mutant rebuilds the crate in full.
-    assert_eq!(incremental.borrow().as_deref(), Some("1"));
+    assert_eq!(incremental.lock().unwrap().as_deref(), Some("1"));
 }
 
 #[test]
@@ -1067,10 +1068,10 @@ fn mutation_sets_the_runner_for_the_host_triple() {
         ("aarch64-apple-darwin", Vec::new()),
         ("x86_64-pc-windows-msvc", Vec::new()),
     ] {
-        let runners = std::cell::RefCell::new(None);
+        let runners = Mutex::new(None);
         let fake = Fake::new(|command: &Command| {
             if !has_arg(command, "-vV") {
-                runners.replace(Some(runner_envs(command)));
+                *runners.lock().unwrap() = Some(runner_envs(command));
             }
             mutants_reply(command, host, 0, &outcomes)
         });
@@ -1081,7 +1082,7 @@ fn mutation_sets_the_runner_for_the_host_triple() {
             &tools(&fake, "mutation-runner"),
         )
         .unwrap();
-        assert_eq!(runners.borrow().as_ref(), Some(&expected), "{host}");
+        assert_eq!(runners.lock().unwrap().as_ref(), Some(&expected), "{host}");
     }
     // Without the host, the limit cannot be named, so there is no measurement.
     let no_host = Fake::new(|_: &Command| Reply::exit(0));
@@ -1097,13 +1098,13 @@ fn mutation_sets_the_runner_for_the_host_triple() {
 
 #[test]
 fn flakes_build_once_then_run_the_tests_twenty_times() {
-    let runs = std::cell::Cell::new(0_u32);
+    let runs = AtomicU32::new(0);
     let fake = Fake::new(|command: &Command| {
         if has_arg(command, "--no-run") {
             return Reply::exit(0);
         }
-        runs.set(runs.get() + 1);
-        Reply::exit(i32::from(runs.get() == 3))
+        let run = runs.fetch_add(1, Ordering::SeqCst);
+        Reply::exit(i32::from(run == 2))
     });
     let score = flakes(&root(), &fixture("flakes"), &tools(&fake, "flakes")).unwrap();
     assert_eq!(score.total, FLAKE_RUNS);
@@ -1123,7 +1124,7 @@ fn the_oracles_flake_check_builds_then_runs_cargo_xtask_oracles() {
     let fake = Fake::new(|_: &Command| Reply::exit(0));
     let score = oracle_flakes(&root(), &fake).unwrap();
     assert_eq!(score, self::score(FLAKE_RUNS, FLAKE_RUNS));
-    let seen = fake.seen.borrow();
+    let seen = fake.seen.lock().unwrap();
     assert!(seen[0].ends_with("oracles build"), "{}", seen[0]);
     assert!(seen[1].ends_with("oracles"), "{}", seen[1]);
     let broken = Fake::new(|_: &Command| Reply::exit(1));
@@ -1181,7 +1182,7 @@ fn the_oracles_coverage_runs_every_check_then_exports_our_files() {
     };
     let score = c_coverage(&root(), Check::Lines, &tools).unwrap();
     assert_eq!(score, self::score(6, 18));
-    let seen = fake.seen.borrow();
+    let seen = fake.seen.lock().unwrap();
     assert!(seen[0].ends_with(" oracles"), "{}", seen[0]);
     assert!(seen[1].contains(" oracles id101 "), "{}", seen[1]);
     assert!(seen[2].contains("merge -sparse"), "{}", seen[2]);
@@ -1324,10 +1325,11 @@ fn a_shard_is_passed_to_cargo_mutants_dealt_round_robin() {
     )
     .unwrap();
     assert_eq!(score.total, 2);
-    let line = fake.seen.borrow()[1].clone();
+    let line = fake.seen.lock().unwrap()[1].clone();
     assert!(line.contains(" --shard 3/10 "), "{line}");
     assert!(line.contains(" --sharding round-robin "), "{line}");
     assert!(line.contains(" --no-shuffle "), "{line}");
+    assert!(line.contains(" --test-tool nextest "), "{line}");
     assert!(
         line.contains("mutants-fx-mutation-3-of-10"),
         "a shard writes in its own directory: {line}"
@@ -1336,7 +1338,7 @@ fn a_shard_is_passed_to_cargo_mutants_dealt_round_robin() {
         mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
     });
     mutation(&root(), &target, None, &tools(&whole, "mutation-shard")).unwrap();
-    let line = whole.seen.borrow()[1].clone();
+    let line = whole.seen.lock().unwrap()[1].clone();
     assert!(!line.contains("--shard"), "{line}");
 }
 

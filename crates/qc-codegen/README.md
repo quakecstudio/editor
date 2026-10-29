@@ -14,7 +14,7 @@ each construct with a new temporary for every result (QC-14 to QC-19, QC-22), th
 the order their definitions end (QC-25.2) and the string table (QC-25.4); then `progdefs.h`,
 whose CRC the header carries, and the progs tables (QC-25). The type rules of expressions are
 the compiler's, as `qcc`'s are: an operator's opcode is the first row of its spelling whose
-operand types are the operands' basic types (QC-16.7, QC-17.6), and a call's arguments must
+operand types are the operands' basic types (QC-16.8, QC-17.6), and a call's arguments must
 have exactly its parameters' types (QC-18.8). Their errors have `qcc`'s texts (QCD-4.2 to
 QCD-4.7). The precache lists `qcc -copy` reads are kept beside the progs (QC-26).
 

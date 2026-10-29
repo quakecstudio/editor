@@ -480,3 +480,67 @@ fn only_the_fte_targets_support_extern() {
         assert_eq!(format.supports_extern(), supports_extern, "{format:?}");
     }
 }
+
+// spec FTEF-25.1: the target holds from the file's start, and a `#pragma TARGET` makes every
+// opcode valid or not again, undoing a `#pragma opcode` before it
+// spec FTEF-25.3: a `#pragma opcode` holds from the token after it
+#[test]
+fn opcode_targets_hold_from_the_token_after_their_pragma() {
+    use crate::Op;
+    use crate::OpcodeTarget;
+    let (_, out) = one_fte(
+        "float a;\n#pragma opcode enable ADD_I\nfloat b;\n#pragma target fte\nfloat c;\n\
+         #pragma target id\nfloat d;\n",
+    );
+    let marks: Vec<(usize, bool, TargetFormat)> = out
+        .targets
+        .iter()
+        .map(|(at, target)| (*at, target.valid(Op::AddI), target.format()))
+        .collect();
+    assert_eq!(
+        marks,
+        [
+            (0, false, TargetFormat::Standard),
+            (3, true, TargetFormat::Standard),
+            (6, true, TargetFormat::Fte),
+            (9, false, TargetFormat::Standard),
+        ]
+    );
+    assert_eq!(OpcodeTarget::default().format(), TargetFormat::Standard);
+}
+
+// spec FTEF-25.1: the command line's last `-T` option sets the target the file starts with
+#[test]
+fn the_command_lines_target_starts_the_file() {
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", b"float a;\n");
+    let mut pp = Preprocessor::new(loader)
+        .with_dialect(Dialect::Fteqcc)
+        .with_command_line(CommandLine::new(&["-Tid", "-Tfte_5744"]));
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    let first = out
+        .targets
+        .first()
+        .map(|(_, target)| (target.format(), target.revision()));
+    assert_eq!(first, Some((TargetFormat::Fte, 5744)));
+}
+
+// spec FTEF-14.43: the places FTEQCC's messages give hold from the token after a `#pragma file`
+// or `#pragma line`, each the file's name and how far its lines are from the source's
+#[test]
+fn message_places_follow_pragma_file_and_line() {
+    let (_, out) = one_fte("float a;\n#pragma file foo.qc\nfloat b;\n#pragma line 40\nfloat c;\n");
+    let marks: Vec<(usize, String, i64)> = out
+        .places
+        .iter()
+        .map(|(at, name, delta)| (*at, String::from_utf8_lossy(name).into_owned(), *delta))
+        .collect();
+    assert_eq!(
+        marks,
+        [
+            (0, "a.qc".to_owned(), 0),
+            (3, "foo.qc".to_owned(), 0),
+            (6, "foo.qc".to_owned(), 35),
+        ]
+    );
+}

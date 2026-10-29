@@ -181,7 +181,7 @@ fn not_by_the_operands_type() {
     );
 }
 
-// spec QC-16.7: an operator compares only its operands' basic types, so two functions of
+// spec QC-16.8: an operator compares only its operands' basic types, so two functions of
 // different types are compared with `EQ_FNC`.
 #[test]
 fn functions_of_two_types_compare() {
@@ -193,7 +193,7 @@ fn functions_of_two_types_compare() {
     assert_eq!(body(&p, "f")[0], st(EqFnc, g, h, global(&p, "f") + 1));
 }
 
-// spec QC-17.6, QC-16.7: `x = e` stores by the two basic types, so a field of another type may
+// spec QC-17.6, QC-16.8: `x = e` stores by the two basic types, so a field of another type may
 // be stored; the value is `e`, so `a = b = c` stores `c` twice.
 #[test]
 fn assignment_stores_by_basic_type() {
@@ -378,7 +378,7 @@ fn each_argument_count_has_its_call() {
     );
 }
 
-// spec QC-16.7: a field of `void` is loaded with `LOAD_F` and its value is a float.
+// spec QC-16.8: a field of `void` is loaded with `LOAD_F` and its value is a float.
 #[test]
 fn a_void_field_loads_as_a_float() {
     let p = progs(".void vf;\nentity e;\nfloat r;\nvoid() f = { r = e.vf; };\n");
@@ -390,7 +390,7 @@ fn a_void_field_loads_as_a_float() {
     );
 }
 
-// spec QC-16.7, QCD-4.2: a field access's error is at its `.`.
+// spec QC-16.8, QCD-4.2: a field access's error is at its `.`.
 #[test]
 fn a_field_access_error_is_at_the_dot() {
     let source = "float a;\nentity e;\nvoid() f = { a = e.a; };\n";

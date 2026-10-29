@@ -400,11 +400,9 @@ builtins by name, `void localsound( entity client, string sample ) = #0:ex_local
   `if (QCC_PR_CheckToken("("))` ... `type = QCC_PR_ParseFunctionType(false, type);`. The type is
   the one `rettype(params) name` declares, so a C-style definition and a vanilla prototype
   (`void() InitLightStyles;` in `rerelease-mg3/world.qc`) are the same function (QC-11.5).
-- **FTE-17.2** A function declarator's body may follow it without `=`:
-  `isinitialised = QCC_PR_CheckToken ("=") || ((type->type == ev_function) && (pr_token[0] ==
-  '{' || pr_token[0] == '[' || pr_token[0] == ':'));`. This holds for both orders,
-  `void InitLightStyles() { ... }` and `void(entity e) remove { ... }`
-  (`rerelease-mg1/defs.qc`).
+- **FTE-17.2** **Withdrawn** (P2-133, #574): it let a `[` right after a function declarator's
+  name be its state header, but `QCC_PR_ParseDefs` reads the array suffix there first, for every
+  type, so an array of functions was refused; replaced by FTE-17.7.
 - **FTE-17.3** The `;` after a function declaration is optional: `QCC_PR_ParseDefs` ends with
   `if (type->type == ev_function) QCC_PR_CheckTokenComment (";", ...)`, which takes a `;` if
   there is one. A `;` before a definition is skipped (`while (QCC_PR_CheckToken(";")) ;` at the
@@ -447,6 +445,20 @@ builtins by name, `void localsound( entity client, string sample ) = #0:ex_local
   `#0x1000001i` as 16777217 and `#4294967313i` as 17, and rejects `#16u`, `#16l` and `#16ll`;
   built for arm64 it binds `#2147483648` as 2147483647, where the x86 result of VM-9.2 is the
   rule.
+- **FTE-17.7** A function declarator's body, state header or builtin may follow it without `=`
+  once its array suffixes are read: after the name `QCC_PR_ParseDefs` runs `if (!arraysize &&
+  QCC_PR_CheckToken ("[")) { dynlength = QCC_PR_ParseDefArray(&type, name, istypedef,
+  istypedef||isstatic);` for every type, and only then `isinitialised = QCC_PR_CheckToken ("=") ||
+  ((type->type == ev_function) && (pr_token[0] == '{' || pr_token[0] == '[' || pr_token[0] ==
+  ':'));`. So a `[` right after the name is the array suffix: `void() h = {}; void() g[2] = { h, h
+  };` declares an array of two functions, as do `g[]`, `*g[2]`, `void(float a) g[2]`, with `static`, `var` or `const`, with `{ h }` or `{}`, a two-dimensional one with braces per dimension (`g[2][2] = { { h, h }, { h, h } }`, and `{ h, h, h, h }` is "expected {, found h", FTEF-19.8), through a typedef
+  (`typedef void() fn; fn g[2] = { h, h };`, `fn *g[2]`, `typedef fn fns[2]; fns g = { h, h };`),
+  and `g[0]()` calls an element; one with no initialiser, `void() x[2];`, holds functions with no body ("function x has no body", FTEF-17.11); `void() g [1, g] {};` and `$frame a1 void() g [$a1, g] { };` are
+  refused, `1, g` being no array size. With no suffix the body, state header and builtin follow as
+  before, in both orders, `void InitLightStyles() { ... }` and `void(entity e) remove { ... }`
+  (`rerelease-mg1/defs.qc`), `void() g = [1, g] {};`, `void() g { };` and `void() g : 6;`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefs`.
 
 ## FTE-18 Parameter lists
 
@@ -601,13 +613,22 @@ list starts empty in each file (QC-8.3).
 - **FTE-22.2** **Withdrawn** (P2-26, #82): it made a second initialiser that is not a literal
   always "NAME redeclared", which the full dialect's corpus contradicts. Replaced by FTE-22.5
   for literals and `dialect-fteqcc.md` FTEF-17.5 for the rest.
-- **FTE-22.5** A name initialised twice with the same value is accepted: for a "dupe
-  initialisation" `QCC_PR_ParseInitializerType_Internal` compares the two word by word and
-  reports `"incompatible redeclaration"` only when they differ. The rerelease initialises
-  `float SIGIL_E1 = 1;` in both `rerelease-mg1/defs.qc` and `rerelease-mg1/items_runes.qc`.
-  This profile compares two literal initialisers by value and accepts them when equal, and a
-  differing literal is still "NAME redeclared" (QCD-3.6); other initialisers compare as
-  FTEF-17.10 says.
+- **FTE-22.5** **Withdrawn** 2026-10-28: it kept "NAME redeclared" (QCD-3.6) for a differing
+  literal by this profile's choice, but the pinned FTEQCC reports `"incompatible redeclaration"`
+  there, and compares no value that is not a constant; replaced by FTE-22.6.
+- **FTE-22.6** A name initialised twice with the same value is accepted: for a "dupe
+  initialisation" (`basedef->initialized && !basedef->unused && !(flags & PIF_STRONGER)`)
+  `QCC_PR_GenerateInitializerType` compares the two word by word and, when they differ, reports
+  the fatal error `QCC_PR_ParseErrorPrintSRef (ERR_REDECLARATION, def, "incompatible
+  redeclaration")`, `E0363` (QCD-4.64), but for the `parseentitydata` and builtin-after-body
+  warnings (FTEF-17.9, QCD-7.49). The comparison is in the branch for a constant value only: a
+  value that is not one is "initializer for 'NAME' is not constant" (QCD-3.14) and nothing more.
+  The rerelease initialises `float SIGIL_E1 = 1;` in both `rerelease-mg1/defs.qc` and
+  `rerelease-mg1/items_runes.qc`. So `float A = 1; float A = 2;`, `string A = "a"; string A =
+  "b";` and `float B = 2; float A = 1; float A = B;` are "incompatible redeclaration", and
+  `float x; float A = 1; float A = x;` is only "not constant"; other initialisers compare as
+  FTEF-17.10 says. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateInitializerType`.
 - **FTE-22.3** With `-Fautoproto` every top-level declaration of the program is visible in every
   function body: `qccmain.c` describes the flag as "Causes compilation to take two passes
   instead of one. The first pass, only the definitions are read. The second pass actually
@@ -717,7 +738,8 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   `#"\x00":ex_b` names nothing before the `:` and binds `ex_b`. Names are bytes, compared with
   `strcmp`, so two bronze names (`\b`, bytes of 0x80 and above) differ when their bytes do. A name after `:` is
   `pr_token`, which `QCC_PR_ParseName`'s "name too long" check does not see.
-- **FTE-23.7** A builtin initialiser makes a builtin function, numbered `binum` and named the
+- **FTE-23.7** **Withdrawn** 2026-10-28: it gave the differing builtin reinitialiser `E0206`, but the pinned FTEQCC reports `"incompatible redeclaration"`, `E0363` (FTE-22.6); replaced by FTE-23.17.
+- **FTE-23.17** A builtin initialiser makes a builtin function, numbered `binum` and named the
   engine name or, with none, the definition's name, unless it initialises a definition already
   initialised and FTEQCC finds one to reuse: `if (basedef && basedef->initialized)` it takes
   the first function, in the order they were made, with `functions[i].code == -1 &&
@@ -727,11 +749,11 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   initialisation" comparison then reports `"incompatible redeclaration"` unless the function is
   the one the definition has. So a second builtin initialiser is the same value exactly when
   its number and engine name are those of the first and no function with them was made before
-  the definition's: under this profile it is otherwise `E0206`. `#0:ex_a` then `#0:ex_b`,
-  `#5:ex_a` then `#5:ex_b`, `#5` then `#5:ex_a` and `#0` then `:ex_a` are `E0206`; `:ex_a`
+  the definition's: under this profile it is otherwise `E0363`. `#0:ex_a` then `#0:ex_b`,
+  `#5:ex_a` then `#5:ex_b`, `#5` then `#5:ex_a` and `#0` then `:ex_a` are `E0363`; `:ex_a`
   then `:"ex_a"`, `#0:ex_a` then `:ex_a`, `#"ex_a"` then `:ex_a`, `#5` then `#5.0`, and, for a
   definition `f`, `#5` then `#5:f` and `#0` then `:f` are not. After `void() g = #5:ex_a;`,
-  `void() f = #5:ex_a;` given twice is `E0206`, since FTEQCC reuses `g`'s function; a function
+  `void() f = #5:ex_a;` given twice is `E0363`, since FTEQCC reuses `g`'s function; a function
   made for a redeclaration it reuses none for counts as made then. FTEQCC reports the
   redeclaration only once it has read the initialiser, so a bad literal in it is that error
   instead; id's `qcc` reports `"%s redeclared"` at the `=`, before it (`PR_ParseDefs`).

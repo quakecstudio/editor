@@ -9,6 +9,8 @@
 //!   `oracles/probes.rs` and the scenario tests of `oracles/scenarios.rs`.
 //!   It then compiles every builtin initialiser of `oracles/builtins.rs` with FTEQCC and id's
 //!   qcc and checks the dialect profiles against them.
+//! - `cargo xtask oracles builtins --recorded` checks the profile against the recorded outcomes
+//!   alone, with no oracle built or run.
 //! - `cargo xtask oracles builtins [--record]` builds them and runs only that check; with
 //!   `--record` it writes the oracles' outcomes to `xtask/fixtures/oracles/builtin-outcomes.json`.
 //! - `cargo xtask oracles build` only builds them, and prints where the binaries are.
@@ -131,11 +133,18 @@ pub(crate) struct Oracles<'a> {
 
 /// Runs `cargo xtask oracles [build | id101 <dir> | rerelease <dir> | json <trace>]`.
 pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
-    run(root, args, &System, &CURL)
+    run(root, args, &System, &CURL, &builtins::Suite::all)
 }
 
-/// [`main`] with the programs `exec` runs and the files `net` fetches.
-fn run(root: &Path, args: &[String], exec: &dyn Exec, net: &dyn Net) -> Result<bool, String> {
+/// [`main`] with the programs `exec` runs, the files `net` fetches and the cases `suite` makes
+/// for the builtin differential, made only when a command runs it.
+fn run(
+    root: &Path,
+    args: &[String],
+    exec: &dyn Exec,
+    net: &dyn Net,
+    suite: &dyn Fn() -> builtins::Suite,
+) -> Result<bool, String> {
     let build = || build_with(root, exec, net);
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
     match words.as_slice() {
@@ -145,14 +154,15 @@ fn run(root: &Path, args: &[String], exec: &dyn Exec, net: &dyn Net) -> Result<b
             let numbers = numbers::check(root, &oracles)?;
             let probes = probes::check(&oracles)?;
             let scenarios = scenarios::check(&oracles, None)?;
-            let builtins = builtins::check(root, &oracles, false)?;
+            let builtins = builtins::check(root, &oracles, false, &suite())?;
             let codegen = codegen::check(root, &oracles, false)?;
             Ok([vectors, numbers, probes, scenarios, builtins, codegen]
                 .iter()
                 .all(|passed| *passed))
         }
-        ["builtins"] => builtins::check(root, &build()?, false),
-        ["builtins", "--record"] => builtins::check(root, &build()?, true),
+        ["builtins"] => builtins::check(root, &build()?, false, &suite()),
+        ["builtins", "--record"] => builtins::check(root, &build()?, true, &suite()),
+        ["builtins", "--recorded"] => builtins::check_recorded(root, &suite()),
         ["codegen"] => codegen::check(root, &build()?, false),
         ["codegen", "--record"] => codegen::check(root, &build()?, true),
         ["fuzz", rest @ ..] => fuzz::run(root, rest, exec, net),
@@ -183,7 +193,7 @@ fn run(root: &Path, args: &[String], exec: &dyn Exec, net: &dyn Net) -> Result<b
         }
         _ => Err(
             "usage: cargo xtask oracles [build | scenarios [<name>...] | fuzz <target> [--time <s>] \
-             | builtins [--record] | codegen [--record] | id101 <codebase directory> \
+             | builtins [--record | --recorded] | codegen [--record] | id101 <codebase directory> \
              | rerelease <directory of codebases> | json <trace>]"
                 .to_owned(),
         ),

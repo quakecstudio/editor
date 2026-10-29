@@ -2,7 +2,7 @@
 
 //! The FTEQCC compiler flags the lexer, the parser and the semantic model read where a token
 //! stands (`docs/spec/dialect-fteqcc.md` FTEF-12.12, FTEF-21), the casts' among them (FTEF-22),
-//! with the defaults `#pragma noref`,
+//! the truth tests' (FTEF-30), with the defaults `#pragma noref`,
 //! `#pragma nosave` and `#pragma defaultstatic` set for each definition, and the changes a
 //! `#pragma` makes to them, which the parser applies as it reads the tokens, with the changes
 //! its own `extern "C"` blocks make (FTEF-21.17).
@@ -13,7 +13,7 @@ use crate::fte_tables::FteFlag;
 
 /// The flags [`CompilerFlags`] keeps, each with the bit it is, and the lexer's flag it is, if
 /// the lexer reads it.
-const KEPT: [(FteFlag, u32, Option<LexFlag>); 15] = [
+const KEPT: [(FteFlag, u32, Option<LexFlag>); 17] = [
     (FteFlag::Qcfuncs, 1, Some(LexFlag::QcFuncs)),
     (FteFlag::Qccx, 1 << 1, Some(LexFlag::Qccx)),
     (FteFlag::Utf8strings, 1 << 2, Some(LexFlag::Utf8Strings)),
@@ -33,6 +33,8 @@ const KEPT: [(FteFlag, u32, Option<LexFlag>); 15] = [
     (FteFlag::Laxcasts, 1 << 16, None),
     (FteFlag::Typeexplicit, 1 << 17, None),
     (FteFlag::Undefwordsize, 1 << 18, None),
+    (FteFlag::Ifvector, 1 << 19, None),
+    (FteFlag::Vectorlogic, 1 << 20, None),
 ];
 
 /// The bit of [`CompilerFlags`] that holds the operator priorities, C's when set.
@@ -77,7 +79,7 @@ pub enum Priorities {
 
 /// Which of the flags the lexer, the parser and the semantic model read are on where a token
 /// stands, and the operator priorities there (FTEF-12.12, FTEF-21). [`Default`] is FTEQCC's
-/// default: only `qcfuncs` on, QuakeC's priorities.
+/// default: `qcfuncs`, `ifvector` and `vectorlogic` on, QuakeC's priorities.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CompilerFlags {
     bits: u32,
@@ -85,7 +87,10 @@ pub struct CompilerFlags {
 
 impl Default for CompilerFlags {
     fn default() -> Self {
-        Self { bits: 0 }.with(FteFlag::Qcfuncs, true)
+        Self { bits: 0 }
+            .with(FteFlag::Qcfuncs, true)
+            .with(FteFlag::Ifvector, true)
+            .with(FteFlag::Vectorlogic, true)
     }
 }
 

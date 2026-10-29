@@ -11,7 +11,7 @@ use super::{index_of, module_index_of};
 use crate::lower::lower_file;
 use crate::resolve::{ResolveOptions, resolve_module};
 use crate::symbol::{DefId, DefKind};
-use crate::ty::{FunctionType, SimpleType, Type};
+use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
 
 /// The codes of the diagnostics an index reports, in order.
 fn codes(source: &str) -> Vec<Code> {
@@ -271,6 +271,7 @@ fn next_think_name_is_declared_void_function() {
             ret: Type::Simple(SimpleType::Void),
             params: Vec::new(),
             variadic: false,
+            labels: ParamLabels::default(),
         }))
     );
     assert_eq!(th2.location.span.start, source.find("th2").unwrap());

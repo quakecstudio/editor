@@ -347,7 +347,7 @@ mod tests {
         let good = fteqcc(compiling(&["a.qc", "b.qc"]));
         assert!(check_dir(&good, Path::new("fteqcc"), &work, &dir, &refs).unwrap());
         {
-            let seen = good.seen.borrow();
+            let seen = good.seen.lock().unwrap();
             assert_eq!(seen.len(), 1);
             assert!(seen[0].contains("-srcfile progs.src"), "{}", seen[0]);
             assert!(!seen[0].contains("-o "), "{}", seen[0]);

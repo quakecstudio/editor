@@ -17,7 +17,7 @@
 //! one `qcc` writes, byte for byte, but where QC-27 says otherwise.
 //!
 //! The type rules of expressions are the compiler's (QC-16 to QC-19): an operator's opcode is
-//! the first of its spelling whose operand types are the operands' basic types (QC-16.7,
+//! the first of its spelling whose operand types are the operands' basic types (QC-16.8,
 //! QC-17.6), and a call's arguments must have exactly its parameters' types (QC-18.8). Their
 //! errors are reported as `qcc` reports them (QCD-4).
 //!

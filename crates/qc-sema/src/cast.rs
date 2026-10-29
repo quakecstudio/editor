@@ -19,7 +19,7 @@ use qc_lexer::{LexFlag, LexFlags};
 use qc_preproc::{CompilerFlags, FteFlag};
 use qc_syntax::c_scalar::CScalar;
 
-use crate::ty::{SimpleType, Type};
+use crate::ty::{FunctionType, SimpleType, Type};
 
 /// The type FTEQCC gives a literal (FTEF-3.1, FTEF-3.3, QC-4, QC-5, QC-6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -158,7 +158,7 @@ impl Literal {
 }
 
 /// The kind of a type, FTEQCC's `etype_t`, as its cast rule and redeclaration checks read it;
-/// `Opaque` for a type the semantic model does not follow (FTEF-17.13), on which no check is
+/// `Opaque` for a type the semantic model does not follow (FTEF-17.21), on which no check is
 /// made.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -200,9 +200,9 @@ fn c_scalar(name: &str) -> Option<CScalar> {
 
 impl Kind {
     /// The kind of a type the model holds. C type words, and the type names FTEQCC registers,
-    /// are the type `QCC_PR_ParseType` makes of them (FTEF-2.8); an 8- or 16-bit integer,
-    /// `__bint` and a type a program names are opaque.
-    fn of(ty: &Type) -> Self {
+    /// are the type `QCC_PR_ParseType` makes of them (FTEF-2.8), an 8- or 16-bit integer its
+    /// parent's (FTEF-2.12); `__bint` and a type a program names are opaque.
+    pub(crate) fn of(ty: &Type) -> Self {
         match ty {
             Type::Simple(SimpleType::Void) => Self::Void,
             Type::Simple(SimpleType::String) => Self::String,
@@ -220,6 +220,13 @@ impl Kind {
     /// The kind the registered type name `name` names (FTEF-2.8), or `Opaque` when it names
     /// none.
     fn of_c_words(name: &str) -> Self {
+        // FTEF-19.54: `QCC_main`'s own names for the core types.
+        match name {
+            "__string" => return Self::String,
+            "__vector" => return Self::Vector,
+            "__entity" => return Self::Entity,
+            _ => {}
+        }
         let Some(scalar) = c_scalar(name) else {
             return Self::Opaque;
         };
@@ -230,12 +237,11 @@ impl Kind {
             CScalar::Uint => Self::Uint,
             CScalar::Int64 => Self::Int64,
             CScalar::Uint64 => Self::Uint64,
-            CScalar::Int16
-            | CScalar::Uint16
-            | CScalar::Int8
-            | CScalar::Uint8
-            | CScalar::Bool
-            | CScalar::BFloat => Self::Opaque,
+            // FTEF-2.12: `ev_bitfld`, cast as its `parentclass` (`QCC_TryEvaluateCast`).
+            CScalar::Int16 | CScalar::Int8 => Self::Integer,
+            CScalar::Uint16 | CScalar::Uint8 => Self::Uint,
+            CScalar::Bool => Self::Integer,
+            CScalar::BFloat => Self::Float,
         }
     }
 
@@ -390,13 +396,19 @@ pub enum Source<'a> {
 }
 
 /// Whether two pointers' targets `a` and `b` are one type to `typecmp_lax`, which follows
-/// pointers to what they point to: a pointer and a pointer agree by their targets, anything
-/// else as [`Type::fteqcc_same`] says.
+/// pointers to what they point to: a pointer and a pointer agree by their targets, a
+/// `__variant` and a pointer or function do not (FTEF-11.4), and anything else as
+/// [`Type::fteqcc_same`] says.
 fn pointees_agree(a: &Type, b: &Type) -> bool {
+    let variant =
+        |ty: &Type| matches!(ty, Type::Named(n) if matches!(n.as_ref(), "__variant" | "variant"));
     match (a, b) {
         (Type::Pointer(a), Type::Pointer(b)) => pointees_agree(a, b),
-        (Type::Pointer(_), other) | (other, Type::Pointer(_)) => {
-            other.fteqcc_kind() == Kind::Opaque
+        (Type::Pointer(_) | Type::Function(_), other)
+        | (other, Type::Pointer(_) | Type::Function(_))
+            if variant(other) =>
+        {
+            false
         }
         _ => a.fteqcc_same(b),
     }
@@ -450,6 +462,31 @@ impl Source<'_> {
         }
     }
 
+    /// `QCC_EvaluateCast(src, to, false)`, a cast the program writes (FTEF-30.6): no warning;
+    /// what an implicit cast takes, and also an entity and a float either way, two types of one
+    /// kind (`!typecmp_lax`) and any type to `void`; under `lax` anything, silently; else
+    /// "Cannot cast".
+    #[must_use]
+    pub fn cast_explicit(self, to: &Type, flags: CompilerFlags) -> Cast {
+        let (from_kind, to_kind) = (self.kind(), Kind::of(to));
+        let entity_float = matches!(
+            (from_kind, to_kind),
+            (Kind::Entity, Kind::Float) | (Kind::Float, Kind::Entity)
+        );
+        match self.try_cast(to, flags) {
+            Some(Cast::StringPointerDisabled) => Cast::StringPointerDisabled,
+            Some(_) => Cast::Silent,
+            None if entity_float
+                || from_kind == to_kind
+                || to_kind == Kind::Void
+                || flags.has(FteFlag::Laxcasts) =>
+            {
+                Cast::Silent
+            }
+            None => Cast::Refused,
+        }
+    }
+
     /// `QCC_TryEvaluateCast(src, to, true)`, its branches in order; `None` when it fails.
     /// `qccx` adds a float to an entity or a string and back to the casts "acceptable but
     /// probably an error"; `flag_undefwordsize` makes a string to a pointer the error of
@@ -462,7 +499,7 @@ impl Source<'_> {
             Source::Typed(ty) => (Kind::of(ty), false, Some(ty)),
         };
         // `typecmp`: a type casts to itself. A redeclaration compares types structurally
-        // (QC-10.6), and so does this. A type the model does not follow is not checked.
+        // (QC-10.10), and so does this. A type the model does not follow is not checked.
         if from_ty == Some(to) || from_kind == Kind::Opaque || to_kind == Kind::Opaque {
             return Some(Cast::Silent);
         }
@@ -500,9 +537,27 @@ impl Source<'_> {
                 Cast::Implicit
             });
         }
-        // `typecmp` of two functions: the same type part by part is a cast to itself.
-        if let (Type::Function(_), Some(from @ Type::Function(_))) = (to, from_ty)
-            && from.fteqcc_same(to)
+        // A field of a `variant` casts to and from any field, silently.
+        if let (Type::Field(to_inner), Some(Type::Field(from_inner))) = (to, from_ty)
+            && (Kind::of(to_inner) == Kind::Opaque || Kind::of(from_inner) == Kind::Opaque)
+        {
+            return Some(Cast::Silent);
+        }
+        // FTEF-22.8: two functions are "acceptable" casts, which warn only when `typecmp_lax`
+        // tells them apart: by their return types and the parameters both have, any more one
+        // has being `optional`, not by `...` (FTEF-30.14).
+        let optional_beyond = |f: &FunctionType, both: usize| {
+            (both..f.params.len()).all(|at| f.labels.0.get(at).is_some_and(|l| l.optional))
+        };
+        if let (Type::Function(to), Some(Type::Function(from))) = (to, from_ty)
+            && optional_beyond(from, to.params.len().min(from.params.len()))
+            && optional_beyond(to, to.params.len().min(from.params.len()))
+            && from.ret.fteqcc_same(&to.ret)
+            && from
+                .params
+                .iter()
+                .zip(&to.params)
+                .all(|(a, b)| a.fteqcc_same(b))
         {
             return Some(Cast::Silent);
         }
@@ -551,6 +606,21 @@ impl Source<'_> {
         }
     }
 
+    /// `QCC_SupplyConversionForAssignment(to, var, wanted, true)` of this value stored into a
+    /// `to` (FTEF-29.4): `QCC_TryEvaluateCast` with `implicit` off, which also casts an entity
+    /// and a float either way, and else [`Source::supply`].
+    #[must_use]
+    pub fn supply_for_assignment(self, to: &Type, flags: CompilerFlags) -> Supply {
+        let entity_float = matches!(
+            (self.kind(), Kind::of(to)),
+            (Kind::Entity, Kind::Float) | (Kind::Float, Kind::Entity)
+        );
+        if entity_float || self.try_cast(to, flags).is_some() {
+            return Supply::Converted;
+        }
+        self.supply(Kind::of(to), flags)
+    }
+
     /// The kind of this value's type.
     #[must_use]
     pub fn kind(self) -> Kind {
@@ -571,6 +641,20 @@ impl Source<'_> {
 }
 
 impl ConstType {
+    /// The type a literal of this type has.
+    pub(crate) fn value_type(self) -> Type {
+        match self {
+            Self::Float => Type::Simple(SimpleType::Float),
+            Self::Vector => Type::Simple(SimpleType::Vector),
+            Self::String => Type::Simple(SimpleType::String),
+            Self::Integer => Type::Named("__int32".into()),
+            Self::Uint => Type::Named("__uint32".into()),
+            Self::Int64 => Type::Named("__int64".into()),
+            Self::Uint64 => Type::Named("__uint64".into()),
+            Self::Double => Type::Named("__double".into()),
+        }
+    }
+
     /// The name FTEQCC's `TypeName` gives this type.
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -588,26 +672,82 @@ impl ConstType {
 }
 
 impl Type {
-    /// This type as FTEQCC's `TypeName` writes it in a message, without parameter names, which
-    /// the model's types do not keep (QC-10.3): `.float`, `void(float, vector)`, `entity*`.
+    /// This type as FTEQCC's `TypeName` writes it in a message, a function's parameters with
+    /// their marks, names and defaults (FTEF-24.7): `.float`, `void(float x, vector v)`,
+    /// `entity*`.
     #[must_use]
     pub fn fteqcc_name(&self) -> String {
+        self.fteqcc_name_with(&Self::fteqcc_name)
+    }
+
+    /// [`Self::fteqcc_name`] with the types this one holds, a field's, a pointer's and a
+    /// function's parameters, named by `name_of`.
+    #[must_use]
+    pub fn fteqcc_name_with(&self, name_of: &dyn Fn(&Self) -> String) -> String {
         let ty = self;
         match ty {
             Type::Unknown => "__variant".to_owned(),
             Type::Simple(simple) => simple.as_str().to_owned(),
-            Type::Field(inner) => format!(".{}", inner.fteqcc_name()),
-            Type::Pointer(inner) => format!("{}*", inner.fteqcc_name()),
-            Type::Named(name) => match Kind::of(ty) {
-                Kind::Opaque => name.to_string(),
-                kind => kind.name().to_owned(),
+            Type::Field(inner) => format!(".{}", name_of(inner)),
+            Type::Pointer(inner) => format!("{}*", name_of(inner)),
+            Type::Named(name) => match (Kind::of(ty), c_scalar(name)) {
+                (
+                    _,
+                    Some(
+                        narrow
+                        @ (CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16),
+                    ),
+                ) => narrow.name().to_owned(),
+                // FTEF-19.54: a type `QCC_main` makes again under its own name prints it.
+                _ if matches!(
+                    name.as_ref(),
+                    "__int" | "__uint" | "__string" | "__vector" | "__entity" | "__bfloat"
+                ) =>
+                {
+                    name.to_string()
+                }
+                (Kind::Opaque, _) => name.to_string(),
+                (kind, _) => kind.name().to_owned(),
             },
             Type::Function(func) => {
-                let mut params: Vec<String> = func.params.iter().map(Type::fteqcc_name).collect();
+                let mut params: Vec<String> = func
+                    .params
+                    .iter()
+                    .enumerate()
+                    .map(|(at, param)| {
+                        let ty = name_of(param);
+                        let Some(label) = func.labels.0.get(at) else {
+                            return ty;
+                        };
+                        let mut text = String::new();
+                        if label.out {
+                            text.push_str("inout ");
+                        }
+                        if label.optional {
+                            text.push_str("optional ");
+                        }
+                        text.push_str(&ty);
+                        if let Some(name) = label.name.as_deref().filter(|n| !n.is_empty()) {
+                            text.push(' ');
+                            text.push_str(name);
+                        }
+                        if let Some(default) = &label.default {
+                            text.push_str(" = ");
+                            text.push_str(default);
+                        }
+                        text
+                    })
+                    .collect();
                 if func.variadic {
                     params.push("...".to_owned());
                 }
-                format!("{}({})", func.ret.fteqcc_name(), params.join(", "))
+                // The return type by its name, `type->aux_type->name`, not by `TypeName`: a
+                // function type's is `__function` (FTEF-19.67).
+                let ret = match &func.ret {
+                    Type::Function(_) => "__function".to_owned(),
+                    ret => ret.fteqcc_name(),
+                };
+                format!("{ret}({})", params.join(", "))
             }
         }
     }
@@ -635,7 +775,7 @@ impl Type {
     }
 
     /// Whether a redeclaration with type `other` declares the same type as this one under
-    /// FTEQCC's `typecmp` (FTEF-17.13): equal, a C type word compared by the kind it names, a
+    /// FTEQCC's `typecmp` (FTEF-17.21): equal, a C type word compared by the kind it names, a
     /// field, function or pointer compared part by part, and any type the model does not follow
     /// agreeing with any other.
     #[must_use]
@@ -654,13 +794,19 @@ impl Type {
                         .zip(&b.params)
                         .all(|(x, y)| x.fteqcc_same(y))
             }
-            // FTEF-17.13: two pointers are the same when what they point to is.
+            // FTEF-17.21: two pointers are the same when what they point to is.
             (Self::Pointer(a), Self::Pointer(b)) => a.fteqcc_same(b),
             _ => {
                 // A type a program names is not followed, so it agrees with anything, a pointer
                 // included; the rest agree when they are of one kind, as `int` and `integer`.
                 let (a, b) = (self.fteqcc_kind(), other.fteqcc_kind());
-                a == Kind::Opaque || b == Kind::Opaque || a == b
+                // FTEF-23.8: `__bint` and `__bfloat` are both `ev_boolean`, one type to
+                // `typecmp` and another than their parent types.
+                let boolean =
+                    |ty: &Self| matches!(ty.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat));
+                a == Kind::Opaque
+                    || b == Kind::Opaque
+                    || (boolean(self) == boolean(other) && (boolean(self) || a == b))
             }
         }
     }

@@ -1,5 +1,5 @@
 # cargo xtask sema-corpus: rerelease, the FTEQCC profile
-module progs: 3364 definitions, 17017 references, 0 diagnostics
+module progs: 3364 definitions, 17017 references, 4 diagnostics
 def defs.qc:31 global self entity refs 3414
 def defs.qc:32 global other entity refs 299
 def defs.qc:33 global world entity refs 101
@@ -3364,3 +3364,7 @@ def monsters/shub.qc:284 local timer entity refs 2
 def monsters/shub.qc:314 function monster_oldone void() refs 0
 def bots/bot.qc:34 function Bot_PreThink void() refs 0
 def bots/bot.qc:52 function Bot_PostThink void() refs 0
+diag doors.qc:628 W0220 Implicit cast from void() to void(entity attacker, float damage)
+diag doors.qc:716 W0220 Implicit cast from void() to void(entity attacker, float damage)
+diag doors.qc:827 W0220 Implicit cast from void() to void(entity attacker, float damage)
+diag monsters/shub.qc:343 W0220 Implicit cast from void() to void(entity attacker, float damage)

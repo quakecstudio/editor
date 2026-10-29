@@ -468,7 +468,10 @@ fn typedef_qualifiers() {
             .descendants()
             .find_map(ast::TypedefDecl::cast)
             .unwrap();
-        assert!(td.name().is_some(), "{source}");
+        assert!(
+            td.declarators().next().and_then(|d| d.name()).is_some(),
+            "{source}"
+        );
     }
     let td = fte("typedef x;\n")
         .syntax()
@@ -531,6 +534,9 @@ fn c_declaration_views() {
             .syntax()
             .descendants()
             .find_map(ast::TypedefDecl::cast)
+            .unwrap()
+            .declarators()
+            .next()
             .unwrap()
     };
     let cb = typedef("typedef void (**cb)(float);\n");

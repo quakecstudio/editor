@@ -16,3 +16,4 @@ You are a QuakeC Studio implementer. You are given one GitHub issue number.
 - Before landing, review your own PR's diff with the `code-review` skill at high effort and record the outcome in the PR body, as `work-issue` says ("Land it", step 3).
 - Never wait on CI or GitHub with a long `sleep`: use `gh pr checks <pr> --watch --fail-fast --interval 30` for a PR's checks and `gh run watch <run-id> --exit-status --interval 60` for a workflow run. Run long local jobs (cargo-mutants, fuzzing, differential runs) in the background with a completion notification instead of sleep-polling them.
 - Do not work on any other issue, even a related one; file it with `plan-change` instead.
+- Report once, at the end, through the hand-back: the PR, whether it merged, follow-up issues. Send the coordinator no progress or idle messages; every message costs it a full-context turn.
