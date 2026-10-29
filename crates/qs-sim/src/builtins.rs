@@ -149,10 +149,8 @@ impl Builtins for SimBuiltins {
             PRECACHE_MODEL | PRECACHE_MODEL2 => {
                 let before = self.mock.engine().model_precache.len();
                 self.mock.call(number, context)?;
-                let list = &self.mock.engine().model_precache;
-                if list.len() > before
-                    && let Some(name) = list.last().cloned()
-                {
+                // A name not precached before is the new last entry.
+                if let Some(name) = self.mock.engine().model_precache.get(before).cloned() {
                     self.loaded(before, &name);
                 }
                 Ok(())

@@ -22,8 +22,6 @@ const FLY_ADJUST: f32 = 8.0;
 const FLY_HIGH: f32 = 40.0;
 /// `dz < 30` raises it (MOVE-2.1).
 const FLY_LOW: f32 = 30.0;
-/// `DI_NODIR` (MOVE-4.1).
-const DI_NODIR: f32 = -1.0;
 /// `FL_FLY`.
 const FL_FLY: i32 = 1;
 /// `FL_SWIM`.
@@ -178,7 +176,7 @@ impl SimCall<'_, '_, '_> {
             self.set_vector(ent, "origin", oldorg);
             return Ok(false);
         }
-        // MOVE-2.5
+        // MOVE-2.5: only when it is set, so a `flags` that is not a whole number is kept.
         if flags & FL_PARTIALGROUND != 0 {
             let flags = self.flags(ent) & !FL_PARTIALGROUND;
             self.set_flags(ent, flags);
@@ -212,7 +210,6 @@ impl SimCall<'_, '_, '_> {
     /// `SV_NewChaseDir` (MOVE-4).
     #[expect(
         clippy::float_cmp,
-        clippy::float_cmp_const,
         reason = "spec MOVE-4.2: id compares the headings as floats"
     )]
     fn new_chase_dir(&mut self, actor: usize, enemy: usize, dist: f32) -> Result<(), RunError> {
@@ -224,25 +221,26 @@ impl SimCall<'_, '_, '_> {
         let [ex, ey, _] = self.vector(enemy, "origin");
         let [ax, ay, _] = self.vector(actor, "origin");
         let (deltax, deltay) = (ex - ax, ey - ay);
+        // MOVE-4.1: `None` is id's DI_NODIR.
         let mut d1 = if deltax > CHASE_SLACK {
-            0.0
+            Some(0.0)
         } else if deltax < -CHASE_SLACK {
-            180.0
+            Some(180.0)
         } else {
-            DI_NODIR
+            None
         };
         let mut d2 = if deltay < -CHASE_SLACK {
-            270.0
+            Some(270.0)
         } else if deltay > CHASE_SLACK {
-            90.0
+            Some(90.0)
         } else {
-            DI_NODIR
+            None
         };
         // MOVE-4.2: the direct route.
-        if d1 != DI_NODIR && d2 != DI_NODIR {
-            let tdir = if d1 == 0.0 {
-                if d2 == 90.0 { 45.0 } else { 315.0 }
-            } else if d2 == 90.0 {
+        if let (Some(x), Some(y)) = (d1, d2) {
+            let tdir = if x == 0.0 {
+                if y == 90.0 { 45.0 } else { 315.0 }
+            } else if y == 90.0 {
                 135.0
             } else {
                 215.0
@@ -257,13 +255,14 @@ impl SimCall<'_, '_, '_> {
         if swap {
             (d1, d2) = (d2, d1);
         }
-        for dir in [d1, d2] {
-            if dir != DI_NODIR && dir != turnaround && self.step_direction(actor, dir, dist)? {
+        for dir in [d1, d2].into_iter().flatten() {
+            if dir != turnaround && self.step_direction(actor, dir, dist)? {
                 return Ok(());
             }
         }
-        // MOVE-4.4: no direct path, so another direction.
-        if olddir != DI_NODIR && self.step_direction(actor, olddir, dist)? {
+        // MOVE-4.4: no direct path, so another direction. id tests `olddir != DI_NODIR` and
+        // `turnaround != DI_NODIR`, which always hold: anglemod is never -1.
+        if self.step_direction(actor, olddir, dist)? {
             return Ok(());
         }
         let headings: [f32; 8] = [0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0];
@@ -277,7 +276,7 @@ impl SimCall<'_, '_, '_> {
                 return Ok(());
             }
         }
-        if turnaround != DI_NODIR && self.step_direction(actor, turnaround, dist)? {
+        if self.step_direction(actor, turnaround, dist)? {
             return Ok(());
         }
         // MOVE-4.5: "can't move".

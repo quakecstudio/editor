@@ -49,6 +49,7 @@ float(entity e) checkbottom = #40;
 float(vector v) pointcontents = #41;
 void(float step) movetogoal = #67;
 void(entity e) makestatic = #69;
+float() random = #7;
 .float count;
 .float dmg;
 .float speed;
@@ -105,14 +106,19 @@ fn compile(source: &str) -> Vec<u8> {
 /// A floor at z = 0 for x below 100, and a pit floor at z = -30 past it; for the player's
 /// hull, 24 and -6, with the edge at x = 116.
 fn ledge() -> MapSpec {
+    ledge_over(30.0)
+}
+
+/// The ledge with its pit floor `pit` below the floor.
+fn ledge_over(pit: f32) -> MapSpec {
     MapSpec {
         planes: vec![
             plane([1.0, 0.0, 0.0], 100.0, 0),
             plane([0.0, 0.0, 1.0], 0.0, 2),
-            plane([0.0, 0.0, 1.0], -30.0, 2),
+            plane([0.0, 0.0, 1.0], -pit, 2),
             plane([1.0, 0.0, 0.0], 116.0, 0),
             plane([0.0, 0.0, 1.0], 24.0, 2),
-            plane([0.0, 0.0, 1.0], -6.0, 2),
+            plane([0.0, 0.0, 1.0], 24.0 - pit, 2),
         ],
         nodes: vec![node(0, [2, 1]), node(1, [-2, -1]), node(2, [-2, -1])],
         leafs: vec![CONTENTS_SOLID, CONTENTS_EMPTY],
@@ -234,7 +240,7 @@ fn traceline_writes_the_trace_globals() {
     let source = "void() tracer = { traceline('50 0 100', '50 0 -100', 0, self); \
         self.frags = trace_fraction; self.oldorigin = trace_endpos; \
         self.movedir = trace_plane_normal; self.health = trace_inopen; \
-        self.armorvalue = trace_allsolid; self.dmg = trace_plane_dist; \
+        self.armorvalue = trace_allsolid; self.ammo_shells = trace_plane_dist; \
         self.enemy = trace_ent; };\n";
     let world = world(source, &entity("tracer", "0 0 0", ""));
     assert!((world.float(2, "frags") - 0.499_843_75).abs() < 1e-6);
@@ -242,7 +248,7 @@ fn traceline_writes_the_trace_globals() {
     assert_eq!(world.vector(2, "movedir"), [0.0, 0.0, 1.0]);
     assert_eq!(world.float(2, "health"), 1.0);
     assert_eq!(world.float(2, "armorvalue"), 0.0);
-    assert_eq!(world.float(2, "dmg"), 0.0);
+    assert_eq!(world.float(2, "ammo_shells"), 0.0);
     assert_eq!(world.entity_field(2, "enemy"), 0);
 }
 
@@ -432,6 +438,7 @@ fn placing_links_and_removing_unlinks() {
 fn spawning_frees_unknown_classes() {
     let world = world("", &entity("nothing_here", "0 0 0", ""));
     assert!(!world.linked(2));
+    assert_eq!(world.machine.edicts().is_free(2), Some(true));
 }
 
 /// A BSP29 file of `spec`'s planes, nodes, leaves and clipnodes and one model over them.
@@ -528,12 +535,15 @@ fn precached_models_bring_their_bounds_and_hulls() {
         void() sprite = { setmodel(self, \"progs/s.spr\"); };\n\
         void() thing = { setmodel(self, \"progs/t.mdl\"); };\n\
         void() tracer = { traceline('300 0 100', '300 0 -100', 0, self); \
-        self.frags = trace_fraction; self.enemy = trace_ent; };\n";
+        self.frags = trace_fraction; self.enemy = trace_ent; };\n\
+        void() rider = { self.solid = 2; setsize(self, '-16 -16 -24', '16 16 32'); \
+        setorigin(self, self.origin); droptofloor(); };\n";
     let entities = [
         entity("boxed", "300 0 50", ""),
         entity("sprite", "0 0 0", ""),
         entity("thing", "0 0 0", ""),
         entity("tracer", "0 0 0", ""),
+        entity("rider", "300 0 200", ""),
     ]
     .concat();
     let files = vec![
@@ -550,6 +560,12 @@ fn precached_models_bring_their_bounds_and_hulls() {
     let fraction = world.float(5, "frags");
     assert!((fraction - 0.2).abs() < 1e-3, "{fraction}");
     assert_eq!(world.entity_field(5, "enemy"), world.entity_value(2));
+    // Dropped onto the box: its hull 1 top is 34 up, at 84.
+    assert!((world.vector(6, "origin")[2] - 84.031_25).abs() < 1e-3);
+    assert_eq!(world.entity_field(6, "groundentity"), world.entity_value(2));
+    let models: Vec<String> = world.entities().into_iter().map(|e| e.model).collect();
+    assert!(models.contains(&"progs/t.mdl".to_owned()), "{models:?}");
+    assert!(models.contains(&"maps/b_box.bsp".to_owned()), "{models:?}");
 }
 
 // spec MOVE-5.1: movetogoal does nothing for a monster not on the ground, flying or swimming,
@@ -642,20 +658,41 @@ fn pillar() -> MapSpec {
 }
 
 /// A goal and a chaser that steps `speed` toward it with `movetogoal`.
-fn chase_source() -> String {
+/// The chase, after `worldspawn` draws `skip` times from the random source.
+fn chase_source_after(skip: usize) -> String {
     format!(
-        "void() goal = {{ marker = self; }};\n\
+        "void() worldspawn = {{ local float i; i = 0; while (i < {skip}) {{ random(); i = i + 1; }} }};\n\
+         void() goal = {{ {PLAYER_SIZE} setorigin(self, self.origin); marker = self; }};\n\
          void() chaser = {{ {PLAYER_SIZE} setorigin(self, self.origin); droptofloor(); \
-         self.goalentity = marker; self.yaw_speed = 360; movetogoal(self.speed); }};\n"
+         self.goalentity = marker; if (self.count) self.enemy = marker; \
+         movetogoal(self.speed); }};\n"
     )
 }
 
 fn chase(spec: &MapSpec, goal: &str, chaser: &str, keys: &str) -> World {
-    let entities = [entity("goal", goal, ""), entity("chaser", chaser, keys)].concat();
-    world_on(spec, &chase_source(), &entities, Vec::new())
+    chase_after(spec, 0, goal, chaser, keys)
 }
 
-const EAST: &str = "\"ideal_yaw\" \"0\"\n\"speed\" \"10\"\n";
+fn chase_after(spec: &MapSpec, skip: usize, goal: &str, chaser: &str, keys: &str) -> World {
+    let entities = [entity("goal", goal, ""), entity("chaser", chaser, keys)].concat();
+    world_on(spec, &chase_source_after(skip), &entities, Vec::new())
+}
+
+const EAST: &str = "\"ideal_yaw\" \"0\"\n\"speed\" \"10\"\n\"yaw_speed\" \"360\"\n";
+
+/// The draws of seed 0's random source, from the first.
+fn draws(count: usize) -> Vec<u32> {
+    let mut rng = Rng::new(0);
+    (0..count).map(|_| rng.next_rand()).collect()
+}
+
+/// The first number of draws to skip after which `first(draw)` and `second(next draw)` hold.
+fn skip_where(first: impl Fn(u32) -> bool, second: impl Fn(u32) -> bool) -> usize {
+    let all = draws(200);
+    (0..199)
+        .find(|&n| first(all[n]) && second(all[n + 1]))
+        .expect("seed 0 has such a pair of draws")
+}
 
 // spec MOVE-4.1: the headings toward the goal are its sides on x and y beyond 10
 // spec MOVE-4.3: when the goal is further off on y than on x, y is tried first
@@ -686,9 +723,7 @@ fn a_chaser_takes_the_diagonal() {
 fn the_search_order_follows_rand() {
     let world = chase(&ledge(), "80 0 30", "80 0 30", EAST);
     // Seed 0: movetogoal's draw, the swap's, then the order's.
-    let mut rng = Rng::new(0);
-    let _ = (rng.next_rand(), rng.next_rand());
-    let ascending = rng.next_rand() & 1 != 0;
+    let ascending = draws(3)[2] & 1 != 0;
     let y = world.vector(3, "origin")[1];
     assert_eq!(y, if ascending { 10.0 } else { -10.0 });
 }
@@ -697,7 +732,7 @@ fn the_search_order_follows_rand() {
 // ground gets FL_PARTIALGROUND
 #[test]
 fn a_chaser_that_cannot_move() {
-    let keys = "\"ideal_yaw\" \"100\"\n\"speed\" \"30\"\n";
+    let keys = "\"ideal_yaw\" \"100\"\n\"speed\" \"30\"\n\"yaw_speed\" \"360\"\n";
     let world = chase(&pillar(), "0 0 30", "0 0 30", keys);
     // olddir is (int)(100/45)*45.
     assert_eq!(world.float(3, "ideal_yaw"), 90.0);
@@ -706,4 +741,304 @@ fn a_chaser_that_cannot_move() {
     assert_eq!(world.float(3, "flags"), 512.0);
     let world = chase(&pillar(), "10 0 30", "10 0 30", keys);
     assert_eq!(world.float(3, "flags"), 512.0 + 1024.0);
+}
+
+/// A floor at z = 0 with a hole 20 wide around the origin whose floor is `depth` down; the
+/// player's hull is the floor at 24, the hole too narrow for it.
+fn well(depth: f32) -> MapSpec {
+    MapSpec {
+        planes: vec![
+            plane([1.0, 0.0, 0.0], 10.0, 0),
+            plane([1.0, 0.0, 0.0], -10.0, 0),
+            plane([0.0, 1.0, 0.0], 10.0, 1),
+            plane([0.0, 1.0, 0.0], -10.0, 1),
+            plane([0.0, 0.0, 1.0], 0.0, 2),
+            plane([0.0, 0.0, 1.0], -depth, 2),
+            plane([0.0, 0.0, 1.0], 24.0, 2),
+        ],
+        nodes: vec![
+            node(0, [4, 1]),
+            node(1, [2, 4]),
+            node(2, [4, 3]),
+            node(3, [5, 4]),
+            node(4, [-2, -1]),
+            node(5, [-2, -1]),
+        ],
+        leafs: vec![CONTENTS_SOLID, CONTENTS_EMPTY],
+        clipnodes: vec![ClipNode {
+            planenum: 6,
+            children: [CONTENTS_EMPTY, CONTENTS_SOLID],
+        }],
+    }
+}
+
+/// `checkbottom` of a box of `mins` to `maxs` at `origin` on `spec`.
+fn bottom_of(spec: &MapSpec, origin: &str, size: &str) -> f32 {
+    let source = format!(
+        "void() prober = {{ {size} setorigin(self, self.origin); self.frags = checkbottom(self); }};\n"
+    );
+    let world = world_on(spec, &source, &entity("prober", origin, ""), Vec::new());
+    world.float(2, "frags")
+}
+
+const SMALL: &str = "setsize(self, '-4 -4 -24', '4 4 32');";
+
+// spec MOVE-1.1: solid one unit below every corner is ground, whatever is under the centre
+// spec MOVE-1.2: the centre's trace starts from the middle of the box's bottom
+// spec MOVE-1.3: a corner exactly 18 below the centre is still ground; more is not
+#[test]
+fn the_ground_check_reads_the_corners_and_the_centre() {
+    assert_eq!(bottom_of(&well(50.0), "0 0 24", PLAYER_SIZE), 1.0);
+    // A corner over a hole 20 deep, the centre on the floor: no ground.
+    assert_eq!(bottom_of(&well(20.0), "12 0 24", SMALL), 0.0);
+    assert_eq!(bottom_of(&well(20.0), "0 12 24", SMALL), 0.0);
+    // The centre over the hole, a corner on the floor above it: ground.
+    assert_eq!(bottom_of(&well(20.0), "6 0 24", SMALL), 1.0);
+    assert_eq!(bottom_of(&well(20.0), "0 6 24", SMALL), 1.0);
+    // 18 exactly.
+    assert_eq!(bottom_of(&well(18.0), "12 0 24", SMALL), 1.0);
+    assert_eq!(bottom_of(&well(18.5), "12 0 24", SMALL), 0.0);
+}
+
+// spec MOVE-2.2: a step pushed down from 18 above lands up to 18 below: a stair down
+#[test]
+fn walkmove_takes_a_stair_down() {
+    // The walker stands 1/32 above its floor, so a stair of exactly 18 is out of reach.
+    let stair = |drop: f32| {
+        let world = world_on(
+            &ledge_over(drop),
+            &walker_source(),
+            &walker("50 0 30", "80", ""),
+            Vec::new(),
+        );
+        (world.float(2, "frags"), world.vector(2, "origin"))
+    };
+    let (moved, [x, _, z]) = stair(17.5);
+    assert_eq!((moved, x), (1.0, 130.0));
+    assert!((z - 6.531_25).abs() < 1e-3, "{z}");
+    assert_eq!(stair(18.0).0, 0.0);
+}
+
+/// A floor at z = 0 under a ceiling at 60; for the player's hull, 24 and 28.
+fn tunnel() -> MapSpec {
+    MapSpec {
+        planes: vec![
+            plane([0.0, 0.0, 1.0], 60.0, 2),
+            plane([0.0, 0.0, 1.0], 0.0, 2),
+            plane([0.0, 0.0, 1.0], 28.0, 2),
+            plane([0.0, 0.0, 1.0], 24.0, 2),
+        ],
+        nodes: vec![node(0, [-1, 1]), node(1, [-2, -1])],
+        leafs: vec![CONTENTS_SOLID, CONTENTS_EMPTY],
+        clipnodes: vec![
+            ClipNode {
+                planenum: 2,
+                children: [CONTENTS_SOLID, 1],
+            },
+            ClipNode {
+                planenum: 3,
+                children: [CONTENTS_EMPTY, CONTENTS_SOLID],
+            },
+        ],
+    }
+}
+
+// spec MOVE-2.2: a step that starts in solid a step up is tried again from the floor's height
+#[test]
+fn walkmove_under_a_low_ceiling() {
+    let world = world_on(
+        &tunnel(),
+        &walker_source(),
+        &walker("0 0 26", "10", ""),
+        Vec::new(),
+    );
+    assert_eq!(world.float(2, "frags"), 1.0);
+    let [x, _, z] = world.vector(2, "origin");
+    assert_eq!(x, 10.0);
+    assert!((z - 24.031_25).abs() < 1e-3, "{z}");
+}
+
+/// A flyer at `height` stepping 10 east, with an enemy at `enemy`.
+fn flyer_at(height: f32, enemy: f32) -> [f32; 3] {
+    let entities = [
+        entity("mark", &format!("0 0 {enemy}"), ""),
+        entity(
+            "flyer",
+            &format!("50 0 {height}"),
+            "\"speed\" \"10\"\n\"flags\" \"1\"\n",
+        ),
+    ]
+    .concat();
+    world(&walker_source(), &entities).vector(3, "origin")
+}
+
+// spec MOVE-2.1: the height bends only above 40 and below 30, and a first try that hits is
+// tried again without it
+#[test]
+fn flyers_bend_toward_their_enemy() {
+    assert_eq!(flyer_at(140.0, 100.0), [60.0, 0.0, 140.0]);
+    assert_eq!(flyer_at(141.0, 100.0), [60.0, 0.0, 133.0]);
+    assert_eq!(flyer_at(130.0, 100.0), [60.0, 0.0, 130.0]);
+    assert_eq!(flyer_at(120.0, 100.0), [60.0, 0.0, 128.0]);
+    // 8 lower would be in the floor: the second try keeps the height.
+    assert_eq!(flyer_at(30.0, -100.0), [60.0, 0.0, 30.0]);
+}
+
+/// A chaser at (20, 0) facing `ideal` with `angles` that turns `yaw_speed` a step.
+fn turner(ideal: &str, angles: &str) -> [f32; 3] {
+    let keys =
+        format!("\"ideal_yaw\" \"{ideal}\"\n\"angles\" \"0 {angles} 0\"\n\"speed\" \"10\"\n");
+    chase(&ledge(), "-500 -500 30", "20 0 30", &keys).vector(3, "origin")
+}
+
+// spec MOVE-3.2: a step whose yaw is more than 45 and less than 315 short of ideal_yaw is put
+// back
+#[test]
+fn a_step_not_turned_far_enough_is_put_back() {
+    let [x, y, _] = turner("90", "180");
+    assert_eq!((x, y), (20.0, 0.0));
+    let [x, y, _] = turner("90", "135");
+    assert_eq!((x, y), (20.0, 10.0));
+    let [x, y, _] = turner("90", "0");
+    assert_eq!((x, y), (20.0, 10.0));
+    let [x, y, _] = turner("0", "315");
+    assert_eq!((x, y), (30.0, 0.0));
+    let [x, y, _] = turner("0", "314");
+    assert_eq!((x, y), (20.0, 0.0));
+}
+
+/// A chase from (-50, 50) facing north, where the first draw forces a new direction.
+fn chase_from(goal: &str) -> [f32; 2] {
+    let skip = skip_where(|d| d & 3 == 1, |_| true);
+    let keys = "\"ideal_yaw\" \"90\"\n\"speed\" \"10\"\n\"yaw_speed\" \"360\"\n";
+    let [x, y, _] = chase_after(&ledge(), skip, goal, "-50 50 30", keys).vector(3, "origin");
+    [x, y]
+}
+
+fn near(got: [f32; 2], want: [f32; 2]) -> bool {
+    (got[0] - want[0]).abs() < 1e-3 && (got[1] - want[1]).abs() < 1e-3
+}
+
+// spec MOVE-4.1: each axis heads toward the goal only when it is more than 10 off
+// spec MOVE-4.2: the diagonal of the two headings, 45, 315, 135 or 215, is tried first
+// spec MOVE-5.3: when rand() & 3 is 1 the step toward ideal_yaw is not tried
+#[test]
+fn chase_headings_and_diagonals() {
+    let d = 10.0 * core::f32::consts::FRAC_1_SQRT_2;
+    let cases: [(&str, [f32; 2]); 10] = [
+        ("-50 150 30", [-50.0, 60.0]),
+        ("100 50 30", [-40.0, 50.0]),
+        ("-40 150 30", [-50.0, 60.0]),
+        ("-60 150 30", [-50.0, 60.0]),
+        ("100 40 30", [-40.0, 50.0]),
+        ("100 60 30", [-40.0, 50.0]),
+        ("100 150 30", [-50.0 + d, 50.0 + d]),
+        ("100 -50 30", [-50.0 + d, 50.0 - d]),
+        ("-200 150 30", [-50.0 - d, 50.0 + d]),
+        (
+            "-200 -50 30",
+            [
+                -50.0 + 10.0 * 215.0_f32.to_radians().cos(),
+                50.0 + 10.0 * 215.0_f32.to_radians().sin(),
+            ],
+        ),
+    ];
+    for (goal, want) in cases {
+        let got = chase_from(goal);
+        assert!(near(got, want), "{goal}: {got:?} not {want:?}");
+    }
+}
+
+/// A chaser at (20, 0) facing 225, so 45 is its turnaround, after `skip` draws.
+fn swap_chase(skip: usize, goal: &str) -> [f32; 2] {
+    let keys = "\"ideal_yaw\" \"225\"\n\"speed\" \"10\"\n\"yaw_speed\" \"360\"\n";
+    let [x, y, _] = chase_after(&ledge(), skip, goal, "20 0 30", keys).vector(3, "origin");
+    [x, y]
+}
+
+// spec MOVE-4.3: x is tried before y unless the draw's bit 0 is set or y is further off
+#[test]
+fn chase_order_follows_the_draw_and_the_distance() {
+    let plain = skip_where(|d| d & 3 == 1, |d| d & 1 == 0);
+    let swapped = skip_where(|d| d & 3 == 1, |d| d & 1 != 0);
+    // 45, the diagonal, is the turnaround, so the two headings are tried alone.
+    assert_eq!(swap_chase(plain, "200 30 30"), [30.0, 0.0]);
+    assert_eq!(swap_chase(swapped, "200 30 30"), [20.0, 10.0]);
+    assert_eq!(swap_chase(plain, "40 200 30"), [20.0, 10.0]);
+}
+
+// spec MOVE-4.1: olddir is ideal_yaw cut to the 45 below it
+#[test]
+fn olddir_is_cut_to_45() {
+    let keys = "\"ideal_yaw\" \"50\"\n\"speed\" \"30\"\n\"yaw_speed\" \"360\"\n";
+    let world = chase(&pillar(), "0 0 30", "0 0 30", keys);
+    assert_eq!(world.float(3, "ideal_yaw"), 45.0);
+}
+
+// spec MOVE-5.2: close enough is within the step of the goal's box on every axis, either side
+#[test]
+fn close_enough_is_within_a_step_either_side() {
+    let at = |goal: &str| {
+        let keys = format!("{EAST}\"count\" \"1\"\n");
+        chase(&ledge(), goal, "60 0 30", &keys).vector(3, "origin")[0]
+    };
+    assert_eq!(at("90 0 30"), 60.0);
+    assert_eq!(at("20 0 30"), 60.0);
+    assert_eq!(at("130 0 30"), 70.0);
+    assert_eq!(at("-10 0 30"), 70.0);
+    assert_eq!(at("60 100 30"), 70.0);
+}
+
+// spec WORLD-8.6: a step links the walker touching triggers, and self is the walker after it
+// spec WORLD-6.6: the touch runs with self the trigger and other the walker
+#[test]
+fn a_walker_touches_triggers_it_steps_into() {
+    let source = format!(
+        "{}void() pad = {{ self.solid = 1; self.touch = pad_touch; setsize(self, '-8 -8 -8', '8 8 8'); \
+         setorigin(self, self.origin); }};\n\
+         void() pad_touch = {{ self.frags = 1; other.health = 5; }};\n\
+         void() pacer = {{ self.solid = 3; {PLAYER_SIZE} setorigin(self, self.origin); droptofloor(); \
+         walkmove(0, 10); self.armorvalue = 1; }};\n",
+        "void() pad_touch;\n"
+    );
+    let entities = [entity("pad", "80 0 30", ""), entity("pacer", "50 0 30", "")].concat();
+    let world = world(&source, &entities);
+    assert_eq!(world.float(2, "frags"), 1.0);
+    assert_eq!(world.float(3, "health"), 5.0);
+    assert_eq!(world.float(3, "armorvalue"), 1.0);
+    assert_eq!(world.float(2, "armorvalue"), 0.0);
+    assert_eq!(world.vector(3, "absmin")[0], 43.0);
+}
+
+// spec WORLD-8.5: droptofloor keeps the flags it had besides FL_ONGROUND
+// spec MOVE-2.5: a step leaves flags that are not a whole number as they are
+#[test]
+fn flags_are_kept() {
+    let source = format!(
+        "void() dropper = {{ self.solid = 2; {PLAYER_SIZE} droptofloor(); }};\n{}",
+        walker_source()
+    );
+    let entities = [
+        entity("dropper", "-300 0 100", "\"flags\" \"512\"\n"),
+        entity(
+            "floater",
+            "20 0 24.03125",
+            "\"speed\" \"10\"\n\"flags\" \"512.5\"\n",
+        ),
+    ]
+    .concat();
+    let world = world(&source, &entities);
+    assert_eq!(world.float(2, "flags"), 512.0);
+    assert_eq!(world.float(3, "frags"), 1.0);
+    assert_eq!(world.float(3, "flags"), 512.5);
+}
+
+// spec EDICT-4.1: the world's model and mapname are engine strings the progs can compare
+#[test]
+fn the_maps_names_are_engine_strings() {
+    let source = "void() namer = { if (mapname == \"test\") self.frags = 1; \
+        if (world.model == \"maps/test.bsp\") self.health = 1; };\n";
+    let world = world(source, &entity("namer", "0 0 0", ""));
+    assert_eq!(world.float(2, "frags"), 1.0);
+    assert_eq!(world.float(2, "health"), 1.0);
 }
