@@ -11,6 +11,7 @@
 //! and dragging with the mouse looks around. `-gamma <g>` is GLQuake's, 0.7 by default, and
 //! `-show water` or `-show sky` starts at the map's first water or sky.
 
+use std::io::Write as _;
 use std::time::Instant;
 
 use eframe::egui;
@@ -31,6 +32,7 @@ fn main() -> Result<(), String> {
         mesh,
         models,
         camera,
+        sim,
     } = common::load(&args)?;
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -62,6 +64,8 @@ fn main() -> Result<(), String> {
                 camera,
                 triangles,
                 models,
+                sim,
+                behind: 0.0,
                 started: Instant::now(),
                 last: Instant::now(),
             }))
@@ -75,6 +79,8 @@ struct Viewer {
     camera: Camera,
     triangles: usize,
     models: common::Models,
+    sim: common::Sim,
+    behind: f64,
     started: Instant,
     last: Instant,
 }
@@ -106,6 +112,11 @@ impl eframe::App for Viewer {
         });
         let aspect = rect.width() / rect.height().max(1.0);
         let time = now.duration_since(self.started);
+        // The server runs as time passes; the models follow it.
+        if let Err(error) = self.sim.advance(f64::from(seconds), &mut self.behind) {
+            report_server_error(&error);
+        }
+        self.models.update(&self.sim);
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
             rect,
             MapCallback {
@@ -114,7 +125,7 @@ impl eframe::App for Viewer {
                     eye: self.camera.origin,
                     time: time.as_secs_f32(),
                 },
-                models: self.models.frame(time.as_secs_f64()),
+                models: self.models.frame(self.sim.time()),
             },
         ));
         // egui's fonts are not bundled (their licenses are outside deny.toml's), so the stats
@@ -130,4 +141,10 @@ impl eframe::App for Viewer {
             )));
         ui.ctx().request_repaint();
     }
+}
+
+/// A server error stops the frame but not the viewer: it is printed.
+fn report_server_error(error: &str) {
+    let mut err = std::io::stderr().lock();
+    writeln!(err, "server: {error}").ok();
 }

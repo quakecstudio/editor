@@ -19,7 +19,8 @@ use qc_types::{DefType, Etype, Slot};
 use qc_vm::{Machine, NoObserver, RunError, ServerState};
 use qs_bsp::Bsp;
 
-use crate::builtins::{ModelFiles, SimBuiltins};
+use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
+use crate::physics::Sound;
 
 use crate::spawn::{self, FieldDef, LoadError, SPAWNFLAGS_SLOT, SpawnError, SpawnHost};
 
@@ -39,6 +40,8 @@ pub enum WorldError {
     Progs(String),
     /// Spawning the map's entities failed (EDICT-8).
     Spawn(LoadError),
+    /// A server frame failed (PHYS-1).
+    Frame(RunError),
 }
 
 impl core::fmt::Display for WorldError {
@@ -49,6 +52,7 @@ impl core::fmt::Display for WorldError {
             Self::Spawn(LoadError::Run(error)) => {
                 write!(f, "a spawn function failed: {}", error.message())
             }
+            Self::Frame(error) => write!(f, "a server frame failed: {}", error.message()),
         }
     }
 }
@@ -127,6 +131,30 @@ impl World {
         spawn::load_from_file(&mut spawner, entities, false, 1).map_err(WorldError::Spawn)?;
         world.builtins.mock.engine_mut().server_active = true;
         Ok(world)
+    }
+
+    /// Runs one server frame of `frametime` seconds through `progs`, the progs the world was
+    /// loaded with (PHYS-1).
+    ///
+    /// # Errors
+    ///
+    /// [`WorldError::Frame`] when a function the frame runs fails, or the engine stops.
+    pub fn frame(&mut self, progs: &Progs<'_>, frametime: f64) -> Result<(), WorldError> {
+        let clients = self.builtins.mock.engine().clients_active.clone();
+        SimCall::frame(&mut self.machine, progs, &mut self.builtins)
+            .physics(frametime, &clients)
+            .map_err(WorldError::Frame)
+    }
+
+    /// The server's time in seconds, `sv.time`.
+    #[must_use]
+    pub fn time(&self) -> f64 {
+        self.builtins.mock.engine().clock
+    }
+
+    /// The sounds the server has started since the last call, oldest first.
+    pub fn take_sounds(&mut self) -> Vec<Sound> {
+        core::mem::take(&mut self.builtins.sounds)
     }
 
     /// Every entity in use that has a model, the world first.

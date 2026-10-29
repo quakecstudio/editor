@@ -14,8 +14,14 @@ use qs_sim::World;
 
 fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let [bsp_path, progs] = args.as_slice() else {
-        return Err("usage: entities <maps/x.bsp> <progs.dat>".to_owned());
+    let (bsp_path, progs, frames) = match args.as_slice() {
+        [bsp, progs] => (bsp, progs, 0),
+        [bsp, progs, frames] => (
+            bsp,
+            progs,
+            frames.parse().map_err(|_| "frames is a number")?,
+        ),
+        _ => return Err("usage: entities <maps/x.bsp> <progs.dat> [frames]".to_owned()),
     };
     let read = |path: &String| std::fs::read(path).map_err(|e| format!("{path}: {e}"));
     let (bsp_bytes, progs_bytes) = (read(bsp_path)?, read(progs)?);
@@ -33,7 +39,11 @@ fn main() -> Result<(), String> {
         .map(std::path::Path::to_path_buf)
         .unwrap_or_default();
     let files = Box::new(move |name: &str| std::fs::read(root.join(name)).ok());
-    let world = World::load(&progs, map, &bsp, files).map_err(|e| e.to_string())?;
+    let mut world = World::load(&progs, map, &bsp, files).map_err(|e| e.to_string())?;
+    // Server frames of a tenth of a second.
+    for _ in 0..frames {
+        world.frame(&progs, 0.1).map_err(|e| e.to_string())?;
+    }
     let mut models: BTreeMap<String, usize> = BTreeMap::new();
     for entity in world.entities() {
         let count = models.entry(entity.model).or_default();

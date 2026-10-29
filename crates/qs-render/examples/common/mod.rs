@@ -21,6 +21,36 @@ pub(crate) struct Loaded {
     pub(crate) mesh: MapMesh,
     pub(crate) models: Models,
     pub(crate) camera: Camera,
+    pub(crate) sim: Sim,
+}
+
+/// The map's server: its world, and the progs and map it runs on, kept for the life of the
+/// viewer.
+pub(crate) struct Sim {
+    world: World,
+    progs: &'static [u8],
+    bsp: Bsp<'static>,
+}
+
+/// GLQuake's `host_maxfps`: the server runs at most 72 frames a second.
+const FRAME: f64 = 1.0 / 72.0;
+
+impl Sim {
+    /// Runs the frames that fit in `seconds` more of real time, carrying the rest in `behind`.
+    pub(crate) fn advance(&mut self, seconds: f64, behind: &mut f64) -> Result<(), String> {
+        let progs = Progs::read(self.progs).map_err(|e| e.to_string())?;
+        *behind += seconds;
+        while *behind >= FRAME {
+            *behind -= FRAME;
+            self.world.frame(&progs, FRAME).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    /// The server's time.
+    pub(crate) fn time(&self) -> f64 {
+        self.world.time()
+    }
 }
 
 /// The alias models the map's entities show.
@@ -30,16 +60,32 @@ pub(crate) struct Models {
     models: Vec<(String, AliasModel, usize)>,
     /// Every model's skin images.
     pub(crate) skins: Vec<Image>,
-    /// Each entity: its model's index in `models`, and what it is drawn with.
-    entities: Vec<(usize, AliasEntity)>,
+    /// Each entity: its number, its model's index in `models`, and what it is drawn with.
+    entities: Vec<(usize, usize, AliasEntity)>,
 }
 
 impl Models {
+    /// Each entity's place, frame and skin as the server has them now, and the light below it.
+    pub(crate) fn update(&mut self, sim: &Sim) {
+        let now = sim.world.entities();
+        for (number, _, entity) in &mut self.entities {
+            if let Some(e) = now.iter().find(|e| e.number == *number) {
+                if e.origin.map(f32::to_bits) != entity.origin.map(f32::to_bits) {
+                    entity.light = light_point(&sim.bsp, e.origin);
+                }
+                entity.origin = e.origin;
+                entity.angles = e.angles;
+                entity.frame = index_of(e.frame);
+                entity.skin = index_of(e.skin);
+            }
+        }
+    }
+
     /// Every entity's triangles at `time` seconds, an `EF_ROTATE` model turned as the client
     /// turns it (REND-4.9).
     pub(crate) fn frame(&self, time: f64) -> ModelFrame {
         let mut out = ModelFrame::default();
-        for (index, entity) in &self.entities {
+        for (_, index, entity) in &self.entities {
             let Some((_, model, first_skin)) = self.models.get(*index) else {
                 continue;
             };
@@ -128,8 +174,8 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     let name = format!("maps/{map}.bsp");
     let bytes = read(&name)?;
     let bsp = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(&name))?;
-    let progs_bytes = read("progs.dat")?;
-    let progs = Progs::read(&progs_bytes).map_err(|e| format!("progs.dat: {e}"))?;
+    let progs_bytes: &'static [u8] = Vec::leak(read("progs.dat")?);
+    let progs = Progs::read(progs_bytes).map_err(|e| format!("progs.dat: {e}"))?;
     // The world reads the other models the progs precaches, such as the health boxes, from the
     // same search path.
     let files = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
@@ -164,6 +210,7 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
                 }
             };
             models.entities.push((
+                entity.number,
                 index,
                 AliasEntity {
                     origin: entity.origin,
@@ -209,10 +256,17 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
             let [x, y, z] = mesh.maxs;
             Camera::new([(a + x) / 2.0, (b + y) / 2.0, (c + z) / 2.0], 0.0)
         });
+    let bsp_bytes: &'static [u8] = Vec::leak(bytes.clone());
+    let sim = Sim {
+        world,
+        progs: progs_bytes,
+        bsp: Bsp::read(bsp_bytes, BspLoader::default()).map_err(|e| e.message(&name))?,
+    };
     Ok(Loaded {
         map,
         mesh,
         models,
+        sim,
         camera,
     })
 }

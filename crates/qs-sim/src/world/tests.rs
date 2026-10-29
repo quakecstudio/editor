@@ -20,7 +20,7 @@ use qc_sema::{Db, FileId, ModuleInput};
 use qc_types::{Etype, Slot};
 use qs_bsp::{Bsp, BspLoader, ClipNode};
 
-use super::{World, field_slot};
+use super::{World, WorldError, field_slot};
 use crate::fixtures::{CONTENTS_EMPTY, CONTENTS_SOLID, MapSpec, bsp, node, plane};
 
 /// The type `defs.qc` declares a system variable with.
@@ -50,6 +50,8 @@ float(vector v) pointcontents = #41;
 void(float step) movetogoal = #67;
 void(entity e) makestatic = #69;
 float() random = #7;
+entity() spawn = #14;
+.float gravity;
 .float count;
 .float dmg;
 .float speed;
@@ -147,6 +149,27 @@ fn world_with(source: &str, entities: &str, files: Vec<(String, Vec<u8>)>) -> Wo
 
 /// The world of `source`'s progs on the map `spec`.
 fn world_on(spec: &MapSpec, source: &str, entities: &str, files: Vec<(String, Vec<u8>)>) -> World {
+    running(spec, source, entities, files).world
+}
+
+/// A world and the progs it runs, so it can run frames.
+struct Running {
+    world: World,
+    progs: Vec<u8>,
+}
+
+impl Running {
+    /// Runs `count` frames of `frametime`.
+    fn frames(&mut self, count: usize, frametime: f64) -> Result<(), WorldError> {
+        let progs = Progs::read(&self.progs).map_err(|e| WorldError::Progs(e.to_string()))?;
+        for _ in 0..count {
+            self.world.frame(&progs, frametime)?;
+        }
+        Ok(())
+    }
+}
+
+fn running(spec: &MapSpec, source: &str, entities: &str, files: Vec<(String, Vec<u8>)>) -> Running {
     let progs_bytes = compile(source);
     let progs = Progs::read(&progs_bytes).unwrap();
     let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{entities}");
@@ -158,7 +181,11 @@ fn world_on(spec: &MapSpec, source: &str, entities: &str, files: Vec<(String, Ve
             .find(|(n, _)| n == name)
             .map(|(_, bytes)| bytes.clone())
     });
-    World::load(&progs, "test", &map, read).expect("the world loads")
+    let world = World::load(&progs, "test", &map, read).expect("the world loads");
+    Running {
+        world,
+        progs: progs_bytes,
+    }
 }
 
 fn world(source: &str, entities: &str) -> World {
@@ -1060,4 +1087,335 @@ fn a_flying_chaser_moves() {
     .concat();
     let world = world(source, &entities);
     assert_eq!(world.vector(3, "origin")[0], 30.0);
+}
+
+fn run_on(spec: &MapSpec, source: &str, entities: &str) -> Running {
+    running(spec, source, entities, Vec::new())
+}
+
+// spec PHYS-1.1: each frame runs StartFrame with time the server's
+// spec PHYS-1.3: then the server's time advances by the frame
+// spec PHYS-2.1: a think runs when nextthink is within the frame, at nextthink or, when that
+// is past, now; nextthink 0 never thinks
+#[test]
+fn thinks_run_on_time() {
+    let source = "float starts; float started_at;\n\
+        void() StartFrame = { starts = starts + 1; started_at = time; };\n\
+        void() thought = { self.frags = time; self.health = self.health + 1; };\n\
+        void() thinker = { self.think = thought; self.nextthink = self.count; };\n\
+        void() counter = { self.frags = starts; self.armorvalue = started_at; \
+        self.nextthink = time + 0.05; };\n\
+        void() watcher = { self.think = counter; self.nextthink = 1.0; };\n";
+    let entities = [
+        entity("thinker", "0 0 0", "\"count\" \"1.25\"\n"),
+        entity("thinker", "0 0 0", "\"count\" \"0.5\"\n"),
+        entity("thinker", "0 0 0", "\"count\" \"0\"\n"),
+        entity("watcher", "0 0 0", ""),
+    ]
+    .concat();
+    let mut run = run_on(&ledge(), source, &entities);
+    run.frames(3, 0.1).unwrap();
+    let w = &run.world;
+    assert!((w.time() - 1.3).abs() < 1e-9, "{}", w.time());
+    // 1.25 is within the frame at 1.2: it runs at 1.25.
+    assert_eq!(w.float(2, "frags"), 1.25);
+    assert_eq!(w.float(2, "health"), 1.0);
+    assert_eq!(w.float(2, "nextthink"), 0.0);
+    // 0.5 is past at 1.0: it runs at 1.0.
+    assert_eq!(w.float(3, "frags"), 1.0);
+    assert_eq!(w.float(4, "health"), 0.0);
+}
+
+// spec PHYS-1.2: while force_retouch is set every entity is linked touching triggers
+// spec PHYS-1.3: force_retouch goes down by one each frame
+#[test]
+fn force_retouch_touches_every_frame() {
+    let source = "void() worldspawn = { force_retouch = 2; };\n\
+        void() pad_touch;\n\
+        void() pad = { self.solid = 1; self.touch = pad_touch; \
+        setsize(self, '-8 -8 -8', '8 8 8'); setorigin(self, self.origin); };\n\
+        void() pad_touch = { self.frags = self.frags + 1; };\n\
+        void() block = { self.solid = 2; setsize(self, '-8 -8 -8', '8 8 8'); \
+        setorigin(self, self.origin); };\n";
+    let entities = [entity("pad", "0 0 50", ""), entity("block", "4 0 50", "")].concat();
+    let mut run = run_on(&ledge(), source, &entities);
+    run.frames(4, 0.1).unwrap();
+    assert_eq!(run.world.float(2, "frags"), 2.0);
+}
+
+// spec PHYS-1.2: a movetype no entity may have is id's Sys_Error, the movetype as an int
+#[test]
+fn a_bad_movetype_stops_the_server() {
+    for (movetype, message) in [("3", "bad movetype 3"), ("1.5", "bad movetype 1")] {
+        let source = "void() odd = { };\n";
+        let keys = format!("\"movetype\" \"{movetype}\"\n");
+        let mut run = run_on(&ledge(), source, &entity("odd", "0 0 0", &keys));
+        let error = run.frames(1, 0.1).unwrap_err();
+        assert!(error.to_string().contains(message), "{error}");
+    }
+}
+
+// spec PHYS-1.2: an entity spawned during the frame moves in the same frame
+// spec PHYS-2.3: noclip moves by velocity and turns by avelocity, linking
+#[test]
+fn noclip_and_entities_spawned_mid_frame() {
+    let source = "void() mover = { self.movetype = 8; self.velocity = '100 0 0'; \
+        self.avelocity = '0 90 0'; self.solid = 2; };\n\
+        void() maker = { local entity e; e = spawn(); e.movetype = 8; e.velocity = '0 50 0'; };\n\
+        void() spawner = { self.think = maker; self.nextthink = 1.0; };\n";
+    let entities = [
+        entity("mover", "0 0 50", ""),
+        entity("spawner", "0 0 0", ""),
+    ]
+    .concat();
+    let mut run = run_on(&ledge(), source, &entities);
+    run.frames(1, 0.1).unwrap();
+    let w = &run.world;
+    assert_eq!(w.vector(2, "origin"), [10.0, 0.0, 50.0]);
+    assert_eq!(w.vector(2, "angles"), [0.0, 9.0, 0.0]);
+    assert!(w.linked(2));
+    assert_eq!(w.vector(4, "origin"), [0.0, 5.0, 0.0]);
+}
+
+// spec PHYS-4.1: a tossed entity on the ground does not move
+// spec PHYS-4.2: else gravity pulls it and it is pushed by its velocity
+// spec PHYS-4.3: on a floor it lands, its velocity cleared
+// spec PHYS-6.4: gravity is 800, scaled by the progs' gravity field when it is not 0
+#[test]
+fn tossed_entities_fall_and_land() {
+    let source = format!(
+        "void() thrown = {{ self.movetype = 6; self.solid = 2; {PLAYER_SIZE} \
+         setorigin(self, self.origin); }};\n"
+    );
+    let entities = [
+        entity("thrown", "50 0 100", ""),
+        entity("thrown", "-50 0 100", "\"gravity\" \"0.5\"\n"),
+        entity("thrown", "-150 0 100", "\"flags\" \"512\"\n"),
+    ]
+    .concat();
+    let mut run = run_on(&ledge(), &source, &entities);
+    run.frames(1, 0.1).unwrap();
+    let w = &run.world;
+    // One frame: velocity -80, moved -8.
+    assert_eq!(w.vector(2, "velocity")[2], -80.0);
+    assert_eq!(w.vector(2, "origin")[2], 92.0);
+    assert_eq!(w.vector(3, "velocity")[2], -40.0);
+    assert_eq!(w.vector(4, "origin")[2], 100.0);
+    run.frames(20, 0.1).unwrap();
+    let w = &run.world;
+    assert_eq!(w.float(2, "flags"), 512.0);
+    assert_eq!(w.vector(2, "velocity"), [0.0; 3]);
+    assert!((w.vector(2, "origin")[2] - 24.031_25).abs() < 1e-3);
+    assert_eq!(w.entity_field(2, "groundentity"), 0);
+}
+
+// spec PHYS-4.3: a bouncer leaves the floor with 1.5 times its speed into it, and lands only
+// when slower than 60
+// spec PHYS-6.2: the velocity is the incoming less the normal times the backoff
+#[test]
+fn bouncers_bounce() {
+    let source = format!(
+        "void() ball = {{ self.movetype = 10; self.solid = 2; {PLAYER_SIZE} \
+         self.velocity = '0 0 -400'; setorigin(self, self.origin); }};\n"
+    );
+    let mut run = run_on(&ledge(), &source, &entity("ball", "50 0 40", ""));
+    run.frames(1, 0.1).unwrap();
+    let w = &run.world;
+    // -400 - 80 into the floor, back out at half of it.
+    assert_eq!(w.vector(2, "velocity")[2], 240.0);
+    assert_eq!(w.float(2, "flags"), 0.0);
+}
+
+// spec PHYS-4.2: a flyer feels no gravity
+// spec PHYS-6.3: velocity is bounded to 2000 on each axis
+#[test]
+fn flyers_ignore_gravity_and_speed_is_bounded() {
+    let source = "void() dart = { self.movetype = 5; self.velocity = '3000 0 0'; };\n";
+    let mut run = run_on(&ledge(), source, &entity("dart", "-500 0 100", ""));
+    run.frames(1, 0.1).unwrap();
+    let w = &run.world;
+    assert_eq!(w.vector(2, "velocity"), [2000.0, 0.0, 0.0]);
+    assert_eq!(w.vector(2, "origin"), [-300.0, 0.0, 100.0]);
+}
+
+// spec PHYS-4.4: after a move that hit something the water is checked: first the contents
+// become the watertype, then out of liquid the watertype is empty and the waterlevel the
+// contents; a move that hit nothing checks nothing
+#[test]
+fn water_is_checked_after_an_impact() {
+    let source = format!(
+        "void() ball = {{ self.movetype = 10; self.solid = 2; {PLAYER_SIZE} \
+         self.velocity = '0 0 -400'; setorigin(self, self.origin); }};\n\
+         void() dart = {{ self.movetype = 5; self.velocity = '10 0 0'; }};\n"
+    );
+    let entities = [
+        entity("ball", "50 0 40", ""),
+        entity("dart", "-500 0 100", ""),
+    ]
+    .concat();
+    let mut run = run_on(&ledge(), &source, &entities);
+    run.frames(1, 0.1).unwrap();
+    assert_eq!(run.world.float(2, "watertype"), -1.0);
+    assert_eq!(run.world.float(2, "waterlevel"), 1.0);
+    assert_eq!(run.world.float(3, "watertype"), 0.0);
+    // Up and down again: the second impact.
+    let mut frames = 0;
+    while run.world.float(2, "waterlevel") > 0.0 && frames < 30 {
+        run.frames(1, 0.1).unwrap();
+        frames += 1;
+    }
+    assert_eq!(run.world.float(2, "watertype"), -1.0);
+    assert_eq!(run.world.float(2, "waterlevel"), -1.0);
+}
+
+// spec PHYS-5.1: a stepping monster off the ground falls by sliding, lands and links
+// spec PHYS-5.2: falling or not, it thinks
+// spec PHYS-7.1: a slide moves the whole way when nothing is hit
+// spec PHYS-7.2: a floor of the world sets FL_ONGROUND
+#[test]
+fn stepping_monsters_fall_to_the_floor() {
+    let source = format!(
+        "void() landed = {{ self.health = 1; }};\n\
+         void() monster = {{ self.movetype = 4; self.solid = 3; {PLAYER_SIZE} \
+         setorigin(self, self.origin); self.think = landed; self.nextthink = 1.5; }};\n"
+    );
+    let mut run = run_on(&ledge(), &source, &entity("monster", "50 0 100", ""));
+    run.frames(10, 0.1).unwrap();
+    let w = &run.world;
+    assert_eq!(w.float(2, "flags"), 512.0);
+    assert!((w.vector(2, "origin")[2] - 24.031_25).abs() < 1e-3);
+    assert_eq!(w.float(2, "health"), 1.0);
+    let sounds = run.world.take_sounds();
+    assert!(
+        sounds
+            .iter()
+            .any(|s| s.sample == "demon/dland2.wav" && s.entity == 2),
+        "{sounds:?}"
+    );
+}
+
+// spec PHYS-7.3: hitting a floor at an angle slides along it
+// spec PHYS-7.4: and keeps going while the slide is along the first velocity
+#[test]
+fn a_fall_slides_along_the_floor() {
+    let source = format!(
+        "void() monster = {{ self.movetype = 4; self.solid = 3; {PLAYER_SIZE} \
+         self.velocity = '200 0 -400'; setorigin(self, self.origin); }};\n"
+    );
+    let mut run = run_on(&ledge(), &source, &entity("monster", "0 0 40", ""));
+    run.frames(1, 0.1).unwrap();
+    let [x, _, z] = run.world.vector(2, "origin");
+    assert!((z - 24.031_25).abs() < 1e-3, "{z}");
+    assert!((x - 20.0).abs() < 1e-3, "{x}");
+    assert_eq!(run.world.vector(2, "velocity")[2], 0.0);
+}
+
+// spec PHYS-6.1: an impact runs both entities' touches, each with the other as other
+// spec PHYS-3.6: a pushed entity's trace end is its origin, and what it hits it touches
+#[test]
+fn impacts_touch_both_ways() {
+    let source = format!(
+        "void() hit_touch = {{ self.frags = self.frags + 1; other.health = 7; }};\n\
+         void() rock = {{ self.movetype = 6; self.solid = 2; {PLAYER_SIZE} self.touch = hit_touch; \
+         setorigin(self, self.origin); }};\n\
+         void() crate = {{ self.solid = 2; {PLAYER_SIZE} self.touch = hit_touch; \
+         setorigin(self, self.origin); }};\n"
+    );
+    let entities = [
+        entity("crate", "50 0 24", ""),
+        entity("rock", "50 0 85", ""),
+    ]
+    .concat();
+    let mut run = run_on(&ledge(), &source, &entities);
+    run.frames(3, 0.1).unwrap();
+    let w = &run.world;
+    assert!(w.float(3, "frags") >= 1.0);
+    assert!(w.float(2, "frags") >= 1.0);
+    assert_eq!(w.float(2, "health"), 7.0);
+    assert_eq!(w.float(3, "health"), 7.0);
+}
+
+/// A pusher: the box BSP moving up at 100, thinking at `stop`, with a rider on it.
+fn lift(spec: &MapSpec, stop: &str, rider_z: &str, more: &str) -> Running {
+    let crate_box = MapSpec {
+        planes: vec![
+            plane([0.0, 0.0, 1.0], 10.0, 2),
+            plane([0.0, 0.0, 1.0], 34.0, 2),
+        ],
+        nodes: vec![node(0, [-2, -1])],
+        ..MapSpec::default()
+    };
+    let bytes = bsp_file(&crate_box, [-8.0; 3], [8.0; 3]);
+    let source = format!(
+        "void() worldspawn = {{ precache_model(\"maps/b_box.bsp\"); }};\n\
+         void() lift_stop = {{ self.velocity = '0 0 0'; self.frags = self.ltime; }};\n\
+         void() lift_blocked = {{ self.health = self.health + 1; }};\n\
+         void() lift = {{ self.solid = 4; self.movetype = 7; setmodel(self, \"maps/b_box.bsp\"); \
+         setorigin(self, self.origin); self.velocity = '0 0 100'; self.think = lift_stop; \
+         self.nextthink = {stop}; self.blocked = lift_blocked; }};\n\
+         void() rider = {{ self.solid = 3; self.movetype = 4; {PLAYER_SIZE} \
+         setorigin(self, self.origin); droptofloor(); }};\n\
+         void() beam = {{ self.solid = 2; setsize(self, '-20 -20 -4', '20 20 4'); \
+         setorigin(self, self.origin); }};\n"
+    );
+    let entities = [
+        entity("lift", "300 0 50", ""),
+        entity("rider", &format!("300 0 {rider_z}"), ""),
+        more.to_owned(),
+    ]
+    .concat();
+    running(
+        spec,
+        &source,
+        &entities,
+        vec![("maps/b_box.bsp".to_owned(), bytes)],
+    )
+}
+
+// spec PHYS-3.1: a pusher moves until its think, whose time is its own ltime
+// spec PHYS-3.2: it moves by velocity times the move's time
+// spec PHYS-3.3: what stands on it moves with it
+// spec PHYS-3.4: a moved entity loses FL_ONGROUND and is pushed by the same move
+#[test]
+fn a_lift_carries_its_rider() {
+    let mut run = lift(&ledge(), "0.3", "200", "");
+    let before = run.world.vector(3, "origin")[2];
+    assert!((before - 84.031_25).abs() < 1e-3, "{before}");
+    run.frames(5, 0.1).unwrap();
+    let w = &run.world;
+    // ltime starts at 0: 0.3 of rising at 100, then it stops.
+    assert!((w.vector(2, "origin")[2] - 80.0).abs() < 1e-3);
+    assert!((w.float(2, "frags") - 0.3).abs() < 1e-6);
+    // After the think, nextthink 0 makes the move's time 0: ltime stays.
+    assert!((w.float(2, "ltime") - 0.3).abs() < 1e-6);
+    assert!((w.vector(3, "origin")[2] - (before + 30.0)).abs() < 1e-2);
+}
+
+// spec PHYS-3.5: a pusher that would crush something goes back, runs blocked, and puts back
+// what it moved
+#[test]
+fn a_blocked_lift_goes_back() {
+    // The rider's head is at 116; the beam's underside 1.5 above it.
+    let mut run = lift(&ledge(), "5", "200", &entity("beam", "300 0 121.5", ""));
+    let rider = run.world.vector(3, "origin");
+    run.frames(2, 0.1).unwrap();
+    let w = &run.world;
+    assert!(w.float(2, "health") >= 1.0);
+    // The lift is back where it started and its clock with it; the rider too.
+    assert_eq!(w.vector(2, "origin")[2], 50.0);
+    assert_eq!(w.float(2, "ltime"), 0.0);
+    assert_eq!(w.vector(3, "origin"), rider);
+}
+
+// spec PHYS-8.1: an unconnected client slot does nothing
+// spec PHYS-2.2: MOVETYPE_NONE only thinks
+#[test]
+fn client_slots_and_none() {
+    let source = "void() still = { self.velocity = '100 0 0'; self.think = still; \
+        self.nextthink = time + 0.1; self.frags = self.frags + 1; };\n";
+    let mut run = run_on(&ledge(), source, &entity("still", "0 0 50", ""));
+    run.frames(3, 0.1).unwrap();
+    let w = &run.world;
+    assert_eq!(w.vector(2, "origin"), [0.0, 0.0, 50.0]);
+    assert!(w.float(2, "frags") >= 3.0);
 }

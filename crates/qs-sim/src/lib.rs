@@ -10,8 +10,10 @@ pub mod collision;
 #[cfg(test)]
 mod fixtures;
 mod movement;
+mod physics;
 pub mod spawn;
 mod world;
 
 pub use builtins::{ModelFiles, SimBuiltins};
+pub use physics::Sound;
 pub use world::{Entity, World, WorldError};
