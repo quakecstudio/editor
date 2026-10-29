@@ -35,7 +35,9 @@ In Zed's `settings.json`, for a project with no `quakec.toml` such as the rerele
 }
 ```
 
-`binary` is optional; without it the server is `quakec-lsp` on `PATH`. To colour names by the
+`binary` is optional; without it the server is `quakec-lsp` on `PATH`, run in the project's
+shell environment. The server reads `initialization_options` only when it starts, so restart
+it after changing them. To colour names by the
 server's semantic tokens as well, add `"semantic_tokens": "combined"`.
 
 ## Checks

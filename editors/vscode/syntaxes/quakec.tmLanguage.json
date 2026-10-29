@@ -4,40 +4,88 @@
   "scopeName": "source.quakec",
   "comment": "Lexical highlighting only: comments, literals, keywords, types and directives, with the keyword list of tree-sitter-quakec's queries/highlights.scm. VS Code has no tree-sitter, so names are coloured by quakec-lsp's semantic tokens.",
   "patterns": [
-    { "include": "#comments" },
-    { "include": "#preprocessor" },
-    { "include": "#frames" },
-    { "include": "#strings" },
-    { "include": "#vectors" },
-    { "include": "#numbers" },
-    { "include": "#keywords" },
-    { "include": "#types" }
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#preprocessor"
+    },
+    {
+      "include": "#frames"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#vectors"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    }
   ],
   "repository": {
     "comments": {
       "patterns": [
-        { "name": "comment.line.double-slash.quakec", "match": "//.*$" },
-        { "name": "comment.block.quakec", "begin": "/\\*", "end": "\\*/" }
+        {
+          "name": "comment.line.double-slash.quakec",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.quakec",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
       ]
     },
     "preprocessor": {
       "name": "meta.preprocessor.quakec",
       "match": "^\\s*(#\\s*[A-Za-z_]+)\\b",
-      "captures": { "1": { "name": "keyword.control.directive.quakec" } }
+      "captures": {
+        "1": {
+          "name": "keyword.control.directive.quakec"
+        }
+      }
     },
     "frames": {
-      "name": "meta.frame.quakec",
-      "match": "^\\s*(\\$[A-Za-z_]+)(.*)$",
-      "captures": {
-        "1": { "name": "keyword.other.frame.quakec" },
-        "2": { "name": "string.unquoted.frame.quakec" }
-      }
+      "patterns": [
+        {
+          "name": "meta.frame.quakec",
+          "begin": "^\\s*(\\$[A-Za-z_]+)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.other.frame.quakec"
+            }
+          },
+          "end": "$",
+          "contentName": "string.unquoted.frame.quakec",
+          "patterns": [
+            {
+              "include": "#comments"
+            }
+          ]
+        },
+        {
+          "name": "constant.other.frame.quakec",
+          "match": "\\$[A-Za-z_][A-Za-z0-9_]*"
+        }
+      ]
     },
     "strings": {
       "name": "string.quoted.double.quakec",
       "begin": "\"",
       "end": "\"",
-      "patterns": [{ "name": "constant.character.escape.quakec", "match": "\\\\." }]
+      "patterns": [
+        {
+          "name": "constant.character.escape.quakec",
+          "match": "\\\\."
+        }
+      ]
     },
     "vectors": {
       "name": "constant.numeric.vector.quakec",
@@ -45,7 +93,7 @@
     },
     "numbers": {
       "name": "constant.numeric.quakec",
-      "match": "\\b(0x[0-9A-Fa-f]+|[0-9]+(\\.[0-9]*)?|\\.[0-9]+)\\b"
+      "match": "(?<![\\w.])(0x[0-9A-Fa-f]+|[0-9]+\\.?[0-9]*|\\.[0-9]+)(?![\\w.])"
     },
     "keywords": {
       "name": "keyword.control.quakec",

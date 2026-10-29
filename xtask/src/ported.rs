@@ -77,12 +77,12 @@ fn backticked(text: &str) -> impl Iterator<Item = &str> {
     text.split('`').skip(1).step_by(2)
 }
 
-/// The header of a source file: its leading comment lines (`//`, `#`, Lua's `--` or a
-/// tree-sitter query's `;`), or its first `/* */` block, ending at the first blank or
-/// non-comment line.
 /// The line-comment openers a header may use.
 const LINE_COMMENTS: [&str; 4] = ["//", "#", "--", ";"];
 
+/// The header of a source file: its leading comment lines (`//`, `#`, Lua's `--` or a
+/// tree-sitter query's `;`), or its first `/* */` block, ending at the first blank or
+/// non-comment line.
 pub(crate) fn header(text: &str) -> Vec<&str> {
     let mut lines = text.lines();
     let mut header = Vec::new();

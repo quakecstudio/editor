@@ -34,13 +34,16 @@ impl zed::Extension for QuakecExtension {
                  and put target/release on PATH, or set lsp.{SERVER}.binary.path"
             ));
         };
-        let (args, env) = match binary {
-            Some(b) => (
-                b.arguments.unwrap_or_default(),
-                b.env.unwrap_or_default().into_iter().collect(),
-            ),
-            None => (Vec::new(), Vec::new()),
-        };
+        // The project's shell environment, as a terminal in it has, with the configured
+        // variables over it.
+        let mut env = worktree.shell_env();
+        let mut args = Vec::new();
+        if let Some(b) = binary {
+            args = b.arguments.unwrap_or_default();
+            let configured = b.env.unwrap_or_default();
+            env.retain(|(name, _)| !configured.contains_key(name));
+            env.extend(configured);
+        }
         Ok(zed::Command { command, args, env })
     }
 

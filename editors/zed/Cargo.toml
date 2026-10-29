@@ -16,13 +16,63 @@ path = "src/lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-zed_extension_api = "=0.7.0"
+zed_extension_api = { version = "=0.7.0", default-features = false }
 
-# The editor's no-panic lints. `unsafe_code` is left at its default: `register_extension!`
-# expands to the unsafe glue Zed's WebAssembly interface needs.
+# The editor's workspace lints (Cargo.toml, [workspace.lints]), copied since this package cannot
+# inherit them. Two are left out: `unsafe_code`, because `register_extension!` expands to the
+# unsafe glue Zed's WebAssembly interface needs, and `clippy::absolute_paths`, whose list of
+# allowed crates is the workspace's .clippy.toml.
+[lints.rust]
+unreachable_pub = "warn"
+non_ascii_idents = "deny"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unused_lifetimes = "warn"
+single_use_lifetimes = "warn"
+
 [lints.clippy]
 pedantic = { level = "deny", priority = -1 }
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"
+exit = "deny"
+unwrap_in_result = "deny"
+panic_in_result_fn = "deny"
+get_unwrap = "deny"
 indexing_slicing = "deny"
+string_slice = "deny"
+arithmetic_side_effects = "deny"
+integer_division = "deny"
+modulo_arithmetic = "deny"
+cast_possible_truncation = "deny"
+cast_sign_loss = "deny"
+cast_possible_wrap = "deny"
+cast_precision_loss = "deny"
+checked_conversions = "deny"
+float_cmp = "deny"
+float_cmp_const = "deny"
+lossy_float_literal = "deny"
+zero_divided_by_zero = "deny"
+fallible_impl_from = "deny"
+recursive_format_impl = "deny"
+infinite_iter = "deny"
+unchecked_time_subtraction = "deny"
+large_stack_arrays = "deny"
+large_stack_frames = "deny"
+mem_replace_with_uninit = "deny"
+uninit_assumed_init = "deny"
+uninit_vec = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+let_underscore_must_use = "deny"
+map_unwrap_or = "deny"
+allow_attributes_without_reason = "deny"
+await_holding_lock = "deny"
+large_futures = "deny"
+mem_forget = "deny"
+mutex_atomic = "deny"
+rc_buffer = "deny"

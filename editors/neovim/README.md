@@ -30,7 +30,8 @@ vim.lsp.config('quakec', {
 })
 ```
 
-Go-to-definition is then Neovim's default: `CTRL-]`, or `vim.lsp.buf.definition()`.
+The server reads `init_options` only when it starts; after changing them, run
+`:lsp restart quakec`. Go-to-definition is then Neovim's default: `CTRL-]`, or `vim.lsp.buf.definition()`.
 
 ## Highlighting
 

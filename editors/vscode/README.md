@@ -20,12 +20,12 @@ for good comes with publishing, after P4-22.
 
 ## Settings
 
-| Setting | Default | Meaning |
-| --- | --- | --- |
-| `quakec.server.path` | `quakec-lsp` | The server binary: a path, or a name on `PATH` |
-| `quakec.dialect` | unset (vanilla) | `vanilla`, `fteqcc` or `gmqcc`, for a project with no `quakec.toml` |
-| `quakec.target` | unset | `quake`, `quakespasm`, `ironwail`, `vkquake`, `rerelease`, `fte` or `dp` |
-| `quakec.autoproto` | `false` | FTEQCC's `-Fautoproto` |
+| Setting              | Default         | Meaning                                                                  |
+| -------------------- | --------------- | ------------------------------------------------------------------------ |
+| `quakec.server.path` | `quakec-lsp`    | The server binary: a path, or a name on `PATH`                           |
+| `quakec.dialect`     | unset (vanilla) | `vanilla`, `fteqcc` or `gmqcc`, for a project with no `quakec.toml`      |
+| `quakec.target`      | unset           | `quake`, `quakespasm`, `ironwail`, `vkquake`, `rerelease`, `fte` or `dp` |
+| `quakec.autoproto`   | `false`         | FTEQCC's `-Fautoproto`                                                   |
 
 The three project settings are sent as `initializationOptions`; changing any setting starts
 the server again. For the rerelease, set `quakec.dialect` to `fteqcc` and `quakec.target` to

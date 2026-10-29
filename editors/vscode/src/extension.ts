@@ -47,14 +47,27 @@ async function start(): Promise<void> {
   await client.start();
 }
 
+/** The last restart; each waits for the one before, so only one client is ever running. */
+let restarting: Promise<void> = Promise.resolve();
+
+async function restart(): Promise<void> {
+  if (client?.isRunning() === true) {
+    await client.stop();
+  }
+  client = undefined;
+  await start();
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   // The server reads the options once, in `initialize`, so a change starts it again.
   context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration(async (event) => {
-      if (event.affectsConfiguration("quakec")) {
-        await client?.stop();
-        await start();
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (!event.affectsConfiguration("quakec")) {
+        return;
       }
+      restarting = restarting.then(restart).catch(async (error: unknown) => {
+        await vscode.window.showErrorMessage(`quakec-lsp did not start: ${String(error)}`);
+      });
     }),
   );
   await start();
