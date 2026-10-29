@@ -31,13 +31,13 @@ const LICENSE_FILE: &str = "LICENSE";
 const LICENSE_MARKERS: [&str; 2] = ["GNU GENERAL PUBLIC LICENSE", "Version 3, 29 June 2007"];
 const SPECS_MANIFEST: &str = "specs/manifest.tsv";
 
-const SOURCE_EXTENSIONS: [&str; 6] = ["rs", "py", "sh", "c", "h", "qc"];
+const SOURCE_EXTENSIONS: [&str; 9] = ["rs", "py", "sh", "c", "h", "qc", "ts", "lua", "scm"];
 const SOURCE_NAMES: [&str; 1] = ["Makefile"];
 const TEXT_EXTENSIONS: [&str; 12] = [
     "md", "toml", "yaml", "yml", "json", "jsonl", "lock", "html", "txt", "tsv", "csv", "hex",
 ];
 const TEXT_NAMES: [&str; 3] = [LICENSE_FILE, ".gitignore", ".gitattributes"];
-const COMMENT_OPENERS: [&str; 6] = ["//", "#", "<!--", "/*", "*", "--"];
+const COMMENT_OPENERS: [&str; 7] = ["//", "#", "<!--", "/*", "*", "--", ";"];
 const COMMENT_CLOSERS: [&str; 2] = ["*/", "-->"];
 
 #[derive(Debug, PartialEq, Eq)]
@@ -435,6 +435,8 @@ mod tests {
             spdx_expression(&format!("let s = \"{}\";", tag("MIT"))),
             None
         );
+        assert_eq!(spdx_expression(&format!("-- {}", tag("MIT"))), Some("MIT"));
+        assert_eq!(spdx_expression(&format!("; {}", tag("MIT"))), Some("MIT"));
         assert_eq!(spdx_expression("// nothing"), None);
     }
 
@@ -443,6 +445,12 @@ mod tests {
         assert_eq!(classify("Makefile"), Kind::Source);
         assert_eq!(classify("x/y.RS"), Kind::Source);
         assert_eq!(classify("src/tests/sample.qc"), Kind::Source);
+        assert_eq!(classify("editors/vscode/src/extension.ts"), Kind::Source);
+        assert_eq!(classify("editors/neovim/lsp/quakec.lua"), Kind::Source);
+        assert_eq!(
+            classify("editors/zed/languages/quakec/highlights.scm"),
+            Kind::Source
+        );
         assert_eq!(classify("LICENSE"), Kind::Text);
         assert_eq!(classify(".gitignore"), Kind::Text);
         assert_eq!(classify("Cargo.lock"), Kind::Text);

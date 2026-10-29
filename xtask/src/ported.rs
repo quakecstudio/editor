@@ -77,8 +77,12 @@ fn backticked(text: &str) -> impl Iterator<Item = &str> {
     text.split('`').skip(1).step_by(2)
 }
 
-/// The header of a source file: its leading comment lines (`//` or `#`), or
-/// its first `/* */` block, ending at the first blank or non-comment line.
+/// The header of a source file: its leading comment lines (`//`, `#`, Lua's `--` or a
+/// tree-sitter query's `;`), or its first `/* */` block, ending at the first blank or
+/// non-comment line.
+/// The line-comment openers a header may use.
+const LINE_COMMENTS: [&str; 4] = ["//", "#", "--", ";"];
+
 pub(crate) fn header(text: &str) -> Vec<&str> {
     let mut lines = text.lines();
     let mut header = Vec::new();
@@ -100,7 +104,7 @@ pub(crate) fn header(text: &str) -> Vec<&str> {
     }
     for line in std::iter::once(first).chain(lines) {
         let trimmed = line.trim_start();
-        if trimmed.is_empty() || !(trimmed.starts_with("//") || trimmed.starts_with('#')) {
+        if trimmed.is_empty() || !LINE_COMMENTS.iter().any(|c| trimmed.starts_with(c)) {
             break;
         }
         header.push(line);
@@ -713,6 +717,8 @@ mod tests {
         assert_eq!(header("/* a\n * b\n */\n// c\n"), ["/* a", " * b", " */"]);
         assert_eq!(header("/* a */\n// c\n"), ["/* a */"]);
         assert!(header("fn f() {}\n").is_empty());
+        assert_eq!(header("-- a\n--\nreturn {}\n"), ["-- a", "--"]);
+        assert_eq!(header("; a\n;\n(comment) @comment\n"), ["; a", ";"]);
     }
 
     #[test]
