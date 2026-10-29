@@ -407,7 +407,7 @@ fn problems_are_reported_with_annotations_in_github_actions() {
 #[test]
 fn a_failing_cargo_bench_is_an_error() {
     let missing = scratch("failing-cargo-bench").join("no-such-root");
-    let error = run_benchmarks(&missing, &missing.join("criterion")).unwrap_err();
+    let error = run_benchmarks(&missing, &missing.join("criterion"), &missing).unwrap_err();
     assert!(error.contains("cannot run cargo bench"), "{error}");
 }
 

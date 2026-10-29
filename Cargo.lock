@@ -503,6 +503,10 @@ name = "qs-bench"
 version = "2026.10.0"
 dependencies = [
  "criterion",
+ "qc-codegen",
+ "qc-progs",
+ "qc-project",
+ "qc-sema",
 ]
 
 [[package]]
