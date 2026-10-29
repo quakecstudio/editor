@@ -1140,14 +1140,48 @@ impl<'a> Compiler<'a> {
     /// A field access `e.f` (QC-16.1, QC-16.6): the entity, the field, then `LOAD_*` by the
     /// field's type into a temporary of that type.
     fn field(&mut self, field: &ast::FieldExpr, span: Span) -> Lowered<Value> {
+        let base = self.expr(&field.base().at(span)?)?;
+        match self.component(&base, field, span)? {
+            Some(component) => Ok(component),
+            None => self.load_field(&base, field, span),
+        }
+    }
+
+    /// FTEQCC's `v.x`, `v.y` and `v.z` of a vector `v` (FTE-9.1): the component's word.
+    /// `None` when the base is no vector or the selector no component's name.
+    fn component(
+        &self,
+        base: &Value,
+        field: &ast::FieldExpr,
+        span: Span,
+    ) -> Lowered<Option<Value>> {
+        if !self.dialect.has_fteqcc_extensions() || self.type_of(base).etype() != Etype::Vector {
+            return Ok(None);
+        }
+        let Some(ast::Expr::Name(name)) = field.field() else {
+            return Ok(None);
+        };
+        let offset = match name.name().map(|t| t.text_lossless()).as_deref() {
+            Some("x") => 0,
+            Some("y") => 1,
+            Some("z") => 2,
+            _ => return Ok(None),
+        };
+        Ok(Some(Value {
+            ofs: base.ofs.checked_add(offset).at(span)?,
+            kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
+        }))
+    }
+
+    /// `e.f` of the entity `base` already read: `LOAD_*` by the field's type.
+    fn load_field(&mut self, base: &Value, field: &ast::FieldExpr, span: Span) -> Lowered<Value> {
         let op_span = field
             .syntax()
             .child_tokens()
             .find(|t| t.kind() == qc_syntax::SyntaxKind::Dot)
             .map_or(span, |t| t.span());
-        let base = self.expr(&field.base().at(span)?)?;
         let selector = self.expr(&field.field().at(span)?)?;
-        let a = self.type_of(&base).etype();
+        let a = self.type_of(base).etype();
         let field_type = self.type_of(&selector);
         let b = field_type.etype();
         let Some(inner) = field_type.field_inner() else {
@@ -1223,7 +1257,13 @@ impl<'a> Compiler<'a> {
         let span = lhs.syntax().span();
         let target = match unparenthesized(lhs) {
             Some(ast::Expr::Field(field)) => {
-                let loaded = self.field(&field, span)?;
+                let base = self.expr(&field.base().at(span)?)?;
+                if let Some(component) = self.component(&base, &field, span)? {
+                    let value = value(self)?;
+                    self.store_to(&component, &value, op_span)?;
+                    return Ok(value);
+                }
+                let loaded = self.load_field(&base, &field, span)?;
                 let inner = self.type_of(&loaded);
                 // QC-17.3: the field's load becomes `ADDRESS`, a pointer to the field.
                 if let Some(last) = self.program.statements.last_mut() {
