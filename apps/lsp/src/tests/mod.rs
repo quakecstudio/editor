@@ -20,6 +20,7 @@
 mod features;
 mod lifecycle;
 mod lines;
+mod logging;
 mod sync;
 mod transport;
 mod uri;

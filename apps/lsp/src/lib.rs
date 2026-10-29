@@ -18,7 +18,7 @@
 //!
 //! # Layer
 //!
-//! apps. It depends on `qc-ide` (L3) and `qc-project` (L2).
+//! apps. It depends on `qc-ide` (L3), `qc-project` (L2), and `qs-log` and `qs-paths` (L0).
 
 pub mod lines;
 pub mod proto;
@@ -33,8 +33,24 @@ mod tests;
 use std::io::{BufRead, Write};
 
 use qc_project::Loader;
+use qs_log::LogConfig;
+use qs_paths::AppDirs;
 
 pub use server::{Exit, Server};
+
+/// The server's log file's name without its extension: its own, since the IDE rotates
+/// `quakec-studio.log` in the same directory.
+pub const LOG_FILE_STEM: &str = "quakec-lsp";
+
+/// Where the server logs (QA-7): `quakec-lsp.log` in the application's log directory, with
+/// directives from `RUST_LOG`, and a crash record there when it panics.
+#[must_use]
+pub fn log_config(dirs: &AppDirs) -> LogConfig {
+    LogConfig {
+        file_stem: LOG_FILE_STEM.to_owned(),
+        ..LogConfig::for_app(dirs)
+    }
+}
 pub use transport::TransportError;
 
 /// Serves one client: reads messages from `input` and writes answers and notifications to

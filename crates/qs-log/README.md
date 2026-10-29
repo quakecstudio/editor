@@ -17,7 +17,7 @@ startup; every crate then logs with the ordinary `tracing` macros.
 
 | What | Behaviour |
 | --- | --- |
-| Location | `<logs>/quakec-studio.log`, where `<logs>` is `qs_paths::AppDirs::logs()` (ADR-0011) |
+| Location | `<logs>/quakec-studio.log`, where `<logs>` is `qs_paths::AppDirs::logs()` (ADR-0011); another process names its own file with `LogConfig::file_stem`, as `quakec-lsp` writes `quakec-lsp.log` |
 | Crash safety | Each event is one unbuffered append, so a crash loses at most the event being written |
 | Rotation | Before an event would take the file past 5 MiB, it becomes `quakec-studio.1.log`, older files move up one, and the fifth is deleted: at most 25 MiB in all. An event larger than a file is cut and marked `[truncated]` |
 | Crash record | A panic writes `crash-<UTC time>-<pid>.log` (time, version, thread, location, backtrace), syncs it to disk, logs an `ERROR` line naming it, then runs the previous panic hook |

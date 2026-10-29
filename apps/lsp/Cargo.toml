@@ -19,6 +19,8 @@ path = "src/main.rs"
 [dependencies]
 qc-ide = { workspace = true }
 qc-project = { workspace = true }
+qs-log = { workspace = true }
+qs-paths = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 
