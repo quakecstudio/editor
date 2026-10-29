@@ -138,38 +138,34 @@ fn json<T: Serialize>(value: T) -> Value {
 }
 
 /// `[appearance]` of a settings file.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Appearance {
     /// The colour theme.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub theme: Option<Theme>,
 }
 
 /// `[log]` of a settings file.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Log {
     /// The log's `RUST_LOG`-style filter.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub filter: Option<String>,
 }
 
-/// One settings file: the settings it sets, each left out when it does not.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+/// One settings file: the settings it sets. It is read with serde and written by editing its
+/// text in place ([`SettingsStore::put`]), never serialised whole.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SettingsFile {
     /// Appearance.
-    #[serde(default, skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub appearance: Appearance,
     /// Logging.
-    #[serde(default, skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub log: Log,
-}
-
-/// Whether a table sets nothing, so the file leaves it out.
-fn is_default<T: Default + PartialEq>(table: &T) -> bool {
-    *table == T::default()
 }
 
 impl SettingsFile {
