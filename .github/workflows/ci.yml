@@ -216,6 +216,8 @@ jobs:
         if: env.CI_PATH == 'full'
         env:
           LIVE: ${{ needs.changes.outputs.oracles != 'false' }}
+        # bash on every OS, Windows included, whose default shell is PowerShell.
+        shell: bash
         run: |
           if [ "$LIVE" = true ]; then
             cargo xtask oracles
