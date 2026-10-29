@@ -14,10 +14,8 @@ qc-edict = { workspace = true }
 qc-progs = { workspace = true }
 qc-types = { workspace = true }
 qc-vm = { workspace = true }
-qs-porting-example = { workspace = true }
-
-[dev-dependencies]
 qs-bsp = { workspace = true }
+qs-porting-example = { workspace = true }
 
 [lints]
 workspace = true
