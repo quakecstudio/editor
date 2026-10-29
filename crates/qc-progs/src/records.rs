@@ -124,6 +124,19 @@ impl Format {
         }
     }
 
+    /// The `secondaryversion` a version 7 header gives this layout (PROGS-19.2); `None` for
+    /// version 6, which has none.
+    #[must_use]
+    pub const fn secondary_version(self) -> Option<i32> {
+        match self {
+            Self::V6 => None,
+            #[cfg(feature = "fte")]
+            Self::Fte16 => Some(PROGS_FTE_SECONDARY16),
+            #[cfg(feature = "fte")]
+            Self::Fte32 => Some(PROGS_FTE_SECONDARY32),
+        }
+    }
+
     /// Bytes in the header.
     #[must_use]
     pub const fn header_size(self) -> usize {
@@ -376,6 +389,9 @@ pub trait Record: Sized + sealed::Sealed {
     fn size(format: Format) -> usize;
     /// Decodes one record from exactly [`Record::size`] bytes.
     fn decode(bytes: &[u8], format: Format) -> Option<Self>;
+    /// Appends the record's [`Record::size`] bytes in `format` to `out`; `None` when a field
+    /// does not fit the format's width, leaving `out` as it was or partly written.
+    fn encode(&self, out: &mut Vec<u8>, format: Format) -> Option<()>;
 }
 
 mod sealed {
@@ -416,6 +432,31 @@ impl Record for Statement {
             }),
         }
     }
+    fn encode(&self, out: &mut Vec<u8>, format: Format) -> Option<()> {
+        match format {
+            Format::V6 => {
+                out.extend(u16::try_from(self.op).ok()?.to_le_bytes());
+                for operand in [self.a, self.b, self.c] {
+                    out.extend(i16::try_from(operand).ok()?.to_le_bytes());
+                }
+            }
+            #[cfg(feature = "fte")]
+            Format::Fte16 => {
+                out.extend(u16::try_from(self.op).ok()?.to_le_bytes());
+                for operand in [self.a, self.b, self.c] {
+                    out.extend(u16::try_from(operand).ok()?.to_le_bytes());
+                }
+            }
+            #[cfg(feature = "fte")]
+            Format::Fte32 => {
+                out.extend(self.op.to_le_bytes());
+                for operand in [self.a, self.b, self.c] {
+                    out.extend(operand.to_le_bytes());
+                }
+            }
+        }
+        Some(())
+    }
 }
 
 impl Record for Def {
@@ -440,6 +481,23 @@ impl Record for Def {
             }),
         }
     }
+    fn encode(&self, out: &mut Vec<u8>, format: Format) -> Option<()> {
+        match format {
+            Format::V6 => {
+                out.extend(u16::try_from(self.type_bits).ok()?.to_le_bytes());
+                out.extend(u16::try_from(self.ofs).ok()?.to_le_bytes());
+            }
+            #[cfg(feature = "fte")]
+            Format::Fte16 => return self.encode(out, Format::V6),
+            #[cfg(feature = "fte")]
+            Format::Fte32 => {
+                out.extend(self.type_bits.to_le_bytes());
+                out.extend(self.ofs.to_le_bytes());
+            }
+        }
+        out.extend(self.s_name.to_le_bytes());
+        Some(())
+    }
 }
 
 impl Record for Function {
@@ -459,6 +517,21 @@ impl Record for Function {
             parm_size: bytes.get(28..36)?.try_into().ok()?,
         })
     }
+    fn encode(&self, out: &mut Vec<u8>, _format: Format) -> Option<()> {
+        for field in [
+            self.first_statement,
+            self.parm_start,
+            self.locals,
+            self.profile,
+            self.s_name,
+            self.s_file,
+            self.numparms,
+        ] {
+            out.extend(field.to_le_bytes());
+        }
+        out.extend(self.parm_size);
+        Some(())
+    }
 }
 
 impl Record for Slot {
@@ -467,7 +540,12 @@ impl Record for Slot {
     }
 
     fn decode(bytes: &[u8], _format: Format) -> Option<Self> {
-        Some(Self::from_le_bytes(bytes.get(..4)?.try_into().ok()?))
+        read_array(bytes, 0).map(Self::from_le_bytes)
+    }
+
+    fn encode(&self, out: &mut Vec<u8>, _format: Format) -> Option<()> {
+        out.extend(self.to_le_bytes());
+        Some(())
     }
 }
 
@@ -479,6 +557,11 @@ impl Record for i32 {
 
     fn decode(bytes: &[u8], _format: Format) -> Option<Self> {
         read_i32(bytes, 0)
+    }
+
+    fn encode(&self, out: &mut Vec<u8>, _format: Format) -> Option<()> {
+        out.extend(self.to_le_bytes());
+        Some(())
     }
 }
 

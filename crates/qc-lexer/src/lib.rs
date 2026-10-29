@@ -1607,7 +1607,7 @@ impl Lexer<'_> {
             self.error(Code::E0107, "hanging $", Span::new(start, self.pos));
             return;
         };
-        self.check_length(word.end.saturating_sub(word.start), word);
+        self.check_length(word.len(), word);
         let command = self.word_text(word);
         match command.as_str() {
             "frame" => self.frames(start),
@@ -1666,7 +1666,7 @@ impl Lexer<'_> {
     fn frames(&mut self, start: usize) {
         let mut names = Vec::new();
         while let Some(span) = self.frame_word() {
-            if span.start == span.end {
+            if span.is_empty() {
                 self.bump(1);
                 self.error(
                     Code::E0503,
@@ -1675,7 +1675,7 @@ impl Lexer<'_> {
                 );
                 continue;
             }
-            self.check_length(span.end.saturating_sub(span.start), span);
+            self.check_length(span.len(), span);
             let name = self.word_text(span);
             if name.len() > QC_MAX_FRAME_NAME {
                 self.error(

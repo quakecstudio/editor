@@ -106,20 +106,20 @@ pub(crate) fn global(progs: &ProgsFile, name: &str) -> i32 {
 
 /// The global offset of the `IMMEDIATE` float definition holding `value`.
 pub(crate) fn immediate(progs: &ProgsFile, value: f32) -> i32 {
-    immediate_where(progs, 2, |p, ofs| p.globals[ofs].0 == value.to_bits())
+    immediate_where(progs, 2, |p, ofs| p.globals[ofs].bits() == value.to_bits())
 }
 
 /// The global offset of the `IMMEDIATE` string definition holding `text`.
 pub(crate) fn immediate_string(progs: &ProgsFile, text: &str) -> i32 {
     immediate_where(progs, 1, |p, ofs| {
-        string(p, i32::try_from(p.globals[ofs].0).unwrap()) == text
+        string(p, i32::try_from(p.globals[ofs].bits()).unwrap()) == text
     })
 }
 
 /// The global offset of the `IMMEDIATE` vector definition holding `v`.
 pub(crate) fn immediate_vector(progs: &ProgsFile, v: [f32; 3]) -> i32 {
     immediate_where(progs, 3, |p, ofs| {
-        (0..3).all(|i| p.globals[ofs + i].0 == v[i].to_bits())
+        (0..3).all(|i| p.globals[ofs + i].bits() == v[i].to_bits())
     })
 }
 
@@ -181,6 +181,6 @@ pub(crate) fn words(progs: &ProgsFile, ofs: i32, n: usize) -> Vec<u32> {
     let start = usize::try_from(ofs).unwrap();
     progs.globals[start..start + n]
         .iter()
-        .map(|s| s.0)
+        .map(|s| s.bits())
         .collect()
 }

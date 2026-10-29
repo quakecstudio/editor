@@ -619,7 +619,12 @@ fn files_lists_every_element() {
     let files = vfs.files();
     let names: Vec<(usize, String)> = files
         .iter()
-        .map(|file| (file.element, String::from_utf8(file.name.clone()).unwrap()))
+        .map(|file| {
+            (
+                file.element(),
+                String::from_utf8(file.name().to_vec()).unwrap(),
+            )
+        })
         .collect();
     let expect = [
         (0, "e.txt"),
@@ -644,6 +649,8 @@ fn files_lists_every_element() {
         vfs.read(file).unwrap();
     }
     assert_eq!(vfs.read(&files[1]).unwrap(), b"mod-loose");
+    assert!(matches!(files[1].location(), Location::Loose(_)));
+    assert!(matches!(files[7].location(), Location::Entry(_)));
     assert_eq!(vfs.read(&files[7]).unwrap(), b"pak0-f");
 }
 

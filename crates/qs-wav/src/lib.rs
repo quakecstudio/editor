@@ -322,12 +322,15 @@ pub fn s_load_sound(wav: &[u8]) -> Result<Sound<'_>, WavError> {
 
 /// The signed little-endian 16-bit integer at `offset`, or `None` past the end of `bytes`.
 fn le_i16(bytes: &[u8], offset: usize) -> Option<i16> {
-    let word = bytes.get(offset..offset.checked_add(2)?)?;
-    Some(i16::from_le_bytes(<[u8; 2]>::try_from(word).ok()?))
+    read_array(bytes, offset).map(i16::from_le_bytes)
 }
 
 /// The signed little-endian 32-bit integer at `offset`, or `None` past the end of `bytes`.
 fn le_i32(bytes: &[u8], offset: usize) -> Option<i32> {
-    let word = bytes.get(offset..offset.checked_add(4)?)?;
-    Some(i32::from_le_bytes(<[u8; 4]>::try_from(word).ok()?))
+    read_array(bytes, offset).map(i32::from_le_bytes)
+}
+
+/// The `N` bytes at `offset`, or `None` past the end of `bytes`.
+fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8; N]> {
+    bytes.get(offset..offset.checked_add(N)?)?.try_into().ok()
 }

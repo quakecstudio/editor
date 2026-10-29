@@ -14,7 +14,7 @@ use proptest::prelude::*;
 use qc_progs::crc::crc_block;
 
 use super::fixtures::{BspSpec, FaceSpec, TextureSpec, from_xxd, leaf, square, texture};
-use super::lit::{companion_applies, companion_name, grey};
+use super::lit::{companion_name, grey};
 use super::*;
 
 const BASE_XXD: &str = include_str!("../../../docs/spec/vectors/bsp/base.txt");
@@ -55,7 +55,7 @@ fn factory_builds_the_base_vector() {
     let bsp = Bsp::read(&base, BspLoader::WinQuake).unwrap();
     assert_eq!(bsp.version, BspVersion::Bsp29);
     assert_eq!(
-        bsp.lumps[BSP_LUMP_MODELS],
+        bsp.lumps[LumpId::Models.index()],
         Lump {
             fileofs: 892,
             filelen: 128
@@ -63,26 +63,56 @@ fn factory_builds_the_base_vector() {
     );
     assert_eq!(
         [
-            BSP_LUMP_ENTITIES,
-            BSP_LUMP_PLANES,
-            BSP_LUMP_TEXTURES,
-            BSP_LUMP_VERTEXES,
-            BSP_LUMP_VISIBILITY,
-            BSP_LUMP_NODES,
-            BSP_LUMP_TEXINFO,
-            BSP_LUMP_FACES,
-            BSP_LUMP_LIGHTING,
-            BSP_LUMP_CLIPNODES,
-            BSP_LUMP_LEAFS,
-            BSP_LUMP_MARKSURFACES,
-            BSP_LUMP_EDGES,
-            BSP_LUMP_SURFEDGES,
-            BSP_LUMP_MODELS
-        ],
+            LumpId::Entities,
+            LumpId::Planes,
+            LumpId::Textures,
+            LumpId::Vertexes,
+            LumpId::Visibility,
+            LumpId::Nodes,
+            LumpId::Texinfo,
+            LumpId::Faces,
+            LumpId::Lighting,
+            LumpId::Clipnodes,
+            LumpId::Leafs,
+            LumpId::Marksurfaces,
+            LumpId::Edges,
+            LumpId::Surfedges,
+            LumpId::Models
+        ]
+        .map(LumpId::index),
         [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     );
-    assert_eq!(lump_name(14), "models");
-    assert_eq!(lump_name(15), "unknown");
+    assert_eq!(
+        LumpId::ALL.map(LumpId::index),
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+    );
+    assert_eq!(
+        LumpId::ALL.map(LumpId::name),
+        [
+            "entities",
+            "planes",
+            "textures",
+            "vertexes",
+            "visibility",
+            "nodes",
+            "texinfo",
+            "faces",
+            "lighting",
+            "clipnodes",
+            "leafs",
+            "marksurfaces",
+            "edges",
+            "surfedges",
+            "models"
+        ]
+    );
+    assert_eq!(
+        BspError::LumpOutOfBounds {
+            lump: LumpId::Lighting
+        }
+        .message("maps/e1m1.bsp"),
+        "maps/e1m1.bsp: the lighting lump runs past the file"
+    );
 }
 
 // spec BSP-2.1, BSP-3.1, BSP-4.3, BSP-5.1, BSP-7.1, BSP-7.2, BSP-8.1, BSP-9.1, BSP-9.2, BSP-9.10:
@@ -243,7 +273,7 @@ fn funny_lump_size() {
     assert_eq!(
         Bsp::read(&bytes, BspLoader::WinQuake),
         Err(BspError::FunnyLumpSize {
-            lump: BSP_LUMP_PLANES
+            lump: LumpId::Planes
         })
     );
     // Empty fixed-size lumps hold no elements: no faces at all.
@@ -288,7 +318,7 @@ fn load_order() {
     assert_eq!(
         read(&spec),
         Err(BspError::FunnyLumpSize {
-            lump: BSP_LUMP_VERTEXES
+            lump: LumpId::Vertexes
         })
     );
     let spec = BspSpec {
@@ -314,7 +344,7 @@ fn bounds() {
     assert_eq!(
         Bsp::read(&base[..1019], BspLoader::WinQuake),
         Err(BspError::LumpOutOfBounds {
-            lump: BSP_LUMP_MODELS
+            lump: LumpId::Models
         })
     );
     for (at, value) in [(4, -1), (8, -1), (8, 2000), (4, i32::MAX)] {
@@ -322,7 +352,9 @@ fn bounds() {
         bytes[at..at + 4].copy_from_slice(&i32::to_le_bytes(value));
         assert_eq!(
             Bsp::read(&bytes, BspLoader::WinQuake),
-            Err(BspError::LumpOutOfBounds { lump: 0 }),
+            Err(BspError::LumpOutOfBounds {
+                lump: LumpId::Entities
+            }),
             "{at} {value}"
         );
     }
@@ -347,7 +379,7 @@ fn bad_indexes() {
         assert_eq!(
             read(&spec),
             Err(BspError::BadIndex {
-                lump: BSP_LUMP_FACES,
+                lump: LumpId::Faces,
                 element: 0
             })
         );
@@ -357,7 +389,7 @@ fn bad_indexes() {
     assert!(matches!(
         read(&spec),
         Err(BspError::BadIndex {
-            lump: BSP_LUMP_FACES,
+            lump: LumpId::Faces,
             ..
         })
     ));
@@ -369,7 +401,7 @@ fn bad_indexes() {
     assert_eq!(
         read(&spec),
         Err(BspError::BadIndex {
-            lump: BSP_LUMP_LEAFS,
+            lump: LumpId::Leafs,
             element: 1
         })
     );
@@ -381,7 +413,7 @@ fn bad_indexes() {
     assert_eq!(
         read(&spec),
         Err(BspError::BadIndex {
-            lump: BSP_LUMP_NODES,
+            lump: LumpId::Nodes,
             element: 0
         })
     );
@@ -396,7 +428,7 @@ fn bad_indexes() {
     assert_eq!(
         read(&spec),
         Err(BspError::BadIndex {
-            lump: BSP_LUMP_CLIPNODES,
+            lump: LumpId::Clipnodes,
             element: 0
         })
     );
@@ -408,7 +440,7 @@ fn bad_indexes() {
     assert_eq!(
         read(&spec),
         Err(BspError::BadIndex {
-            lump: BSP_LUMP_MODELS,
+            lump: LumpId::Models,
             element: 1
         })
     );
@@ -420,7 +452,7 @@ fn bad_indexes() {
     assert!(read(&spec).is_err());
     assert!(
         BspError::BadIndex {
-            lump: 7,
+            lump: LumpId::Faces,
             element: 0
         }
         .message("m")
@@ -776,7 +808,7 @@ fn extents() {
     assert_eq!(
         read(&spec),
         Err(BspError::BadIndex {
-            lump: BSP_LUMP_FACES,
+            lump: LumpId::Faces,
             element: 0
         })
     );
@@ -924,7 +956,7 @@ fn face_fields() {
     assert_eq!(
         read(&spec),
         Err(BspError::BadIndex {
-            lump: BSP_LUMP_FACES,
+            lump: LumpId::Faces,
             element: 0
         })
     );
@@ -1036,7 +1068,7 @@ fn negative_extent_lightmap() {
         assert_eq!(
             read(&spec),
             Err(BspError::BadIndex {
-                lump: BSP_LUMP_FACES,
+                lump: LumpId::Faces,
                 element: 0
             })
         );
@@ -1328,7 +1360,7 @@ fn unread_vis_offsets() {
     assert_eq!(
         read(&spec),
         Err(BspError::BadIndex {
-            lump: BSP_LUMP_LEAFS,
+            lump: LumpId::Leafs,
             element: 1
         })
     );
@@ -1428,7 +1460,7 @@ fn limits() {
     assert_eq!(
         read(&spec),
         Err(BspError::BadIndex {
-            lump: BSP_LUMP_NODES,
+            lump: LumpId::Nodes,
             element: 0
         })
     );
@@ -1548,9 +1580,11 @@ fn lit() {
 // spec BSP-18.4, BSP-19.2: a .lit or .ent from a lower-priority game directory is ignored.
 #[test]
 fn companion_priority() {
-    assert!(companion_applies(2, 2));
-    assert!(companion_applies(2, 3));
-    assert!(!companion_applies(2, 1));
+    let second = PathId::FIRST.next();
+    assert_eq!(second.next(), PathId::FIRST.next().next());
+    assert!(second.admits_companion_from(second));
+    assert!(second.admits_companion_from(second.next()));
+    assert!(!second.admits_companion_from(PathId::FIRST));
 }
 
 /// The lighting lump of the `.lit` vectors of BSP-18.
@@ -1566,14 +1600,18 @@ fn lit_vector(magic: [u8; 4], version: i32, extra: u8) -> Vec<u8> {
     file
 }
 
+/// The second and third game directories' path ids, 2 and 4.
+const SECOND: PathId = PathId::FIRST.next();
+const THIRD: PathId = SECOND.next();
+
 /// What `mod_load_lighting` prints for a vector with the `.lit` from path id `path_id`, for a
 /// map in path id 2: the `Con_Printf` line, else the `Con_DPrintf` line, with the light.
-fn lit_result(file: &[u8], path_id: u32) -> (Option<String>, Vec<[u8; 3]>) {
+fn lit_result(file: &[u8], path_id: PathId) -> (Option<String>, Vec<[u8; 3]>) {
     let found = FoundLit {
         bytes: file,
         path_id,
     };
-    let choice = mod_load_lighting(BspLoader::FitzQuake, 2, 4, Some(found));
+    let choice = mod_load_lighting(BspLoader::FitzQuake, SECOND, 4, Some(found));
     let printed = choice
         .message("maps/a.lit")
         .or_else(|| choice.developer_message("maps/a.lit"));
@@ -1593,25 +1631,29 @@ fn lit_vectors() {
         [[0x00; 3], [0x40; 3], [0x80; 3], [0xff; 3]],
         "the harness printed 00 00 00 40 40 40 80 80 80 ff ff ff"
     );
-    assert_eq!(lit_result(&used, 2), (None, samples.clone()), "lit-used");
-    assert_eq!(lit_result(&used, 4), (None, samples), "lit-higher");
+    assert_eq!(
+        lit_result(&used, SECOND),
+        (None, samples.clone()),
+        "lit-used"
+    );
+    assert_eq!(lit_result(&used, THIRD), (None, samples), "lit-higher");
     let outdated = |size: usize| {
         Some(format!(
             "Outdated .lit file (maps/a.lit should be 20 bytes, not {size})"
         ))
     };
     assert_eq!(
-        lit_result(&used[..19], 2),
+        lit_result(&used[..19], SECOND),
         (outdated(19), grey_light.clone()),
         "lit-short"
     );
     assert_eq!(
-        lit_result(&lit_vector(BSP_LIT_MAGIC, 1, 1), 2),
+        lit_result(&lit_vector(BSP_LIT_MAGIC, 1, 1), SECOND),
         (outdated(21), grey_light.clone()),
         "lit-long"
     );
     assert_eq!(
-        lit_result(&lit_vector(BSP_LIT_MAGIC, 2, 0), 2),
+        lit_result(&lit_vector(BSP_LIT_MAGIC, 2, 0), SECOND),
         (
             Some("Unknown .lit file version (2)".to_owned()),
             grey_light.clone()
@@ -1620,7 +1662,7 @@ fn lit_vectors() {
     );
     let corrupt = lit_vector(*b"QLIX", 1, 0);
     assert_eq!(
-        lit_result(&corrupt, 2),
+        lit_result(&corrupt, SECOND),
         (
             Some("Corrupt .lit file (old version?), ignoring".to_owned()),
             grey_light.clone()
@@ -1628,7 +1670,7 @@ fn lit_vectors() {
         "lit-corrupt"
     );
     assert_eq!(
-        lit_result(&corrupt, 1),
+        lit_result(&corrupt, PathId::FIRST),
         (
             Some("ignored maps/a.lit from a gamedir with lower priority".to_owned()),
             grey_light
@@ -1644,11 +1686,11 @@ fn lit_messages_by_console() {
     let used = lit_vector(BSP_LIT_MAGIC, 1, 0);
     let lower = mod_load_lighting(
         BspLoader::FitzQuake,
-        2,
+        SECOND,
         4,
         Some(FoundLit {
             bytes: &used,
-            path_id: 1,
+            path_id: PathId::FIRST,
         }),
     );
     assert_eq!(lower, LitChoice::LowerPriority);
@@ -1666,7 +1708,7 @@ fn lit_messages_by_console() {
         );
     }
     assert_eq!(
-        mod_load_lighting(BspLoader::FitzQuake, 2, 4, None),
+        mod_load_lighting(BspLoader::FitzQuake, SECOND, 4, None),
         LitChoice::Missing
     );
 }
@@ -1679,9 +1721,9 @@ fn lit_not_read_by_id_loaders() {
     for loader in [BspLoader::WinQuake, BspLoader::GlQuake] {
         let found = FoundLit {
             bytes: &used,
-            path_id: 2,
+            path_id: SECOND,
         };
-        let choice = mod_load_lighting(loader, 2, 4, Some(found));
+        let choice = mod_load_lighting(loader, SECOND, 4, Some(found));
         assert_eq!(choice, LitChoice::NotRead);
         assert_eq!(choice.rgb(&LIT_VECTOR_LIGHTING), grey(&LIT_VECTOR_LIGHTING));
         assert_eq!(choice.message("m"), None);

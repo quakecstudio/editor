@@ -26,5 +26,5 @@ pub mod qbsp;
 
 pub use check::{Diagnostic, DiagnosticKind, MAP_MAX_SOUNDS};
 pub use document::{
-    Brush, Compiler, Entity, Face, Item, MapError, MapFile, Pair, TexDef, is_tool_key,
+    Brush, BrushModel, Compiler, Entity, Face, Item, MapError, MapFile, Pair, TexDef, is_tool_key,
 };

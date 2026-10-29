@@ -9,10 +9,13 @@
 
 use proptest::prelude::*;
 
-use super::{Gap, LexError, Lexed, Lexer, LineBreak, MAP_MAX_TOKEN, Token, is_map_space, map_text};
+use super::{
+    Gap, LexError, Lexed, Lexer, LineBreak, MAP_MAX_TOKEN, Token, TokenLimit, is_map_space,
+    map_text,
+};
 use crate::cnum::{c_atof, c_atoi, c_strtod, scan_vector};
 
-fn tokens(text: &[u8], limit: bool) -> Vec<Token<'_>> {
+fn tokens(text: &[u8], limit: TokenLimit) -> Vec<Token<'_>> {
     let mut lexer = Lexer::new(text, limit);
     let mut out = Vec::new();
     loop {
@@ -24,7 +27,7 @@ fn tokens(text: &[u8], limit: bool) -> Vec<Token<'_>> {
 }
 
 fn texts(text: &[u8]) -> Vec<&[u8]> {
-    tokens(text, true)
+    tokens(text, TokenLimit::Qbsp)
         .into_iter()
         .map(|token| token.text)
         .collect()
@@ -64,7 +67,7 @@ fn comments() {
 // spec MAP-1.4: quoted tokens, empty or holding LFs and backslashes.
 #[test]
 fn quoted() {
-    let found = tokens(b"\"\" \"a\nb\" \"c\\\"d", true);
+    let found = tokens(b"\"\" \"a\nb\" \"c\\\"d", TokenLimit::Qbsp);
     assert_eq!(found[0].text, b"");
     assert!(found[0].quoted);
     assert_eq!((found[0].start, found[0].end), (0, 2));
@@ -72,7 +75,7 @@ fn quoted() {
     assert_eq!(found[2].text, b"c\\");
     assert_eq!(found[3].text, b"d");
     assert_eq!(found[3].line, 2);
-    let mut lexer = Lexer::new(b"\n \"abc", true);
+    let mut lexer = Lexer::new(b"\n \"abc", TokenLimit::Qbsp);
     assert_eq!(lexer.next_token(), Err(LexError::EofInQuote { line: 2 }));
     assert_eq!(
         LexError::EofInQuote { line: 2 }.to_string(),
@@ -113,9 +116,9 @@ fn token_limit() {
             }
             text
         };
-        assert_eq!(tokens(&make(127), true)[0].text.len(), 127);
+        assert_eq!(tokens(&make(127), TokenLimit::Qbsp)[0].text.len(), 127);
         let long = make(128);
-        let mut lexer = Lexer::new(&long, true);
+        let mut lexer = Lexer::new(&long, TokenLimit::Qbsp);
         let error = lexer.next_token().unwrap_err();
         assert_eq!(
             error,
@@ -125,7 +128,7 @@ fn token_limit() {
             }
         );
         assert_eq!(error.to_string(), "Token too large on line 2");
-        assert_eq!(tokens(&make(500), false)[0].text.len(), 500);
+        assert_eq!(tokens(&make(500), TokenLimit::Unlimited)[0].text.len(), 500);
     }
 }
 
@@ -133,7 +136,7 @@ fn token_limit() {
 // LFs that end comments.
 #[test]
 fn line_breaks() {
-    let found = tokens(b"a b\n c // x\n// y\nd", true);
+    let found = tokens(b"a b\n c // x\n// y\nd", TokenLimit::Qbsp);
     assert_eq!(found[1].gap_break, None);
     assert_eq!(
         found[2].gap_break,
@@ -150,7 +153,7 @@ fn line_breaks() {
         })
     );
     assert_eq!(found[3].line, 4);
-    let mut lexer = Lexer::new(b"a // x\n", true);
+    let mut lexer = Lexer::new(b"a // x\n", TokenLimit::Qbsp);
     lexer.next_token().unwrap();
     assert_eq!(
         lexer.skip(),
@@ -159,7 +162,7 @@ fn line_breaks() {
             qbsp_line: 1
         })
     );
-    let mut lexer = Lexer::new(b"a", true);
+    let mut lexer = Lexer::new(b"a", TokenLimit::Qbsp);
     lexer.next_token().unwrap();
     assert_eq!(lexer.offset(), 1);
     match lexer.next_token().unwrap() {
@@ -229,7 +232,7 @@ proptest! {
     // in order.
     #[test]
     fn arbitrary_text(bytes in proptest::collection::vec(any::<u8>(), 0..200)) {
-        let mut lexer = Lexer::new(&bytes, true);
+        let mut lexer = Lexer::new(&bytes, TokenLimit::Qbsp);
         let mut last = 0;
         while let Ok(Lexed::Token(token)) = lexer.next_token() {
             prop_assert!(token.start >= last);

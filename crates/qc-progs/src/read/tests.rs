@@ -117,7 +117,7 @@ fn minimal_tables_hold_the_reserved_records() {
     assert_eq!(progs.strings(), [0, 0, 0, 0]);
     assert_eq!(progs.string(0), Some(&b""[..]));
     assert_eq!(progs.globals().len(), 28);
-    assert!(progs.globals().iter().all(|slot| slot == Slot(0)));
+    assert!(progs.globals().iter().all(|slot| slot == Slot::ZERO));
 }
 
 // spec PROGS-1.5: the engine does not check the reserved records; non-zero ones load as
@@ -477,10 +477,10 @@ fn small_globals() {
         (40, 0x0000_0002),
     ];
     for (slot, bits) in expected {
-        assert_eq!(globals[slot], Slot(bits), "slot {slot}");
+        assert_eq!(globals[slot], Slot::from_bits(bits), "slot {slot}");
     }
     for zero in (0..28).chain([33, 38, 41, 42, 43]) {
-        assert_eq!(globals[zero], Slot(0), "slot {zero}");
+        assert_eq!(globals[zero], Slot::ZERO, "slot {zero}");
     }
     assert_eq!(globals[34].as_f32().to_bits(), 1.0_f32.to_bits());
     assert_eq!(globals[37].as_i32(), 21);
@@ -539,7 +539,7 @@ fn tables_in_any_order_with_gaps_and_overlap() {
                 .map(<[u8]>::to_vec)
                 .collect(),
             strings: progs.strings().to_vec(),
-            globals: progs.globals().iter().map(|slot| slot.0).collect(),
+            globals: progs.globals().iter().map(|slot| slot.bits()).collect(),
             entityfields: 4,
             ..FixtureSpec::default()
         };
@@ -682,7 +682,7 @@ fn execution_fields_are_not_checked() {
     assert_eq!(progs.functions().get(0).unwrap().first_statement, 1_000_000);
     assert_eq!(progs.functions().get(0).unwrap().locals, i32::MAX);
     assert_eq!(progs.global_defs().get(0).unwrap().ofs, 65535);
-    assert_eq!(progs.globals().get(0), Some(Slot(u32::MAX)));
+    assert_eq!(progs.globals().get(0), Some(Slot::from_bits(u32::MAX)));
 }
 
 // spec PROGS-15.1: a file shorter than 60 bytes is rejected.
@@ -1157,7 +1157,7 @@ proptest! {
         }
         for (index, slot) in progs.globals().iter().enumerate() {
             let raw = &bytes[at(header.ofs_globals) + index * 4..][..4];
-            prop_assert_eq!(slot.0, u32::from_le_bytes(raw.try_into().unwrap()));
+            prop_assert_eq!(slot.bits(), u32::from_le_bytes(raw.try_into().unwrap()));
         }
         for (index, def) in progs.global_defs().iter().enumerate() {
             let raw = &bytes[at(header.ofs_globaldefs) + index * 8..][..8];

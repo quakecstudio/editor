@@ -24,7 +24,7 @@ const CALL_TARGET_SLOT: u32 = 60;
 /// done. Function 2 is the builtin (`first_statement = -number`). The globals have 92 slots, the
 /// minimum the edict layout needs (EDICT-2.4); slot `CALL_TARGET_SLOT` holds function 2.
 fn progs_calling_builtin(number: u32) -> Vec<u8> {
-    let mut globals = vec![Slot(0); 92];
+    let mut globals = vec![Slot::ZERO; 92];
     globals[usize::try_from(CALL_TARGET_SLOT).unwrap()] = Slot::from_i32(2);
 
     let statements = vec![

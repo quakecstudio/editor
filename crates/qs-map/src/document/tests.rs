@@ -9,7 +9,9 @@
 
 use proptest::prelude::*;
 
-use super::{Brush, Compiler, Entity, Face, Item, MapError, MapFile, Pair, TexDef, is_tool_key};
+use super::{
+    Brush, BrushModel, Compiler, Entity, Face, Item, MapError, MapFile, Pair, TexDef, is_tool_key,
+};
 use crate::lexer::LexError;
 use crate::qbsp::load_map_file;
 
@@ -332,7 +334,13 @@ fn valve_scale_zero() {
 #[test]
 fn brush_models() {
     let map = round_trip(STANDARD);
-    assert_eq!(map.brush_models(), [(2, 1)]);
+    assert_eq!(
+        map.brush_models(),
+        [BrushModel {
+            entity: 2,
+            model: 1
+        }]
+    );
     assert!(map.entities[2].has_brushes());
     assert!(!map.entities[1].has_brushes());
 }

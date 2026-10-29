@@ -46,6 +46,9 @@ pub const GOG_QUAKE_ID: &str = "1435828198";
 /// GOG's product id for Quake Enhanced, the 2021 rerelease.
 pub const GOG_QUAKE_ENHANCED_ID: &str = "1739637082";
 
+/// Both of GOG's Quake product ids.
+const GOG_QUAKE_IDS: [&str; 2] = [GOG_QUAKE_ID, GOG_QUAKE_ENHANCED_ID];
+
 /// The name of the rerelease's folder inside a Steam install (FS-5.1).
 const RERELEASE_DIR: &str = "rerelease";
 
@@ -312,16 +315,32 @@ impl<'a, F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'a, F, R> {
                 found.push(install);
             }
         }
+        self.first_of_each_folder(found, |install| &install.root)
+    }
+
+    /// `items` without those whose folder, `path` of the item, is one an earlier item's is,
+    /// once links are followed.
+    fn first_of_each_folder<T>(&self, items: Vec<T>, path: impl Fn(&T) -> &Path) -> Vec<T> {
         let mut seen = Vec::new();
-        found.retain(|install| {
-            let canonical = self.fs.canonical(&install.root);
-            if seen.contains(&canonical) {
-                return false;
-            }
-            seen.push(canonical);
-            true
-        });
-        found
+        items
+            .into_iter()
+            .filter(|item| {
+                let canonical = self.fs.canonical(path(item));
+                if seen.contains(&canonical) {
+                    return false;
+                }
+                seen.push(canonical);
+                true
+            })
+            .collect()
+    }
+
+    /// The text of the file `name` in the folder `sub` of `dir`, each found as
+    /// [`Self::child`] finds an entry.
+    fn read_child_text(&self, dir: &Path, sub: &str, name: &str) -> Option<String> {
+        self.child(dir, sub, EntryKind::Dir)
+            .and_then(|sub| self.child(&sub, name, EntryKind::File))
+            .and_then(|file| self.read_text(&file))
     }
 
     /// Looks at a folder the user chose: any folder whose `id1` holds `pak0.pak`, the
@@ -418,18 +437,7 @@ impl<'a, F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'a, F, R> {
     /// disk. A link is not listed as a directory ([`qs_vfs::StdFs`]), so when no entry
     /// matches, the exact name is tried by opening it, which follows links.
     fn child(&self, dir: &Path, name: &str, kind: EntryKind) -> Option<PathBuf> {
-        let mut entries = self.fs.read_dir(dir).ok()?;
-        entries.retain(|entry| entry.kind == kind);
-        entries.sort_by(|a, b| a.name.cmp(&b.name));
-        let exact = entries.iter().find(|entry| entry.name == name);
-        let found = exact.or_else(|| {
-            entries.iter().find(|entry| {
-                entry
-                    .name
-                    .to_str()
-                    .is_some_and(|entry_name| entry_name.eq_ignore_ascii_case(name))
-            })
-        });
+        let found = qs_vfs::find_entry(self.fs.read_dir(dir).ok()?, name, kind);
         if let Some(entry) = found {
             return Some(dir.join(&entry.name));
         }

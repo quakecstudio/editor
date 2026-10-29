@@ -31,7 +31,7 @@
 use std::env;
 
 use qs_bsp::lit::companion_name;
-use qs_bsp::{Bsp, BspLoader, FoundLit, LitChoice, mod_load_lighting};
+use qs_bsp::{Bsp, BspLoader, FoundLit, LitChoice, PathId, mod_load_lighting};
 use qs_map::MapFile;
 use qs_mdl::md5::md5_anim_path;
 use qs_mdl::{Md5Anim, Md5Mesh, Mdl, Sprite};
@@ -65,14 +65,15 @@ struct Decoded {
 /// The path id QuakeSpasm gives each element's game directory, as its
 /// `COM_AddGameDirectory` does: each game directory added doubles it, so a later, higher
 /// priority one has a larger id, and its archives share its directory's id (BSP-18.4).
-fn path_ids(vfs: &Vfs<StdFs>) -> Vec<u32> {
+fn path_ids(vfs: &Vfs<StdFs>) -> Vec<PathId> {
     let mut ids = Vec::new();
-    let mut id = 0_u32;
+    let mut id: Option<PathId> = None;
     for element in vfs.elements().iter().rev() {
         if let Element::Directory(_) = element {
-            id = if id == 0 { 1 } else { id.saturating_mul(2) };
+            id = Some(id.map_or(PathId::FIRST, PathId::next));
         }
-        ids.push(id);
+        // An archive is added after its game directory, so one always comes first.
+        ids.push(id.unwrap_or(PathId::FIRST));
     }
     ids.reverse();
     ids
@@ -83,12 +84,12 @@ fn path_ids(vfs: &Vfs<StdFs>) -> Vec<u32> {
 /// line for one QuakeSpasm ignores with a message.
 fn decode_bsp(
     vfs: &Vfs<StdFs>,
-    path_ids: &[u32],
+    path_ids: &[PathId],
     file: &FileRef,
     data: &[u8],
     decoded: &mut Decoded,
 ) -> Result<(), String> {
-    let name = file.name.as_slice();
+    let name = file.name();
     let bsp = Bsp::read(data, BspLoader::default()).map_err(|error| error.to_string())?;
     let entities = MapFile::parse(bsp.entities()).map_err(|error| format!("entities: {error}"))?;
     if entities.to_bytes() != bsp.entities() {
@@ -98,13 +99,13 @@ fn decode_bsp(
     if vfs.find(name).as_ref() != Some(file) {
         return Ok(());
     }
-    let path_id = |element: usize| path_ids.get(element).copied().unwrap_or_default();
+    let path_id = |element: usize| path_ids.get(element).copied().unwrap_or(PathId::FIRST);
     let lit_name = companion_name(&String::from_utf8_lossy(name), ".lit");
     let lit_bytes = match vfs.find(lit_name.as_bytes()) {
         Some(lit) => Some((
             vfs.read(&lit)
                 .map_err(|error| format!("{lit_name}: {error}"))?,
-            path_id(lit.element),
+            path_id(lit.element()),
         )),
         None => None,
     };
@@ -114,7 +115,7 @@ fn decode_bsp(
     });
     let choice = mod_load_lighting(
         BspLoader::default(),
-        path_id(file.element),
+        path_id(file.element()),
         bsp.lighting.len(),
         found,
     );
@@ -135,12 +136,12 @@ fn decode_bsp(
 /// failed.
 fn decode(
     vfs: &Vfs<StdFs>,
-    path_ids: &[u32],
+    path_ids: &[PathId],
     file: &FileRef,
     data: &[u8],
     decoded: &mut Decoded,
 ) -> Result<(), String> {
-    let name = file.name.as_slice();
+    let name = file.name();
     let lower = name.to_ascii_lowercase();
     if lower.ends_with(b".bsp") {
         decode_bsp(vfs, path_ids, file, data, decoded)?;
@@ -218,15 +219,15 @@ fn main() -> Result<(), String> {
             Ok(data) => {
                 files = files.saturating_add(1);
                 bytes = bytes.saturating_add(u64::try_from(data.len()).unwrap_or(u64::MAX));
-                digest = fnv1a(fnv1a(digest, &file.name), &data);
+                digest = fnv1a(fnv1a(digest, file.name()), &data);
                 if let Err(error) = decode(&vfs, &path_ids, &file, &data, &mut decoded) {
                     failed = failed.saturating_add(1);
-                    println!("failed: {}: {error}", file.name.escape_ascii());
+                    println!("failed: {}: {error}", file.name().escape_ascii());
                 }
             }
             Err(error) => {
                 failed = failed.saturating_add(1);
-                println!("failed: {}: {error}", file.name.escape_ascii());
+                println!("failed: {}: {error}", file.name().escape_ascii());
             }
         }
     }

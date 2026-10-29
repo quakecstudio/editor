@@ -632,14 +632,16 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
             i32::try_from(n)
                 .ok()
                 .and_then(|n| machine.global(n).ok())
-                .unwrap_or(Slot(0))
+                .unwrap_or(Slot::ZERO)
         })
     }
 
     /// The value of edict `edict`'s field of type `def_type` at slot `ofs` (DIFF-12.3).
     fn field(&self, edict: usize, def_type: DefType, ofs: usize) -> Value {
         let edicts = self.host.machine.edicts();
-        self.value(def_type, ofs, |n| edicts.field(edict, n).unwrap_or(Slot(0)))
+        self.value(def_type, ofs, |n| {
+            edicts.field(edict, n).unwrap_or(Slot::ZERO)
+        })
     }
 
     /// The value of type `def_type` starting at slot `ofs` of `slot` (DIFF-12.3): a string by
@@ -668,12 +670,12 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
                     .map(<[u8]>::to_vec),
             ),
             DefType::Known(Etype::Vector) => Value::Vector([
-                slot(ofs).0,
-                slot(ofs.saturating_add(1)).0,
-                slot(ofs.saturating_add(2)).0,
+                slot(ofs).bits(),
+                slot(ofs.saturating_add(1)).bits(),
+                slot(ofs.saturating_add(2)).bits(),
             ]),
             DefType::Known(Etype::Entity) => {
-                let bits = slot(ofs).0;
+                let bits = slot(ofs).bits();
                 let size = self.host.machine.edicts().layout().edict_size();
                 usize::try_from(i32::from_ne_bytes(bits.to_ne_bytes()))
                     .ok()
@@ -683,7 +685,7 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
                     .map_or(Value::Bits(bits), Value::Entity)
             }
             DefType::Known(Etype::Field) => {
-                let bits = slot(ofs).0;
+                let bits = slot(ofs).bits();
                 usize::try_from(bits)
                     .ok()
                     .and_then(|slot| {
@@ -696,7 +698,7 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
                     .map_or(Value::Bits(bits), Value::FieldName)
             }
             DefType::Known(Etype::Void | Etype::Float | Etype::Pointer) | DefType::Unknown(_) => {
-                Value::Bits(slot(ofs).0)
+                Value::Bits(slot(ofs).bits())
             }
         }
     }

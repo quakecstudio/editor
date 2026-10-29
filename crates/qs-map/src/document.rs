@@ -13,8 +13,9 @@ mod tests;
 use core::fmt;
 
 use crate::cnum::{c_atof, c_atoi, c_strtod, scan_vector};
-use crate::geometry::{Plane, TexVecs, plane, standard_texvecs, valve_texvecs};
-use crate::lexer::{Gap, LexError, Lexer, Token, is_map_space};
+use crate::geometry::{Plane, TexVecs, plane, texvecs, valve_texvecs};
+use crate::lexer::{Gap, LexError, Lexer, Token, TokenLimit, is_map_space};
+use crate::qbsp::MAP_WAD_KEYS;
 
 /// Why a map cannot be read, or an edit cannot be written.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -294,7 +295,7 @@ impl Face {
                 shift,
                 rotate,
                 scale,
-            } => Some(standard_texvecs(self.plane()?.normal, shift, rotate, scale)),
+            } => Some(texvecs(self.plane()?.normal, shift, rotate, scale)),
             TexDef::Valve { s, t, scale, .. } => valve_texvecs(s, t, scale),
         }
     }
@@ -608,6 +609,15 @@ impl Default for MapFile {
     }
 }
 
+/// A brush entity and the model qbsp makes of its brushes (MAP-6.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BrushModel {
+    /// The entity's index in [`MapFile::entities`].
+    pub entity: usize,
+    /// Its model number, `*<n>`.
+    pub model: usize,
+}
+
 /// The parser: a lexer and the offset up to which the text has been taken into nodes.
 struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -626,21 +636,16 @@ impl<'a> Parser<'a> {
 
     /// The next token, which must be on the current line (MAP-1.7).
     fn same_line(&mut self) -> Result<Token<'a>, MapError> {
-        match self.lexer.skip() {
-            Gap::End(line_break) | Gap::Token(Some(line_break)) => Err(MapError::LineIncomplete {
+        self.lexer
+            .same_line_token()?
+            .map_err(|line_break| MapError::LineIncomplete {
                 line: line_break.line,
-            }),
-            Gap::Token(None) => Ok(self.lexer.token(None)?),
-        }
+            })
     }
 
     /// The next token without consuming it, if it is on the current line.
     fn peek_same_line(&self) -> Option<Token<'a>> {
-        let mut lexer = self.lexer.clone();
-        match lexer.skip() {
-            Gap::Token(None) => lexer.token(None).ok(),
-            Gap::Token(Some(_)) | Gap::End(_) => None,
-        }
+        self.lexer.clone().same_line_token().ok()?.ok()
     }
 
     /// The text from the cursor up to `offset`, moving the cursor there.
@@ -654,7 +659,9 @@ impl<'a> Parser<'a> {
         piece
     }
 
-    fn number(&mut self, line: u32, numbers: &mut Vec<Vec<u8>>) -> Result<f64, MapError> {
+    /// The next number on the line, whole as `strtod` reads it (MAP-3.3, MAP-4.1), and its
+    /// text as written.
+    fn number(&mut self, line: u32) -> Result<(f64, &'a [u8]), MapError> {
         let token = self.same_line()?;
         let (value, used) = c_strtod(token.text);
         if used == 0 || used != token.text.len() {
@@ -663,7 +670,13 @@ impl<'a> Parser<'a> {
                 text: token.text.to_vec(),
             });
         }
-        numbers.push(token.text.to_vec());
+        Ok((value, token.text))
+    }
+
+    /// [`Self::number`], keeping its text in `numbers`.
+    fn number_into(&mut self, line: u32, numbers: &mut Vec<Vec<u8>>) -> Result<f64, MapError> {
+        let (value, text) = self.number(line)?;
+        numbers.push(text.to_vec());
         Ok(value)
     }
 
@@ -766,7 +779,7 @@ impl<'a> Parser<'a> {
                 return Err(parsing);
             }
             for value in point.iter_mut() {
-                *value = self.number(line, &mut numbers)?;
+                *value = self.number_into(line, &mut numbers)?;
             }
             self.word(b")", parsing.clone())?;
         }
@@ -779,15 +792,12 @@ impl<'a> Parser<'a> {
             for axis in &mut axes {
                 self.word(b"[", valve.clone())?;
                 for value in axis.iter_mut() {
-                    *value = self.number(line, &mut Vec::new())?;
+                    *value = self.number(line)?.0;
                 }
                 self.word(b"]", valve.clone())?;
             }
-            let rotate = self.number(line, &mut Vec::new())?;
-            let scale = [
-                self.number(line, &mut Vec::new())?,
-                self.number(line, &mut Vec::new())?,
-            ];
+            let rotate = self.number(line)?.0;
+            let scale = [self.number(line)?.0, self.number(line)?.0];
             let [s, t] = axes;
             TexDef::Valve {
                 s,
@@ -797,14 +807,14 @@ impl<'a> Parser<'a> {
             }
         } else {
             let shift = [
-                self.number(line, &mut numbers)?,
-                self.number(line, &mut numbers)?,
+                self.number_into(line, &mut numbers)?,
+                self.number_into(line, &mut numbers)?,
             ];
-            let rotate = self.number(line, &mut numbers)?;
+            let rotate = self.number_into(line, &mut numbers)?;
             let mut scales = Vec::new();
             let scale = [
-                self.number(line, &mut scales)?,
-                self.number(line, &mut scales)?,
+                self.number_into(line, &mut scales)?,
+                self.number_into(line, &mut scales)?,
             ];
             qbsp_differs = scales
                 .iter()
@@ -885,7 +895,7 @@ impl MapFile {
     ///
     /// The first [`MapError`] in the file.
     pub fn parse(bytes: &[u8]) -> Result<Self, MapError> {
-        let lexer = Lexer::new(bytes, false);
+        let lexer = Lexer::new(bytes, TokenLimit::Unlimited);
         let text = lexer.text();
         let mut parser = Parser {
             lexer,
@@ -934,14 +944,17 @@ impl MapFile {
         self.entities.first()
     }
 
-    /// Each brush entity's index and the model number qbsp gives it: the entities after the
-    /// world with a brush, numbered from 1 in file order (MAP-6.2).
+    /// Each brush entity and the model number qbsp gives it: the entities after the world
+    /// with a brush, numbered from 1 in file order (MAP-6.2).
     #[must_use]
-    pub fn brush_models(&self) -> Vec<(usize, usize)> {
+    pub fn brush_models(&self) -> Vec<BrushModel> {
         let mut models = Vec::new();
-        for (index, entity) in self.entities.iter().enumerate().skip(1) {
-            if entity.has_brushes() {
-                models.push((index, models.len().saturating_add(1)));
+        for (entity, item) in self.entities.iter().enumerate().skip(1) {
+            if item.has_brushes() {
+                models.push(BrushModel {
+                    entity,
+                    model: models.len().saturating_add(1),
+                });
             }
         }
         models
@@ -954,7 +967,7 @@ impl MapFile {
         let Some(world) = self.world() else {
             return Vec::new();
         };
-        let Some(value) = [b"_wad".as_slice(), b"wad"]
+        let Some(value) = MAP_WAD_KEYS
             .into_iter()
             .filter_map(|key| world.value(key))
             .find(|value| !value.is_empty())

@@ -10,10 +10,7 @@
 
 use proptest::prelude::*;
 
-use super::{
-    MAP_BASE_AXES, MAP_ON_EPSILON, on_plane, plane, qbsp_on_plane, qbsp_plane, qbsp_texvecs,
-    standard_texvecs, valve_texvecs,
-};
+use super::{MAP_BASE_AXES, MAP_ON_EPSILON, on_plane, plane, qbsp_plane, texvecs, valve_texvecs};
 
 const DIAGONAL: f32 = core::f32::consts::FRAC_1_SQRT_2;
 
@@ -24,15 +21,15 @@ fn base_axes() {
     assert_eq!(MAP_BASE_AXES[5], [[0, -1, 0], [1, 0, 0], [0, 0, -1]]);
     let unit = [1.0, 1.0];
     // A tie between floor and west wall: the floor wins.
-    let vecs = qbsp_texvecs([DIAGONAL, 0.0, DIAGONAL], [0.0; 2], 0.0, unit);
+    let vecs = texvecs::<f32>([DIAGONAL, 0.0, DIAGONAL], [0.0; 2], 0.0, unit);
     assert_eq!(vecs, [[1.0, 0.0, 0.0, 0.0], [0.0, -1.0, 0.0, 0.0]]);
     // Closest to the east wall.
-    let vecs = qbsp_texvecs([-0.8, 0.0, 0.6], [0.0; 2], 0.0, unit);
+    let vecs = texvecs::<f32>([-0.8, 0.0, 0.6], [0.0; 2], 0.0, unit);
     assert_eq!(vecs, [[0.0, 1.0, 0.0, 0.0], [0.0, 0.0, -1.0, 0.0]]);
     // No positive dot product: the floor.
-    let vecs = qbsp_texvecs([0.0; 3], [0.0; 2], 0.0, unit);
+    let vecs = texvecs::<f32>([0.0; 3], [0.0; 2], 0.0, unit);
     assert_eq!(vecs, [[1.0, 0.0, 0.0, 0.0], [0.0, -1.0, 0.0, 0.0]]);
-    let vecs = standard_texvecs([0.0, -1.0, 0.0], [0.0; 2], 0.0, [1.0; 2]);
+    let vecs = texvecs::<f64>([0.0, -1.0, 0.0], [0.0; 2], 0.0, [1.0; 2]);
     assert_eq!(vecs, [[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, -1.0, 0.0]]);
 }
 
@@ -41,7 +38,7 @@ fn base_axes() {
 fn rotation() {
     let floor = [0.0, 0.0, 1.0];
     let unit = [1.0, 1.0];
-    let rotated = |rotate| qbsp_texvecs(floor, [0.0; 2], rotate, unit);
+    let rotated = |rotate| texvecs::<f32>(floor, [0.0; 2], rotate, unit);
     assert_eq!(rotated(90.0), [[0.0, 1.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]]);
     assert_eq!(
         rotated(180.0),
@@ -57,16 +54,16 @@ fn rotation() {
     // 360 is not one of the exact angles; its sine is not exactly 0.
     let vecs = rotated(360.0);
     assert!((vecs[0][0] - 1.0).abs() < 1e-6);
-    let wide = standard_texvecs([0.0, 0.0, 1.0], [0.0; 2], 90.0, [1.0; 2]);
+    let wide = texvecs::<f64>([0.0, 0.0, 1.0], [0.0; 2], 90.0, [1.0; 2]);
     assert_eq!(wide, [[0.0, 1.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]]);
 }
 
 // spec MAP-4.4: axes are divided by their scale, 0 counting as 1; offsets are the shifts.
 #[test]
 fn scale_and_shift() {
-    let vecs = qbsp_texvecs([0.0, 0.0, 1.0], [3.0, -4.0], 0.0, [0.0, 4.0]);
+    let vecs = texvecs::<f32>([0.0, 0.0, 1.0], [3.0, -4.0], 0.0, [0.0, 4.0]);
     assert_eq!(vecs, [[1.0, 0.0, 0.0, 3.0], [0.0, -0.25, 0.0, -4.0]]);
-    let vecs = standard_texvecs([0.0, 0.0, 1.0], [3.0, -4.0], 0.0, [2.0, 0.0]);
+    let vecs = texvecs::<f64>([0.0, 0.0, 1.0], [3.0, -4.0], 0.0, [2.0, 0.0]);
     assert_eq!(vecs, [[0.5, 0.0, 0.0, 3.0], [0.0, -1.0, 0.0, -4.0]]);
 }
 
@@ -94,8 +91,8 @@ fn planes() {
     assert!(on_plane(&near, &wide));
     let far = [[0.06, 5.0, 5.0], [0.0, 0.0, 0.0], [0.0, 9.0, 1.0]];
     assert!(!on_plane(&far, &wide));
-    assert!(qbsp_on_plane(&[[0.0, 7.0, 7.0]; 3], &narrow));
-    assert!(!qbsp_on_plane(&[[1.0, 7.0, 7.0]; 3], &narrow));
+    assert!(on_plane(&[[0.0, 7.0, 7.0]; 3], &narrow));
+    assert!(!on_plane(&[[1.0, 7.0, 7.0]; 3], &narrow));
 }
 
 proptest! {
@@ -124,10 +121,10 @@ fn best_row_picks_the_largest_dot() {
     // The largest wins (row 1, ceiling), so the s axis is [1,0,0] and t is [0,-1,0]; picking
     // the smallest dot instead would land on the floor and give the same first axes but a
     // different normal-to-row mapping, so use the east wall to separate the rows cleanly.
-    let down = standard_texvecs([0.0, 0.0, -1.0], [0.0; 2], 0.0, [1.0; 2]);
+    let down = texvecs::<f64>([0.0, 0.0, -1.0], [0.0; 2], 0.0, [1.0; 2]);
     assert_eq!(down, [[1.0, 0.0, 0.0, 0.0], [0.0, -1.0, 0.0, 0.0]]);
     // A normal pointing +x is the west wall (row 2): s axis [0,1,0], t axis [0,0,-1].
-    let east = standard_texvecs([1.0, 0.0, 0.0], [0.0; 2], 0.0, [1.0; 2]);
+    let east = texvecs::<f64>([1.0, 0.0, 0.0], [0.0; 2], 0.0, [1.0; 2]);
     assert_eq!(east, [[0.0, 1.0, 0.0, 0.0], [0.0, 0.0, -1.0, 0.0]]);
 }
 
@@ -175,7 +172,7 @@ fn on_plane_multiplies_by_the_normal() {
     // [0,10,5] is on this plane (10 * 0.4472 + 5 * -0.8944 = 0); dividing instead gives ~16.8.
     let on = [[0.0, 10.0, 5.0]; 3];
     assert!(on_plane(&on, &wide));
-    assert!(qbsp_on_plane(&on.map(|p| p.map(|v| v as f32)), &narrow));
+    assert!(on_plane(&on.map(|p| p.map(|v| v as f32)), &narrow));
     let off = [[0.0, 10.0, 0.0]; 3];
     assert!(!on_plane(&off, &wide));
 }
@@ -188,14 +185,14 @@ fn texvecs_rotation_and_scale_are_applied() {
     // After rotation the s axis is [cos45, -sin45, 0] and t is [sin45, cos45, 0], then each is
     // divided by its scale. cos45 = sin45 = 1/sqrt(2).
     let d = core::f64::consts::FRAC_1_SQRT_2;
-    let vecs = standard_texvecs([0.0, 0.0, 1.0], [5.0, -6.0], 45.0, [2.0, 4.0]);
+    let vecs = texvecs::<f64>([0.0, 0.0, 1.0], [5.0, -6.0], 45.0, [2.0, 4.0]);
     let expect = [[d / 2.0, d / 2.0, 0.0, 5.0], [d / 4.0, -d / 4.0, 0.0, -6.0]];
     for (row, want) in vecs.iter().zip(expect) {
         for (got, w) in row.iter().zip(want) {
             assert!((got - w).abs() < 1e-9, "{got} != {w}");
         }
     }
-    let q = qbsp_texvecs([0.0, 0.0, 1.0], [5.0, -6.0], 45.0, [2.0, 4.0]);
+    let q = texvecs::<f32>([0.0, 0.0, 1.0], [5.0, -6.0], 45.0, [2.0, 4.0]);
     let df = core::f32::consts::FRAC_1_SQRT_2;
     let expect_q = [
         [df / 2.0, df / 2.0, 0.0, 5.0],
@@ -220,8 +217,8 @@ fn valve_divides_every_component_by_its_scale() {
 // scale. A west wall's t axis is [0,0,-1], so its z divided by a non-unit scale is non-zero.
 #[test]
 fn texvecs_divides_the_z_component_on_a_wall() {
-    let vecs = standard_texvecs([1.0, 0.0, 0.0], [0.0; 2], 0.0, [2.0, 4.0]);
+    let vecs = texvecs::<f64>([1.0, 0.0, 0.0], [0.0; 2], 0.0, [2.0, 4.0]);
     assert_eq!(vecs, [[0.0, 0.5, 0.0, 0.0], [0.0, 0.0, -0.25, 0.0]]);
-    let q = qbsp_texvecs([1.0, 0.0, 0.0], [0.0; 2], 0.0, [2.0, 4.0]);
+    let q = texvecs::<f32>([1.0, 0.0, 0.0], [0.0; 2], 0.0, [2.0, 4.0]);
     assert_eq!(q, [[0.0, 0.5, 0.0, 0.0], [0.0, 0.0, -0.25, 0.0]]);
 }

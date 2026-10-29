@@ -13,6 +13,8 @@ mod tests;
 
 use core::fmt;
 
+use crate::cursor::{self, le_i32};
+
 /// The four bytes an alias model starts with, id's `IDPOLYHEADER` (MDL-1.2).
 pub const MDL_MAGIC: [u8; 4] = *b"IDPO";
 /// The only version the engine loads, id's `ALIAS_VERSION` (MDL-1.3).
@@ -380,37 +382,8 @@ pub struct Mdl<'a> {
     pub frames: Vec<MdlFrameEntry<'a>>,
 }
 
-/// The little-endian 32-bit word at `offset`, or `None` past the end.
-fn le_i32(bytes: &[u8], offset: usize) -> Option<i32> {
-    let word = bytes.get(offset..offset.checked_add(4)?)?;
-    Some(i32::from_le_bytes(<[u8; 4]>::try_from(word).ok()?))
-}
-
-/// A cursor over the file, failing at the end (MDL-2.5, MDL-5.6).
-struct Cursor<'a> {
-    bytes: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> Cursor<'a> {
-    fn take(&mut self, len: usize) -> Result<&'a [u8], MdlError> {
-        let truncated = MdlError::Truncated { offset: self.pos };
-        let end = self.pos.checked_add(len).ok_or(truncated)?;
-        let slice = self.bytes.get(self.pos..end).ok_or(truncated)?;
-        self.pos = end;
-        Ok(slice)
-    }
-
-    fn int(&mut self) -> Result<i32, MdlError> {
-        let pos = self.pos;
-        let word = self.take(4)?;
-        le_i32(word, 0).ok_or(MdlError::Truncated { offset: pos })
-    }
-
-    fn float(&mut self) -> Result<f32, MdlError> {
-        Ok(f32::from_bits(self.int()?.cast_unsigned()))
-    }
-}
+/// A cursor over an alias model.
+type Cursor<'a> = cursor::Cursor<'a, MdlError>;
 
 /// A count of 1 or more read from the file, or `error`.
 fn count(value: i32, error: MdlError) -> Result<usize, MdlError> {
@@ -491,10 +464,9 @@ impl<'a> Mdl<'a> {
             .checked_mul(header.skinheight)
             .and_then(|size| usize::try_from(size).ok())
             .ok_or(bad_size)?;
-        let mut cursor = Cursor {
-            bytes,
-            pos: MDL_HEADER_SIZE,
-        };
+        let mut cursor = Cursor::new(bytes, MDL_HEADER_SIZE, |offset| MdlError::Truncated {
+            offset,
+        });
         let mut skins = Vec::new();
         for _ in 0..numskins {
             let skin_type = cursor.int()?;
@@ -659,15 +631,7 @@ fn mod_load_alias_skin_group<'a>(
 ) -> Result<MdlSkin<'a>, MdlError> {
     let stored = cursor.int()?;
     let numskins = count(stored, MdlError::InvalidSkinGroupCount { count: stored })?;
-    let mut intervals = Vec::new();
-    for _ in 0..numskins {
-        let interval = cursor.float()?;
-        // MDL-2.3: id's test is `interval <= 0`, so NaN passes.
-        if interval <= 0.0 {
-            return Err(MdlError::SkinInterval);
-        }
-        intervals.push(interval);
-    }
+    let intervals = cursor.intervals(numskins, |_| MdlError::SkinInterval)?;
     let mut skins = Vec::new();
     for _ in 0..numskins {
         skins.push(cursor.take(skinsize)?);
@@ -705,15 +669,7 @@ fn mod_load_alias_group<'a>(
     let header = cursor.take(MDL_GROUP_HEADER_SIZE)?;
     let stored = le_i32(header, 0).unwrap_or_default();
     let numframes = count(stored, MdlError::InvalidFrameGroupCount { count: stored })?;
-    let mut intervals = Vec::new();
-    for _ in 0..numframes {
-        let interval = cursor.float()?;
-        // MDL-5.5: id's test is `interval <= 0.0`, so NaN passes.
-        if interval <= 0.0 {
-            return Err(MdlError::FrameInterval);
-        }
-        intervals.push(interval);
-    }
+    let intervals = cursor.intervals(numframes, |_| MdlError::FrameInterval)?;
     let mut frames = Vec::new();
     for _ in 0..numframes {
         frames.push(mod_load_alias_frame(cursor, numverts)?);

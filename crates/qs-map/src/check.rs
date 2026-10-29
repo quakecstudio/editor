@@ -14,8 +14,8 @@ use crate::document::{Entity, MapFile};
 use crate::geometry::on_plane;
 use crate::lexer::MAP_MAX_TOKEN;
 use crate::qbsp::{
-    MAP_LUMP_LINE, MAP_MAX_ENTITIES, MAP_MAX_KEY, MAP_MAX_TEXINFO, MAP_MAX_TEXTURE_NAME,
-    MAP_MAX_VALUE, QbspError, load_map_file,
+    MAP_MAX_ENTITIES, MAP_MAX_TEXINFO, QbspError, key_too_long, load_map_file, pair_too_long,
+    texture_name_too_long, value_too_long,
 };
 
 /// The largest CD track the world's `sounds` key can name: it is sent as one byte (MAP-6.6).
@@ -123,7 +123,7 @@ impl MapFile {
                     kind: DiagnosticKind::TooManyEntities,
                 });
             }
-            check_pairs(entity, &mut out);
+            entity.check_pairs(&mut out);
             for brush in entity.brushes() {
                 let mut kept = Vec::new();
                 for face in &brush.faces {
@@ -135,7 +135,7 @@ impl MapFile {
                     };
                     faces = faces.saturating_add(1);
                     textures.insert(face.texture());
-                    if face.texture().len() > MAP_MAX_TEXTURE_NAME {
+                    if texture_name_too_long(face.texture().len()) {
                         push(DiagnosticKind::TextureNameTooLong);
                     }
                     if let crate::TexDef::Valve { scale, .. } = face.texdef() {
@@ -206,44 +206,46 @@ impl MapFile {
     }
 }
 
-fn check_pairs(entity: &Entity, out: &mut Vec<Diagnostic>) {
-    let mut seen = BTreeSet::new();
-    for pair in entity.pairs() {
-        let mut push = |kind| {
-            out.push(Diagnostic {
-                line: pair.line(),
-                kind,
-            });
-        };
-        let (key, value) = (pair.key(), pair.value());
-        if key.len() >= MAP_MAX_TOKEN || value.len() >= MAP_MAX_TOKEN {
-            push(DiagnosticKind::TokenTooLarge);
-        }
-        if key.len() >= MAP_MAX_KEY.saturating_sub(1)
-            || value.len() >= MAP_MAX_VALUE.saturating_sub(1)
-        {
-            push(DiagnosticKind::KeyTooLong);
-        }
-        if key.len().saturating_add(value.len()).saturating_add(7) > MAP_LUMP_LINE {
-            push(DiagnosticKind::PairTooLong);
-        }
-        if !seen.insert(key) {
-            push(DiagnosticKind::DuplicateKey { key: key.to_vec() });
-        }
-        if key.first().is_some_and(u8::is_ascii_whitespace)
-            || key.last().is_some_and(u8::is_ascii_whitespace)
-        {
-            push(DiagnosticKind::KeyWhitespace);
-        }
-        if key.contains(&b'\n') || value.contains(&b'\n') {
-            push(DiagnosticKind::LineBreakInToken);
-        }
-        let unquoted = |raw: &[u8], text: &[u8]| raw.first() != Some(&b'"') && text.contains(&b';');
-        if unquoted(pair.key_raw(), key) || unquoted(pair.value_raw(), value) {
-            push(DiagnosticKind::EricwComment);
-        }
-        if pair.ericw_escape() {
-            push(DiagnosticKind::EricwEscape);
+impl Entity {
+    /// The diagnostics of the entity's pairs.
+    fn check_pairs(&self, out: &mut Vec<Diagnostic>) {
+        let mut seen = BTreeSet::new();
+        for pair in self.pairs() {
+            let mut push = |kind| {
+                out.push(Diagnostic {
+                    line: pair.line(),
+                    kind,
+                });
+            };
+            let (key, value) = (pair.key(), pair.value());
+            if key.len() >= MAP_MAX_TOKEN || value.len() >= MAP_MAX_TOKEN {
+                push(DiagnosticKind::TokenTooLarge);
+            }
+            if key_too_long(key.len()) || value_too_long(value.len()) {
+                push(DiagnosticKind::KeyTooLong);
+            }
+            if pair_too_long(key.len(), value.len()) {
+                push(DiagnosticKind::PairTooLong);
+            }
+            if !seen.insert(key) {
+                push(DiagnosticKind::DuplicateKey { key: key.to_vec() });
+            }
+            if key.first().is_some_and(u8::is_ascii_whitespace)
+                || key.last().is_some_and(u8::is_ascii_whitespace)
+            {
+                push(DiagnosticKind::KeyWhitespace);
+            }
+            if key.contains(&b'\n') || value.contains(&b'\n') {
+                push(DiagnosticKind::LineBreakInToken);
+            }
+            let unquoted =
+                |raw: &[u8], text: &[u8]| raw.first() != Some(&b'"') && text.contains(&b';');
+            if unquoted(pair.key_raw(), key) || unquoted(pair.value_raw(), value) {
+                push(DiagnosticKind::EricwComment);
+            }
+            if pair.ericw_escape() {
+                push(DiagnosticKind::EricwEscape);
+            }
         }
     }
 }

@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 use qs_pak::{Pak, PakError};
 use qs_wad::{Wad, WadError};
 
-pub use host::{DirEntry, EntryKind, HostFs, StdFs};
+pub use host::{DirEntry, EntryKind, HostFs, StdFs, find_entry};
 use host::{components, resolve};
 
 /// The game directory every search path starts with, id's `GAMENAME` (FS-1.7).
@@ -204,15 +204,33 @@ pub enum Location {
     Loose(PathBuf),
 }
 
-/// A file on the search path, from [`Vfs::find`] or [`Vfs::files`].
+/// A file on the search path, made only by [`Vfs::find`] and [`Vfs::files`], so its element
+/// and its location agree.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FileRef {
+    element: usize,
+    name: Vec<u8>,
+    location: Location,
+}
+
+impl FileRef {
     /// The index of its element in [`Vfs::elements`].
-    pub element: usize,
+    #[must_use]
+    pub const fn element(&self) -> usize {
+        self.element
+    }
+
     /// The file's name on the search path.
-    pub name: Vec<u8>,
+    #[must_use]
+    pub fn name(&self) -> &[u8] {
+        &self.name
+    }
+
     /// Where it is.
-    pub location: Location,
+    #[must_use]
+    pub const fn location(&self) -> &Location {
+        &self.location
+    }
 }
 
 /// A file's contents as id's `COM_LoadFile` returns them: its bytes and one NUL after them

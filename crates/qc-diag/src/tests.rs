@@ -240,3 +240,26 @@ fn span_helpers() {
     assert!(!span.contains(Span::new(1, 4)));
     assert!(!span.contains(Span::new(4, 6)));
 }
+
+#[test]
+fn a_span_covers_its_bytes_and_an_empty_one_its_start() {
+    let span = Span::new(3, 6);
+    assert!(!span.covers(2));
+    assert!(span.covers(3) && span.covers(5));
+    assert!(!span.covers(6));
+    let empty = Span::new(4, 4);
+    assert!(empty.covers(4));
+    assert!(!empty.covers(3) && !empty.covers(5));
+}
+
+#[test]
+fn spans_join_and_measure() {
+    assert_eq!(Span::new(2, 5).to(Span::new(9, 12)), Span::new(2, 12));
+    assert_eq!(Span::new(3, 6).len(), 3);
+    assert!(!Span::new(3, 6).is_empty());
+    assert_eq!(Span::new(4, 4).len(), 0);
+    assert!(Span::new(4, 4).is_empty());
+    // An inverted span holds nothing.
+    assert_eq!(Span::new(6, 3).len(), 0);
+    assert!(Span::new(6, 3).is_empty());
+}

@@ -124,7 +124,7 @@ impl OriginMap {
         if last.file == first.file && last.span.end >= first.span.start {
             return Some(Location {
                 file: first.file,
-                span: Span::new(first.span.start, last.span.end),
+                span: first.span.to(last.span),
             });
         }
         Some(first)

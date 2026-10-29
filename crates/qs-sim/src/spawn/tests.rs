@@ -156,7 +156,7 @@ impl SpawnHost for RecordingHost {
             .map(|&(_, index)| index)
     }
     fn global(&self, _slot: usize) -> Option<Slot> {
-        Some(Slot(0))
+        Some(Slot::ZERO)
     }
     fn set_field(&mut self, edict: usize, field: usize, value: Slot) {
         self.writes.push((edict, field, value));

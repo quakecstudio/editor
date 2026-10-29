@@ -26,7 +26,7 @@ impl ModuleIndex {
             .refs
             .iter()
             .chain(&self.redeclarations)
-            .find(|r| r.location.file == file && covers(r.location.span, offset))
+            .find(|r| r.location.file == file && r.location.span.covers(offset))
         {
             let def = self.def(reference.def)?;
             return Some((reference.def, def.location));
@@ -35,7 +35,7 @@ impl ModuleIndex {
         self.defs
             .iter()
             .enumerate()
-            .find(|(_, d)| d.location.file == file && covers(d.location.span, offset))
+            .find(|(_, d)| d.location.file == file && d.location.span.covers(offset))
             .map(|(index, d)| (DefId(index), d.location))
     }
 
@@ -77,15 +77,5 @@ impl ModuleIndex {
             Some((def, _)) => self.references(def, include_declaration),
             None => Vec::new(),
         }
-    }
-}
-
-/// Whether a span covers a byte position: `[start, end)`, or exactly at `start` for an empty
-/// span so a cursor at the first byte of a zero-width name still hits.
-fn covers(span: qc_diag::Span, offset: usize) -> bool {
-    if span.start == span.end {
-        offset == span.start
-    } else {
-        offset >= span.start && offset < span.end
     }
 }

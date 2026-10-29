@@ -234,10 +234,10 @@ impl TraceBuilder {
             .zip(self.last_globals.iter())
             .enumerate()
         {
-            if now.0 != before.0 {
+            if now.bits() != before.bits() {
                 globals.push(GlobalChange {
                     slot: u32::try_from(slot).unwrap_or(u32::MAX),
-                    bits: now.0,
+                    bits: now.bits(),
                 });
             }
         }
@@ -249,12 +249,12 @@ impl TraceBuilder {
                 let before = previous
                     .and_then(|p| p.get(field))
                     .copied()
-                    .unwrap_or(Slot(0));
-                if now.0 != before.0 {
+                    .unwrap_or(Slot::ZERO);
+                if now.bits() != before.bits() {
                     fields.push(FieldChange {
                         edict: u32::try_from(edict).unwrap_or(u32::MAX),
                         field: u32::try_from(field).unwrap_or(u32::MAX),
-                        bits: now.0,
+                        bits: now.bits(),
                     });
                 }
             }

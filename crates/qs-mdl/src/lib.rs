@@ -8,6 +8,7 @@
 //! rejects malformed input with an error, never a panic. The formats are specified in
 //! `docs/spec/mdl.md` (MDL-1 to MDL-5), `docs/spec/spr.md` (SPR-1, SPR-2) and `docs/spec/md5.md` (MD5-1 to MD5-3).
 
+mod cursor;
 pub mod md5;
 pub mod mdl;
 pub mod spr;

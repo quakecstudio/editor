@@ -33,7 +33,11 @@ fn functions_are_numbered_as_their_definitions_end() {
         .collect();
     assert_eq!(names, ["a", "b", "c"]);
     let b = usize::try_from(global(&p, "b")).unwrap();
-    assert_eq!(p.globals[b].0, 2, "b's global holds its function number");
+    assert_eq!(
+        p.globals[b].bits(),
+        2,
+        "b's global holds its function number"
+    );
 }
 
 // spec QC-25.3: one global definition per definition in the order made, parameters, locals,

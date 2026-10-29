@@ -27,7 +27,7 @@ pub fn install_panic_hook(dir: PathBuf, clock: fn() -> SystemTime) {
         let location = info
             .location()
             .map_or_else(|| "unknown".to_owned(), ToString::to_string);
-        match write_crash_record(&dir, clock(), info) {
+        match write_crash_record(&dir, clock(), info, &location) {
             Ok(path) => tracing::error!(
                 location = %location,
                 record = %path.display(),
@@ -47,6 +47,7 @@ fn write_crash_record(
     dir: &Path,
     now: SystemTime,
     info: &PanicHookInfo<'_>,
+    location: &str,
 ) -> io::Result<PathBuf> {
     fs::create_dir_all(dir)?;
     let path = dir.join(format!(
@@ -58,16 +59,14 @@ fn write_crash_record(
         .write(true)
         .create_new(true)
         .open(&path)?;
-    file.write_all(crash_record(now, info).as_bytes())?;
+    file.write_all(crash_record(now, info, location).as_bytes())?;
     file.sync_all()?;
     Ok(path)
 }
 
-fn crash_record(now: SystemTime, info: &PanicHookInfo<'_>) -> String {
+/// The record's text: everything about the panic but its message, of which only the length.
+fn crash_record(now: SystemTime, info: &PanicHookInfo<'_>, location: &str) -> String {
     let thread = thread::current();
-    let location = info
-        .location()
-        .map_or_else(|| "unknown".to_owned(), ToString::to_string);
     format!(
         "QuakeC Studio crash record\n\
          time: {}\n\
@@ -79,12 +78,7 @@ fn crash_record(now: SystemTime, info: &PanicHookInfo<'_>) -> String {
         Utc::from_system_time(now).rfc3339(),
         env!("CARGO_PKG_VERSION"),
         thread.name().unwrap_or("unnamed"),
-        marker(payload_len(info)),
+        marker(info.payload_as_str().map_or(0, str::len)),
         Backtrace::force_capture()
     )
-}
-
-/// The length of the panic message, which is all the record says about it.
-fn payload_len(info: &PanicHookInfo<'_>) -> usize {
-    info.payload_as_str().map_or(0, str::len)
 }

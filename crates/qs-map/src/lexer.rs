@@ -117,6 +117,15 @@ pub const fn is_map_space(byte: u8) -> bool {
     byte <= b' ' || byte >= 0x80
 }
 
+/// How long a token may be.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TokenLimit {
+    /// qbsp's: a token over 127 bytes is an error (MAP-1.6).
+    Qbsp,
+    /// Any length is read.
+    Unlimited,
+}
+
 /// Reads `.map` tokens one at a time, as qbsp's `GetToken` does (MAP-1).
 #[derive(Clone, Debug)]
 pub struct Lexer<'a> {
@@ -124,20 +133,32 @@ pub struct Lexer<'a> {
     pos: usize,
     line: u32,
     qbsp_line: u32,
-    limit: bool,
+    limit: TokenLimit,
 }
 
 impl<'a> Lexer<'a> {
-    /// A tokenizer over `bytes` up to its first NUL (MAP-1.1). With `limit`, a token over
-    /// 127 bytes is an error, as in qbsp (MAP-1.6); without it any length is read.
+    /// A tokenizer over `bytes` up to its first NUL (MAP-1.1), reading tokens up to `limit`.
     #[must_use]
-    pub fn new(bytes: &'a [u8], limit: bool) -> Self {
+    pub fn new(bytes: &'a [u8], limit: TokenLimit) -> Self {
         Self {
             text: map_text(bytes),
             pos: 0,
             line: 1,
             qbsp_line: 1,
             limit,
+        }
+    }
+
+    /// The next token if it is on the current line, else the line break, or the end of the
+    /// text, that comes first (MAP-1.7).
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`Self::token`].
+    pub fn same_line_token(&mut self) -> Result<Result<Token<'a>, LineBreak>, LexError> {
+        match self.skip() {
+            Gap::End(line_break) | Gap::Token(Some(line_break)) => Ok(Err(line_break)),
+            Gap::Token(None) => Ok(Ok(self.token(None)?)),
         }
     }
 
@@ -218,7 +239,7 @@ impl<'a> Lexer<'a> {
     /// # Errors
     ///
     /// [`LexError::EofInQuote`], and [`LexError::TokenTooLarge`] when the lexer was made
-    /// with `limit`.
+    /// with [`TokenLimit::Qbsp`].
     pub fn token(&mut self, gap_break: Option<LineBreak>) -> Result<Token<'a>, LexError> {
         let start = self.pos;
         let line = self.line;
@@ -239,7 +260,9 @@ impl<'a> Lexer<'a> {
                             self.line = self.line.saturating_add(1);
                         }
                         pos = pos.saturating_add(1);
-                        if self.limit && pos.saturating_sub(text_start) >= MAP_MAX_TOKEN {
+                        if self.limit == TokenLimit::Qbsp
+                            && pos.saturating_sub(text_start) >= MAP_MAX_TOKEN
+                        {
                             return Err(too_large);
                         }
                     }
@@ -250,7 +273,7 @@ impl<'a> Lexer<'a> {
             let mut pos = start;
             while self.byte(pos).is_some_and(|byte| !is_map_space(byte)) {
                 pos = pos.saturating_add(1);
-                if self.limit && pos.saturating_sub(start) >= MAP_MAX_TOKEN {
+                if self.limit == TokenLimit::Qbsp && pos.saturating_sub(start) >= MAP_MAX_TOKEN {
                     return Err(too_large);
                 }
             }

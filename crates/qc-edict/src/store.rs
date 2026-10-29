@@ -53,7 +53,7 @@ impl Edict {
         Self {
             free: false,
             freetime: 0.0,
-            fields: vec![Slot(0); entityfields].into_boxed_slice(),
+            fields: vec![Slot::ZERO; entityfields].into_boxed_slice(),
         }
     }
 }
@@ -267,7 +267,7 @@ impl EdictStore {
     /// number the array does not hold.
     pub fn clear_edict(&mut self, number: usize) {
         if let Some(edict) = self.edicts.get_mut(number) {
-            edict.fields.fill(Slot(0));
+            edict.fields.fill(Slot::ZERO);
             edict.free = false;
         }
     }
@@ -330,7 +330,7 @@ impl EdictStore {
         // frame = 0, solid = 0, origin = 0 0 0, angles = 0 0 0, nextthink = -1.
         for slot in FREE_ZEROED_SLOTS {
             if let Some(cell) = edict.fields.get_mut(slot) {
-                *cell = Slot(0);
+                *cell = Slot::ZERO;
             }
         }
         // nextthink (46) to -1, not 0.

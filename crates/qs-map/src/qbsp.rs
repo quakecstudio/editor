@@ -15,8 +15,8 @@ mod tests;
 use core::fmt;
 
 use crate::cnum::{c_atof, c_atoi, scan_vector};
-use crate::geometry::{Plane, TexVecs, qbsp_on_plane, qbsp_plane, qbsp_texvecs};
-use crate::lexer::{Gap, LexError, Lexer, Token};
+use crate::geometry::{Plane, TexVecs, on_plane, qbsp_plane, texvecs, to_f32};
+use crate::lexer::{Gap, LexError, Lexer, Token, TokenLimit};
 
 /// The most entities a map may hold, `MAX_MAP_ENTITIES` (MAP-2.8).
 pub const MAP_MAX_ENTITIES: usize = 1024;
@@ -235,36 +235,53 @@ pub struct QbspMap {
     pub warnings: Vec<QbspWarning>,
 }
 
+/// The world's keys a WAD path is read from, in order: `_wad`, then `wad` (MAP-6.3).
+pub(crate) const MAP_WAD_KEYS: [&[u8]; 2] = [b"_wad", b"wad"];
+
+/// Whether qbsp refuses a key of `len` bytes, which with its NUL overflows its `MAX_KEY`
+/// buffer (MAP-2.4).
+pub(crate) const fn key_too_long(len: usize) -> bool {
+    len >= MAP_MAX_KEY.saturating_sub(1)
+}
+
+/// Whether qbsp refuses a value of `len` bytes, as [`key_too_long`] for `MAX_VALUE` (MAP-2.4).
+pub(crate) const fn value_too_long(len: usize) -> bool {
+    len >= MAP_MAX_VALUE.saturating_sub(1)
+}
+
+/// Whether a pair written as `"key" "value"` with its line break and NUL overflows qbsp's
+/// 128-byte entity lump line (MAP-2.10).
+pub(crate) const fn pair_too_long(key_len: usize, value_len: usize) -> bool {
+    key_len.saturating_add(value_len).saturating_add(7) > MAP_LUMP_LINE
+}
+
+/// Whether a texture name of `len` bytes overflows qbsp's 16-byte miptex name (MAP-4.6).
+pub(crate) const fn texture_name_too_long(len: usize) -> bool {
+    len > MAP_MAX_TEXTURE_NAME
+}
+
 /// qbsp's tokenizer: `GetToken` with its `crossline` argument.
 struct Reader<'a> {
     lexer: Lexer<'a>,
 }
 
 impl<'a> Reader<'a> {
-    /// The next token. With `crossline` false a line break before it, or the end of the
-    /// file, is an error (MAP-1.7); with it true the end of the file is `None`.
-    fn get(&mut self, crossline: bool) -> Result<Option<Token<'a>>, QbspError> {
+    /// The next token, across line breaks, `GetToken (true)`; `None` at the end of the file.
+    fn next(&mut self) -> Result<Option<Token<'a>>, QbspError> {
         match self.lexer.skip() {
-            Gap::End(line_break) => {
-                if crossline {
-                    Ok(None)
-                } else {
-                    Err(QbspError::LineIncomplete {
-                        line: line_break.qbsp_line,
-                    })
-                }
-            }
-            Gap::Token(Some(line_break)) if !crossline => Err(QbspError::LineIncomplete {
-                line: line_break.qbsp_line,
-            }),
+            Gap::End(_) => Ok(None),
             Gap::Token(gap_break) => Ok(Some(self.lexer.token(gap_break)?)),
         }
     }
 
-    /// The next token, which must be on the current line.
+    /// The next token, which must be on the current line, `GetToken (false)`: a line break
+    /// before it, or the end of the file, is an error (MAP-1.7).
     fn same_line(&mut self) -> Result<Token<'a>, QbspError> {
-        self.get(false)?
-            .ok_or(QbspError::LineIncomplete { line: 0 })
+        self.lexer
+            .same_line_token()?
+            .map_err(|line_break| QbspError::LineIncomplete {
+                line: line_break.qbsp_line,
+            })
     }
 }
 
@@ -278,10 +295,10 @@ impl<'a> Reader<'a> {
 /// The [`QbspError`] qbsp stops with.
 pub fn load_map_file(bytes: &[u8]) -> Result<QbspMap, QbspError> {
     let mut reader = Reader {
-        lexer: Lexer::new(bytes, true),
+        lexer: Lexer::new(bytes, TokenLimit::Qbsp),
     };
     let mut map = QbspMap::default();
-    while let Some(open) = reader.get(true)? {
+    while let Some(open) = reader.next()? {
         if !open.is(b"{") {
             return Err(QbspError::NoOpenBrace);
         }
@@ -293,7 +310,7 @@ pub fn load_map_file(bytes: &[u8]) -> Result<QbspMap, QbspError> {
             ..QbspEntity::default()
         };
         loop {
-            let token = reader.get(true)?.ok_or(QbspError::EofWithoutBrace)?;
+            let token = reader.next()?.ok_or(QbspError::EofWithoutBrace)?;
             if token.is(b"}") {
                 break;
             }
@@ -301,11 +318,11 @@ pub fn load_map_file(bytes: &[u8]) -> Result<QbspMap, QbspError> {
                 let brush = map.parse_brush(&mut reader)?;
                 entity.brushes.push(brush);
             } else {
-                if token.text.len() >= MAP_MAX_KEY.saturating_sub(1) {
+                if key_too_long(token.text.len()) {
                     return Err(QbspError::TokenTooLong);
                 }
                 let value = reader.same_line()?;
-                if value.text.len() >= MAP_MAX_VALUE.saturating_sub(1) {
+                if value_too_long(value.text.len()) {
                     return Err(QbspError::TokenTooLong);
                 }
                 entity
@@ -318,15 +335,6 @@ pub fn load_map_file(bytes: &[u8]) -> Result<QbspMap, QbspError> {
         map.entities.push(entity);
     }
     Ok(map)
-}
-
-/// A `double` stored in a `float`.
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "spec MAP-2.7, MAP-4.1: qbsp stores atof and sscanf doubles in floats"
-)]
-const fn to_f32(value: f64) -> f32 {
-    value as f32
 }
 
 /// An `int` stored in a `float`.
@@ -342,7 +350,7 @@ impl QbspMap {
     /// qbsp's `ParseBrush`: faces up to `}` or the end of the file (MAP-3, MAP-4).
     fn parse_brush(&mut self, reader: &mut Reader<'_>) -> Result<Vec<QbspFace>, QbspError> {
         let mut faces: Vec<QbspFace> = Vec::new();
-        while let Some(first) = reader.get(true)? {
+        while let Some(first) = reader.next()? {
             if first.is(b"}") {
                 break;
             }
@@ -353,7 +361,7 @@ impl QbspMap {
                 let open = if index == 0 {
                     Some(first)
                 } else {
-                    reader.get(true)?
+                    reader.next()?
                 };
                 if !open.is_some_and(|token| token.is(b"(")) {
                     return Err(QbspError::ParsingBrush);
@@ -371,7 +379,7 @@ impl QbspMap {
             let rotate = int_to_f32(c_atoi(reader.same_line()?.text));
             let scale_s = to_f32(c_atof(reader.same_line()?.text));
             let scale_t = to_f32(c_atof(reader.same_line()?.text));
-            if faces.iter().any(|face| qbsp_on_plane(&points, &face.plane)) {
+            if faces.iter().any(|face| on_plane(&points, &face.plane)) {
                 self.warnings.push(QbspWarning::DuplicatePlane { line });
                 continue;
             }
@@ -379,7 +387,7 @@ impl QbspMap {
                 self.warnings.push(QbspWarning::NoNormal { line });
                 break;
             };
-            let vecs = qbsp_texvecs(plane.normal, [shift_s, shift_t], rotate, [scale_s, scale_t]);
+            let vecs = texvecs(plane.normal, [shift_s, shift_t], rotate, [scale_s, scale_t]);
             let texinfo = self.find_texinfo(vecs, miptex)?;
             faces.push(QbspFace {
                 points,
@@ -398,7 +406,7 @@ impl QbspMap {
         if self.miptex.len() == MAP_MAX_TEXINFO {
             return Err(QbspError::TooManyMiptex);
         }
-        if name.len() > MAP_MAX_TEXTURE_NAME {
+        if texture_name_too_long(name.len()) {
             return Err(QbspError::TextureNameTooLong {
                 name: name.to_vec(),
             });
@@ -445,7 +453,7 @@ impl QbspMap {
     #[must_use]
     pub fn wad_path(&self) -> Option<&[u8]> {
         let world = self.entities.first()?;
-        [b"_wad".as_slice(), b"wad"]
+        MAP_WAD_KEYS
             .into_iter()
             .filter_map(|key| world.value_for_key(key))
             .find(|value| !value.is_empty())
@@ -480,8 +488,7 @@ impl QbspMap {
             }
             out.extend_from_slice(b"{\n");
             for (key, value) in entity.pairs.iter().rev() {
-                // `"key" "value"\n` and its NUL must fit the 128-byte line.
-                if key.len().saturating_add(value.len()).saturating_add(7) > MAP_LUMP_LINE {
+                if pair_too_long(key.len(), value.len()) {
                     return Err(QbspError::PairTooLong {
                         key: key.clone(),
                         value: value.clone(),

@@ -585,7 +585,7 @@ pub(super) fn build_progs(vector: &Vector) -> Result<Vec<u8>, String> {
         statements,
         functions,
         strings,
-        globals: vec![Slot(0); vector.numglobals.unwrap_or(DEFAULT_GLOBALS)],
+        globals: vec![Slot::ZERO; vector.numglobals.unwrap_or(DEFAULT_GLOBALS)],
         ..ProgsFile::default()
     };
     write(&file).map_err(|e| format!("cannot write the progs: {e:?}"))

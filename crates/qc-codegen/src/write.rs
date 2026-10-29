@@ -131,7 +131,7 @@ pub(crate) fn progs(mut program: Program, crc: u16) -> Result<ProgsFile, Interna
         field_defs,
         functions: program.functions,
         strings,
-        globals: program.globals.into_iter().map(Slot).collect(),
+        globals: program.globals.into_iter().map(Slot::from_bits).collect(),
         ..ProgsFile::default()
     })
 }
