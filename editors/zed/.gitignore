@@ -1,0 +1,4 @@
+# Zed's build of a dev extension: the WebAssembly module and the fetched grammar.
+target/
+extension.wasm
+grammars/

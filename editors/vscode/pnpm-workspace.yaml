@@ -1,0 +1,5 @@
+# A package of its own, outside any parent workspace. Supply-chain settings
+# (docs/conventions.md): a version must be a day old before it is installed,
+# and no dependency runs an install script.
+minimumReleaseAge: 1440
+ignoreScripts: true

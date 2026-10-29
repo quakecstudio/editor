@@ -1,0 +1,15 @@
+id = "quakec"
+name = "QuakeC"
+description = "QuakeC support: tree-sitter-quakec highlighting and QuakeC Studio's language server, quakec-lsp"
+version = "0.1.0"
+schema_version = 1
+authors = ["QuakeC Studio contributors"]
+repository = "https://github.com/quakecstudio/editor"
+
+[grammars.quakec]
+repository = "https://github.com/quakecstudio/tree-sitter-quakec"
+rev = "77949595b4238c24eaf7641fc1ce156f307df1d6"
+
+[language_servers.quakec-lsp]
+name = "quakec-lsp"
+languages = ["QuakeC"]

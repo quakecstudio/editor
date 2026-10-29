@@ -1,0 +1,110 @@
+{
+  "name": "quakec",
+  "displayName": "QuakeC Studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "QuakeC language support from QuakeC Studio's language server, quakec-lsp",
+  "categories": [
+    "Programming Languages"
+  ],
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/quakecstudio/editor",
+    "directory": "editors/vscode"
+  },
+  "publisher": "quakecstudio",
+  "type": "module",
+  "main": "./dist/extension.cjs",
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.cjs --external:vscode --format=cjs --platform=node --target=node20",
+    "check": "tsc --noEmit && oxlint --deny-warnings && oxfmt --check",
+    "test": "pnpm run build && esbuild test/suite.ts --outfile=out/suite.cjs --format=cjs --platform=node --target=node20 && esbuild test/run.ts --outfile=out/run.js --format=esm --platform=node && node out/run.js"
+  },
+  "dependencies": {
+    "vscode-languageclient": "10.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "@types/vscode": "1.91.0",
+    "@vscode/test-electron": "3.1.0",
+    "esbuild": "0.28.2",
+    "oxfmt": "0.73.0",
+    "oxlint": "1.88.0",
+    "typescript": "7.0.2"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "quakec",
+        "aliases": [
+          "QuakeC"
+        ],
+        "extensions": [
+          ".qc",
+          ".qh"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "quakec",
+        "scopeName": "source.quakec",
+        "path": "./syntaxes/quakec.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "QuakeC",
+      "properties": {
+        "quakec.server.path": {
+          "type": "string",
+          "default": "quakec-lsp",
+          "description": "The quakec-lsp binary: a path, or a name looked up on PATH."
+        },
+        "quakec.dialect": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            null,
+            "vanilla",
+            "fteqcc",
+            "gmqcc"
+          ],
+          "default": null,
+          "description": "The dialect of a project with no quakec.toml. Unset is vanilla."
+        },
+        "quakec.target": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            null,
+            "quake",
+            "quakespasm",
+            "ironwail",
+            "vkquake",
+            "rerelease",
+            "fte",
+            "dp"
+          ],
+          "default": null,
+          "description": "The target engine of a project with no quakec.toml."
+        },
+        "quakec.autoproto": {
+          "type": "boolean",
+          "default": false,
+          "description": "FTEQCC's -Fautoproto, for a project with no quakec.toml."
+        }
+      }
+    }
+  },
+  "preview": true,
+  "engines": {
+    "node": ">=22",
+    "vscode": "^1.91.0"
+  }
+}

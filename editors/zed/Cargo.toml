@@ -1,0 +1,28 @@
+[package]
+name = "quakec-zed"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+description = "The Zed extension for QuakeC: starts quakec-lsp"
+repository = "https://github.com/quakecstudio/editor"
+
+# Zed builds the extension in this directory for wasm32-wasip2, so it is a package of its own
+# and not a member of the editor's workspace.
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+zed_extension_api = "=0.7.0"
+
+# The editor's no-panic lints. `unsafe_code` is left at its default: `register_extension!`
+# expands to the unsafe glue Zed's WebAssembly interface needs.
+[lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"

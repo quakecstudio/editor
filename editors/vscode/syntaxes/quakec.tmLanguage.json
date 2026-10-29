@@ -1,0 +1,59 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "QuakeC",
+  "scopeName": "source.quakec",
+  "comment": "Lexical highlighting only: comments, literals, keywords, types and directives, with the keyword list of tree-sitter-quakec's queries/highlights.scm. VS Code has no tree-sitter, so names are coloured by quakec-lsp's semantic tokens.",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#preprocessor" },
+    { "include": "#frames" },
+    { "include": "#strings" },
+    { "include": "#vectors" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#types" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.quakec", "match": "//.*$" },
+        { "name": "comment.block.quakec", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "preprocessor": {
+      "name": "meta.preprocessor.quakec",
+      "match": "^\\s*(#\\s*[A-Za-z_]+)\\b",
+      "captures": { "1": { "name": "keyword.control.directive.quakec" } }
+    },
+    "frames": {
+      "name": "meta.frame.quakec",
+      "match": "^\\s*(\\$[A-Za-z_]+)(.*)$",
+      "captures": {
+        "1": { "name": "keyword.other.frame.quakec" },
+        "2": { "name": "string.unquoted.frame.quakec" }
+      }
+    },
+    "strings": {
+      "name": "string.quoted.double.quakec",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [{ "name": "constant.character.escape.quakec", "match": "\\\\." }]
+    },
+    "vectors": {
+      "name": "constant.numeric.vector.quakec",
+      "match": "'[^'\\n]*'"
+    },
+    "numbers": {
+      "name": "constant.numeric.quakec",
+      "match": "\\b(0x[0-9A-Fa-f]+|[0-9]+(\\.[0-9]*)?|\\.[0-9]+)\\b"
+    },
+    "keywords": {
+      "name": "keyword.control.quakec",
+      "match": "\\b(local|return|if|else|while|do|for|switch|case|default|break|continue|goto|until|not|sizeof|struct|union|enum|enumflags|class|accessor|inline|const|var|nosave|static|shared|nonstatic|typedef)\\b"
+    },
+    "types": {
+      "name": "storage.type.quakec",
+      "match": "\\b(void|float|vector|string|entity|int|integer|__variant|variant)\\b"
+    }
+  }
+}

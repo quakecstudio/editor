@@ -1,0 +1,2 @@
+# The language's name is a word, not code, in the docs.
+doc-valid-idents = ["QuakeC", ".."]

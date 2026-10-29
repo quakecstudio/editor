@@ -22,6 +22,7 @@ are. Then [`docs/design/design-doc.md`](docs/design/design-doc.md) for the why,
 editor/
 ├── crates/        qs-* library crates, one per layer component; qs-tests: the one cross-crate test binary (tests/it)
 ├── apps/          desktop app, CLI, LSP server binaries (names from ADR-0006)
+├── editors/       VS Code and Zed extensions and the Neovim setup, wrapping quakec-lsp (not published)
 ├── xtask/         build automation: cargo xtask <command>, called from make
 ├── docs/          roadmap, design and mockups, ADRs (adr/), engine behaviour specs (spec/), conventions, testing bar
 ├── specs/         cached public specifications (LSP, MCP, ACP), verbatim; grep before fetching
