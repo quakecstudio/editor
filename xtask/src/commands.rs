@@ -8,7 +8,8 @@ use std::fs;
 use std::path::Path;
 
 use qs_commands::Registry;
-use qs_settings::SettingsStore;
+use qs_layout::{HasLayout, Layout};
+use qs_settings::{HasSettings, SettingsStore};
 
 use crate::{Report, print_outcome};
 
@@ -48,11 +49,30 @@ pub(crate) fn check(root: &Path) -> Result<Report, String> {
     Ok(report)
 }
 
-/// The reference the registry renders: the built-in commands and the settings commands
-/// (P2-22).
+/// The context the reference's registry is built over: one with every part a command reads.
+struct Everything {
+    settings: SettingsStore,
+    layout: Layout,
+}
+
+impl HasSettings for Everything {
+    fn settings(&mut self) -> &mut SettingsStore {
+        &mut self.settings
+    }
+}
+
+impl HasLayout for Everything {
+    fn layout_mut(&mut self) -> &mut Layout {
+        &mut self.layout
+    }
+}
+
+/// The reference the registry renders: the built-in commands, the settings commands (P2-22)
+/// and the layout commands (P2-17).
 fn reference() -> Result<String, String> {
-    let mut registry = Registry::<SettingsStore>::new();
+    let mut registry = Registry::<Everything>::new();
     qs_settings::register(&mut registry).map_err(|e| e.to_string())?;
+    qs_layout::register(&mut registry).map_err(|e| e.to_string())?;
     Ok(registry.markdown())
 }
 

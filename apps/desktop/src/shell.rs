@@ -12,6 +12,7 @@
 
 use std::path::PathBuf;
 
+use eframe::egui::containers::panel::PanelState;
 use eframe::egui::{self, Align, Button, Id, Layout as EguiLayout, RichText, Sense, Ui};
 use qs_commands::{CommandError, RegisterError, Registry, Session};
 use qs_layout::{
@@ -35,11 +36,13 @@ impl HasLayout for Workspace {
     }
 }
 
-/// The regions of the window that are not a [`Panel`], each egui's id for it.
+/// The areas of the window, each egui's id for it. One enum, so no two share an id: a
+/// field-less enum hashes only its variant's place, so two enums' first variants would.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-enum Region {
+enum Area {
     Toolbar,
     StatusBar,
+    Panel(Panel),
 }
 
 /// The tab shown in the bottom panel.
@@ -75,7 +78,7 @@ pub struct Shell {
     bottom_tab: BottomTab,
     centre_tab: CentreTab,
     /// Each panel's size as drawn in the last frame, left, right and bottom.
-    drawn: [Option<f32>; 3],
+    pub(crate) drawn: [Option<f32>; 3],
 }
 
 impl Shell {
@@ -141,7 +144,7 @@ impl Shell {
 
     /// Writes the layout when it has changed since it was last written, and no drag is under
     /// way.
-    fn save_if_changed(&mut self, dragging: bool) {
+    pub(crate) fn save_if_changed(&mut self, dragging: bool) {
         let layout = *self.layout();
         if dragging || layout == self.saved {
             return;
@@ -172,7 +175,7 @@ impl Shell {
         let theme = &self.theme;
         let fill = theme.color(Token::SurfaceToolbar);
         let mut toggled = None;
-        egui::Panel::top(Id::new(Region::Toolbar))
+        egui::Panel::top(Id::new(Area::Toolbar))
             .exact_size(theme.size.toolbar)
             .frame(egui::Frame::NONE.fill(fill).inner_margin(theme.space(1)))
             .show(ui, |ui| {
@@ -232,7 +235,7 @@ impl Shell {
 
     fn status_bar(&self, ui: &mut Ui) {
         let theme = &self.theme;
-        egui::Panel::bottom(Id::new(Region::StatusBar))
+        egui::Panel::bottom(Id::new(Area::StatusBar))
             .exact_size(theme.size.status_bar)
             .frame(
                 egui::Frame::NONE
@@ -258,9 +261,9 @@ impl Shell {
         let state = *self.layout().panel(panel);
         let theme = &self.theme;
         let builder = match panel {
-            Panel::Left => egui::Panel::left(Id::new(panel)),
-            Panel::Right => egui::Panel::right(Id::new(panel)),
-            Panel::Bottom => egui::Panel::bottom(Id::new(panel)),
+            Panel::Left => egui::Panel::left(Id::new(Area::Panel(panel))),
+            Panel::Right => egui::Panel::right(Id::new(Area::Panel(panel))),
+            Panel::Bottom => egui::Panel::bottom(Id::new(Area::Panel(panel))),
         };
         let frame = egui::Frame::NONE
             .fill(theme.color(Token::SurfacePanel))
@@ -273,18 +276,34 @@ impl Shell {
             .default_size(state.size)
             .min_size(qs_layout::MIN_PANEL_SIZE)
             .frame(frame)
-            .show_collapsible(ui, &mut expanded, |ui| match panel {
-                Panel::Left => {
-                    section(ui, theme, Text::Project, Text::NoProject);
-                    ui.add_space(theme.space(3));
-                    section(ui, theme, Text::Entities, Text::NotPlaying);
+            .show_collapsible(ui, &mut expanded, |ui| {
+                // egui 0.36 stores a panel's size as its contents' rect, so the contents take
+                // the whole size the panel was given: it neither shrinks to them nor grows
+                // with them.
+                let given = ui.max_rect().size();
+                match panel {
+                    Panel::Left | Panel::Right => {
+                        ui.set_min_width(given.x);
+                        ui.set_max_width(given.x);
+                    }
+                    Panel::Bottom => {
+                        ui.set_min_height(given.y);
+                        ui.set_max_height(given.y);
+                    }
                 }
-                Panel::Right => {
-                    section(ui, theme, Text::Properties, Text::NotPlaying);
-                    ui.add_space(theme.space(3));
-                    section(ui, theme, Text::Agent, Text::NoAgent);
+                match panel {
+                    Panel::Left => {
+                        section(ui, theme, Text::Project, Text::NoProject);
+                        ui.add_space(theme.space(3));
+                        section(ui, theme, Text::Entities, Text::NotPlaying);
+                    }
+                    Panel::Right => {
+                        section(ui, theme, Text::Properties, Text::NotPlaying);
+                        ui.add_space(theme.space(3));
+                        section(ui, theme, Text::Agent, Text::NoAgent);
+                    }
+                    Panel::Bottom => bottom(ui, theme, bottom_tab),
                 }
-                Panel::Bottom => bottom(ui, theme, bottom_tab),
             });
         // A panel dragged shut is hidden through its command too.
         if expanded != state.visible
@@ -294,22 +313,26 @@ impl Shell {
         }
         // A size that changes while the pointer is held is a drag of the panel's edge: that
         // one goes to the layout, not a size that follows the panel's contents.
+        // The panel's size is egui's stored outer size, not its contents' rect.
         let dragging = ui.input(|input| input.pointer.any_down());
-        let size = shown.filter(|_| expanded).map(|shown| match panel {
-            Panel::Left | Panel::Right => shown.response.rect.width(),
-            Panel::Bottom => shown.response.rect.height(),
-        });
-        let index = Panel::ALL
-            .iter()
-            .position(|p| *p == panel)
-            .unwrap_or_default();
+        let stored = PanelState::load(ui.ctx(), Id::new(Area::Panel(panel)));
+        let size = shown
+            .filter(|_| expanded)
+            .and(stored)
+            .map(|stored| match panel {
+                Panel::Left | Panel::Right => stored.size().x,
+                Panel::Bottom => stored.size().y,
+            });
+        let index = match panel {
+            Panel::Left => 0,
+            Panel::Right => 1,
+            Panel::Bottom => 2,
+        };
         let previous = self.drawn.get(index).copied().flatten();
         if let Some(slot) = self.drawn.get_mut(index) {
             *slot = size;
         }
-        if let (Some(size), Some(previous)) = (size, previous)
-            && dragging
-            && (size - previous).abs() >= 0.5
+        if let Some(size) = dragged_size(previous, size, dragging)
             && let Err(error) = self.resize(panel, size)
         {
             tracing::debug!(%error, "panel resize refused");
@@ -348,6 +371,14 @@ impl Shell {
             ui.allocate_response(egui::Vec2::ZERO, Sense::hover());
         });
     }
+}
+
+/// The size a drag of a panel's edge gave it: its size this frame, when the pointer is held
+/// and the size has moved half a point or more since the last frame. A size that changes
+/// without a drag, or the first frame's, is not one.
+pub(crate) fn dragged_size(previous: Option<f32>, now: Option<f32>, dragging: bool) -> Option<f32> {
+    let (previous, now) = (previous?, now?);
+    (dragging && (now - previous).abs() >= 0.5).then_some(now)
 }
 
 /// A panel section: its heading and, until it has content, one line of explanation.

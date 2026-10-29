@@ -3,7 +3,8 @@
 #![expect(
     clippy::unwrap_used,
     clippy::arithmetic_side_effects,
-    reason = "test code: a failed unwrap is a failed test; line numbers and depths are small"
+    reason = "test code: a failed unwrap is a failed test; line numbers and depths are small, \
+              and sizes are compared exactly as set"
 )]
 
 use std::collections::BTreeSet;
@@ -14,10 +15,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use eframe::egui::{self, FontId, RawInput, Rect, Vec2};
 use qs_layout::{Layout, Panel};
 
-use crate::App;
 use crate::icons::Icon;
+use crate::shell::dragged_size;
 use crate::strings::Text;
-use crate::theme::{Mode, Theme, Token, semibold};
+use crate::theme::{Mode, Theme, ThemeError, Token, semibold};
+use crate::{App, AppError};
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
@@ -240,4 +242,160 @@ fn the_ui_code_has_no_string_literals() {
         "ui.label(\"Play\");\n// \"comment\"\ntracing::warn!(\"log\");\n#[expect(\n  reason = \"why\"\n)]\neprintln!(\"{}: {error}\", x);\n",
     );
     assert_eq!(found, [(1, "ui.label(\"Play\");")]);
+}
+
+/// The text of every string a frame painted.
+fn painted(output: &egui::FullOutput) -> Vec<String> {
+    fn walk(shape: &egui::Shape, out: &mut Vec<String>) {
+        match shape {
+            egui::Shape::Text(text) => out.push(text.galley.job.text.clone()),
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for clipped in &output.shapes {
+        walk(&clipped.shape, &mut out);
+    }
+    out
+}
+
+/// One frame with `events`, returning what it painted.
+fn frame_with(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) -> Vec<String> {
+    let input = RawInput {
+        screen_rect: Some(Rect::from_min_size(
+            egui::Pos2::ZERO,
+            Vec2::new(1440.0, 900.0),
+        )),
+        events,
+        ..RawInput::default()
+    };
+    let mut output = ctx.run_ui(input, |ui| app.frame(ui));
+    output.textures_delta.clear();
+    painted(&output)
+}
+
+fn labelled(icon: Icon, text: Text) -> String {
+    format!("{} {}", icon.char(), text.get())
+}
+
+// UI-2: the window paints the toolbar, every panel's heading and placeholder, the centre and
+// the status bar, from the catalog.
+#[test]
+fn the_window_paints_every_region() {
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, None).unwrap();
+    frame_with(&ctx, &mut app, Vec::new());
+    let texts = frame_with(&ctx, &mut app, Vec::new());
+    let mut expected: Vec<String> = [
+        Text::PreviewHost,
+        Text::PreviewDocked,
+        Text::Project,
+        Text::NoProject,
+        Text::Entities,
+        Text::NotPlaying,
+        Text::Properties,
+        Text::Agent,
+        Text::NoAgent,
+        Text::Problems,
+        Text::Console,
+        Text::Debugger,
+        Text::NoProblems,
+        Text::Editor,
+        Text::Game,
+        Text::NoFileOpen,
+        Text::PreviewStopped,
+    ]
+    .iter()
+    .map(|text| text.get().to_owned())
+    .collect();
+    expected.extend([
+        labelled(Icon::Play, Text::Play),
+        labelled(Icon::Pause, Text::Pause),
+        labelled(Icon::Step, Text::Step),
+        labelled(Icon::Restart, Text::RestartMap),
+        labelled(Icon::Search, Text::SearchCommands),
+        format!("{} 0", Icon::Error.char()),
+        format!("{} 0", Icon::Warning.char()),
+        Icon::PanelLeft.char().to_string(),
+    ]);
+    for text in &expected {
+        assert!(texts.contains(text), "{text:?} not painted in {texts:?}");
+    }
+    // A hidden panel paints nothing.
+    app.shell.toggle(Panel::Left).unwrap();
+    for _ in 0..30 {
+        frame_with(&ctx, &mut app, Vec::new());
+    }
+    let texts = frame_with(&ctx, &mut app, Vec::new());
+    assert!(
+        !texts.contains(&Text::NoProject.get().to_owned()),
+        "{texts:?}"
+    );
+}
+
+// UI-2: a size that moves while the pointer is held is a drag of the panel's edge; one that
+// moves without it, by less than half a point, or on the first frame is not.
+#[test]
+fn only_a_drag_resizes_a_panel() {
+    assert_eq!(dragged_size(Some(240.0), Some(260.0), true), Some(260.0));
+    assert_eq!(dragged_size(Some(240.0), Some(220.0), true), Some(220.0));
+    assert_eq!(dragged_size(Some(240.0), Some(240.5), true), Some(240.5));
+    assert_eq!(dragged_size(Some(240.0), Some(240.4), true), None);
+    assert_eq!(dragged_size(Some(240.0), Some(260.0), false), None);
+    assert_eq!(dragged_size(None, Some(260.0), true), None);
+    assert_eq!(dragged_size(Some(240.0), None, true), None);
+}
+
+// UI-2: the layout is written once a change is made and no drag is under way, and only once.
+#[test]
+fn the_layout_is_written_after_a_drag_not_during_it() {
+    let dir = TempDir::new("drag");
+    let file = qs_layout::layout_path(dir.path());
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, Some(file.clone())).unwrap();
+    app.shell.resize(Panel::Left, 300.0).unwrap();
+    app.shell.save_if_changed(true);
+    assert!(!file.exists(), "written during the drag");
+    app.shell.save_if_changed(false);
+    assert_eq!(Layout::read(&file).unwrap().left.size, 300.0);
+    fs::remove_file(&file).unwrap();
+    app.shell.save_if_changed(false);
+    assert!(!file.exists(), "written again with nothing changed");
+}
+
+// UI-2: a size within half a point of the panel's is not a resize.
+#[test]
+fn a_resize_under_half_a_point_changes_nothing() {
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, None).unwrap();
+    app.shell.resize(Panel::Right, 320.4).unwrap();
+    assert_eq!(app.shell().layout().right.size, 320.0);
+    app.shell.resize(Panel::Right, 319.6).unwrap();
+    assert_eq!(app.shell().layout().right.size, 320.0);
+    app.shell.resize(Panel::Right, 320.5).unwrap();
+    assert_eq!(app.shell().layout().right.size, 320.5);
+}
+
+#[test]
+fn errors_say_what_went_wrong() {
+    let missing = ThemeError::Missing {
+        mode: Mode::Light,
+        token: Token::Accent,
+    };
+    assert_eq!(missing.to_string(), "the Light theme has no accent colour");
+    let bad = ThemeError::BadColor {
+        token: Token::Text,
+        value: "red".to_owned(),
+    };
+    assert_eq!(bad.to_string(), "colour text is \"red\", not #RRGGBB");
+    assert_eq!(
+        AppError::Theme(missing).to_string(),
+        "the Light theme has no accent colour"
+    );
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, None).unwrap();
+    let error = app.shell.resize(Panel::Left, 1.0).unwrap_err();
+    assert!(error.to_string().contains("at least 120 points"), "{error}");
+    assert!(std::error::Error::source(&error).is_some());
 }
