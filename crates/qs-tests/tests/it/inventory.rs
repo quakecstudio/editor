@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The L2 upstream inventory (`docs/spec/inventory-l2.md`, P2-116): every row of its tables is
-//! `ported` or `not modelled`, every statement ID a row names is an active statement
-//! (or a section) of `docs/spec/requirements.tsv`, a `not modelled` row names the statement that
-//! says why, and every case family a row names is a `fn` or `const` of the builtin differential
-//! (`xtask/src/oracles/builtins.rs` and `builtins/*.rs`), or the row says `none` and why.
+//! The upstream inventories: L2's (`docs/spec/inventory-l2.md`, P2-116) and L4's
+//! (`docs/spec/inventory-l4.md`, P2-06). Every row of their tables is `ported` or `not modelled`,
+//! every statement ID a row names is an active statement (or a section) of
+//! `docs/spec/requirements.tsv`, a `not modelled` row names the statement that says why, and every
+//! case family a row names is a `fn` or `const` of the inventory's differential (L2: the builtin
+//! differential, `xtask/src/oracles/builtins.rs` and `builtins/*.rs`; L4: the compiler
+//! differential, `xtask/src/oracles/codegen.rs`, `codegen/*.rs` and `id101.rs`) or, for L4, the
+//! name of one of its cases, or the row says `none` and why.
 
 #![expect(
     clippy::expect_used,
@@ -25,10 +28,43 @@ struct Known {
     statements: BTreeMap<String, String>,
     sections: BTreeSet<String>,
     differential: String,
+    /// The case names a differential records, for the L4 inventory.
+    cases: BTreeSet<String>,
 }
 
 impl Known {
+    /// What the L2 inventory may cite: the builtin differential.
     fn read(root: &Path) -> Self {
+        let oracles = root.join("xtask/src/oracles");
+        Self::with_differential(
+            root,
+            &oracles.join("builtins.rs"),
+            &oracles.join("builtins"),
+        )
+    }
+
+    /// What the L4 inventory may cite: the compiler differential and the id 1.01 check.
+    fn read_codegen(root: &Path) -> Self {
+        let oracles = root.join("xtask/src/oracles");
+        let mut known =
+            Self::with_differential(root, &oracles.join("codegen.rs"), &oracles.join("codegen"));
+        known
+            .differential
+            .push_str(&fs::read_to_string(oracles.join("id101.rs")).expect("id101.rs"));
+        // The case names are the keys of the outcomes the differential records.
+        let fixture = root.join("xtask/fixtures/oracles/codegen-outcomes.json");
+        let fixture = fs::read_to_string(fixture).expect("codegen-outcomes.json");
+        for line in fixture.lines() {
+            if let Some((key, _)) = line.trim().split_once("\": ") {
+                known.cases.insert(key.trim_start_matches('"').to_owned());
+            }
+        }
+        known
+    }
+
+    /// The statements and sections, and as the differential `main` and the files of `family`
+    /// but its tests.
+    fn with_differential(root: &Path, main: &Path, family: &Path) -> Self {
         let tsv = fs::read_to_string(root.join("docs/spec/requirements.tsv"))
             .expect("docs/spec/requirements.tsv");
         let mut statements = BTreeMap::new();
@@ -43,11 +79,9 @@ impl Known {
             statements.insert(id.to_owned(), status.to_owned());
             sections.insert(section.to_owned());
         }
-        let oracles = root.join("xtask/src/oracles");
-        let mut differential =
-            fs::read_to_string(oracles.join("builtins.rs")).expect("builtins.rs");
-        let mut family = fs::read_dir(oracles.join("builtins"))
-            .expect("xtask/src/oracles/builtins")
+        let mut differential = fs::read_to_string(main).expect("the differential");
+        let mut family = fs::read_dir(family)
+            .expect("the differential's directory")
             .map(|entry| entry.expect("an entry").path())
             .filter(|path| path.file_name().is_some_and(|name| name != "tests.rs"))
             .collect::<Vec<_>>();
@@ -59,6 +93,7 @@ impl Known {
             statements,
             sections,
             differential,
+            cases: BTreeSet::new(),
         }
     }
 
@@ -72,7 +107,7 @@ impl Known {
         }
     }
 
-    /// Whether `name` is a `fn` or `const` of the differential.
+    /// Whether `name` is a `fn` or `const` of the differential, or a case it records.
     fn is_family(&self, name: &str) -> bool {
         [
             format!("fn {name}("),
@@ -81,6 +116,7 @@ impl Known {
         ]
         .iter()
         .any(|form| self.differential.contains(form.as_str()))
+            || self.cases.contains(name)
     }
 }
 
@@ -200,6 +236,33 @@ fn every_inventory_row_is_ported_or_not_modelled_and_proven() {
         "inventory breaches:\n{}",
         found.join("\n")
     );
+}
+
+#[test]
+fn every_l4_inventory_row_is_ported_and_proven() {
+    let root = repo_root();
+    let known = Known::read_codegen(&root);
+    let text = fs::read_to_string(root.join("docs/spec/inventory-l4.md"))
+        .expect("docs/spec/inventory-l4.md");
+    let found = breaches("inventory-l4.md", &text, &known);
+    assert!(
+        found.is_empty(),
+        "inventory breaches:\n{}",
+        found.join("\n")
+    );
+}
+
+#[test]
+fn an_l4_row_cites_cases_by_name() {
+    let known = Known::read_codegen(&repo_root());
+    assert!(known.is_family("precedence"), "a case of one");
+    assert!(
+        known.is_family("earlier-load-rewritten"),
+        "a case of diverges"
+    );
+    assert!(known.is_family("two-files"), "a case written out");
+    assert!(known.is_family("check_ours") && known.is_family("program"));
+    assert!(!known.is_family("no-such-case"));
 }
 
 #[test]
