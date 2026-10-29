@@ -497,6 +497,27 @@ impl<'a> Compiler<'a> {
                     let literal = literal_of(&expr, self.dialect).at(expr.syntax().span())?;
                     self.program.initialise(place, &literal).at(span)?;
                 }
+                // FTE-13.1: `vector v = {x, y, z};`, each element stored to its component in
+                // turn, as `QCC_PR_ParseInitializerType` stores an aggregate's elements.
+                Some(ast::Initializer::Aggregate(aggregate))
+                    if self.dialect.has_fteqcc_extensions()
+                        && self.type_of(&self.def_value(place, span)?).etype() == Etype::Vector =>
+                {
+                    let base = self.def_value(place, span)?.ofs;
+                    for (i, element) in (0_u32..3).zip(aggregate.elements()) {
+                        let value = self.expr(&element)?;
+                        let at = element.syntax().span();
+                        if self.type_of(&value).etype() != Etype::Float {
+                            return Self::mismatch(Operator::Assign, at);
+                        }
+                        let component = base.checked_add(i).at(at)?;
+                        self.program.emit(
+                            Opcode::StoreF,
+                            operand(value.ofs).at(at)?,
+                            operand(component).at(at)?,
+                        );
+                    }
+                }
                 Some(
                     ast::Initializer::Body(_)
                     | ast::Initializer::Builtin(_)
@@ -551,14 +572,115 @@ impl<'a> Compiler<'a> {
             ast::Expr::Binary(binary) => self.binary(binary, span),
             ast::Expr::Field(field) => self.field(field, span),
             ast::Expr::Call(call) => self.call(call, span),
-            ast::Expr::Postfix(_)
-            | ast::Expr::Ternary(_)
-            | ast::Expr::Index(_)
-            | ast::Expr::Unary(_)
+            ast::Expr::Postfix(postfix) => self.postfix(postfix, span),
+            ast::Expr::Unary(unary) => self.unary(unary, span),
+            ast::Expr::Index(index) => self.index(index, span),
+            ast::Expr::Ternary(_)
             | ast::Expr::Cast(_)
             | ast::Expr::Vector(_)
             | ast::Expr::Sizeof(_) => Err(Abort::Internal(Internal::Unsupported, span)),
         }
+    }
+
+    /// The float literal `value`'s global (QC-20).
+    fn float_literal(&mut self, value: f32, span: Span) -> Lowered<Value> {
+        let place = self.program.immediate(&Literal::Float(value)).at(span)?;
+        self.def_value(place, span)
+    }
+
+    /// FTEQCC's `x++` and `x--` (FTE-5.1): the old value copied to a temporary, then `x` stored
+    /// as the temporary plus or minus 1 (`ADD_F` with the constant `inc`, as `QCC_RefToDef`'s
+    /// post-increment does); the value is the old one.
+    fn postfix(&mut self, postfix: &ast::PostfixExpr, span: Span) -> Lowered<Value> {
+        let target = postfix.operand().at(span)?;
+        let decrement = postfix
+            .syntax()
+            .child_tokens()
+            .any(|t| t.kind() == qc_syntax::SyntaxKind::MinusMinus);
+        let inc = self.float_literal(if decrement { -1.0 } else { 1.0 }, span)?;
+        let mut old = None;
+        self.store(&target, span, |compiler| {
+            let current = compiler.expr(&target)?;
+            let ty = compiler.type_of(&current);
+            if ty.etype() != Etype::Float {
+                return Self::mismatch(Operator::Add, span);
+            }
+            let temp = compiler.program.allocate(1).at(span)?;
+            compiler.program.emit(
+                Opcode::StoreF,
+                operand(current.ofs).at(span)?,
+                operand(temp).at(span)?,
+            );
+            let copy = Value {
+                ofs: temp,
+                kind: ValueKind::Temp(ty),
+            };
+            old = Some(copy.clone());
+            compiler.operate(Operator::Add, &copy, &inc, (span, span))
+        })?;
+        old.at(span)
+    }
+
+    /// A prefix operator (FTE-5.1): `-x` is `0 - x`, `SUB_F` or `SUB_V` from a zero literal as
+    /// FTEQCC writes it; `+x` is `x`; `++x` and `--x` store `x` plus or minus 1 and are the new
+    /// value.
+    fn unary(&mut self, unary: &ast::UnaryExpr, span: Span) -> Lowered<Value> {
+        let operand = unary.operand().at(span)?;
+        match unary.op().at(span)? {
+            ast::UnaryOp::Neg => {
+                let value = self.expr(&operand)?;
+                let zero = match self.type_of(&value).etype() {
+                    Etype::Vector => {
+                        let place = self
+                            .program
+                            .immediate(&Literal::Vector([0.0; 3]))
+                            .at(span)?;
+                        self.def_value(place, span)?
+                    }
+                    _ => self.float_literal(0.0, span)?,
+                };
+                self.operate(Operator::Sub, &zero, &value, (span, span))
+            }
+            ast::UnaryOp::Plus => self.expr(&operand),
+            op @ (ast::UnaryOp::PreIncrement | ast::UnaryOp::PreDecrement) => {
+                let step = if op == ast::UnaryOp::PreDecrement {
+                    -1.0
+                } else {
+                    1.0
+                };
+                let inc = self.float_literal(step, span)?;
+                self.store(&operand, span, |compiler| {
+                    let current = compiler.expr(&operand)?;
+                    compiler.operate(Operator::Add, &current, &inc, (span, span))
+                })
+            }
+            ast::UnaryOp::BitNot
+            | ast::UnaryOp::AddressOf
+            | ast::UnaryOp::Deref
+            | ast::UnaryOp::AsString => Err(Abort::Internal(Internal::Unsupported, span)),
+        }
+    }
+
+    /// A vector's component by a constant index, `v[0]` to `v[2]` (FTE-13.2): the component's
+    /// word of the vector, a field's vector loaded first by `LOAD_V`.
+    fn index(&mut self, index: &ast::IndexExpr, span: Span) -> Lowered<Value> {
+        let base = self.expr(&index.base().at(span)?)?;
+        let at = index.index().at(span)?;
+        if self.type_of(&base).etype() != Etype::Vector {
+            return Err(Abort::Internal(Internal::Unsupported, span));
+        }
+        let Some(Literal::Float(i)) = literal_of(&at, self.dialect) else {
+            return Err(Abort::Internal(Internal::Unsupported, span));
+        };
+        let offset = [0.0_f32, 1.0, 2.0]
+            .iter()
+            .position(|c| c.to_bits() == i.to_bits())
+            .and_then(|o| u32::try_from(o).ok())
+            .ok_or(Abort::Internal(Internal::Unsupported, span))?;
+        Ok(Value {
+            ofs: base.ofs.checked_add(offset).at(span)?,
+            kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
+        })
     }
 
     fn def_value(&self, place: usize, span: Span) -> Lowered<Value> {

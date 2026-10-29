@@ -189,7 +189,7 @@ impl Program {
     }
 
     /// Takes the next `words` global offsets (QC-21.2); returns the first.
-    fn allocate(&mut self, words: u32) -> Result<u32, Internal> {
+    pub(crate) fn allocate(&mut self, words: u32) -> Result<u32, Internal> {
         let ofs = self.next_global()?;
         let words = usize::try_from(words).map_err(|_| Internal::TooLarge)?;
         let len = self
