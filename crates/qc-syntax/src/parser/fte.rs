@@ -1764,14 +1764,11 @@ impl Parser<'_> {
         self.finish_node();
     }
 
-    /// `goto name;` (FTEF-18.23), whose label is looked for at the end of the function
-    /// (FTEF-18.24).
+    /// `goto name;` (FTEF-18.23), whose label the check stage looks for at the end of the
+    /// function (FTEF-34.12).
     pub(super) fn goto_stmt(&mut self) {
         self.start_node(K::GotoStmt);
         self.bump_as(K::GotoKw);
-        if let Some(tok) = self.current().filter(|t| t.kind == K::Name) {
-            self.gotos.push((tok.text.clone(), tok.span));
-        }
         self.name();
         self.end_statement();
         self.finish_node();

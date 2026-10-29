@@ -212,7 +212,7 @@ pub enum Code {
     E0306,
     /// "More than eight parameters": nine or more arguments (QCD-4.7).
     E0307,
-    /// "Goto statement with no matching label \"NAME\"" (QCD-4.8).
+    /// "Goto statement with no matching label \"NAME\"" (QCD-4.81).
     E0308,
     /// "Type mismatch: TYPE, should be void()" (QCD-4.9).
     E0309,

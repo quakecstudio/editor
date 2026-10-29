@@ -881,6 +881,96 @@ const CALLS_AS_FTEQCC_READS_THEM_CASES: &[(&str, &[&str])] = &[
             "initializer for 'y' is not constant",
         ],
     ),
+    (
+        "entity self;\nclass C : entity { nonvirtual float() h = { return 1; }; };\nvoid() f = { local C c; c.(C::h)(1); };\n",
+        &["too many parameters on call to C::h, argument IMMEDIATE will be ignored"],
+    ),
+    (
+        "entity self;\nclass C : entity { virtual float() h = { return 1; }; };\nvoid() f = { local C c; c.(C::h)(1); };\n",
+        &["too many parameters on call to C::h, argument IMMEDIATE will be ignored"],
+    ),
+    (
+        "entity self;\nclass C : entity { virtual float() random = { return 1; }; };\nvoid() f = { local C c; c.(C::random)(\"x\"); };\n",
+        &["too many parameters on call to C::random, argument IMMEDIATE will be ignored"],
+    ),
+    (
+        "entity self;\nclass C : entity { virtual float() random = { return 1; }; };\nclass D : C { virtual float() random = { return 2; }; };\nvoid() f = { local D d; d.C::random(\"x\"); };\n",
+        &["too many parameters on call to C::random, argument IMMEDIATE will be ignored"],
+    ),
+    (
+        "entity self;\nclass C : entity { nonvirtual float() random = { return 1; }; };\nclass D : C { };\nvoid() f = { local D d; d.C::random(\"x\"); };\n",
+        &["too many parameters on call to C::random, argument IMMEDIATE will be ignored"],
+    ),
+    (
+        "entity self;\nclass C : entity { virtual float() h = { return 1; }; };\nclass D : C { virtual float() h = { return 2; }; };\nvoid() f = { local D d; local float x = d.C::h(); };\n",
+        &[],
+    ),
+    (
+        "entity self;\nclass C : entity { float v; };\nvoid() f = { local C c; c.C::v = 1; };\n",
+        &[],
+    ),
+    (
+        "entity self;\nclass C : entity { virtual float() h = { return 1; }; };\nvoid() f = { local C c; local float x = c.(C::h)(); };\n",
+        &[],
+    ),
+    (
+        "float y = g(1);\n",
+        &[
+            "Unknown value \"g\".",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (CALL1).",
+            "initializer for 'y' is not constant",
+        ],
+    ),
+    (
+        "float d; float y = g(d, d);\n",
+        &[
+            "Unknown value \"g\".",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (CALL2).",
+            "initializer for 'y' is not constant",
+        ],
+    ),
+    (
+        "__variant v; float y = v(1);\n",
+        &[
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (CALL1).",
+            "initializer for 'y' is not constant",
+        ],
+    ),
+    (
+        "#pragma target fte_6614\nfloat y = g(1, 2, 3);\n",
+        &[
+            "Unknown value \"g\".",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (CALL3H).",
+            "initializer for 'y' is not constant",
+        ],
+    ),
+    (
+        "void() f = { local float y = g(1); };\n",
+        &["Unknown value \"g\"."],
+    ),
+    (
+        "vector w; float y = g(w, \"s\");\n",
+        &[
+            "Unknown value \"g\".",
+            "Unable to generate statements at global scope (STORE_V).",
+            "Unable to generate statements at global scope (STORE_F).",
+            "Unable to generate statements at global scope (CALL2).",
+            "initializer for 'y' is not constant",
+        ],
+    ),
+    (
+        "float y = g();\n",
+        &[
+            "Unknown value \"g\".",
+            "Unable to generate statements at global scope (CALL0).",
+            "initializer for 'y' is not constant",
+        ],
+    ),
 ];
 
 // spec FTEF-32.10: a function with no named parameters, `...` or not, is an intrinsic unless the
@@ -890,8 +980,9 @@ const CALLS_AS_FTEQCC_READS_THEM_CASES: &[(&str, &[&str])] = &[
 // spec FTEF-32.12: `entnum()` and `autocvar()` read their argument after the `)`; `autocvar` takes
 // two or three arguments
 // spec FTEF-17.20: a type that is no entity's ends `spawn` at the token after it
+// spec FTEF-24.16: `e.CLASS::name` and `e.(CLASS::name)` call the member's global with `e`
 // spec FTEF-34.9: a call at global scope generates its argument stores, a two-word one
-// `STORE_I64` where the target has it
+// `STORE_I64` where the target has it, and a `variant`'s by each argument's own size
 // spec FTEF-17.19: `used_sound` and `used_model` add to the sounds' and the models' lists
 #[test]
 fn calls_as_fteqcc_reads_them() {

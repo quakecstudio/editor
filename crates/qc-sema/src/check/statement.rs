@@ -53,6 +53,7 @@ impl Checker<'_> {
 
     fn statement_parts(&mut self, stmt: &ast::Stmt) -> Result<(), Fatal> {
         let line = self.env.line(stmt.syntax().span());
+        self.line_starts.entry(line).or_insert(stmt.syntax().span());
         match stmt {
             ast::Stmt::Block(block) => self.block(block),
             ast::Stmt::Expr(s) => {
@@ -84,6 +85,9 @@ impl Checker<'_> {
                     self.layout.push(Step::Other, None, line);
                 }
                 self.local(local)?;
+                for inner in inner_functions(local.syntax()) {
+                    self.inner_function(&inner)?;
+                }
             }
             ast::Stmt::Break(_) => self.layout.break_(line),
             ast::Stmt::Continue(_) => self.layout.continue_(line),
@@ -751,6 +755,23 @@ impl Checker<'_> {
         }
     }
 
+    /// FTEF-34.12: the end of a function defined inside this one checks every `goto` read since
+    /// the last function's end, this one's included, against the labels read since then, its
+    /// own included, then forgets both; a `goto` with none is fatal there.
+    fn inner_function(&mut self, inner: &ast::FunctionBody) -> Result<(), Fatal> {
+        let (labels, gotos) = own_jumps(inner);
+        if let Some(name) = self.layout.unlabelled(&labels, &gotos) {
+            let message = format!("Goto statement with no matching label \"{name}\"");
+            let end = inner
+                .block()
+                .and_then(|b| b.syntax().token_of(qc_syntax::SyntaxKind::RBrace))
+                .map_or_else(|| inner.syntax().span(), |brace| brace.span());
+            return self.fatal(Code::E0308, end, message).map(drop);
+        }
+        self.layout.forget_jumps();
+        Ok(())
+    }
+
     /// Whether the function returns a type larger than a vector, through a pointer its caller
     /// passes.
     fn returns_large(&self) -> bool {
@@ -777,6 +798,13 @@ impl Checker<'_> {
     /// control paths return a value", and "contains unreachable code".
     pub(super) fn finish_function(&mut self, span: Span) {
         if self.env.failed() {
+            return;
+        }
+        // FTEF-34.12: "Goto statement with no matching label", a fatal error at the function's
+        // end that ends its checks, before the illegal jumps.
+        if let Some(name) = self.layout.unlabelled(&[], &[]).filter(|_| !self.nested) {
+            let message = format!("Goto statement with no matching label \"{name}\"");
+            self.env.report(Code::E0308, span, message);
             return;
         }
         // FTEF-21.19: a `continue` or `break` no loop took, which a stripped `if` arm does not
@@ -816,11 +844,47 @@ impl Checker<'_> {
                 }
                 Finding::Unreachable(at) => {
                     let message = format!("{name}: contains unreachable code (line {at})");
-                    self.env.report(Code::W0259, span, message);
+                    let at = self.line_starts.get(&at).copied().unwrap_or(span);
+                    self.env.report(Code::W0259, at, message);
                 }
             }
         }
     }
+}
+
+/// The bodies of the functions a local declaration defines, not those defined inside them.
+fn inner_functions(node: &qc_syntax::SyntaxNode) -> Vec<ast::FunctionBody> {
+    node.descendants()
+        .filter_map(ast::FunctionBody::cast)
+        .filter(|body| {
+            !body
+                .syntax()
+                .ancestors()
+                .skip(1)
+                .take_while(|n| n != node)
+                .any(|n| n.kind() == qc_syntax::SyntaxKind::FunctionBody)
+        })
+        .collect()
+}
+
+/// The labels and the `goto`s' labels of `body`, not those of a function defined inside it.
+fn own_jumps(body: &ast::FunctionBody) -> (Vec<String>, Vec<String>) {
+    let mut labels = Vec::new();
+    let mut gotos = Vec::new();
+    let own = |node: &qc_syntax::SyntaxNode| {
+        !node
+            .ancestors()
+            .take_while(|n| n != body.syntax())
+            .any(|n| n.kind() == qc_syntax::SyntaxKind::FunctionBody)
+    };
+    for node in body.syntax().descendants().filter(own) {
+        if let Some(label) = ast::LabelStmt::cast(node.clone()).and_then(|s| s.name()) {
+            labels.push(label.text_lossless());
+        } else if let Some(goto) = ast::GotoStmt::cast(node).and_then(|s| s.label()) {
+            gotos.push(goto.text_lossless());
+        }
+    }
+    (labels, gotos)
 }
 
 /// Whether an expression statement generates code: any expression but a name or a literal,

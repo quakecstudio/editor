@@ -280,35 +280,10 @@ fn labels_and_goto_parse() {
     assert_eq!(fte_codes(&in_body("goto 1;")), [Code::E0201]);
 }
 
-// spec FTEF-18.24: at the end of each function, an inner one included, every goto read since the last end must name a label read since then
-// spec QCD-4.8: E0308 "Goto statement with no matching label \"NAME\""
+// spec FTEF-18.23: the parser reads `goto name;` and leaves its label to the check stage
 #[test]
-fn a_goto_needs_a_label_by_the_end_of_its_function() {
-    // A label later in the function is found.
-    assert!(fte_codes(&in_body("goto top;\na = 1;\ntop:\na = 2;")).is_empty());
-    let parsed = fte(&in_body("goto nowhere;\ngoto top;\ntop:\na = 1;"));
-    let codes: Vec<Code> = parsed.diagnostics().iter().map(|d| d.code).collect();
-    assert_eq!(codes, [Code::E0308]);
-    assert_eq!(
-        parsed.diagnostics()[0].message,
-        "Goto statement with no matching label \"nowhere\""
-    );
-    assert!(Code::E0308.is_error());
-    // Another function's label is forgotten at its end.
-    let other = "float a;\nvoid() g = { top: a = 1; };\nvoid() f = { goto top; };\n";
-    assert_eq!(fte_codes(other), [Code::E0308]);
-    // An inner function's end checks the gotos read before it against the labels read
-    // since the last end, its own included, and then forgets both.
-    let inner_label = "float a;\nvoid() f = { goto out; void() h = { out: a = 1; }; };\n";
-    assert!(
-        fte_codes(inner_label).is_empty(),
-        "{:?}",
-        fte_codes(inner_label)
-    );
-    let label_after = "float a;\nvoid() f = { goto out; void() h = { a = 1; }; out: a = 2; };\n";
-    assert_eq!(fte_codes(label_after), [Code::E0308]);
-    let label_before = "float a;\nvoid() f = { top: a = 1; void() h = { a = 2; }; goto top; };\n";
-    assert_eq!(fte_codes(label_before), [Code::E0308]);
+fn a_goto_with_no_label_is_no_parse_error() {
+    assert!(fte_codes(&in_body("goto nowhere;\na = 1;")).is_empty());
 }
 
 // spec FTEF-18.25: an expression statement, a `for` clause FTEQCC discards, or an expression

@@ -2696,17 +2696,9 @@ FTEF-18.5.
   a duplicate for a label of that name in the inner one, and is forgotten after it. The
   preprocessed text this profile parses keeps a name and the `:` after it together when the
   source does, so the C style is found there too.
-- **FTEF-18.24** At the end of each function, a function defined inside another included, every
-  `goto` read since the last function's end must name a label read since then (FTEF-18.23):
-  `for (i = 0; i < num_gotos; i++) { for (j = 0; j < num_labels; j++) if
-  (!strcmp(pr_gotos[i].name, pr_labels[j].name))`, and otherwise
-  `QCC_PR_ParseError(ERR_NOLABEL, "Goto statement with no matching label \"%s\"",
-  pr_gotos[i].name);`, after which `num_gotos = 0;`. This profile reports each such `goto` as
-  `E0308` at its label name, where FTEQCC stops at the first. A label later in the same
-  function is found and one of another function is not. A function defined inside another
-  checks, and clears, the enclosing function's `goto`s read before it, against the enclosing
-  function's labels read before it and its own: a label after the inner function does not help
-  them, and a `goto` after it does not find a label before it.
+- **FTEF-18.24** **Withdrawn** (#84): it had the parser check each `goto`'s label at its label
+  name; FTEQCC checks the statements generated, so a `goto` a stripped `if` arm took back is not
+  checked, and the error is fatal at the function's end. FTEF-34.12 replaces it.
 - **FTEF-18.25** FTEQCC's flag `qcc_usefulstatement` says whether the expression being read
   does something: a call sets it (`if (priority == FUNC_PRIORITY && QCC_PR_CheckToken ("(") )
   { qcc_usefulstatement=true;`, before the arguments are read), and so do an assignment of
@@ -4248,6 +4240,13 @@ statement's checks (FTEF-23.6).
   in place of FTEF-24.6's "Unknown field"; once the class is defined its unknown member is that
   error again. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefValue`.
+- **FTEF-24.16** After an entity's `.`, a selector that names a class's member through its class,
+  `e.CLASS::name` or `e.(CLASS::name)`, is the global `CLASS::name`, the member function's own
+  body even for a `virtual` one, called with the entity as `self` (`REF_NONVIRTUAL`, for a
+  `REF_GLOBAL` whose name has `::`): "too many parameters on call to C::random" names it, and no
+  "is not a field of class" is given. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseField`.
 ## FTEF-25 The opcodes the target has
 
 **Source:** `qcc_pr_comp.c`, `QCC_OPCodeValidForTarget`, `QCC_OPCodeSetTarget` and
@@ -4779,6 +4778,14 @@ reference are FTEF-31's.
   `void(float a)` stores to a `void(float a, optional float b)` with no "Implicit cast" (FTEF-22.8).
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `typecmp_lax`.
+- **FTEF-30.15** At global scope (`pr_scope` null) a conditional whose condition is a constant
+  (`QCC_SRef_EvalConst`) generates nothing: `c ?: b` is `c` when `QCC_Eval_Truth` holds of it,
+  else `b`; `c ? a : b` is `a` when the constant's first word (`eval->_int`) is not 0, so `-0.0`
+  picks `a`, else `b`. The other arm is read and dropped, and the value is the arm's, constant or
+  not ("initializer for 'q' is not constant" only when that arm is not). In a body the jumps are
+  always generated (`if (pr_scope) eval = NULL;`). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_RefExpression`.
 ## FTEF-31 References
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`, `QCC_RefToDef`,
@@ -5189,3 +5196,32 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   global scope (OPNAME).": `string t = s + 1;` on the id target is "OP_ADD_SF: string+float may
   be unsafe", `AddInt`'s and `ADD_I`'s refusals, and "Unable to generate statements at global
   scope (ADD_I).".
+- **FTEF-34.12** At the end of each function, before the illegal `case`, `continue` and `break`
+  checks, every `goto` read since the last function's end must name a label read since then
+  (FTEF-18.23): `for (i = 0; i < num_gotos; i++) { for (j = 0; j < num_labels; j++) if
+  (!strcmp(pr_gotos[i].name, pr_labels[j].name))`, and otherwise
+  `QCC_PR_ParseError(ERR_NOLABEL, "Goto statement with no matching label \"%s\"",
+  pr_gotos[i].name);`, the fatal error `E0308` at the function's closing `}` for the first such
+  `goto`, which ends the function's checks. A `goto` in a stripped `if` arm is no longer among
+  them (`QCC_UngenerateStatements` takes back `num_gotos`), where a label there stays. A
+  function defined inside another ends the same way, checking the enclosing function's `goto`s
+  read before it and its own against the enclosing function's labels read before it and its
+  own, and then forgets both: a label after the inner function does not help them, and a
+  `goto` after it does not find a label before it; its error ends the enclosing function's
+  checks. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseImmediateStatements`, `QCC_UngenerateStatements`.
+- **FTEF-34.13** "NAME: contains unreachable code (line N)" (FTEF-34.6) is given at the line of
+  the unreachable statement (`statements[st].linenum`), and "not all control paths return a
+  value" at the function's end. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_CheckForDeadAndMissingReturns`.
+- **FTEF-34.14** These differences from FTEQCC's messages are not modelled by this profile, each
+  for its reason. Code generation's, which the compiler (QC-25) owns, as the checks report
+  nothing a program's meaning depends on: the slots `QCC_GetTemp` keeps across functions, so a
+  later function's `temp_N` may be numbered higher (FTEF-27.16); a narrow integer read again in
+  a function, whose extension FTEQCC emulates only the first time; a `__double` stored to a
+  `_Bool`, which FTEQCC follows with one more "ftoi emulation"; and the offset constants a
+  struct's member array frees again (FTEF-29.12). The text of an error in a program both
+  refuse: `typedef ;` warned at the line of the token after the `;`; `(T *)0` and `typedef for
+  x;` with `T` and `for` no type; `[x, 0, 0]_x`; and `spawn(float)`, whose type keyword the
+  semantic model reads as a value. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`.

@@ -705,6 +705,11 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         return vanilla::check_body(env, body);
     }
     let mut checker = expr::Checker::new(env);
+    checker.nested = body
+        .syntax()
+        .ancestors()
+        .skip(1)
+        .any(|node| node.kind() == qc_syntax::SyntaxKind::FunctionBody);
     if let Some(block) = body.block()
         && checker.start_function(block.syntax().span())
     {

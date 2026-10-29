@@ -172,7 +172,7 @@ modelled**, the second with the statement that says why.
 | `QCC_PR_ParseStruct` | a `virtual` function member is `Struct::member`, "function %s has no body" without one; a `static` or `virtual` member takes a body | `Resolver::check_struct_members`, `Parser::struct_declarator` | FTEF-6.7, FTEF-19.41 | `MEMBERS` | ported |
 | `QCC_PR_ParseType` | an accessor declared with its base as a class member's type, and one with no base anywhere, end FTEQCC | `lower::lower_file` (nested declarations), `Parser::class_member` | FTEF-10.6, QCD-3.54 | `TYPE_POSITIONS`, `CLASS_MEMBERS` | ported |
 | `QCC_PR_ParseStatement` | `break` and `continue` in `do`, `while`, `for`, `loop`, `until`; a `break` in `switch`; the counts a loop consumes | `lower::Flow` | FTEF-21.19 | `PROGRAMS` | ported |
-| `QCC_PR_ParseStatement` | `goto` with no label, a label twice, `case` outside a `switch` | `lower::lower_stmt`, `Parser::goto_stmt` | FTEF-18.23, FTEF-18.24 | `PROGRAMS` | ported |
+| `QCC_PR_ParseStatement` | `goto` with no label, a label twice, `case` outside a `switch` | `lower::lower_stmt`, `Parser::goto_stmt`, `Checker::finish_function` | FTEF-18.23, FTEF-34.12 | `PROGRAMS` | ported |
 | `QCC_PR_ParseStatement` | locals: a type's name starts a definition, `local` and a duplicate local | `lower::lower_local`, `Resolver::declare_scoped` | FTEF-20.14, FTEF-19.1 | `PROGRAMS` | ported |
 
 ## 5. The check stage (P2-136)

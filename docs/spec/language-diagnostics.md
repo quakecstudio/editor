@@ -239,10 +239,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (QC-18.8).
 - **QCD-4.6** `E0306` "type mismatch on parm N": argument N, counting from 0, has the wrong
   type (QC-18.8).
-- **QCD-4.8** `E0308` "Goto statement with no matching label "NAME"": under an FTEQCC
-  profile, a `goto` whose label is not among those read since the last function's end by the
-  end of its function, at the label name, FTEQCC's error of the same text
-  (`dialect-fteqcc.md`, FTEF-18.24).
+- **QCD-4.8** **Withdrawn** (#84): it placed `E0308` at the label name of each `goto` with no
+  label, replaced by QCD-4.81.
 - **QCD-4.7** `E0307` "More than eight parameters": nine or more arguments to a variadic
   function (QC-18.2).
 - **QCD-4.9** `E0309` "Type mismatch: TYPE, should be void()": under an FTEQCC profile, a state
@@ -408,6 +406,10 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-4.80** `E0379` "virtual keyword on member that is not a function", "inline keyword on
   member that is not a function" and "inline keyword on function prototype or virtual function":
   a class member's word that only a member function takes (FTEF-9.20).
+- **QCD-4.81** `E0308` "Goto statement with no matching label "NAME"": under an FTEQCC
+  profile, the first `goto` generated whose label is not among those read since the last
+  function's end, at the function's closing `}`, a fatal error that ends the function's checks
+  (`dialect-fteqcc.md`, FTEF-34.12).
 
 ## QCD-5 Project, limit and fatal errors
 

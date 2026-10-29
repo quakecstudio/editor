@@ -75,12 +75,14 @@ impl Checker<'_> {
             .and_then(|def| self.env.definition(def))
             .and_then(|d| Some((d.member_of?, d)));
         let method = member.is_some();
-        let method_name =
-            member
+        let method_name = match &callee.reference {
+            Reference::Field(field) if field.field.contains("::") => Some(field.field.clone()),
+            _ => member
                 .filter(|(_, d)| d.kind != DefKind::Field)
                 .and_then(|(class, d)| {
                     Some(format!("{}::{}", self.env.definition(class)?.name, d.name))
-                });
+                }),
+        };
         let mut func = self.read(callee, callee_span)?;
         if method_name.is_some() {
             func.name = method_name;
@@ -111,12 +113,15 @@ impl Checker<'_> {
         let Some(function) = function else {
             // A `variant` takes any arguments, and no argument left empty (FTEF-32.9).
             let slots = call.args().map(|list| list.slots()).unwrap_or_default();
+            let mut values = Vec::new();
             for (at, slot) in slots.iter().enumerate() {
                 let Some(arg) = slot else {
                     return self.missing_argument(at, &slots, span);
                 };
-                self.value(Some(arg.clone()))?;
+                values.push(self.value(Some(arg.clone()))?);
             }
+            // Each argument is stored by its own size, then the call made (FTEF-34.9).
+            self.generate_call(&values, span);
             return Ok(Value::of(Type::Named("__variant".into())));
         };
         // `!t->num_parms`, which counts no `...` (FTEF-32.10).

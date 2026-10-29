@@ -163,12 +163,34 @@ impl Checker<'_> {
     pub(super) fn ternary(&mut self, ternary: &ast::TernaryExpr) -> Checked {
         let span = ternary.syntax().span();
         let condition = self.value(ternary.condition())?;
+        let (middle, last) = ternary.arms();
+        // FTEF-30.15: at global scope a constant condition picks its arm, the other read and
+        // dropped, with no jump and no store (`if (pr_scope) eval = NULL;`).
+        if self.global
+            && let Some(constant) = condition.known()
+        {
+            return match middle {
+                None if constant.truth() => {
+                    self.value(last)?;
+                    Ok(condition)
+                }
+                None => self.value(last),
+                Some(middle) if constant.i() != 0 => {
+                    let value = self.value(Some(middle))?;
+                    self.value(last)?;
+                    Ok(value)
+                }
+                Some(middle) => {
+                    self.value(Some(middle))?;
+                    self.value(last)
+                }
+            };
+        }
         self.branch(&condition, Jump::IfNot, span)?;
         // `QCC_Generate_OP_IFNOT` of a vector under `ifvector` tests `!v` by `OP_IF_I`.
         let vector = self.etype_of(&condition.ty) == Some(Etype::Vector)
             && self.env.flags_at(span.start).has(FteFlag::Ifvector);
         self.generate(if vector { Op::IfI } else { Op::IfnotI }, span);
-        let (middle, last) = ternary.arms();
         let (kept, kept_null) = match middle {
             None => {
                 let null = condition.known().is_some_and(Constant::null);

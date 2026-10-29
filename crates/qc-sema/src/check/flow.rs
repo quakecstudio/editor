@@ -149,6 +149,31 @@ impl Layout {
         self.gotos.push((name, at));
     }
 
+    /// FTEF-34.12: the first `goto` left, one a stripped `if` arm did not take back
+    /// (`QCC_UngenerateStatements`), then each of `more`, whose label is neither the function's
+    /// nor among `labels`.
+    pub(super) fn unlabelled(&self, labels: &[String], more: &[String]) -> Option<String> {
+        self.gotos
+            .iter()
+            .map(|(name, _)| name)
+            .chain(more)
+            .find(|name| {
+                self.labels.iter().all(|(label, _)| label != *name) && !labels.contains(name)
+            })
+            .cloned()
+    }
+
+    /// FTEF-34.12: the end of a function defined inside this one patches the `goto`s to the
+    /// labels read so far, then forgets both (`num_gotos = 0;`, `num_labels = 0;`).
+    pub(super) fn forget_jumps(&mut self) {
+        for (name, at) in std::mem::take(&mut self.gotos) {
+            if let Some(&(_, target)) = self.labels.iter().find(|(label, _)| *label == name) {
+                self.patch(at, target);
+            }
+        }
+        self.labels.clear();
+    }
+
     /// `QCC_PR_FinaliseFunction`: the `return` of a value `return =` set, when `returned`; then
     /// `OP_DONE` unless the last statement returns; then `QCC_CheckForDeadAndMissingReturns`
     /// for a function whose value is `void` or not.
