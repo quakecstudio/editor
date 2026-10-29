@@ -14,7 +14,7 @@
 //! host error, shuts the server down (DIFF-8). It drives `qc-vm` with `qc-edict` and the
 //! `qc-builtins` mock engine, and every call into QuakeC writes trace records (TRACE-4) into
 //! one [`TraceBuilder`]; the map's entities are spawned by the EDICT-8 port
-//! ([`crate::edict8`]). The loop around those is this module's, following the oracle's
+//! ([`qs_sim::spawn`]). The loop around those is this module's, following the oracle's
 //! `scenario.c` and id's `SV_SpawnServer` and `SV_Physics`, so the two runners write the same
 //! trace (DIFF-1.1).
 //!
@@ -30,8 +30,8 @@ use qc_progs::Progs;
 use qc_types::Slot;
 use qc_vm::{Machine, RunError, ServerState};
 
-use crate::edict8::{self, LoadError};
 use crate::scenario::Scenario;
+use qs_sim::spawn::{self, LoadError};
 
 mod frames;
 mod spawner;
@@ -274,7 +274,7 @@ impl Host<'_> {
         // for the inhibition test (EDICT-8.4).
         let deathmatch = self.setting("deathmatch") != 0.0;
         let mut spawner = Spawner::new(self, progs);
-        edict8::load_from_file(&mut spawner, entities, deathmatch, skill)?;
+        spawn::load_from_file(&mut spawner, entities, deathmatch, skill)?;
 
         // DIFF-3.6: the server becomes active and runs the two settle frames (DIFF-5.3),
         // without setting frametime, emptying a buffer or clearing muzzle flashes.
@@ -377,7 +377,7 @@ impl Host<'_> {
             .engine()
             .cvars
             .text(name)
-            .map_or(0.0, |text| edict8::c_atof(text.as_bytes()))
+            .map_or(0.0, |text| spawn::c_atof(text.as_bytes()))
     }
 
     /// Runs the QuakeC function named by the system global `name`, id's `qs_run` (EDICT-9.1).
