@@ -37,9 +37,13 @@ fn main() -> ExitCode {
         Text::AppName.get(),
         options,
         Box::new(move |cc| {
-            let mut app = App::new(&cc.egui_ctx, layout_file)?;
+            let app = App::new(&cc.egui_ctx, layout_file)?;
             #[cfg(target_os = "macos")]
-            app.install_menu();
+            let app = {
+                let mut app = app;
+                app.install_menu();
+                app
+            };
             Ok(Box::new(app))
         }),
     );
