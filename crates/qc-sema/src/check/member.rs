@@ -17,6 +17,7 @@ use crate::DefId;
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
+use crate::check::pointer;
 use crate::check::reference::expected_after;
 use crate::check::{Bitfield, Constness, MemberArray, Reference, Value};
 use crate::ty::{SimpleType, Type};
@@ -29,10 +30,15 @@ impl Checker<'_> {
             return Ok(Value::unknown());
         };
         // FTEF-24.8: an array's only member is `length`, an `int`; the resolver reports any
-        // other (FTE-13).
+        // other (FTE-13). FTEF-26.13: a definition's size the model knows is the value.
         if base.is_array_head() {
             return Ok(match selector_name(&selector) {
-                Some((name, _)) if name == "length" => length(),
+                Some((name, _)) if name == "length" => base
+                    .sym
+                    .def()
+                    .and_then(|def| self.env.array_length(def))
+                    .and_then(|n| i32::try_from(n).ok())
+                    .map_or_else(length, pointer::int),
                 Some(_) | None => Value::unknown(),
             });
         }
@@ -557,7 +563,7 @@ fn selector_name(selector: &ast::Expr) -> Option<(String, Span)> {
 }
 
 /// FTEF-24.8: a `length`, an `int` constant (`QCC_MakeIntConst`) whose value the model does not
-/// keep (FTEF-26.5).
+/// keep (FTEF-26.13): a string's, or an array's whose size it does not know.
 pub(super) fn length() -> Value {
     Value {
         constness: Constness::Opaque,

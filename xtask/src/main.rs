@@ -71,6 +71,8 @@
 //!   rerelease codebase under the FTEQCC profile (P2-03) and fails on any error,
 //!   then checks the vanilla profile rejects each extension; `--warnings` prints
 //!   each warning too.
+//! - `codegen-corpus`: compiles every module of each codebase with `qc-codegen` under the
+//!   FTEQCC profile (P2-07) and fails when any module does not compile.
 //! - `engines`: fetches the fact sources of the engine-target database pinned in
 //!   `crates/qc-engines/sources.toml` by checksum and writes `crates/qc-engines/src/tables.rs`
 //!   from them (P2-04); `engines --check` fails when the checked-in tables differ.
@@ -90,6 +92,7 @@ mod adr;
 mod attribution;
 mod bench;
 mod ci;
+mod codegen_corpus;
 mod commands;
 mod contrast;
 mod conventions;
@@ -128,9 +131,8 @@ const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixture
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
                      readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
                      map-corpus | parse-corpus | project-corpus | sema-corpus | lsp-corpus | \
-                     differential | \
-                     fteqcc-coverage | fteqcc-full-coverage | fteqcc-profile | engines | \
-                     commands>";
+                     differential | fteqcc-coverage | fteqcc-full-coverage | fteqcc-profile | \
+                     codegen-corpus | engines | commands>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;
@@ -185,6 +187,7 @@ fn command(name: &str) -> Option<Command> {
     match name {
         "assets" => Some(corpus::assets_main),
         "bench" => Some(bench::main),
+        "codegen-corpus" => Some(codegen_corpus::main),
         "commands" => Some(commands::main),
         "corpus" => Some(corpus::main),
         "differential" => Some(differential::main),

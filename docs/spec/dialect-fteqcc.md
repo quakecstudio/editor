@@ -4321,11 +4321,9 @@ saturates, as on the arm64 build the differential is recorded on.
   `a / 1` are `a`, and `a & ~0` for integers; a division by a constant 0 is "Division by 0"; a
   false right operand of `&&` is 0. `||` never folds here: `QCC_Eval_Truth(eval_a, ...)` reads
   the absent left constant, which is false.
-- **FTEF-26.5** A value is a constant when it is a literal, a folded result, or a definition
-  that is constant and initialised (`QCC_SRef_EvalConst`), an enum's item and a `length` among
-  them. A constant whose value the semantic model does not keep (an integer constant's
-  initialiser, kept as text, an enum's item, a `length`) decides nothing it checks: no folding,
-  no emulation.
+- **FTEF-26.5** **Withdrawn** (P2-07, #63): it said a `length` is a constant whose value the
+  semantic model does not keep, but the model keeps an array's size when it knows it. Replaced
+  by FTEF-26.13.
 
 - **FTEF-26.6** An unsigned division folds with no check of its divisor (`eval_a->_uint /
   eval_b->_uint`), a 0 divisor giving 0 as arm64's `udiv` does. A remainder by a constant 0,
@@ -4361,6 +4359,12 @@ saturates, as on the arm64 build the differential is recorded on.
   id target `b = (_Bool)fn;` of a `void() fn` is the `OP_NE_FNC` truth and three "ftoi
   emulation", as of an entity. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`, `QCC_SRef_EvalConst`.
+- **FTEF-26.13** A value is a constant when it is a literal, a folded result, or a definition
+  that is constant and initialised (`QCC_SRef_EvalConst`), an enum's item and a `length` among
+  them. An array's `length` is its size when the model knows it (FTEF-24.8), an `int`. A
+  constant whose value the semantic model does not keep (an integer constant's initialiser,
+  kept as text, an enum's item, a string's `length`, an array's whose size the model does not
+  know) decides nothing it checks: no folding, no emulation.
 - **FTEF-26.10** A constant operand that an opcode's row converts is the constant its conversion
   folds to (`QCC_SupplyConversion` emits the conversion opcode, folded as FTEF-26.3 says), so the
   opcode then folds too: in `(__double)2.5 * 2` the float 2 is converted by `OP_CONV_FD` to the

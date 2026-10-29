@@ -5,7 +5,7 @@ use qc_lexer::LexFlags;
 use super::Constant;
 use crate::cast::ConstType;
 
-// spec FTEF-26.5: a constant's words read as each type `QCC_SRef_EvalConst` reads them
+// spec FTEF-26.13: a constant's words read as each type `QCC_SRef_EvalConst` reads them
 #[test]
 fn a_constant_reads_as_its_words() {
     assert_eq!(Constant::double(2.5).d(), 2.5);

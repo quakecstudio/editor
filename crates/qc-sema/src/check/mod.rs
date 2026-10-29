@@ -90,7 +90,7 @@ pub(crate) trait Env {
     fn strict_enum(&self, ty: &Type) -> bool;
     /// Whether the field `def` is the module's first, at offset 0 (FTEF-31.17).
     fn first_field(&self, def: DefId) -> bool;
-    /// Whether a definition is a constant, and its value (`QCC_SRef_EvalConst`, FTEF-26.5).
+    /// Whether a definition is a constant, and its value (`QCC_SRef_EvalConst`, FTEF-26.13).
     fn constness(&self, def: DefId) -> Constness;
     /// `FILE:LINE` of offset `span.start`, as `s_filen` and `pr_source_line` print it.
     fn file_line(&self, span: Span) -> String;
@@ -601,7 +601,7 @@ impl Reference {
     }
 }
 
-/// Whether a value is a constant (`QCC_SRef_EvalConst`, FTEF-26.5).
+/// Whether a value is a constant (`QCC_SRef_EvalConst`, FTEF-26.13).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Constness {
     /// Not a constant: no folding reads it.
@@ -680,10 +680,17 @@ impl TypedBody {
 
 /// FTEF-34.9: checks the initialiser `expr` of the global `name` of type `ty` at global scope:
 /// read, cast to `ty`, and "initializer for 'NAME' is not constant" when it is no constant.
-pub(crate) fn check_initialiser(env: &mut dyn Env, expr: &ast::Expr, ty: &Type, name: &str) {
+/// FTEF-34.9: checks a global's initialiser `expr` at global scope, and returns what it folds
+/// to.
+pub(crate) fn check_initialiser(
+    env: &mut dyn Env,
+    expr: &ast::Expr,
+    ty: &Type,
+    name: &str,
+) -> Option<crate::InitialValue> {
     let mut checker = expr::Checker::new(env);
     checker.global = true;
-    checker.initialiser(expr, ty, name);
+    checker.initialiser(expr, ty, name)
 }
 
 /// Whether a value of basic type `from` stored to `to` is converted by opcodes (FTEF-22).

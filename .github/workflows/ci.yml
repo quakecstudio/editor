@@ -538,6 +538,17 @@ jobs:
             "$QS_TEST_ASSETS/codebase/rerelease-mg1" \
             "$QS_TEST_ASSETS/codebase/rerelease-ctf" \
             "$QS_TEST_ASSETS/codebase/rerelease-mg3"
+      # P2-07: every rerelease codebase compiles with our compiler under the FTEQCC profile.
+      - name: Compile the rerelease with qc-codegen
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: |
+          cargo xtask codegen-corpus \
+            "$QS_TEST_ASSETS/codebase/rerelease" \
+            "$QS_TEST_ASSETS/codebase/rerelease-hipnotic" \
+            "$QS_TEST_ASSETS/codebase/rerelease-rogue" \
+            "$QS_TEST_ASSETS/codebase/rerelease-mg1" \
+            "$QS_TEST_ASSETS/codebase/rerelease-ctf" \
+            "$QS_TEST_ASSETS/codebase/rerelease-mg3"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: env.CI_PATH == 'full' && runner.os == 'Linux'
         id: rerelease-cache

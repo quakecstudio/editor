@@ -19,5 +19,8 @@ toml_edit = { workspace = true, features = ["display", "parse"] }
 [dev-dependencies]
 proptest = { workspace = true, features = ["std"] }
 
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
 [lints]
 workspace = true
