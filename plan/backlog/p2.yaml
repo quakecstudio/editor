@@ -1617,6 +1617,27 @@ issues:
   verify:
   - cargo test -p xtask
   - cargo xtask oracles builtins
+- key: P5-05
+  title: Build the wgpu renderer for BSPs and models
+  labels:
+  - L7-ui
+  - area:map
+  - type:feature
+  size: L
+  reqs:
+  - MAP-17
+  depends:
+  - P5-02
+  - P0-10
+  deliverable:
+  - 'crates/qs-render: BSP with lightmaps and .lit, MDL with skins and frames, palette handling, picking; shared by the map view and model previews'
+  - The map view and model previews draw inside the UI's render pass through egui_wgpu paint callbacks on the UI's wgpu device, with no copy or readback (ADR-0003)
+  - 'Lightmaps are RGB throughout, as .lit already needs, and each texture may carry its own palette (Half-Life''s BSP version 30 and WAD3, P5-11 and P5-12, MAP-24), so the renderer assumes neither one global palette nor greyscale lightmaps'
+  acceptance:
+  - Renders every id1 map at 120 Hz on the reference Mac
+  - The map view renders through an egui_wgpu paint callback in the app window, checked by a snapshot test
+  verify:
+  - Image comparison tests; benchmark
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1628,6 +1649,7 @@ issues:
   - MVP-2
   - OPEN-5
   depends:
+  - P5-05
   - P2-01
   - P2-02
   - P2-03
