@@ -2280,7 +2280,10 @@ dependencies = [
  "eframe",
  "egui-wgpu",
  "epaint",
+ "qc-progs",
  "qs-bsp",
+ "qs-mdl",
+ "qs-sim",
  "qs-vfs",
 ]
 

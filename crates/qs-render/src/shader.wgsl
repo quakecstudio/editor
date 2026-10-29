@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The world's surfaces: lit (REND-1.7), turbulent (REND-2.2) and sky (REND-2.3).
+// The world's surfaces: lit (REND-1.7), turbulent (REND-2.2) and sky (REND-2.3); and alias
+// models (REND-4.8).
 
 // REND-2.2: the peak of `turbsin`, 8 sin(2πi/256), in `WinQuake/gl_warp_sin.h`.
 const TURB_AMPLITUDE: f32 = 8.0;
@@ -102,4 +103,33 @@ fn sky(input: Out) -> @location(0) vec4<f32> {
 fn sky_st(flat: vec2<f32>, scroll: f32) -> vec2<f32> {
     let speedscale = scroll - floor(scroll / SKY_SCROLL_WRAP) * SKY_SCROLL_WRAP;
     return (vec2<f32>(speedscale) + flat) / SKY_TILE;
+}
+
+struct AliasIn {
+    @location(0) position: vec3<f32>,
+    @location(1) texture: vec2<f32>,
+    @location(2) shade: f32,
+};
+
+struct AliasOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) texture: vec2<f32>,
+    // Interpolated across the triangle, `glShadeModel (GL_SMOOTH)` (REND-4.8).
+    @location(1) shade: f32,
+};
+
+@vertex
+fn alias_vertex(input: AliasIn) -> AliasOut {
+    var out: AliasOut;
+    out.clip = view.clip_from_world * vec4<f32>(input.position, POINT);
+    out.texture = input.texture;
+    out.shade = input.shade;
+    return out;
+}
+
+// REND-4.8: the skin's colour times the vertex's shade, `GL_MODULATE`.
+@fragment
+fn alias_fragment(input: AliasOut) -> @location(0) vec4<f32> {
+    let colour = textureSample(surface, surface_sampler, input.texture);
+    return vec4<f32>(colour.rgb * input.shade, OPAQUE);
 }

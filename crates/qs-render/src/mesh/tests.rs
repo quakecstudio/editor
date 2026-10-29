@@ -9,23 +9,23 @@
 
 use qs_bsp::{
     BSP_HEADER_LUMPS, BSP_MAX_MAP_HULLS, BSP_MIPTEX_HEADER_SIZE, Bsp, BspVersion, Face, Lump,
-    Model, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo, Texture,
+    Model, Node, Plane, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo, Texture,
 };
 
-use super::{MapMesh, MeshError, Palette};
+use super::{MapMesh, MeshBuilder, MeshError, Palette, Placement};
 
 /// One face of a test map: a 64 by 32 rectangle in the z = 0 plane, lit by `lighting`.
-struct MapSpec {
+pub(crate) struct MapSpec {
     /// The face's surfedges, around the rectangle.
-    surfedges: Vec<i32>,
+    pub(crate) surfedges: Vec<i32>,
     /// The face's flags.
-    flags: u32,
+    pub(crate) flags: u32,
     /// The face's styles.
-    styles: [u8; 4],
+    pub(crate) styles: [u8; 4],
     /// Where its samples start in the lighting lump; -1 for none.
-    lightofs: i32,
+    pub(crate) lightofs: i32,
     /// Whether the texinfo names a texture.
-    textured: bool,
+    pub(crate) textured: bool,
 }
 
 impl Default for MapSpec {
@@ -41,10 +41,10 @@ impl Default for MapSpec {
 }
 
 /// The face's lightmap: `(64>>4)+1` by `(32>>4)+1` texels (REND-1.3).
-const LIGHTMAP: [usize; 2] = [5, 3];
+pub(crate) const LIGHTMAP: [usize; 2] = [5, 3];
 
 /// A palette whose colour `i` is `(i, 2i, 3i)` wrapped.
-fn palette() -> Palette {
+pub(crate) fn palette() -> Palette {
     let bytes: Vec<u8> = (0..=255_u8)
         .flat_map(|i| [i, i.wrapping_mul(2), i.wrapping_mul(3)])
         .collect();
@@ -54,7 +54,8 @@ fn palette() -> Palette {
 /// The texture's pixels, 16 by 16 of index 7, after its 40-byte header in the BSP.
 const PIXELS: [u8; 256] = [7; 256];
 
-fn bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
+/// The test map: its one face lies in the z = 0 plane of node 0, whose sides are leaves.
+pub(crate) fn bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
     let texture = Texture {
         name: b"wall".to_vec(),
         width: 16,
@@ -68,7 +69,12 @@ fn bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
         version: BspVersion::Bsp29,
         lumps: [Lump::default(); BSP_HEADER_LUMPS],
         entity_lump: b"",
-        planes: Vec::new(),
+        planes: vec![Plane {
+            normal: [0.0, 0.0, 1.0],
+            dist: 0.0,
+            plane_type: 2,
+            signbits: 0,
+        }],
         textures: vec![Some(texture)],
         // Edge 0 is unused; edges 1 to 4 go round the rectangle, and their reversed ends are
         // read for negative surfedges.
@@ -80,7 +86,14 @@ fn bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
             [99.0, 99.0, 99.0],
         ],
         visibility: b"",
-        nodes: Vec::new(),
+        nodes: vec![Node {
+            planenum: 0,
+            children: [-1, -2],
+            mins: [0.0; 3],
+            maxs: [64.0, 32.0, 0.0],
+            firstface: 0,
+            numfaces: 1,
+        }],
         texinfo: vec![Texinfo {
             vecs: [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]],
             miptex: 0,
@@ -121,7 +134,7 @@ fn bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
 }
 
 /// Fifteen samples of `value` for each of `styles` styles.
-fn samples(values: &[u8]) -> Vec<u8> {
+pub(crate) fn samples(values: &[u8]) -> Vec<u8> {
     values
         .iter()
         .flat_map(|&v| [v; LIGHTMAP[0] * LIGHTMAP[1]])
@@ -409,4 +422,113 @@ fn mip_levels_follow_gl_resample_and_gl_mipmap() {
     );
     assert_eq!(levels[1].rgba, grey(&[1, 2]));
     assert_eq!(levels[2].rgba, grey(&[1]));
+}
+
+// spec REND-1.9: a brush entity's corners are turned by roll about x, pitch about y and yaw
+// about z, then moved by its origin; its texture coordinates stay its own
+#[test]
+fn a_placed_model_moves_and_turns_its_corners() {
+    let world = bsp(&MapSpec::default(), &[]);
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette);
+    let placed = Placement {
+        model: 0,
+        origin: [100.0, 200.0, 300.0],
+        angles: [0.0, 90.0, 0.0],
+    };
+    builder.add(&world, &[Placement::WORLD, placed]).unwrap();
+    let mesh = builder.finish();
+    let (unmoved, moved) = mesh.vertices.split_at(4);
+    let round = |p: [f32; 3]| p.map(f32::round);
+    // Yaw 90 takes (64, 0, 0) to (0, 64, 0).
+    assert_eq!(round(moved[1].position), [100.0, 264.0, 300.0]);
+    assert_eq!(round(moved[2].position), [68.0, 264.0, 300.0]);
+    assert_eq!(moved[1].texture, unmoved[1].texture);
+    assert_eq!(moved[1].light, unmoved[1].light);
+    // The first model added gives the bounds.
+    assert_eq!(mesh.maxs, [64.0, 32.0, 0.0]);
+    // One batch draws both copies.
+    assert_eq!(mesh.batches.len(), 1);
+    assert_eq!(mesh.batches[0].count, 12);
+}
+
+// spec REND-1.9: pitch turns about y with the sign `R_DrawBrushModel`'s double negation leaves,
+// and roll about x
+#[test]
+fn pitch_and_roll_turn_as_r_rotate_for_entity() {
+    let pitched = Placement {
+        model: 0,
+        origin: [0.0; 3],
+        angles: [90.0, 0.0, 0.0],
+    };
+    // glRotatef (90, 0, 1, 0) takes x to -z.
+    let p = pitched.position([1.0, 0.0, 0.0]).map(f32::round);
+    assert_eq!(p, [0.0, 0.0, -1.0]);
+    let rolled = Placement {
+        angles: [0.0, 0.0, 90.0],
+        ..pitched
+    };
+    // glRotatef (90, 1, 0, 0) takes y to z.
+    assert_eq!(
+        rolled.position([0.0, 1.0, 0.0]).map(f32::round),
+        [0.0, 0.0, 1.0]
+    );
+}
+
+// spec REND-1.9: a second BSP's textures follow the first's, so its animations still name
+// its own frames
+#[test]
+fn a_second_bsps_textures_follow_the_firsts() {
+    let world = bsp(&MapSpec::default(), &[]);
+    let mut other = bsp(&MapSpec::default(), &[]);
+    other.textures[0].as_mut().unwrap().animation = Some(qs_bsp::Animation {
+        total: 1,
+        min: 0,
+        max: 1,
+        next: 0,
+        alternate: None,
+    });
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette);
+    builder.add(&world, &[Placement::WORLD]).unwrap();
+    builder.add(&other, &[Placement::WORLD]).unwrap();
+    let mesh = builder.finish();
+    assert_eq!(mesh.textures.len(), 2);
+    assert_eq!(mesh.animations[1].unwrap().next, 1);
+    assert_eq!(
+        mesh.batches.iter().map(|b| b.texture).collect::<Vec<_>>(),
+        [0, 1]
+    );
+}
+
+#[test]
+fn a_placement_of_a_missing_model_is_refused() {
+    let world = bsp(&MapSpec::default(), &[]);
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette);
+    let missing = Placement {
+        model: 1,
+        ..Placement::WORLD
+    };
+    assert!(matches!(
+        builder.add(&world, &[missing]),
+        Err(MeshError::NoWorld)
+    ));
+}
+
+// spec REND-2.1: a cycle of no length is not animated
+#[test]
+fn an_empty_cycle_is_not_animated() {
+    let mut map = bsp(&MapSpec::default(), &[]);
+    let cycle = |total| qs_bsp::Animation {
+        total,
+        min: 0,
+        max: 1,
+        next: 0,
+        alternate: None,
+    };
+    map.textures[0].as_mut().unwrap().animation = Some(cycle(0));
+    assert_eq!(MapMesh::build(&map, &palette()).unwrap().animations, [None]);
+    map.textures[0].as_mut().unwrap().animation = Some(cycle(1));
+    assert!(MapMesh::build(&map, &palette()).unwrap().animations[0].is_some());
 }
