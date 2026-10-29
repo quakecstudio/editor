@@ -280,3 +280,58 @@ fn ancestors_and_tokens() {
         format!("Name@{0}..{1} \"b\"", token.span().start, token.span().end)
     );
 }
+
+/// The names id's qcc gives the parameters of the first declaration's function type.
+fn qcc_names(source: &str) -> Vec<Option<String>> {
+    let declaration = parse(source.as_bytes())
+        .tree()
+        .unwrap()
+        .declarations()
+        .next()
+        .unwrap();
+    let Some(ast::Type::Function(function)) = declaration.ty() else {
+        panic!("{source:?} declares no function type");
+    };
+    function
+        .params()
+        .unwrap()
+        .qcc_parm_names()
+        .iter()
+        .map(|name| {
+            name.as_ref()
+                .map(|t| String::from_utf8_lossy(t.text()).into_owned())
+        })
+        .collect()
+}
+
+// spec QC-13.11: each parameter's type writes its own parameters' names from index 0 before
+// the parameter's name is written, through fields too; only the list's count are kept
+#[test]
+fn qcc_parameter_names() {
+    let names = |list: &[&str]| -> Vec<Option<String>> {
+        list.iter().map(|n| Some((*n).to_owned())).collect()
+    };
+    assert_eq!(qcc_names("void(float a, vector b) f;"), names(&["a", "b"]));
+    assert_eq!(
+        qcc_names("void(float b, void(float q) cb) f;"),
+        names(&["q", "cb"])
+    );
+    assert_eq!(
+        qcc_names("void(float a, .void(float q, float s) fl) f;"),
+        names(&["q", "fl"])
+    );
+    assert_eq!(
+        qcc_names("void(float x, float y, void(float a, float b) cb) f;"),
+        names(&["a", "b", "cb"])
+    );
+    assert_eq!(
+        qcc_names("void(void(float a, float b) cb) f;"),
+        names(&["cb"])
+    );
+    assert_eq!(
+        qcc_names("void(float x, void(void(float z) g) h) f;"),
+        names(&["g", "h"])
+    );
+    assert!(qcc_names("void() f;").is_empty());
+    assert!(qcc_names("void(...) f;").is_empty());
+}

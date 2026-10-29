@@ -474,7 +474,7 @@ specified as: simpletype ( type name {,type name} )", "A field type is specified
   function type and another field type (`..float` is accepted).
 - **QC-10.3** `T(T1 n1, T2 n2, ...)` is the type of a function returning the simple type `T`
   with those parameters; `T()` takes none. A parameter's type may itself be a field or
-  function type. The parameter names are part of the declaration, not the type (QC-13.2).
+  function type. The parameter names are part of the declaration, not the type (QC-13.11).
 - **QC-10.4** `T(...)` is a function taking any number of arguments of any types. `...` must
   be the whole parameter list: `void(float a, ...)` is an error, `"..." is not a type`.
 - **QC-10.5** A function type cannot return a function: after `T(...)` the type ends, so
@@ -653,9 +653,9 @@ nextthink] {code}".
 - **QC-13.1** A function is defined by `= body`, `= [frame, next] body` or `= #number` on a
   declaration of function type. A body is `{`, zero or more statements, `}`; an empty body is
   allowed.
-- **QC-13.2** The parameter names used inside the body are the ones written in the type of
-  the defining declaration. Names in prototypes are ignored. `qcc.h`: "The names are ignored
-  except when the function is initialized."
+- **QC-13.2** **Withdrawn** (P2-120, #612): it said the body's parameter names are the ones
+  written in the defining declaration's type, but a parameter of function type with
+  parameters writes over them. Replaced by QC-13.11.
 - **QC-13.3** `#n` makes the function the engine builtin number `n`: the function record's
   `first_statement` is `-n` and no statements are emitted. `n` must be a float literal with
   an integral value, else "Bad builtin immediate"; `#1.5` is rejected. Builtins allocate no
@@ -690,6 +690,20 @@ nextthink] {code}".
   C leaves its conversion to `int` undefined, and the x86 build gives -2147483648 (VM-9.2),
   which differs from the value. id's `qcc` built for arm64 by `cargo xtask oracles build`
   saturates instead and binds `#2147483648` as 2147483647; the x86 result is the rule.
+- **QC-13.11** The parameter names used inside the body come from the defining declaration's
+  type, as `pr_parm_names` holds them once that type is read; names in prototypes are ignored
+  (`qcc.h`: "The names are ignored except when the function is initialized."). `PR_ParseType`
+  (`qcc/pr_lex.c`, id-Software/Quake-Tools@`c0d1b91c74eb654365ac7755bc837e497caaca73`) reads
+  each parameter as `type = PR_ParseType (); name = PR_ParseName (); strcpy (pr_parm_names[new.num_parms], name);`,
+  and `PR_ParseImmediateStatements` (`qcc/pr_comp.c`) defines parameter `i` as
+  `PR_GetDef (type->parm_types[i], pr_parm_names[i], pr_scope, true)`. So a parameter whose type
+  is a function type with parameters, or a field of one, first writes those parameters' names
+  from index 0, and the parameter's own name is written after. In
+  `void(float b, void(float q) cb) f` the body's parameters are `q` and `cb`: `b` is
+  `Unknown value "b"`. FTEQCC keeps each parameter's own name: its `QCC_PR_ParseFunctionType`
+  (`engine/qclib/qcc_pr_lex.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`)
+  writes `pr_parm_names` only when `int definenames = !recursivefunctiontype;`, the outermost
+  function type.
 
 ### Test vectors
 
@@ -698,6 +712,8 @@ nextthink] {code}".
 | `void() f = {};` | `DONE` | QC-13.1, QC-13.7 |
 | `void() z = #0;\nvoid() n = #-1;\nvoid() o = #7;` | `first_statement` 0, 1 and -7 | QC-13.3, QC-13.4 |
 | `void() f = #1.5;` | `Bad builtin immediate` | QC-13.3 |
+| `float r;\nvoid(float b, void(float q) cb) f = { r = b; };` | `Unknown value "b"` | QC-13.11 |
+| `float r;\nvoid(float b, void(float q) cb) f = { r = q; };` | `r` is the first parameter | QC-13.11 |
 | `void() f = #16777217;`, `void() g = #123456789;` | builtins 16777216 and 123456792 | QC-13.10 |
 | `void() f = #2147483648;` | `Bad builtin immediate` | QC-13.10 |
 | `void() th2;\n$frame s1 s2\nvoid() th1 = [$s2, th2] { };` (and `th2` defined) | `STATE 1, th2`; `DONE` | QC-13.6 |

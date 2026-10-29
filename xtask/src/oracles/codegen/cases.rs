@@ -59,6 +59,23 @@ pub(crate) const CASES: &[Case] = &[
         "parameters-and-locals",
         "float a;\nvoid(float p, vector q) f = { local float l; local vector lv; a = p; };\n",
     ),
+    // QC-13.11: a parameter of function type writes its own parameters' names first.
+    one(
+        "parameter-names-from-a-function-parameter",
+        "float r;\nvoid(float b, void(float q) cb) f = { r = q; };\n",
+    ),
+    one(
+        "parameter-name-overwritten-by-a-function-parameter",
+        "float r;\nvoid(float b, void(float q) cb) f = { r = b; };\n",
+    ),
+    one(
+        "parameter-names-from-a-field-of-function-type",
+        "float r;\nvoid(float a, .void(float q, float s) fl) f = { r = q; };\n",
+    ),
+    one(
+        "parameter-names-from-a-later-function-parameter",
+        "float r;\nvoid(float x, float y, void(float a, float b) cb) f = { r = a + b; };\n",
+    ),
     one(
         "parameters-no-locals",
         "float a;\nvoid(float p, vector q) f = { a = p + 1; };\n",

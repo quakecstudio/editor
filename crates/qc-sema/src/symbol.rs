@@ -43,7 +43,7 @@ pub enum DefKind {
     Function,
     /// A file-level field, `.T name` (QC-11.9: fields are global).
     Field,
-    /// A function parameter, visible only inside that function (QC-12.1, QC-13.2).
+    /// A function parameter, visible only inside that function (QC-12.1, QC-13.11).
     Param,
     /// A `local` inside a function body, visible to the end of the function (QC-11.10,
     /// QC-12.1).

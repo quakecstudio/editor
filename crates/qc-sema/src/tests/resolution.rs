@@ -360,6 +360,15 @@ fn statement_parts_are_resolved() {
     );
 }
 
+// spec QC-13.11: a parameter of function type writes its parameters' names over the body's
+#[test]
+fn a_function_parameter_renames_the_body_parameters() {
+    assert_eq!(
+        unknown_values("float r;\nvoid(float b, void(float q) cb) f = { r = b; r = q; cb(r); };\n"),
+        ["Unknown value \"b\""]
+    );
+}
+
 /// The messages of the "Unknown value" errors of a vanilla module of one file.
 fn unknown_values(source: &str) -> Vec<String> {
     index_of(source)
