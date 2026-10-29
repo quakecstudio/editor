@@ -15,7 +15,12 @@ qc-progs = { workspace = true }
 qc-types = { workspace = true }
 qc-vm = { workspace = true }
 qs-bsp = { workspace = true }
+qs-mdl = { workspace = true }
 qs-porting-example = { workspace = true }
+
+[dev-dependencies]
+qc-codegen = { workspace = true }
+qc-sema = { workspace = true }
 
 [lints]
 workspace = true

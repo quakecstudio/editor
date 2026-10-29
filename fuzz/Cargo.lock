@@ -335,6 +335,7 @@ dependencies = [
  "qc-types",
  "qc-vm",
  "qs-bsp",
+ "qs-mdl",
  "qs-porting-example",
 ]
 
