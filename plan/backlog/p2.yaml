@@ -295,7 +295,7 @@ issues:
   deliverable:
   - 'tests/compiler-diff: compiles each vanilla corpus codebase with our compiler and with oracle qcc, runs scripted function calls in qc-vm on both outputs, compares traces'
   acceptance:
-  - Zero behavioural divergences on the vanilla corpus
+  - Zero behavioural divergences on the vanilla corpus, with `--opt fold` off and on (QC-27.20, P2-08)
   - At least 90% of statements executed per corpus codebase
   verify:
   - CI fast subset; nightly full run
@@ -395,10 +395,12 @@ issues:
   - P0-15
   deliverable:
   - 'apps/lsp (binary name from ADR-0006): definition, references, rename, hover docs (including engine-target docs), completion, semantic tokens, inlay hints, diagnostics'
+  - 'crates/qc-ide (L3): the same features with no protocol, in byte offsets and paths, over a host that keeps one qc-sema database per module, so the server and the desktop editor share them (the design doc: "the LSP binary is the same crates behind a different front end"), as rust-analyzer splits its ide crate from its server'
   acceptance:
   - LSP integration tests drive each request against the rerelease codebase with expected results
   verify:
   - cargo test in apps/lsp
+  - cargo xtask lsp-corpus on the rerelease in the corpus CI job, against docs/spec/vectors/lsp/rerelease.txt
 - key: P2-15
   title: Write the tree-sitter grammar
   labels:
@@ -1743,10 +1745,12 @@ issues:
   - P2-117
   - P2-118
   - P2-119
+  - P2-120
   - P2-121
   - P2-122
   - P2-123
   - P2-124
+  - P2-126
   - P2-127
   - P2-130
   - P2-131
@@ -2477,6 +2481,26 @@ issues:
   verify:
   - cargo test -p qc-preproc -p qc-syntax -p qc-sema
   - cargo xtask oracles builtins
+- key: P2-126
+  title: Log the language server's crashes
+  labels:
+  - apps
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - QA-7
+  summary: |
+    Found while shipping the language server (P2-14): `quakec-lsp` installs no `qs-log` subscriber, so a crash in it leaves no record. `qs_log::LogConfig::for_app` writes `quakec-studio.log`, which the IDE writes too, and two processes rotating one file would lose events; the server needs a log file of its own in the same directory.
+  depends:
+  - P2-14
+  deliverable:
+  - 'crates/qs-log: a `LogConfig` names its log file, `quakec-studio.log` by default'
+  - 'apps/lsp: `quakec-lsp` initialises `qs-log` with `quakec-lsp.log` in `qs_paths::AppDirs::logs()` at startup, so a panic writes a crash record (QA-7); a failure to initialise logging does not stop the server'
+  acceptance:
+  - A qs-log test that a config with another file name writes and rotates that file, and an apps/lsp test of the config the server builds
+  verify:
+  - cargo test -p qs-log -p quakec-lsp
 - key: P2-121
   title: Read FTEQCC's extern "C" and extern "QC" blocks
   labels:
@@ -2499,6 +2523,28 @@ issues:
   verify:
   - cargo test -p qc-syntax -p qc-sema
   - cargo xtask oracles builtins
+- key: P2-120
+  title: Name a function's parameters as id's qcc does after a parameter of function type
+  labels:
+  - L3-semantics
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-4
+  summary: |
+    id's qcc names a body's parameters from `pr_parm_names`, which `PR_ParseType` writes for every function type it reads, a parameter's own function type included, so the names of a parameter of function type that has parameters overwrite the outer list's first names. The semantic model (`qc_sema::lower`, `collect_params`) names each parameter as the defining declaration writes it, so `float r; void(float b, void(float q) cb) f = { r = b; };` resolves, where id's qcc reports `Unknown value "b"` (the body's parameters are `q` and `cb`), and `r = q` is refused where qcc compiles it.
+  environment: |
+    feat/62-qc-codegen; found by the self-review of P2-06 against the pinned id qcc built by `cargo xtask oracles build`
+  depends:
+  - P2-117
+  deliverable:
+  - 'crates/qc-sema (`lower.rs`, `collect_params`) and docs/spec/language.md QC-13.2 (withdrawn for a new statement): `PR_ParseType` (`qcc/pr_lex.c`, id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73) runs `strcpy (pr_parm_names[new.num_parms], name);` after `type = PR_ParseType ();` has read the parameter''s type, and `PR_ParseImmediateStatements` defines `PR_GetDef (type->parm_types[i], pr_parm_names[i], pr_scope, true)`; crates/qc-codegen (`Compiler::parameters`) takes the same names'
+  acceptance:
+  - 'Under the vanilla profile a body''s parameters have the names id''s qcc gives them after a parameter of function type with parameters, recorded as cases of the compiler differential (`cargo xtask oracles codegen`); each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-sema -p qc-codegen
+  - cargo xtask oracles codegen
 - key: P2-122
   title: Read FTEQCC's cast flags in the semantic model's casts
   labels:

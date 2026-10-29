@@ -3,11 +3,11 @@
 //! Navigation: go-to-definition and find-references (GOAL-1).
 //!
 //! These read a resolved [`ModuleIndex`] (`crate::resolve`). Go-to-definition maps a byte
-//! position in a file to the definition whose name or use covers it; find-references lists
-//! every use of a definition, and optionally its declaration. The answers follow `qcc`'s
-//! resolution exactly (QC-12), so a name that reuses a global (QC-12.3) navigates to that
-//! global, and a local of one function is never confused with a same-named local of
-//! another (QC-12.4).
+//! position in a file to the definition whose name, use or later declaration covers it;
+//! find-references lists every use of a definition, and optionally its declarations. The
+//! answers follow `qcc`'s resolution exactly (QC-12), so a name that reuses a global (QC-12.3)
+//! navigates to that global, and a local of one function is never confused with a same-named
+//! local of another (QC-12.4).
 
 use crate::resolve::ModuleIndex;
 use crate::symbol::{DefId, FileId, Location};
@@ -20,10 +20,12 @@ impl ModuleIndex {
     /// the [`Location`] to jump to (the definition's name).
     #[must_use]
     pub fn definition_at(&self, file: FileId, offset: usize) -> Option<(DefId, Location)> {
-        // A use at this position resolves to its definition.
+        // A use, or a declaration after the first (QC-11.5), at this position names its
+        // definition.
         if let Some(reference) = self
             .refs
             .iter()
+            .chain(&self.redeclarations)
             .find(|r| r.location.file == file && covers(r.location.span, offset))
         {
             let def = self.def(reference.def)?;
@@ -39,12 +41,19 @@ impl ModuleIndex {
 
     /// Every reference to definition `def`, in source order (find-references).
     ///
-    /// When `include_declaration` is true, the definition's own name location is first.
+    /// When `include_declaration` is true, the definition's own name location is first, then
+    /// every later declaration of it (QC-11.5) in declaration order, then the uses.
     #[must_use]
     pub fn references(&self, def: DefId, include_declaration: bool) -> Vec<Location> {
         let mut out = Vec::new();
         if include_declaration && let Some(definition) = self.def(def) {
             out.push(definition.location);
+            out.extend(
+                self.redeclarations
+                    .iter()
+                    .filter(|r| r.def == def)
+                    .map(|r| r.location),
+            );
         }
         out.extend(
             self.refs

@@ -98,6 +98,8 @@ type Typed = Result<Option<Type>, Fatal>;
 struct Vanilla<'e> {
     env: &'e mut dyn Env,
     types: HashMap<(usize, usize), Type>,
+    /// The return value's type, `def_ret.type`, which each call sets (QC-18.9).
+    returned: Option<Type>,
 }
 
 /// QC-16, QC-18: checks `body` as id's `qcc` does, reporting through `env`, and returns its
@@ -106,6 +108,7 @@ pub(super) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
     let mut checker = Vanilla {
         env,
         types: HashMap::new(),
+        returned: None,
     };
     if let Some(block) = body.block() {
         checker.block(&block);
@@ -235,6 +238,18 @@ impl Vanilla<'_> {
         };
         let lhs = self.expr_of(binary.lhs())?;
         let rhs = self.expr_of(binary.rhs())?;
+        // QC-18.9: a call's value is the one return global, retyped by each call, so an operand
+        // that is a call has the type of the last call read, the other operand's included.
+        let lhs = if binary.lhs().as_ref().is_some_and(is_call) {
+            self.returned.clone()
+        } else {
+            lhs
+        };
+        let rhs = if binary.rhs().as_ref().is_some_and(is_call) {
+            self.returned.clone()
+        } else {
+            rhs
+        };
         let (Some(lhs), Some(rhs)) = (lhs, rhs) else {
             return Ok(None);
         };
@@ -272,7 +287,11 @@ impl Vanilla<'_> {
     /// QC-16.1: `e.f`, an entity and a field of a float, vector, string, entity, field or
     /// function, is what the field holds.
     fn field(&mut self, field: &ast::FieldExpr) -> Typed {
-        let span = field.syntax().span();
+        // QCD-4.2: the error is at the `.`, where `PR_Expression` reads the operator.
+        let span = field
+            .syntax()
+            .token_of(qc_syntax::SyntaxKind::Dot)
+            .map_or_else(|| field.syntax().span(), |dot| dot.span());
         let base = self.expr_of(field.base())?;
         let selector = self.expr_of(field.field())?;
         let (Some(base), Some(selector)) = (base, selector) else {
@@ -343,6 +362,16 @@ impl Vanilla<'_> {
                 .report(Code::E0307, span, "More than eight parameters".to_owned());
             return Err(Fatal);
         }
+        self.returned = Some(function.ret.clone());
         Ok(Some(function.ret.clone()))
+    }
+}
+
+/// Whether `expr` is a call, in parentheses or not, whose value is the return global.
+fn is_call(expr: &ast::Expr) -> bool {
+    match expr {
+        ast::Expr::Call(_) => true,
+        ast::Expr::Paren(paren) => paren.expr().as_ref().is_some_and(is_call),
+        _ => false,
     }
 }

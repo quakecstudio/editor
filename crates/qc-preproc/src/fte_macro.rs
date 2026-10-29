@@ -76,6 +76,13 @@ pub(crate) struct Text {
 }
 
 impl Text {
+    /// `bytes` made by no file's text, standing for `at`: a module's define (PRJ-5.4).
+    pub(crate) fn made(bytes: &[u8], at: FileSpan) -> Self {
+        let mut text = Self::default();
+        text.push(bytes, Origin::Made(at));
+        text
+    }
+
     /// The text's bytes.
     pub(crate) fn bytes(&self) -> &[u8] {
         &self.bytes
@@ -1210,6 +1217,7 @@ impl<L: Loader> Preprocessor<L> {
             file: at_name.file,
             name_span: at_name.span,
             evil: definition.evil.is_some(),
+            spelled: None,
         };
         self.macros.insert(name, Rc::new(mac));
         self.macros_changed();

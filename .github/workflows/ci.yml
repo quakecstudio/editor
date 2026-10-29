@@ -72,6 +72,7 @@ jobs:
       contents: read
     outputs:
       full: ${{ steps.classify.outputs.full }}
+      oracles: ${{ steps.classify.outputs.oracles }}
     steps:
       # A pull request checks out its merge commit, whose first parent is the
       # base branch, so a depth of two holds the pull request's whole diff.
@@ -105,6 +106,17 @@ jobs:
             echo "full=false" >>"$GITHUB_OUTPUT"
           else
             echo "full=true" >>"$GITHUB_OUTPUT"
+          fi
+          # The live builtin differential runs FTEQCC and qcc on 78870 cases, half an hour on a
+          # runner; it says something new only when the oracles, the differential's cases or
+          # their recorded outcomes change. Otherwise the outcomes the fixture records stand in
+          # for the oracles (`cargo xtask oracles --recorded`), and the nightly Differential
+          # workflow runs the live check on main. With no base to compare, it runs live.
+          if [ -z "$base" ] || ! git diff --quiet "$base" HEAD -- \
+            oracles xtask/src/oracles.rs xtask/src/oracles xtask/fixtures/oracles; then
+            echo "oracles=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "oracles=false" >>"$GITHUB_OUTPUT"
           fi
 
   fmt:
@@ -202,7 +214,16 @@ jobs:
           key: oracles-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**') }}
       - name: Build and check the oracles
         if: env.CI_PATH == 'full'
-        run: cargo xtask oracles
+        env:
+          LIVE: ${{ needs.changes.outputs.oracles != 'false' }}
+        # bash on every OS, Windows included, whose default shell is PowerShell.
+        shell: bash
+        run: |
+          if [ "$LIVE" = true ]; then
+            cargo xtask oracles
+          else
+            cargo xtask oracles --recorded
+          fi
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: env.CI_PATH == 'full' && github.ref == 'refs/heads/main' && steps.oracles-cache.outputs.cache-hit != 'true'
         with:
@@ -545,6 +566,11 @@ jobs:
           cargo xtask sema-corpus \
             "$QS_TEST_ASSETS/codebase/id-1.01=$QS_TEST_ASSETS/progs/id-1.01/progs.dat" \
             "$QS_TEST_ASSETS/codebase/rerelease=$QS_TEST_ASSETS/progs/rerelease/progs.dat"
+      # P2-14: the language server, driven over the protocol against the rerelease, gives the
+      # answers its golden file records (docs/spec/vectors/lsp/rerelease.txt).
+      - name: Drive the language server against the rerelease
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: cargo xtask lsp-corpus "$QS_TEST_ASSETS/codebase/rerelease"
       # P1-13 (FND-8, QA-1): the fast differential subset. Runs id 1.01 end to end
       # in the VM oracle (restored above) and QuakeC Studio's runner and fails on any
       # divergence that DIFF-10.1 does not list (DIFF-10.3). This is the differential VM

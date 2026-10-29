@@ -2170,8 +2170,9 @@ pub(crate) fn check(
     check_where(root, oracles, record, Host::HOST, suite)
 }
 
-/// Checks the profile against the outcomes [`FIXTURE`] records, without the oracles: what
-/// [`check`] tallies once the oracles agree with the fixture, in seconds instead of minutes.
+/// Checks the profile and the project graph against the outcomes [`FIXTURE`] records, without
+/// the oracles: what [`check`] tallies once the oracles agree with the fixture, in seconds
+/// instead of minutes.
 pub(crate) fn check_recorded(root: &Path, suite: &Suite) -> Result<bool, String> {
     let recorded = read_fixture(root)?;
     let cases = &suite.cases;
@@ -2180,7 +2181,16 @@ pub(crate) fn check_recorded(root: &Path, suite: &Suite) -> Result<bool, String>
         "oracles: {} builtin initialiser cases against {FIXTURE}: {tally}",
         cases.len()
     );
-    Ok(tally.differ == 0)
+    let graph = graph_differences(&suite.graph, &recorded, Host::HOST.ulong);
+    for problem in &graph {
+        println!("FAIL  project graph: {problem}");
+    }
+    println!(
+        "oracles: {} project graph cases against {FIXTURE}, {} differ",
+        suite.graph.len(),
+        graph.len()
+    );
+    Ok(tally.differ == 0 && graph.is_empty())
 }
 
 /// [`check`] with oracles that run on `host`, which records nothing unless its `unsigned long`

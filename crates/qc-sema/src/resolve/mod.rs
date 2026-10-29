@@ -91,6 +91,10 @@ pub struct ModuleIndex {
     pub defs: Vec<Definition>,
     /// Every resolved name use, in source order (QC-12.5).
     pub refs: Vec<Reference>,
+    /// Every global declaration after the first of a name, each naming the definition it
+    /// declares again (QC-11.5): a function's body after its prototype, or a second
+    /// `float x;`. In declaration order. Find-references lists them with the declaration.
+    pub redeclarations: Vec<Reference>,
     /// The semantic diagnostics, in the order found, each with its file.
     pub diagnostics: Vec<FileDiagnostic>,
     /// Each function body's types, by the function's definition (`crate::check`).

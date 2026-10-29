@@ -876,6 +876,8 @@ equal the operands' types exactly; if none does, it is an error, "type mismatch 
 | `a = fl == fl;` with `.float fl` | `type mismatch for ==` | QC-16.2 |
 | `if (e && a) a = 1;` with `entity e` | `type mismatch for &&` | QC-16.2 |
 | `if (g == g) g();` with `void() g` | `EQ_FNC g, g, t`; `IFNOT t, +2`; `CALL0 g` | QC-16.7 |
+| `r = g == h;` with `void() g` and `float(float x) h` | `EQ_FNC g, h, t`; `STORE_F t, r` | QC-16.8 |
+| `a = e.a;` with `float a` and `entity e` | `type mismatch for .` | QC-16.8 |
 | `a = s == "x"; a = e != world; a = !s; a = !e; a = !v;` | `EQ_S`, `NE_E`, `NOT_S`, `NOT_ENT`, `NOT_V` | QC-16.1, QC-16.4 |
 
 ## QC-17 Assignment
@@ -885,10 +887,9 @@ equal the operands' types exactly; if none does, it is an error, "type mismatch 
 
 ### Behaviour
 
-- **QC-17.1** `x = e` requires `x` and `e` to have the same type and emits
-  `STORE_F`, `STORE_V`, `STORE_S`, `STORE_ENT`, `STORE_FLD` or `STORE_FNC` with `e` as
-  operand a and `x` as operand b. Its value is `e`, so `a = b = c` stores `c` into `b` and
-  then `c` into `a`.
+- **QC-17.1** **Withdrawn** (P2-06, #62): it said `x = e` requires `x` and `e` to have the same
+  type, but the store's row is chosen by basic types (QC-16.8), so two fields or two functions
+  of different types are assigned. Replaced by QC-17.6.
 - **QC-17.2** id's `qcc` does not check that the left side can be assigned: `5 = a;` stores
   into the literal's global, `f() = 3` into the return slot and `(a + b) = 3` into a
   temporary. QC-27.10 makes these errors.
@@ -902,12 +903,23 @@ equal the operands' types exactly; if none does, it is an error, "type mismatch 
   name, the earlier load is rewritten and the name's definition is retyped as a pointer:
   `e.fl; a = 2;` emits `ADDRESS e, fl, t` and `STOREP_F 2, a`. QC-27.11 diverges.
 - **QC-17.5** There are no compound assignments (QC-7.4).
+- **QC-17.6** `x = e` requires `x` and `e` to have the same basic type (QC-16.8) and emits
+  `STORE_F`, `STORE_V`, `STORE_S`, `STORE_ENT`, `STORE_FLD` or `STORE_FNC` by it, with `e` as
+  operand a and `x` as operand b: `fa = fb;` with `.float fa` and `.vector fb` is
+  `STORE_FLD fb, fa`. Its value is `e`, so `a = b = c` stores `c` into `b` and then `c` into
+  `a`.
+- **QC-17.7** Through a field (QC-17.3) the value must have the basic type of what the field
+  holds: `PR_Expression` checks `if (type_a == ev_pointer && type_b != e->type->aux_type->type)`,
+  so `e.fv = 1` with `.vector fv` is "type mismatch for =". The address keeps the temporary its
+  load had, three words for a vector field (QC-21.5).
 
 ### Test vectors
 
 | Input (in a function body) | Statements emitted | Statements |
 | --- | --- | --- |
-| `a = b = c;` | `STORE_F c, b`; `STORE_F c, a` | QC-17.1 |
+| `a = b = c;` | `STORE_F c, b`; `STORE_F c, a` | QC-17.6 |
+| `fa = fb;` with `.float fa` and `.vector fb` | `STORE_FLD fb, fa` | QC-17.6 |
+| `e.fv = 1;` with `.vector fv` | `type mismatch for =` | QC-17.7 |
 | `5 = a;` | `STORE_F a, IMMEDIATE` | QC-17.2 |
 | `a = e.o_z; e.o_x = 1;` with `.vector o` | `INDIRECT e, o_z, t1`; `STORE_F t1, a`; `ADDRESS e, o_x, t2`; `STOREP_F 1, t2` | QC-17.3 |
 | `e.o = '1 2 3';` | `ADDRESS e, o, t`; `STOREP_V '1 2 3', t` | QC-17.3 |
@@ -947,14 +959,19 @@ equal the operands' types exactly; if none does, it is an error, "type mismatch 
   a single global area."
 - **QC-18.7** A call through a field, `e.th()`, loads the function from the field and calls
   the loaded value.
-
 - **QC-18.8** `f(a1, ..., an)` requires `f` to have a function type, else "not a function". With
   at least one argument and a fixed parameter list, an argument past the last parameter is an
   error, "too many parameters" (raised before it is parsed), an argument whose type is not
   exactly the parameter's is "type mismatch on parm N", counting from 0, and fewer arguments
   than parameters "too few parameters"; a call with none is checked for no count. Each is
   `PR_ParseError`, which ends the statement.
+- **QC-18.9** The return value's global has the type of the last call made when an operator
+  reads its operands' types, after both are parsed: `qcc` keeps one `def_ret` and retypes it at
+  each call (`def_ret.type = t->aux_type;`). With `float() g` and `vector() h`, `g() + h()` adds
+  two vectors, `ADD_V`, and `h() * g()` multiplies two floats, `MUL_F`.
+
 ### Constants
+
 
 The slots are `PROGS_OFS_RETURN` and `PROGS_OFS_PARM0` in [`progs.md`](progs.md); `qcc/qcc.h`
 defines the same `OFS_RETURN` and `OFS_PARM0`, and `InitData` puts slot `i` at
@@ -973,6 +990,9 @@ defines the same `OFS_RETURN` and `OFS_PARM0`, and `InitData` puts slot `i` at
 | `g("x");` with `void(float a) g` | `type mismatch on parm 0` | QC-18.8 |
 | `a();` with `float a` | `not a function` | QC-18.8 |
 | `g();` with `void(float a) g` | none: no count is checked with no argument | QC-18.8 |
+| `g();` with `float(float a, float b) g` | `CALL0 g` | QC-18.8 |
+| `g(fv_x);` with `.vector fv` and `void(.float x) g` | `type mismatch on parm 0` | QC-18.8 |
+| `v = g() + h(); a = h() * g();` with `float() g` and `vector() h` | `CALL0 g`; `CALL0 h`; `ADD_V return, return, t`; `STORE_V t, v`; `CALL0 h`; `CALL0 g`; `MUL_F return, return, u`; `STORE_F u, a` | QC-18.9 |
 | `e.th();` with `.void() th` | `INDIRECT e, th, t`; `CALL0 t` | QC-18.7 |
 
 ## QC-19 Conversions and conditions
@@ -1108,7 +1128,7 @@ A summary for code generation; the sections cited hold the rules.
 | `a OP b` | statements of `a`, of `b`, then `OP a, b, t` | QC-15.9, QC-16.1 |
 | `!a` | statements of `a`, `NOT_* a, t` | QC-16.4 |
 | `e.f` | statements of `e`, `LOAD_* e, f, t` | QC-16.1 |
-| `x = e` | statements of `e`, `STORE_* e, x` | QC-17.1 |
+| `x = e` | statements of `e`, `STORE_* e, x` | QC-17.6 |
 | `e.f = v` | `ADDRESS e, f, t`, statements of `v`, `STOREP_* v, t` | QC-17.3 |
 | `f(a, b)` | statements of `a`, `STORE_V a, parm0`, statements of `b`, `STORE_V b, parm1`, `CALL2 f` | QC-18.3 |
 | `return;`, `return e;` | `RETURN`, `RETURN e` | QC-14.3 |
@@ -1283,6 +1303,10 @@ These lists do not reach `progs.dat`; `qcc -copy` and `-pak` use them to collect
   compile-time value, normally the empty string.
 - **QC-26.4** `PrecacheModel` checks the sound count, not the model count, against its limit
   ("PrecacheModels: numsounds == MAX_SOUNDS"), so the model list itself is unchecked.
+- **QC-26.5** A first argument whose compile-time word is no offset into the string table, such
+  as a float's in `precache_model(1000000)`, adds nothing: id's `qcc` reads the string at that
+  word (`n = G_STRING(e->ofs);`) outside its table, which C leaves undefined. This compiler
+  keeps the lists without the limits of QC-26.4 and LIMIT-7.3, which bind id's `qcc` only.
 
 ### Constants
 
@@ -1339,6 +1363,27 @@ differential suite lists each of these as an expected divergence.
   operator, field access, call or type around what they hold, so the tree stays within the
   limit, and the rest of the statement or declaration is skipped as after any error (QCD-1.4).
   The next statement or declaration nests afresh.
+- **QC-27.17** Each file's functions record the name `progs.src` lists the file by
+  (QC-25.4), as id's `qcc` records it run in the source directory; `qcc -src DIR` records
+  `DIR/` before it (`sprintf (filename, "%s%s", sourcedir, com_token)`).
+- **QC-27.18** A `string` initialiser's text (QC-27.12) is appended to the string table where
+  the initialiser is read, and a later literal of the same text is the initialised definition
+  (QC-20.2).
+- **QC-27.19** Every build writes a line map beside the progs, in FTEQCC's `.lno` layout
+  ([`lno.md`](lno.md)), which id's `qcc` does not: one line per statement, the line of the
+  source statement the compiler was reading when it emitted it, counted from 1 in the file the
+  statement's function is in: a state header's statements have the line of the function's
+  name, and the `DONE` a body ends with the line of its last statement (the name's for an
+  empty body). The placeholder statement 0 has line 0, no line
+  (LNO-3.2). The map's counts are the progs' (LNO-4.1).
+- **QC-27.20** With `--opt fold` (COMP-5), an arithmetic operator whose operands are both float
+  or vector literals is the literal of its value, made as `PR_ParseImmediate` makes a literal
+  (QC-20.2), and emits no statement: `ADD_F`, `SUB_F`, `MUL_F`, `DIV_F`, `ADD_V`, `SUB_V`,
+  `MUL_V`, `MUL_FV` and `MUL_VF`. The value is the one the VM computes for that statement
+  (VM-5): each product and sum an `f32` rounded in turn, the dot product
+  `(a0*b0 + a1*b1) + a2*b2`, a division by zero infinity or NaN. Every other operator, and an
+  operand that is no literal, is emitted as without the option. `qcc` folds nothing, so the
+  option changes the progs but not what it computes (COMP-4).
 
 ### Constants
 

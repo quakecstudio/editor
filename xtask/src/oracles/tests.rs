@@ -233,6 +233,9 @@ fn every_command_of_cargo_xtask_oracles_runs() {
     assert!(run(&dir, &words("build"), &fake, &files, &suite).unwrap());
     // The fake VM oracle writes no trace, so every check that reads one fails.
     assert!(!run(&dir, &[], &fake, &files, &suite).unwrap());
+    // The recorded mode runs the VM checks, then reads the fixture, which this root has none of.
+    let recorded = run(&dir, &words("--recorded"), &fake, &files, &suite).unwrap_err();
+    assert!(recorded.contains("builtin-outcomes.json"), "{recorded}");
     assert!(!run(&dir, &words("scenarios defaults"), &fake, &files, &suite).unwrap());
     // The fake compilers write no progs.dat, so the builtin differential fails too.
     assert!(!run(&dir, &words("builtins"), &fake, &files, &suite).unwrap());
@@ -244,6 +247,10 @@ fn every_command_of_cargo_xtask_oracles_runs() {
         assert!(recording.is_err());
     }
     assert!(run(&dir, &words("builtins again"), &fake, &files, &suite).is_err());
+    // The fake qcc writes no progs.dat and the fake root records no codegen outcomes.
+    assert!(!run(&dir, &words("codegen"), &fake, &files, &suite).unwrap());
+    assert!(!run(&dir, &words("codegen --record"), &fake, &files, &suite).unwrap());
+    assert!(run(&dir, &words("codegen again"), &fake, &files, &suite).is_err());
     assert!(run(&dir, &words("id101 nowhere"), &fake, &files, &suite).is_err());
     let codebases = fresh_dir("oracles-commands-codebases");
     assert!(run(&dir, &words("rerelease"), &fake, &files, &suite).is_err());
