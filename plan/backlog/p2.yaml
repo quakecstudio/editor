@@ -1749,7 +1749,6 @@ issues:
   - P2-122
   - P2-123
   - P2-124
-  - P2-125
   - P2-126
   - P2-127
   - P2-130
@@ -2481,27 +2480,6 @@ issues:
   verify:
   - cargo test -p qc-preproc -p qc-syntax -p qc-sema
   - cargo xtask oracles builtins
-- key: P2-125
-  title: Pass a module's defines to the semantic model
-  labels:
-  - L3-semantics
-  - area:language
-  - type:bug
-  size: S
-  reqs:
-  - LANG-4
-  - LANG-10
-  summary: |
-    Found while shipping the language server (P2-14): `qc_project::Module::defines` (PRJ-2.6), which the project graph defines before the module's first file (PRJ-5.4), never reach the semantic model, since `qc_sema::ModuleInput` has no defines and `Db::analyze_module` preprocesses with none. A module whose `quakec.toml` gives `defines` is resolved, and its diagnostics reported in the editor and the language server, as if the build defined nothing, while its file graph was read with them.
-  environment: |
-    main at 84965ed; found by reading the code (crates/qc-sema/src/expand.rs `ModuleInput`, which has no defines), not by a failing run
-  depends: []
-  deliverable:
-  - 'crates/qc-sema: `ModuleInput` carries the module''s defines (`ModuleInput::from_module` takes them from `Module::defines`), and `Db::analyze_module` defines them before the first file as the graph does (PRJ-5.4)'
-  acceptance:
-  - 'A test citing PRJ-5.4: a module whose project file defines `X` resolves the `#ifdef X` side of a conditional, and the same module with no defines the other side'
-  verify:
-  - cargo test -p qc-sema -p qc-ide
 - key: P2-126
   title: Log the language server's crashes
   labels:

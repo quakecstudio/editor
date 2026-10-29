@@ -1437,6 +1437,7 @@ impl<L: Loader> Preprocessor<L> {
                 file: FileId(u32::MAX),
                 name_span: Span::new(0, 0),
                 evil: false,
+                spelled: None,
             };
             self.macros.insert_builtin(name, Rc::new(mac));
             self.macros_changed();

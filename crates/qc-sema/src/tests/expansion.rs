@@ -514,6 +514,57 @@ fn module_input_from_a_graph() {
     assert_eq!(input.compiled, [FileId(0)]);
 }
 
+// spec PRJ-5.4: a module's defines are defined before its first file, in both dialects and in
+// FTEQCC's second autoprototyping pass: `#ifdef X` takes its first side with `X` defined and the
+// other without, and a define's body is its text
+#[test]
+fn a_module_s_defines_hold_from_its_first_file() {
+    let text = "#ifdef X\nfloat a = Y;\n#else\nfloat b;\n#endif\n";
+    for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+        for autoproto in [None, Some(true)] {
+            let names = |defines: &[(&str, &str)]| -> Vec<String> {
+                let (mut db, mut input) = module(&[("a.qc", text)], &["a.qc"], dialect);
+                input.autoproto = autoproto;
+                input.defines = defines
+                    .iter()
+                    .map(|&(n, v)| (n.to_owned(), v.to_owned()))
+                    .collect();
+                let analysis = db.analyze_module(&input);
+                assert!(
+                    codes(&analysis).is_empty(),
+                    "{dialect:?} {autoproto:?} {defines:?} {:?}",
+                    analysis
+                        .diagnostics()
+                        .map(|d| d.diagnostic.message.clone())
+                        .collect::<Vec<_>>()
+                );
+                analysis.index.defs.iter().map(|d| d.name.clone()).collect()
+            };
+            let with = names(&[("X", ""), ("Y", "2")]);
+            assert!(
+                with.contains(&"a".to_owned()) && !with.contains(&"b".to_owned()),
+                "{with:?}"
+            );
+            let without = names(&[]);
+            assert!(without.contains(&"b".to_owned()) && !without.contains(&"a".to_owned()));
+        }
+    }
+    // `ModuleInput::from_module` takes them from the project's module.
+    let module = qc_project::Module {
+        name: "progs".to_owned(),
+        kind: qc_project::ModuleKind::Ssqc,
+        src: PathBuf::from("progs.src"),
+        dialect: qc_project::Dialect::Fteqcc,
+        target: qc_project::Target::Quake,
+        output: PathBuf::from("progs.dat"),
+        defines: vec![qc_project::Define::parse("X=1").unwrap()],
+        include_dirs: Vec::new(),
+        graph: FileGraph::default(),
+    };
+    let input = ModuleInput::from_module(&module);
+    assert_eq!(input.defines, [("X".to_owned(), "1".to_owned())]);
+}
+
 // spec FTEF-12.18: the `#pragma autoproto` setting the graph read from a list-form
 // `progs.src` is the module input's.
 #[test]
