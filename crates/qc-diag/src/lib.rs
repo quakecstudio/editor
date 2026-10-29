@@ -59,6 +59,35 @@ impl Span {
     pub const fn contains(self, other: Self) -> bool {
         self.start <= other.start && other.end <= self.end
     }
+
+    /// Whether the byte at `offset` is in this span: `[start, end)`, or exactly `start` for an
+    /// empty span, so a cursor at the first byte of a zero-width name still hits.
+    #[must_use]
+    pub const fn covers(self, offset: usize) -> bool {
+        if self.start == self.end {
+            offset == self.start
+        } else {
+            offset >= self.start && offset < self.end
+        }
+    }
+
+    /// The two spans joined: from this one's start to `last`'s end.
+    #[must_use]
+    pub const fn to(self, last: Self) -> Self {
+        Self::new(self.start, last.end)
+    }
+
+    /// How many bytes it holds; 0 for an empty or inverted span.
+    #[must_use]
+    pub const fn len(self) -> usize {
+        self.end.saturating_sub(self.start)
+    }
+
+    /// Whether it holds no byte.
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// An error or a warning from any stage of the QuakeC front end.

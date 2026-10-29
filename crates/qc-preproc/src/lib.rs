@@ -1660,10 +1660,7 @@ impl<L: Loader> Preprocessor<L> {
             return;
         };
         let file = cursor.file;
-        let whole = Span::new(
-            hash.span.start,
-            line.last().map_or(name_span.end, |t| t.span.end),
-        );
+        let whole = hash.span.to(line.last().map_or(*name_span, |t| t.span));
         let at = |span: Span| FileSpan { file, span };
         let was_taking = cursor.taking();
         let operand = match line.get(2) {
@@ -1739,7 +1736,7 @@ impl<L: Loader> Preprocessor<L> {
     fn define(&mut self, run: &mut Run, file: FileId, line: &[Token]) {
         let at = |span: Span| FileSpan { file, span };
         let whole = match (line.first(), line.last()) {
-            (Some(first), Some(last)) => Span::new(first.span.start, last.span.end),
+            (Some(first), Some(last)) => first.span.to(last.span),
             _ => return,
         };
         let Some(Token {
