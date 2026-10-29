@@ -9,6 +9,10 @@
 //!   `oracles/probes.rs` and the scenario tests of `oracles/scenarios.rs`.
 //!   It then compiles every builtin initialiser of `oracles/builtins.rs` with FTEQCC and id's
 //!   qcc and checks the dialect profiles against them.
+//! - `cargo xtask oracles --recorded` does the same, but checks the profiles and the project
+//!   graph against the builtin outcomes the fixture records instead of running FTEQCC and qcc on
+//!   them: seconds instead of half an hour. Pull requests run it unless they change the oracles
+//!   or the differential (docs/ci.md); the nightly Differential workflow runs the live check.
 //! - `cargo xtask oracles builtins --recorded` checks the profile against the recorded outcomes
 //!   alone, with no oracle built or run.
 //! - `cargo xtask oracles builtins [--record]` builds them and runs only that check; with
@@ -158,6 +162,20 @@ fn run(
                 .iter()
                 .all(|passed| *passed))
         }
+        // The same, the builtin differential against the outcomes its fixture records rather
+        // than the oracles, which takes seconds where the live run takes half an hour: what pull
+        // requests run unless they change the oracles or the differential's cases (docs/ci.md).
+        ["--recorded"] => {
+            let oracles = build()?;
+            let vectors = vectors::check(root, &oracles)?;
+            let numbers = numbers::check(root, &oracles)?;
+            let probes = probes::check(&oracles)?;
+            let scenarios = scenarios::check(&oracles, None)?;
+            let builtins = builtins::check_recorded(root, &suite())?;
+            Ok([vectors, numbers, probes, scenarios, builtins]
+                .iter()
+                .all(|passed| *passed))
+        }
         ["builtins"] => builtins::check(root, &build()?, false, &suite()),
         ["builtins", "--record"] => builtins::check(root, &build()?, true, &suite()),
         ["builtins", "--recorded"] => builtins::check_recorded(root, &suite()),
@@ -188,7 +206,8 @@ fn run(
             Ok(true)
         }
         _ => Err(
-            "usage: cargo xtask oracles [build | scenarios [<name>...] | fuzz <target> [--time <s>] \
+            "usage: cargo xtask oracles [--recorded | build | scenarios [<name>...] \
+             | fuzz <target> [--time <s>] \
              | builtins [--record | --recorded] | id101 <codebase directory> \
              | rerelease <directory of codebases> | json <trace>]"
                 .to_owned(),
