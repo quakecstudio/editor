@@ -1,0 +1,19 @@
+[package]
+name = "qs-settings"
+description = "QuakeC Studio settings: user and project settings files, their schema, and the commands that read and change them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qs-commands = { workspace = true }
+schemars = { workspace = true, features = ["derive", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+toml = { workspace = true, features = ["display", "parse", "serde", "std"] }
+
+[lints]
+workspace = true

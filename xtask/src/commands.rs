@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `cargo xtask commands [--check]`: writes the command reference, `docs/commands.md`, from
-//! the `qs-commands` registry (P2-12, PRIN-3); `--check` writes nothing and fails when the
+//! the `qs-commands` registry with every crate's commands registered (P2-12, PRIN-3); `--check` writes nothing and fails when the
 //! checked-in file differs. `cargo xtask ci` runs the same check in-process ([`check`]).
 
 use std::fs;
 use std::path::Path;
 
 use qs_commands::Registry;
+use qs_settings::SettingsStore;
 
 use crate::{Report, print_outcome};
 
@@ -20,7 +21,7 @@ const USAGE: &str = "usage: cargo xtask commands [--check]";
 pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     match args {
         [] => {
-            fs::write(root.join(REFERENCE), reference())
+            fs::write(root.join(REFERENCE), reference()?)
                 .map_err(|e| format!("{REFERENCE}: {e}"))?;
             eprintln!("commands: wrote {REFERENCE}");
             Ok(true)
@@ -35,7 +36,7 @@ pub(crate) fn check(root: &Path) -> Result<Report, String> {
     let current =
         fs::read_to_string(root.join(REFERENCE)).map_err(|e| format!("{REFERENCE}: {e}"))?;
     let mut report = Report::default();
-    let matches = current == reference();
+    let matches = current == reference()?;
     report.record(
         matches,
         if matches {
@@ -47,9 +48,12 @@ pub(crate) fn check(root: &Path) -> Result<Report, String> {
     Ok(report)
 }
 
-/// The reference the registry renders.
-fn reference() -> String {
-    Registry::<()>::new().markdown()
+/// The reference the registry renders: the built-in commands and the settings commands
+/// (P2-22).
+fn reference() -> Result<String, String> {
+    let mut registry = Registry::<SettingsStore>::new();
+    qs_settings::register(&mut registry).map_err(|e| e.to_string())?;
+    Ok(registry.markdown())
 }
 
 #[cfg(test)]
