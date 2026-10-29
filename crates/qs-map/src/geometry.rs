@@ -3,14 +3,75 @@
 //! Face planes and texture axes (MAP-3.4, MAP-4.2 to MAP-4.4, MAP-5.3), written from
 //! `docs/spec/map.md`.
 //!
-//! Each computation comes twice: in single precision from integer points, as id's qbsp does
-//! it (its `vec_t` is `float`), for [`crate::qbsp`]; and in double precision, as
-//! ericw-tools reads `.map` numbers (MAP-3.3, MAP-4.1), for [`crate::MapFile`].
+//! Each computation runs in single precision from integer points, as id's qbsp does it (its
+//! `vec_t` is `float`), for [`crate::qbsp`], and in double precision, as ericw-tools reads
+//! `.map` numbers (MAP-3.3, MAP-4.1), for [`crate::MapFile`]: one function generic over
+//! [`MapFloat`], except the plane, whose test for a degenerate normal differs (MAP-3.6).
 
 #[cfg(test)]
 mod tests;
 
 use core::f64::consts::PI;
+use core::ops::{Add, Div, Mul, Sub};
+
+/// The float type a computation runs in: qbsp's `float` or ericw-tools' `double`.
+pub trait MapFloat:
+    Copy
+    + PartialOrd
+    + From<i8>
+    + Add<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + Div<Output = Self>
+    + sealed::Sealed
+{
+    /// The value as a `double`, as C converts it.
+    fn to_f64(self) -> f64;
+
+    /// The sine and cosine of a rotation of `rotate` degrees, computed as this precision's
+    /// reader computes them (MAP-4.3).
+    fn rotation(rotate: Self) -> (Self, Self);
+}
+
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for f32 {}
+    impl Sealed for f64 {}
+}
+
+impl MapFloat for f32 {
+    fn to_f64(self) -> f64 {
+        f64::from(self)
+    }
+
+    /// qbsp: `ang = rotate / 180 * Q_PI` is a float divided, then multiplied by a double, and
+    /// stored in a float, whose sine and cosine are taken in double and stored in floats.
+    fn rotation(rotate: Self) -> (Self, Self) {
+        let (sinv, cosv) = sin_cos(f64::from(rotate), || {
+            f64::from(to_f32(f64::from(rotate / 180.0) * PI))
+        });
+        (to_f32(sinv), to_f32(cosv))
+    }
+}
+
+impl MapFloat for f64 {
+    fn to_f64(self) -> f64 {
+        self
+    }
+
+    fn rotation(rotate: Self) -> (Self, Self) {
+        sin_cos(rotate, || rotate / 180.0 * PI)
+    }
+}
+
+/// `dot(a, b)`, in the order qbsp's `DotProduct` adds.
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "MapFloat is sealed to f32 and f64, whose arithmetic never overflows or panics"
+)]
+fn dot<T: MapFloat>(a: [T; 3], b: [T; 3]) -> T {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
 
 /// How far a point may lie from a plane and still be on it, qbsp's `ON_EPSILON` (MAP-3.5).
 pub const MAP_ON_EPSILON: f64 = 0.05;
@@ -76,9 +137,10 @@ fn best_row<T: Copy + PartialOrd + From<i8>>(dots: impl Iterator<Item = T>) -> u
 /// A `float` holding a `double`, as C converts on assignment.
 #[expect(
     clippy::cast_possible_truncation,
-    reason = "spec MAP-3.4: qbsp stores double results in float, rounding to nearest"
+    reason = "spec MAP-2.7, MAP-3.4, MAP-4.1: qbsp stores atof, sscanf and double results in \
+              floats, rounding to nearest"
 )]
-const fn to_f32(value: f64) -> f32 {
+pub(crate) const fn to_f32(value: f64) -> f32 {
     value as f32
 }
 
@@ -107,7 +169,7 @@ pub fn qbsp_plane(points: [[f32; 3]; 3]) -> Option<Plane<f32>> {
     }
     let length = length.sqrt();
     let normal = cross.map(|value| to_f32(f64::from(value) / length));
-    let dist = p1[0] * normal[0] + p1[1] * normal[1] + p1[2] * normal[2];
+    let dist = dot(p1, normal);
     Some(Plane { normal, dist })
 }
 
@@ -123,35 +185,26 @@ pub fn plane(points: [[f64; 3]; 3]) -> Option<Plane<f64>> {
         t1[2] * t2[0] - t1[0] * t2[2],
         t1[0] * t2[1] - t1[1] * t2[0],
     ];
-    let length = (cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2]).sqrt();
+    let length = dot(cross, cross).sqrt();
     if !length.is_normal() {
         return None;
     }
     let normal = cross.map(|value| value / length);
-    let dist = p1[0] * normal[0] + p1[1] * normal[1] + p1[2] * normal[2];
+    let dist = dot(p1, normal);
     Some(Plane { normal, dist })
 }
 
-/// Whether every point lies within [`MAP_ON_EPSILON`] of `plane`, on either side (MAP-3.5).
+/// Whether every point lies within [`MAP_ON_EPSILON`] of `plane`, on either side, the
+/// distance compared as a `double`, as qbsp compares its `float` one (MAP-3.5).
 #[must_use]
-pub fn on_plane(points: &[[f64; 3]; 3], plane: &Plane<f64>) -> bool {
-    points.iter().all(|point| {
-        let d =
-            point[0] * plane.normal[0] + point[1] * plane.normal[1] + point[2] * plane.normal[2]
-                - plane.dist;
-        (-MAP_ON_EPSILON..=MAP_ON_EPSILON).contains(&d)
-    })
-}
-
-/// [`on_plane`] as qbsp computes it: `float` points and distance, compared with the
-/// `double` epsilon (MAP-3.5).
-#[must_use]
-pub fn qbsp_on_plane(points: &[[f32; 3]; 3], plane: &Plane<f32>) -> bool {
-    points.iter().all(|point| {
-        let d =
-            point[0] * plane.normal[0] + point[1] * plane.normal[1] + point[2] * plane.normal[2]
-                - plane.dist;
-        (-MAP_ON_EPSILON..=MAP_ON_EPSILON).contains(&f64::from(d))
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "MapFloat is sealed to f32 and f64, whose arithmetic never overflows or panics"
+)]
+pub fn on_plane<T: MapFloat>(points: &[[T; 3]; 3], plane: &Plane<T>) -> bool {
+    points.iter().all(|&point| {
+        let d = dot(point, plane.normal) - plane.dist;
+        (-MAP_ON_EPSILON..=MAP_ON_EPSILON).contains(&d.to_f64())
     })
 }
 
@@ -175,33 +228,24 @@ fn sin_cos(rotate: f64, angle: impl FnOnce() -> f64) -> (f64, f64) {
     }
 }
 
-/// The texture axes of a standard face as qbsp computes them, in single precision
-/// (MAP-4.2 to MAP-4.4).
+/// The texture axes of a standard face (MAP-4.2 to MAP-4.4), in the precision of `T`.
 #[must_use]
-pub fn qbsp_texvecs(
-    normal: [f32; 3],
-    shift: [f32; 2],
-    rotate: f32,
-    scale: [f32; 2],
-) -> TexVecs<f32> {
-    let row = best_row((0..6).map(|row| {
-        let axis: [f32; 3] = base_axis(row, 0);
-        normal[0] * axis[0] + normal[1] * axis[1] + normal[2] * axis[2]
-    }));
-    let mut vecs: [[f32; 3]; 2] = [base_axis(row, 1), base_axis(row, 2)];
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "MapFloat is sealed to f32 and f64, whose arithmetic never overflows or panics"
+)]
+pub fn texvecs<T: MapFloat>(normal: [T; 3], shift: [T; 2], rotate: T, scale: [T; 2]) -> TexVecs<T> {
+    let row = best_row((0..6).map(|row| dot(normal, base_axis(row, 0))));
+    let mut vecs: [[T; 3]; 2] = [base_axis(row, 1), base_axis(row, 2)];
     let axes = MAP_BASE_AXES.get(row).copied().unwrap_or_default();
     let sv = first_nonzero(axes[1]);
     let tv = first_nonzero(axes[2]);
-    // qbsp: `ang = rotate / 180 * Q_PI` is a float divided, then multiplied by a double, and
-    // stored in a float, whose sine and cosine are taken in double and stored in floats.
-    let (sinv, cosv) = sin_cos(f64::from(rotate), || {
-        f64::from(to_f32(f64::from(rotate / 180.0) * PI))
-    });
-    let (sinv, cosv) = (to_f32(sinv), to_f32(cosv));
+    let (sinv, cosv) = T::rotation(rotate);
+    let zero = T::from(0);
     for axis in &mut vecs {
         let (s, t) = (
-            axis.get(sv).copied().unwrap_or_default(),
-            axis.get(tv).copied().unwrap_or_default(),
+            axis.get(sv).copied().unwrap_or(zero),
+            axis.get(tv).copied().unwrap_or(zero),
         );
         if let Some(value) = axis.get_mut(sv) {
             *value = cosv * s - sinv * t;
@@ -210,46 +254,9 @@ pub fn qbsp_texvecs(
             *value = sinv * s + cosv * t;
         }
     }
-    let scale = scale.map(|value| if value == 0.0 { 1.0 } else { value });
-    let mut out = [[0.0; 4]; 2];
-    for ((row, axis), (scale, shift)) in out.iter_mut().zip(vecs).zip(scale.into_iter().zip(shift))
-    {
-        *row = [axis[0] / scale, axis[1] / scale, axis[2] / scale, shift];
-    }
-    out
-}
-
-/// The texture axes of a standard face in double precision (MAP-4.2 to MAP-4.4).
-#[must_use]
-pub fn standard_texvecs(
-    normal: [f64; 3],
-    shift: [f64; 2],
-    rotate: f64,
-    scale: [f64; 2],
-) -> TexVecs<f64> {
-    let row = best_row((0..6).map(|row| {
-        let axis: [f64; 3] = base_axis(row, 0);
-        normal[0] * axis[0] + normal[1] * axis[1] + normal[2] * axis[2]
-    }));
-    let mut vecs: [[f64; 3]; 2] = [base_axis(row, 1), base_axis(row, 2)];
-    let axes = MAP_BASE_AXES.get(row).copied().unwrap_or_default();
-    let sv = first_nonzero(axes[1]);
-    let tv = first_nonzero(axes[2]);
-    let (sinv, cosv) = sin_cos(rotate, || rotate / 180.0 * PI);
-    for axis in &mut vecs {
-        let (s, t) = (
-            axis.get(sv).copied().unwrap_or_default(),
-            axis.get(tv).copied().unwrap_or_default(),
-        );
-        if let Some(value) = axis.get_mut(sv) {
-            *value = cosv * s - sinv * t;
-        }
-        if let Some(value) = axis.get_mut(tv) {
-            *value = sinv * s + cosv * t;
-        }
-    }
-    let scale = scale.map(|value| if value == 0.0 { 1.0 } else { value });
-    let mut out = [[0.0; 4]; 2];
+    // A scale of exactly 0 is 1.
+    let scale = scale.map(|value| if value == zero { T::from(1) } else { value });
+    let mut out = [[zero; 4]; 2];
     for ((row, axis), (scale, shift)) in out.iter_mut().zip(vecs).zip(scale.into_iter().zip(shift))
     {
         *row = [axis[0] / scale, axis[1] / scale, axis[2] / scale, shift];
