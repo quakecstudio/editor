@@ -486,6 +486,13 @@ impl<'a> Compiler<'a> {
             let place = self.declare(&name)?;
             match declarator.initializer() {
                 None => {}
+                // Under FTEQCC a local's initialiser is its first store, made each time the
+                // function runs (FTEF-32.4); `qcc` initialises the global once (QC-11.10).
+                Some(ast::Initializer::Value(expr)) if self.dialect.has_fteqcc_extensions() => {
+                    let to = self.def_value(place, span)?;
+                    let value = self.expr(&expr)?;
+                    self.store_to(&to, &value, expr.syntax().span())?;
+                }
                 Some(ast::Initializer::Value(expr)) => {
                     let literal = literal_of(&expr, self.dialect).at(expr.syntax().span())?;
                     self.program.initialise(place, &literal).at(span)?;
@@ -586,17 +593,33 @@ impl<'a> Compiler<'a> {
             ast::BinaryOp::Gt => Operator::Gt,
             ast::BinaryOp::And => Operator::And,
             ast::BinaryOp::Or => Operator::Or,
-            ast::BinaryOp::Rem
-            | ast::BinaryOp::BitXor
-            | ast::BinaryOp::Shl
-            | ast::BinaryOp::Shr
-            | ast::BinaryOp::AddAssign
+            ast::BinaryOp::AddAssign
             | ast::BinaryOp::SubAssign
             | ast::BinaryOp::MulAssign
             | ast::BinaryOp::DivAssign
             | ast::BinaryOp::BitAndAssign
-            | ast::BinaryOp::BitOrAssign
-            | ast::BinaryOp::BitClearAssign
+            | ast::BinaryOp::BitOrAssign => {
+                let operator = match binary.op().at(span)? {
+                    ast::BinaryOp::AddAssign => Operator::Add,
+                    ast::BinaryOp::SubAssign => Operator::Sub,
+                    ast::BinaryOp::MulAssign => Operator::Mul,
+                    ast::BinaryOp::DivAssign => Operator::Div,
+                    ast::BinaryOp::BitAndAssign => Operator::BitAnd,
+                    _ => Operator::BitOr,
+                };
+                let lhs = binary.lhs().at(span)?;
+                let rhs = binary.rhs().at(span)?;
+                return self.compound(operator, (&lhs, &rhs), (op_span, span));
+            }
+            ast::BinaryOp::BitClearAssign => {
+                let lhs = binary.lhs().at(span)?;
+                let rhs = binary.rhs().at(span)?;
+                return self.clear_bits((&lhs, &rhs), (op_span, span));
+            }
+            ast::BinaryOp::Rem
+            | ast::BinaryOp::BitXor
+            | ast::BinaryOp::Shl
+            | ast::BinaryOp::Shr
             | ast::BinaryOp::BitXorAssign
             | ast::BinaryOp::ShlAssign
             | ast::BinaryOp::ShrAssign
@@ -609,15 +632,27 @@ impl<'a> Compiler<'a> {
         };
         let left = self.expr(&binary.lhs().at(span)?)?;
         let right = self.expr(&binary.rhs().at(span)?)?;
+        self.operate(operator, &left, &right, (op_span, span))
+    }
+
+    /// The row of `operator` for the two operands' types, folded under `--opt fold`, else
+    /// emitted into a temporary (QC-16.1).
+    fn operate(
+        &mut self,
+        operator: Operator,
+        left: &Value,
+        right: &Value,
+        (op_span, span): (Span, Span),
+    ) -> Lowered<Value> {
         // The types are read after both operands, as `PR_Expression` reads them: a call in the
         // right operand retypes the return value the left one may be (QC-18.6).
-        let a = self.type_of(&left).etype();
-        let b = self.type_of(&right).etype();
+        let a = self.type_of(left).etype();
+        let b = self.type_of(right).etype();
         let Some(row) = ops::select(operator, a, b, None) else {
             return Self::mismatch(operator, op_span);
         };
         if self.fold
-            && let Some(value) = self.folded(row.opcode, &left, &right).at(span)?
+            && let Some(value) = self.folded(row.opcode, left, right).at(span)?
         {
             return Ok(value);
         }
@@ -745,6 +780,46 @@ impl<'a> Compiler<'a> {
     /// QC-27.11), then the value, then `STORE_*` or `STOREP_*` by the two basic types. The
     /// value of the assignment is the value stored (QC-17.6, QC-17.7).
     fn assign(&mut self, lhs: &ast::Expr, rhs: &ast::Expr, op_span: Span) -> Lowered<Value> {
+        self.store(lhs, op_span, |compiler| compiler.expr(rhs))
+    }
+
+    /// FTEQCC's `x OP= e` (FTE-8.1): `x = x OP e`, the operator's row chosen as for `x OP e`;
+    /// `&~=` clears bits, `x - (x & e)` on the vanilla opcodes.
+    fn compound(
+        &mut self,
+        operator: Operator,
+        (lhs, rhs): (&ast::Expr, &ast::Expr),
+        (op_span, span): (Span, Span),
+    ) -> Lowered<Value> {
+        self.store(lhs, op_span, |compiler| {
+            let left = compiler.expr(lhs)?;
+            let right = compiler.expr(rhs)?;
+            compiler.operate(operator, &left, &right, (op_span, span))
+        })
+    }
+
+    /// `x &~= e`: `x - (x & e)`.
+    fn clear_bits(
+        &mut self,
+        (lhs, rhs): (&ast::Expr, &ast::Expr),
+        (op_span, span): (Span, Span),
+    ) -> Lowered<Value> {
+        self.store(lhs, op_span, |compiler| {
+            let left = compiler.expr(lhs)?;
+            let right = compiler.expr(rhs)?;
+            let masked = compiler.operate(Operator::BitAnd, &left, &right, (op_span, span))?;
+            compiler.operate(Operator::Sub, &left, &masked, (op_span, span))
+        })
+    }
+
+    /// Stores the value `value` computes in `lhs` (QC-17): the target read first, then the
+    /// value, then the store of the row the two types select.
+    fn store(
+        &mut self,
+        lhs: &ast::Expr,
+        op_span: Span,
+        value: impl FnOnce(&mut Self) -> Lowered<Value>,
+    ) -> Lowered<Value> {
         let span = lhs.syntax().span();
         let target = match unparenthesized(lhs) {
             Some(ast::Expr::Field(field)) => {
@@ -761,7 +836,7 @@ impl<'a> Compiler<'a> {
             }
             _ => Target::Value(self.expr(lhs)?),
         };
-        let value = self.expr(rhs)?;
+        let value = value(self)?;
         let b = self.type_of(&value).etype();
         let (a, to, inner) = match &target {
             Target::Value(v) => (self.type_of(v).etype(), v.ofs, None),
@@ -779,6 +854,21 @@ impl<'a> Compiler<'a> {
             operand(to).at(op_span)?,
         );
         Ok(value)
+    }
+
+    /// Stores `value` in the definition or temporary `to` by the `STORE_*` row of their types.
+    fn store_to(&mut self, to: &Value, value: &Value, span: Span) -> Lowered<()> {
+        let a = self.type_of(to).etype();
+        let b = self.type_of(value).etype();
+        let Some(row) = ops::select(Operator::Assign, a, b, None) else {
+            return Self::mismatch(Operator::Assign, span);
+        };
+        self.program.emit(
+            row.opcode,
+            operand(value.ofs).at(span)?,
+            operand(to.ofs).at(span)?,
+        );
+        Ok(())
     }
 
     /// `PR_ParseFunctionCall` (QC-18): each argument evaluated and copied with `STORE_V` to
