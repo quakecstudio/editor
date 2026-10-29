@@ -733,10 +733,13 @@ fn an_undo_that_cannot_write_its_file_stays_in_line() {
         json!({"key": "log.filter", "value": "warn", "scope": "project"}),
     )
     .unwrap();
-    // Replace the project's settings directory with a file, so the file cannot be written.
-    let settings_dir = project.parent().unwrap().to_path_buf();
-    fs::remove_dir_all(&settings_dir).unwrap();
-    fs::write(&settings_dir, "").unwrap();
+    // Make the file read-only, so it can be read but not written, on every platform.
+    let read_only = |yes: bool| {
+        let mut permissions = fs::metadata(&project).unwrap().permissions();
+        permissions.set_readonly(yes);
+        fs::set_permissions(&project, permissions).unwrap();
+    };
+    read_only(true);
     let error = s.undo().unwrap_err();
     assert!(
         matches!(error, CommandError::UndoFailed { .. }),
@@ -744,14 +747,19 @@ fn an_undo_that_cannot_write_its_file_stays_in_line() {
     );
     assert_eq!(s.undo_depth(), 1);
     assert_eq!(s.context().0.log_filter(), "warn");
-    fs::remove_file(&settings_dir).unwrap();
+    assert!(fs::read_to_string(&project).unwrap().contains("warn"));
+    read_only(false);
     s.undo().unwrap();
     assert_eq!(
         s.context().0.value(Setting::LogFilter),
         (json!("info"), Source::Default)
     );
-    // The file went with its directory, so it already sets nothing and is not written.
-    assert!(!project.exists());
+    assert_eq!(
+        SettingsFile::load(&project)
+            .unwrap()
+            .get(Setting::LogFilter),
+        None
+    );
 }
 
 // QA-10: a log filter is written and read back exactly, whatever characters it holds.
