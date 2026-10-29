@@ -129,6 +129,7 @@ Each section holds, in this order:
 | `PROGS` | [`progs.md`](progs.md) | progs.dat version 6 and FTE version 7, and the QC type layout | [#25](https://github.com/quakecstudio/editor/issues/25) |
 | `QC` | [`language.md`](language.md) | Vanilla QuakeC as id's `qcc` compiles it: lexing, `$frame`, the preprocessor, declarations, statements, expressions, types, `progs.src` and the progs each construct emits | [#30](https://github.com/quakecstudio/editor/issues/30) |
 | `QCD` | [`language-diagnostics.md`](language-diagnostics.md) | The error and warning catalogue with codes | [#30](https://github.com/quakecstudio/editor/issues/30) |
+| `REND` | [`render.md`](render.md) | How the world's surfaces are drawn: polygons, texture and lightmap coordinates, lightmap texels, the palette | [#146](https://github.com/quakecstudio/editor/issues/146) |
 | `SPR` | [`spr.md`](spr.md) | SPR sprites: header, frames and frame groups | [#235](https://github.com/quakecstudio/editor/issues/235) |
 | `TRACE` | [`trace.md`](trace.md) | The shared VM trace format: per-statement records, binary and JSON forms, reading engine-specific values | [#36](https://github.com/quakecstudio/editor/issues/36) |
 | `VM` | [`vm.md`](vm.md) | QC virtual machine execution: opcodes, calls, the local stack, errors | [#26](https://github.com/quakecstudio/editor/issues/26) |
