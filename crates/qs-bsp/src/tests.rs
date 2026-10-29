@@ -86,8 +86,33 @@ fn factory_builds_the_base_vector() {
         LumpId::ALL.map(LumpId::index),
         [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     );
-    assert_eq!(LumpId::Models.name(), "models");
-    assert_eq!(LumpId::Entities.name(), "entities");
+    assert_eq!(
+        LumpId::ALL.map(LumpId::name),
+        [
+            "entities",
+            "planes",
+            "textures",
+            "vertexes",
+            "visibility",
+            "nodes",
+            "texinfo",
+            "faces",
+            "lighting",
+            "clipnodes",
+            "leafs",
+            "marksurfaces",
+            "edges",
+            "surfedges",
+            "models"
+        ]
+    );
+    assert_eq!(
+        BspError::LumpOutOfBounds {
+            lump: LumpId::Lighting
+        }
+        .message("maps/e1m1.bsp"),
+        "maps/e1m1.bsp: the lighting lump runs past the file"
+    );
 }
 
 // spec BSP-2.1, BSP-3.1, BSP-4.3, BSP-5.1, BSP-7.1, BSP-7.2, BSP-8.1, BSP-9.1, BSP-9.2, BSP-9.10:

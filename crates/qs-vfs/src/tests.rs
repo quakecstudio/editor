@@ -649,6 +649,8 @@ fn files_lists_every_element() {
         vfs.read(file).unwrap();
     }
     assert_eq!(vfs.read(&files[1]).unwrap(), b"mod-loose");
+    assert!(matches!(files[1].location(), Location::Loose(_)));
+    assert!(matches!(files[7].location(), Location::Entry(_)));
     assert_eq!(vfs.read(&files[7]).unwrap(), b"pak0-f");
 }
 

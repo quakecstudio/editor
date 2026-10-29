@@ -1090,3 +1090,46 @@ fn a_non_not_found_error_at_the_link_is_an_io_error() {
         "{error:?}"
     );
 }
+
+// The public entry point finds whatever this machine has, each install a folder that exists.
+#[test]
+fn find_installs_reads_this_machine() {
+    for install in crate::find_installs() {
+        assert!(install.root.is_dir(), "{}", install.root.display());
+    }
+}
+
+// A child of a kind that is neither a file nor a directory is never found by opening it.
+#[test]
+fn a_child_of_another_kind_is_not_found() {
+    let fs = MemFs::default().dir("/q/thing");
+    let registry = MemRegistry::default();
+    let finder = Finder::new(&fs, &registry, Platform::Linux, env(Platform::Linux));
+    assert_eq!(
+        finder.child(Path::new("/q"), "thing", qs_vfs::EntryKind::Other),
+        None
+    );
+    assert_eq!(
+        finder.child(Path::new("/q"), "thing", qs_vfs::EntryKind::Dir),
+        Some(PathBuf::from("/q/thing"))
+    );
+}
+
+// A game directory whose name is not UTF-8 is passed over, and the install is still found.
+// Linux only: macOS's file systems refuse such a name.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_game_dir_whose_name_is_not_utf8_is_skipped() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt as _;
+
+    let dir = std::env::temp_dir().join(format!("qs-install-utf8-{}", std::process::id()));
+    let _ignored = fs::remove_dir_all(&dir);
+    fs::create_dir_all(dir.join("id1")).unwrap();
+    fs::write(dir.join("id1/pak0.pak"), pak("pak0.pak")).unwrap();
+    fs::create_dir_all(dir.join(OsStr::from_bytes(b"mod\xff"))).unwrap();
+    let install = examine_folder(&dir);
+    let _ignored = fs::remove_dir_all(&dir);
+    let base = install.unwrap().original.unwrap();
+    assert!(base.game_dirs.is_empty(), "{:?}", base.game_dirs);
+}
