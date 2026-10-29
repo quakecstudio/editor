@@ -4956,21 +4956,9 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
 - **FTEF-32.1** The callee is read (FTEF-31.1); a value of a type that is no function or
   `variant` is the fatal error `E0256` "not a function" (FTEF-19.40), whatever names it. A
   `variant` takes any arguments.
-- **FTEF-32.2** A call of a function with no parameters, not variadic and not a method, is an
-  intrinsic when its name is one, and a name no definition has is called as one (FTEQCC declares
-  them on demand): `_` takes only a string immediate, else the fatal error `E0340` "_() intrinsic
-  accepts only a string immediate"; `random` makes its arguments floats (`QCC_SupplyConversion`,
-  the fatal error `E0227` "Implicit type mismatch. Needed float, got TYPE." for a type with no
-  conversion); `randomv` takes vectors as they are, any other type the fatal error `E0340` "type
-  mismatch on parm N"; `alloca` makes its size an integer, rounds it up to words (`OP_ADD_I` of 3,
-  `OP_DIV_I` by 4) and pushes them by `OP_PUSH`, a plain statement, which only FTE's highest
-  revision has ("Opcode \"<PUSH>|PUSH\" not valid for target. Consider the use of: #pragma
-  target fte_6614"); `alloca`, `used_sound` and `used_model` read their first argument whatever
-  follows the `(` (`QCC_PR_Expression`), so with none they are the fatal error `E0201` "\")\" -
-  not a name"; `entnum(e)` is `(e / 1i) /
-  (nextent(world) / 1i)` by `OP_DIV_I`, and with no `nextent` the fatal error `E0347` "the nextent
-  builtin is not defined"; `used_sound` and `used_model` take a string immediate, else the error
-  `E0340` "Argument to used_sound intrinsic was not a string immediate.".
+- **FTEF-32.2** **Withdrawn** (#84): it said a variadic function is no intrinsic and did not say
+  which calls are a method's; FTEQCC's test, `!newself.cast && !t->num_parms`, counts no `...`,
+  and FTEF-32.10 replaces it.
 - **FTEF-32.3** Each argument is read and, when `typecmp` tells its type from its parameter's,
   cast to it as an assignment's value is (FTEF-29.2), its conversion emitted: `f1(i)` of an
   integer is "itof emulation". An argument past the last parameter of a function that is not
@@ -5021,6 +5009,41 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   argument is a missing expression. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseFunctionCall`, `QCC_FreeTemp`, `QCC_VarAtOffset`.
+- **FTEF-32.10** A call of a function with no named parameters, `...` or not
+  (`!t->num_parms`), that is no method's is an intrinsic when its name is one, and a name no definition has is called as one (FTEQCC declares
+  them on demand): `_` takes only a string immediate, else the fatal error `E0340` "_() intrinsic
+  accepts only a string immediate"; `random` makes its arguments floats (`QCC_SupplyConversion`,
+  the fatal error `E0227` "Implicit type mismatch. Needed float, got TYPE." for a type with no
+  conversion); `randomv` takes vectors as they are, any other type the fatal error `E0340` "type
+  mismatch on parm N"; `alloca` makes its size an integer, rounds it up to words (`OP_ADD_I` of 3,
+  `OP_DIV_I` by 4) and pushes them by `OP_PUSH`, a plain statement, which only FTE's highest
+  revision has ("Opcode \"<PUSH>|PUSH\" not valid for target. Consider the use of: #pragma
+  target fte_6614"); `alloca`, `used_sound` and `used_model` read their first argument whatever
+  follows the `(` (`QCC_PR_Expression`), so with none they are the fatal error `E0201` "\")\" -
+  not a name"; `entnum(e)` is `(e / 1i) /
+  (nextent(world) / 1i)` by `OP_DIV_I`, and with no `nextent` the fatal error `E0347` "the nextent
+  builtin is not defined"; `used_sound` and `used_model` take a string immediate, else the error
+  `E0340` "Argument to used_sound intrinsic was not a string immediate.".
+  A method's call is one made through an object's member, `c.m()`, or of a member function named
+  bare in another, which passes `this` (`newself`). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseFunctionCall`.
+- **FTEF-32.11** A call names its callee as `QCC_GetSRefName` does: a definition by its name, a
+  non-virtual member function's `CLASS::name` however it is reached (`QCC_RefToDef` of the
+  member), and a temporary, a field's read and so a virtual method's, by its type's name, which
+  for a function type FTEQCC parses is `__function`: "too many parameters on call to
+  __function, argument IMMEDIATE will be ignored". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_GetSRefName`, `QCC_PR_ParseFunctionCall`; `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseFunctionType`.
+- **FTEF-32.12** `entnum` and `autocvar` are intrinsics only when an argument follows the `(`:
+  `!QCC_PR_CheckToken(")")` takes the `)` of `entnum()` and `autocvar()`, and the call that
+  follows reads its argument from the token after it, so `entnum();` is the fatal error `E0201`
+  "\";\" - not a name". `autocvar` reads its name, a `,`, its default and at most a description:
+  with no `,` after the name it is the fatal error `E0204` "expected ,, found )", and with a
+  fourth argument "expected ), found ,". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseFunctionCall`.
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,

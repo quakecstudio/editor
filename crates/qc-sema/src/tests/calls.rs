@@ -119,7 +119,7 @@ fn argument_counts() {
     }
 }
 
-// spec FTEF-32.2: the intrinsics a function with no parameters stands for: `_` takes a string
+// spec FTEF-32.10: the intrinsics a function with no parameters stands for: `_` takes a string
 // immediate, `random`'s arguments are made floats
 // spec QCD-4.46: E0340 for an intrinsic's argument refused
 // spec QCD-3.27: E0227 for an argument with no conversion to the intrinsic's type
@@ -288,7 +288,7 @@ fn va_arg_reads_any_type() {
     );
 }
 
-// spec FTEF-32.2: `alloca`, `used_sound` and `used_model` read an argument whatever follows, and
+// spec FTEF-32.10: `alloca`, `used_sound` and `used_model` read an argument whatever follows, and
 // `alloca` pushes its words by `OP_PUSH`
 // spec QCD-4.26: E0320 for the `OP_PUSH` the target refuses
 #[test]
@@ -317,7 +317,7 @@ fn alloca_pushes_and_intrinsics_need_an_argument() {
     }
 }
 
-// spec FTEF-32.2: `randomv` takes vectors as they are; `entnum` needs `nextent`
+// spec FTEF-32.10: `randomv` takes vectors as they are; `entnum` needs `nextent`
 // spec QCD-4.53: E0347 for `entnum` with no `nextent`
 // spec FTEF-24.9: an intrinsic's name or `nil` after `.` is no field
 #[test]
@@ -458,6 +458,8 @@ fn backslashes_in_paths_warn_once_per_list() {
              void(string s) precache_model = #20;\nvoid(entity e, string m) setmodel = #3;\n\
              void(entity e, float c, string s, float v, float a) sound = #8;\n\
              void(entity e, string s) localsound = #9;\n\
+             void(string s) precache_texture = #10;\nvoid(string s) precache_file = #11;\n\
+             void(string s) other = #12;\n\
              string P = \"m\\\\p.mdl\";\nvoid() f = {{ {body} }};\n"
         ))
         .into_iter()
@@ -482,6 +484,18 @@ fn backslashes_in_paths_warn_once_per_list() {
         [warn(r"c\d.wav")]
     );
     assert_eq!(messages(r#"used_model("e\\f.mdl");"#)[0], warn(r"e\f.mdl"));
+    // Each list is its own: a texture, a file, a sound and a model of one path each warn.
+    assert_eq!(
+        messages(
+            r#"precache_texture("g\\h"); precache_model("g\\h"); precache_file("g\\h");
+               precache_sound("g\\h"); precache_texture("g\\h");"#
+        ),
+        [warn(r"g\h"), warn(r"g\h"), warn(r"g\h"), warn(r"g\h")]
+    );
+    // FTEQCC also warns "Model "m\p.mdl" was used but not directly precached" here, from its
+    // output stage, which this profile does not model (FTEF-19.63).
+    assert_eq!(messages("setmodel(world, P);"), [warn(r"m\p.mdl")]);
+    assert!(messages(r#"other("a\\b");"#).is_empty());
     assert!(messages(r#"precache_sound("a/b.wav"); setmodel(world, "");"#).is_empty());
     assert!(
         messages(r#"setmodel("x\\y.mdl", world);"#)
@@ -656,7 +670,7 @@ fn a_format_constant_is_every_literal_it_joins() {
     );
 }
 
-// spec FTEF-32.2: `random`'s arguments are supplied as floats, a type that does not convert
+// spec FTEF-32.10: `random`'s arguments are supplied as floats, a type that does not convert
 // refused
 // spec FTEF-27.7: a conversion the target lacks is emulated with its warning, unless the program
 // defines a helper of the emulation's name
@@ -735,4 +749,155 @@ fn behaviours_real_programs_reach() {
         found("fte", &format!("{vector}void() f = {{ y = farr[cv_z]; }};")),
         [past]
     );
+}
+
+/// The cases of [`calls_as_fteqcc_reads_them`], each with the pinned FTEQCC's messages.
+const CALLS_AS_FTEQCC_READS_THEM_CASES: &[(&str, &[&str])] = &[
+    (
+        "float(...) random = #7;\nvoid() f = { local float x = random(\"x\"); };\n",
+        &["Implicit type mismatch. Needed float, got string."],
+    ),
+    (
+        "float(float a, ...) random = #7;\nvoid() f = { random(1, 2); };\n",
+        &[],
+    ),
+    (
+        "void(...) alloca = #7;\nvoid() f = { local float *p = alloca(4); };\n",
+        &[
+            "Opcode \"<PUSH>|PUSH\" not valid for target. Consider the use of: #pragma target fte_6614",
+        ],
+    ),
+    (
+        "class C : entity { float() random; };\nvoid() f = { local C c; c.random(\"x\"); };\n",
+        &[
+            "C::random was not qualified. Assuming non-virtual.",
+            "too many parameters on call to C::random, argument IMMEDIATE will be ignored",
+            "function C::random has no body",
+        ],
+    ),
+    (
+        "class C : entity { nonvirtual float() random = { return 1; }; };\nvoid() f = { local C c; c.random(\"x\"); };\n",
+        &["too many parameters on call to C::random, argument IMMEDIATE will be ignored"],
+    ),
+    (
+        "class C : entity { virtual float() random = { return 1; }; };\nvoid() f = { local C c; c.random(\"x\"); };\n",
+        &["too many parameters on call to __function, argument IMMEDIATE will be ignored"],
+    ),
+    (
+        ".float() random; entity e;\nvoid() f = { e.random(\"x\"); };\n",
+        &["too many parameters on call to __function, argument IMMEDIATE will be ignored"],
+    ),
+    (
+        "entity self;\nclass C : entity { virtual float() random = { return 1; }; void() g = { random(\"x\"); }; };\n",
+        &[
+            "C::g was not qualified. Assuming non-virtual.",
+            "too many parameters on call to __function, argument IMMEDIATE will be ignored",
+        ],
+    ),
+    (
+        "entity self;\nclass C : entity { nonvirtual float() random = { return 1; }; void() g = { random(\"x\"); }; };\n",
+        &[
+            "C::g was not qualified. Assuming non-virtual.",
+            "too many parameters on call to C::random, argument IMMEDIATE will be ignored",
+        ],
+    ),
+    (
+        "entity self;\nclass C : entity { static float() random = { return 1; }; void() g = { random(\"x\"); }; };\n",
+        &[
+            "C::g was not qualified. Assuming non-virtual.",
+            "too many parameters on call to C::random, argument IMMEDIATE will be ignored",
+        ],
+    ),
+    (
+        "entity self;\nclass C : entity { static float() random = { return 1; }; };\nvoid() g = { C::random(\"x\"); };\n",
+        &["too many parameters on call to C::random, argument IMMEDIATE will be ignored"],
+    ),
+    (
+        "entity self;\nclass C : entity { virtual float() h; nonvirtual void() g; };\nfloat() C::h = { return 1; };\nvoid() C::g = { h(1); };\n",
+        &["too many parameters on call to __function, argument IMMEDIATE will be ignored"],
+    ),
+    ("void() f = { autocvar(); };\n", &["\";\" - not a name"]),
+    (
+        "float() entnum = #7;\nvoid() f = { local float x = entnum(); };\n",
+        &["\";\" - not a name"],
+    ),
+    (
+        "void() f = { local float y = autocvar(sv_x, 1, \"d\", 4); };\n",
+        &["expected ), found ,"],
+    ),
+    (
+        "void() f = { local float y = autocvar(sv_x); };\n",
+        &["expected ,, found )"],
+    ),
+    (
+        "void() f = { local float y = autocvar(sv_x, 1, \"d\"); };\n",
+        &[],
+    ),
+    (
+        "void(string s) precache_model = #2; void(string s) precache_sound = #3;\nvoid() f = { used_sound(\"a\\\\b\"); precache_model(\"a\\\\b\"); precache_sound(\"a\\\\b\"); };\n",
+        &[
+            "backslashes in path names are non-portable - a\\b",
+            "backslashes in path names are non-portable - a\\b",
+        ],
+    ),
+    (
+        "void(string s) precache_model = #2;\nvoid() f = { used_model(\"a\\\\b\"); precache_model(\"a\\\\b\"); };\n",
+        &["backslashes in path names are non-portable - a\\b"],
+    ),
+    (
+        "entity() spawn = #14; struct S { float a; };\nvoid() f = { spawn(S); };\n",
+        &["\")\" - not a name"],
+    ),
+    (
+        "entity() spawn = #14; struct S { float a; };\nvoid() f = { spawn(S, 1); };\n",
+        &["\",\" - not a name"],
+    ),
+    (
+        "entity() spawn = #14; struct S { float a; };\nvoid() f = { spawn(S, a: 1); };\n",
+        &["\",\" - not a name"],
+    ),
+    (
+        "entity() spawn = #14; struct S { float a; }; entity e;\nvoid() f = { spawn(e, S); };\n",
+        &["\")\" - not a name"],
+    ),
+    (
+        "float(entity e) entnum = #7; entity world;\nvoid() f = { entnum(world); };\n",
+        &[],
+    ),
+    ("void() f = { local float y = autocvar(sv_x, 1); };\n", &[]),
+    (
+        "#pragma target fte_6614\nfloat(__int64 a, __int64 b, __int64 c) g = #1; __int64 d; float y = g(d, d, d);\n",
+        &[
+            "Unable to generate statements at global scope (STORE_I64).",
+            "Unable to generate statements at global scope (CALL3H).",
+            "initializer for 'y' is not constant",
+        ],
+    ),
+    (
+        "float(__int64 a) g = #1; __int64 d; float y = g(d);\n",
+        &[
+            "Unable to generate statements at global scope (STORE_V).",
+            "Unable to generate statements at global scope (CALL1).",
+            "initializer for 'y' is not constant",
+        ],
+    ),
+];
+
+// spec FTEF-32.10: a function with no named parameters, `...` or not, is an intrinsic unless the
+// call is a method's, through a member or a member function named bare
+// spec FTEF-32.11: a call names a non-virtual member function `CLASS::name` and a field's read
+// `__function`
+// spec FTEF-32.12: `entnum()` and `autocvar()` read their argument after the `)`; `autocvar` takes
+// two or three arguments
+// spec FTEF-17.20: a type that is no entity's ends `spawn` at the token after it
+// spec FTEF-34.9: a call at global scope generates its argument stores, a two-word one
+// `STORE_I64` where the target has it
+// spec FTEF-17.19: `used_sound` and `used_model` add to the sounds' and the models' lists
+#[test]
+fn calls_as_fteqcc_reads_them() {
+    let cases = CALLS_AS_FTEQCC_READS_THEM_CASES;
+    for (source, expected) in cases {
+        let found: Vec<String> = diags(source).into_iter().map(|(_, m)| m).collect();
+        assert_eq!(found, *expected, "{source}");
+    }
 }

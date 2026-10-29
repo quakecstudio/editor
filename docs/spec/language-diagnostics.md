@@ -339,7 +339,7 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (FTEF-32.6); not a fatal error.
 - **QCD-4.46** `E0340` "_() intrinsic accepts only a string immediate", "type mismatch on parm N"
   and "Argument to used_sound intrinsic was not a string immediate.": an intrinsic's argument
-  refused (FTEF-32.2); fatal but for the last.
+  refused (FTEF-32.10); fatal but for the last.
 - **QCD-4.47** `E0342` "Case statements may not use formulas": a `case` value that generates
   code (FTEF-34.5); a fatal error.
 - **QCD-4.48** `E0343` "Bad switch type": a `switch` of a type no comparison takes, without
@@ -354,7 +354,7 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-4.52** `E0346` "va_arg() intrinsic only works inside varadic functions" (FTEF-32.7); a
   fatal error.
 - **QCD-4.53** `E0347` "the nextent builtin is not defined": `entnum` with no `nextent`
-  (FTEF-32.2); a fatal error.
+  (FTEF-32.10); a fatal error.
 - **QCD-4.54** `E0348` "Accessor NAME has no get function" (FTEF-10.7); a fatal error.
 - **QCD-4.55** `E0349` "Accessor has no set function" (FTEF-10.7); a fatal error.
 - **QCD-4.56** `E0352` "Duplicated default case": a `switch` with a second `default`

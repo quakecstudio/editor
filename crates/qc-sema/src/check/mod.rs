@@ -381,6 +381,8 @@ impl Value {
         match (self.sym, self.name.as_deref()) {
             (Sym::Immediate(_), _) => "IMMEDIATE".to_owned(),
             (_, Some(name)) => name.to_owned(),
+            // `cast->name`: a function type parsed is named `__function` (FTEF-32.11).
+            (_, None) if self.ty.is_function() => "__function".to_owned(),
             (_, None) => self.ty.fteqcc_name(),
         }
     }
