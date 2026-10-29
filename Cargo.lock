@@ -365,6 +365,7 @@ dependencies = [
  "proptest",
  "qc-diag",
  "qc-lexer",
+ "qc-lno",
  "qc-progs",
  "qc-sema",
  "qc-syntax",

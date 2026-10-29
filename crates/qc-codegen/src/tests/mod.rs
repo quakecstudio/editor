@@ -26,7 +26,7 @@ use qc_progs::opcode::Opcode;
 use qc_progs::{ProgsFile, Statement};
 use qc_sema::{Db, FileId, ModuleInput};
 
-use crate::{CompileError, Compiled, compile_module};
+use crate::{CompileError, Compiled, Options, compile_module};
 
 /// A program of one file, `t.qc`, compiled as `progs.src` lists it.
 pub(crate) fn compile_source(source: &str) -> Result<Compiled, CompileError> {
@@ -35,6 +35,14 @@ pub(crate) fn compile_source(source: &str) -> Result<Compiled, CompileError> {
 
 /// A program of the files `files`, compiled in that order.
 pub(crate) fn compile_files(files: &[(&str, &str)]) -> Result<Compiled, CompileError> {
+    compile_with(files, Options::default())
+}
+
+/// [`compile_files`] with `options`.
+pub(crate) fn compile_with(
+    files: &[(&str, &str)],
+    options: Options,
+) -> Result<Compiled, CompileError> {
     let mut db = Db::new();
     let mut input = ModuleInput::default();
     for (i, (name, text)) in files.iter().enumerate() {
@@ -42,7 +50,7 @@ pub(crate) fn compile_files(files: &[(&str, &str)]) -> Result<Compiled, CompileE
         input.compiled.push(FileId(i));
     }
     let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
-    compile_module(&mut db, &input, |id| names[id.0].clone())
+    compile_module(&mut db, &input, |id| names[id.0].clone(), options)
 }
 
 /// The progs of a program that must compile.

@@ -19,9 +19,9 @@ have exactly its parameters' types (QC-18.8). Their errors have `qcc`'s texts (Q
 QCD-4.7). The precache lists `qcc -copy` reads are kept beside the progs (QC-26).
 
 - **Layer:** L4 bridges. It depends on `qc-sema` (L3), `qc-syntax` and `qc-lexer` (L2), and
-  `qc-progs`, `qc-types` and `qc-diag` (L0).
+  `qc-progs`, `qc-lno`, `qc-types` and `qc-diag` (L0).
 - **Spec sections:** QC-13 to QC-22, QC-25, QC-26 and the code-generation divergences of QC-27
-  (QC-27.11 to QC-27.13, QC-27.17, QC-27.18) of
+  (QC-27.11 to QC-27.13, QC-27.17 to QC-27.20) of
   [`language.md`](../../docs/spec/language.md); QCD-4.2 to QCD-4.7 of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md).
 - **Ported from:** id-Software/Quake-Tools@`c0d1b91c74eb654365ac7755bc837e497caaca73`,
@@ -35,14 +35,18 @@ QCD-4.7). The precache lists `qcc -copy` reads are kept beside the progs (QC-26)
 
 ## Public shape
 
-- `compile_module(db, input, name_of)`: compiles a module of a `qc_sema::Db` under the vanilla
+- `compile_module(db, input, name_of, options)`: compiles a module of a `qc_sema::Db` under the vanilla
   profile, each file named in the progs as `name_of` says (the name `progs.src` lists it by,
   QC-27.17); a preprocessor, parser, semantic or compiler error stops it, with every
   diagnostic at a span of its source file.
-- `compile(units)`: the same for files already preprocessed, each a `Unit` of a name and a
-  parse.
-- `Compiled`: the `qc_progs::ProgsFile`, the text of `progdefs.h`, its CRC, the precache lists
-  and the warnings. `qc_progs::write` writes the progs.
+- `compile(units, options)`: the same for files already preprocessed, each a `Unit` of a name
+  and a parse.
+- `Options`: the optimisations (COMP-5), each off by default, where the output is `qcc`'s:
+  `fold`, `--opt fold`, makes an arithmetic operator of two literals the literal of its value
+  (QC-27.20).
+- `Compiled`: the `qc_progs::ProgsFile`, the text of `progdefs.h`, its CRC, the precache lists,
+  the `.lno` line map (`qc_lno::LnoFile`, QC-27.19) and the warnings. `qc_progs::write` writes
+  the progs and `LnoFile::write` the line map.
 - `CompileError`: the diagnostics, an FTEQCC dialect (the FTEQCC subset is P2-07's), or an
   `Internal` construct the semantic model should have refused.
 

@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use qc_progs::opcode::Opcode;
 use qc_progs::{Function, Statement};
-use qc_sema::{DefId, FunctionType, ModuleIndex, SimpleType, Type};
+use qc_sema::{DefId, FileId, FunctionType, ModuleIndex, SimpleType, Type};
 use qc_types::Etype;
 
 use crate::Internal;
@@ -153,6 +153,12 @@ pub(crate) struct Program {
     pub(crate) strings: Vec<u8>,
     /// The statements; statement 0 is the placeholder (QC-25.1).
     pub(crate) statements: Vec<Statement>,
+    /// Where in the compiled text each statement was emitted from, for the `.lno`'s lines
+    /// (QC-27.19): the file and the start of the source statement, `None` for the placeholder.
+    pub(crate) origins: Vec<Option<(FileId, usize)>>,
+    /// The place [`Program::emit`] and [`Program::emit_result`] record, which the compiler sets
+    /// as it reads each statement.
+    pub(crate) origin: Option<(FileId, usize)>,
     /// The functions; function 0 is the placeholder (QC-25.1).
     pub(crate) functions: Vec<Function>,
     /// The entity fields allocated so far, `pr.size_fields` (QC-21.3).
@@ -170,6 +176,8 @@ impl Program {
             globals: vec![0; RESERVED_OFS],
             strings: vec![0],
             statements: vec![Statement::default()],
+            origins: vec![None],
+            origin: None,
             functions: vec![Function::default()],
             size_fields: 0,
         }
@@ -367,6 +375,7 @@ impl Program {
     /// `PR_Statement` for an opcode with no result: an assignment, `IF`, `IFNOT`, `GOTO`,
     /// `RETURN`, `STATE`, a call or `DONE` (QC-21.5); returns its index.
     pub(crate) fn emit(&mut self, op: Opcode, a: i32, b: i32) -> usize {
+        self.origins.push(self.origin);
         self.statements.push(Statement {
             op: u32::from(op.number()),
             a,
@@ -387,6 +396,7 @@ impl Program {
     ) -> Result<u32, Internal> {
         let words = if result == Etype::Vector { 3 } else { 1 };
         let c = self.allocate(words)?;
+        self.origins.push(self.origin);
         self.statements.push(Statement {
             op: u32::from(op.number()),
             a: operand(a)?,

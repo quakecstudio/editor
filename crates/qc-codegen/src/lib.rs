@@ -44,6 +44,7 @@ mod write;
 mod tests;
 
 use qc_diag::{Severity, Span};
+use qc_lno::LnoFile;
 use qc_progs::{ProgsFile, WriteError};
 use qc_sema::lower::{FileDecls, lower_file};
 use qc_sema::{Db, FileDiagnostic, FileId, ModuleInput, ResolveOptions, resolve_module};
@@ -64,6 +65,15 @@ pub struct Unit<'a> {
     pub parse: &'a Parse,
 }
 
+/// How a module is compiled: the optimisations turned on (COMP-5), each off by default, where
+/// the output is `qcc`'s.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Options {
+    /// `--opt fold`: an arithmetic operator of two float or vector literals is the literal of
+    /// its value, computed as the VM computes it, rather than a statement.
+    pub fold: bool,
+}
+
 /// A compiled program.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Compiled {
@@ -75,6 +85,9 @@ pub struct Compiled {
     pub crc: u16,
     /// The precache lists (QC-26).
     pub precaches: Precaches,
+    /// The line map written beside the progs (LNO-1): the source line of each statement, with
+    /// the progs' counts it is checked against (LNO-4.1).
+    pub lno: LnoFile,
     /// The warnings of the parser and the semantic model, which never change the progs
     /// (QCD-7).
     pub warnings: Vec<FileDiagnostic>,
@@ -134,16 +147,24 @@ pub enum Internal {
 ///
 /// [`CompileError::Diagnostics`] when the module has errors, [`CompileError::Internal`] when a
 /// construct cannot be lowered.
-pub fn compile(units: &[Unit<'_>]) -> Result<Compiled, CompileError> {
+pub fn compile(units: &[Unit<'_>], options: Options) -> Result<Compiled, CompileError> {
     let decls: Vec<FileDecls> = units
         .iter()
         .map(|u| lower_file(u.parse, Dialect::Vanilla))
         .collect();
-    compile_lowered(units, &decls)
+    let texts: Vec<Vec<u8>> = units.iter().map(|u| u.parse.syntax().text()).collect();
+    compile_lowered(units, &decls, options, |file, at| {
+        texts.get(file.0).map_or(0, |text| line_at(text, at))
+    })
 }
 
 /// [`compile`] of units whose parses are lowered already, `decls[i]` from `units[i]`.
-fn compile_lowered(units: &[Unit<'_>], decls: &[FileDecls]) -> Result<Compiled, CompileError> {
+fn compile_lowered(
+    units: &[Unit<'_>],
+    decls: &[FileDecls],
+    options: Options,
+    line_of: impl Fn(FileId, usize) -> i32,
+) -> Result<Compiled, CompileError> {
     let index = resolve_module(
         decls,
         ResolveOptions {
@@ -167,6 +188,7 @@ fn compile_lowered(units: &[Unit<'_>], decls: &[FileDecls]) -> Result<Compiled, 
     }
     let names = Names::new(&index);
     let mut compiler = Compiler::new(&index, &names);
+    compiler.fold = options.fold;
     for (i, unit) in units.iter().enumerate() {
         compiler
             .compile_file(FileId(i), unit.name, unit.parse)
@@ -181,6 +203,12 @@ fn compile_lowered(units: &[Unit<'_>], decls: &[FileDecls]) -> Result<Compiled, 
     }
     let (progdefs, crc) = write::progdefs(&compiler.program);
     let precaches = compiler.precaches;
+    let lines: Vec<i32> = compiler
+        .program
+        .origins
+        .iter()
+        .map(|origin| origin.map_or(0, |(file, at)| line_of(file, at)))
+        .collect();
     let progs = write::progs(compiler.program, crc).map_err(|internal| CompileError::Internal {
         file: FileId(0),
         span: Span::new(0, 0),
@@ -189,11 +217,21 @@ fn compile_lowered(units: &[Unit<'_>], decls: &[FileDecls]) -> Result<Compiled, 
     // PROGS-22.4: a table or operand past the version 6 format's integers is refused here,
     // not when the caller writes the file.
     qc_progs::write(&progs).map_err(CompileError::Write)?;
+    let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+    let lno = LnoFile {
+        numglobaldefs: count(progs.global_defs.len()),
+        numglobals: count(progs.globals.len()),
+        numfielddefs: count(progs.field_defs.len()),
+        lines,
+        columns: None,
+        trailing: Vec::new(),
+    };
     Ok(Compiled {
         progs,
         progdefs,
         crc,
         precaches,
+        lno,
         warnings,
     })
 }
@@ -213,6 +251,7 @@ pub fn compile_module(
     db: &mut Db,
     input: &ModuleInput,
     name_of: impl Fn(FileId) -> String,
+    options: Options,
 ) -> Result<Compiled, CompileError> {
     if db.dialect() != Dialect::Vanilla {
         return Err(CompileError::Dialect(db.dialect()));
@@ -234,7 +273,16 @@ pub fn compile_module(
         units.push(Unit { name, parse });
         decls.push(lowered.clone());
     }
-    let mut compiled = compile_lowered(&units, &decls).map_err(|error| locate(db, input, error))?;
+    let mut compiled = compile_lowered(&units, &decls, options, |file, at| {
+        // QC-27.19: the line in the source file the expansion's text came from (QC-9.7).
+        let id = input.compiled.get(file.0).copied().unwrap_or(file);
+        let (source, at) = db
+            .expanded_origins(id)
+            .and_then(|origins| origins.locate(Span::new(at, at)))
+            .map_or((id, at), |location| (location.file, location.span.start));
+        line_at(db.file_text(source), at)
+    })
+    .map_err(|error| locate(db, input, error))?;
     // The analysis's warnings are at their source spans.
     compiled.warnings = warnings;
     Ok(compiled)
@@ -274,4 +322,11 @@ fn locate(db: &Db, input: &ModuleInput, error: CompileError) -> CompileError {
         }
         CompileError::Dialect(_) | CompileError::NotAnalysed(_) | CompileError::Write(_) => error,
     }
+}
+
+/// The line of byte `at` of `text`, counted from 1 (LNO-3.1).
+fn line_at(text: &[u8], at: usize) -> i32 {
+    let before = text.get(..at).unwrap_or(text);
+    let newlines = before.iter().filter(|&&b| b == b'\n').count();
+    i32::try_from(newlines.saturating_add(1)).unwrap_or(i32::MAX)
 }
