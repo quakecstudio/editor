@@ -314,7 +314,8 @@ mod tests {
         reason = "test code: a failed unwrap is a failed test"
     )]
 
-    use egui_wgpu::wgpu::naga;
+    use egui_wgpu::wgpu::naga::front::wgsl;
+    use egui_wgpu::wgpu::naga::valid::{Capabilities, ValidationFlags, Validator};
 
     const SHADER: &str = include_str!("shader.wgsl");
 
@@ -322,13 +323,10 @@ mod tests {
     // shader every backend accepts
     #[test]
     fn the_shader_validates_and_darkens_the_texture_by_the_light() {
-        let module = naga::front::wgsl::parse_str(SHADER).unwrap();
-        naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::empty(),
-        )
-        .validate(&module)
-        .unwrap();
+        let module = wgsl::parse_str(SHADER).unwrap();
+        Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
         assert!(SHADER.contains("textureSample(lightmap, lightmap_sampler, input.light).r"));
         assert!(SHADER.contains("return vec4<f32>(colour.rgb * light, 1.0);"));
     }
