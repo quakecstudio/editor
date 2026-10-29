@@ -1,0 +1,545 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Tests of the compiler differential's scripted calls (DIFF-12), on programs `qc-codegen`
+//! compiles from a `defs.qc` written from the system globals and fields of EDICT-2 and
+//! EDICT-3.
+
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a failed unwrap, index or panic is a failed test"
+)]
+
+use std::collections::BTreeSet;
+use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
+
+use qc_codegen::{Options, compile_module};
+use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
+use qc_progs::Progs;
+use qc_sema::{Db, FileId, ModuleInput};
+use qc_types::Etype;
+use qc_vm::ServerState;
+
+use super::draw::{Draw, Drawer, Pools, Rng};
+use super::{
+    COVERAGE_BAR, CallsError, CodebaseReport, Difference, Report, Value, World, coverage,
+    run_calls, run_codebase,
+};
+use crate::runner::scenarios;
+use crate::scenario::{self, Scenario};
+
+/// The type `defs.qc` declares a system variable with.
+fn type_name(etype: Etype) -> &'static str {
+    match etype {
+        Etype::String => "string",
+        Etype::Float => "float",
+        Etype::Vector => "vector",
+        Etype::Entity => "entity",
+        Etype::Function => "void()",
+        other => panic!("no system variable has type {other:?}"),
+    }
+}
+
+/// The system part of a `defs.qc`: the globals of EDICT-2.1 and the fields of EDICT-3.1, in
+/// slot order, each section closed as id's `defs.qc` closes it.
+fn system_defs() -> String {
+    let mut text = String::new();
+    for var in SYSTEM_GLOBALS {
+        writeln!(text, "{} {};", type_name(var.etype), var.name).unwrap();
+    }
+    text.push_str("void end_sys_globals;\n");
+    for var in SYSTEM_FIELDS {
+        writeln!(text, ".{} {};", type_name(var.etype), var.name).unwrap();
+    }
+    text.push_str("void end_sys_fields;\n");
+    text.push_str(
+        "void(string e) error = #10;\nvoid(entity e) remove = #15;\n\
+         void(string s) dprint = #25;\nvoid(float style, string value) lightstyle = #35;\n",
+    );
+    text
+}
+
+/// The bodies of the engine's entry points (EDICT-9.1), so the setup runs.
+const ENTRY_POINTS: &str = "void() main = {};\nvoid() StartFrame = {};\n\
+    void() info_notnull = {};\n\
+    void() PlayerPreThink = {};\nvoid() PlayerPostThink = {};\nvoid() ClientKill = {};\n\
+    void() ClientConnect = {};\nvoid() PutClientInServer = {};\n\
+    void() ClientDisconnect = {};\nvoid() SetNewParms = {};\nvoid() SetChangeParms = {};\n";
+
+/// Globals after the program's own. `qcc` passes every parameter with `STORE_V`
+/// (QC-22), which reads three slots, so a string or float immediate passed last in a program
+/// with nothing after it would read past the globals (VM-1.4).
+const PADDING: &str = "vector padding;\n";
+
+/// The entry points [`ENTRY_POINTS`] defines that `source` does not.
+fn entry_points(source: &str) -> String {
+    ENTRY_POINTS
+        .lines()
+        .filter(|line| {
+            let head = line.split('=').next().unwrap_or_default();
+            !source.contains(head.trim_end())
+        })
+        .map(|line| format!("{line}\n"))
+        .collect()
+}
+
+/// The progs `qc-codegen` writes for `source` after the system defs and the entry points.
+fn compile(source: &str, fold: bool) -> Vec<u8> {
+    let files = [
+        ("defs.qc", system_defs()),
+        ("entry.qc", entry_points(source)),
+        ("t.qc", format!("{source}{PADDING}")),
+    ];
+    let mut db = Db::new();
+    let mut input = ModuleInput::default();
+    for (i, (name, text)) in files.iter().enumerate() {
+        db.set_file(FileId(i), PathBuf::from(name), text.as_bytes().to_vec());
+        input.compiled.push(FileId(i));
+    }
+    let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
+    let compiled = compile_module(&mut db, &input, |id| names[id.0].clone(), Options { fold })
+        .unwrap_or_else(|e| panic!("{source:?} did not compile: {e:?}"));
+    qc_progs::write(&compiled.progs).unwrap()
+}
+
+/// One client in the world of [`WORLD`].
+fn scenario() -> Scenario {
+    scenario::read(b"progs progs.dat\nclients 1\n", Path::new(".")).unwrap()
+}
+
+/// The world and one `info_notnull`, so three edicts are in use with the client.
+const WORLD: &[u8] = b"{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"info_notnull\"\n}\n";
+
+fn run(theirs: &[u8], ours: &[u8], rounds: u32) -> Report {
+    run_calls(theirs, ours, &scenario(), WORLD, rounds).unwrap()
+}
+
+/// The first divergence of a run of the two sources, with the call's function.
+fn first(theirs: &str, ours: &str) -> (Option<String>, Difference) {
+    let report = run(&compile(theirs, false), &compile(ours, false), 16);
+    let divergence = report
+        .divergences
+        .first()
+        .unwrap_or_else(|| panic!("no divergence: {report:?}"))
+        .clone();
+    (
+        divergence.function.map(|f| String::from_utf8(f).unwrap()),
+        divergence.what,
+    )
+}
+
+const FOLDED: &str = "float x;\nvector v;\n\
+    void() worldspawn = { x = 1 + 2; };\n\
+    void() f = { x = 2 * 3 + time; v = '1 2 3' * 2; };\n\
+    void(float a, entity e, string s) g = { if (a > 1 + 1) x = a; else x = 0 - a; \
+        if (e) x = x + 1; if (s == \"player\") x = x * 2; };\n";
+
+// spec DIFF-12.1, DIFF-12.3: a program compiled with `--opt fold` off and on has other
+// statements and globals, yet every call agrees by name and type.
+#[test]
+fn a_program_folded_and_not_agrees() {
+    let (plain, folded) = (compile(FOLDED, false), compile(FOLDED, true));
+    let (a, b) = (Progs::read(&plain).unwrap(), Progs::read(&folded).unwrap());
+    assert!(a.statements().len() > b.statements().len());
+    assert_ne!(a.globals().len(), b.globals().len());
+    let report = run(&plain, &folded, 8);
+    assert_eq!(report.divergences, []);
+    assert!(report.calls > 0);
+}
+
+// spec DIFF-12.3: a named global that ends with another value is a divergence.
+#[test]
+fn a_global_that_differs_is_a_divergence() {
+    let (function, what) = first(
+        "float x;\nvoid() f = { x = 1; };\n",
+        "float x;\nvoid() f = { x = 2; };\n",
+    );
+    assert_eq!(function.as_deref(), Some("f"));
+    assert_eq!(
+        what,
+        Difference::Global(
+            b"x".to_vec(),
+            Value::Bits(1.0_f32.to_bits()),
+            Value::Bits(2.0_f32.to_bits())
+        )
+    );
+}
+
+// spec DIFF-12.3: a field of an edict that ends with another value is a divergence, named by
+// the edict and the field.
+#[test]
+fn a_field_that_differs_is_a_divergence() {
+    let (_, what) = first(
+        "void() f = { self.health = 1; };\n",
+        "void() f = { self.health = 3; };\n",
+    );
+    let (one, three) = (
+        Value::Bits(1.0_f32.to_bits()),
+        Value::Bits(3.0_f32.to_bits()),
+    );
+    assert!(
+        matches!(&what, Difference::Field(n, name, a, b)
+            if *n > 0 && name == b"health" && *a == one && *b == three),
+        "{what:?}"
+    );
+}
+
+// spec DIFF-12.3: a string compares by its text, so two programs whose string tables differ
+// agree when the texts do.
+#[test]
+fn strings_compare_by_text() {
+    let report = run(
+        &compile("string s;\nvoid() f = { s = \"a\"; };\n", false),
+        &compile(
+            "string s;\nvoid() f = { s = \"zzz\"; s = \"a\"; };\n",
+            false,
+        ),
+        4,
+    );
+    assert_eq!(report.divergences, []);
+    let (_, what) = first(
+        "string s;\nvoid() f = { s = \"a\"; };\n",
+        "string s;\nvoid() f = { s = \"b\"; };\n",
+    );
+    assert_eq!(
+        what,
+        Difference::Global(
+            b"s".to_vec(),
+            Value::Text(Some(b"a".to_vec())),
+            Value::Text(Some(b"b".to_vec()))
+        )
+    );
+}
+
+// spec DIFF-12.3: a function value compares by the function's name.
+#[test]
+fn functions_compare_by_name() {
+    let (_, what) = first(
+        "void() a = {};\nvoid() b = {};\n.void() th;\nvoid() f = { self.th = a; };\n",
+        "void() a = {};\nvoid() b = {};\n.void() th;\nvoid() f = { self.th = b; };\n",
+    );
+    let (a, b) = (
+        Value::Function(Some(b"a".to_vec())),
+        Value::Function(Some(b"b".to_vec())),
+    );
+    assert!(
+        matches!(&what, Difference::Field(_, name, x, y) if name == b"th" && *x == a && *y == b),
+        "{what:?}"
+    );
+}
+
+// spec DIFF-12.3: a vector compares by its three slots.
+#[test]
+fn vectors_compare_by_their_slots() {
+    let (_, what) = first(
+        "vector v;\nvoid() f = { v = '1 2 3'; };\n",
+        "vector v;\nvoid() f = { v = '1 2 4'; };\n",
+    );
+    let bits = |z: f32| [1.0_f32.to_bits(), 2.0_f32.to_bits(), z.to_bits()];
+    assert!(
+        matches!(&what, Difference::Global(name, Value::Vector(a), Value::Vector(b))
+            if name == b"v" && *a == bits(3.0) && *b == bits(4.0)),
+        "{what:?}"
+    );
+}
+
+// spec DIFF-12.3: a call that ends in an error where the other returns is a divergence.
+#[test]
+fn an_ending_that_differs_is_a_divergence() {
+    let (_, what) = first(
+        "void() f = { error(\"no\"); };\n",
+        "void() f = { dprint(\"no\"); };\n",
+    );
+    assert!(
+        matches!(&what, Difference::Ending(Some(_), None)),
+        "{what:?}"
+    );
+}
+
+// spec DIFF-12.3: the builtins called are compared in order.
+#[test]
+fn builtins_that_differ_are_a_divergence() {
+    let (_, what) = first("void() f = { dprint(\"a\"); };\n", "void() f = {};\n");
+    assert_eq!(what, Difference::Builtins(vec![25], vec![]));
+}
+
+// spec DIFF-12.3: the mock engine's state is compared.
+#[test]
+fn an_engine_state_that_differs_is_a_divergence() {
+    let (_, what) = first(
+        "void() f = { lightstyle(0, \"a\"); };\n",
+        "void() f = { lightstyle(0, \"b\"); };\n",
+    );
+    assert_eq!(what, Difference::Engine);
+}
+
+// spec DIFF-12.3: an edict free after one call and in use after the other is a divergence.
+#[test]
+fn an_edict_freed_in_one_is_a_divergence() {
+    let (_, what) = first(
+        "void() f = { remove(other); };\n",
+        "void() f = { remove(self); };\n",
+    );
+    assert!(matches!(what, Difference::Free(_)), "{what:?}");
+}
+
+// spec DIFF-12.3: two programs that name other globals cannot be compared by name.
+#[test]
+fn other_definitions_are_a_divergence() {
+    let (_, what) = first(
+        "float x;\nvoid() f = { x = 1; };\n",
+        "float x;\nfloat y;\nvoid() f = { x = 1; y = 1; };\n",
+    );
+    assert_eq!(what, Difference::Definitions);
+}
+
+// spec DIFF-12.3: a function the second program lacks is a global it lacks, found when the
+// worlds are compared after the setup.
+#[test]
+fn a_missing_function_is_found_at_the_setup() {
+    let report = run(
+        &compile("void() f = {};\nvoid() h = {};\n", false),
+        &compile("void() f = {};\n", false),
+        2,
+    );
+    let found: Vec<_> = report
+        .divergences
+        .iter()
+        .map(|d| (d.function.clone(), d.what.clone()))
+        .collect();
+    assert_eq!(found, [(None, Difference::Definitions)]);
+}
+
+// spec DIFF-12.4: with the same statements, the calls must execute the same ones, even when
+// they end in the same state.
+#[test]
+fn the_same_statements_must_run_the_same_way() {
+    let source = |k: u8| format!("float x;\nvoid() f = {{ if ({k} > 5.5) x = 1; else x = 1; }};\n");
+    let (theirs, ours) = (compile(&source(5), false), compile(&source(6), false));
+    assert!(
+        Progs::read(&theirs)
+            .unwrap()
+            .statements()
+            .iter()
+            .eq(Progs::read(&ours).unwrap().statements().iter())
+    );
+    let report = run(&theirs, &ours, 1);
+    let functions: Vec<_> = report
+        .divergences
+        .iter()
+        .map(|d| (d.function.clone(), d.what.clone()))
+        .collect();
+    assert_eq!(functions, [(Some(b"f".to_vec()), Difference::Statements)]);
+}
+
+// spec DIFF-12.1: the two worlds are compared after the setup, before any call.
+#[test]
+fn a_setup_that_differs_is_a_divergence_and_stops_the_run() {
+    let report = run(
+        &compile("float x;\nvoid() worldspawn = { x = 1; };\n", false),
+        &compile("float x;\nvoid() worldspawn = { x = 2; };\n", false),
+        4,
+    );
+    assert_eq!(report.calls, 0);
+    let [divergence] = report.divergences.as_slice() else {
+        panic!("{report:?}");
+    };
+    assert_eq!(divergence.function, None);
+    assert!(matches!(divergence.what, Difference::Global(..)));
+}
+
+// spec DIFF-12.1: a progs that is refused, or a setup that fails, leaves nothing to call.
+#[test]
+fn a_refused_progs_or_a_failed_setup_is_an_error() {
+    let good = compile("void() f = {};\n", false);
+    let refused = run_calls(b"not a progs", &good, &scenario(), WORLD, 1);
+    assert!(
+        matches!(refused, Err(CallsError::Refused(_))),
+        "{refused:?}"
+    );
+    let refused = run_calls(&good, b"", &scenario(), WORLD, 1);
+    assert!(
+        matches!(refused, Err(CallsError::Refused(_))),
+        "{refused:?}"
+    );
+    let failing = compile("void() worldspawn = { error(\"x\"); };\n", false);
+    let setup = run_calls(&failing, &good, &scenario(), WORLD, 1);
+    assert!(matches!(setup, Err(CallsError::Setup(_))), "{setup:?}");
+    let entering = compile("void() PutClientInServer = { error(\"x\"); };\n", false);
+    let setup = run_calls(&good, &entering, &scenario(), WORLD, 1);
+    assert!(matches!(setup, Err(CallsError::Setup(_))), "{setup:?}");
+    for error in [
+        CallsError::Scenario("s".to_owned()),
+        CallsError::Setup("s".to_owned()),
+    ] {
+        assert!(error.to_string().contains('s'));
+    }
+}
+
+// spec DIFF-12.5: coverage counts the first progs' distinct statements, the setup's
+// included, over `numstatements - 1`.
+#[test]
+fn coverage_counts_the_first_progs_statements() {
+    let source = "float x;\nvoid() worldspawn = { x = 1; };\nvoid(float a) f = { if (a) x = 2; else x = 3; };\n";
+    let progs = compile(source, false);
+    let report = run(&progs, &progs, 8);
+    let total = Progs::read(&progs).unwrap().statements().len() - 1;
+    assert_eq!(usize::try_from(report.total_statements).unwrap(), total);
+    assert!(
+        report
+            .executed
+            .iter()
+            .all(|&s| s >= 1 && usize::try_from(s).unwrap() <= total)
+    );
+    assert!(
+        (report.coverage() - coverage(&report.executed, report.total_statements)).abs() < 1e-12
+    );
+    // Every statement but the entry points' and worldspawn's DONE runs in some round.
+    assert!(report.coverage() > 0.9, "{report:?}");
+    assert!(coverage(&BTreeSet::new(), 0).abs() < f64::EPSILON);
+    assert!((coverage(&BTreeSet::from([1, 2]), 4) - 0.5).abs() < f64::EPSILON);
+}
+
+// spec DIFF-12.5: a codebase passes with no divergence and at least 90% of its statements
+// executed over the scenarios together.
+#[test]
+fn a_codebase_passes_at_the_bar() {
+    let report = |executed: BTreeSet<i32>, divergences| {
+        let mut scenario = Report {
+            calls: 1,
+            divergences: Vec::new(),
+            executed: executed.clone(),
+            total_statements: 10,
+        };
+        if divergences {
+            scenario.divergences.push(super::Divergence {
+                function: None,
+                round: 0,
+                what: Difference::Engine,
+            });
+        }
+        CodebaseReport {
+            scenarios: vec![("s", scenario)],
+            executed,
+            total_statements: 10,
+        }
+    };
+    let nine: BTreeSet<i32> = (1..=9).collect();
+    let eight: BTreeSet<i32> = (1..=8).collect();
+    assert!((COVERAGE_BAR - 0.9).abs() < f64::EPSILON);
+    assert!(report(nine.clone(), false).passes());
+    assert!(!report(eight, false).passes());
+    assert!(!report(nine.clone(), true).passes());
+    assert_eq!(report(nine, true).divergences(), 1);
+}
+
+// spec DIFF-12.1, DIFF-12.5: a codebase runs every world of the differential scenarios and
+// unions their statements.
+#[test]
+fn a_codebase_runs_every_scenario() {
+    let progs = compile(FOLDED, false);
+    let folded = compile(FOLDED, true);
+    let report = run_codebase(&progs, &folded, 2).unwrap();
+    let names: Vec<_> = report.scenarios.iter().map(|(n, _)| *n).collect();
+    let expected: Vec<_> = scenarios("").iter().map(|s| s.name).collect();
+    assert_eq!(names, expected);
+    assert_eq!(report.divergences(), 0);
+    let union: BTreeSet<i32> = report
+        .scenarios
+        .iter()
+        .flat_map(|(_, r)| r.executed.iter().copied())
+        .collect();
+    assert_eq!(report.executed, union);
+    assert!(run_codebase(b"", &folded, 1).is_err());
+}
+
+// spec DIFF-12.2: the generator is seeded by the function's name and the round, so a context
+// is the same on every run and differs between rounds.
+#[test]
+fn the_generator_is_deterministic() {
+    let draws = |name: &[u8], round| {
+        let mut rng = Rng::new(name, round);
+        (0..16).map(|_| rng.next()).collect::<Vec<_>>()
+    };
+    assert_eq!(draws(b"f", 1), draws(b"f", 1));
+    assert_ne!(draws(b"f", 1), draws(b"f", 2));
+    assert_ne!(draws(b"f", 1), draws(b"g", 1));
+    let mut rng = Rng::new(b"f", 0);
+    assert_eq!(rng.below(0), 0);
+    assert!((0..100).all(|_| rng.below(7) < 7));
+    assert_eq!(rng.pick::<u8>(&[]), None);
+    assert_eq!(rng.pick(&[5]), Some(&5));
+}
+
+// spec DIFF-12.2: the float pool holds whole numbers from -1000 to 2^24, flag bits and masks,
+// and fractions, every one exact in an f32.
+#[test]
+fn the_float_pool_is_what_it_says() {
+    let mut rng = Rng::new(b"pool", 0);
+    let values: Vec<f32> = (0..4000).map(|_| rng.float()).collect();
+    assert!(
+        values
+            .iter()
+            .all(|v| v.is_finite() && *v > -1000.0 && *v < 16_777_216.0)
+    );
+    assert!(values.iter().any(|v| v.fract() != 0.0));
+    assert!(values.iter().any(|v| *v < 0.0));
+    assert!(values.iter().any(|v| *v >= 65536.0));
+    assert!(
+        values
+            .iter()
+            .any(|v| (-1.0..=10.0).contains(v) && v.fract() == 0.0)
+    );
+}
+
+/// The drawer over the first world of [`FOLDED`], with a function's record by name.
+fn with_drawer(test: impl FnOnce(&Drawer<'_, '_>, &Progs<'_>)) {
+    let bytes = compile(FOLDED, false);
+    let progs = Progs::read(&bytes).unwrap();
+    let scenario = scenario();
+    let world = World::new(&progs, &scenario, WORLD).unwrap();
+    let drawer = Drawer::new(&world);
+    test(&drawer, &progs);
+}
+
+fn function(progs: &Progs<'_>, name: &[u8]) -> qc_progs::Function {
+    progs.ed_find_function(name).unwrap()
+}
+
+// spec DIFF-12.2: a function's own constants are the floats and strings its statements name.
+#[test]
+fn a_functions_constants_are_its_operands() {
+    with_drawer(|drawer, progs| {
+        let Pools { numbers, texts } = drawer.pools(function(progs, b"g"));
+        let numbers: Vec<f32> = numbers.iter().map(|b| f32::from_bits(*b)).collect();
+        assert!(numbers.contains(&1.0), "{numbers:?}");
+        assert_eq!(texts, [b"player".to_vec()]);
+        assert_eq!(drawer.pools(function(progs, b"main")), Pools::default());
+    });
+}
+
+// spec DIFF-12.2: each parameter is drawn by its type, round 0 of four draws no field or
+// variable, later rounds draw some, and every eighth round runs with the server loading.
+#[test]
+fn contexts_follow_the_rounds() {
+    with_drawer(|drawer, progs| {
+        let g = function(progs, b"g");
+        let draw = |round| drawer.draw(&mut Rng::new(b"g", round), g, round);
+        let first = draw(0);
+        assert!(first.fields.is_empty() && first.globals.is_empty());
+        assert!(matches!(
+            first.parms.as_slice(),
+            [Draw::Float(_), Draw::Entity(_), Draw::Text(_)]
+        ));
+        assert_eq!(first.server, ServerState::Active);
+        assert_eq!(draw(0), first);
+        assert!((1..4).any(|round| !draw(round).fields.is_empty()));
+        assert_eq!(draw(7).server, ServerState::Loading);
+        assert_eq!(draw(15).server, ServerState::Loading);
+        assert_eq!(draw(6).server, ServerState::Active);
+        let f = function(progs, b"f");
+        assert!(drawer.draw(&mut Rng::new(b"f", 3), f, 3).parms.is_empty());
+    });
+}

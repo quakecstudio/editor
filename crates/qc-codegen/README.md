@@ -53,8 +53,7 @@ QCD-4.7). The precache lists `qcc -copy` reads are kept beside the progs (QC-26)
 ## What it is not, yet
 
 The FTEQCC subset and FTE's extended format (P2-07), `.lno` line maps and constant folding
-(P2-08) are later issues; the compiler differential job on the vanilla corpus with traces is
-P2-09. Only the vanilla dialect compiles.
+(P2-08) are later issues. Only the vanilla dialect compiles.
 
 ## Tests
 
@@ -65,6 +64,10 @@ P2-09. Only the vanilla dialect compiles.
 - `cargo xtask oracles id101 <dir>` compiles id's QuakeC 1.01 with this crate: the progs.dat is
   id's `qcc`'s, byte for byte (410,616 bytes), and the scenarios the VM oracle runs on it leave
   the records `qcc`'s does.
+- `cargo xtask compiler-diff` (P2-09, `docs/spec/differential.md` DIFF-12) compiles id 1.01
+  with id's `qcc` and with this crate, `--opt fold` off and on, and calls every function of
+  each progs in `qc-vm` from the differential scenarios' worlds: no divergence, and at least
+  90% of `qcc`'s statements executed.
 - `cargo xtask oracles codegen` compiles the hand-written programs of
   `xtask/src/oracles/codegen/cases.rs` and 300 generated ones with both compilers: the two
   progs must be the same bytes, or both refused with `qcc`'s message among ours, but for the

@@ -36,7 +36,7 @@ mod tests;
 use cases::CASES;
 
 /// Compiles the vanilla codebase whose `progs.src` is in `dir` with `qc-codegen`.
-pub(crate) fn compile_codebase(dir: &Path) -> Result<Compiled, String> {
+pub(crate) fn compile_codebase(dir: &Path, options: Options) -> Result<Compiled, String> {
     let project = qc_project::open(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let [module] = project.modules.as_slice() else {
         return Err(format!("{}: one module expected", dir.display()));
@@ -64,7 +64,7 @@ pub(crate) fn compile_codebase(dir: &Path) -> Result<Compiled, String> {
         &mut db,
         &input,
         |id| names.get(id.0).cloned().unwrap_or_default(),
-        Options::default(),
+        options,
     )
     .map_err(|e| describe(&db, &e))
 }

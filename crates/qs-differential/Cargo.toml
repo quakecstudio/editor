@@ -18,5 +18,9 @@ qc-vm.workspace = true
 qs-map.workspace = true
 qs-porting-example.workspace = true
 
+[dev-dependencies]
+qc-codegen.workspace = true
+qc-sema.workspace = true
+
 [lints]
 workspace = true

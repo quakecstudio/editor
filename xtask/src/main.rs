@@ -91,6 +91,7 @@ mod attribution;
 mod bench;
 mod ci;
 mod commands;
+mod compiler_diff;
 mod contrast;
 mod conventions;
 mod corpus;
@@ -128,7 +129,7 @@ const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixture
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
                      readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
                      map-corpus | parse-corpus | project-corpus | sema-corpus | lsp-corpus | \
-                     differential | \
+                     differential | compiler-diff | \
                      fteqcc-coverage | fteqcc-full-coverage | fteqcc-profile | engines | \
                      commands>";
 
@@ -186,6 +187,7 @@ fn command(name: &str) -> Option<Command> {
         "assets" => Some(corpus::assets_main),
         "bench" => Some(bench::main),
         "commands" => Some(commands::main),
+        "compiler-diff" => Some(compiler_diff::main),
         "corpus" => Some(corpus::main),
         "differential" => Some(differential::main),
         "engines" => Some(engines::main),
@@ -291,6 +293,7 @@ mod tests {
         for name in [
             "assets",
             "bench",
+            "compiler-diff",
             "corpus",
             "differential",
             "fteqcc-coverage",

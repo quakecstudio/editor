@@ -37,7 +37,7 @@
 //! is part of the shipped app.
 
 mod builtins;
-mod codegen;
+pub(crate) mod codegen;
 mod compile;
 mod extract;
 mod fuzz;

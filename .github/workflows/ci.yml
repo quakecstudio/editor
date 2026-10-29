@@ -580,6 +580,13 @@ jobs:
       - name: Run the fast differential VM suite on id 1.01
         if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo xtask differential --fast
+      # P2-09 (COMP-4, COMP-7): the compiler differential. id 1.01 compiled by id's qcc and by
+      # qc-codegen with --opt fold off and on; every function called in qc-vm on each progs,
+      # 32 rounds, with no divergence and at least 90% of qcc's statements executed (DIFF-12).
+      # The 128-round run is nightly (differential.yml).
+      - name: Run the compiler differential on id 1.01
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: cargo xtask compiler-diff --fast
       # P1-23: every module of each codebase opens with no error in its file graph, and id
       # 1.01's graph has the order of the functions in the progs.dat id's qcc compiled above.
       - name: Open the corpus as projects
