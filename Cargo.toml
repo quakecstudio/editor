@@ -130,6 +130,7 @@ qc-trace = { path = "crates/qc-trace" }
 qc-types = { path = "crates/qc-types" }
 qc-vm = { path = "crates/qc-vm" }
 qs-bsp = { path = "crates/qs-bsp" }
+qs-commands = { path = "crates/qs-commands" }
 qs-log = { path = "crates/qs-log" }
 qs-map = { path = "crates/qs-map" }
 qs-mdl = { path = "crates/qs-mdl" }
@@ -139,6 +140,7 @@ qs-porting-example = { path = "crates/qs-porting-example" }
 qs-vfs = { path = "crates/qs-vfs" }
 qs-wad = { path = "crates/qs-wad" }
 qs-wav = { path = "crates/qs-wav" }
+schemars = { version = "=1.2.2", default-features = false }
 serde = { version = "=1.0.229", default-features = false }
 serde_json = { version = "=1.0.151", default-features = false }
 toml = { version = "=1.1.6", default-features = false }
