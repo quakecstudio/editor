@@ -9,6 +9,10 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`commands.list`](#commandslist) | Lists every command with its id, summary and parameter schema. |
 | [`edit.redo`](#editredo) | Makes the most recently undone change again. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
+| [`settings.get`](#settingsget) | Gives one setting's value and where it comes from. |
+| [`settings.list`](#settingslist) | Lists every setting with its default, its value and where the value comes from. |
+| [`settings.reset`](#settingsreset) | Removes a setting from the user's or the project's settings file and writes the file. |
+| [`settings.set`](#settingsset) | Sets a setting in the user's or the project's settings file and writes the file. |
 
 ## `commands.list`
 
@@ -54,6 +58,192 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `settings.get`
+
+Gives one setting's value and where it comes from.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Setting": {
+      "description": "A setting, named by its key.",
+      "oneOf": [
+        {
+          "const": "appearance.theme",
+          "description": "`appearance.theme`.",
+          "type": "string"
+        },
+        {
+          "const": "log.filter",
+          "description": "`log.filter`.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `settings.get`.",
+  "properties": {
+    "key": {
+      "$ref": "#/$defs/Setting",
+      "description": "The setting's key."
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "title": "GetParams",
+  "type": "object"
+}
+```
+
+## `settings.list`
+
+Lists every setting with its default, its value and where the value comes from.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `settings.reset`
+
+Removes a setting from the user's or the project's settings file and writes the file.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Scope": {
+      "description": "Which file a setting is read from or written to.",
+      "oneOf": [
+        {
+          "const": "user",
+          "description": "The user's settings, which hold in every project.",
+          "type": "string"
+        },
+        {
+          "const": "project",
+          "description": "The open project's settings, which win over the user's.",
+          "type": "string"
+        }
+      ]
+    },
+    "Setting": {
+      "description": "A setting, named by its key.",
+      "oneOf": [
+        {
+          "const": "appearance.theme",
+          "description": "`appearance.theme`.",
+          "type": "string"
+        },
+        {
+          "const": "log.filter",
+          "description": "`log.filter`.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `settings.reset`.",
+  "properties": {
+    "key": {
+      "$ref": "#/$defs/Setting",
+      "description": "The setting's key."
+    },
+    "scope": {
+      "$ref": "#/$defs/Scope",
+      "default": "user",
+      "description": "The file to remove it from: the user's, by default, or the open project's."
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "title": "ResetParams",
+  "type": "object"
+}
+```
+
+## `settings.set`
+
+Sets a setting in the user's or the project's settings file and writes the file.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Scope": {
+      "description": "Which file a setting is read from or written to.",
+      "oneOf": [
+        {
+          "const": "user",
+          "description": "The user's settings, which hold in every project.",
+          "type": "string"
+        },
+        {
+          "const": "project",
+          "description": "The open project's settings, which win over the user's.",
+          "type": "string"
+        }
+      ]
+    },
+    "Setting": {
+      "description": "A setting, named by its key.",
+      "oneOf": [
+        {
+          "const": "appearance.theme",
+          "description": "`appearance.theme`.",
+          "type": "string"
+        },
+        {
+          "const": "log.filter",
+          "description": "`log.filter`.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `settings.set`.",
+  "properties": {
+    "key": {
+      "$ref": "#/$defs/Setting",
+      "description": "The setting's key."
+    },
+    "scope": {
+      "$ref": "#/$defs/Scope",
+      "default": "user",
+      "description": "The file to set it in: the user's, by default, or the open project's."
+    },
+    "value": {
+      "description": "Its new value, of the setting's type."
+    }
+  },
+  "required": [
+    "key",
+    "value"
+  ],
+  "title": "SetParams",
   "type": "object"
 }
 ```

@@ -564,6 +564,17 @@ name = "qs-porting-example"
 version = "2026.10.0"
 
 [[package]]
+name = "qs-settings"
+version = "2026.10.0"
+dependencies = [
+ "qs-commands",
+ "schemars",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "qs-tests"
 version = "2026.10.0"
 dependencies = [
@@ -1044,6 +1055,7 @@ dependencies = [
  "qs-commands",
  "qs-map",
  "qs-pak",
+ "qs-settings",
  "serde",
  "serde_json",
  "toml",
