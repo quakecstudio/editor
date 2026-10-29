@@ -2282,6 +2282,7 @@ dependencies = [
  "epaint",
  "qc-progs",
  "qs-bsp",
+ "qs-mdl",
  "qs-sim",
  "qs-vfs",
 ]

@@ -10,6 +10,8 @@
 
 use qs_bsp::{Bsp, Face, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo};
 
+use crate::alias::rotate_for_entity;
+
 /// GLQuake's `vid_gamma` on any card but a 3Dfx, "default to 0.7 on non-3dfx hardware"
 /// (REND-3.1).
 pub const GAMMA: f32 = 0.7;
@@ -19,7 +21,7 @@ const PALETTE_BYTES: usize = 768;
 /// `t >>= 7` in `R_BuildLightMap` (REND-1.4).
 const LIGHT_SHIFT: u32 = 7;
 /// A style's value while no light string is set for it (REND-1.4).
-const UNSET_STYLE: u32 = 256;
+pub(crate) const UNSET_STYLE: u32 = 256;
 /// The world units of one lightmap texel, `light_s*16` (REND-1.3).
 const LIGHTMAP_TEXEL: f32 = 16.0;
 /// The atlas's width in texels; its height grows with the faces it holds.
@@ -89,9 +91,20 @@ impl Palette {
     }
 
     /// The colour of index `index`, opaque.
-    fn rgba(&self, index: u8) -> [u8; 4] {
+    pub(crate) fn rgba(&self, index: u8) -> [u8; 4] {
         let [r, g, b] = self.0.get(usize::from(index)).copied().unwrap_or_default();
         [r, g, b, 255]
+    }
+
+    /// `Mod_FloodFillSkin`'s `filledcolor` (REND-4.1): the first index whose `d_8to24table`
+    /// entry is `255 << 0`, red 255 with alpha 0, which only index 255, the one transparent
+    /// entry, can be, and only when its colour is pure red; else 0.
+    pub(crate) fn filled_colour(&self) -> u8 {
+        if self.0.last() == Some(&[255, 0, 0]) {
+            255
+        } else {
+            0
+        }
     }
 }
 
@@ -218,19 +231,8 @@ impl Placement {
     /// `R_DrawBrushModel` negates twice (REND-1.9).
     #[must_use]
     pub fn position(&self, corner: [f32; 3]) -> [f32; 3] {
-        let [pitch, yaw, roll] = self.angles.map(f32::to_radians);
-        let [x, y, z] = corner;
-        let (y, z) = (
-            y * roll.cos() - z * roll.sin(),
-            y * roll.sin() + z * roll.cos(),
-        );
-        let (x, z) = (
-            x * pitch.cos() + z * pitch.sin(),
-            z * pitch.cos() - x * pitch.sin(),
-        );
-        let (x, y) = (x * yaw.cos() - y * yaw.sin(), x * yaw.sin() + y * yaw.cos());
-        let [dx, dy, dz] = self.origin;
-        [x + dx, y + dy, z + dz]
+        // The pitch, negated twice, turns about y as it is.
+        rotate_for_entity(self.origin, self.angles, corner)
     }
 }
 
@@ -809,4 +811,4 @@ fn u32_of(n: usize) -> u32 {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

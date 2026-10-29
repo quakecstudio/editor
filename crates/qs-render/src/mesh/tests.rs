@@ -9,23 +9,23 @@
 
 use qs_bsp::{
     BSP_HEADER_LUMPS, BSP_MAX_MAP_HULLS, BSP_MIPTEX_HEADER_SIZE, Bsp, BspVersion, Face, Lump,
-    Model, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo, Texture,
+    Model, Node, Plane, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo, Texture,
 };
 
 use super::{MapMesh, MeshBuilder, MeshError, Palette, Placement};
 
 /// One face of a test map: a 64 by 32 rectangle in the z = 0 plane, lit by `lighting`.
-struct MapSpec {
+pub(crate) struct MapSpec {
     /// The face's surfedges, around the rectangle.
-    surfedges: Vec<i32>,
+    pub(crate) surfedges: Vec<i32>,
     /// The face's flags.
-    flags: u32,
+    pub(crate) flags: u32,
     /// The face's styles.
-    styles: [u8; 4],
+    pub(crate) styles: [u8; 4],
     /// Where its samples start in the lighting lump; -1 for none.
-    lightofs: i32,
+    pub(crate) lightofs: i32,
     /// Whether the texinfo names a texture.
-    textured: bool,
+    pub(crate) textured: bool,
 }
 
 impl Default for MapSpec {
@@ -41,10 +41,10 @@ impl Default for MapSpec {
 }
 
 /// The face's lightmap: `(64>>4)+1` by `(32>>4)+1` texels (REND-1.3).
-const LIGHTMAP: [usize; 2] = [5, 3];
+pub(crate) const LIGHTMAP: [usize; 2] = [5, 3];
 
 /// A palette whose colour `i` is `(i, 2i, 3i)` wrapped.
-fn palette() -> Palette {
+pub(crate) fn palette() -> Palette {
     let bytes: Vec<u8> = (0..=255_u8)
         .flat_map(|i| [i, i.wrapping_mul(2), i.wrapping_mul(3)])
         .collect();
@@ -54,7 +54,8 @@ fn palette() -> Palette {
 /// The texture's pixels, 16 by 16 of index 7, after its 40-byte header in the BSP.
 const PIXELS: [u8; 256] = [7; 256];
 
-fn bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
+/// The test map: its one face lies in the z = 0 plane of node 0, whose sides are leaves.
+pub(crate) fn bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
     let texture = Texture {
         name: b"wall".to_vec(),
         width: 16,
@@ -68,7 +69,12 @@ fn bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
         version: BspVersion::Bsp29,
         lumps: [Lump::default(); BSP_HEADER_LUMPS],
         entity_lump: b"",
-        planes: Vec::new(),
+        planes: vec![Plane {
+            normal: [0.0, 0.0, 1.0],
+            dist: 0.0,
+            plane_type: 2,
+            signbits: 0,
+        }],
         textures: vec![Some(texture)],
         // Edge 0 is unused; edges 1 to 4 go round the rectangle, and their reversed ends are
         // read for negative surfedges.
@@ -80,7 +86,14 @@ fn bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
             [99.0, 99.0, 99.0],
         ],
         visibility: b"",
-        nodes: Vec::new(),
+        nodes: vec![Node {
+            planenum: 0,
+            children: [-1, -2],
+            mins: [0.0; 3],
+            maxs: [64.0, 32.0, 0.0],
+            firstface: 0,
+            numfaces: 1,
+        }],
         texinfo: vec![Texinfo {
             vecs: [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]],
             miptex: 0,
@@ -121,7 +134,7 @@ fn bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
 }
 
 /// Fifteen samples of `value` for each of `styles` styles.
-fn samples(values: &[u8]) -> Vec<u8> {
+pub(crate) fn samples(values: &[u8]) -> Vec<u8> {
     values
         .iter()
         .flat_map(|&v| [v; LIGHTMAP[0] * LIGHTMAP[1]])

@@ -12,6 +12,7 @@ publish.workspace = true
 egui-wgpu = { workspace = true }
 epaint = { workspace = true }
 qs-bsp = { workspace = true }
+qs-mdl = { workspace = true }
 
 [dev-dependencies]
 eframe = { workspace = true, features = ["wayland", "wgpu", "x11"] }

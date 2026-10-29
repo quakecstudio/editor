@@ -140,3 +140,87 @@ decide how bright and how smooth a frame looks.
 | `REND_FOV_X` | 90 | `WinQuake/gl_screen.c`, `scr_fov = {"fov","90"}` |
 | `REND_NEAR`, `REND_FAR` | 4, 4096 | `WinQuake/gl_rmain.c`, `MYgluPerspective (..., 4, 4096)` in `R_SetupGL` |
 | `REND_LIGHTMAP_TEXEL` | 16 | `WinQuake/gl_rsurf.c`, `light_s*16` and `(extents[0]>>4)+1` |
+
+## REND-4 Alias models
+
+**Source:** `WinQuake/gl_rmain.c`, `R_DrawAliasModel`, `R_SetupAliasFrame`,
+`GL_DrawAliasFrame` and `R_RotateForEntity`; `WinQuake/gl_model.c`, `Mod_FloodFillSkin`,
+`Mod_LoadAllSkins` and `Mod_LoadAliasGroup`; `WinQuake/gl_mesh.c`, `BuildTris`;
+`WinQuake/gl_rlight.c`, `R_LightPoint` and `RecursiveLightPoint`; `WinQuake/anorm_dots.h`;
+`WinQuake/cl_main.c`, `CL_RelinkEntities`; `WinQuake/mathlib.c`, `anglemod`; `WinQuake/gl_vidnt.c`,
+`VID_SetPalette` (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`). The colour clamp
+is OpenGL 1.1, section 2.13.6.
+
+GLQuake draws an alias model (`.mdl`: monsters, weapons, items, torches) as one pose of
+triangles, turned and moved to its entity, its skin modulated by a shade per vertex from the
+world's light below the entity.
+
+### Behaviour
+
+- **REND-4.1** Before each skin, and each frame of a skin group, is uploaded,
+  `Mod_FloodFillSkin` runs on `skin`, the pixels after the *first* skin's type, never on the
+  skin being uploaded: `skin = (byte *)(pskintype + 1)` is set once and every call passes it.
+  It fills the region of `fillcolor = skin[0]` joined to pixel (0, 0), breadth first through a
+  4096-entry ring (`FLOODFILL_FIFO_SIZE`) that ends when its read and write positions meet, so an
+  overflow ends the fill early. Each queued pixel is marked 255; each pixel taken from the ring
+  becomes the last neighbour colour that is neither `fillcolor` nor 255 seen in the order
+  left, right, up, down, else `filledcolor`. `filledcolor` is the first index whose
+  `d_8to24table` entry equals `255 << 0`; `VID_SetPalette` makes every entry
+  `(255<<24) + r + (g<<8) + (b<<16)` and clears entry 255's alpha, so only entry 255, when its
+  colour is (255, 0, 0), can match, and otherwise `filledcolor` is 0. Nothing is filled when
+  `fillcolor` is `filledcolor` or 255.
+- **REND-4.2** A skin has four slots, `gl_texturenum[i][4]`. A single skin fills all four. A
+  group's frame `j` goes in slot `j&3`, and after the loop
+  `for (; j < 4; j++) gl_texturenum[i][j&3] = gl_texturenum[i][j - k]` with `k` the group's
+  count. The slot drawn is `anim = (int)(cl.time*10) & 3`. GLQuake does not check the entity's
+  `skinnum`; a skin the model does not have is drawn as skin 0 here, our choice.
+- **REND-4.3** A corner's skin coordinates are `s = stverts[k].s`, plus `skinwidth / 2` when the
+  vertex is on the seam and the triangle does not face front, then `(s + 0.5) / skinwidth` and
+  `(t + 0.5) / skinheight` (`BuildTris`). Strips join only triangles with the same
+  `facesfront`, so this is the triangle's own. A skin is uploaded as a world texture is,
+  `GL_LoadTexture (..., true, false)`: palette, resampling, mipmaps and filtering as REND-3.2
+  and REND-3.3, every pixel opaque.
+- **REND-4.4** A frame entry is one pose, or a group of poses whose `interval` is the group's
+  *first* interval (`Mod_LoadAliasGroup`). The pose drawn is the frame's first, plus
+  `(int)(cl.time / interval) % numposes` when it has more than one. A frame the model does not
+  have draws frame 0 ("no such frame"). An interval of 0 or less is refused when the model
+  loads (`Mod_LoadAliasGroup: interval<=0`); a NaN one, which loads, holds the first pose here,
+  our choice: id's int conversion of a NaN quotient is undefined.
+- **REND-4.5** A vertex is at `v * scale + scale_origin` in the model (`glTranslatef
+  (scale_origin)`, `glScalef (scale)`), turned and moved by `R_RotateForEntity`: roll about x,
+  then `-angles[0]` about y, then yaw about z, then the origin. Unlike a brush model
+  (REND-1.9) the pitch is not negated first.
+- **REND-4.6** `R_LightPoint (p)` is 255 in a map with no lighting lump. Otherwise it follows
+  the line from `p` to 2048 units below it through the world's nodes from node 0: on a node it
+  goes down the side `front < 0` of `start`, and when `end` is on the same side, only there;
+  else to the crossing `mid = start + (end - start) * front/(front-back)`, then the node's faces,
+  then the far side from `mid`. A face drawn tiled (sky, water) is skipped. For the others,
+  `s` and `t` are the texinfo's dot products at `mid` with their offsets, truncated to ints; a
+  face is hit when `s - texturemins[0]` and `t - texturemins[1]` are each from 0 to its
+  extents. A face hit with no samples gives 0; one with samples gives
+  `(sum over its styles of sample * style value) >> 8` at sample `(dt>>4) *
+  ((extents[0]>>4)+1) + (ds>>4)`, every style at `REND_UNSET_STYLE`. A leaf hit with nothing
+  gives 0.
+- **REND-4.7** `ambientlight` and `shadelight` start as `R_LightPoint (origin)`. `ambientlight`
+  is capped at 128, and when `ambientlight + shadelight > 192`, `shadelight` becomes
+  `192 - ambientlight`. Then `progs/flame2.mdl` and `progs/flame.mdl` are set to 256 ("make
+  torches full light"), and `shadelight` is divided by 200. The view model's floor of 24, the
+  players' floor of 8 and dynamic lights are not drawn yet.
+- **REND-4.8** The shade of a vertex is `shadedots[lightnormalindex] * shadelight`, with
+  `shadedots` the row `((int)(angles[1] * (SHADEDOT_QUANT / 360.0))) & (SHADEDOT_QUANT - 1)` of
+  `r_avertexnormal_dots`, 16 rows of 256 entries. It is given to `glColor3f`, so it is clamped
+  to 0 to 1 before it is interpolated: OpenGL 1.1, 2.13.6, "After lighting (whether enabled or
+  not), RGBA colors are clamped to the range [0, 1]." It is interpolated across the triangle
+  (`gl_smoothmodels`, `GL_SMOOTH`), and the skin's colour is multiplied by it (`GL_MODULATE`).
+- **REND-4.9** A model whose header has `EF_ROTATE` (items and weapons) is drawn with yaw
+  `bobjrotate = anglemod(100*cl.time)` (`CL_RelinkEntities`), with `anglemod (a)` of the float
+  `a` being `(360.0/65536) * ((int)(a*(65536/360.0)) & 65535)`.
+
+### Constants
+
+| Name | Value | Source |
+| --- | --- | --- |
+| `REND_SHADEDOT_QUANT` | 16 | `WinQuake/gl_rmain.c`, `#define SHADEDOT_QUANT 16` |
+| `REND_SHADE_SCALE` | 200 | `WinQuake/gl_rmain.c`, `shadelight = shadelight / 200.0` in `R_DrawAliasModel` |
+| `REND_LIGHT_DEPTH` | 2048 | `WinQuake/gl_rlight.c`, `end[2] = p[2] - 2048` in `R_LightPoint` |
+| `REND_ROTATE_RATE` | 100 degrees a second | `WinQuake/cl_main.c`, `anglemod(100*cl.time)` in `CL_RelinkEntities` |

@@ -4,18 +4,85 @@
 
 use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader};
-use qs_render::{Camera, GAMMA, MapMesh, MeshBuilder, Palette, Placement, Surface};
+use qs_render::{
+    AliasDraw, AliasEntity, AliasModel, Camera, GAMMA, Image, MapMesh, MeshBuilder, ModelFrame,
+    Palette, Placement, Surface, bob_rotate, light_point,
+};
 use qs_sim::World;
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
 /// The height of a player's eyes above its origin, `view_ofs` in id's QuakeC `client.qc`.
 const EYE_HEIGHT: f32 = 22.0;
 
-/// A map read from an install: its name, its mesh and where its player starts.
+/// A map read from an install: its name, its mesh, its alias models and where its player
+/// starts.
 pub(crate) struct Loaded {
     pub(crate) map: String,
     pub(crate) mesh: MapMesh,
+    pub(crate) models: Models,
     pub(crate) camera: Camera,
+}
+
+/// The alias models the map's entities show.
+#[derive(Default)]
+pub(crate) struct Models {
+    /// Each model, with the index of its first skin image in `skins`.
+    models: Vec<(String, AliasModel, usize)>,
+    /// Every model's skin images.
+    pub(crate) skins: Vec<Image>,
+    /// Each entity: its model's index in `models`, and what it is drawn with.
+    entities: Vec<(usize, AliasEntity)>,
+}
+
+impl Models {
+    /// Every entity's triangles at `time` seconds, an `EF_ROTATE` model turned as the client
+    /// turns it (REND-4.9).
+    pub(crate) fn frame(&self, time: f64) -> ModelFrame {
+        let mut out = ModelFrame::default();
+        for (index, entity) in &self.entities {
+            let Some((_, model, first_skin)) = self.models.get(*index) else {
+                continue;
+            };
+            let mut entity = *entity;
+            if model.rotates() {
+                entity.angles[1] = bob_rotate(time);
+            }
+            let first = out.vertices.len();
+            let image = model.draw(&entity, time, &mut out.vertices);
+            let (Ok(first), Ok(count)) = (
+                u32::try_from(first),
+                u32::try_from(out.vertices.len().saturating_sub(first)),
+            ) else {
+                continue;
+            };
+            out.draws.push(AliasDraw {
+                skin: first_skin.saturating_add(image),
+                first,
+                count,
+            });
+        }
+        out
+    }
+
+    /// The number of entities drawn with an alias model.
+    pub(crate) const fn len(&self) -> usize {
+        self.entities.len()
+    }
+}
+
+/// A progs float as the index the client keeps, toward zero; a negative one is out of every
+/// model's range, which draws frame or skin 0 (REND-4.2, REND-4.4).
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "C's (int) of the float, which truncates; a negative one is handled first"
+)]
+fn index_of(value: f32) -> usize {
+    if value >= 0.0 {
+        value as usize
+    } else {
+        usize::MAX
+    }
 }
 
 /// Reads the map the command line names (`e1m1` by default) from the install that `-basedir`
@@ -74,7 +141,36 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     // or model 0 of a BSP of its own, such as a health box.
     let mut placements = vec![Placement::WORLD];
     let mut others: Vec<(String, Vec<Placement>)> = Vec::new();
+    let mut models = Models::default();
     for entity in world.entities().into_iter().skip(1) {
+        if entity.model.ends_with(".mdl") {
+            let found = models
+                .models
+                .iter()
+                .position(|(n, _, _)| *n == entity.model);
+            let index = match found {
+                Some(index) => index,
+                None => {
+                    let model = AliasModel::read(&entity.model, &read(&entity.model)?, &palette)
+                        .map_err(|e| e.to_string())?;
+                    let first = models.skins.len();
+                    models.skins.extend_from_slice(model.images());
+                    models.models.push((entity.model.clone(), model, first));
+                    models.models.len().saturating_sub(1)
+                }
+            };
+            models.entities.push((
+                index,
+                AliasEntity {
+                    origin: entity.origin,
+                    angles: entity.angles,
+                    frame: index_of(entity.frame),
+                    skin: index_of(entity.skin),
+                    light: light_point(&bsp, entity.origin),
+                },
+            ));
+            continue;
+        }
         if let Some(n) = entity.model.strip_prefix('*').and_then(|n| n.parse().ok()) {
             placements.push(Placement {
                 model: n,
@@ -109,7 +205,12 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
             let [x, y, z] = mesh.maxs;
             Camera::new([(a + x) / 2.0, (b + y) / 2.0, (c + z) / 2.0], 0.0)
         });
-    Ok(Loaded { map, mesh, camera })
+    Ok(Loaded {
+        map,
+        mesh,
+        models,
+        camera,
+    })
 }
 
 /// A camera looking at the middle of the first batch of `surface` in the map: above water

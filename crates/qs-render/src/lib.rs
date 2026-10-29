@@ -11,12 +11,17 @@
 //!
 //! Implements `docs/spec/render.md` REND-1 to REND-3.
 
+mod alias;
+mod anorm_dots;
 mod camera;
 mod gpu;
+mod light;
 mod mesh;
 
+pub use alias::{AliasEntity, AliasError, AliasModel, AliasVertex, bob_rotate, shade_light};
 pub use camera::Camera;
-pub use gpu::{MapCallback, MapRenderer, View};
+pub use gpu::{AliasDraw, MapCallback, MapRenderer, ModelFrame, View};
+pub use light::light_point;
 pub use mesh::{
     Animation, Batch, GAMMA, Image, MapMesh, MeshBuilder, MeshError, Palette, Placement, Surface,
     Vertex, frame, mip_levels,

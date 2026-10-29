@@ -26,7 +26,12 @@ const TURN: f32 = 0.25;
 
 fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let common::Loaded { map, mesh, camera } = common::load(&args)?;
+    let common::Loaded {
+        map,
+        mesh,
+        models,
+        camera,
+    } = common::load(&args)?;
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(format!("qs-render: {map}"))
@@ -49,12 +54,14 @@ fn main() -> Result<(), String> {
                 &state.queue,
                 (state.target_format, wgpu::TextureFormat::Depth32Float),
                 &mesh,
+                &models.skins,
             );
             state.renderer.write().callback_resources.insert(renderer);
             Ok(Box::new(Viewer {
                 map,
                 camera,
                 triangles,
+                models,
                 started: Instant::now(),
                 last: Instant::now(),
             }))
@@ -67,6 +74,7 @@ struct Viewer {
     map: String,
     camera: Camera,
     triangles: usize,
+    models: common::Models,
     started: Instant,
     last: Instant,
 }
@@ -97,14 +105,16 @@ impl eframe::App for Viewer {
             );
         });
         let aspect = rect.width() / rect.height().max(1.0);
+        let time = now.duration_since(self.started);
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
             rect,
             MapCallback {
                 view: View {
                     clip_from_world: self.camera.clip_from_world(aspect),
                     eye: self.camera.origin,
-                    time: now.duration_since(self.started).as_secs_f32(),
+                    time: time.as_secs_f32(),
                 },
+                models: self.models.frame(time.as_secs_f64()),
             },
         ));
         // egui's fonts are not bundled (their licenses are outside deny.toml's), so the stats
@@ -112,9 +122,10 @@ impl eframe::App for Viewer {
         let [x, y, z] = self.camera.origin;
         ui.ctx()
             .send_viewport_cmd(egui::ViewportCommand::Title(format!(
-                "qs-render: {}  {} triangles  ({x:.0} {y:.0} {z:.0})  {:.0} fps",
+                "qs-render: {}  {} triangles  {} models  ({x:.0} {y:.0} {z:.0})  {:.0} fps",
                 self.map,
                 self.triangles,
+                self.models.len(),
                 1.0 / seconds.max(1e-3)
             )));
         ui.ctx().request_repaint();
