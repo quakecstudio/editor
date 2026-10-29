@@ -16,28 +16,45 @@
     reason = "test code: a failed unwrap, expect, panic or index is a failed test"
 )]
 
+mod aggregates;
+mod assignments;
+mod builtin_arguments;
+mod calls;
 mod casts;
+mod classes;
+mod comparisons;
 mod definitions;
 mod dialect;
 mod dialect_builtins;
 mod dialect_full;
 mod dialect_resolution;
 mod dialect_statements;
+mod emulation;
 mod expansion;
 mod flags;
+mod folding;
 mod incremental;
 mod initialiser_uses;
 mod keywords;
+mod member_access;
 mod members;
 mod names;
 mod navigation;
+mod operators;
+mod oracle_cases;
 mod passes;
+mod pointers;
 mod properties;
 mod recovery;
+mod references;
 mod resolution;
 mod reviewer;
 mod settings;
+mod statements;
+mod terms;
+mod type_declarations;
 mod types;
+mod vanilla_checks;
 
 use crate::db::Db;
 use crate::resolve::ModuleIndex;

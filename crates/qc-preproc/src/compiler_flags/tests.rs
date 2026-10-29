@@ -7,8 +7,9 @@ use crate::fte_tables::FteFlag;
 use crate::{CommandLine, FlagSettings};
 
 // spec FTEF-21.1: the flags kept are the lexer's eight, `cpriority`, `assumevar`, `subscope` and
-// `attributes`, with the casts' (FTEF-22); any other is read as off and set to nothing
-// spec FTEF-21.18: a flag only the compiler's output reads is not kept
+// `attributes`, with the casts' (FTEF-22) and the truth tests' (FTEF-30); any other is read as
+// off and set to nothing
+// spec FTEF-21.20: a flag only the compiler's output reads is not kept
 #[test]
 fn the_kept_flags() {
     let all = [
@@ -27,6 +28,8 @@ fn the_kept_flags() {
         FteFlag::Laxcasts,
         FteFlag::Typeexplicit,
         FteFlag::Undefwordsize,
+        FteFlag::Ifvector,
+        FteFlag::Vectorlogic,
     ];
     for flag in all {
         let on = CompilerFlags::default().with(flag, true);
@@ -34,7 +37,11 @@ fn the_kept_flags() {
         assert!(!on.with(flag, false).has(flag), "{flag:?}");
         for other in all.iter().filter(|&&other| other != flag) {
             assert!(
-                !on.has(*other) || *other == FteFlag::Qcfuncs,
+                !on.has(*other)
+                    || matches!(
+                        other,
+                        FteFlag::Qcfuncs | FteFlag::Ifvector | FteFlag::Vectorlogic
+                    ),
                 "{flag:?} {other:?}"
             );
         }

@@ -42,7 +42,7 @@ fn reviewer_goto_definition_is_per_file() {
     assert!(index.references_at(FileId(1), offset, true).is_empty());
 }
 
-// spec QC-10.6: function types compare structurally with parameter names excluded, also
+// spec QC-10.10: function types compare structurally with parameter names excluded, also
 // when a parameter is itself a function, so a prototype and a body naming them differently
 // declare one function
 #[test]
@@ -103,7 +103,7 @@ fn reviewer_file_paths_are_kept() {
 // members before a global of the same name
 #[test]
 fn reviewer_member_before_global() {
-    let source = "float hp;\nclass c { float hp; void() hurt = { hp = 1; }; };";
+    let source = "float hp;\nclass c { float hp; nonvirtual void() hurt = { this.hp = 1; }; };";
     let index = fte_index_of(source);
     assert!(index.diagnostics.is_empty(), "{:?}", index.diagnostics);
     let use_at = nth_offset(source, "hp", 2);
@@ -121,7 +121,7 @@ fn nested_prototype(depth: usize, prefix: &str, inner: &str) -> String {
     format!("{ty} run")
 }
 
-// spec QC-10.6: function types nested 200 deep compare by their parameter types at every
+// spec QC-10.10: function types nested 200 deep compare by their parameter types at every
 // level, names excluded: a prototype and a body naming every parameter differently are one
 // function, and a body whose innermost parameter has another type is a mismatch
 #[test]
@@ -190,7 +190,7 @@ fn reviewer_many_locals_each_resolve_to_their_own() {
 
 // spec FTEF-17.10: under FTEQCC a builtin initialised again with the same number, written as a
 // float or a fraction of zeros, or with the same `#0:NAME`, is accepted, and with another
-// number is E0206, as the pinned FTEQCC compiles the first two and reports "incompatible
+// number is E0363, as the pinned FTEQCC compiles the first two and reports "incompatible
 // redeclaration" for the third
 #[test]
 fn reviewer_builtins_initialised_again_compare_by_number() {
@@ -207,7 +207,7 @@ fn reviewer_builtins_initialised_again_compare_by_number() {
             .map(|d| d.diagnostic.code)
             .collect();
         let expected = if redeclared {
-            vec![qc_diag::Code::E0206]
+            vec![qc_diag::Code::E0363]
         } else {
             vec![]
         };
@@ -239,23 +239,23 @@ fn fte_module_errors(files: &[&str], autoproto: bool) -> Vec<(usize, qc_diag::Co
         .collect()
 }
 
-// spec FTE-23.7: FTEQCC reuses the first function made with a number and engine name across
+// spec FTE-23.17: FTEQCC reuses the first function made with a number and engine name across
 // the whole program, so after `g = #5:ex_a` in the first file, `f` given `#5:ex_a` twice in the
-// second is E0206 there, as the pinned FTEQCC reports "incompatible redeclaration" at b.qc:2
+// second is E0363 there, as the pinned FTEQCC reports "incompatible redeclaration" at b.qc:2
 #[test]
 fn reviewer_the_reused_builtin_function_is_found_across_files() {
     let first = "void() g = #5:ex_a;\n";
     let second = "void() f = #5:ex_a;\nvoid() f = #5:ex_a;\n";
     assert_eq!(
         fte_module_errors(&[first, second], false),
-        [(1, qc_diag::Code::E0206)]
+        [(1, qc_diag::Code::E0363)]
     );
     assert!(fte_module_errors(&[second], false).is_empty());
 }
 
-// spec FTE-23.7: a builtin's number and engine name are compared after macro expansion, as the
+// spec FTE-23.17: a builtin's number and engine name are compared after macro expansion, as the
 // pinned FTEQCC compiles each of these with no error; a macro that gives a different number
-// is still E0206
+// is still E0363
 #[test]
 fn reviewer_builtins_compare_after_macro_expansion() {
     for (source, redeclared) in [
@@ -272,7 +272,7 @@ fn reviewer_builtins_compare_after_macro_expansion() {
         ("#define NEG -5\nvoid() f = #5;\nvoid() f = :NEG;\n", true),
     ] {
         let expected = if redeclared {
-            vec![(0, qc_diag::Code::E0206)]
+            vec![(0, qc_diag::Code::E0363)]
         } else {
             vec![]
         };
@@ -294,7 +294,7 @@ fn reviewer_a_noref_builtin_is_never_compared() {
 }
 
 // spec FTE-22.3: autoprototyping reads the program twice, but a builtin is compared as in one
-// reading (FTE-23.7): the pinned FTEQCC with `-Fautoproto` reports "incompatible
+// reading (FTE-23.17): the pinned FTEQCC with `-Fautoproto` reports "incompatible
 // redeclaration" for exactly the second and fourth of these
 #[test]
 fn reviewer_autoprototyping_compares_builtins_as_one_reading() {
@@ -309,7 +309,7 @@ fn reviewer_autoprototyping_compares_builtins_as_one_reading() {
         ("void() f = :ex_a;\nvoid() f = #0:ex_a;\n", false),
     ] {
         let expected = if redeclared {
-            vec![(0, qc_diag::Code::E0206)]
+            vec![(0, qc_diag::Code::E0363)]
         } else {
             vec![]
         };
@@ -317,9 +317,9 @@ fn reviewer_autoprototyping_compares_builtins_as_one_reading() {
     }
 }
 
-// spec FTE-23.7: the definitions of one declaration make their functions left to right, so
+// spec FTE-23.17: the definitions of one declaration make their functions left to right, so
 // after `f = #5:ex_a, g = #5:ex_a` initialising `g` again with `#5:ex_a` finds `f`'s function
-// and is E0206, while a second `f` is not; the pinned FTEQCC agrees on both
+// and is E0363, while a second `f` is not; the pinned FTEQCC agrees on both
 #[test]
 fn reviewer_one_declaration_makes_its_functions_in_order() {
     for (source, redeclared) in [
@@ -339,7 +339,7 @@ fn reviewer_one_declaration_makes_its_functions_in_order() {
         ("const void() f = #5;\nvoid() f = #5;\n", false),
     ] {
         let expected = if redeclared {
-            vec![(0, qc_diag::Code::E0206)]
+            vec![(0, qc_diag::Code::E0363)]
         } else {
             vec![]
         };

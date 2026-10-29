@@ -10,6 +10,7 @@
 //! `QCC_SetDefaultProperties` resets the settings. Ported from FTEQCC's behaviour under
 //! ADR-0017's clean-port policy.
 
+use crate::fte_opcodes::OpcodeTarget;
 use crate::fte_pragma::{FlagSettings, target_named};
 use crate::fte_tables::{FteFlag, TargetFormat};
 use crate::fte_warning::{FteWarning, WarningAction, WarningSettings};
@@ -676,7 +677,7 @@ impl CommandLine {
         for arg in self.options() {
             // FTEF-22.4: each `-TNAME` that names a target runs `QCC_OPCodeSetTarget`, which sets
             // `flag_undefwordsize` by the format, among the other options in order.
-            if let Some(format) = target_option(arg) {
+            if let Some((format, _)) = target_option(arg) {
                 flags.set(FteFlag::Undefwordsize, format.undefined_word_size());
                 continue;
             }
@@ -718,21 +719,29 @@ impl CommandLine {
     /// `-dp` that `QCC_SetDefaultProperties` reads first are set again by the `-Tid`; then each
     /// `-TNAME` that names one, in order, `-Tparse` none.
     pub(crate) fn target(&self) -> TargetFormat {
+        self.opcode_target().format()
+    }
+
+    /// The target the last `-T` option sets and the opcodes it has, else the standard
+    /// format's (FTEF-25.1).
+    pub(crate) fn opcode_target(&self) -> OpcodeTarget {
         self.options()
             .filter_map(target_option)
             .last()
-            .unwrap_or(TargetFormat::Standard)
+            .map_or_else(OpcodeTarget::default, |(format, revision)| {
+                OpcodeTarget::new(format, revision)
+            })
     }
 }
 
-/// The target the option `arg` sets: `-TNAME` (`!strncmp(myargv[i], "-T", 2)`, in this case
-/// only) whose NAME names one, `-Tparse` none.
-fn target_option(arg: &[u8]) -> Option<TargetFormat> {
+/// The target and revision the option `arg` sets: `-TNAME` (`!strncmp(myargv[i], "-T", 2)`, in
+/// this case only) whose NAME names one, `-Tparse` none.
+fn target_option(arg: &[u8]) -> Option<(TargetFormat, u32)> {
     let name = arg.strip_prefix(b"-T")?;
     if name == b"parse" {
         return None;
     }
-    target_named(name).map(|(format, _)| format)
+    target_named(name).map(|(format, revision, _)| (format, revision))
 }
 
 #[cfg(test)]

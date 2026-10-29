@@ -9,6 +9,7 @@
 use qc_preproc::FteFlag;
 
 use super::{fte_with, whole};
+use crate::ast::{self, AstNode};
 use crate::kind::SyntaxKind as K;
 use crate::{Code, Dialect, Keywords, Parse, parse_preprocessed_flagged, parse_with};
 
@@ -369,4 +370,38 @@ fn a_registered_name_alone_is_a_definition() {
         assert_eq!(count(&insensitive(&source), K::Declaration), 1, "{source}");
         assert_ne!(codes(&fte(&source)), [], "{source}");
     }
+}
+
+// spec FTEF-19.26: under `qccx` `@e` is a unary expression, `e` read as a string
+#[test]
+fn at_is_the_as_string_operator_under_qccx() {
+    let qccx = [(0, whole(&[(FteFlag::Qccx, true)]))];
+    let source = b"float a;\nvoid() f = { local string s = @a; };\n";
+    let parsed = parse_preprocessed_flagged(source, Dialect::Fteqcc, &qccx, &[], &[]);
+    let ops: Vec<_> = parsed
+        .syntax()
+        .descendants()
+        .filter_map(<ast::UnaryExpr as AstNode>::cast)
+        .map(|u| u.op())
+        .collect();
+    assert_eq!(ops, [Some(ast::UnaryOp::AsString)]);
+}
+
+// spec QCD-3.62: under FTEQCC "not a name" names the token found, and is "unexpected EOF" at the
+// end of the file
+// spec QCD-3.1: id's text is "not a name"
+#[test]
+fn not_a_name_names_the_token() {
+    let body = |statement: &str| format!("float x; void() g = {{ {statement} }};");
+    assert_eq!(messages(&fte(&body("x = ;"))), ["\";\" - not a name"]);
+    assert_eq!(messages(&fte(&body("x = );"))), ["\")\" - not a name"]);
+    assert_eq!(messages(&fte("struct *p;")), ["\"*\" - not a name"]);
+    assert_eq!(
+        messages(&fte("float x; void() g = { x = "))
+            .first()
+            .map(String::as_str),
+        Some("unexpected EOF")
+    );
+    let vanilla = parse_with(body("x = ;").as_bytes(), Dialect::Vanilla);
+    assert_eq!(messages(&vanilla), ["not a name"]);
 }

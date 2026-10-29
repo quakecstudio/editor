@@ -155,7 +155,10 @@ jobs:
       # light path runs them on every OS and leaves out the other crates'.
       CI_PATH: ${{ needs.changes.outputs.full == 'false' && 'light' || 'full' }}
     strategy:
-      fail-fast: false
+      # The first OS whose tests fail cancels the other two: the failure is
+      # known, and a cancelled job frees its runner (docs/ci.md, "Stopping at
+      # the first failure").
+      fail-fast: true
       matrix:
         include:
           - name: linux
@@ -170,15 +173,21 @@ jobs:
           persist-credentials: false
       - name: Set up the Rust toolchain
         run: rustup toolchain install
+      # cargo-nextest stops scheduling tests after the first failure (its
+      # fail-fast default), so a job with a failing test ends at that test.
+      # The workspace has no doc tests: every rustdoc code block is `text`.
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: cargo-nextest@0.9.148
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: debug-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - if: env.CI_PATH == 'full'
-        run: cargo test --locked --workspace --all-features
+        run: cargo nextest run --locked --workspace --all-features
       - name: Test xtask, whose tests read the light files
         if: env.CI_PATH == 'light'
-        run: cargo test --locked -p xtask --all-features
+        run: cargo nextest run --locked -p xtask --all-features
       # P1-11: the oracles (oracles/README.md), built from id's sources fetched by checksum
       # with the system C compiler, then the VM oracle checked against the VM vectors. The
       # fetched sources and binaries are cached; a stamp of every input decides whether the
@@ -212,7 +221,9 @@ jobs:
     env:
       CI_PATH: ${{ needs.changes.outputs.full == 'false' && 'light' || 'full' }}
     strategy:
-      fail-fast: false
+      # The first target that fails to build cancels the rest (docs/ci.md,
+      # "Stopping at the first failure").
+      fail-fast: true
       matrix:
         include:
           - name: linux-x86_64
@@ -331,7 +342,7 @@ jobs:
       # itself. make ci runs every step.
       - name: cargo xtask ci, less the steps other jobs run
         env:
-          SKIP: ${{ github.ref == 'refs/heads/main' && 'clippy,test,differential' || 'fmt,clippy,test,deny,differential' }}
+          SKIP: ${{ github.ref == 'refs/heads/main' && 'clippy,nextest,differential' || 'fmt,clippy,nextest,deny,differential' }}
         run: cargo xtask ci --skip "$SKIP"
 
   deny:

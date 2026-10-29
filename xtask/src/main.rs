@@ -69,7 +69,8 @@
 //!   section names.
 //! - `fteqcc-profile`: preprocesses, parses and resolves every module of each
 //!   rerelease codebase under the FTEQCC profile (P2-03) and fails on any error,
-//!   then checks the vanilla profile rejects each extension.
+//!   then checks the vanilla profile rejects each extension; `--warnings` prints
+//!   each warning too.
 //! - `engines`: fetches the fact sources of the engine-target database pinned in
 //!   `crates/qc-engines/sources.toml` by checksum and writes `crates/qc-engines/src/tables.rs`
 //!   from them (P2-04); `engines --check` fails when the checked-in tables differ.

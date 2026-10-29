@@ -200,7 +200,7 @@ read as a keyword in one program and as a name in another; the unit tests in
 | `keyword_static` | on | `QCC_PR_ParseDefs`, `QCC_PR_ParseStatement` (`STRCMP`) | `qc_syntax` `Parser::decl_qualifier`, `Parser::fte_looks_like_local` | FTEF-20.7, FTEF-20.14 | `KEYWORD_PROGRAMS` | ported |
 | `keyword_nonstatic` | on | `QCC_PR_ParseDefs` (outside a function) | `qc_syntax` `Parser::decl_qualifier` | FTEF-20.7 | `KEYWORD_PROGRAMS` | ported |
 | `keyword_ignore` | off | `QCC_PR_ParseDefs` | `qc_syntax` `Parser::decl_qualifier` | FTEF-20.7 | `KEYWORD_PROGRAMS` | ported |
-| `keyword_auto` | off | `QCC_PR_ParseDefs`, `QCC_PR_ParseStatement` (`STRCMP`) | `qc_syntax` `Parser::decl_qualifier`, `Parser::fte_looks_like_local` | FTEF-20.7, FTEF-20.14 | none: a definition `auto` makes needs `memalloc` or `OP_PUSH`, code generation's (FTEF-19.32); the unit tests read it | ported |
+| `keyword_auto` | off | `QCC_PR_ParseDefs`, `QCC_PR_ParseStatement` (`STRCMP`) | `qc_syntax` `Parser::decl_qualifier`, `Parser::fte_looks_like_local` | FTEF-20.7, FTEF-20.14 | none: a definition `auto` makes needs `memalloc` or `OP_PUSH`, code generation's (FTEF-19.63); the unit tests read it | ported |
 | `keyword_nosave` | on | `QCC_PR_ParseDefs` | `qc_syntax` `Parser::decl_qualifier` | FTEF-20.7 | `KEYWORD_PROGRAMS` | ported |
 | `keyword_inline` | on | `QCC_PR_ParseDefs` | `qc_syntax` `Parser::decl_qualifier` | FTEF-20.7 | `KEYWORD_PROGRAMS` | ported |
 | `keyword_strip` | on | `QCC_PR_ParseDefs` | `qc_syntax` `Parser::decl_qualifier` | FTEF-20.7 | `KEYWORD_PROGRAMS` | ported |
@@ -229,7 +229,7 @@ read as a keyword in one program and as a name in another; the unit tests in
 | `get`, `set`, `inline` of an accessor, an enum's `class` | `QCC_PR_CheckName` | `QCC_PR_ParseType`, `QCC_PR_ParseEnum` | `qc_syntax` `Parser::names`, `Parser::accessor_member` | FTEF-20.2 | `KEYWORD_OPTIONS` | ported |
 | `keywords_coexist` (`kce`) | on | `QCC_PR_DummyDef` | `qc_preproc` `Keywords::after_definition`, `qc_syntax` `Parser::define` | FTEF-20.4, QCD-7.67 | `KEYWORD_PROGRAMS`, `KEYWORD_WARNINGS`, `KEYWORD_OPTIONS` | ported |
 | `flag_caseinsensitive` (`caseinsens`) | off | `QCC_PR_CheckKeyword`, `QCC_PR_CheckName` | `qc_preproc` `Keywords::checks`, `Keywords::names` | FTEF-20.2 | `KEYWORD_OPTIONS` | ported |
-| the reacc keywords (`flag_acc`) | off | `QCC_PR_ParseDefs`, `QCC_PR_ParseImmediateStatements`, `QCC_PR_ParseStatement` | none: reacc's syntax | FTEF-20.13, FTEF-19.32 | none: `-Tid` and the profile read no reacc | not modelled |
+| the reacc keywords (`flag_acc`) | off | `QCC_PR_ParseDefs`, `QCC_PR_ParseImmediateStatements`, `QCC_PR_ParseStatement` | none: reacc's syntax | FTEF-20.13, FTEF-19.63 | none: `-Tid` and the profile read no reacc | not modelled |
 
 | Where FTEQCC sets them | File | Behaviour | Rust | Statements | Differential | Status |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -259,23 +259,23 @@ outcome with the pinned FTEQCC's; the unit tests in `crates/qc-preproc/src/compi
 | `QCC_PR_Precompiler` (`warning`) | `qcc_pr_lex.c` | The warning settings | `qc_preproc::WarningSettings` | FTEF-14.63, FTEF-19.22 | `EVIL_SETTINGS` | ported |
 | `QCC_PR_Precompiler` (`TARGET`), `QCC_OPCodeSetTarget` | `qcc_pr_lex.c`, `qcc_pr_comp.c` | The target, which `QCC_PR_DummyDef` reads for `float` | `qc_preproc` `KeywordEdit::hexen2_target` | FTEF-20.4, FTEF-12.11 | `KEYWORD_WARNINGS` | ported |
 | `QCC_OPCodeSetTarget` (`flag_undefwordsize`), from `#pragma TARGET` and `-T` | `qcc_pr_comp.c`, `qcc_pr_lex.c`, `qccmain.c` | `flag_undefwordsize`, on for the DarkPlaces target only, which the casts read | `qc_preproc` `TargetFormat::undefined_word_size`, the `TARGET` pragma's `FlagEdit`, `CommandLine::flags` | FTEF-22.4 | the cast family (`CAST_PROGRAMS`, `CAST_OPTIONS`) | ported |
-| `QCC_OPCodeSetTarget` (`flag_pointerrelocs`) | `qcc_pr_comp.c` | A flag only an initialiser that takes an address reads | none | FTEF-21.18 | none: an expression's, the compiler's | not modelled |
-| `QCC_PR_Precompiler` (`optimise`, `opcode`) | `qcc_pr_lex.c` | The optimisations and the opcodes, which only the output reads; their warnings | `qc_preproc` `optimise_warnings`, `opcode_warnings` | FTEF-12.11, FTEF-21.18 | `PRAGMAS` | ported |
+| `QCC_OPCodeSetTarget` (`flag_pointerrelocs`) | `qcc_pr_comp.c` | A flag only an initialiser that takes an address reads | none | FTEF-21.20 | none: an expression's, the compiler's | not modelled |
+| `QCC_PR_Precompiler` (`optimise`, `opcode`) | `qcc_pr_lex.c` | The optimisations and the opcodes, which only the output reads; their warnings | `qc_preproc` `optimise_warnings`, `opcode_warnings` | FTEF-12.11, FTEF-21.20 | `PRAGMAS` | ported |
 | `QCC_PR_ParseDefs` (the `extern` string branch) | `qcc_pr_comp.c` | `qcfuncs`, `cpriority`, `assumeint`, `assumedouble`, `assumevar` and `subscope` saved, set for `"C"` or `"QC"`, and restored after the token that follows the block; the string `strcasecmp` compares, up to its first NUL and as the lexer joined it; the `;`s and the definition each call reads; the call's recursion | `qc_syntax` `Parser::extern_block`, `Parser::defs_start`, `flags::Linkage`, `flags::marks`, `Parser::relexed`; `qc_sema` the `Rendered` marks and `seams`, `Db::analyze_module` | FTEF-21.1, FTEF-21.17, FTEF-21.3, FTEF-18.32 | `FLAG_PROGRAMS`, `FLAG_WARNINGS`, `extern_programs`, `macro_programs`, `qccx_programs` | ported |
 | `QCC_PR_BeginCompilation` (`QCC_PrioritiseOpcodes`) | `qccmain.c` | The priorities, once the command line is read | `qc_preproc` `FlagSettings::prioritise` (`Preprocessor::with_command_line`) | FTEF-21.4 | `FLAG_OPTIONS` | ported |
 | `QCC_SetDefaultProperties` | `qccmain.c` | Before the second autoprototyping pass, `defaultstatic` off; the flags and the priorities kept | `qc_preproc` `Preprocessor::fte_default_properties` | FTEF-21.14, FTEF-21.4, FTEF-12.11 | none: the second pass is the unit tests', as no case asks for autoprototyping and sets these | ported |
 | `QCC_PR_DummyDef` (`KEYWORD`) | `qcc_pr_comp.c` | A keyword a definition is named as, with `kce` off | the keyword table above | FTEF-20.4 | `KEYWORD_PROGRAMS` | ported |
 | `QCC_ImportProgs` (`#merge`) | `qccmain.c` | `wrap` and `weak` on | none: `#merge` opens no file here | FTEF-14.47, FTEF-20.1 | none: `#merge` reads a progs the build makes | not modelled |
-| `QCC_LoadFromArray` (`opt_assignments`) | `qcc_pr_comp.c` | An optimisation, off around a call it writes | none | FTEF-21.18 | none: code generation's | not modelled |
+| `QCC_LoadFromArray` (`opt_assignments`) | `qcc_pr_comp.c` | An optimisation, off around a call it writes | none | FTEF-21.20 | none: code generation's | not modelled |
 
 | Flag | Where the path reads it | Rust | Statements | Differential | Status |
 | --- | --- | --- | --- | --- | --- |
 | `qcfuncs` | `QCC_PR_LexEscapedCodepoint`; `QCC_PR_ParseType` (`(`, `class`), `QCC_PR_ParseDefs` (`ignoreptr`, `extern`, a function in a body), `QCC_PR_ParseFunctionType` (`()`, a first parameter, arrays), `QCC_PR_ParseEntClass`, `QCC_PR_ParseStruct` | `qc_lexer` `fte_string`; `qc_syntax` `Parser::fte_type_inner`, `Parser::declarator_head`, `Parser::fte_param`, `Parser::at_class`; `qc_sema` `ty::TypeContext`, `declarator_type`, `RawLocal::global_function` | FTEF-12.12, FTEF-20.8, FTEF-21.7, FTEF-21.8, FTEF-21.10, FTEF-19.28 | `FLAG_PROGRAMS`, `FLAG_OPTIONS`, `KEYWORD_OPTIONS` | ported |
-| `qcfuncs` | `QCC_PR_RefTerm` (`*` of a function), `QCC_PR_ParseFunctionType` (`vargtodouble`), `QCC_PR_ParseDefArray` (a dynamic array) | none | FTEF-21.18 | none: expression typing and code generation | not modelled |
+| `qcfuncs` | `QCC_PR_RefTerm` (`*` of a function), `QCC_PR_ParseFunctionType` (`vargtodouble`), `QCC_PR_ParseDefArray` (a dynamic array) | none | FTEF-21.20 | none: expression typing and code generation | not modelled |
 | `cpriority` | `QCC_PrioritiseOpcodes`, through `QCC_PR_RefExpression` | `qc_syntax` `Precedence`, `Parser::precedence` | FTEF-21.4, FTEF-21.5, FTEF-21.6 | `FLAG_WARNINGS`, `FLAG_OPTIONS` | ported |
 | `assumeint` | `QCC_PR_LexNumber`, `QCC_PR_LexVector`; `QCC_PR_ParseEnum` | `qc_lexer`; `qc_sema` `cast::Literal::of_fteqcc_number`, `lower_enum` | FTEF-12.12, FTEF-19.24, FTEF-21.13 | `FLAG_PROGRAMS`, `FLAG_LINES` | ported |
-| `assumeint` | `QCC_PR_Statement` (`&&` and `||` of constants folded) | none | FTEF-21.18 | none: expression typing | not modelled |
-| `qccx` | `QCC_PR_ParseField` (`e^[f]`, `e[f]` on an entity) | `qc_syntax` (`^` and an index) | FTEF-21.18 | none: the type an expression has decides it, the compiler's | not modelled |
+| `assumeint` | `QCC_PR_Statement` (`&&` and `||` of constants folded) | none | FTEF-21.20 | none: expression typing | not modelled |
+| `qccx` | `QCC_PR_ParseField` (`e^[f]`, `e[f]` on an entity) | `qc_syntax` (`^` and an index) | FTEF-21.20 | none: the type an expression has decides it, the compiler's | not modelled |
 | `assumedouble` | `QCC_PR_LexNumber` | `qc_sema` `cast::Literal::of_fteqcc_number` | FTEF-19.24 | `FLAG_PROGRAMS` | ported |
 | `assumevar` | `QCC_PR_ParseDefs` (`GDF_CONST`) | `qc_sema` `RawDecl::assumevar`, `Resolver::constness` | FTEF-21.11 | `FLAG_PROGRAMS`, `FLAG_OPTIONS` | ported |
 | `subscope` | `QCC_PR_ParseStatement` (a block's end), `QCC_PR_GetDef`; `QCC_PR_ParseStatement_For`, `QCC_PR_ParseStatement_Using`, which end their locals either way | `qc_sema` `lower_block`, `ScopedFacts::subscope`, `Resolver::lookup_local` | FTEF-21.12, FTEF-19.19 | `FLAG_PROGRAMS`, `FLAG_OPTIONS` | ported |
@@ -283,9 +283,9 @@ outcome with the pinned FTEQCC's; the unit tests in `crates/qc-preproc/src/compi
 | `qccx`, `utf8`, `ILP32`, `ssp`, `macroinstrings` | `QCC_PR_Lex` and its readers | `qc_lexer::LexFlags` | FTEF-12.12 | `FLAG_LINES`, `FLAG_BYTE_LINES` | ported |
 | `hashonly`, `nofileline` | `QCC_PR_Lex`, `QCC_PR_Precompiler` | `qc_preproc` | FTEF-12.13 | `FLAG_LINES` | ported |
 | `qccx`, `lax`, `typeexplicit`, `undefwordsize` | `QCC_TryEvaluateCast`, `QCC_EvaluateCast`, `QCC_SupplyConversion` (an initialiser's, a default value's, an enum value's and a state frame's casts) | `qc_preproc::CompilerFlags`; `qc_sema` `cast::Source::cast`, `Source::supply`, `RawValue::cast_flags` | FTEF-22.1, FTEF-22.2, FTEF-22.3, FTEF-22.4, FTEF-22.6 | the cast family (`CAST_PROGRAMS`, `CAST_WARNINGS`, `CAST_OPTIONS`) | ported |
-| `qccx`, `lax`, `typeexplicit`, `undefwordsize` | `QCC_PR_Statement`, `QCC_SupplyConversionForAssignment`, `QCC_PR_GenerateLogicalTruth`, `sizeof` (an expression's operators, assignments and conditions) | none | FTEF-21.18 | none: expression typing (P2-06) | not modelled |
-| `nullemptystr`, `ifstring`, `iffloat`, `ifvector`, `vectorlogic`, `brokenarray`, `rootconstructor`, `lo`, `fastarrays`, `boundchecks`, `allowuninit`, `reciprocal-math`, `omitinternals`, `embedsrc`, `annotate`, `filetimes` and the `dump` flags | code generation and the output | none | FTEF-21.18 | none: the compiler's output | not modelled |
-| `msvcstyle`, `debugmacros`, `verbose` | what FTEQCC prints | none | FTEF-12.17, FTEF-21.18 | none: printing only | not modelled |
+| `qccx`, `lax`, `typeexplicit`, `undefwordsize` | `QCC_PR_Statement`, `QCC_SupplyConversionForAssignment`, `QCC_PR_GenerateLogicalTruth`, `sizeof` (an expression's operators, assignments and conditions) | none | FTEF-21.20 | none: expression typing (P2-06) | not modelled |
+| `nullemptystr`, `ifstring`, `iffloat`, `ifvector`, `vectorlogic`, `brokenarray`, `rootconstructor`, `lo`, `fastarrays`, `boundchecks`, `allowuninit`, `reciprocal-math`, `omitinternals`, `embedsrc`, `annotate`, `filetimes` and the `dump` flags | code generation and the output | none | FTEF-21.20 | none: the compiler's output | not modelled |
+| `msvcstyle`, `debugmacros`, `verbose` | what FTEQCC prints | none | FTEF-12.17, FTEF-21.20 | none: printing only | not modelled |
 
 ## C library calls
 
@@ -369,3 +369,62 @@ reach from `progs.src` to a token. **Default** is what `fteqcc -Tid` does with i
 | `QCC_PR_Lex` | "Explicit precompiler usage when not defined %s" | error | E0209 | FTEF-14.52, FTE-23.10 | ported |
 | `QCC_LoadFile` | "file contains null bytes" | warning | W0117 | FTEF-14.64, QCD-7.60 | ported |
 | `QCC_main` | "No destination filename.  qcc -help for info." | error | none: FTEQCC never reaches it | PRJ-4.9 | ported |
+
+## The type declaration grammar (P2-133)
+
+The functions of fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e` that read a type and
+the definitions that follow it, which the first inventory stopped short of (it ended at the
+token, and the L3 inventory began at a definition): `QCC_PR_ParseType`, `QCC_PR_ParseStruct`,
+`QCC_PR_ParseEntClass`, `QCC_PR_ParseEnum`, `QCC_PR_ParseDefs` and the declaration branches of
+`QCC_PR_ParseStatement`, a row for each behaviour, with the source's own words where they decide
+it. The programs are the `types` family of the builtin differential
+(`xtask/src/oracles/builtins/types.rs`): every position a type stands (file level, a body, a
+member list, a `for` initialiser, a parameter list, a cast, `sizeof`), with no option, with
+`-Fcaseinsens` and with `qcfuncs` off. The rows that are about a name, a type or a statement the
+semantic model checks are in [`inventory-l3.md`](inventory-l3.md), section 4.
+
+| FTEQCC function | Behaviour | Rust | Statements | Differential | Status |
+| --- | --- | --- | --- | --- | --- |
+| `QCC_PR_ParseType` | `if (QCC_PR_CheckKeyword(keyword_const, "const")) ... silentfail = false;` and `volatile`: read and ignored, `const` with a warning | `Parser::fte_type_inner` | FTEF-2.11 | `TYPE_POSITIONS` | ported |
+| `QCC_PR_ParseType` | `...` is a field of field of a type, `..` and `.` field types, `.*T` a field of pointer | `Parser::fte_type_inner` | FTEF-4.1 | `TYPE_POSITIONS` | ported |
+| `QCC_PR_ParseType` | `QCC_PR_CheckKeyword (keyword_accessor, "accessor")`: an accessor as a type anywhere, `: type` and a body | `Parser::accessor_type`, `Parser::fte_base_type` | FTEF-10.5 | `TYPE_POSITIONS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseType` | `if (flag_qcfuncs && QCC_PR_CheckKeyword (keyword_class, "class")) type = QCC_PR_ParseEntClass();` | `Parser::class_type`, `Parser::fte_base_type` | FTEF-9.8 | `TYPE_POSITIONS`, `CLASS_HEADS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseType` | `enum` and `enumflags` call `QCC_PR_ParseEnum`; `union` and `struct` call `QCC_PR_ParseStruct` | `Parser::enum_body`, `Parser::struct_type` | FTEF-6.8, FTEF-8.2 | `TYPE_POSITIONS`, `HEADS` | ported |
+| `QCC_PR_ParseType` | `type = QCC_TypeForName(name);` a registered or defined name, in any case under `caseinsens` | `Parser::registered_type` | FTEF-19.33 | `TYPE_POSITIONS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseType` | the reacc names `Void`, `Real`, `Vector`, `Object`, `String`, `PFunc` under `flag_acc` | not modelled: FTEF-20.13 (`-Facc` is outside the profile) | FTEF-20.13 | none: outside the profile | not modelled |
+| `QCC_PR_ParseType` | the loop over C type words, `register`, `signed`, `long`, `int`, `short`, `char`, `_Bool`, `float`, `double` | `CWords::read` | FTEF-2.8, FTEF-20.9 | `TYPE_POSITIONS` | ported |
+| `QCC_PR_ParseType` | `if (!ignoreptr) while (QCC_PR_CheckToken("*"))` and `if (flag_qcfuncs && QCC_PR_CheckToken ("("))`: pointers, and a parameter list with `qcfuncs` on | `Parser::fte_type_inner` | FTEF-21.7, FTEF-18.32 | `TYPE_POSITIONS` | ported |
+| `QCC_PR_ParseFunctionType` | `if (QCC_PR_PeekToken("*")) return NULL;` and a first parameter that names no type: "expected function arg list" with `qcfuncs` on, an `int` named so with it off | `Parser::fte_param`, `Parser::fte_param_list` | FTEF-15.3, FTEF-21.8, FTEF-19.35 | `PROGRAMS` | ported |
+| `QCC_PR_ParseStruct` | `if (QCC_PR_CheckToken("{"))` an anonymous struct, else `QCC_PR_ParseName()`, a parent only for a struct, `QCC_PR_Expect("{")` after a parent, a tag alone naming the type | `Parser::struct_type` | FTEF-6.8 | `HEADS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseStruct` | `}` ends, `;` closes the type, `,` goes on, a new type with one open is "missing semi-colon" | `Parser::struct_members` | FTEF-6.7 | `MEMBERS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseStruct` | `QCC_PR_CheckKeyword(1, "public")`, `private`, `protected`, each `QCC_PR_Expect(":")`, then `static` or `virtual` | `Parser::member_label`, `Parser::struct_member` | FTEF-6.7 | `MEMBERS` | ported |
+| `QCC_PR_ParseStruct` | `newparm = QCC_PR_ParseType(false, false, true);` then `while (QCC_PR_CheckToken("*"))`, `//annonymous structs do weird scope stuff`, `(` `*` name `)`, `[`, `(` a parameter list or "expected function arg list" | `Parser::struct_member`, `Parser::struct_declarator` | FTEF-6.7 | `MEMBERS` | ported |
+| `QCC_PR_ParseStruct` | `if (QCC_PR_CheckToken(":")) { int bits = QCC_PR_IntConstExpr(); ...` the width, in the parser; its type and size are checked in the semantic model | `Parser::struct_declarator` | FTEF-6.7, FTEF-6.9 | `MEMBERS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseStruct` | `if (QCC_PR_CheckToken("=")) { defaultval = QCC_PR_ParseDefaultInitialiser(type); QCC_PR_ParseWarning(ERR_INTERNAL, "TODO: pre-initialised struct members are not implemented yet");` | `Parser::struct_declarator` | FTEF-6.7 | `MEMBERS` | ported |
+| `QCC_PR_ParseStruct` | `if (!numparms) QCC_PR_ParseError(ERR_NOTANAME, "%s %s has no members", ...)` | `Parser::struct_members` | FTEF-6.7, QCD-3.43 | `MEMBERS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseEntClass` | `parmname = QCC_PR_ParseName();` then `:` and a parent with `QCC_PR_Expect("{")`, else `forwarddeclaration = !QCC_PR_CheckToken("{")` | `Parser::class_type` | FTEF-9.8 | `CLASS_HEADS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseEntClass` | `if (pr_scope) QCC_PR_ParseError(ERR_REDECLARATION, "Declaration of class %s%s%s within function"` | `Parser::class_type` | FTEF-9.8, QCD-3.50 | `CLASS_HEADS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseEntClass` | the loop over a member's keywords: `nonvirtual`, `static`, `const`, `var`, `virtual`, `ignore`, `strip`, `inline`, `get`, `set`, and, `firstkeyword` only, `public`, `private`, `protected` with `QCC_PR_Expect(":")` (twice for `protected`) | `Parser::class_member` | FTEF-9.2, FTEF-9.9, FTEF-20.11 | `CLASS_MEMBERS` | ported |
+| `QCC_PR_ParseEntClass` | `basetype = QCC_PR_ParseType(false, false, false); if (!basetype) ... "In class %s, expected type, found %s"`, so a `;` or a `}` after a label is no member | `Parser::class_member` | FTEF-9.9 | `CLASS_MEMBERS` | ported |
+| `QCC_PR_ParseEntClass` | `if (basetype->type == ev_struct || basetype->type == ev_union) ... "Struct or union in class %s"` | `Parser::class_member` | FTEF-9.11, QCD-3.51 | `CLASS_MEMBERS` | ported |
+| `QCC_PR_ParseEntClass` | the declarator loop: a constructor `Name(void);`, `parmname`, `[`, `(`, `=` or `{` a body, `,` or `QCC_PR_Expect(";")` | `Parser::class_member`, `Parser::declarators` | FTEF-9.4 | `CLASS_MEMBERS` | ported |
+| `QCC_PR_ParseEnum` | `if (!QCC_PR_CheckToken("{"))` `class`, a legacy base type, a name, `:` a base type, `QCC_PR_Expect("{")` | `Parser::enum_head_and_body` | FTEF-8.2, FTEF-19.10 | `PROGRAMS` | ported |
+| `QCC_PR_ParseEnum` | `while(1) { name = QCC_PR_ParseName(); ... if (QCC_PR_CheckToken("}")) break; QCC_PR_Expect(","); if (QCC_PR_CheckToken("}")) break; }` | `Parser::enum_head_and_body` | FTEF-19.37 | `PROGRAMS` | ported |
+| `QCC_PR_ParseEnum` | `else if (strictenum) QCC_PR_Expect(":");`, and the declarators after the body as after any type | `Parser::enum_head_and_body`, `Parser::enum_decl` | FTEF-8.5 | `PROGRAMS`, `TYPE_POSITIONS` | ported |
+| `QCC_PR_ParseDefs` | the loop of storage classes, `typedef` among them any number of times, `extern`, `auto`, `register`, `static`, `shared`, `const`, `var`, `nonstatic`, `unused`, `noref`, `used`, `nosave`, `strip`, `ignore`, `inline`, `wrap`, `weak`, `accumulate`, `deprecated`, `[[` | `Parser::fte_qualifiers` | FTEF-15.1, FTEF-21.9, FTEF-21.14, FTEF-7.4 | `PROGRAMS` | ported |
+| `QCC_PR_ParseDefs` | `if (!hadmodifier && pr_token_type == tt_immediate && pr_immediate_type==type_string)`, the `extern "C"` block | `Parser::extern_block` | FTEF-21.17 | `PROGRAMS` | ported |
+| `QCC_PR_ParseDefs` | `basetype = QCC_PR_ParseType (false, hadmodifier, !flag_qcfuncs);` and an `int` when a modifier was read and no type | `Parser::fte_decl_type`, `Parser::fte_type_omitted` | FTEF-19.21, FTEF-21.7 | `PROGRAMS` | ported |
+| `QCC_PR_ParseDefs` | `do { ... if (QCC_PR_CheckToken (";")) ... } while (QCC_PR_CheckToken (","))`: a `;` right after the type (`typedef;` a warning), `*`s, `(` a parameter list or C's `(*name)`, `::`, the name, `[`, `(` | `Parser::declarators`, `Parser::declarator`, `Parser::declarator_head` | FTEF-15.6, FTEF-15.8, FTEF-20.12, FTEF-21.7, FTEF-9.4 | `TAILS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseDefs` | `if (istypedef) {... def = NULL; continue; }`: each declarator of a typedef defines a type, with no initialiser | `Parser::typedef_decl`, `Parser::declarator` | FTEF-7.4, FTEF-19.9 | `PROGRAMS` | ported |
+| `QCC_PR_ParseDefs` | `type->type == ev_function` after `QCC_PR_ParseType`: a definition of a typedef'd function type takes a body, state header or builtin | `Parser::declared_function`, `Parser::fte_base_type` | FTEF-7.5 | `PROGRAMS` | ported |
+| `QCC_PR_ParseDefs` | the end: `QCC_PR_CheckTokenComment (";"...)` or "Missing semicolon at end of definition", a warning | `Parser::declarators` | FTE-21.3, FTEF-6.7 | `PROGRAMS` | ported |
+| `QCC_PR_ParseDefs` | the `flag_acc` branches (`CodeSys`, `var name:`, `function`, `objdata`) and the reacc `function` definition | not modelled: FTEF-20.13 (`-Facc` is outside the profile) | FTEF-20.13 | none: outside the profile | not modelled |
+| `QCC_PR_ParseStatement` | `{` a block, whose `typedef`s end with it | `Parser::block_inner`, `Parser::ends_at_declaration_line` | FTEF-18.34, FTEF-20.14 | `PROGRAMS` | ported |
+| `QCC_PR_ParseStatement` | a statement that starts with `local`, a type's name or one of the 26 words (`var` ... `const`, `class`, `struct`, `union`, `enum`, `extern`, `typedef`) is `QCC_PR_ParseDefs`, `enumflags` and `accessor` not among them | `Parser::fte_statement`, `Parser::fte_looks_like_local` | FTEF-20.14 | `PROGRAMS` | ported |
+| `QCC_PR_ParseStatement` | `switch`: `QCC_PR_Expect (")"); ... QCC_PR_ParseStatement ();`, any statement as the body | `Parser::switch_stmt` | FTEF-18.33 | `PROGRAMS` | ported |
+| `QCC_PR_ParseType` | after a struct, class, enum or accessor written as a declaration's type: `if (!ignoreptr) while (QCC_PR_CheckToken("*"))` and `if (flag_qcfuncs && QCC_PR_CheckToken ("("))`, before `QCC_PR_ParseDefs`'s declarators | `Parser::type_decl_tail` | FTEF-6.8, FTEF-21.7 | `TAILS`, `TYPE_POSITIONS` | ported |
+| `QCC_PR_ParseFunctionType` | `*`s after a parameter's type, a function type's included: `void(void() *a)` | `Parser::fte_param` | FTEF-15.3 | `TYPE_POSITIONS` | ported |
+| `QCC_PR_ParseStatement_For` | `type = QCC_PR_ParseType (false, true, false)`: any type starts a declaration in the first clause | `Parser::for_init_declares` | FTEF-16.9 | `TYPE_POSITIONS` | ported |
+| `QCC_PR_ParseStruct` | `if (QCC_PR_CheckToken("=") \|\| (type->type == ev_function && QCC_PR_PeekToken("{")))` for a `static` or `virtual` member: a body or value | `Parser::struct_declarator` | FTEF-6.7 | `MEMBERS` | ported |
+| `QCC_PR_ParseEntClass` | `!strcmp(parmname, classname)`: the constructor named exactly as the class; `parmname = QCC_PR_ParseName()` after a `,` | `Parser::class_member`, `Parser::declarators` | FTEF-9.13, FTEF-9.9 | `CLASS_MEMBERS` | ported |
+| `QCC_PR_ParseStatement` | `case` and `default` outside a `switch`, a repeated `default`: "Duplicated default case", "function contains illegal cases" | `Parser::at_case_label`, `Parser::switch_body` | FTEF-18.10 | `PROGRAMS` | ported |

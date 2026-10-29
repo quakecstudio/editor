@@ -67,7 +67,7 @@ other crates' tests open or embed with `include_str!` and `include_bytes!` are u
 | Check | What it does |
 | --- | --- |
 | `cargo xtask ci` | everything, as on a full run: the plan checks, cached specs, conventions, ADRs, layers, licenses, attribution, contrast and both fixture checks |
-| `Unit Tests (linux)`, `(macos)`, `(windows)` | `cargo test --locked -p xtask --all-features` on each OS instead of the whole workspace, and no oracles |
+| `Unit Tests (linux)`, `(macos)`, `(windows)` | `cargo nextest run --locked -p xtask --all-features` on each OS instead of the whole workspace, and no oracles |
 | `Format`, `Clippy`, `cargo-deny`, `Build (macos-universal)` | the job is skipped by its `if:`, which reports success |
 | `Build (linux-x86_64)` and the other build entries, `Test Assets (linux)`, `(macos)`, `(windows)` | every step is skipped, so the job reports success under its matrix name |
 | `Dependency Review`, `Pinned Actions`, `zizmor` | unchanged; `.github/**` is never light |
@@ -105,6 +105,22 @@ also runs weekly, so a cache evicted after seven days unused or one whose key ch
 the runner image is refilled, and on demand (`workflow_dispatch`). The push paths must list
 every input of every cache key.
 
+### Stopping at the first failure
+
+A run stops as soon as one test fails, at two levels (P2-146):
+
+- Within a job, `Unit Tests` runs the workspace with
+  [cargo-nextest](https://nexte.st/) (`cargo nextest run`, installed through
+  `taiki-e/install-action` at a pinned version), whose default is to stop scheduling tests
+  after the first failure, so the job ends at that test instead of running every binary
+  to the end. The light path's xtask-only step uses the same command. nextest runs no doc
+  tests, and the workspace has none: every rustdoc code block is `text`.
+- Across a matrix, `Unit Tests`, `Build` and the Readiness `flakes` matrices set
+  `fail-fast: true`, so the first OS or target that fails cancels its siblings and frees
+  their runners. A cancelled job shows as cancelled, not failed: the failure to read is the
+  one that was not cancelled. The Readiness `mutation` shards keep `fail-fast: false`, since
+  each shard is an independent measurement the ratchet judges on its own.
+
 ## Workflows
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml):
@@ -113,7 +129,7 @@ every input of every cache key.
 | --- | --- | --- |
 | `Format` | Linux | `cargo fmt --all --check` |
 | `Clippy` | Linux | `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings` |
-| `Unit Tests (linux)`, `Unit Tests (macos)`, `Unit Tests (windows)` | each OS | `cargo test --locked --workspace --all-features`, then `cargo xtask oracles`: fetches id's and FTEQCC's sources by checksum, builds the VM oracle, id's qcc and FTEQCC with the system C compiler, and runs every VM vector through the VM oracle ([`oracles/README.md`](../oracles/README.md)); the fetched sources and binaries are cached, keyed on `oracles/` and the xtask code that builds them |
+| `Unit Tests (linux)`, `Unit Tests (macos)`, `Unit Tests (windows)` | each OS | `cargo nextest run --locked --workspace --all-features` with cargo-nextest 0.9.148, then `cargo xtask oracles`: fetches id's and FTEQCC's sources by checksum, builds the VM oracle, id's qcc and FTEQCC with the system C compiler, and runs every VM vector through the VM oracle ([`oracles/README.md`](../oracles/README.md)); the fetched sources and binaries are cached, keyed on `oracles/` and the xtask code that builds them |
 | `Build (linux-x86_64)`, `Build (linux-aarch64)` | x86_64 and arm64 Linux runners | `cargo build --profile ci --locked --workspace` for `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` |
 | `Build (windows-x86_64)`, `Build (windows-aarch64)` | Windows | the same for `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc` (cross-compiled) |
 | `Build (macos-universal)` | macOS | builds `aarch64-apple-darwin` and `x86_64-apple-darwin`, then joins every binary with `lipo` and checks both architectures are in it |
@@ -137,7 +153,7 @@ there the `cargo xtask ci` job runs fmt and deny itself.
 | `specs` | `bash scripts/refresh-specs.sh --verify` | `cargo xtask ci` | `cargo xtask ci` |
 | `conventions`, `adr`, `layers`, `licenses`, `attribution`, `contrast` | `cargo xtask <name>` | `cargo xtask ci` | `cargo xtask ci` |
 | `clippy` | `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings` | `Clippy` | `Clippy` |
-| `test` | `cargo test --locked --workspace --all-features` | `Unit Tests (linux)` (and macOS and Windows) | `Unit Tests (linux)` |
+| `nextest` | `cargo nextest run --locked --workspace --all-features` | `Unit Tests (linux)` (and macOS and Windows) | `Unit Tests (linux)` |
 | `clippy-fixtures` | `cargo xtask clippy-fixtures` | `cargo xtask ci` | `cargo xtask ci` |
 | `deny` | `cargo deny --locked --all-features check advisories bans licenses sources` | `cargo-deny` | `cargo xtask ci` |
 | `deny-fixtures` | `cargo xtask deny-fixtures` | `cargo xtask ci` | `cargo xtask ci` |

@@ -191,7 +191,7 @@ fn fte_items(source: &str) -> Vec<SyntaxKind> {
         .collect()
 }
 
-// spec FTEF-18.27: a struct, class or accessor body that lost its `}` ends at the next
+// spec FTEF-18.34: a struct, class or accessor body that lost its `}` ends at the next
 // declaration line, a declaration's shape or a file-level keyword at column 0
 #[test]
 fn fteqcc_bodies_end_at_declaration_lines() {
@@ -243,7 +243,7 @@ fn a_stray_semicolon_is_not_deleted() {
     assert_eq!(report.failures, Vec::<String>::new());
 }
 
-// spec FTEF-18.27: a class member's recovery stops at the `}` that closes the class
+// spec FTEF-18.34: a class member's recovery stops at the `}` that closes the class
 #[test]
 fn class_member_recovery_keeps_the_class_brace() {
     use SyntaxKind as K;

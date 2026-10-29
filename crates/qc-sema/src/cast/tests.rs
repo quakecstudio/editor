@@ -11,7 +11,7 @@ use qc_lexer::{LexFlag, LexFlags};
 use qc_preproc::{CompilerFlags, FteFlag};
 
 use super::{Cast, ConstType, Kind, Literal, Source, Supply};
-use crate::ty::{FunctionType, SimpleType, Type};
+use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
 
 fn simple(ty: SimpleType) -> Type {
     Type::Simple(ty)
@@ -113,6 +113,7 @@ fn a_float_casts_to_numbers_and_vectors() {
             ret: simple(SimpleType::Void),
             params: Vec::new(),
             variadic: false,
+            labels: ParamLabels::default(),
         })),
     ] {
         assert!(refused(literal("1"), &to), "{to:?}");
@@ -184,7 +185,7 @@ fn named_definitions_cast_by_their_type() {
 }
 
 // spec FTEF-19.31: C type words and registered type names are the type FTEF-2.8 makes, an 8-
-// or 16-bit integer none the model follows
+// or 16-bit integer cast as its parent, `int` or `uint`, and named by its own name
 #[test]
 fn c_words_name_their_kinds() {
     for (words, kind) in [
@@ -205,9 +206,9 @@ fn c_words_name_their_kinds() {
         ("__uint", Kind::Uint),
         ("__int64", Kind::Int64),
         ("__uint64", Kind::Uint64),
-        ("__char", Kind::Opaque),
-        ("__short", Kind::Opaque),
-        ("_Bool", Kind::Opaque),
+        ("__char", Kind::Integer),
+        ("__short", Kind::Integer),
+        ("_Bool", Kind::Integer),
         ("int int", Kind::Opaque),
         ("long", Kind::Opaque),
         ("Player", Kind::Opaque),
@@ -217,6 +218,9 @@ fn c_words_name_their_kinds() {
     assert_eq!(named("unsigned __long").fteqcc_name(), "__uint64");
     assert_eq!(named("__long __double").fteqcc_name(), "__double");
     assert_eq!(named("Player").fteqcc_name(), "Player");
+    assert_eq!(named("__uint8").fteqcc_kind(), Kind::Uint);
+    assert_eq!(named("__char").fteqcc_name(), "__int8");
+    assert_eq!(named("unsigned __short").fteqcc_name(), "__uint16");
     assert!(Kind::Double.is_numeric());
     assert!(!Kind::Vector.is_numeric());
 }
@@ -260,6 +264,7 @@ fn pointers_and_warnings() {
             ret: simple(SimpleType::Void),
             params: vec![simple(param)],
             variadic: false,
+            labels: ParamLabels::default(),
         }))
     };
     assert!(warns(
@@ -272,7 +277,7 @@ fn pointers_and_warnings() {
     ));
 }
 
-// spec FTEF-17.13: two types are FTEQCC's same type part by part, a C word by its kind
+// spec FTEF-17.21: two types are FTEQCC's same type part by part, a C word by its kind
 #[test]
 fn types_are_the_same_part_by_part() {
     let f = |ret: Type, params: Vec<Type>, variadic: bool| {
@@ -280,13 +285,14 @@ fn types_are_the_same_part_by_part() {
             ret,
             params,
             variadic,
+            labels: ParamLabels::default(),
         }))
     };
     let float = simple(SimpleType::Float);
     assert!(named("int").fteqcc_same(&named("integer")));
     assert!(!named("int").fteqcc_same(&float));
     assert!(named("Player").fteqcc_same(&float));
-    // FTEF-17.13: a pointer is the same as a pointer to the same, and as no other type.
+    // FTEF-17.21: a pointer is the same as a pointer to the same, and as no other type.
     let pointer = |inner: &Type| Type::Pointer(Rc::new(inner.clone()));
     assert!(!pointer(&float).fteqcc_same(&simple(SimpleType::Vector)));
     assert!(!pointer(&float).fteqcc_same(&float));
@@ -319,6 +325,7 @@ fn type_names_are_fteqcc_spellings() {
         ret: simple(SimpleType::Void),
         params: vec![simple(SimpleType::Float)],
         variadic: true,
+        labels: ParamLabels::default(),
     }));
     assert_eq!(func.fteqcc_name(), "void(float, ...)");
     assert_eq!(
@@ -576,4 +583,89 @@ fn supplied_conversions() {
     ] {
         assert_eq!(kind.basic_name(), name);
     }
+}
+
+// spec FTEF-19.31: pointers cast silently when `typecmp_lax` of what they point to agrees, a
+// pointer to anything agreeing with a type the model does not follow, and a field of one casts
+// to and from any field
+#[test]
+fn pointees_and_fields_of_unfollowed_types() {
+    let none = CompilerFlags::default();
+    let pointer = |ty: Type| Type::Pointer(Rc::new(ty));
+    let field = |ty: Type| Type::Field(Rc::new(ty));
+    let float = simple(SimpleType::Float);
+    let player = named("Player");
+    let float_2 = pointer(pointer(float.clone()));
+    let float_3 = pointer(float_2.clone());
+    assert_eq!(
+        Source::Typed(&float_2).cast(&pointer(player.clone()), none),
+        Cast::Silent
+    );
+    assert_eq!(
+        Source::Typed(&float_3).cast(&pointer(pointer(player.clone())), none),
+        Cast::Silent
+    );
+    assert_eq!(
+        Source::Typed(&pointer(named("int"))).cast(&pointer(named("__uint32")), none),
+        Cast::Implicit
+    );
+    assert_eq!(
+        Source::Typed(&pointer(simple(SimpleType::Vector)))
+            .cast(&pointer(pointer(float.clone())), none),
+        Cast::Implicit
+    );
+    assert_eq!(
+        Source::Typed(&pointer(named("int"))).cast(&pointer(named("__int64")), none),
+        Cast::Implicit
+    );
+    assert_eq!(
+        Source::Typed(&field(float.clone())).cast(&field(player.clone()), none),
+        Cast::Silent
+    );
+    assert_eq!(
+        Source::Typed(&field(player)).cast(&field(float), none),
+        Cast::Silent
+    );
+}
+
+// spec FTEF-22.3: `QCC_ShouldConvert` needs no conversion from an integer to a function, but
+// one from an unsigned integer, and converts a 64-bit integer to a float
+#[test]
+fn should_convert_between_kinds() {
+    let none = CompilerFlags::default();
+    let explicit = flags(&[FteFlag::Typeexplicit]);
+    assert_eq!(
+        literal("1i").supply(Kind::Function, explicit),
+        Supply::Converted
+    );
+    assert_eq!(literal("1u").supply(Kind::Function, none), Supply::Mismatch);
+    assert_eq!(
+        literal("1l").supply(Kind::Float, explicit),
+        Supply::Explicit
+    );
+    assert_eq!(
+        literal("1l").supply(Kind::Uint64, explicit),
+        Supply::Converted
+    );
+}
+
+// spec FTEF-29.4: a store tries the cast with `implicit` off, which also takes an entity and a
+// float either way, before `QCC_SupplyConversion`
+#[test]
+fn a_store_casts_an_entity_and_a_float() {
+    let none = CompilerFlags::default();
+    let entity = simple(SimpleType::Entity);
+    let float = simple(SimpleType::Float);
+    assert_eq!(
+        Source::Typed(&float).supply_for_assignment(&entity, none),
+        Supply::Converted
+    );
+    assert_eq!(
+        Source::Typed(&entity).supply_for_assignment(&float, none),
+        Supply::Converted
+    );
+    assert_eq!(
+        Source::Typed(&simple(SimpleType::Vector)).supply_for_assignment(&entity, none),
+        Supply::Mismatch
+    );
 }

@@ -138,13 +138,13 @@ fn parameters_below_the_one_before_are_bad_parm_order() {
 
 // spec QC-11.11: a vector's initialiser does not initialise its components under the vanilla
 // profile
-// spec FTEF-19.5: under FTEQCC the components have the vector's words
+// spec FTEF-19.58: under FTEQCC the components have the vector's words
 #[test]
 fn a_vectors_components_and_its_initialiser() {
     assert_eq!(vanilla("vector v = '1 2 3';\nfloat v_x = 2;\n"), []);
     assert_eq!(vanilla("vector v = '1 2 3';\nfloat v_x = 1;\n"), []);
     assert_eq!(fte("vector v = '1 2 3';\nfloat v_x = 1;\n"), []);
-    assert_eq!(fte("vector v = '1 2 3';\nfloat v_x = 2;\n"), [Code::E0206]);
+    assert_eq!(fte("vector v = '1 2 3';\nfloat v_x = 2;\n"), [Code::E0363]);
     assert_eq!(fte("float x = 0x10;\nfloat x = 16;\n"), []);
 }
 
@@ -179,11 +179,11 @@ fn locals_are_initialised_once() {
     );
     assert_eq!(
         fte("void() g = { static float x = 1; static float x = 2; };\n"),
-        [Code::E0206]
+        [Code::E0363]
     );
     assert_eq!(
         fte("void() g = { const float x = 1; const float x = 2; };\n"),
-        [Code::W0207, Code::E0206]
+        [Code::W0207, Code::E0363]
     );
 }
 
@@ -333,7 +333,9 @@ fn named_initialisers_are_cast() {
     assert_eq!(fte(".float fl;\nfloat x = fl;\n"), [Code::E0213]);
     assert_eq!(fte(".float fl;\n.float g = fl;\n"), []);
     assert_eq!(
-        fte("class C { void() m; };\n.vector origin;\nvoid() C::m = { vector v = origin; };\n"),
+        fte(
+            "class C { nonvirtual void() m; };\n.vector origin;\nvoid() C::m = { vector v = origin; };\n"
+        ),
         []
     );
     assert_eq!(fte("string s = _(\"a\");\n"), []);
@@ -367,10 +369,7 @@ fn a_macro_number_for_a_function_cannot_be_cast() {
     // The function it would have been is left with no body.
     assert_eq!(
         found,
-        [
-            "Cannot cast from float to void()",
-            "function f was not defined"
-        ]
+        ["Cannot cast from float to void()", "function f has no body"]
     );
 }
 
@@ -428,7 +427,7 @@ fn constants_initialise_constants() {
     );
 }
 
-// spec FTEF-19.4: a body for a definition already initialised is E0216, but for anglemod and
+// spec FTEF-19.57: a body for a definition already initialised is E0216, but for anglemod and
 // crossproduct, and wrap and accumulate their own rules
 // spec QCD-3.16: E0216 "redeclaration of function body"
 // spec QCD-3.22: E0222 "wrapper function does not wrap anything"
@@ -439,15 +438,15 @@ fn constants_initialise_constants() {
 fn bodies_for_initialised_definitions() {
     assert_eq!(
         fte("void() g = {};\nvoid() g = {};\n"),
-        [Code::E0216, Code::E0206]
+        [Code::E0216, Code::E0363]
     );
     assert_eq!(
         fte("void() g = #6;\nvoid() g = {};\n"),
-        [Code::E0216, Code::E0206]
+        [Code::E0216, Code::E0363]
     );
     assert_eq!(
         fte("extern void() g;\nvoid() g = {};\n"),
-        [Code::E0216, Code::E0206]
+        [Code::E0216, Code::E0363]
     );
     assert_eq!(
         fte_only("void() anglemod = #6;\nvoid() anglemod = {};\n"),
@@ -484,14 +483,14 @@ fn bodies_for_initialised_definitions() {
     );
 }
 
-// spec FTEF-19.5: a constant's name gives its value, and parseentitydata may be renumbered
+// spec FTEF-19.58: a constant's name gives its value, and parseentitydata may be renumbered
 // spec QCD-7.49: W0223 for parseentitydata given another builtin after #608 or #613
 #[test]
 fn values_compare_through_names() {
     assert_eq!(fte("float y = 2;\nfloat x = y;\nfloat x = 2;\n"), []);
     assert_eq!(
         fte("float y = 2;\nfloat x = y;\nfloat x = 3;\n"),
-        [Code::E0206]
+        [Code::E0363]
     );
     let (code, message) =
         fte_only("void() parseentitydata = #608;\nvoid() parseentitydata = #613;\n");
@@ -502,7 +501,7 @@ fn values_compare_through_names() {
     );
     assert_eq!(
         fte("void() parseentitydata = #609;\nvoid() parseentitydata = #613;\n"),
-        [Code::E0206]
+        [Code::E0363]
     );
 }
 
@@ -522,10 +521,7 @@ fn default_values() {
         (Code::E0218, "Default value not initialized yet".to_owned())
     );
     assert_eq!(fte("float y = 1;\nvoid(float a = y) g = #6;\n"), []);
-    assert_eq!(
-        fte("void(float a = \"s\") g = #6;\n"),
-        [Code::E0213, Code::E0211]
-    );
+    assert_eq!(fte("void(float a = \"s\") g = #6;\n"), [Code::E0213]);
     assert_eq!(
         fte("void(float a = 1) g;\nvoid(float a = 2) g = #6;\n"),
         [Code::E0205, Code::E0211]
@@ -571,8 +567,8 @@ fn redeclarations_of_another_type() {
         fte_only("float(float a, optional float b) g;\nfloat(float a) g = #6;\n"),
         (
             Code::W0209,
-            "Optional arguments differ on redeclaration of g. float(float), should be \
-             float(float, float)"
+            "Optional arguments differ on redeclaration of g. float(float a), should be \
+             float(float a, optional float b)"
                 .to_owned()
         )
     );
@@ -594,19 +590,19 @@ fn redeclarations_of_another_type() {
         fte_only("void() droptofloor = #6;\nfloat(float a) droptofloor;\n"),
         (
             Code::W0210,
-            "droptofloor builtin was wrongly redefined as float(float). ignoring later \
+            "droptofloor builtin was wrongly redefined as float(float a). ignoring later \
              definition"
                 .to_owned()
         )
     );
-    // A builtin a body replaced is unused and unreferenced (FTEF-19.4).
+    // A builtin a body replaced is unused and unreferenced (FTEF-19.57).
     assert_eq!(
         fte_messages(
             "void() anglemod = #6;\nvoid() anglemod = {};\nfloat(float a) anglemod = #7;\n"
         )[1],
         (
             Code::W0211,
-            "Type redeclaration of float(float) anglemod replaces existing variable".to_owned()
+            "Type redeclaration of float(float a) anglemod replaces existing variable".to_owned()
         )
     );
     // A `noref` mark is a reference too (`def->referenced = true;`).
@@ -652,7 +648,7 @@ fn an_extensions_file_keeps_the_first_declaration() {
         found,
         [(
             Code::W0210,
-            "spin builtin was redefined as float(float). ignoring alternative definition"
+            "spin builtin was redefined as float(float a). ignoring alternative definition"
                 .to_owned()
         )]
     );
@@ -707,7 +703,7 @@ fn array_sizes_of_redeclarations() {
 
 // spec FTEF-19.9: a typedef names its type again, a typedef's name is its type, a storage
 // qualifier is an error and a typedef with no name a warning
-// spec FTEF-17.13: a redeclaration reads a typedef's name as the type it names
+// spec FTEF-17.21: a redeclaration reads a typedef's name as the type it names
 // spec QCD-3.19: E0219 "Cannot redeclare typedef NAME from TYPE to TYPE"
 // spec QCD-3.24: E0224 "bad combination of modifiers with typedef (defining NAME)"
 // spec QCD-7.40: W0215 "typedef defines no types"
@@ -764,10 +760,10 @@ fn enum_values() {
     // After a value the model does not compute, the names that follow have none.
     assert_eq!(
         fte("enum { A = 1+1, B, C };\nfloat C = 0;\n"),
-        [Code::E0206]
+        [Code::E0363]
     );
     assert_eq!(fte("enum { A, B };\nfloat A = 0;\n"), []);
-    assert_eq!(fte("enum { A, B };\nfloat A = 1;\n"), [Code::E0206]);
+    assert_eq!(fte("enum { A, B };\nfloat A = 1;\n"), [Code::E0363]);
     assert_eq!(
         fte("enumflags { A, B, C };\nfloat x = C;\nfloat x = 4;\n"),
         []
@@ -800,7 +796,7 @@ fn enum_values() {
             "enum - y is not a compile-time constant".to_owned()
         )
     );
-    assert_eq!(fte("enum { A = y };\n"), [Code::E0301]);
+    assert_eq!(fte("enum { A = y };\n"), [Code::E0301, Code::E0228]);
     assert_eq!(
         fte_only("enum : vector { A };\n"),
         (
@@ -834,7 +830,7 @@ fn enum_values() {
     );
     assert_eq!(
         fte("enum class E : float { A };\nfloat x = A;\n"),
-        [Code::E0301]
+        [Code::E0214, Code::E0301]
     );
 }
 
@@ -865,11 +861,13 @@ fn shared_and_extern() {
 // spec FTEF-19.12: a static global is visible in its unit only, and static on another file's
 // name is an error
 // spec QCD-3.31: E0231 "can't redefine non-static as static"
+// spec FTEF-19.60: a name found only as another unit's static warns "NAME defined static"
+// spec QCD-7.108: W0315 "NAME defined static"
 #[test]
 fn statics_are_their_units() {
     assert_eq!(
         fte_module(&["static float w;\n", "void() g = { w = 1; };\n"]),
-        [Code::E0301]
+        [Code::W0315, Code::E0301]
     );
     assert_eq!(
         fte_module(&[
@@ -957,7 +955,10 @@ fn scoped_definitions() {
         fte_only("class C { float a; };\nvoid() C::b = {};\n"),
         (Code::W0216, "C::b is not part of class C".to_owned())
     );
-    assert_eq!(fte("class C { void() a; };\nvoid() C::a = {};\n"), []);
+    assert_eq!(
+        fte("class C { nonvirtual void() a; };\nvoid() C::a = {};\n"),
+        []
+    );
     assert_eq!(
         fte_only("struct S { float a; };\nfloat S::a;\n"),
         (Code::E0226, "S::a is not part of class S".to_owned())
@@ -1025,13 +1026,19 @@ fn type_names_must_be_types() {
     );
     assert_eq!(fte(".foo x;\n"), [Code::E0203]);
     assert_eq!(fte("foo *p;\n"), [Code::E0203]);
-    assert_eq!(fte("void(foo a) g = #6;\n"), [Code::E0203]);
+    // FTEF-21.22: a first parameter of no type is "expected function arg list".
+    assert_eq!(fte("void(foo a) g = #6;\n"), [Code::E0204]);
+    assert_eq!(fte("void(float b, foo a) g = #6;\n"), [Code::E0203]);
     assert_eq!(fte("foo(float a) g = #6;\n"), [Code::E0203]);
     assert_eq!(fte("t x;\ntypedef float t;\n"), [Code::E0203]);
     assert_eq!(fte("typedef float t;\nt x;\n"), []);
     assert_eq!(fte("class C;\nC c;\n"), []);
     assert_eq!(fte("enum E { A };\nE e;\n"), []);
     assert_eq!(fte("struct S { float a; };\nS s;\n"), []);
+    // A tag named where a type stands, with no body, is a type from there.
+    assert_eq!(fte("struct T *p; T *q;\n"), []);
+    assert_eq!(fte("union U *p; U *q;\n"), []);
+    assert_eq!(fte("T *q; struct T *p;\n"), [Code::E0203]);
     // A struct's tag written in another's members is a type too.
     assert_eq!(
         fte("typedef struct { struct inner_s { float a; } *list; } outer_t;\ninner_s *p;\n"),
@@ -1065,13 +1072,14 @@ fn type_names_must_be_types() {
     );
     // A body's typedef is a type for the locals after it in that body only.
     assert_eq!(fte("void() g = { typedef float t; t x; };\n"), []);
+    // FTEF-19.74: before the typedef, `t x;` is the expression `t`.
     assert_eq!(
         fte("void() g = { t x; typedef float t; };\n"),
-        [Code::E0203]
+        [Code::E0301, Code::W0205, Code::W0313, Code::E0204]
     );
     assert_eq!(
         fte("void() g = { typedef float t; };\nvoid() h = { t x; };\n"),
-        [Code::E0203]
+        [Code::E0301, Code::W0205, Code::W0313, Code::E0204]
     );
     // Vanilla has its own parse error for a name that is no type (QCD-3.3).
     assert_eq!(vanilla("float x;\n"), []);
@@ -1081,7 +1089,9 @@ fn type_names_must_be_types() {
 #[test]
 fn a_for_statements_locals_leave_scope() {
     assert_eq!(
-        fte("void() g = { for (float i = 0;;) {} for (string i = \"\";;) { i = \"a\"; } };\n"),
+        fte(
+            "void() g = { for (float i = 0; i < 1;) {} for (string i = \"\";;) { i = \"a\"; } };\n"
+        ),
         []
     );
     let index = fte_index_of(
@@ -1141,6 +1151,7 @@ fn a_for_statements_locals_leave_scope() {
 
 // spec FTEF-19.1: the qualifiers a declaration starts with are each read
 // spec FTEF-15.1: written as such or after `__`
+// spec FTEF-19.61: `register` is no qualifier, and undoes an `auto`
 #[test]
 fn qualifiers_are_read() {
     use crate::lower::{Qualifier, lower_file};
@@ -1158,7 +1169,7 @@ fn qualifiers_are_read() {
             vec![Qualifier::Strip],
             vec![Qualifier::Strip],
             vec![Qualifier::Auto],
-            vec![Qualifier::Auto],
+            vec![],
         ]
     );
 }
@@ -1168,7 +1179,11 @@ fn qualifiers_are_read() {
 fn character_constants_and_calls() {
     assert_eq!(fte("float f = 'a';\n"), []);
     assert_eq!(fte("string s = 'a';\n"), [Code::E0213]);
-    assert_eq!(fte("string(float a) t = #6;\nstring s = t(5);\n"), []);
+    // A call at global scope generates statements (FTEF-34.9).
+    assert_eq!(
+        fte("string(float a) t = #6;\nstring s = t(5);\n"),
+        [Code::E0345, Code::E0345, Code::E0214]
+    );
 }
 
 // spec FTEF-19.7: the type with more parameters becomes the definition's, and an out parameter
@@ -1222,7 +1237,7 @@ fn a_replaced_definition_is_the_one_used() {
     assert_eq!(used, [defs[1]]);
 }
 
-// spec QC-11.7: an array of vectors has no components (FTEF-19.5: `!arraysize`)
+// spec QC-11.7: an array of vectors has no components (FTEF-19.58: `!arraysize`)
 #[test]
 fn vector_arrays_have_no_components() {
     assert_eq!(fte("vector v[2];\nvector v_x;\n"), []);
@@ -1269,15 +1284,16 @@ fn extern_and_static_on_a_variable() {
     );
 }
 
-// spec FTEF-19.32: an initialiser that is an expression is compared by its text and not typed,
-// and an attribute before the type is refused, as the pinned FTEQCC refuses it
+// spec FTEF-19.63: an initialiser that is an expression is compared by its text, and an
+// attribute before the type is refused, as the pinned FTEQCC refuses it
 // spec FTEF-22.5: a module resolved without its preprocessing has no target, and its `extern`
 // functions are not checked
 #[test]
 fn what_the_profile_does_not_model() {
-    assert_eq!(fte("float x = 1 + 1;\nfloat x = 2;\n"), [Code::E0206]);
+    assert_eq!(fte("float x = 1 + 1;\nfloat x = 2;\n"), [Code::E0363]);
     assert_eq!(fte("float x = 1 + 1;\nfloat x = 1 + 1;\n"), []);
-    assert_eq!(fte("string s = 1 + 1;\n"), []);
+    // The check stage types it (FTEF-34.9).
+    assert_eq!(fte("string s = 1 + 1;\n"), [Code::E0213]);
     assert_eq!(fte("extern void() g;\n"), []);
     let parse = qc_syntax::parse_with(b"[[alias(\"y\")]] float x;\n", Dialect::Fteqcc);
     let parsed: Vec<Code> = parse.diagnostics().iter().map(|d| d.code).collect();
@@ -1348,5 +1364,250 @@ fn intrinsics_autocvars_keywords_and_qualifiers() {
     assert_eq!(
         messages("extern static void() g;\n"),
         ["Conflicting storage classes."]
+    );
+}
+
+// spec FTEF-19.49: a refused default value ends the declaration before its name, which is then
+// neither defined nor compared with an earlier definition
+#[test]
+fn a_refused_default_ends_the_declaration() {
+    let cast = (Code::E0213, "Cannot cast from vector to float".to_owned());
+    assert_eq!(
+        fte_messages("void(float a, optional float b = '1 2 3') g;\nvoid() h = { g(1); };\n"),
+        [
+            cast.clone(),
+            (Code::E0301, "Unknown value \"g\".".to_owned())
+        ]
+    );
+    assert_eq!(
+        fte_messages(
+            "void(float a, optional float b = '1 2') g;\n\
+             void(float a, optional float b = '1 2', float c) g;\n"
+        ),
+        [cast.clone(), cast]
+    );
+}
+
+// spec FTEF-24.7: a default prints as `QCC_VarAtOffset` prints its constant: a float `%gf`, an
+// integer `%#xi` of its 32 bits (`0i` for zero), a vector `'%g %g %g'`, a name as written
+#[test]
+fn defaults_print_as_their_constants() {
+    let printed = |param: &str| -> String {
+        let found = fte_messages(&format!(
+            "const float k = 1;\nvoid(float a, optional {param}) g;\n\
+             void(float a, optional {param}, float c) g;\n"
+        ));
+        let message = &found[0].1;
+        let (_, rest) = message.split_once(" = ").unwrap();
+        let (text, _) = rest.split_once(", float c").unwrap();
+        text.to_owned()
+    };
+    for (param, text) in [
+        ("float b = 0.5", "0.5f"),
+        ("float b = - 2", "-2f"),
+        ("float b = 1234567", "1.23457e+06f"),
+        ("float b = 0.00001", "1e-05f"),
+        ("float b = 1000000", "1e+06f"),
+        ("float b = 100000", "100000f"),
+        ("float b = 0.0001", "0.0001f"),
+        ("float b = 3.0", "3f"),
+        ("float b = k", "k"),
+        ("vector b = '1 -2 0.00001'", "'1 -2 1e-05'"),
+        ("int b = 3", "0x3i"),
+        ("int b = -4", "0xfffffffci"),
+        ("int b = - 4", "0xfffffffci"),
+        ("int b = 0", "0i"),
+    ] {
+        assert_eq!(printed(param), text, "{param}");
+    }
+}
+
+// spec FTEF-19.59: a static local redefining a local that is not static is a fatal error
+// spec QCD-4.65: E0364 "static redefinition of NAME follows non-static definition."
+#[test]
+fn a_static_local_after_a_plain_one() {
+    assert_eq!(
+        fte_messages("void() f = { local float x; static float x; };\n"),
+        [(
+            Code::E0364,
+            "static redefinition of x follows non-static definition.".to_owned()
+        )]
+    );
+    assert_eq!(fte("void() f = { static float x; static float x; };\n"), []);
+    assert_eq!(
+        fte("void() f = { local float y;\nextern static float y; };\n"),
+        []
+    );
+}
+
+// spec FTEF-19.61: a global or static __auto needs memalloc; a local's qualifiers are checked
+// spec QCD-4.66: E0365 "memalloc not yet defined, cannot define __auto NAME at global scope"
+#[test]
+fn auto_definitions_need_memalloc() {
+    let memalloc = (
+        Code::E0365,
+        "memalloc not yet defined, cannot define __auto x at global scope".to_owned(),
+    );
+    assert_eq!(
+        fte_messages("__auto float x;\n"),
+        std::slice::from_ref(&memalloc)
+    );
+    assert!(fte("void(float n) memalloc = #1;\n__auto float x;\n").is_empty());
+    assert_eq!(
+        fte_messages("void() f = { static __auto float x; };\n"),
+        [
+            (Code::W0214, "Conflicting storage classes.".to_owned()),
+            memalloc
+        ]
+    );
+    assert_eq!(
+        fte_messages("void() f = { const var float x = 1; };\n"),
+        [(Code::W0214, "Conflicting constness.".to_owned())]
+    );
+}
+
+// spec FTEF-19.62: an array's size expression is folded; one that is no constant is an error
+// spec QCD-4.67: E0366 "Array length is not a constant"
+#[test]
+fn array_sizes_are_folded() {
+    let length = || (Code::E0366, "Array length is not a constant".to_owned());
+    let bounds = |i: u32, n: u32| {
+        (
+            Code::W0249,
+            format!("(constant) array index out of bounds (0 <= {i} < {n})"),
+        )
+    };
+    assert_eq!(fte_messages("float n; float a[n];\n"), [length()]);
+    assert_eq!(
+        fte_messages("const float N = 3; float c[N];\nvoid() f = { c[3] = 1; c[2] = 1; };\n"),
+        [bounds(3, 3)]
+    );
+    assert_eq!(
+        fte_messages("const float N = 3; float c[N+1];\nvoid() f = { c[4] = 1; };\n"),
+        [bounds(4, 4)]
+    );
+    assert_eq!(
+        fte_messages("float n; void() f = { local float a[n]; };\n"),
+        [length()]
+    );
+    assert_eq!(
+        fte_messages("const float N = 2; void() f = { local float a[N]; a[2] = 1; };\n"),
+        [bounds(2, 2)]
+    );
+    assert!(fte("const float N = 3; float c[N];\nfloat c[3];\n").is_empty());
+}
+
+// spec FTEF-19.66: `CLASS::NAME` with no type is a `void`, an error but for a constructor
+// spec QCD-4.77: E0376 "no type specified for CLASS::NAME. this is only allowed for constructors"
+// spec FTEF-19.67: a parameter list after the name of an inline function type's definition is a
+// function returning a function, which warns
+// spec QCD-7.113: W0320 "Function returning function. Is this what you meant? (suggestion: use
+// typedefs)"
+#[test]
+fn untyped_members_and_functions_returning_functions() {
+    let messages = |source: &str| -> Vec<(Code, String)> {
+        diagnostics(&fte_index_of(&format!(
+            "class C : entity {{ void() C; nonvirtual void() m; }};\n{source}\n"
+        )))
+        .into_iter()
+        .filter(|(_, message)| !message.ends_with("has no body"))
+        .collect()
+    };
+    let untyped = (
+        Code::E0376,
+        "no type specified for C::m. this is only allowed for constructors".to_owned(),
+    );
+    assert_eq!(messages("C::m() = {};"), std::slice::from_ref(&untyped));
+    assert!(messages("C::C() = {};").is_empty());
+    assert_eq!(
+        messages("C::m = {};"),
+        [
+            untyped,
+            (
+                Code::E0205,
+                "Type mismatch on redeclaration of C::m. void, should be void()".to_owned()
+            )
+        ]
+    );
+    let returning = (
+        Code::W0320,
+        "Function returning function. Is this what you meant? (suggestion: use typedefs)"
+            .to_owned(),
+    );
+    assert_eq!(
+        messages("float() g() = { return 0; };"),
+        std::slice::from_ref(&returning)
+    );
+    assert!(messages("typedef float() fn; fn k() = { return 0; };").is_empty());
+    assert_eq!(
+        messages("typedef float() fn(); fn h; float x = h;"),
+        [
+            (Code::W0320, returning.1.clone()),
+            (
+                Code::E0213,
+                "Cannot cast from __function() to float".to_owned()
+            ),
+        ]
+    );
+}
+
+// spec FTEF-19.68: a typedef named as a type FTEQCC defines must name that type
+#[test]
+fn typedefs_named_as_builtin_types() {
+    let messages = |source: &str| diagnostics(&fte_index_of(source));
+    let redeclared = |name: &str, to: &str| {
+        (
+            Code::E0219,
+            format!("Cannot redeclare typedef {name} from {name} to {to}"),
+        )
+    };
+    assert_eq!(
+        messages("typedef vector float;\n"),
+        [redeclared("float", "vector")]
+    );
+    assert_eq!(
+        messages("typedef void() void;\n"),
+        [redeclared("void", "void()")]
+    );
+    assert_eq!(
+        messages("typedef float __int;\n"),
+        [redeclared("__int", "float")]
+    );
+    assert!(messages("typedef float float;\ntypedef __int __int;\n").is_empty());
+}
+
+// spec FTEF-17.21: a class, struct or accessor type is its own type to a redeclaration, an
+// `enum` its base, and an accessor its base only to `typecmp_lax`
+#[test]
+fn named_types_in_redeclarations() {
+    let messages = |source: &str| -> Vec<String> {
+        diagnostics(&fte_index_of(source))
+            .into_iter()
+            .map(|(_, message)| message)
+            .filter(|m| !m.ends_with("has no body"))
+            .collect()
+    };
+    let class = "class C : entity { float m; }; class D : entity { float m; };\n";
+    assert_eq!(
+        messages(&format!("{class}C c; entity c;\n")),
+        ["Type mismatch on redeclaration of c. entity, should be class C"]
+    );
+    assert_eq!(
+        messages(&format!("{class}void(entity e) f; void(C e) f = {{}};\n")),
+        ["Type mismatch on redeclaration of f. void(class C e), should be void(entity e)"]
+    );
+    assert_eq!(
+        messages(&format!("{class}void(C e) f; void(D e) f = {{}};\n")),
+        ["Type mismatch on redeclaration of f. void(class D e), should be void(class C e)"]
+    );
+    assert!(messages("enum E { A };\nvoid(E e) f; void(float e) f = {};\n").is_empty());
+    assert!(messages("struct S { float a; };\nvoid(S s) f; void(S s) f = {};\n").is_empty());
+    assert_eq!(
+        messages("accessor box : float;\nbox b; float b;\n"),
+        ["Optional arguments differ on redeclaration of b. float, should be box"]
+    );
+    assert_eq!(
+        messages("float(float h) g = #1;\naccessor box : float { get float x = g; };\n"),
+        ["Type mismatch on redeclaration of g. float(box this), should be float(float h)"]
     );
 }

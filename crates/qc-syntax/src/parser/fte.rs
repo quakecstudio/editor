@@ -25,7 +25,8 @@ pub(super) const FTE_MAX_PARMS: usize = 136;
 /// The qualifiers `QCC_PR_ParseDefs` reads before a type, each with the keyword
 /// `QCC_PR_CheckKeyword` is given for it (FTEF-15.1, FTEF-20.7); `typedef`, which the loop reads
 /// too, starts a typedef of its own. `deprecated` is given `false`, so only `__deprecated` is one.
-const QUALIFIERS: [(&str, Enabled); 19] = [
+const QUALIFIERS: [(&str, Enabled); 20] = [
+    ("typedef", Enabled::By(Keyword::Typedef)),
     ("extern", Enabled::By(Keyword::Extern)),
     ("auto", Enabled::By(Keyword::Auto)),
     ("register", Enabled::By(Keyword::Register)),
@@ -91,10 +92,6 @@ const MEMBER_QUALIFIERS: [&str; 8] = [
     "inline",
 ];
 
-/// The access and default labels of a class body, `QCC_PR_CheckKeyword(1, ...)` and a `:`
-/// (FTEF-9.2, FTEF-20.11).
-const MEMBER_LABELS: [&str; 5] = ["public", "private", "protected", "virtual", "nonvirtual"];
-
 /// The words that, under an FTEQCC dialect, never name a type the program defines at the token
 /// they are, each with its keyword (FTE-14.2): statement and construct keywords.
 const RESERVED: [(&str, Enabled); 28] = [
@@ -133,7 +130,10 @@ const RESERVED: [(&str, Enabled); 28] = [
 enum Place {
     /// A declaration's type, read by `QCC_PR_ParseDefs` with `ignoreptr` when `qcfuncs` is off.
     Declaration,
-    /// Any other: a parameter's, a member's, a cast's, a field's inner type of either.
+    /// A struct member's, read with `QCC_PR_ParseType(false, false, true)`: it takes no `*`
+    /// whether or not `qcfuncs` is on (FTEF-6.7).
+    Member,
+    /// Any other: a parameter's, a cast's, a field's inner type of either.
     Nested,
 }
 
@@ -148,9 +148,10 @@ impl Parser<'_> {
                 .nth(1)
                 .is_some_and(|t| matches!(t.kind, K::Semicolon | K::Comma | K::Eq | K::LBracket)),
             // `QCC_PR_ParseType` with `silentfail` returns no type for a token that is no name,
-            // so `static;` and `const *x;` are an `int`'s definitions (FTEF-19.21).
-            Some(K::Semicolon | K::Star | K::LParen | K::LBracket) => true,
-            _ => false,
+            // so `static;` and `const *x;` are an `int`'s definitions (FTEF-19.21), and `var =
+            // 1;` one whose name `QCC_PR_ParseName` refuses, "\"=\" - not a name" (FTEF-19.73).
+            Some(K::Dot | K::DotDot) | None => false,
+            Some(_) => true,
         }
     }
 
@@ -235,7 +236,7 @@ impl Parser<'_> {
                 && (self.type_word(n).is_some()
                     || self.scalar_name(n).is_some()
                     || REGISTERED_TYPES.iter().any(|name| named(name))
-                    || self.types.iter().any(|(name, _)| named(name)))
+                    || self.types.iter().any(|t| named(&t.name)))
         })
     }
 
@@ -287,14 +288,11 @@ impl Parser<'_> {
 
     /// The qualifiers before a declaration's type (FTEF-15.1), each its own node; a
     /// `__deprecated` takes its optional `("reason")`; and the attribute lists among them
-    /// (FTEF-21.9). Returns whether it read one, `QCC_PR_ParseDefs`'s `hadmodifier`.
+    /// (FTEF-21.9). `typedef` is one, any number of times and in any place among them
+    /// (FTEF-21.14); it is a token of its own. Returns whether it read one, `QCC_PR_ParseDefs`'s
+    /// `hadmodifier`.
     pub(super) fn fte_qualifiers(&mut self) -> bool {
-        self.fte_qualifiers_after(false)
-    }
-
-    /// [`Self::fte_qualifiers`] after a `typedef` when `typedef` says, which is one of them.
-    pub(super) fn fte_qualifiers_after(&mut self, typedef: bool) -> bool {
-        let mut read = typedef;
+        let mut read = false;
         let mut accumulate = false;
         loop {
             if !self.decl_qualifier(0) {
@@ -309,10 +307,14 @@ impl Parser<'_> {
                 read = true;
                 continue;
             }
+            read = true;
+            if self.kw(0, Keyword::Typedef, "typedef") {
+                self.bump_as(K::TypedefKw);
+                continue;
+            }
             accumulate |= self.kw(0, Keyword::Accumulate, "accumulate");
             let text = self.found();
             let deprecated = self.checks(0, Enabled::Never, "deprecated");
-            read = true;
             self.start_node(K::Qualifier);
             match text.as_str() {
                 "const" => self.bump_as(K::ConstKw),
@@ -517,6 +519,11 @@ impl Parser<'_> {
         self.fte_type_at(Place::Declaration)
     }
 
+    /// The type of a struct's member (FTEF-6.7), which takes no `*`.
+    pub(super) fn fte_member_type(&mut self) -> Option<TypeShape> {
+        self.fte_type_at(Place::Member)
+    }
+
     fn fte_type_at(&mut self, place: Place) -> Option<TypeShape> {
         if !self.enter() {
             self.bump_error();
@@ -529,8 +536,13 @@ impl Parser<'_> {
     }
 
     fn fte_type_inner(&mut self, place: Place) -> Option<TypeShape> {
+        self.type_derived = false;
         // FTEF-21.7: `ignoreptr`, read once, as the declaration starts.
-        let ignore_pointers = place == Place::Declaration && !self.flag_ahead(0, FteFlag::Qcfuncs);
+        let ignore_pointers = match place {
+            Place::Declaration => !self.flag_ahead(0, FteFlag::Qcfuncs),
+            Place::Member => true,
+            Place::Nested => false,
+        };
         if self.kw(0, Keyword::Const, "const") {
             // FTEF-2.11: `QCC_PR_ParseType` reads a `const` and ignores it, with a warning.
             self.warn_const();
@@ -599,10 +611,21 @@ impl Parser<'_> {
         // FTEF-21.7: `if (flag_qcfuncs && QCC_PR_CheckToken ("("))`, at the token after the
         // type's words and `*`s.
         let qcfuncs = self.flag_ahead(0, FteFlag::Qcfuncs);
-        let function = qcfuncs && self.at_function_params();
+        let function = (qcfuncs && self.at_function_params()) || self.type_function;
         // FTEF-18.15: `QCC_PR_ParseDefs` loops `while(QCC_PR_CheckToken ("("))`, so each
         // further parameter list makes a function returning the type so far.
-        while function && self.at_function_params() {
+        // A first list of a name that is no type is "expected function arg list", which the
+        // semantic model reports as the name's ("is not a type"); no list after it is counted.
+        let named_first = self.at(K::LParen)
+            && self.nth(1).is_some_and(|t| t.kind == K::Name)
+            && self.nth(2).is_some_and(|t| t.kind == K::RParen)
+            && self.type_word(1).is_none()
+            && !self.c_type_word(1)
+            && !self.declared_type(1);
+        let mut lists = 0_usize;
+        while function && self.at_function_params() && !(levels > 0 && self.at_parenthesised_name())
+        {
+            lists = lists.saturating_add(1);
             levels = levels.saturating_add(1);
             if !self.enter() {
                 break;
@@ -612,6 +635,8 @@ impl Parser<'_> {
             self.finish_node();
         }
         self.leave(levels);
+        self.type_derived = levels > 0;
+        self.type_lists = if named_first { lists.min(1) } else { lists };
         Some(TypeShape {
             function,
             field: false,
@@ -619,9 +644,66 @@ impl Parser<'_> {
         })
     }
 
+    /// What `QCC_PR_ParseType` takes after a struct, union, class, enum or accessor written as a
+    /// declaration's type, before `QCC_PR_ParseDefs`'s declarators (FTEF-6.8, FTEF-21.7): with
+    /// `qcfuncs` on, the `*`s (`if (!ignoreptr) while (QCC_PR_CheckToken("*"))`), each as a
+    /// token of the declaration, and the parameter lists (`if (flag_qcfuncs &&
+    /// QCC_PR_CheckToken ("("))`), each a `FunctionType` node of its own; with it off, nothing.
+    pub(super) fn type_decl_tail(&mut self) -> TypeShape {
+        let qcfuncs = self.flag_ahead(0, FteFlag::Qcfuncs);
+        while qcfuncs && self.at(K::Star) {
+            self.bump();
+            if self.kw(0, Keyword::Const, "const") {
+                // FTEF-2.11: `T *const` is the pointer, with the warning.
+                self.warn_const();
+                self.bump();
+            }
+        }
+        let function = qcfuncs && self.at_function_params();
+        while function && self.at_function_params() {
+            self.start_node(K::FunctionType);
+            self.fte_param_list();
+            self.finish_node();
+        }
+        TypeShape {
+            function,
+            field: false,
+            qcfuncs,
+        }
+    }
+
+    /// FTEF-15.9: whether `(name)` starts here with `qcfuncs` on, `name` no type, and what ends a
+    /// declarator after it, `;`, `=`, `,` or `[`: after a function type no parameter list, which
+    /// would leave the declarator no name, but C's parenthesised name
+    /// (`QCC_PR_ParseFunctionType` finds no type, and the C-style branch reads the name with no
+    /// `*`). With `qcfuncs` off the list is read as a QC one and the name is missing.
+    pub(super) fn at_parenthesised_name(&self) -> bool {
+        self.at(K::LParen)
+            && self.flag_ahead(0, FteFlag::Qcfuncs)
+            && self.nth(1).is_some_and(|t| t.kind == K::Name)
+            && self.type_word(1).is_none()
+            && !self.c_type_word(1)
+            && !self.declared_type(1)
+            && self.nth(2).is_some_and(|t| t.kind == K::RParen)
+            && self
+                .nth(3)
+                .is_some_and(|t| matches!(t.kind, K::Semicolon | K::Eq | K::Comma | K::LBracket))
+    }
+
     /// Whether a type's parameter list starts here: a `(` that opens no `(*name)` (FTEF-15.3).
     fn at_function_params(&self) -> bool {
         self.at(K::LParen) && !self.nth(1).is_some_and(|t| t.kind == K::Star)
+    }
+
+    /// Whether the token `n` ahead starts a type that `QCC_PR_ParseType` reads by its keyword
+    /// alone (FTEF-9.8): `const`, `volatile`, `accessor`, `class` with `qcfuncs` on, `enum`,
+    /// `enumflags`, `union` and `struct`.
+    pub(super) fn type_form(&self, n: usize) -> bool {
+        self.kw(n, Keyword::Const, "const")
+            || self.at_volatile(n)
+            || self.kw(n, Keyword::Accessor, "accessor")
+            || self.at_class_keyword(n)
+            || self.at_tagged_type(n)
     }
 
     /// Whether a tagged type's keyword is the token `n` ahead, with the keywords in force
@@ -644,6 +726,7 @@ impl Parser<'_> {
     /// words, `struct`/`union` and a tag, or a type name. False, consuming nothing, when the
     /// token starts none. Each keyword is read with the keywords in force (FTEF-20.8).
     fn fte_base_type(&mut self) -> bool {
+        self.type_function = false;
         let Some(tok) = self.current() else {
             return false;
         };
@@ -658,27 +741,52 @@ impl Parser<'_> {
             self.finish_node();
             return true;
         }
-        if self.at_struct_keyword(0)
-            && (self.nth(1).is_some_and(|t| t.kind == K::LBrace)
-                || self.nth(2).is_some_and(|t| t.kind == K::LBrace))
-        {
-            // FTEF-6.4: a struct written as a member's type, `struct tag { ... } *field;`.
+        if self.kw(0, Keyword::Accessor, "accessor") {
+            // FTEF-10.1: an accessor, defined or named, as a type anywhere a type stands.
             self.start_node(K::SimpleType);
-            self.struct_type();
+            self.start_node(K::AccessorDecl);
+            self.accessor_type();
+            self.finish_node();
+            self.finish_node();
+            return true;
+        }
+        if self.at_class_keyword(0) {
+            // FTEF-9.8: `class Name` names a class, and `class Name { ... }` defines one, as a
+            // type anywhere a type stands.
+            self.start_node(K::SimpleType);
+            self.start_node(K::ClassDecl);
+            self.class_type();
+            self.finish_node();
+            self.finish_node();
+            return true;
+        }
+        if self.at_struct_keyword(0)
+            && self.nth(1).is_some_and(|t| t.kind == K::Name)
+            && !self
+                .nth(2)
+                .is_some_and(|t| matches!(t.kind, K::LBrace | K::Colon))
+        {
+            // FTEF-6.1: `struct tag` names a struct by its tag; the tag becomes a type there
+            // if none is.
+            self.start_node(K::SimpleType);
+            let keyword = if self.kw(0, Keyword::Union, "union") {
+                K::UnionKw
+            } else {
+                K::StructKw
+            };
+            self.bump_as(keyword);
+            let tag = self.found();
+            if self.name() {
+                self.declare_type(tag);
+            }
             self.finish_node();
             return true;
         }
         if self.at_struct_keyword(0) {
-            // `struct tag` names a struct by its tag (FTEF-6.1).
+            // FTEF-6.4: a struct written as a type, `struct tag { ... } *field;`, or named by its
+            // tag, `struct tag x;` (FTEF-6.1).
             self.start_node(K::SimpleType);
-            self.bump_as(if self.kw(0, Keyword::Union, "union") {
-                K::UnionKw
-            } else {
-                K::StructKw
-            });
-            if self.at(K::Name) {
-                self.bump();
-            }
+            self.struct_type();
             self.finish_node();
             return true;
         }
@@ -715,6 +823,9 @@ impl Parser<'_> {
         if !self.fte_type_name(0) {
             return false;
         }
+        // FTEF-7.5: a typedef of a function type is one (`type->type == ev_function` after
+        // `QCC_TypeForName`), so a body, state or builtin may follow its declarator.
+        self.type_function = self.declared_function(0);
         self.start_node(K::SimpleType);
         self.bump();
         self.finish_node();
@@ -803,6 +914,11 @@ impl Parser<'_> {
             self.finish_node();
             return None;
         };
+        // `void() *a`: `QCC_PR_ParseFunctionType` reads `*`s after a parameter's type, a
+        // function type's included (FTEF-15.3).
+        while ty.function && self.at(K::Star) {
+            self.bump();
+        }
         let mut named = None;
         if self.at(K::Amp) {
             // `type &name`: an out parameter, C++'s spelling (FTEF-15.3).
@@ -850,39 +966,78 @@ impl Parser<'_> {
 
     // ---- file-level constructs ----
 
-    /// `class Name [: Parent] { members } [;]` or the forward `class Name;`
-    /// (`QCC_PR_ParseEntClass`, FTEF-9.1).
+    /// `class Name [: Parent] { members }` or `class Name` as a definition's type: the qualifiers,
+    /// `QCC_PR_ParseEntClass`'s type, and the declarators that follow it as they follow any type
+    /// (FTEF-9.1, FTEF-9.8).
     pub(super) fn class_decl(&mut self) {
         self.start_node(K::ClassDecl);
         // `static class ...`: `QCC_PR_ParseDefs` reads the qualifiers, then the class as the
         // declaration's type.
         self.fte_qualifiers();
+        self.class_type();
+        let shape = self.type_decl_tail();
+        self.declarators(shape, Site::File);
+        self.finish_node();
+    }
+
+    /// `QCC_PR_ParseEntClass` (FTEF-9.1): `class`, a name, a parent after `:`, which needs the
+    /// body, and the body, or nothing after a name, which names the class (FTEF-9.8).
+    pub(super) fn class_type(&mut self) {
         self.bump_as(K::ClassKw);
         let declared = self.found();
-        if self.name() {
-            self.declare_type(declared);
+        if !self.name() {
+            return;
         }
+        self.declare_type(declared.clone());
+        // The class being read around this one comes back once its body is read.
+        let outer = self.class_name.replace(declared);
+        self.class_body();
+        self.class_name = outer;
+    }
+
+    /// The rest of a class after its name: a parent, which needs the body, and the body.
+    fn class_body(&mut self) {
+        let mut parent = false;
         if self.at(K::Colon) {
             self.bump();
-            self.name();
-        }
-        if self.at(K::LBrace) {
-            self.bump();
-            // FTEF-18.27: a class that lost its `}` ends at the next declaration line.
-            while !self.at(K::RBrace) && self.current().is_some() && !self.at_declaration_line() {
-                let before = self.pos;
-                self.start_item();
-                self.class_member();
-                if self.pos == before {
-                    self.bump_error();
-                }
+            parent = true;
+            if !self.name() {
+                return;
             }
-            self.expect(K::RBrace, "}");
         }
-        if self.at(K::Semicolon) {
+        let opened = if parent {
+            self.expect(K::LBrace, "{")
+        } else if self.at(K::LBrace) {
             self.bump();
+            true
+        } else {
+            false
+        };
+        if !opened {
+            return;
         }
-        self.finish_node();
+        if self.bodies > 0 {
+            // `if (pr_scope) QCC_PR_ParseError(ERR_REDECLARATION, "Declaration of class %s%s%s
+            // within function", ...)`
+            self.error(Code::E0253, "Declaration of class within function");
+        }
+        if self.at(K::Comma) {
+            // `if (QCC_PR_CheckToken(",")) QCC_PR_ParseError(ERR_NOTANAME, "member missing name");`
+            self.error(Code::E0201, "member missing name");
+        }
+        while !self.at(K::RBrace) && self.current().is_some() {
+            if self.lost_brace() {
+                // FTEF-18.27: a class that lost its `}` ends at the next declaration line.
+                break;
+            }
+            let before = self.pos;
+            self.start_item();
+            self.class_member();
+            if self.pos == before {
+                self.bump_error();
+            }
+        }
+        self.expect(K::RBrace, "}");
     }
 
     /// Whether a keyword that starts a file-level construct of the full dialect is here:
@@ -916,42 +1071,77 @@ impl Parser<'_> {
         }
     }
 
-    /// Whether a class starts here, after any declaration qualifiers (FTEF-9.1): `class` with
-    /// its keyword, and `qcfuncs` on at it (`if (flag_qcfuncs && QCC_PR_CheckKeyword
-    /// (keyword_class, "class"))`, FTEF-20.8).
-    pub(super) fn at_class(&self) -> bool {
-        let mut n = 0_usize;
-        while self.decl_qualifier(n) {
-            n = n.saturating_add(1);
-        }
+    /// Whether `class` is the token `n` ahead, with its keyword, and `qcfuncs` on at it
+    /// (`if (flag_qcfuncs && QCC_PR_CheckKeyword (keyword_class, "class"))`, FTEF-20.8).
+    pub(super) fn at_class_keyword(&self, n: usize) -> bool {
         self.kw(n, Keyword::Class, "class")
             && self
                 .nth(n)
                 .is_some_and(|t| self.lexed_with(t.span.start, LexFlag::QcFuncs))
     }
 
+    /// Whether an accessor starts here, after any declaration qualifiers (FTEF-10.1).
+    pub(super) fn at_accessor(&self) -> bool {
+        let mut n = 0_usize;
+        while self.decl_qualifier(n) {
+            n = n.saturating_add(1);
+        }
+        self.kw(n, Keyword::Accessor, "accessor")
+    }
+
+    /// Whether a class starts here, after any declaration qualifiers (FTEF-9.1).
+    pub(super) fn at_class(&self) -> bool {
+        let mut n = 0_usize;
+        while self.decl_qualifier(n) {
+            n = n.saturating_add(1);
+        }
+        self.at_class_keyword(n)
+    }
+
     /// One member of a class body (FTEF-9.2 to FTEF-9.4, FTEF-10.3): an access or default
     /// label, a `get`/`set` accessor member, or qualifiers and a declaration of fields or
     /// member functions, which may have bodies.
     fn class_member(&mut self) {
-        let label = MEMBER_LABELS
-            .iter()
-            .any(|word| self.checks(0, Enabled::Always, word))
-            && self.nth(1).is_some_and(|t| t.kind == K::Colon);
-        if label {
+        // FTEF-9.9: `public` and `private` take a `:` (`QCC_PR_Expect(":")`), `protected` two;
+        // `virtual` and `nonvirtual` are a label only when a `:` follows. The member follows its
+        // labels, which `QCC_PR_ParseEntClass`'s loop of keywords keeps reading.
+        let mut labels = 0_usize;
+        loop {
+            let labelled = |parser: &Self, word: &str| parser.checks(0, Enabled::Always, word);
+            let colons = if labelled(self, "public") || labelled(self, "private") {
+                1_usize
+            } else if labelled(self, "protected") {
+                2
+            } else if (labelled(self, "virtual") || labelled(self, "nonvirtual"))
+                && self.nth(1).is_some_and(|t| t.kind == K::Colon)
+            {
+                1
+            } else {
+                break;
+            };
             self.start_node(K::AccessLabel);
             self.bump();
-            self.bump();
+            for _ in 0..colons {
+                self.expect(K::Colon, ":");
+            }
             self.finish_node();
+            labels = labels.saturating_add(1);
+        }
+        if labels > 0 && self.at(K::RBrace) {
+            let message = format!("\"{}\" is not a type", self.found());
+            self.error(Code::E0203, message);
             return;
         }
-        if self.at(K::Semicolon) {
-            self.bump();
-            return;
-        }
+        // FTEF-10.10: `get` and `set` are among the qualifiers `QCC_PR_ParseClass` reads in any
+        // order, and either makes the member an accessor's.
         let get_set =
             |n| self.checks(n, Enabled::Always, "get") || self.checks(n, Enabled::Always, "set");
-        let accessor = get_set(0) || (self.checks(0, Enabled::Always, "inline") && get_set(1));
+        let mut ahead = 0_usize;
+        let mut accessor = false;
+        while self.member_qualifier(ahead) || get_set(ahead) {
+            accessor |= get_set(ahead);
+            ahead = ahead.saturating_add(1);
+        }
         if accessor {
             self.accessor_member(Member::Class);
             return;
@@ -966,9 +1156,38 @@ impl Parser<'_> {
             }
             self.finish_node();
         }
-        match self.fte_type() {
+        // `struct float` is `float`, the type the name finds (FTEF-6.8), no struct.
+        let struct_keyword =
+            self.at_struct_keyword(0) && !(self.type_word(1).is_some() || self.c_type_word(1));
+        // FTEF-10.6: an accessor declared with its base where a member's type stands ends
+        // FTEQCC; the member is refused here.
+        let accessor_based = self.kw(0, Keyword::Accessor, "accessor")
+            && self.nth(2).is_some_and(|t| t.kind == K::Colon);
+        let head = self.found();
+        let accessor = self.nth(1).map(|t| t.text.clone()).unwrap_or_default();
+        let ty = self.fte_type();
+        if accessor_based {
+            let class = self.class_name.clone().unwrap_or_default();
+            let message = format!("Accessor {accessor} declared with its base in class {class}");
+            self.error(Code::E0258, message);
+        }
+        if struct_keyword && !self.type_derived {
+            // `if (basetype->type == ev_struct || basetype->type == ev_union)
+            // QCC_PR_ParseError(ERR_INTERNAL, "Struct or union in class %s", classname);`; a
+            // pointer to one is a pointer.
+            self.error(Code::E0254, "Struct or union in class");
+        }
+        match ty {
             // `Name(void);`: a constructor with no return type (FTEF-9.4).
-            Some(ty) if ty.function && self.at(K::Semicolon) => self.bump(),
+            Some(ty) if ty.function && self.at(K::Semicolon) => {
+                // `!strcmp(parmname, classname)`: the constructor's name is the class's, exactly,
+                // under `-Fcaseinsens` too.
+                if self.class_name.as_deref() != Some(head.as_str()) {
+                    let message = format!("\"{head}\" is not a type");
+                    self.error(Code::E0203, message);
+                }
+                self.bump();
+            }
             // A member's recovery stops at the `}` that closes the class.
             Some(ty) => self.declarators(ty, Site::Member),
             None => self.recover(true),
@@ -981,25 +1200,26 @@ impl Parser<'_> {
     pub(super) fn struct_decl(&mut self) {
         self.start_node(K::StructDecl);
         self.struct_type();
-        // FTEF-18.27: a declaration line after a struct that lost its `}` is the next
-        // declaration, not a variable of the struct.
-        if (self.at(K::Name) || self.at(K::Star)) && !self.at_declaration_line() {
-            // FTEF-6.1: `struct { ... } a[4], *p;` declares variables of the struct too.
-            let shape = TypeShape {
-                function: false,
-                field: false,
-                qcfuncs: false,
-            };
-            self.declarators(shape, Site::File);
-        } else if !self.expect(K::Semicolon, ";") {
-            self.recover(false);
-        }
+        // FTEF-6.1: `struct { ... } a[4], *p;` declares variables of the struct too, as any type
+        // is followed by declarators.
+        let shape = self.type_decl_tail();
+        self.declarators(shape, Site::File);
         self.finish_node();
     }
 
-    /// `accessor Name [: Base] [{ members }] [;]` (FTEF-10.1).
+    /// `accessor Name [: Base] [{ members }]` and the declarators after it (FTEF-10.1): the
+    /// qualifiers, `QCC_PR_ParseType`'s accessor, and the declarators that follow any type.
     pub(super) fn accessor_decl(&mut self) {
         self.start_node(K::AccessorDecl);
+        self.fte_qualifiers();
+        self.accessor_type();
+        let shape = self.type_decl_tail();
+        self.declarators(shape, Site::File);
+        self.finish_node();
+    }
+
+    /// `accessor Name [: Base] [{ members }]` (`QCC_PR_ParseType`, FTEF-10.1).
+    pub(super) fn accessor_type(&mut self) {
         self.bump_as(K::AccessorKw);
         let declared = self.found();
         if self.name() {
@@ -1012,7 +1232,7 @@ impl Parser<'_> {
         if self.at(K::LBrace) {
             self.bump();
             // FTEF-18.27: an accessor that lost its `}` ends at the next declaration line.
-            while !self.at(K::RBrace) && self.current().is_some() && !self.at_declaration_line() {
+            while !self.at(K::RBrace) && self.current().is_some() && !self.lost_brace() {
                 let before = self.pos;
                 self.start_item();
                 self.accessor_member(Member::Accessor);
@@ -1025,10 +1245,6 @@ impl Parser<'_> {
             }
             self.expect(K::RBrace, "}");
         }
-        if self.at(K::Semicolon) {
-            self.bump();
-        }
-        self.finish_node();
     }
 
     /// One accessor member (`QCC_PR_ParseAccessorMember`, FTEF-10.2): `[inline] get|set`, a
@@ -1041,18 +1257,43 @@ impl Parser<'_> {
             Member::Class => parser.checks(0, Enabled::Always, word),
             Member::Accessor => parser.names(0, word),
         };
-        if word(self, "inline") {
-            self.bump();
+        let get_set = |parser: &Self| word(parser, "get") || word(parser, "set");
+        let mut accessor = false;
+        match member {
+            Member::Class => {
+                while self.member_qualifier(0) || get_set(self) {
+                    accessor |= get_set(self);
+                    self.bump();
+                }
+            }
+            Member::Accessor => {
+                if word(self, "inline") {
+                    self.bump();
+                }
+                if get_set(self) {
+                    accessor = true;
+                    self.bump();
+                }
+            }
         }
-        if word(self, "get") || word(self, "set") {
-            self.bump();
-        } else {
+        if !accessor {
             self.expected("get or set");
             self.recover(true);
             self.finish_node();
             return;
         }
-        if self.fte_type().is_some() {
+        // FTEF-10.9: `QCC_PR_ParseAccessorMember` reads a type's name and its `*`s, so a
+        // parameter list after it is where the `=` should be.
+        let paren = self.nth(1).filter(|t| t.kind == K::LParen).map(|t| t.span);
+        if let Some(shape) = self.fte_type() {
+            if shape.function
+                && let Some(span) = paren
+            {
+                self.error_at(Code::E0204, "expected =, found (", span);
+                self.recover(true);
+                self.finish_node();
+                return;
+            }
             if self.at(K::Name) {
                 self.name();
             }
@@ -1065,8 +1306,8 @@ impl Parser<'_> {
                 self.expect(K::RBracket, "]");
                 self.finish_node();
             }
-            if self.at(K::Eq) {
-                self.bump();
+            // FTEF-10.11: `QCC_PR_Expect("=")`, then a body or a function's name.
+            if self.expect(K::Eq, "=") {
                 if self.at(K::LBrace) {
                     self.start_node(K::FunctionBody);
                     self.block(true);
@@ -1097,7 +1338,7 @@ impl Parser<'_> {
         if first.kind != K::Name {
             return false;
         }
-        if self.type_word(1).is_some() || self.c_type_word(1) {
+        if self.type_word(1).is_some() || self.c_type_word(1) || self.type_form(1) {
             return true;
         }
         if !self.fte_type_name(1) {
@@ -1240,7 +1481,7 @@ impl Parser<'_> {
         match tok.kind {
             K::Dot | K::DotDot => true,
             K::Name => {
-                if self.registered_type(0) || self.c_type_word(0) || self.at_tagged_type(0) {
+                if self.registered_type(0) || self.c_type_word(0) || self.type_form(0) {
                     return true;
                 }
                 if !bracket || !self.fte_type_name(0) {
@@ -1491,43 +1732,43 @@ impl Parser<'_> {
     }
 
     /// `name:` or `:name` (FTEF-18.23). A label read since the end of the last function is
-    /// "Duplicate label NAME", a warning, and is not added again.
+    /// "Duplicate label NAME", a warning, and is not added again; a duplicate `name:` leaves its
+    /// `:` (`QCC_PR_Lex(); return;`), which starts a `:name` label. A `:` before no name is
+    /// `invalid label name "TOKEN"`.
     pub(super) fn label_stmt(&mut self) {
         self.start_node(K::LabelStmt);
         let frikqcc = self.at(K::Colon);
         if frikqcc {
             self.bump();
         }
-        let label = self
+        let Some((name, span)) = self
             .current()
             .filter(|t| t.kind == K::Name)
-            .map(|t| (t.text.clone(), t.span));
-        if !self.name() {
-            // `invalid label name`: the statement is abandoned.
+            .map(|t| (t.text.clone(), t.span))
+        else {
+            let token = self.current().map(|t| t.text.clone()).unwrap_or_default();
+            self.error(Code::E0201, format!("invalid label name \"{token}\""));
             self.recover(true);
+            self.finish_node();
+            return;
+        };
+        self.name();
+        if self.labels.contains(&name) {
+            self.warning_at(Code::W0312, format!("Duplicate label {name}"), span);
         } else {
+            self.labels.push(name);
             if !frikqcc {
                 self.bump();
-            }
-            if let Some((name, span)) = label {
-                if self.labels.contains(&name) {
-                    self.warning_at(Code::W0312, format!("Duplicate label {name}"), span);
-                } else {
-                    self.labels.push(name);
-                }
             }
         }
         self.finish_node();
     }
 
-    /// `goto name;` (FTEF-18.23), whose label is looked for at the end of the function
-    /// (FTEF-18.24).
+    /// `goto name;` (FTEF-18.23), whose label the check stage looks for at the end of the
+    /// function (FTEF-34.12).
     pub(super) fn goto_stmt(&mut self) {
         self.start_node(K::GotoStmt);
         self.bump_as(K::GotoKw);
-        if let Some(tok) = self.current().filter(|t| t.kind == K::Name) {
-            self.gotos.push((tok.text.clone(), tok.span));
-        }
         self.name();
         self.end_statement();
         self.finish_node();

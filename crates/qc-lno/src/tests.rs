@@ -421,3 +421,44 @@ fn reviewer_matches_header_reports_a_mismatch() {
         CountField::GlobalDefs
     );
 }
+
+// spec LNO-6.3: a line table of LNO_MAX_STATEMENTS entries is written, one more is refused;
+// the limit is checked on the length alone, which no test can allocate
+#[test]
+fn the_statement_limit_is_inclusive() {
+    use crate::LNO_MAX_STATEMENTS;
+    use crate::write::{WriteError, statement_count_fits};
+    assert_eq!(statement_count_fits(0), Ok(()));
+    assert_eq!(statement_count_fits(LNO_MAX_STATEMENTS), Ok(()));
+    assert_eq!(
+        statement_count_fits(LNO_MAX_STATEMENTS + 1),
+        Err(WriteError::TooManyStatements(LNO_MAX_STATEMENTS + 1))
+    );
+}
+
+// spec LNO-6.1: the output's size is known before it is laid out, the header, the line and
+// column tables and the trailing bytes
+#[test]
+fn the_size_hint_is_the_written_length() {
+    let plain = LnoFile {
+        numglobaldefs: 1,
+        numglobals: 2,
+        numfielddefs: 3,
+        lines: vec![1, 2, 3],
+        columns: None,
+        trailing: vec![9, 9],
+    };
+    let with_columns = LnoFile {
+        columns: Some(vec![4, 5, 6]),
+        trailing: Vec::new(),
+        ..plain.clone()
+    };
+    let empty = LnoFile {
+        lines: Vec::new(),
+        trailing: Vec::new(),
+        ..plain.clone()
+    };
+    for lno in [plain, with_columns, empty] {
+        assert_eq!(lno.size_hint(), lno.write().unwrap().len(), "{lno:?}");
+    }
+}

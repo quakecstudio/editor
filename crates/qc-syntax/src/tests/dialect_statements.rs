@@ -212,6 +212,34 @@ fn sequences_where_fteqcc_allows_them() {
     );
 }
 
+// spec FTEF-18.35: a duplicate `name:` leaves its `:`, which starts a `:name` label, and a `:`
+// before no name is "invalid label name"
+#[test]
+fn a_duplicate_c_label_leaves_its_colon() {
+    let parsed = fte(&in_body("l: ;\nl: x: ;"));
+    let found: Vec<(Code, String)> = parsed
+        .diagnostics()
+        .iter()
+        .filter(|d| d.code != Code::W0204)
+        .map(|d| (d.code, d.message.clone()))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (Code::W0312, "Duplicate label l".to_owned()),
+            (Code::E0201, "invalid label name \";\"".to_owned()),
+        ]
+    );
+    let labels: Vec<String> = statements(&fte(&in_body("l: a = 1;\nl: x; a = 2;")))
+        .iter()
+        .filter_map(|s| match s {
+            ast::Stmt::Label(label) => Some(label.name().unwrap().text_lossless()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(labels, ["l", "l", "x"]);
+}
+
 // spec FTEF-18.23: `name:` and `:name` are labels and `goto name;` jumps to one; a label read since the end of the last function is a duplicate
 // spec QCD-7.30: W0312 "Duplicate label NAME" for a label read since the last function's end
 #[test]
@@ -237,7 +265,7 @@ fn labels_and_goto_parse() {
     // A name and a `:` with a space between is no label.
     assert!(fte(&in_body("top :\na = 1;")).errors().next().is_some());
     // A label twice in a function is a warning; another function may have its own.
-    let parsed = fte(&in_body("l:\nl:\n:l\na = 1;"));
+    let parsed = fte(&in_body("l:\n:l\n:l\na = 1;"));
     let codes: Vec<Code> = parsed.diagnostics().iter().map(|d| d.code).collect();
     assert_eq!(codes, [Code::W0312, Code::W0312]);
     assert_eq!(parsed.diagnostics()[0].message, "Duplicate label l");
@@ -245,42 +273,17 @@ fn labels_and_goto_parse() {
     assert!(fte_codes(two).is_empty(), "{:?}", fte_codes(two));
     // A function defined inside another shares the labels read before it, and its end
     // forgets them all.
-    let nested = "float a;\nvoid() f = { l: a = 2; void() h = { l: a = 3; }; l: a = 4; };\n";
+    let nested = "float a;\nvoid() f = { l: a = 2; void() h = { :l a = 3; }; l: a = 4; };\n";
     assert_eq!(fte_codes(nested), [Code::W0312]);
     // A label or goto without a name is an error.
     assert_eq!(fte_codes(&in_body(":1\na = 1;")), [Code::E0201]);
     assert_eq!(fte_codes(&in_body("goto 1;")), [Code::E0201]);
 }
 
-// spec FTEF-18.24: at the end of each function, an inner one included, every goto read since the last end must name a label read since then
-// spec QCD-4.8: E0308 "Goto statement with no matching label \"NAME\""
+// spec FTEF-18.23: the parser reads `goto name;` and leaves its label to the check stage
 #[test]
-fn a_goto_needs_a_label_by_the_end_of_its_function() {
-    // A label later in the function is found.
-    assert!(fte_codes(&in_body("goto top;\na = 1;\ntop:\na = 2;")).is_empty());
-    let parsed = fte(&in_body("goto nowhere;\ngoto top;\ntop:\na = 1;"));
-    let codes: Vec<Code> = parsed.diagnostics().iter().map(|d| d.code).collect();
-    assert_eq!(codes, [Code::E0308]);
-    assert_eq!(
-        parsed.diagnostics()[0].message,
-        "Goto statement with no matching label \"nowhere\""
-    );
-    assert!(Code::E0308.is_error());
-    // Another function's label is forgotten at its end.
-    let other = "float a;\nvoid() g = { top: a = 1; };\nvoid() f = { goto top; };\n";
-    assert_eq!(fte_codes(other), [Code::E0308]);
-    // An inner function's end checks the gotos read before it against the labels read
-    // since the last end, its own included, and then forgets both.
-    let inner_label = "float a;\nvoid() f = { goto out; void() h = { out: a = 1; }; };\n";
-    assert!(
-        fte_codes(inner_label).is_empty(),
-        "{:?}",
-        fte_codes(inner_label)
-    );
-    let label_after = "float a;\nvoid() f = { goto out; void() h = { a = 1; }; out: a = 2; };\n";
-    assert_eq!(fte_codes(label_after), [Code::E0308]);
-    let label_before = "float a;\nvoid() f = { top: a = 1; void() h = { a = 2; }; goto top; };\n";
-    assert_eq!(fte_codes(label_before), [Code::E0308]);
+fn a_goto_with_no_label_is_no_parse_error() {
+    assert!(fte_codes(&in_body("goto nowhere;\na = 1;")).is_empty());
 }
 
 // spec FTEF-18.25: an expression statement, a `for` clause FTEQCC discards, or an expression
@@ -478,4 +481,169 @@ fn field_of_field_parses() {
         statements(&parsed).first(),
         Some(ast::Stmt::Local(_))
     ));
+}
+
+// spec FTEF-15.9: `(name)` after a function type is the declarator's parenthesised name
+#[test]
+fn a_parenthesised_name_after_a_function_type() {
+    assert!(fte_codes("typedef void() (fn);\nfn g;\n").is_empty());
+    assert!(fte_codes("typedef float() (fn); fn g = { return 1; };\n").is_empty());
+    assert!(fte_codes("void() (g) = {};\n").is_empty());
+    assert!(fte_codes("void() (g), (h);\n").is_empty());
+    let parsed = fte_ok("void() (g) = {};\n");
+    let names: Vec<String> = parsed
+        .tree()
+        .unwrap()
+        .declarations()
+        .filter_map(|d| d.declarators().next())
+        .filter_map(|d| d.name().map(|t| t.text_lossless()))
+        .collect();
+    assert_eq!(names, ["g"]);
+}
+
+// spec FTEF-15.9: before a type's name `(name)` is a parameter list
+// spec FTEF-18.36: a further parameter list after a type's is the declarator's, which needs a
+// name
+#[test]
+fn a_further_parameter_list_needs_a_name() {
+    assert!(fte_codes("void();\n").is_empty());
+    for source in [
+        "void()();\n",
+        "void() (float);\n",
+        "typedef float t; void() (t);\n",
+    ] {
+        assert!(fte_codes(source).contains(&Code::E0201), "{source}");
+    }
+}
+
+// spec FTEF-10.9: an accessor member's type is a name and its `*`s, so a parameter list after it
+// is "expected =, found ("
+#[test]
+fn an_accessor_member_takes_no_parameter_list() {
+    for source in [
+        "accessor A : float { get float() x = {}; };\n",
+        "accessor A : float { set void(float v) y = {}; };\n",
+    ] {
+        assert_eq!(fte_codes(source), [Code::E0204], "{source}");
+    }
+    assert!(fte_codes("accessor A : float { set float y = {}; };\n").is_empty());
+}
+
+// spec FTEF-18.7: `return = e;` sets the value without returning, and `return e;` does not
+// spec FTEF-18.8: `if !(e)` and `if not (e)` negate the condition, a plain `if` none
+// spec FTEF-18.31: `until` loops while the condition is false
+#[test]
+fn statement_forms_are_named_by_the_view() {
+    let parsed = fte_ok(&in_body(
+        "return = 1;\nreturn 2;\nif !(a) {}\nif not (a) {}\nif (a) {}\n__until (a) {}\nwhile (a) {}\ndo {} __until (a);\ndo {} while (a);",
+    ));
+    let stmts = statements(&parsed);
+    let sets: Vec<bool> = stmts
+        .iter()
+        .filter_map(|s| match s {
+            ast::Stmt::Return(r) => Some(r.sets()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(sets, [true, false]);
+    let negations: Vec<Option<ast::Negation>> = stmts
+        .iter()
+        .filter_map(|s| match s {
+            ast::Stmt::If(i) => Some(i.negation()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        negations,
+        [Some(ast::Negation::Bang), Some(ast::Negation::Not), None]
+    );
+    let untils: Vec<bool> = stmts
+        .iter()
+        .filter_map(|s| match s {
+            ast::Stmt::While(w) => Some(w.until()),
+            ast::Stmt::Do(d) => Some(d.until()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(untils, [true, false, true, false]);
+}
+
+// spec FTEF-16.9: a `for` header's three clauses are each the view's, and an empty one is none
+#[test]
+fn for_clauses_are_named_by_the_view() {
+    let parsed = fte_ok(&in_body(
+        "for (a = 1; a < 2; a++) {}\nfor (;;) {}\nfor (; a;) {}\nfor (;; a++) {}\nfor (a = 1;;) {}",
+    ));
+    let clauses: Vec<(bool, bool, bool)> = statements(&parsed)
+        .iter()
+        .filter_map(|s| match s {
+            ast::Stmt::For(f) => Some((
+                f.init().is_some(),
+                f.condition().is_some(),
+                f.step().is_some(),
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        clauses,
+        [
+            (true, true, true),
+            (false, false, false),
+            (false, true, false),
+            (false, false, true),
+            (true, false, false),
+        ]
+    );
+    let text: Vec<String> = statements(&parsed)
+        .iter()
+        .filter_map(|s| match s {
+            ast::Stmt::For(f) if f.init().is_some() && f.condition().is_some() => Some(
+                [f.init(), f.condition(), f.step()]
+                    .iter()
+                    .map(|c| {
+                        String::from_utf8_lossy(&c.as_ref().unwrap().text())
+                            .trim()
+                            .to_owned()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("|"),
+            ),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(text, ["a = 1|a < 2|a++"]);
+}
+
+// spec FTEF-10.2: an accessor member's type and its index's type are the view's
+#[test]
+fn accessor_member_types_are_named_by_the_view() {
+    let parsed =
+        fte_ok("accessor A : float { get float x[float i] = { return i; }; set float y = {}; };\n");
+    let members: Vec<(Option<String>, Option<String>)> = parsed
+        .tree()
+        .unwrap()
+        .syntax()
+        .descendants()
+        .find_map(ast::AccessorDecl::cast)
+        .unwrap()
+        .members()
+        .map(|m| {
+            let text = |t: Option<ast::Type>| {
+                t.map(|t| {
+                    String::from_utf8_lossy(&t.syntax().text())
+                        .trim()
+                        .to_owned()
+                })
+            };
+            (text(m.ty()), text(m.index_ty()))
+        })
+        .collect();
+    assert_eq!(
+        members,
+        [
+            (Some("float".to_owned()), Some("float".to_owned())),
+            (Some("float".to_owned()), None),
+        ]
+    );
 }

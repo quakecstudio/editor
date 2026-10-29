@@ -475,7 +475,7 @@ fn checking_every_vector_counts_the_ones_without_a_trace_as_failures() {
     let fake = Fake::new(|command: &Command| replay(&recorded, command));
     let oracles = fake_oracles(&work, &fake);
     assert!(!check(&root(), &oracles).unwrap());
-    let seen = fake.seen.borrow();
+    let seen = fake.seen.lock().unwrap();
     assert!(seen.len() > 250, "{}", seen.len());
     assert!(
         seen.iter()

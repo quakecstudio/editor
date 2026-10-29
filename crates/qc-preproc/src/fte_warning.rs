@@ -176,6 +176,16 @@ pub enum FteWarning {
     NotConstant,
     /// `WARN_KEYWORDDISABLED`, which has no name.
     KeywordDisabled,
+    /// `WARN_IFVECTOR_DISABLED`, which has no name.
+    IfvectorDisabled,
+    /// `WARN_CONDITIONALTYPEMISMATCH`, which has no name.
+    ConditionalTypeMismatch,
+    /// `WARN_TOOMANYPARAMETERSFORFUNC`, which has no name.
+    TooManyParametersForFunc,
+    /// `WARN_TOOMANYPARAMETERSVARARGS`, which has no name.
+    TooManyParametersVarargs,
+    /// `WARN_SWITCHTYPEMISMATCH`, which has no name.
+    SwitchTypeMismatch,
 }
 
 /// `warningnames[]`, each name without its leading space, in FTEQCC's order: `QCC_WarningForName`
@@ -248,7 +258,7 @@ const NAMES: [(&str, FteWarning); 63] = [
 ];
 
 /// Every warning, for the settings' table.
-const ALL: [FteWarning; 73] = [
+const ALL: [FteWarning; 78] = [
     FteWarning::PrecompilerMessage,
     FteWarning::TooManyParams,
     FteWarning::TooFewParams,
@@ -322,6 +332,11 @@ const ALL: [FteWarning; 73] = [
     FteWarning::NotStandardBehaviour,
     FteWarning::NotConstant,
     FteWarning::KeywordDisabled,
+    FteWarning::IfvectorDisabled,
+    FteWarning::ConditionalTypeMismatch,
+    FteWarning::TooManyParametersForFunc,
+    FteWarning::TooManyParametersVarargs,
+    FteWarning::SwitchTypeMismatch,
 ];
 
 impl FteWarning {
@@ -392,6 +407,11 @@ impl FteWarning {
             | Self::DeprecatedSyntax
             | Self::RedeclarationMismatch
             | Self::ArgumentCheck
+            | Self::IfvectorDisabled
+            | Self::ConditionalTypeMismatch
+            | Self::TooManyParametersForFunc
+            | Self::TooManyParametersVarargs
+            | Self::SwitchTypeMismatch
             | Self::MissingMemberQualifier
             | Self::MemberNotDefined
             | Self::NotReferencedField
@@ -429,7 +449,7 @@ impl FteWarning {
             Code::W0108 | Code::W0113 => Self::BadPragma,
             Code::W0109 => Self::EvilPreprocessor,
             Code::W0110 => Self::Octal,
-            Code::W0111 => Self::Overflow,
+            Code::W0111 | Code::W0234 => Self::Overflow,
             Code::W0112 => Self::NestedComment,
             Code::W0114 => Self::UndefNotDefined,
             Code::W0115 => Self::DuplicatePrecompiler,
@@ -437,7 +457,7 @@ impl FteWarning {
             Code::W0118 => Self::GmqccSpecific,
             Code::W0119 => Self::NotUtf8,
             Code::W0120 => Self::FteSpecific,
-            Code::W0121 => Self::Denormal,
+            Code::W0121 | Code::W0237 => Self::Denormal,
             Code::W0122 => Self::MacroInString,
             Code::W0123 => Self::HangingSlashR,
             Code::W0203 => Self::UndesirableConvention,
@@ -445,23 +465,47 @@ impl FteWarning {
             Code::W0205 | Code::W0215 => Self::UnexpectedPunct,
             Code::W0206 | Code::W0210 | Code::W0211 | Code::W0223 => Self::CompatibilityHack,
             Code::W0207 => Self::DuplicateDefinition,
-            Code::W0208 => Self::SameNameAsGlobal,
+            Code::W0316 => Self::SelfNotThis,
+            Code::W0208 | Code::W0315 => Self::SameNameAsGlobal,
             Code::W0209 => Self::TypeMismatchRedecOptional,
             Code::W0212 => Self::RedeclarationMismatch,
             Code::W0213 => Self::MisusedAutocvar,
             Code::W0214 | Code::W0226 => Self::IgnoredKeyword,
             Code::W0216 => Self::MemberNotDefined,
-            Code::W0217 => Self::NotStandardBehaviour,
+            Code::W0217 | Code::W0238 => Self::NotStandardBehaviour,
             Code::W0218 => Self::GmqccSpecific,
             Code::W0219 => Self::NotConstant,
-            Code::W0220 => Self::LaxCast,
+            Code::W0220 | Code::W0231 | Code::W0243 | Code::W0248 => Self::LaxCast,
+            Code::W0233 => Self::DivisionBy0,
+            Code::W0239 => Self::ConstantComparison,
+            Code::W0241 => Self::AssignmentToConstant,
+            Code::W0242 => Self::AssignmentInConditional,
+            Code::W0245 => Self::IfstringUsed,
+            Code::W0249 => Self::Bounds,
+            Code::W0251 => Self::TooManyParametersVarargs,
+            Code::W0252 => Self::TooManyParametersForFunc,
+            Code::W0253 => Self::TooFewParams,
+            Code::W0254 => Self::FormatString,
+            Code::W0255 => Self::ArgumentCheck,
+            Code::W0250 => Self::UnsafeLocalPointer,
+            Code::W0246 => Self::IfvectorDisabled,
+            Code::W0247 => Self::ConditionalTypeMismatch,
+            Code::W0256 => Self::MissingReturnValue,
+            Code::W0257 => Self::WrongReturnType,
+            Code::W0258 => Self::MissingReturn,
+            Code::W0259 => Self::UnreachableCode,
+            Code::W0260 => Self::SwitchTypeMismatch,
+            Code::W0261 => Self::FteSpecific,
+            Code::W0262 => Self::SlowLargeReturn,
+            Code::W0265 => Self::MissingMemberQualifier,
+            Code::W0240 => Self::StrictTypeMismatch,
             Code::W0221 => Self::KeywordDisabled,
             Code::W0222 => Self::ParamWithNoName,
             Code::W0224 => Self::DeprecatedSyntax,
             Code::W0225 => Self::EnumflagsNotInteger,
             Code::W0227 => Self::UnaryNotScope,
             Code::W0228 => Self::GmqccSpecific,
-            Code::W0229 => Self::Debugging,
+            Code::W0229 | Code::W0263 | Code::W0264 | Code::W0319 => Self::Debugging,
             Code::W0230 => Self::LaxCast,
             Code::W0312 => Self::DuplicateLabel,
             Code::W0314 => Self::DeprecatedVariable,

@@ -52,7 +52,7 @@ fn completion_items_have_kind_and_type() {
     let items = host.completions(&path("a.qc"), nth(text, "/*here*/", 0));
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].kind, DefKind::Function);
-    assert_eq!(items[0].detail, "float(entity)");
+    assert_eq!(items[0].detail, "float(entity e)");
     assert!(host.completions(&path("missing.qc"), 0).is_empty());
 }
 

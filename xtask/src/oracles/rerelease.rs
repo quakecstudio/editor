@@ -391,7 +391,7 @@ mod tests {
         // FTEQCC's outputs differ from the recorded ones, and hold an extended opcode.
         assert!(!check(&oracles, &codebases).unwrap());
         {
-            let seen = fake.seen.borrow();
+            let seen = fake.seen.lock().unwrap();
             assert_eq!(seen.len(), 6);
             assert!(
                 seen.iter()
