@@ -90,15 +90,16 @@ semantic-tokens monsters/vore.qc: 402 tokens
 semantic-tokens monsters/enforcer.qc: 548 tokens
 semantic-tokens monsters/shub.qc: 442 tokens
 semantic-tokens bots/bot.qc: 2 tokens
-diagnostics: none
+diagnostics doors.qc: W0220 x3
+diagnostics monsters/shub.qc: W0220 x1
 # the same, target quake
 diagnostics ai.qc: W0311 x3
 diagnostics client.qc: W0311 x45
-diagnostics doors.qc: W0311 x8
+diagnostics doors.qc: W0220 x3, W0311 x8
 diagnostics items.qc: W0311 x18
 diagnostics monsters/hellknight.qc: W0311 x1
 diagnostics monsters/ogre.qc: W0311 x1
-diagnostics monsters/shub.qc: W0311 x1
+diagnostics monsters/shub.qc: W0220 x1, W0311 x1
 diagnostics player.qc: W0311 x2
 diagnostics subs.qc: W0311 x1
 diagnostics triggers.qc: W0311 x6
