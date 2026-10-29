@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use qc_codegen::{CompileError, Compiled, compile_module};
+use qc_codegen::{CompileError, Compiled, Options, compile_module};
 use qc_progs::{Progs, ReadOptions};
 use qc_sema::{Db, FileId, ModuleInput};
 
@@ -60,9 +60,12 @@ pub(crate) fn compile_codebase(dir: &Path) -> Result<Compiled, String> {
         })
         .collect();
     let input = ModuleInput::from_module(module);
-    compile_module(&mut db, &input, |id| {
-        names.get(id.0).cloned().unwrap_or_default()
-    })
+    compile_module(
+        &mut db,
+        &input,
+        |id| names.get(id.0).cloned().unwrap_or_default(),
+        Options::default(),
+    )
     .map_err(|e| describe(&db, &e))
 }
 
@@ -272,12 +275,17 @@ pub(crate) fn ours(case: &Case) -> Ours {
         db.set_file(FileId(index), PathBuf::from(name), text.as_bytes().to_vec());
         input.compiled.push(FileId(index));
     }
-    let result = compile_module(&mut db, &input, |id| {
-        files
-            .get(id.0)
-            .map(|(n, _)| (*n).to_owned())
-            .unwrap_or_default()
-    });
+    let result = compile_module(
+        &mut db,
+        &input,
+        |id| {
+            files
+                .get(id.0)
+                .map(|(n, _)| (*n).to_owned())
+                .unwrap_or_default()
+        },
+        Options::default(),
+    );
     let refused = |message: String| Ours {
         outcome: Outcome::Error(message.clone()),
         messages: vec![message],

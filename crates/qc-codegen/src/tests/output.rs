@@ -260,3 +260,46 @@ fn warnings_come_with_the_program() {
 fn a_semantic_error_stops_the_build() {
     assert_eq!(super::errors("void() f;\n"), ["function f was not defined"]);
 }
+
+// spec QC-27.19: every statement has the line of the source statement it was emitted for, a
+// state header's and an empty body's the line of the function's name; statement 0 has none;
+// the map's counts are the progs'
+#[test]
+fn every_statement_maps_to_its_source_line() {
+    let source =
+        "float a;\nvoid() g;\nvoid() f = [1, g]\n{\n\ta = 1;\n\n\tg();\n};\nvoid() g = {};\n";
+    let compiled = compile_source(source).unwrap();
+    let p = &compiled.progs;
+    let lno = &compiled.lno;
+    assert_eq!(lno.lines.len(), p.statements.len());
+    assert_eq!(lno.lines[0], 0);
+    assert!(
+        lno.lines[1..].iter().all(|&line| line > 0),
+        "{:?}",
+        lno.lines
+    );
+    let first = |name: &str| {
+        let f = p
+            .functions
+            .iter()
+            .find(|f| string(p, f.s_name) == name)
+            .unwrap();
+        usize::try_from(f.first_statement).unwrap()
+    };
+    let f = first("f");
+    // `STATE`, then `a = 1;` on line 5, then the call on line 7 and the `DONE` after it.
+    assert_eq!(&lno.lines[f..f + 4], [3, 5, 7, 7]);
+    assert_eq!(
+        lno.lines[first("g")],
+        9,
+        "an empty body's DONE is on the name's line"
+    );
+    let bytes = qc_progs::write(p).unwrap();
+    let unchecked = qc_progs::ReadOptions {
+        check_header_crc: false,
+    };
+    let header = *qc_progs::Progs::read_with(&bytes, &unchecked)
+        .unwrap()
+        .header();
+    assert_eq!(lno.matches_header(&header), Ok(()));
+}

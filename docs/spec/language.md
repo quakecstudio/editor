@@ -1369,6 +1369,21 @@ differential suite lists each of these as an expected divergence.
 - **QC-27.18** A `string` initialiser's text (QC-27.12) is appended to the string table where
   the initialiser is read, and a later literal of the same text is the initialised definition
   (QC-20.2).
+- **QC-27.19** Every build writes a line map beside the progs, in FTEQCC's `.lno` layout
+  ([`lno.md`](lno.md)), which id's `qcc` does not: one line per statement, the line of the
+  source statement the compiler was reading when it emitted it, counted from 1 in the file the
+  statement's function is in: a state header's statements have the line of the function's
+  name, and the `DONE` a body ends with the line of its last statement (the name's for an
+  empty body). The placeholder statement 0 has line 0, no line
+  (LNO-3.2). The map's counts are the progs' (LNO-4.1).
+- **QC-27.20** With `--opt fold` (COMP-5), an arithmetic operator whose operands are both float
+  or vector literals is the literal of its value, made as `PR_ParseImmediate` makes a literal
+  (QC-20.2), and emits no statement: `ADD_F`, `SUB_F`, `MUL_F`, `DIV_F`, `ADD_V`, `SUB_V`,
+  `MUL_V`, `MUL_FV` and `MUL_VF`. The value is the one the VM computes for that statement
+  (VM-5): each product and sum an `f32` rounded in turn, the dot product
+  `(a0*b0 + a1*b1) + a2*b2`, a division by zero infinity or NaN. Every other operator, and an
+  operand that is no literal, is emitted as without the option. `qcc` folds nothing, so the
+  option changes the progs but not what it computes (COMP-4).
 
 ### Constants
 

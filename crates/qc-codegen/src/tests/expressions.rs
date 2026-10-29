@@ -522,3 +522,64 @@ fn a_return_value_is_not_checked() {
     );
     assert_eq!(body(&p, "g")[0], st(Return, 0, 0, 0));
 }
+
+/// The progs of `source` compiled with `--opt fold`.
+fn folded(source: &str) -> qc_progs::ProgsFile {
+    let options = crate::Options { fold: true };
+    super::compile_with(&[("t.qc", source)], options)
+        .unwrap()
+        .progs
+}
+
+/// The float in the global at `ofs`.
+fn float_at(p: &qc_progs::ProgsFile, ofs: i32) -> f32 {
+    f32::from_bits(p.globals[usize::try_from(ofs).unwrap()].0)
+}
+
+// spec QC-27.20: with `--opt fold` an arithmetic operator of two literals is the literal of its
+// value, each step an f32 as the VM computes it, and emits no statement; without it, or with an
+// operand that is no literal, the statements are emitted as before
+#[test]
+fn folding_makes_literals_of_literal_arithmetic() {
+    let source = "float r; float a;\nvoid() f = { r = 2 * 3 + 1; a = a + 1 * 2; };\n";
+    let plain = progs(source);
+    let p = folded(source);
+    let ops = |p: &qc_progs::ProgsFile| -> Vec<Opcode> {
+        body(p, "f")
+            .iter()
+            .map(|s| Opcode::from_number(s.op).unwrap())
+            .collect()
+    };
+    assert_eq!(ops(&plain), [MulF, AddF, StoreF, MulF, AddF, StoreF, Done]);
+    // `2 * 3 + 1` folds to 7; `a + 1 * 2` folds `1 * 2` and adds it to `a`.
+    assert_eq!(ops(&p), [StoreF, AddF, StoreF, Done]);
+    let f = body(&p, "f");
+    assert_eq!(float_at(&p, f[0].a), 7.0);
+    assert_eq!(float_at(&p, f[1].b), 2.0);
+    for (expr, value) in [
+        ("1 / 0", f32::INFINITY),
+        ("0.1 + 0.2", 0.1_f32 + 0.2_f32),
+        ("3 - 5", -2.0),
+        ("'1 2 3' * '4 5 6'", (4.0 + 10.0) + 18.0),
+    ] {
+        let p = folded(&format!("float r;\nvoid() f = {{ r = {expr}; }};\n"));
+        let f = body(&p, "f");
+        assert_eq!(f.len(), 2, "{expr}: a store and DONE");
+        assert_eq!(float_at(&p, f[0].a).to_bits(), value.to_bits(), "{expr}");
+    }
+    for (expr, value) in [
+        ("'1 2 3' + '0.5 0.5 0.5'", [1.5, 2.5, 3.5]),
+        ("'1 2 3' - '1 1 1'", [0.0, 1.0, 2.0]),
+        ("2 * '1 2 3'", [2.0, 4.0, 6.0]),
+        ("'1 2 3' * 0.5", [0.5, 1.0, 1.5]),
+    ] {
+        let p = folded(&format!("vector v;\nvoid() f = {{ v = {expr}; }};\n"));
+        let f = body(&p, "f");
+        assert_eq!(f.len(), 2, "{expr}");
+        let got = [0, 1, 2].map(|i| float_at(&p, f[0].a + i));
+        assert_eq!(got, value, "{expr}");
+    }
+    // A comparison or `&&` of literals is emitted as it is.
+    let compare = folded("float r;\nvoid() f = { r = 1 < 2; r = (1 && 0); };\n");
+    assert_eq!(ops(&compare), [Lt, StoreF, And, StoreF, Done]);
+}

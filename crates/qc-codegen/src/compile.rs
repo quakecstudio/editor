@@ -103,6 +103,9 @@ pub(crate) struct Compiler<'a> {
     locals_end: u32,
     /// The type of the last call's value, `def_ret.type` (QC-18.4).
     return_type: ValueType,
+    /// Whether an operator of two literals is folded into the literal of its value
+    /// (`--opt fold`, COMP-5).
+    pub(crate) fold: bool,
 }
 
 impl<'a> Compiler<'a> {
@@ -118,6 +121,7 @@ impl<'a> Compiler<'a> {
             scope: None,
             locals_end: 0,
             return_type: ValueType::simple(Etype::Void),
+            fold: false,
         }
     }
 
@@ -247,6 +251,7 @@ impl<'a> Compiler<'a> {
         let span = name.span();
         let def = self.program.def(place).at(span)?.clone();
         let function_type = def.ty.function().at(span)?.clone();
+        self.set_line(span);
         let locals_start = self.program.next_global().at(span)?;
         self.locals_end = locals_start;
         self.scope = Some(id);
@@ -354,8 +359,14 @@ impl<'a> Compiler<'a> {
     // ---------------------------------------------------------------------------------------
 
     /// `PR_ParseStatement` (QC-14, QC-22.1).
+    /// Records `span`'s start as where the statements emitted from here come from (QC-27.19).
+    fn set_line(&mut self, span: Span) {
+        self.program.origin = Some((self.file, span.start));
+    }
+
     fn statement(&mut self, statement: &ast::Stmt) -> Lowered<()> {
         let span = statement.syntax().span();
+        self.set_line(span);
         match statement {
             ast::Stmt::Block(block) => {
                 for inner in block.statements() {
@@ -582,6 +593,11 @@ impl<'a> Compiler<'a> {
         let Some(row) = ops::select(operator, a, b, None) else {
             return Self::mismatch(operator, op_span);
         };
+        if self.fold
+            && let Some(value) = self.folded(row.opcode, &left, &right).at(span)?
+        {
+            return Ok(value);
+        }
         let ofs = self
             .program
             .emit_result(row.opcode, left.ofs, right.ofs, row.c)
@@ -590,6 +606,69 @@ impl<'a> Compiler<'a> {
             ofs,
             kind: ValueKind::Temp(ValueType::simple(row.c)),
         })
+    }
+
+    /// `--opt fold` (COMP-5): the operator `opcode` of two literals as the literal of its value,
+    /// computed as the VM computes it (VM-5): each product and sum an `f32` rounded in turn, the
+    /// dot product `(a0*b0 + a1*b1) + a2*b2`. `None` for any other operator or operand, which is
+    /// emitted as it is.
+    fn folded(
+        &mut self,
+        opcode: Opcode,
+        left: &Value,
+        right: &Value,
+    ) -> Result<Option<Value>, Internal> {
+        let (Some(a), Some(b)) = (self.literal_of(left), self.literal_of(right)) else {
+            return Ok(None);
+        };
+        let each =
+            |x: [f32; 3], f: &dyn Fn(usize, f32) -> f32| [f(0, x[0]), f(1, x[1]), f(2, x[2])];
+        let literal = match (opcode, a, b) {
+            (Opcode::AddF, Literal::Float(x), Literal::Float(y)) => Literal::Float(x + y),
+            (Opcode::SubF, Literal::Float(x), Literal::Float(y)) => Literal::Float(x - y),
+            (Opcode::MulF, Literal::Float(x), Literal::Float(y)) => Literal::Float(x * y),
+            (Opcode::DivF, Literal::Float(x), Literal::Float(y)) => Literal::Float(x / y),
+            (Opcode::AddV, Literal::Vector(x), Literal::Vector(y)) => {
+                Literal::Vector(each(x, &|i, v| v + component(y, i)))
+            }
+            (Opcode::SubV, Literal::Vector(x), Literal::Vector(y)) => {
+                Literal::Vector(each(x, &|i, v| v - component(y, i)))
+            }
+            (Opcode::MulV, Literal::Vector(x), Literal::Vector(y)) => {
+                Literal::Float((x[0] * y[0] + x[1] * y[1]) + x[2] * y[2])
+            }
+            (Opcode::MulFv, Literal::Float(s), Literal::Vector(v)) => {
+                Literal::Vector(each(v, &|_, c| s * c))
+            }
+            (Opcode::MulVf, Literal::Vector(v), Literal::Float(s)) => {
+                Literal::Vector(each(v, &|_, c| s * c))
+            }
+            _ => return Ok(None),
+        };
+        let place = self.program.immediate(&literal)?;
+        let ofs = self.program.def(place).ok_or(Internal::NoDefinition)?.ofs;
+        Ok(Some(Value {
+            ofs,
+            kind: ValueKind::Def(place),
+        }))
+    }
+
+    /// The literal a value is, when it is one of the float or vector immediates
+    /// `PR_ParseImmediate` makes (QC-20).
+    fn literal_of(&self, value: &Value) -> Option<Literal> {
+        let ValueKind::Def(place) = value.kind else {
+            return None;
+        };
+        let def = self.program.def(place)?;
+        if def.name != "IMMEDIATE" {
+            return None;
+        }
+        let float = |i: u32| f32::from_bits(self.program.word(def.ofs.saturating_add(i)));
+        match def.ty.etype() {
+            Etype::Float => Some(Literal::Float(float(0))),
+            Etype::Vector => Some(Literal::Vector([float(0), float(1), float(2)])),
+            _ => None,
+        }
     }
 
     fn mismatch<T>(operator: Operator, span: Span) -> Lowered<T> {
@@ -837,4 +916,9 @@ fn literal_of_token(literal: &ast::Literal) -> Option<Literal> {
         | qc_lexer::TokenKind::Frames(_)
         | qc_lexer::TokenKind::FrameCommand(_) => None,
     }
+}
+
+/// Component `i` of `v`, 0 for none.
+fn component(v: [f32; 3], i: usize) -> f32 {
+    v.get(i).copied().unwrap_or(0.0)
 }

@@ -295,7 +295,7 @@ issues:
   deliverable:
   - 'tests/compiler-diff: compiles each vanilla corpus codebase with our compiler and with oracle qcc, runs scripted function calls in qc-vm on both outputs, compares traces'
   acceptance:
-  - Zero behavioural divergences on the vanilla corpus
+  - Zero behavioural divergences on the vanilla corpus, with `--opt fold` off and on (QC-27.20, P2-08)
   - At least 90% of statements executed per corpus codebase
   verify:
   - CI fast subset; nightly full run

@@ -10,7 +10,7 @@ use qc_sema::{Db, FileId, ModuleInput};
 use qc_syntax::Dialect;
 
 use super::compile_source;
-use crate::{CompileError, Unit, compile, compile_module};
+use crate::{CompileError, Options, Unit, compile, compile_module};
 
 // spec QC-9.7: a compiler error is at the span of the source file it came from, after the
 // preprocessor's lines and through a macro's use.
@@ -40,7 +40,7 @@ fn only_the_vanilla_dialect_is_compiled() {
         ..ModuleInput::default()
     };
     assert_eq!(
-        compile_module(&mut db, &input, |_| "t.qc".to_owned()),
+        compile_module(&mut db, &input, |_| "t.qc".to_owned(), Options::default()),
         Err(CompileError::Dialect(Dialect::Fteqcc))
     );
 }
@@ -52,14 +52,17 @@ fn units_compile_without_a_database() {
         name: "u.qc",
         parse: &parse,
     }];
-    let compiled = compile(&units).unwrap();
+    let compiled = compile(&units, Options::default()).unwrap();
     assert_eq!(super::string(&compiled.progs, 1), "u.qc");
     let bad = qc_syntax::parse_with(b"float a;\nvoid() f = { a = ; };\n", Dialect::Vanilla);
     let units = [Unit {
         name: "u.qc",
         parse: &bad,
     }];
-    assert!(matches!(compile(&units), Err(CompileError::Diagnostics(_))));
+    assert!(matches!(
+        compile(&units, Options::default()),
+        Err(CompileError::Diagnostics(_))
+    ));
 }
 
 /// Words a vanilla program is made of, to build token soup from.
