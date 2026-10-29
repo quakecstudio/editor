@@ -366,6 +366,7 @@ dependencies = [
  "qc-diag",
  "qc-lexer",
  "qc-lno",
+ "qc-preproc",
  "qc-progs",
  "qc-sema",
  "qc-syntax",

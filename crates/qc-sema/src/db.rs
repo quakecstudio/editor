@@ -69,6 +69,9 @@ pub struct ModuleAnalysis {
     pub index: ModuleIndex,
     /// The preprocessor's, lexer's and parser's diagnostics, each at a span of a source file.
     pub syntax: Vec<FileDiagnostic>,
+    /// The options the module was resolved with, which a compiler resolving the expansion
+    /// again uses too.
+    pub options: ResolveOptions,
 }
 
 impl ModuleAnalysis {
@@ -530,6 +533,7 @@ impl Db {
         let analysis = ModuleAnalysis {
             index: resolve_mapped(&decls, &sources, options),
             syntax,
+            options,
         };
         self.remember_origins(input, preprocessed.files);
         self.analysis = Some(Memo {

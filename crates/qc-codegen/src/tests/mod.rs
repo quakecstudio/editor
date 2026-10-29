@@ -17,6 +17,7 @@
 mod api;
 mod declarations;
 mod expressions;
+mod fteqcc;
 mod output;
 mod statements;
 
@@ -51,6 +52,26 @@ pub(crate) fn compile_with(
     }
     let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
     compile_module(&mut db, &input, |id| names[id.0].clone(), options)
+}
+
+/// A program of one file, `t.qc`, compiled under the FTEQCC profile.
+pub(crate) fn compile_fteqcc(source: &str) -> Result<Compiled, CompileError> {
+    let mut db = Db::new();
+    db.set_dialect(qc_syntax::Dialect::Fteqcc);
+    db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+    let input = ModuleInput {
+        compiled: vec![FileId(0)],
+        ..ModuleInput::default()
+    };
+    compile_module(&mut db, &input, |_| "t.qc".to_owned(), Options::default())
+}
+
+/// The progs of a program that must compile under the FTEQCC profile.
+pub(crate) fn fte_progs(source: &str) -> ProgsFile {
+    match compile_fteqcc(source) {
+        Ok(compiled) => compiled.progs,
+        Err(error) => panic!("{source:?} did not compile: {error:?}"),
+    }
 }
 
 /// The progs of a program that must compile.

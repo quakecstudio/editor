@@ -384,7 +384,7 @@ impl<'e> Checker<'e> {
             *slot = self.convert(value, operand, row, span)?;
         }
         // A constant converted to the row's type is folded by FTEQCC's conversion, which the
-        // model does not follow: its value no longer decides anything (FTEF-26.5).
+        // model does not follow: its value no longer decides anything (FTEF-26.13).
         let constness = |value: &Value, operand: Operand, row: OpType| {
             if row.etype() == operand.etype
                 || value.constness == Constness::Variable

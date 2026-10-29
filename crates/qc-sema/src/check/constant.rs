@@ -12,6 +12,23 @@ use qc_lexer::{LexFlags, atof};
 
 use crate::cast::{ConstType, Literal};
 
+impl Constant {
+    /// The words a global this constant initialises holds (FTEF-34.9): a float, an integer or
+    /// an unsigned integer is one word and a vector three. `None` for a string, whose text the
+    /// semantic model does not keep, and a 64-bit value or a double, which a vanilla progs has
+    /// no global for.
+    pub(crate) fn initial_value(self) -> Option<crate::InitialValue> {
+        let words = match self.ty {
+            ConstType::Float | ConstType::Integer | ConstType::Uint => vec![self.words[0]],
+            ConstType::Vector => self.words.to_vec(),
+            ConstType::String | ConstType::Int64 | ConstType::Uint64 | ConstType::Double => {
+                return None;
+            }
+        };
+        Some(crate::InitialValue::new(words))
+    }
+}
+
 /// A constant: the words of its `QCC_eval_t` and the type it was made with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Constant {

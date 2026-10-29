@@ -75,6 +75,9 @@ pub use expand::{ModuleInput, OriginMap};
 pub use lower::{
     BuiltinFunction, FileDecls, LiteralValue, RawBody, RawDecl, RawLocal, RawParam, RawUse, UseKind,
 };
-pub use resolve::{FileDiagnostic, ModuleIndex, ResolveOptions, resolve_module};
+pub use resolve::{
+    FileDiagnostic, InitialValue, MemberShape, ModuleIndex, ResolveOptions, StructShape,
+    resolve_module,
+};
 pub use symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 pub use ty::{FunctionType, SimpleType, Type};

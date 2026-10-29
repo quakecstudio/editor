@@ -12,6 +12,7 @@ publish.workspace = true
 qc-diag = { workspace = true }
 qc-lexer = { workspace = true }
 qc-lno = { workspace = true }
+qc-preproc = { workspace = true }
 qc-progs = { workspace = true }
 qc-sema = { workspace = true }
 qc-syntax = { workspace = true }

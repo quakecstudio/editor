@@ -50,6 +50,7 @@ mod references;
 mod resolution;
 mod reviewer;
 mod settings;
+mod shapes;
 mod statements;
 mod terms;
 mod type_declarations;

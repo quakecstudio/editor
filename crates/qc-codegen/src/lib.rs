@@ -153,7 +153,11 @@ pub fn compile(units: &[Unit<'_>], options: Options) -> Result<Compiled, Compile
         .map(|u| lower_file(u.parse, Dialect::Vanilla))
         .collect();
     let texts: Vec<Vec<u8>> = units.iter().map(|u| u.parse.syntax().text()).collect();
-    compile_lowered(units, &decls, options, |file, at| {
+    let vanilla = ResolveOptions {
+        dialect: Dialect::Vanilla,
+        ..ResolveOptions::default()
+    };
+    compile_lowered(units, &decls, vanilla, options, |file, at| {
         texts.get(file.0).map_or(0, |text| line_at(text, at))
     })
 }
@@ -162,16 +166,11 @@ pub fn compile(units: &[Unit<'_>], options: Options) -> Result<Compiled, Compile
 fn compile_lowered(
     units: &[Unit<'_>],
     decls: &[FileDecls],
+    resolve: ResolveOptions,
     options: Options,
     line_of: impl Fn(FileId, usize) -> i32,
 ) -> Result<Compiled, CompileError> {
-    let index = resolve_module(
-        decls,
-        ResolveOptions {
-            dialect: Dialect::Vanilla,
-            ..ResolveOptions::default()
-        },
-    );
+    let index = resolve_module(decls, resolve);
     let mut errors: Vec<FileDiagnostic> = Vec::new();
     for (i, unit) in units.iter().enumerate() {
         errors.extend(unit.parse.diagnostics().iter().map(|d| FileDiagnostic {
@@ -189,6 +188,7 @@ fn compile_lowered(
     let names = Names::new(&index);
     let mut compiler = Compiler::new(&index, &names);
     compiler.fold = options.fold;
+    compiler.dialect = resolve.dialect;
     for (i, unit) in units.iter().enumerate() {
         compiler
             .compile_file(FileId(i), unit.name, unit.parse)
@@ -198,6 +198,13 @@ fn compile_lowered(
                 internal,
             })?;
     }
+    compiler
+        .emit_getters()
+        .map_err(|(internal, file, span)| CompileError::Internal {
+            file,
+            span,
+            internal,
+        })?;
     if !compiler.errors.is_empty() {
         return Err(CompileError::Diagnostics(compiler.errors));
     }
@@ -253,7 +260,7 @@ pub fn compile_module(
     name_of: impl Fn(FileId) -> String,
     options: Options,
 ) -> Result<Compiled, CompileError> {
-    if db.dialect() != Dialect::Vanilla {
+    if db.dialect() == Dialect::Gmqcc {
         return Err(CompileError::Dialect(db.dialect()));
     }
     let analysis = db.analyze_module(input);
@@ -273,7 +280,7 @@ pub fn compile_module(
         units.push(Unit { name, parse });
         decls.push(lowered.clone());
     }
-    let mut compiled = compile_lowered(&units, &decls, options, |file, at| {
+    let mut compiled = compile_lowered(&units, &decls, analysis.options, options, |file, at| {
         // QC-27.19: the line in the source file the expansion's text came from (QC-9.7).
         let id = input.compiled.get(file.0).copied().unwrap_or(file);
         let (source, at) = db
