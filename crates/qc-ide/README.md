@@ -42,7 +42,7 @@ edit.
 | Hover | `hover` | The declaration as written, its comment, and for a builtin the target engine's entry and every engine's (ENGT-3.9, ENGT-3.11) |
 | Completion | `completions` | The globals declared before the cursor (QC-12.5; all with autoprototyping, FTE-22.3), and the enclosing function's parameters and earlier locals (QC-12.1); only fields after `.` or `->` (QC-16.6) |
 | Highlighting | `highlights` | Each resolved name by what it names, with declaration, constant (QC-11.6, vanilla) and builtin modifiers |
-| Inlay hints | `parameter_hints` | The parameter name of each argument (QC-13.5), from the declaration that names them (QC-13.2) |
+| Inlay hints | `parameter_hints` | The parameter name of each argument (QC-13.5), from the declaration that names them (QC-13.11) |
 | Diagnostics | `diagnostics`, `all_diagnostics` | The project graph's, the preprocessor's and parser's, the semantic model's, and `W0311` for the target engine |
 
 A position just after a name names it, as an editor's cursor at the end of a word does.

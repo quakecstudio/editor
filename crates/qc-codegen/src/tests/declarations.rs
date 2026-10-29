@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Definitions, functions, literals and layout: QC-11.6, QC-11.10, QC-11.11, QC-13.2 to
-//! QC-13.10, QC-20, QC-21 and QC-27.12.
+//! Definitions, functions, literals and layout: QC-11.6, QC-11.10, QC-11.11, QC-13.3 to
+//! QC-13.11, QC-20, QC-21 and QC-27.12.
 
 use qc_progs::PROGS_DEF_SAVEGLOBAL;
 use qc_progs::opcode::Opcode::{AddF, StoreF, StoreS, StoreV};
 
-use super::{body, function, global, immediate, immediate_string, progs, st, string, words};
+use super::{
+    body, errors, fte_progs, function, global, immediate, immediate_string, progs, st, string,
+    words,
+};
 
 /// The global definitions named `name`, as (type bits, offset).
 fn defs_named(p: &qc_progs::ProgsFile, name: &str) -> Vec<(u32, u32)> {
@@ -184,13 +187,41 @@ fn a_string_constant_holds_its_own_text() {
     assert_eq!(body(&p, "f")[0].a, s1);
 }
 
-// spec QC-13.2: the parameters a body uses are named in its defining declaration's type.
+// spec QC-13.11: the parameters a body uses are named in its defining declaration's type.
 #[test]
 fn a_body_uses_its_own_parameter_names() {
     let p = progs("float(float x) f;\nfloat(float y) f = { return y; };\n");
     let y = global(&p, "y");
     assert_eq!(body(&p, "f")[0].a, y);
     assert!(defs_named(&p, "x").is_empty());
+}
+
+// spec QC-13.11: a parameter of function type, or of a field of one, writes its parameters'
+// names from index 0 before its own is written; the body has only as many as its type
+#[test]
+fn a_function_parameter_writes_over_the_names() {
+    let p = progs("float r;\nvoid(float b, void(float q) cb) f = { r = q; };\n");
+    assert_eq!(global(&p, "q"), function(&p, "f").parm_start);
+    assert!(defs_named(&p, "b").is_empty());
+    let e = errors("float r;\nvoid(float b, void(float q) cb) f = { r = b; };\n");
+    assert!(e.iter().any(|m| m.contains("Unknown value \"b\"")), "{e:?}");
+    let p = progs("float r;\nvoid(float a, .void(float q, float s) fl) f = { r = q; };\n");
+    assert_eq!(global(&p, "q"), function(&p, "f").parm_start);
+    assert!(defs_named(&p, "s").is_empty());
+    let p =
+        progs("float r;\nvoid(float x, float y, void(float a, float b) cb) f = { r = a + b; };\n");
+    assert_eq!(global(&p, "a"), function(&p, "f").parm_start);
+    assert!(defs_named(&p, "x").is_empty() && defs_named(&p, "y").is_empty());
+    let p = progs("void(void(float a, float b) cb) f = { cb(1, 2); };\n");
+    assert_eq!(global(&p, "cb"), function(&p, "f").parm_start);
+    assert!(defs_named(&p, "b").is_empty() && defs_named(&p, "a").is_empty());
+}
+
+// spec QC-13.11: FTEQCC names each parameter as it is written
+#[test]
+fn fteqcc_keeps_each_parameter_name() {
+    let p = fte_progs("float r;\nvoid(float b, void(float q) cb) f = { r = b; };\n");
+    assert_eq!(global(&p, "b"), function(&p, "f").parm_start);
 }
 
 // spec QC-13.3, QC-13.10: `#n` is builtin `n`, `first_statement` `-n`, the literal's float

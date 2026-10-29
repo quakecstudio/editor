@@ -412,9 +412,9 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    /// The parameters of a body, made at the next globals in order (QC-13.2, QC-13.5): the
-    /// names written in the defining declaration's type, or after the name of FTEQCC's C-style
-    /// definition `float f(float x) { ... }` (FTE-17.1).
+    /// The parameters of a body, made at the next globals in order (QC-13.11, QC-13.5): the
+    /// names id's qcc gives them from the defining declaration's type, or after the name of
+    /// FTEQCC's C-style definition `float f(float x) { ... }` (FTE-17.1).
     fn parameters(
         &mut self,
         declaration: &ast::Declaration,
@@ -429,10 +429,13 @@ impl<'a> Compiler<'a> {
             },
             (None, _) => return Err(Abort::Internal(Internal::Unlowered, span)),
         };
-        for param in list.params() {
-            if let Some(name) = param.name() {
-                self.declare(&name)?;
-            }
+        let names = if self.dialect == Dialect::Vanilla {
+            list.qcc_parm_names()
+        } else {
+            list.params().map(|param| param.name()).collect()
+        };
+        for name in names.into_iter().flatten() {
+            self.declare(&name)?;
         }
         Ok(())
     }

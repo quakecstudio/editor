@@ -25,7 +25,7 @@ pub enum HighlightKind {
     Field,
     /// A file-level variable or constant (QC-11.1).
     Global,
-    /// A function parameter (QC-13.2).
+    /// A function parameter (QC-13.11).
     Parameter,
     /// A `local` (QC-11.10).
     Local,

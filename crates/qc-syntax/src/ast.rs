@@ -784,6 +784,52 @@ impl ParamList {
     pub fn is_variadic(&self) -> bool {
         self.0.token_of(K::Ellipsis).is_some()
     }
+
+    /// The name id's `qcc` gives each parameter of a body defined with this list (QC-13.11):
+    /// `pr_parm_names` once `PR_ParseType` has read the list. Each parameter's own type is read
+    /// before its name is written, so a parameter of function type writes its parameters'
+    /// names first, from index 0, and a later parameter's type can overwrite an earlier name.
+    /// `None` where the last name written is missing.
+    #[must_use]
+    pub fn qcc_parm_names(&self) -> Vec<Option<SyntaxToken>> {
+        let mut names = Vec::new();
+        write_parm_names(self, &mut names);
+        names.truncate(self.params().count());
+        names
+    }
+}
+
+/// `PR_ParseType`'s writes to `pr_parm_names` for the parameters of `list` (QC-13.11).
+fn write_parm_names(list: &ParamList, names: &mut Vec<Option<SyntaxToken>>) {
+    for (index, param) in list.params().enumerate() {
+        if let Some(ty) = param.ty() {
+            write_type_names(&ty, names);
+        }
+        if names.len() <= index {
+            names.resize(index.saturating_add(1), None);
+        }
+        if let Some(slot) = names.get_mut(index) {
+            *slot = param.name();
+        }
+    }
+}
+
+/// The writes reading `ty` makes: a field type's, through its value's type, and a function
+/// type's, through its parameters.
+fn write_type_names(ty: &Type, names: &mut Vec<Option<SyntaxToken>>) {
+    match ty {
+        Type::Field(field) => {
+            if let Some(inner) = field.inner() {
+                write_type_names(&inner, names);
+            }
+        }
+        Type::Function(function) => {
+            if let Some(list) = function.params() {
+                write_parm_names(&list, names);
+            }
+        }
+        Type::Simple(_) | Type::Pointer(_) => {}
+    }
 }
 
 impl Param {

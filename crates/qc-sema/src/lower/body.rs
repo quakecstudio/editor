@@ -23,7 +23,7 @@ use super::types::{TypedefScope, typedef_diagnostics};
 /// A function body's parameters, locals and the names it uses (QC-13).
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct RawBody {
-    /// The parameters, in order, with each one's name span (QC-13.2).
+    /// The parameters, in order, with each one's name span (QC-13.11).
     pub params: Vec<RawParam>,
     /// The `local` declarations, in source order (QC-11.10).
     pub locals: Vec<RawLocal>,
@@ -88,7 +88,7 @@ pub enum StatePart {
     Next,
 }
 
-/// One parameter of a function definition (QC-13.2).
+/// One parameter of a function definition (QC-13.11).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RawParam {
     /// The parameter name.
@@ -221,7 +221,7 @@ pub(super) fn written_types(node: &SyntaxNode, cx: Cx<'_>) -> Vec<(usize, Type)>
     out
 }
 
-/// The parameters named in the function type of the defining declaration (QC-13.2).
+/// The parameters named in the function type of the defining declaration (QC-13.11).
 ///
 /// The parameter names come from the `FunctionType`'s `ParamList`; the semantic types come
 /// from the same list, matched by position to [`Type::from_ast`]'s view of the function
@@ -244,8 +244,15 @@ fn collect_params(
         _ => None,
     };
     let count = param_list.params().count();
+    // QC-13.11: id's qcc names the body's parameters from `pr_parm_names`, which a parameter
+    // of function type also writes; FTEQCC keeps each parameter's own name.
+    let qcc_names = (!cx.fte).then(|| param_list.qcc_parm_names());
     for (index, param) in param_list.params().enumerate() {
-        let Some(name_token) = param.name() else {
+        let name = match &qcc_names {
+            Some(names) => names.get(index).cloned().flatten(),
+            None => param.name(),
+        };
+        let Some(name_token) = name else {
             // FTEF-19.1: a parameter of a function with a body has a name, or FTEQCC's warning
             // "Parameter N of NAME is not named"; a lone `void` is no parameter (FTEF-15.3).
             let lone_void = count == 1
@@ -269,7 +276,7 @@ fn collect_params(
     }
 }
 
-/// The `ParamList` of the function that defines `fn_body` (QC-13.2): the vanilla function
+/// The `ParamList` of the function that defines `fn_body` (QC-13.11): the vanilla function
 /// type's list, an FTEQCC C-style declarator's own `(params)` list (FTE-17.1), or with
 /// `qcfuncs` off the list before the declarator's name.
 fn param_list_of(fn_body: &ast::FunctionBody) -> Option<ast::ParamList> {
