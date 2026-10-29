@@ -72,12 +72,12 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   functions of FTE-23.17 and the cast of FTE-23.16. Of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md), the diagnostics
   QCD-3.5 to QCD-3.8, QCD-3.11, QCD-3.13 to QCD-3.35, QCD-4.1, QCD-4.9 to QCD-4.13, QCD-5.4,
-  QCD-7.3, QCD-7.23, QCD-7.72, QCD-7.32 to QCD-7.51 and QCD-7.67. Of
+  QCD-7.3, QCD-7.23, QCD-7.72, QCD-7.32 to QCD-7.46, QCD-7.48 to QCD-7.51 and QCD-7.67. Of
   [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md), the classes' members, FTEF-9.1,
   FTEF-9.2, FTEF-9.3, FTEF-9.4 and FTEF-9.5, the accessor
   members FTEF-10.2 and FTEF-10.3, the scoped names of FTEF-16.4, the redeclarations of
-  FTEF-17.12, the C scalar types FTEF-2.8 names, the definitions of FTEF-19.1 to FTEF-19.16
-  and FTEF-19.19 to FTEF-19.63: the warning settings, the command line's flags, the lexer's
+  , the C scalar types FTEF-2.8 names, the definitions of FTEF-19.1, FTEF-19.3, FTEF-19.6 to FTEF-19.16
+  and FTEF-19.19 to FTEF-19.24, FTEF-19.26 to FTEF-19.28, FTEF-19.31, FTEF-19.33 to FTEF-19.45, FTEF-19.47 to FTEF-19.63: the warning settings, the command line's flags, the lexer's
   flags in literals and engine names, case insensitivity and a module's source; the flags
   that change in the middle of a file, FTEF-21.7 to FTEF-21.14: the types and definitions with
   `qcfuncs` off, the attributes and the definitions `alias` makes (QCD-3.34, QCD-3.35),
