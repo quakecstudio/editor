@@ -1008,6 +1008,11 @@ impl<'a> Compiler<'a> {
         let a = self.type_of(left).etype();
         let b = self.type_of(right).etype();
         let Some(row) = ops::select(operator, a, b, None) else {
+            if self.dialect.has_fteqcc_extensions()
+                && matches!(operator, Operator::And | Operator::Or)
+            {
+                return self.any_logic(operator, left, right, op_span);
+            }
             return Self::mismatch(operator, op_span);
         };
         if self.fold
@@ -1022,6 +1027,42 @@ impl<'a> Compiler<'a> {
         Ok(Value {
             ofs,
             kind: ValueKind::Temp(ValueType::simple(row.c)),
+        })
+    }
+
+    /// FTEQCC's `&&` and `||` of operands that are not both floats, `OP_AND_ANY` and
+    /// `OP_OR_ANY` on the vanilla opcodes: a vector is first its dot product with itself under
+    /// `vectorlogic`, then `AND_F` or `OR_F` of the two words.
+    fn any_logic(
+        &mut self,
+        operator: Operator,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> Lowered<Value> {
+        let flags = qc_syntax::CompilerFlags::at(&self.flags, span.start);
+        let truth = |compiler: &mut Self, value: &Value| -> Lowered<u32> {
+            if compiler.type_of(value).etype() == Etype::Vector
+                && flags.has(qc_preproc::FteFlag::Vectorlogic)
+            {
+                return compiler
+                    .program
+                    .emit_result(Opcode::MulV, value.ofs, value.ofs, Etype::Float)
+                    .at(span);
+            }
+            Ok(value.ofs)
+        };
+        let a = truth(self, left)?;
+        let b = truth(self, right)?;
+        let op = if operator == Operator::And {
+            Opcode::And
+        } else {
+            Opcode::Or
+        };
+        let ofs = self.program.emit_result(op, a, b, Etype::Float).at(span)?;
+        Ok(Value {
+            ofs,
+            kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
         })
     }
 
