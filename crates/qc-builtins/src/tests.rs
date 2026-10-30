@@ -13,6 +13,7 @@
 
 use crate::math;
 use crate::table::{self, BUILTIN_MAX_NUMBER, Class};
+use qc_vm::convert::float_to_int;
 
 /// Compares two f32 by bits, so NaNs and signed zeros are distinguished (DIFF-9.4).
 fn same_bits(a: f32, b: f32) -> bool {
@@ -234,17 +235,17 @@ fn anglemod_values() {
 // spec BUILTIN-2.1: a float used as an integer truncates toward zero.
 #[test]
 fn float_to_int_truncates() {
-    assert_eq!(math::float_to_int(1.9), 1);
-    assert_eq!(math::float_to_int(-1.9), -1);
-    assert_eq!(math::float_to_int(0.0), 0);
+    assert_eq!(float_to_int(1.9), 1);
+    assert_eq!(float_to_int(-1.9), -1);
+    assert_eq!(float_to_int(0.0), 0);
 }
 
 // spec BUILTIN-2.2: an out-of-range float or a NaN converts to 0x80000000.
 #[test]
 fn float_to_int_saturates() {
-    assert_eq!(math::float_to_int(f32::NAN), i32::MIN);
-    assert_eq!(math::float_to_int(1e30), i32::MIN);
-    assert_eq!(math::float_to_int(-1e30), i32::MIN);
+    assert_eq!(float_to_int(f32::NAN), i32::MIN);
+    assert_eq!(float_to_int(1e30), i32::MIN);
+    assert_eq!(float_to_int(-1e30), i32::MIN);
 }
 
 // spec BUILTIN-6.6: random of a 15-bit value is (r & 0x7fff) / (f32)0x7fff.
@@ -1737,13 +1738,17 @@ mod bodies {
         );
     }
 
-    // spec BUILTIN-16.4: traceon and traceoff succeed and change nothing observable.
+    // spec BUILTIN-16.4: traceon sets the VM's trace flag and traceoff clears it; the run
+    // clears it only when it starts (VM-2.3), so it is still set after a traceon run
     #[test]
-    fn traceon_traceoff_succeed() {
-        for number in [29u32, 30] {
-            let mut f = Fixture::new(number, 0, vec![0], 0);
-            f.run_ok(ServerState::Active);
-        }
+    fn traceon_sets_and_traceoff_clears_the_trace_flag() {
+        let mut on = Fixture::new(29, 0, vec![0], 0);
+        on.run_ok(ServerState::Active);
+        assert!(on.machine.tracing());
+        let mut off = Fixture::new(30, 0, vec![0], 0);
+        off.machine.set_tracing(true);
+        off.run_ok(ServerState::Active);
+        assert!(!off.machine.tracing());
     }
 
     // spec BUILTIN-1.2: a PF_Fixme gap number is the runtime error with id's spelling.

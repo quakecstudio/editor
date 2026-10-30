@@ -19,7 +19,7 @@ use qc_progs::{Progs, ReadOptions};
 
 use super::harness::{self, Func, Stmt};
 use crate::exec::{Builtins, Context, NoObserver, ServerState};
-use crate::{ErrorKind, Machine, RunError};
+use crate::{Divergence, ErrorKind, Machine, RunError};
 
 /// The number of QC functions on the stack when builtin 1 raises its error.
 const CHAIN: i16 = 30;
@@ -208,10 +208,7 @@ fn which_errors_reset_the_depth() {
         ErrorKind::BadBuiltin,
         ErrorKind::BadOpcode { opcode: 70 },
         ErrorKind::AssignmentToWorld,
-        ErrorKind::Divergence {
-            statement: "VM-3.3",
-            detail: String::new(),
-        },
+        ErrorKind::Divergence(Divergence::StatementOutOfRange { statement: 0 }),
         ErrorKind::Builtin {
             message: String::new(),
         },
@@ -222,4 +219,94 @@ fn which_errors_reset_the_depth() {
     }
     let fatal: Vec<bool> = keep.iter().map(ErrorKind::is_fatal).collect();
     assert_eq!(fatal, [false, false, true]);
+}
+
+// spec VM-19.7: each divergence's message is the VM's own text with its statement in
+// parentheses, byte for byte as it reaches a trace's error record
+#[test]
+fn divergence_messages_name_their_statement() {
+    use crate::FieldFault;
+    let cases = [
+        (
+            Divergence::GlobalOutOfRange { slot: 900 },
+            "global slot 900 out of range (VM-1.4)",
+        ),
+        (
+            Divergence::GlobalOffsetOutOfRange {
+                base: i32::MAX,
+                offset: 2,
+            },
+            "global slot 2147483647 + 2 out of range (VM-1.4)",
+        ),
+        (
+            Divergence::RunBuiltin,
+            "PR_ExecuteProgram on a builtin (VM-2.4)",
+        ),
+        (
+            Divergence::StatementOutOfRange { statement: -1 },
+            "statement index -1 out of range (VM-3.3)",
+        ),
+        (
+            Divergence::BadString { value: -5 },
+            "string value -5 is neither a table offset nor an engine string (VM-7.3)",
+        ),
+        (
+            Divergence::Load(FieldFault::NotAnEdict),
+            "entity value does not name an edict (VM-11.4)",
+        ),
+        (
+            Divergence::Load(FieldFault::FieldOutOfRange),
+            "field index out of range (VM-11.4)",
+        ),
+        (
+            Divergence::Load(FieldFault::FieldSlotMissing),
+            "field slot missing (VM-11.4)",
+        ),
+        (
+            Divergence::Load(FieldFault::VectorFieldOutOfRange),
+            "vector field slot out of range (VM-11.4)",
+        ),
+        (
+            Divergence::Pointer(FieldFault::PointerOutOfRange),
+            "pointer out of range (VM-12.5)",
+        ),
+        (
+            Divergence::Pointer(FieldFault::PointerNotAField),
+            "pointer does not name a field slot (VM-12.5)",
+        ),
+        (
+            Divergence::Pointer(FieldFault::VectorPointerOutOfRange),
+            "vector pointer out of range (VM-12.5)",
+        ),
+        (
+            Divergence::CallOutOfRange { index: 7 },
+            "call function index 7 out of range (VM-14.3)",
+        ),
+        (
+            Divergence::UnregisteredBuiltin { number: 3 },
+            "no builtin 3 is registered (VM-14.4)",
+        ),
+        (
+            Divergence::NegativeLocals { locals: -2 },
+            "function locals -2 is negative (VM-15.6)",
+        ),
+        (
+            Divergence::StateSelf,
+            "self does not name an edict (VM-17.4)",
+        ),
+    ];
+    for (divergence, text) in cases {
+        assert_eq!(ErrorKind::Divergence(divergence).to_string(), text);
+    }
+}
+
+// spec VM-19.7: only the VM-3.3 fetch is a divergence raised before a statement executes
+#[test]
+fn only_the_fetch_divergence_is_not_an_executed_statement() {
+    assert!(
+        !ErrorKind::Divergence(Divergence::StatementOutOfRange { statement: 9 })
+            .is_executed_statement()
+    );
+    assert!(ErrorKind::Divergence(Divergence::RunBuiltin).is_executed_statement());
+    assert!(ErrorKind::Divergence(Divergence::StateSelf).is_executed_statement());
 }

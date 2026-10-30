@@ -23,6 +23,7 @@
 use qc_edict::EdictNumber;
 use qc_edict::system::{SysField, SysGlobal};
 use qc_types::{EntityRef, PROGS_OFS_RETURN, Slot, ofs_parm};
+use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
 use qc_vm::{Builtins, Context, ErrorKind, RunError};
 
 use crate::engine::{BuiltinError, Engine};
@@ -248,12 +249,16 @@ impl MockBuiltins<MockEngine> {
         write_return_string(context, value)
     }
 
-    fn b_traceon(&mut self, _context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        // BUILTIN-16.4, DIFF-6.7: the trace flag change is not observable in the trace.
+    /// `traceon()` (BUILTIN-16.4): sets the VM's trace flag, which the trace does not show
+    /// (DIFF-6.7).
+    fn b_traceon(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        context.machine().set_tracing(true);
         Ok(())
     }
 
-    fn b_traceoff(&mut self, _context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    /// `traceoff()` (BUILTIN-16.4): clears the VM's trace flag.
+    fn b_traceoff(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        context.machine().set_tracing(false);
         Ok(())
     }
 }
@@ -272,7 +277,7 @@ fn read_parm_float(context: &mut Context<'_, '_>, n: u16) -> Result<f32, Builtin
 
 /// Reads parameter `n` as an integer, id's `G_FLOAT` then `(int)` (BUILTIN-2.1, BUILTIN-2.2).
 fn read_parm_int(context: &mut Context<'_, '_>, n: u16) -> Result<i32, BuiltinError> {
-    Ok(math::float_to_int(read_parm_float(context, n)?))
+    Ok(float_to_int(read_parm_float(context, n)?))
 }
 
 /// Reads parameter `n` as a vector from its three slots, bounds-checked (VM-1.4).
@@ -793,7 +798,7 @@ fn radius_delta(org: [f32; 3], origin: [f32; 3], mins: [f32; 3], maxs: [f32; 3])
         let centre = f64::from(orig) + f64::from(half) * 0.5;
         let delta = f64::from(o) - centre;
         if let Some(cell) = d.get_mut(axis) {
-            *cell = math::f64_to_f32_public(delta);
+            *cell = double_to_float(delta);
         }
     }
     d
@@ -821,8 +826,7 @@ impl MockBuiltins<MockEngine> {
         let origin = read_field_vector(context, number, SysField::Origin)?;
         let mins = read_field_vector(context, number, SysField::Mins)?;
         let maxs = read_field_vector(context, number, SysField::Maxs)?;
-        let flags =
-            math::float_to_int(read_field_float(context, number, SysField::Flags).unwrap_or(0.0));
+        let flags = float_to_int(read_field_float(context, number, SysField::Flags).unwrap_or(0.0));
         let (wx, wz) = if flags & BUILTIN_FL_ITEM != 0 {
             (15.0_f32, 0.0_f32)
         } else {
@@ -889,7 +893,7 @@ impl MockBuiltins<MockEngine> {
         };
         // BUILTIN-9.4: model is the string value itself (BUILTIN-2.6), not the list's copy.
         write_field_int(context, number, SysField::Model, model_value)?;
-        let index_f = i32_to_f32(i32::try_from(index).unwrap_or(0));
+        let index_f = int_to_float(i32::try_from(index).unwrap_or(0));
         write_field_float(context, number, SysField::Modelindex, index_f)?;
         let bounds = self.engine.model_bounds_for(&name);
         // Set the size as setsize does, from the model's bounds (these never go backwards).
@@ -964,11 +968,6 @@ impl MockBuiltins<MockEngine> {
         let value = read_parm_raw(context, 0)?;
         write_return_string(context, value)
     }
-}
-
-/// An `i32` as f32, id's `(float)n`.
-fn i32_to_f32(v: i32) -> f32 {
-    math::int_to_f32_public(v)
 }
 
 // ===== class output: printing, commands and settings (BUILTIN-11) =====
@@ -1106,7 +1105,7 @@ impl MockBuiltins<MockEngine> {
         let chan = read_parm_int(context, 1)?;
         let vol_f = read_parm_float(context, 3)?;
         let atten = read_parm_float(context, 4)?;
-        let volume = math::float_to_int(vol_f * 255.0);
+        let volume = float_to_int(vol_f * 255.0);
         // BUILTIN-12.1: volume, attenuation, channel checked in that order; NaN atten passes.
         if !(0..=255).contains(&volume) {
             return Err(BuiltinError::Fatal(format!(
@@ -1444,9 +1443,8 @@ impl MockBuiltins<MockEngine> {
                 continue;
             }
             let health = read_field_float(context, number, SysField::Health).unwrap_or(0.0);
-            let flags = math::float_to_int(
-                read_field_float(context, number, SysField::Flags).unwrap_or(0.0),
-            );
+            let flags =
+                float_to_int(read_field_float(context, number, SysField::Flags).unwrap_or(0.0));
             if health > 0.0 && flags & BUILTIN_FL_NOTARGET == 0 {
                 return Ok(n);
             }
@@ -1459,8 +1457,8 @@ impl MockBuiltins<MockEngine> {
     fn b_droptofloor(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let self_num = checked_self(context)?;
         self.link_edict(context, self_num)?;
-        let flags = math::float_to_int(read_field_float(context, self_num, SysField::Flags)?);
-        let new_flags = i32_to_f32(flags | BUILTIN_FL_ONGROUND);
+        let flags = float_to_int(read_field_float(context, self_num, SysField::Flags)?);
+        let new_flags = int_to_float(flags | BUILTIN_FL_ONGROUND);
         write_field_float(context, self_num, SysField::Flags, new_flags)?;
         write_field_int(context, self_num, SysField::Groundentity, 0)?;
         write_return_float(context, 1.0)
@@ -1471,7 +1469,7 @@ impl MockBuiltins<MockEngine> {
         let yaw = read_parm_float(context, 0)?;
         let dist = read_parm_float(context, 1)?;
         let self_num = checked_self(context)?;
-        let flags = math::float_to_int(read_field_float(context, self_num, SysField::Flags)?);
+        let flags = float_to_int(read_field_float(context, self_num, SysField::Flags)?);
         if flags & (BUILTIN_FL_ONGROUND | BUILTIN_FL_FLY | BUILTIN_FL_SWIM) == 0 {
             return write_return_float(context, 0.0);
         }
@@ -1492,7 +1490,7 @@ impl MockBuiltins<MockEngine> {
     fn b_movetogoal(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let step = read_parm_float(context, 0)?;
         let self_num = checked_self(context)?;
-        let flags = math::float_to_int(read_field_float(context, self_num, SysField::Flags)?);
+        let flags = float_to_int(read_field_float(context, self_num, SysField::Flags)?);
         if flags & (BUILTIN_FL_ONGROUND | BUILTIN_FL_FLY | BUILTIN_FL_SWIM) == 0 {
             return write_return_float(context, 0.0);
         }
@@ -1520,11 +1518,11 @@ impl MockBuiltins<MockEngine> {
         a: f32,
         d: f32,
     ) -> Result<(), BuiltinError> {
-        let y = f64::from(math::f64_to_f32_public(
+        let y = f64::from(double_to_float(
             f64::from(a) * core::f64::consts::PI * 2.0 / 360.0,
         ));
-        let move_x = math::f64_to_f32_public(y.cos() * f64::from(d));
-        let move_y = math::f64_to_f32_public(y.sin() * f64::from(d));
+        let move_x = double_to_float(y.cos() * f64::from(d));
+        let move_y = double_to_float(y.sin() * f64::from(d));
         let origin = read_field_vector(context, number, SysField::Origin)?;
         let new = [origin[0] + move_x, origin[1] + move_y, origin[2]];
         write_field_vector(context, number, SysField::Origin, new)

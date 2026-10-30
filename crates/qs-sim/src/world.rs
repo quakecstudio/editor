@@ -17,10 +17,9 @@ use qc_edict::EdictNumber;
 use qc_edict::system::{field_by_name, global_by_name};
 use qc_progs::Progs;
 use qc_types::{DefType, Etype, Slot};
+use qc_vm::convert::double_to_float;
 use qc_vm::{Machine, NoObserver, RunError, ServerState};
 use qs_bsp::Bsp;
-
-use qc_builtins::math::f64_to_f32_public;
 
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::{UserCmd, wire_angle};
@@ -155,7 +154,7 @@ impl World {
         let clients = self.builtins.mock.engine().clients_active.clone();
         let player = self.player;
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
-        let t = f64_to_f32_public(frametime);
+        let t = double_to_float(frametime);
         // Host_ServerFrame: frametime, then the clients' moves, then the physics.
         call.set_global("frametime", Slot::from_f32(t));
         if let Some(cmd) = player {

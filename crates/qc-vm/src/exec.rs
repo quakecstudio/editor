@@ -14,7 +14,7 @@ use qc_progs::opcode::Opcode;
 use qc_progs::{Function, Progs, Statement};
 use qc_types::{PROGS_OFS_PARM0, PROGS_PARM_SLOTS};
 
-use crate::error::{ErrorKind, RunError, StackEntry};
+use crate::error::{Divergence, ErrorKind, RunError, StackEntry};
 use crate::machine::{Frame, Machine};
 use crate::ops::{self, Control};
 
@@ -71,10 +71,11 @@ pub struct NoBuiltins;
 
 impl Builtins for NoBuiltins {
     fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
-        Err(context.run_error(ErrorKind::Divergence {
-            statement: "VM-14.4",
-            detail: format!("no builtin {number} is registered"),
-        }))
+        Err(
+            context.run_error(ErrorKind::Divergence(Divergence::UnregisteredBuiltin {
+                number,
+            })),
+        )
     }
 
     /// `NoBuiltins` has no engine, so it makes no engine strings and resolves none (EDICT-13.1).
@@ -185,7 +186,7 @@ impl Context<'_, '_> {
     /// Builds a [`RunError`] for an error a builtin raises, with the current stack trace.
     #[must_use]
     pub fn run_error(&self, kind: ErrorKind) -> RunError {
-        run_error(self.machine, self.progs, kind)
+        self.machine.run_error(self.progs, kind)
     }
 }
 
@@ -218,42 +219,28 @@ impl Machine {
         observer: &mut dyn Observer,
         function: i32,
     ) -> Result<(), RunError> {
-        execute(self, progs, server, builtins, observer, function)
-    }
-}
-
-/// The outermost `PR_ExecuteProgram`: runs, and on an error emits the one error record
-/// (TRACE-4.6) and, for a runtime error, resets the call depth to 0 (VM-19.1, VM-19.6); a host
-/// or fatal error leaves it (VM-2.1, BUILTIN-3.2). A nested run started by a builtin calls
-/// [`run_inner`] directly, so the error record is written once, by the outermost run
-/// (TRACE-4.9).
-pub(crate) fn execute(
-    machine: &mut Machine,
-    progs: &Progs<'_>,
-    server: ServerState,
-    builtins: &mut dyn Builtins,
-    observer: &mut dyn Observer,
-    function: i32,
-) -> Result<(), RunError> {
-    match run_inner(machine, progs, server, builtins, observer, function) {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            // VM-19.1: PR_RunError prints the current statement, the stack and the message,
-            // then sets the depth to 0 ("dump the stack so host_error can shutdown
-            // functions"); the local stack is not reset (VM-19.6). VM-2.1's NULL function and
-            // a builtin's host error call Host_Error directly, and a fatal error Sys_Error, so
-            // the depth stays where the error left it (BUILTIN-3.2, DIFF-8.4).
-            observer.error(machine, &error);
-            if error.kind.resets_depth() {
-                machine.stack.clear();
-            }
-            Err(error)
+        // The outermost run emits the one error record (TRACE-4.6); a nested run started by a
+        // builtin calls run_inner directly, so the record is written once (TRACE-4.9).
+        let error = match run_inner(self, progs, server, builtins, observer, function) {
+            Ok(()) => return Ok(()),
+            Err(error) => error,
+        };
+        // VM-19.1: PR_RunError prints the current statement, the stack and the message, then
+        // sets the depth to 0 ("dump the stack so host_error can shutdown functions"); the
+        // local stack is not reset (VM-19.6). VM-2.1's NULL function and a builtin's host error
+        // call Host_Error directly, and a fatal error Sys_Error, so the depth stays where the
+        // error left it (BUILTIN-3.2, DIFF-8.4).
+        observer.error(self, &error);
+        if error.kind.resets_depth() {
+            self.stack.clear();
         }
+        Err(error)
     }
 }
 
 /// id's `PR_ExecuteProgram` body: one run, nested or not (VM-2, VM-3, VM-18). Returns the
-/// error as a value without observing it or resetting the depth; [`execute`] does that once.
+/// error as a value without observing it or resetting the depth;
+/// [`Machine::execute_program`] does that once.
 pub(crate) fn run_inner(
     machine: &mut Machine,
     progs: &Progs<'_>,
@@ -277,10 +264,7 @@ pub(crate) fn run_inner(
             machine,
             progs,
             function,
-            ErrorKind::Divergence {
-                statement: "VM-2.4",
-                detail: "PR_ExecuteProgram on a builtin".to_owned(),
-            },
+            ErrorKind::Divergence(Divergence::RunBuiltin),
         ));
     }
 
@@ -304,18 +288,16 @@ pub(crate) fn run_inner(
         machine.xstatement = machine.xstatement.wrapping_add(1);
         runaway = runaway.wrapping_sub(1);
         if runaway == 0 {
-            return Err(run_error(machine, progs, ErrorKind::Runaway));
+            return Err(machine.run_error(progs, ErrorKind::Runaway));
         }
 
         // VM-3.3: a statement index outside 0..numstatements fails before it executes.
         let statements = progs.statements();
         let Some(statement) = statement_at(&statements, machine.xstatement) else {
-            return Err(run_error(
-                machine,
+            return Err(machine.divergence(
                 progs,
-                ErrorKind::Divergence {
-                    statement: "VM-3.3",
-                    detail: format!("statement index {} out of range", machine.xstatement),
+                Divergence::StatementOutOfRange {
+                    statement: machine.xstatement,
                 },
             ));
         };
@@ -325,8 +307,7 @@ pub(crate) fn run_inner(
 
         // VM-3.4: an opcode above 65 fails with Bad opcode.
         let Some(opcode) = Opcode::from_number(statement.op) else {
-            return Err(run_error(
-                machine,
+            return Err(machine.run_error(
                 progs,
                 ErrorKind::BadOpcode {
                     opcode: statement.op,
@@ -395,17 +376,15 @@ pub(crate) fn enter_function(
         function: machine.xfunction,
     });
     if machine.stack.len() >= crate::LIMIT_MAX_STACK_DEPTH {
-        return Err(run_error(machine, progs, ErrorKind::StackOverflow));
+        return Err(machine.run_error(progs, ErrorKind::StackOverflow));
     }
 
     // VM-15.6: a negative locals is undefined in C; this spec fails.
     let locals = usize::try_from(callee.locals).map_err(|_| {
-        run_error(
-            machine,
+        machine.divergence(
             progs,
-            ErrorKind::Divergence {
-                statement: "VM-15.6",
-                detail: format!("function locals {} is negative", callee.locals),
+            Divergence::NegativeLocals {
+                locals: callee.locals,
             },
         )
     })?;
@@ -417,15 +396,13 @@ pub(crate) fn enter_function(
         .checked_add(locals)
         .filter(|used| *used <= crate::LIMIT_LOCALSTACK_SIZE);
     let Some(new_used) = new_used else {
-        return Err(run_error(machine, progs, ErrorKind::LocalsStackOverflow));
+        return Err(machine.run_error(progs, ErrorKind::LocalsStackOverflow));
     };
 
     // VM-15.2: save the callee's locals slots, from parm_start up, onto the local stack.
     for offset in 0..locals {
         let slot = add_i32(callee.parm_start, offset, progs, machine)?;
-        let value = machine
-            .global(slot)
-            .map_err(|e| global_error(machine, progs, e))?;
+        let value = ops::read_slot(machine, progs, slot)?;
         if let Some(cell) = machine
             .localstack
             .get_mut(machine.localstack_used.wrapping_add(offset))
@@ -462,12 +439,8 @@ fn copy_parameters(
             .wrapping_add(i32::from(PROGS_PARM_SLOTS).wrapping_mul(i32::try_from(i).unwrap_or(0)));
         for j in 0..usize::from(size) {
             let src = parm_base.wrapping_add(i32::try_from(j).unwrap_or(0));
-            let value = machine
-                .global(src)
-                .map_err(|e| global_error(machine, progs, e))?;
-            machine
-                .set_global(dest, value)
-                .map_err(|e| global_error(machine, progs, e))?;
+            let value = ops::read_slot(machine, progs, src)?;
+            ops::write_slot(machine, progs, dest, value)?;
             dest = dest.wrapping_add(1);
         }
     }
@@ -483,9 +456,7 @@ pub(crate) fn leave_function(machine: &mut Machine, progs: &Progs<'_>) {
     // The callee is the current function. A QC function always has a non-negative locals
     // (VM-15.6) and its index is valid, so these lookups succeed; fall back to 0 rather than
     // panic for a frame that somehow has no function.
-    let current = usize::try_from(machine.xfunction)
-        .ok()
-        .and_then(|i| progs.functions().get(i));
+    let current = function_record(progs, machine.xfunction);
     let locals = current
         .and_then(|f| usize::try_from(f.locals).ok())
         .unwrap_or(0);
@@ -520,6 +491,11 @@ pub(crate) fn function_at(progs: &Progs<'_>, index: i32) -> Option<Function> {
     if index <= 0 {
         return None;
     }
+    function_record(progs, index)
+}
+
+/// The functions-table record at `index`, function 0 included; `None` outside the table.
+fn function_record(progs: &Progs<'_>, index: i32) -> Option<Function> {
     let i = usize::try_from(index).ok()?;
     if i >= progs.functions().len() {
         return None;
@@ -544,14 +520,7 @@ fn add_i32(
         .ok()
         .and_then(|o| base.checked_add(o))
         .ok_or_else(|| {
-            run_error(
-                machine,
-                progs,
-                ErrorKind::Divergence {
-                    statement: "VM-1.4",
-                    detail: format!("global slot {base} + {offset} out of range"),
-                },
-            )
+            machine.divergence(progs, Divergence::GlobalOffsetOutOfRange { base, offset })
         })
 }
 
@@ -561,24 +530,24 @@ pub(crate) fn global_error(
     progs: &Progs<'_>,
     error: crate::GlobalAccessError,
 ) -> RunError {
-    run_error(
-        machine,
-        progs,
-        ErrorKind::Divergence {
-            statement: "VM-1.4",
-            detail: format!("global slot {} out of range", error.slot),
-        },
-    )
+    machine.divergence(progs, Divergence::GlobalOutOfRange { slot: error.slot })
 }
 
-/// Builds a [`RunError`] for an error raised by the current statement (VM-19.1): the current
-/// function and statement and the stack trace innermost first.
-pub(crate) fn run_error(machine: &Machine, progs: &Progs<'_>, kind: ErrorKind) -> RunError {
-    RunError {
-        kind,
-        function: machine.xfunction,
-        statement: machine.xstatement,
-        trace: stack_trace(machine, progs),
+impl Machine {
+    /// Builds a [`RunError`] for an error raised by the current statement (VM-19.1): the
+    /// current function and statement and the stack trace innermost first.
+    pub(crate) fn run_error(&self, progs: &Progs<'_>, kind: ErrorKind) -> RunError {
+        RunError {
+            kind,
+            function: self.xfunction,
+            statement: self.xstatement,
+            trace: stack_trace(self, progs),
+        }
+    }
+
+    /// Builds the [`RunError`] for a divergence the current statement raised (VM-19.7).
+    pub(crate) fn divergence(&self, progs: &Progs<'_>, divergence: Divergence) -> RunError {
+        self.run_error(progs, ErrorKind::Divergence(divergence))
     }
 }
 
@@ -611,10 +580,7 @@ fn stack_trace(machine: &Machine, progs: &Progs<'_>) -> Vec<StackEntry> {
 
 /// One stack-trace entry, resolving the function's name and file from the string table.
 fn stack_entry(progs: &Progs<'_>, function: i32, statement: i32) -> StackEntry {
-    let function_record = usize::try_from(function)
-        .ok()
-        .and_then(|i| progs.functions().get(i));
-    let (name, file) = match function_record {
+    let (name, file) = match function_record(progs, function) {
         Some(f) => (string_of(progs, f.s_name), string_of(progs, f.s_file)),
         None => (String::new(), String::new()),
     };

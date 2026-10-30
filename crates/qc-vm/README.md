@@ -24,7 +24,10 @@ and the argument count of the last call. `Machine::execute_program` is id's
 - builtin dispatch through the `Builtins` trait (VM-14.4, LIMIT-5);
 - nested runs a builtin starts (VM-18);
 - structured errors with a QuakeC stack trace, returned as `RunError` values, never panics
-  (VM-19).
+  (VM-19); each divergence where id's C is undefined is a `Divergence` variant (VM-19.7).
+
+The `convert` module holds C's conversions between `int`, `float` and `double` as id's x86
+build performs them (VM-9.1, VM-9.2), which `qc-builtins` shares (BUILTIN-2.1, BUILTIN-2.2).
 
 The VM runs untrusted `progs.dat`, so every operand, global slot, field slot, jump target and
 call index is bounds- and type-checked exactly as the spec fixes id's undefined C (VM-1.4,

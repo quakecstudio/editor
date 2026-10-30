@@ -874,7 +874,10 @@ fn edict_num_accepts_world_and_first() {
 fn edict_number_converts_to_and_from_int() {
     assert_eq!(EdictNumber::WORLD, EdictNumber::new(0));
     assert_eq!(EdictNumber::from_i32(0), Some(EdictNumber::WORLD));
-    assert_eq!(EdictNumber::from_i32(599).map(EdictNumber::index), Some(599));
+    assert_eq!(
+        EdictNumber::from_i32(599).map(EdictNumber::index),
+        Some(599)
+    );
     assert_eq!(EdictNumber::from_i32(-1), None);
     assert_eq!(EdictNumber::from_i32(i32::MIN), None);
     assert_eq!(EdictNumber::new(599).to_i32(), Some(599));

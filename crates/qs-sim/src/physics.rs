@@ -7,9 +7,9 @@
 //! The server frame (`docs/spec/engine/physics.md`): thinking, and how each kind of entity
 //! moves.
 
-use qc_builtins::math::{f64_to_f32_public, float_to_int};
 use qc_edict::EdictNumber;
 use qc_types::Slot;
+use qc_vm::convert::{double_to_float, float_to_int};
 use qc_vm::{ErrorKind, RunError};
 
 use crate::builtins::{FL_ONGROUND, SimCall};
@@ -114,7 +114,7 @@ impl SimCall<'_, '_, '_> {
     }
 
     pub(crate) fn set_time(&mut self, time: f64) {
-        self.set_global("time", Slot::from_f32(f64_to_f32_public(time)));
+        self.set_global("time", Slot::from_f32(double_to_float(time)));
     }
 
     pub(crate) fn clock(&self) -> f64 {
@@ -185,7 +185,7 @@ impl SimCall<'_, '_, '_> {
         }
         // "don't let things stay in the past"
         let time = if f64::from(nextthink) < now {
-            f64_to_f32_public(now)
+            double_to_float(now)
         } else {
             nextthink
         };
@@ -205,7 +205,7 @@ impl SimCall<'_, '_, '_> {
         if !self.run_think(ent, frametime)? {
             return Ok(());
         }
-        let t = f64_to_f32_public(frametime);
+        let t = double_to_float(frametime);
         let angles = ma(self.vector(ent, "angles"), t, self.vector(ent, "avelocity"));
         self.set_vector(ent, "angles", angles);
         let origin = ma(self.vector(ent, "origin"), t, self.vector(ent, "velocity"));
@@ -215,7 +215,7 @@ impl SimCall<'_, '_, '_> {
 
     /// `SV_Physics_Pusher` (PHYS-3.1).
     fn physics_pusher(&mut self, ent: usize, frametime: f64) -> Result<(), RunError> {
-        let frametime = f64_to_f32_public(frametime);
+        let frametime = double_to_float(frametime);
         let oldltime = self.float(ent, "ltime");
         let thinktime = self.float(ent, "nextthink");
         let movetime = if thinktime < oldltime + frametime {
@@ -378,7 +378,7 @@ impl SimCall<'_, '_, '_> {
         if !matches!(movetype, MoveType::Fly | MoveType::FlyMissile) {
             self.add_gravity(ent, frametime);
         }
-        let t = f64_to_f32_public(frametime);
+        let t = double_to_float(frametime);
         let angles = ma(self.vector(ent, "angles"), t, self.vector(ent, "avelocity"));
         self.set_vector(ent, "angles", angles);
         let push = self.vector(ent, "velocity").map(|v| v * t);
@@ -459,7 +459,7 @@ impl SimCall<'_, '_, '_> {
             let hitsound = self.vector(ent, "velocity")[2] < GRAVITY * HARD_LANDING;
             self.add_gravity(ent, frametime);
             self.check_velocity(ent);
-            self.fly_move(ent, f64_to_f32_public(frametime), &mut None)?;
+            self.fly_move(ent, double_to_float(frametime), &mut None)?;
             self.link(ent, true)?;
             if self.flags(ent) & FL_ONGROUND != 0 && hitsound {
                 self.sound(ent, "demon/dland2.wav");
@@ -493,7 +493,7 @@ impl SimCall<'_, '_, '_> {
             .filter(|g| *g != 0.0)
             .unwrap_or(1.0);
         let [x, y, z] = self.vector(ent, "velocity");
-        let fall = f64_to_f32_public(f64::from(gravity) * f64::from(GRAVITY) * frametime);
+        let fall = double_to_float(f64::from(gravity) * f64::from(GRAVITY) * frametime);
         self.set_vector(ent, "velocity", [x, y, z - fall]);
     }
 

@@ -98,12 +98,7 @@ pub enum ErrorKind {
     AssignmentToWorld,
     /// A divergence where id's C is undefined and this spec fixes an error (VM-19.7). The
     /// message is this VM's own.
-    Divergence {
-        /// The spec statement that fixes this error.
-        statement: &'static str,
-        /// What went wrong, as this VM phrases it.
-        detail: String,
-    },
+    Divergence(Divergence),
     /// A runtime error a builtin raised with id's verbatim message (BUILTIN-3.1, DIFF-8.2).
     ///
     /// Unlike [`Divergence`](Self::Divergence), the message is printed byte for byte so a
@@ -143,7 +138,9 @@ impl ErrorKind {
     pub fn is_executed_statement(&self) -> bool {
         match self {
             Self::Runaway => false,
-            Self::Divergence { statement, .. } => *statement != "VM-3.3",
+            Self::Divergence(divergence) => {
+                !matches!(divergence, Divergence::StatementOutOfRange { .. })
+            }
             _ => true,
         }
     }
@@ -166,7 +163,7 @@ impl ErrorKind {
             | Self::BadBuiltin
             | Self::BadOpcode { .. }
             | Self::AssignmentToWorld
-            | Self::Divergence { .. }
+            | Self::Divergence(_)
             | Self::Builtin { .. } => true,
         }
     }
@@ -185,7 +182,7 @@ impl ErrorKind {
             | Self::BadBuiltin
             | Self::BadOpcode { .. }
             | Self::AssignmentToWorld
-            | Self::Divergence { .. }
+            | Self::Divergence(_)
             | Self::Builtin { .. }
             | Self::Host { .. } => false,
         }
@@ -203,10 +200,141 @@ impl fmt::Display for ErrorKind {
             Self::BadBuiltin => f.write_str("Bad builtin call number"),
             Self::BadOpcode { opcode } => write!(f, "Bad opcode {opcode}"),
             Self::AssignmentToWorld => f.write_str("assignment to world entity"),
-            Self::Divergence { statement, detail } => write!(f, "{detail} ({statement})"),
+            Self::Divergence(divergence) => write!(f, "{divergence}"),
             Self::Builtin { message } | Self::Host { message } | Self::Fatal { message } => {
                 f.write_str(message)
             }
         }
+    }
+}
+
+/// A runtime error where id's C is undefined and this spec fixes one (VM-19.7), one variant
+/// per statement that fixes it.
+///
+/// Its `Display` is the VM's own message followed by the statement in parentheses, the text
+/// that reaches a trace's error record (TRACE-4.8).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Divergence {
+    /// VM-1.4: an operand names a global slot outside the globals.
+    GlobalOutOfRange {
+        /// The slot.
+        slot: i32,
+    },
+    /// VM-1.4: a vector operand's base plus a component offset overflows.
+    GlobalOffsetOutOfRange {
+        /// The operand's slot.
+        base: i32,
+        /// The component offset.
+        offset: usize,
+    },
+    /// VM-2.4: `PR_ExecuteProgram` was given a builtin.
+    RunBuiltin,
+    /// VM-3.3: the next statement index is outside the statements.
+    StatementOutOfRange {
+        /// The statement index.
+        statement: i32,
+    },
+    /// VM-7.3: a string operand names neither the string table nor an engine string.
+    BadString {
+        /// The string value.
+        value: i32,
+    },
+    /// VM-11.4: a `LOAD` whose entity or field is out of range.
+    Load(FieldFault),
+    /// VM-12.5: an `ADDRESS` or `STOREP` whose entity, field or pointer is out of range.
+    Pointer(FieldFault),
+    /// VM-14.3: a `CALL` names a function index outside the functions.
+    CallOutOfRange {
+        /// The function index.
+        index: i32,
+    },
+    /// VM-14.4: a builtin number the host has no builtin for.
+    UnregisteredBuiltin {
+        /// The builtin number.
+        number: u32,
+    },
+    /// VM-15.6: the function being entered has a negative `locals`.
+    NegativeLocals {
+        /// The function's `locals`.
+        locals: i32,
+    },
+    /// VM-17.4: `STATE`'s `self` does not name an edict.
+    StateSelf,
+}
+
+impl Divergence {
+    /// The spec statement that fixes this error.
+    #[must_use]
+    pub const fn statement(self) -> &'static str {
+        match self {
+            Self::GlobalOutOfRange { .. } | Self::GlobalOffsetOutOfRange { .. } => "VM-1.4",
+            Self::RunBuiltin => "VM-2.4",
+            Self::StatementOutOfRange { .. } => "VM-3.3",
+            Self::BadString { .. } => "VM-7.3",
+            Self::Load(_) => "VM-11.4",
+            Self::Pointer(_) => "VM-12.5",
+            Self::CallOutOfRange { .. } => "VM-14.3",
+            Self::UnregisteredBuiltin { .. } => "VM-14.4",
+            Self::NegativeLocals { .. } => "VM-15.6",
+            Self::StateSelf => "VM-17.4",
+        }
+    }
+}
+
+impl fmt::Display for Divergence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GlobalOutOfRange { slot } => write!(f, "global slot {slot} out of range"),
+            Self::GlobalOffsetOutOfRange { base, offset } => {
+                write!(f, "global slot {base} + {offset} out of range")
+            }
+            Self::RunBuiltin => f.write_str("PR_ExecuteProgram on a builtin"),
+            Self::StatementOutOfRange { statement } => {
+                write!(f, "statement index {statement} out of range")
+            }
+            Self::BadString { value } => write!(
+                f,
+                "string value {value} is neither a table offset nor an engine string"
+            ),
+            Self::Load(fault) | Self::Pointer(fault) => write!(f, "{fault}"),
+            Self::CallOutOfRange { index } => write!(f, "call function index {index} out of range"),
+            Self::UnregisteredBuiltin { number } => write!(f, "no builtin {number} is registered"),
+            Self::NegativeLocals { locals } => write!(f, "function locals {locals} is negative"),
+            Self::StateSelf => f.write_str("self does not name an edict"),
+        }?;
+        write!(f, " ({})", self.statement())
+    }
+}
+
+/// What was out of range in a field access (VM-11.4, VM-12.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FieldFault {
+    /// The entity value does not name an edict.
+    NotAnEdict,
+    /// The field index is outside the edict's fields.
+    FieldOutOfRange,
+    /// The edict has no slot at the field index.
+    FieldSlotMissing,
+    /// A vector field's last slot is outside the edict's fields.
+    VectorFieldOutOfRange,
+    /// The pointer value is not representable.
+    PointerOutOfRange,
+    /// The pointer does not name a field slot of an edict.
+    PointerNotAField,
+    /// A vector pointer's last slot is outside the edict's fields.
+    VectorPointerOutOfRange,
+}
+
+impl fmt::Display for FieldFault {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::NotAnEdict => "entity value does not name an edict",
+            Self::FieldOutOfRange => "field index out of range",
+            Self::FieldSlotMissing => "field slot missing",
+            Self::VectorFieldOutOfRange => "vector field slot out of range",
+            Self::PointerOutOfRange => "pointer out of range",
+            Self::PointerNotAField => "pointer does not name a field slot",
+            Self::VectorPointerOutOfRange => "vector pointer out of range",
+        })
     }
 }

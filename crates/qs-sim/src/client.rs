@@ -10,8 +10,8 @@
 //! The player (`docs/spec/engine/physics.md` PHYS-8 and PHYS-9): what the client asks for each
 //! frame, and how the server moves the player for it.
 
-use qc_builtins::math::{f64_to_f32_public, float_to_int};
 use qc_types::Slot;
+use qc_vm::convert::{double_to_float, float_to_int};
 use qc_vm::{ErrorKind, RunError};
 
 use crate::builtins::{FL_ONGROUND, SimCall};
@@ -71,7 +71,7 @@ pub struct UserCmd {
 pub(crate) fn wire_angle(f: f32) -> f32 {
     let step = float_to_int(f).wrapping_mul(256).wrapping_div(360) & 255;
     let signed = i8::from_le_bytes([u8::try_from(step).unwrap_or(0)]);
-    f64_to_f32_public(f64::from(signed) * (360.0 / 256.0))
+    double_to_float(f64::from(signed) * (360.0 / 256.0))
 }
 
 /// A move as `MSG_WriteShort` sends it: the float to an int, kept to 16 bits (PHYS-9.6).
@@ -82,10 +82,10 @@ fn wire_short(f: f32) -> f32 {
 
 /// `AngleVectors`: forward, right and up for `angles` in degrees.
 pub(crate) fn angle_vectors([pitch, yaw, roll]: [f32; 3]) -> ([f32; 3], [f32; 3], [f32; 3]) {
-    let radians = |a: f32| f64_to_f32_public(f64::from(a) * (core::f64::consts::PI * 2.0 / 360.0));
+    let radians = |a: f32| double_to_float(f64::from(a) * (core::f64::consts::PI * 2.0 / 360.0));
     let trig = |a: f32| {
         let a = f64::from(radians(a));
-        (f64_to_f32_public(a.sin()), f64_to_f32_public(a.cos()))
+        (double_to_float(a.sin()), double_to_float(a.cos()))
     };
     let (sy, cy) = trig(yaw);
     let (sp, cp) = trig(pitch);
@@ -106,7 +106,7 @@ fn dot([a, b, c]: [f32; 3], [x, y, z]: [f32; 3]) -> f32 {
 
 /// `Length`.
 fn length(v: [f32; 3]) -> f32 {
-    f64_to_f32_public(f64::from(dot(v, v)).sqrt())
+    double_to_float(f64::from(dot(v, v)).sqrt())
 }
 
 /// `VectorNormalize`: the vector made one long, when it is not 0, and its length.
@@ -247,7 +247,7 @@ impl SimCall<'_, '_, '_> {
     /// `SV_UserFriction` (PHYS-9.3).
     fn user_friction(&mut self, ent: usize, frametime: f32) -> Result<(), RunError> {
         let vel = self.vector(ent, "velocity");
-        let speed = f64_to_f32_public(f64::from(vel[0] * vel[0] + vel[1] * vel[1]).sqrt());
+        let speed = double_to_float(f64::from(vel[0] * vel[0] + vel[1] * vel[1]).sqrt());
         if speed == 0.0 {
             return Ok(());
         }
@@ -366,7 +366,7 @@ impl SimCall<'_, '_, '_> {
         self.run(pre)?;
         self.check_velocity(ent);
         let movetype = float_to_int(self.float(ent, "movetype"));
-        let t = f64_to_f32_public(frametime);
+        let t = double_to_float(frametime);
         match movetype {
             0 => {
                 if !self.run_think(ent, frametime)? {
