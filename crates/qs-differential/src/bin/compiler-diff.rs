@@ -136,9 +136,9 @@ fn run(args: &[String]) -> Result<bool, String> {
         if let Some(summary) = &options.summary {
             add_row(summary, &options, path, &report)?;
         }
-        if let Some(uncovered) = &options.uncovered {
+        if let Some(path) = &options.uncovered {
             let text = uncovered(&theirs, &report.executed).map_err(|e| e.to_string())?;
-            std::fs::write(uncovered, text).map_err(|e| format!("{}: {e}", uncovered.display()))?;
+            std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
         }
         all_ok &= passed;
     }
