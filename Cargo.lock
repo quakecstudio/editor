@@ -2261,6 +2261,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-editor-view"
+version = "2026.10.0"
+dependencies = [
+ "eframe",
+ "egui",
+]
+
+[[package]]
 name = "qs-install"
 version = "2026.10.0"
 dependencies = [
