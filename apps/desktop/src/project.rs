@@ -182,21 +182,31 @@ pub(crate) fn problems_ui(
 }
 
 /// A problem's row: its severity's icon, its code and message, then where it is, as
-/// `file:line:column` under `root`.
+/// `file:line:column` under `root`, or the whole path when it is not under `root`.
 pub fn problem_text(problem: &Problem, root: Option<&Path>) -> String {
     let icon = match problem.diagnostic.severity() {
         Severity::Error => Icon::Error,
         Severity::Warning => Icon::Warning,
     };
+    // A path under the project is written with `/` on every OS, as `progs.src` lists it.
     let shown = root
         .and_then(|root| problem.path.strip_prefix(root).ok())
-        .unwrap_or(&problem.path);
+        .map_or_else(
+            || problem.path.display().to_string(),
+            |below| {
+                below
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/")
+            },
+        );
     format!(
         "{} {} {}  {}:{}:{}",
         icon.char(),
         problem.diagnostic.code.as_str(),
         problem.diagnostic.message,
-        shown.display(),
+        shown,
         problem.location.line(),
         problem.location.column()
     )

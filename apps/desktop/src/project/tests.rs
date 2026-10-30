@@ -166,10 +166,10 @@ fn a_problems_row_says_what_and_where() {
     assert_eq!(
         problem_text(error, Some(&root)),
         format!(
-            "{} E0301 Unknown value \"speed\"  {}:15:8",
-            Icon::Error.char(),
-            Path::new("src").join("weapons.qc").display()
-        )
+            "{} E0301 Unknown value \"speed\"  src/weapons.qc:15:8",
+            Icon::Error.char()
+        ),
+        "a path under the project is written with `/` on every OS"
     );
     let warning = problems
         .iter()
