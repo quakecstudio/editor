@@ -16,9 +16,7 @@
 pub(crate) enum Vector {
     Minimal,
     Small,
-    #[cfg(feature = "fte")]
     Fte16Minimal,
-    #[cfg(feature = "fte")]
     Fte32Minimal,
 }
 
@@ -26,9 +24,7 @@ pub(crate) enum Vector {
 pub(crate) const VECTORS: &[Vector] = &[
     Vector::Minimal,
     Vector::Small,
-    #[cfg(feature = "fte")]
     Vector::Fte16Minimal,
-    #[cfg(feature = "fte")]
     Vector::Fte32Minimal,
 ];
 
@@ -37,11 +33,9 @@ pub(crate) fn vector(vector: Vector) -> Vec<u8> {
     let dump = match vector {
         Vector::Minimal => include_str!("../../../docs/spec/vectors/progs/minimal.txt"),
         Vector::Small => include_str!("../../../docs/spec/vectors/progs/small.txt"),
-        #[cfg(feature = "fte")]
         Vector::Fte16Minimal => {
             include_str!("../../../docs/spec/vectors/progs/fte16-minimal.txt")
         }
-        #[cfg(feature = "fte")]
         Vector::Fte32Minimal => {
             include_str!("../../../docs/spec/vectors/progs/fte32-minimal.txt")
         }

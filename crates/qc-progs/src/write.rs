@@ -18,7 +18,6 @@ use crate::{Layout, Progs, TableId};
 mod tests;
 
 /// The parts of a version 7 file beyond the version 6 tables (PROGS-19, PROGS-21).
-#[cfg(feature = "fte")]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FteParts {
     /// The line number of each statement, or `None` when the file has no table (PROGS-21.1).
@@ -55,7 +54,6 @@ pub struct ProgsFile {
     /// The globals (PROGS-12).
     pub globals: Vec<Slot>,
     /// The version 7 parts; must be empty for a version 6 file.
-    #[cfg(feature = "fte")]
     pub fte: FteParts,
     /// Where the file this came from had its tables (PROGS-22.1), or `None` for qcc's layout
     /// (PROGS-22.2).
@@ -75,7 +73,6 @@ impl Default for ProgsFile {
             functions: Vec::new(),
             strings: Vec::new(),
             globals: Vec::new(),
-            #[cfg(feature = "fte")]
             fte: FteParts::default(),
             layout: None,
         }
@@ -97,7 +94,6 @@ impl Progs<'_> {
             functions: self.functions().iter().collect(),
             strings: self.strings().to_vec(),
             globals: self.globals().iter().collect(),
-            #[cfg(feature = "fte")]
             fte: self
                 .fte_header()
                 .map_or_else(FteParts::default, |fte| FteParts {
@@ -133,10 +129,8 @@ pub enum WriteError {
         table: TableId,
     },
     /// Version 7 parts on a version 6 file.
-    #[cfg(feature = "fte")]
     FtePartsInV6,
     /// The number of line numbers is not the number of statements (PROGS-21.1).
-    #[cfg(feature = "fte")]
     LineNumberCount {
         /// Line numbers given.
         line_numbers: usize,
@@ -144,14 +138,12 @@ pub enum WriteError {
         statements: usize,
     },
     /// A bodyless function name contains a NUL byte (PROGS-21.2).
-    #[cfg(feature = "fte")]
     NulInBodylessName {
         /// The name's index.
         index: usize,
     },
     /// `ofsfiles` or `ofs_types` is not 0 but there is no source layout to keep the bytes it
     /// points at (PROGS-21.5).
-    #[cfg(feature = "fte")]
     OpaqueTableWithoutLayout,
 }
 
@@ -165,9 +157,7 @@ impl fmt::Display for WriteError {
                 write!(f, "{table} entry {index} does not fit the progs.dat format")
             }
             Self::TooLarge { table } => write!(f, "the {table} table is too large for progs.dat"),
-            #[cfg(feature = "fte")]
             Self::FtePartsInV6 => f.write_str("a version 6 progs.dat cannot hold FTE tables"),
-            #[cfg(feature = "fte")]
             Self::LineNumberCount {
                 line_numbers,
                 statements,
@@ -175,11 +165,9 @@ impl fmt::Display for WriteError {
                 f,
                 "{line_numbers} line numbers given for {statements} statements"
             ),
-            #[cfg(feature = "fte")]
             Self::NulInBodylessName { index } => {
                 write!(f, "bodyless function name {index} contains a NUL byte")
             }
-            #[cfg(feature = "fte")]
             Self::OpaqueTableWithoutLayout => f.write_str(
                 "ofsfiles or ofs_types points into a source file whose layout is not kept",
             ),
@@ -206,7 +194,6 @@ struct Encoded {
 ///
 /// A [`WriteError`] when a value does not fit the format (PROGS-22.4).
 pub fn write(file: &ProgsFile) -> Result<Vec<u8>, WriteError> {
-    #[cfg(feature = "fte")]
     if file.format == Format::V6 && file.fte != FteParts::default() {
         return Err(WriteError::FtePartsInV6);
     }
@@ -250,16 +237,11 @@ pub fn write(file: &ProgsFile) -> Result<Vec<u8>, WriteError> {
         numglobals: count(TableId::Globals, file.globals.len())?,
         entityfields: file.entityfields,
     };
-    #[cfg_attr(
-        not(feature = "fte"),
-        expect(unused_mut, reason = "FTE fields are added")
-    )]
     let mut fields: Vec<u8> = header
         .fields()
         .iter()
         .flat_map(|v| v.to_le_bytes())
         .collect();
-    #[cfg(feature = "fte")]
     if let Some(secondaryversion) = file.format.secondary_version() {
         let numbodylessfuncs =
             u32::try_from(file.fte.bodyless_functions.len()).map_err(|_| WriteError::TooLarge {
@@ -313,19 +295,15 @@ fn place_in_qcc_order(
     encoded: &mut [Encoded],
     file: &ProgsFile,
 ) -> Result<(), WriteError> {
-    #[cfg(feature = "fte")]
     if file.fte.ofsfiles != 0 || file.fte.ofs_types != 0 {
         return Err(WriteError::OpaqueTableWithoutLayout);
     }
-    #[cfg(not(feature = "fte"))]
-    let _ = file;
     for entry in encoded.iter_mut() {
         if entry.table == TableId::Strings {
             while !entry.bytes.len().is_multiple_of(PROGS_STRING_ALIGN) {
                 entry.bytes.push(0);
             }
         }
-        #[cfg(feature = "fte")]
         if entry.table == TableId::BodylessFunctions && entry.bytes.is_empty() {
             entry.offset = Some(0);
             continue;
@@ -370,10 +348,6 @@ fn encode_tables(file: &ProgsFile) -> Result<Vec<Encoded>, WriteError> {
         bytes,
         offset: None,
     };
-    #[cfg_attr(
-        not(feature = "fte"),
-        expect(unused_mut, reason = "FTE tables are added")
-    )]
     let mut tables = vec![
         entry(TableId::Strings, file.strings.clone()),
         entry(TableId::Statements, statements),
@@ -388,7 +362,6 @@ fn encode_tables(file: &ProgsFile) -> Result<Vec<Encoded>, WriteError> {
         ),
         entry(TableId::Globals, globals),
     ];
-    #[cfg(feature = "fte")]
     if format != Format::V6 {
         if let Some(lines) = &file.fte.line_numbers {
             if lines.len() != file.statements.len() {

@@ -68,7 +68,7 @@ sections:
   - id: FND
     title: Foundation layers
     requirements:
-      - {id: FND-1, kind: stated, text: "qc-progs: progs.dat v6 header, statements, globaldefs, fielddefs, functions, string table; FTE v7 extensions behind a flag"}
+      - {id: FND-1, kind: stated, text: "qc-progs: progs.dat v6 header, statements, globaldefs, fielddefs, functions, string table; FTE v7 extensions, read when the header's version is 7"}
       - {id: FND-2, kind: stated, text: "qc-types: the eight QC types and their global-slot layout"}
       - {id: FND-3, kind: stated, text: "qc-vm: opcode semantics, call and local stacks, parameter and return slots, builtin dispatch, runaway-loop guard"}
       - {id: FND-4, kind: stated, text: "qc-edict: entity memory, field access, spawn/remove, system globals and fields shared with the engine"}

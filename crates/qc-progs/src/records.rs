@@ -6,8 +6,8 @@
 
 //! The header and the records of each progs.dat table, and how they decode from bytes.
 //!
-//! Implements PROGS-2, PROGS-7, PROGS-9 and PROGS-10 of `docs/spec/progs.md`, and with the
-//! `fte` feature the version 7 layouts of PROGS-19 and PROGS-20.
+//! Implements PROGS-2, PROGS-7, PROGS-9 and PROGS-10 of `docs/spec/progs.md`, and the
+//! version 7 layouts of PROGS-19 and PROGS-20.
 
 use qc_types::{DefType, Slot};
 
@@ -59,45 +59,37 @@ pub const PROGS_DEF_SAVEGLOBAL: u32 = 0x8000;
 /// FTEQCC's extended format version, `PROG_EXTENDEDVERSION`.
 ///
 /// `PROGS_VERSION_FTE` in PROGS-19.
-#[cfg(feature = "fte")]
 pub const PROGS_VERSION_FTE: i32 = 7;
 
 /// Bytes in a version 7 header.
 ///
 /// `PROGS_FTE_HEADER_SIZE` in PROGS-19.
-#[cfg(feature = "fte")]
 pub const PROGS_FTE_HEADER_SIZE: usize = 92;
 
 /// `secondaryversion` of the 16-bit version 7 layout, `PROG_SECONDARYVERSION16`.
 ///
 /// `PROGS_FTE_SECONDARY16` in PROGS-19.
-#[cfg(feature = "fte")]
 pub const PROGS_FTE_SECONDARY16: i32 = 0x021B_1461;
 
 /// `secondaryversion` of the 32-bit version 7 layout, `PROG_SECONDARYVERSION32`.
 ///
 /// `PROGS_FTE_SECONDARY32` in PROGS-19.
-#[cfg(feature = "fte")]
 pub const PROGS_FTE_SECONDARY32: i32 = 0x6516_7402;
 
 /// Bytes in a statement of the 32-bit version 7 layout, `sizeof(dstatement32_t)`.
 ///
 /// `PROGS_FTE32_STATEMENT_SIZE` in PROGS-20.
-#[cfg(feature = "fte")]
 pub const PROGS_FTE32_STATEMENT_SIZE: usize = 16;
 
 /// Bytes in a definition of the 32-bit version 7 layout, `sizeof(ddef32_t)`.
 ///
 /// `PROGS_FTE32_DEF_SIZE` in PROGS-20.
-#[cfg(feature = "fte")]
 pub const PROGS_FTE32_DEF_SIZE: usize = 12;
 
 /// Bytes in one record of FTE's type table, `sizeof(typeinfo_t)` (PROGS-21.8).
-#[cfg(feature = "fte")]
 pub const PROGS_FTE_TYPE_SIZE: usize = 28;
 
 /// Bytes in one line number (PROGS-21.1).
-#[cfg(feature = "fte")]
 pub const PROGS_FTE_LINE_SIZE: usize = 4;
 
 /// Which layout a file uses.
@@ -106,10 +98,8 @@ pub enum Format {
     /// Version 6, the format id's engine loads (PROGS-2 to PROGS-13).
     V6,
     /// FTE version 7 with the 16-bit statements and definitions of version 6 (PROGS-19.2).
-    #[cfg(feature = "fte")]
     Fte16,
     /// FTE version 7 with 32-bit statements and definitions (PROGS-20).
-    #[cfg(feature = "fte")]
     Fte32,
 }
 
@@ -119,7 +109,6 @@ impl Format {
     pub const fn version(self) -> i32 {
         match self {
             Self::V6 => PROGS_VERSION,
-            #[cfg(feature = "fte")]
             Self::Fte16 | Self::Fte32 => PROGS_VERSION_FTE,
         }
     }
@@ -130,9 +119,7 @@ impl Format {
     pub const fn secondary_version(self) -> Option<i32> {
         match self {
             Self::V6 => None,
-            #[cfg(feature = "fte")]
             Self::Fte16 => Some(PROGS_FTE_SECONDARY16),
-            #[cfg(feature = "fte")]
             Self::Fte32 => Some(PROGS_FTE_SECONDARY32),
         }
     }
@@ -142,7 +129,6 @@ impl Format {
     pub const fn header_size(self) -> usize {
         match self {
             Self::V6 => PROGS_HEADER_SIZE,
-            #[cfg(feature = "fte")]
             Self::Fte16 | Self::Fte32 => PROGS_FTE_HEADER_SIZE,
         }
     }
@@ -152,9 +138,7 @@ impl Format {
     pub const fn statement_size(self) -> usize {
         match self {
             Self::V6 => PROGS_STATEMENT_SIZE,
-            #[cfg(feature = "fte")]
             Self::Fte16 => PROGS_STATEMENT_SIZE,
-            #[cfg(feature = "fte")]
             Self::Fte32 => PROGS_FTE32_STATEMENT_SIZE,
         }
     }
@@ -164,9 +148,7 @@ impl Format {
     pub const fn def_size(self) -> usize {
         match self {
             Self::V6 => PROGS_DEF_SIZE,
-            #[cfg(feature = "fte")]
             Self::Fte16 => PROGS_DEF_SIZE,
-            #[cfg(feature = "fte")]
             Self::Fte32 => PROGS_FTE32_DEF_SIZE,
         }
     }
@@ -258,7 +240,6 @@ impl Header {
 /// The eight fields a version 7 header adds after the version 6 fields, as stored.
 ///
 /// Implements PROGS-19.1.
-#[cfg(feature = "fte")]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct FteHeader {
     /// Offset of the embedded source files, 0 if none (PROGS-21.7).
@@ -279,7 +260,6 @@ pub struct FteHeader {
     pub secondaryversion: i32,
 }
 
-#[cfg(feature = "fte")]
 impl FteHeader {
     /// Decodes the eight fields from the bytes after the version 6 header.
     pub(crate) fn decode(bytes: &[u8]) -> Option<Self> {
@@ -416,14 +396,12 @@ impl Record for Statement {
                 b: i32::from(read_i16(bytes, 4)?),
                 c: i32::from(read_i16(bytes, 6)?),
             }),
-            #[cfg(feature = "fte")]
             Format::Fte16 => Some(Self {
                 op: u32::from(read_u16(bytes, 0)?),
                 a: i32::from(read_u16(bytes, 2)?),
                 b: i32::from(read_u16(bytes, 4)?),
                 c: i32::from(read_u16(bytes, 6)?),
             }),
-            #[cfg(feature = "fte")]
             Format::Fte32 => Some(Self {
                 op: read_u32(bytes, 0)?,
                 a: read_i32(bytes, 4)?,
@@ -440,14 +418,12 @@ impl Record for Statement {
                     out.extend(i16::try_from(operand).ok()?.to_le_bytes());
                 }
             }
-            #[cfg(feature = "fte")]
             Format::Fte16 => {
                 out.extend(u16::try_from(self.op).ok()?.to_le_bytes());
                 for operand in [self.a, self.b, self.c] {
                     out.extend(u16::try_from(operand).ok()?.to_le_bytes());
                 }
             }
-            #[cfg(feature = "fte")]
             Format::Fte32 => {
                 out.extend(self.op.to_le_bytes());
                 for operand in [self.a, self.b, self.c] {
@@ -471,9 +447,7 @@ impl Record for Def {
                 ofs: u32::from(read_u16(bytes, 2)?),
                 s_name: read_i32(bytes, 4)?,
             }),
-            #[cfg(feature = "fte")]
             Format::Fte16 => Self::decode(bytes, Format::V6),
-            #[cfg(feature = "fte")]
             Format::Fte32 => Some(Self {
                 type_bits: read_u32(bytes, 0)?,
                 ofs: read_u32(bytes, 4)?,
@@ -487,9 +461,7 @@ impl Record for Def {
                 out.extend(u16::try_from(self.type_bits).ok()?.to_le_bytes());
                 out.extend(u16::try_from(self.ofs).ok()?.to_le_bytes());
             }
-            #[cfg(feature = "fte")]
             Format::Fte16 => return self.encode(out, Format::V6),
-            #[cfg(feature = "fte")]
             Format::Fte32 => {
                 out.extend(self.type_bits.to_le_bytes());
                 out.extend(self.ofs.to_le_bytes());
@@ -573,7 +545,6 @@ pub(crate) fn read_i32(bytes: &[u8], at: usize) -> Option<i32> {
     read_array(bytes, at).map(i32::from_le_bytes)
 }
 
-#[cfg(feature = "fte")]
 pub(crate) fn read_u32(bytes: &[u8], at: usize) -> Option<u32> {
     read_array(bytes, at).map(u32::from_le_bytes)
 }

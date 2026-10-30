@@ -515,7 +515,7 @@ only files that id's qcc never writes.
 `PR_ReallyLoadProgs` (fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`).
 
 FTEQCC can write version 7, an extended header used by FTE and other engines. id's engine
-rejects it (PROGS-3.1). The editor reads it only behind a feature flag (FND-1).
+rejects it (PROGS-3.1). The editor reads it whenever the header's version is 7 (FND-1).
 
 ### Behaviour
 
@@ -682,7 +682,7 @@ followed by one NUL, as `COM_LoadFile` returns it), and was built with Apple cla
 macOS. For each file it printed the error, or every header field, `pr_crc`, every field of every
 record with each name's bytes, the result of each lookup for every definition's name and slot
 and every function's name, and every global. A Rust program printed the same from `qc-progs`
-(default features). Over the four vectors and 3,000 generated files (random tables in a random
+(with version 7 reading off, as it then could be). Over the four vectors and 3,000 generated files (random tables in a random
 order with random gaps, valid string references, and in a fifth of them a wrong version, a
 wrong CRC, a field definition with `DEF_SAVEGLOBAL` or a function with more than 8
 parameters), 2,771 outputs were identical and the other 233 were the expected divergence of
