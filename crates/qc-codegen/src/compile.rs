@@ -387,16 +387,8 @@ impl<'a> Compiler<'a> {
                     Some(token) => qc_syntax::builtin_binum(&token.text_lossless(), self.dialect)
                         .at(token.span())?,
                     // FTE-17.5: FTEQCC binds builtin 0 when it reads a string or a name in
-                    // place of the number.
-                    None if self.dialect == Dialect::Fteqcc
-                        && builtin.syntax().child_tokens().any(|t| {
-                            use qc_syntax::SyntaxKind as K;
-                            matches!(t.kind(), K::StringLit | K::Name)
-                        }) =>
-                    {
-                        0
-                    }
-                    None => return Err(Abort::Internal(Internal::Unlowered, whole)),
+                    // place of the number; the parser refuses any other builtin without one.
+                    None => 0,
                 };
                 // FTE-23.17: FTEQCC names a builtin's function after its engine name, when it
                 // has one, read with the lexer flags it was lexed with (FTEF-12.12).
@@ -1695,8 +1687,7 @@ impl<'a> Compiler<'a> {
 
     /// FTEF-29.13: under FTEQCC a store of the temporary the statement before made to a
     /// definition is folded into that statement, which then writes the definition, as
-    /// `opt_assignments` folds it; true when it was. Only an operator's or a load's statement
-    /// is folded, never a store, as a `?:` stores to its temporary in each arm (FTE-8.3).
+    /// `opt_assignments` folds it; true when it was.
     fn fold_store(&mut self, to: &Value, value: &Value) -> bool {
         if self.dialect != Dialect::Fteqcc
             || !matches!(to.kind, ValueKind::Def(_))
@@ -1708,11 +1699,12 @@ impl<'a> Compiler<'a> {
         let Some(last) = self.program.statements.last_mut() else {
             return false;
         };
-        let folds = Opcode::from_number(last.op).is_some_and(writes_its_result);
         let (Ok(made), Ok(def)) = (operand(value.ofs), operand(to.ofs)) else {
             return false;
         };
-        if !folds || last.c != made {
+        // Only a statement that writes its result to `c` names a temporary there: a store
+        // writes to `b`, so a `?:`'s stores to its temporary in each arm (FTE-8.3) never match.
+        if last.c != made {
             return false;
         }
         last.c = def;
@@ -2061,53 +2053,6 @@ fn postfix_step(postfix: &ast::PostfixExpr) -> f32 {
         .child_tokens()
         .any(|t| t.kind() == qc_syntax::SyntaxKind::MinusMinus);
     if decrement { -1.0 } else { 1.0 }
-}
-
-/// Whether `op` is an operator or a load that writes its result to its `c` operand and nothing
-/// else (FTEF-29.13).
-fn writes_its_result(op: Opcode) -> bool {
-    use Opcode as O;
-    matches!(
-        op,
-        O::MulF
-            | O::MulV
-            | O::MulFv
-            | O::MulVf
-            | O::DivF
-            | O::AddF
-            | O::AddV
-            | O::SubF
-            | O::SubV
-            | O::EqF
-            | O::EqV
-            | O::EqS
-            | O::EqE
-            | O::EqFnc
-            | O::NeF
-            | O::NeV
-            | O::NeS
-            | O::NeE
-            | O::NeFnc
-            | O::Le
-            | O::Ge
-            | O::Lt
-            | O::Gt
-            | O::LoadF
-            | O::LoadV
-            | O::LoadS
-            | O::LoadEnt
-            | O::LoadFld
-            | O::LoadFnc
-            | O::NotF
-            | O::NotV
-            | O::NotS
-            | O::NotEnt
-            | O::NotFnc
-            | O::And
-            | O::Or
-            | O::BitAnd
-            | O::BitOr
-    )
 }
 
 /// A statement or function index as the `i32` a record stores.

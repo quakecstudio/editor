@@ -202,3 +202,55 @@ fn add_row(
         .and_then(|mut file| file.write_all(row.as_bytes()))
         .map_err(|e| format!("{}: {e}", summary.display()))
 }
+
+#[cfg(test)]
+mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        reason = "test code: a failed unwrap is a failed test"
+    )]
+
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
+
+    use qs_differential::calls::{CodebaseReport, Oracle};
+
+    use super::{Options, add_row};
+
+    // spec DIFF-12.8: each pair compared adds its row to the results table, after the rows
+    // already there.
+    #[test]
+    fn each_pair_adds_a_row_to_the_table() {
+        let dir = std::env::temp_dir().join(format!("compiler-diff-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let summary = dir.join("summary.md");
+        std::fs::write(&summary, "head\n").unwrap();
+        let options = Options {
+            rounds: 1,
+            codebase: "rerelease".to_owned(),
+            oracle: Oracle::Fteqcc,
+            summary: Some(summary.clone()),
+            theirs: PathBuf::from("x/oracle.dat"),
+            ours: Vec::new(),
+        };
+        let report = CodebaseReport {
+            scenarios: Vec::new(),
+            executed: BTreeSet::new(),
+            total_statements: 4,
+        };
+        add_row(&summary, &options, &PathBuf::from("x/ours.dat"), &report).unwrap();
+        add_row(
+            &summary,
+            &options,
+            &PathBuf::from("x/ours-fold.dat"),
+            &report,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&summary).unwrap(),
+            "head\n| rerelease | oracle.dat | ours.dat | 0 | 0 of 4 (0.0%) | fail |\n\
+             | rerelease | oracle.dat | ours-fold.dat | 0 | 0 of 4 (0.0%) | fail |\n"
+        );
+        assert!(add_row(&dir.join("no/such/dir.md"), &options, &summary, &report).is_err());
+    }
+}

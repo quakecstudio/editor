@@ -750,3 +750,13 @@ fn against_fteqcc_two_runaway_calls_agree() {
         Some(Difference::Ending(..))
     ));
 }
+
+// spec DIFF-12.9: against FTEQCC a function definition inside a body's locals, as a state's
+// `[frame, next]` declares `next` there, is a global and is paired with FTEQCC's.
+#[test]
+fn against_fteqcc_a_states_next_function_is_a_global() {
+    let theirs =
+        "void() a;\nvoid() b;\nvoid() a = [1, b] { local float q; q = 1; };\nvoid() b = {};\n";
+    let ours = "void() a = [1, b] { local float q; q = 1; };\nvoid() b = {};\n";
+    assert_eq!(against(Oracle::Fteqcc, theirs, ours), []);
+}
