@@ -949,3 +949,25 @@ fn programs_both_refuse_keep_this_profile_s_text() {
         [(1, "\"T\" is not a type".to_owned())]
     );
 }
+
+// spec FTEF-18.2: a nested function is a function of its own: its body sees the globals and its
+// own parameters, and is checked when it ends, under its empty name
+// spec FTEF-34.17: a nested function the outer definition's error does not end is checked
+#[test]
+fn a_nested_function_is_resolved_and_checked_as_its_own() {
+    let source = concat!(
+        "float a;\nvoid() f = {\nvoid() h = { return; a = 1; };\nh();\n",
+        "float(float p) k = { return p + a; };\nk(1);\n};\n",
+    );
+    assert_eq!(
+        lined(source),
+        [(3, ": contains unreachable code (line 3)".to_owned())]
+    );
+}
+
+// spec FTEF-18.2: the outer function's locals are not names in a nested function's body
+#[test]
+fn a_nested_function_does_not_see_the_outer_locals() {
+    let source = "void() f = { float x; void() h = { x = 1; }; h(); };\n";
+    assert_eq!(lined(source), [(1, "Unknown value \"x\".".to_owned())]);
+}

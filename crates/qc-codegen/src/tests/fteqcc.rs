@@ -4,6 +4,7 @@
 //! expected statements follow FTEQCC's lowering as each statement quotes it; a temporary is
 //! read from the statement that made it.
 
+use qc_diag::Code;
 use qc_progs::opcode::Opcode::{
     self, AddF, And, BitAnd, BitOr, Call1, Call2, Call3, DivF, Done, EqF, Goto, If, IfNot, Lt,
     MulF, MulV, MulVf, NotF, NotS, NotV, Return, StoreF, StoreS, StoreV, SubF, SubV,
@@ -1624,4 +1625,132 @@ fn a_bare_return_returns_the_ret_local() {
         .collect();
     assert_eq!(returns, [ret, ret]);
     assert_eq!(body(&p, "g")[0], st(Return, 0, 0, 0));
+}
+
+// spec FTEF-18.2, FTEF-18.39: a function defined in another's body takes the record after the
+// outer function's, with no name; its statements follow the outer function's DONE, and the local
+// is stored with its number when the outer function runs, its own word left 0
+#[test]
+fn a_nested_function_follows_its_outer_function() {
+    let p = fte_progs("void() a = #1;\nvoid() t = { void() g = { a(); }; g(); };\n");
+    let outer = p
+        .functions
+        .iter()
+        .position(|f| string(&p, f.s_name) == "t")
+        .unwrap();
+    let inner = outer + 1;
+    let record = &p.functions[inner];
+    assert_eq!(string(&p, record.s_name), "");
+    let t = body(&p, "t");
+    let g = t[0].b;
+    let number = u32::try_from(inner).unwrap();
+    assert_eq!(p.globals[usize::try_from(t[0].a).unwrap()].bits(), number);
+    assert_eq!(p.globals[usize::try_from(g).unwrap()].bits(), 0);
+    assert_eq!(
+        t,
+        [
+            st(Opcode::StoreFnc, t[0].a, g, 0),
+            st(Opcode::Call0, g, 0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+    let first = usize::try_from(record.first_statement).unwrap();
+    assert_eq!(
+        first,
+        usize::try_from(function(&p, "t").first_statement).unwrap() + 3
+    );
+    assert_eq!(
+        p.statements[first..first + 2],
+        [st(Opcode::Call0, global(&p, "a"), 0, 0), st(Done, 0, 0, 0)]
+    );
+}
+
+// spec FTEF-18.39: nested functions take their records in the order FTEQCC reads them, a
+// nested function's own after it and before its outer function's next one
+#[test]
+fn nested_functions_are_numbered_in_reading_order() {
+    let p = fte_progs(concat!(
+        "void() a = #1;\n",
+        "void() t = { void() g = { void() h = { a(); }; h(); }; void() k = { a(); }; k(); g(); };\n",
+        "void() u = {};\n",
+    ));
+    let names: Vec<String> = p.functions.iter().map(|f| string(&p, f.s_name)).collect();
+    let outer = names.iter().position(|n| n == "t").unwrap();
+    assert_eq!(names[outer + 1..], ["", "", "", "u"]);
+    let t = body(&p, "t");
+    // `g` is the record after `t`, `k` the one after `g`'s own `h`.
+    let constant = |s: &Statement| p.globals[usize::try_from(s.a).unwrap()].bits();
+    assert_eq!(constant(&t[0]), u32::try_from(outer + 1).unwrap());
+    assert_eq!(constant(&t[1]), u32::try_from(outer + 3).unwrap());
+    let firsts: Vec<i32> = p.functions[outer..outer + 5]
+        .iter()
+        .map(|f| f.first_statement)
+        .collect();
+    assert!(firsts.windows(2).all(|w| w[0] < w[1]), "{firsts:?}");
+}
+
+// spec FTEF-18.39: a static nested function keeps its name, and its local's word holds its number
+// with no store
+#[test]
+fn a_static_nested_function_is_named_and_initialised() {
+    let p = fte_progs("void() a = #1;\nvoid() t = { static void() g = { a(); }; g(); };\n");
+    let outer = p
+        .functions
+        .iter()
+        .position(|f| string(&p, f.s_name) == "t")
+        .unwrap();
+    assert_eq!(string(&p, p.functions[outer + 1].s_name), "g");
+    let t = body(&p, "t");
+    assert_eq!(t[0].op, u32::from(Opcode::Call0.number()));
+    assert_eq!(
+        p.globals[usize::try_from(t[0].a).unwrap()].bits(),
+        u32::try_from(outer + 1).unwrap()
+    );
+}
+
+// spec FTEF-32.15: a local array's braced initialiser stores each element in turn, a value an
+// operator made folded into its element, and a string element by STORE_S
+#[test]
+fn a_local_arrays_initialiser_stores_each_element() {
+    let p = fte_progs(concat!(
+        "entity self;\n.float f;\nfloat Q = 4;\n",
+        "void() t = { float a[3] = { Q, 2, self.f }; string s[2] = { \"x\", \"y\" }; };\n",
+    ));
+    let t = body(&p, "t");
+    let a = global(&p, "a");
+    let s = global(&p, "s");
+    assert_eq!(
+        t,
+        [
+            st(StoreF, global(&p, "Q"), a, 0),
+            st(StoreF, immediate(&p, 2.0), a + 1, 0),
+            st(Opcode::LoadF, global(&p, "self"), global(&p, "f"), a + 2),
+            st(StoreS, immediate_string(&p, "x"), s, 0),
+            st(StoreS, immediate_string(&p, "y"), s + 1, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-32.15: a local array's initialiser with more elements than the array is FTEQCC's
+// `QCC_PR_Expect("}")` error after the last element it takes; one with fewer stores only those
+#[test]
+fn a_local_arrays_initialiser_is_read_up_to_its_size() {
+    let error = compile_fteqcc("void() t = { float a[2] = { 1, 2, 3 }; };\n").unwrap_err();
+    let CompileError::Diagnostics(found) = error else {
+        panic!("{error:?}");
+    };
+    assert!(
+        found.iter().any(|d| d.diagnostic.code == Code::E0204),
+        "{found:?}"
+    );
+    let p = fte_progs("void() t = { float a[3] = { 1 }; };\n");
+    let t = body(&p, "t");
+    assert_eq!(
+        t,
+        [
+            st(StoreF, immediate(&p, 1.0), global(&p, "a"), 0),
+            st(Done, 0, 0, 0)
+        ]
+    );
 }

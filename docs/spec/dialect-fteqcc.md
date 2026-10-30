@@ -2847,6 +2847,23 @@ against FTEQCC.
   q = x[1];` the warnings, and `float q = e[1];` of an entity only "Cannot cast from entity to
   float". Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_GenerateInitializerType`.
+- **FTEF-18.39** A nested function (FTEF-18.2) takes the next function record when its
+  declaration is read, `func = &functions[numfunctions++];` in `QCC_PR_GenerateQCFunction`, after
+  its outer function's, which took its record when its own definition was read. Its statements
+  are kept with its record (`f->statements`), and `QCC_PR_FinaliseFunctions` writes every
+  function's in the order of the records (`for (f = functions; f < functions+numfunctions;
+  f++) if (f->statements) QCC_PR_FinaliseFunction(f);`), so they follow the outer function's
+  `DONE`. The `GOTO` generated around it then jumps one statement and is dropped: `if
+  (patch->a.jumpofs == 1) numstatements--;`. A local that is not static is
+  then initialised as any local is (FTEF-32.15), `STORE_FNC` of the record's number, an integer
+  immediate (`QCC_MakeIntConst`), to the local, and its own word is left 0; a static one's word
+  holds the number. The nested function's name is empty unless the local is static
+  (`QCC_PR_ParseImmediateStatements (def.sym->isstatic?def.sym:NULL, ...)`). So `void() t = {
+  void() g = { a(); }; g(); };` is `STORE_FNC n g`, `CALL0 g`, `DONE`, then the nested
+  function's `CALL0 a`, `DONE`, with `t`'s record before the nested one's. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseInitializerType_Internal`, `QCC_PR_GenerateQCFunction`, `QCC_PR_FinaliseFunctions`,
+  `QCC_PR_GenerateInitializerType`.
 - **FTEF-18.34** This profile's error recovery (QCD-1.4) ends the body of a struct, class,
   accessor, `switch` or function at a declaration line, a token at column 0 that has a
   declaration's shape or is one of `typedef`, `class`, `accessor`, `enum`, `enumflags`, `struct`
@@ -5096,6 +5113,17 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   string constant's text where calls are checked, and makes the call. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateFunctionCallRef`; `engine/qclib/progsint.h`, `min`, `max`.
+- **FTEF-32.15** A local array that is not constant or static, given a braced initialiser, stores
+  each element's value to its element in turn each time the function runs: the array goes
+  "recursive" (`QCC_PR_ParseInitializerType(0, basedef, def, ...)`, then `def.ofs +=
+  def.cast->size;`), and `QCC_PR_GenerateInitializerType` takes the `finalnotconst` path, since
+  `basedef->scope` is set and it is neither `constant` nor `isstatic`, where a one-word value is
+  `OP_STORE_F`, `_S`, `_ENT`, `_FLD` or `_FNC` by the element's type and a vector `OP_STORE_V`.
+  An element value need not be constant, and the store of one an operator just made is folded
+  into it (FTEF-29.13). Elements past the last written get no store. So `float a[3] = { Q, 2,
+  self.f };` is `STORE_F Q a[0]`, `STORE_F 2 a[1]`, `LOAD_F self f a[2]`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseInitializerType_Internal`, `QCC_PR_GenerateInitializerType`.
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,
@@ -5293,3 +5321,12 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   `NOT_V`, nor the `OP_IF` of `do ... while`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_StatementFlags`, `QCC_Generate_OP_IFNOT`; `engine/qclib/qccmain.c`, `optimisations[]`.
+- **FTEF-34.17** A nested function (FTEF-18.2) is checked as any function is when it ends
+  (FTEF-34.6), under its name (FTEF-18.39), unless an error of its outer definition at or
+  before its end ended FTEQCC's parse of the definition first (`QCC_PR_ParseError`), which then
+  never finishes it: so `void() f = { goto out; void() h = { goto in; a = 1; }; ... };` is only
+  "Goto statement with no matching label \"out\"", at `h`'s end (FTEF-34.12), with no
+  "contains unreachable code" for `h`. This profile checks an outer definition's statements
+  after a nested function's error too, where FTEQCC stops. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseInitializerType_Internal`, `QCC_PR_FinaliseFunction`.

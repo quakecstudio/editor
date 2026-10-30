@@ -19,11 +19,11 @@ use std::collections::HashMap;
 use qc_diag::{Code, Diagnostic, Span};
 use qc_progs::Function;
 use qc_progs::opcode::Opcode;
-use qc_sema::lower::declares_wrap;
+use qc_sema::lower::{Qualifier, declares};
 use qc_sema::{DefId, DefKind, FileDiagnostic, FileId, FunctionType, ModuleIndex};
 use qc_syntax::ast::{self, AstNode};
 use qc_syntax::c_scalar::CScalar;
-use qc_syntax::{Dialect, Parse, SyntaxToken};
+use qc_syntax::{Dialect, Parse, SyntaxKind, SyntaxToken};
 use qc_types::Etype;
 
 use crate::Internal;
@@ -196,6 +196,20 @@ pub(crate) struct Compiler<'a> {
     array_functions: Vec<arrays::ArrayFunction>,
     /// Each file's `s_file`, which a getter's function record takes from its array's file.
     s_files: HashMap<FileId, i32>,
+    /// The functions defined in the body being compiled, compiled after it (FTEF-18.2).
+    nested: Vec<Nested>,
+    /// The record number the next nested function of the body being compiled takes
+    /// (FTEF-18.2).
+    next_nested: usize,
+}
+
+/// A function defined in another's body, compiled once that one is (FTEF-18.2).
+struct Nested {
+    written: Written,
+    declarator: ast::Declarator,
+    name: SyntaxToken,
+    def: (DefId, usize),
+    body: ast::FunctionBody,
 }
 
 /// One loop or switch: the `GOTO`s of its `break`s, and of its `continue`s for a loop.
@@ -233,6 +247,8 @@ impl<'a> Compiler<'a> {
             defaults: HashMap::new(),
             autoproto: false,
             s_files: HashMap::new(),
+            nested: Vec::new(),
+            next_nested: 0,
         }
     }
 
@@ -412,6 +428,11 @@ impl<'a> Compiler<'a> {
     /// `PR_ParseDefs` at file level (QC-11): each name is made or found, and an initialiser
     /// defines a function (QC-13) or stores a constant (QC-11.6).
     fn declaration(&mut self, declaration: &ast::Declaration) -> Lowered<()> {
+        let written = Written {
+            ty: declaration.ty(),
+            wrap: declares(declaration.syntax(), &Qualifier::Wrap),
+            nested: false,
+        };
         for declarator in declaration.declarators() {
             let name = declarator.name().at(declaration.syntax().span())?;
             let id = self.declared(&name)?;
@@ -440,7 +461,7 @@ impl<'a> Compiler<'a> {
                 }
                 Some(ast::Initializer::Body(body)) => {
                     self.function(
-                        (declaration, &declarator),
+                        (&written, &declarator),
                         &name,
                         (id, place),
                         FunctionInit::Body(&body),
@@ -448,7 +469,7 @@ impl<'a> Compiler<'a> {
                 }
                 Some(ast::Initializer::Builtin(builtin)) => {
                     self.function(
-                        (declaration, &declarator),
+                        (&written, &declarator),
                         &name,
                         (id, place),
                         FunctionInit::Builtin(&builtin),
@@ -513,7 +534,7 @@ impl<'a> Compiler<'a> {
     /// QC-25.2).
     fn function(
         &mut self,
-        (declaration, declarator): (&ast::Declaration, &ast::Declarator),
+        (written, declarator): (&Written, &ast::Declarator),
         name: &SyntaxToken,
         (id, place): (DefId, usize),
         init: FunctionInit<'_>,
@@ -522,11 +543,22 @@ impl<'a> Compiler<'a> {
         let def = self.program.def(place).at(span)?.clone();
         let function_type = def.ty.function().at(span)?.clone();
         self.set_line(span);
-        let wrapped = self.wrap(declaration, &def, init, span)?;
+        let wrapped = self.wrap(written, &def, init, span)?;
+        // FTEF-18.2: the functions this body defines take the records after its own.
+        self.next_nested = self
+            .program
+            .functions
+            .len()
+            .checked_add(usize::from(wrapped.is_none()))
+            .at(span)?;
         let locals_start = self.program.next_global().at(span)?;
         self.locals_end = locals_start;
         self.scope = Some(id);
-        let mut record_name = def.name.clone();
+        let mut record_name = if written.nested {
+            String::new()
+        } else {
+            def.name.clone()
+        };
         let builtin = matches!(init, FunctionInit::Builtin(_));
         let first_statement = match init {
             FunctionInit::Builtin(builtin) => {
@@ -550,7 +582,7 @@ impl<'a> Compiler<'a> {
                     .ok_or(Abort::Internal(Internal::TooLarge, whole))?
             }
             FunctionInit::Body(body) => {
-                self.parameters(declaration, declarator, span)?;
+                self.parameters(written.ty.as_ref(), declarator, span)?;
                 // FTE-21.6: FTEQCC's record counts the parameters among the locals, so a call
                 // that enters the function again restores them; id's `qcc` counts only up to
                 // the last `local` declaration (QC-21.4).
@@ -582,7 +614,8 @@ impl<'a> Compiler<'a> {
         self.ret_local = None;
         // `PR_ParseDefs` marks the function initialised here, which nothing reads for a
         // function: no literal is a function (QC-20.2), and no function is saved (QC-21.6).
-        if wrapped.is_none() {
+        // FTEF-18.2: a nested function's local is stored when the outer function runs.
+        if wrapped.is_none() && !written.nested {
             let number = operand_index(self.program.functions.len()).at(span)?;
             self.program
                 .set_words(def.ofs, &[u32::from_ne_bytes(number.to_ne_bytes())])
@@ -635,6 +668,16 @@ impl<'a> Compiler<'a> {
                 *self.program.functions.get_mut(number).at(span)? = record;
             }
             None => self.program.functions.push(record),
+        }
+        // FTEF-18.2: `QCC_PR_FinaliseFunctions` writes each function's statements in the order
+        // of the records, so a nested function's follow its outer function's.
+        for nested in std::mem::take(&mut self.nested) {
+            self.function(
+                (&nested.written, &nested.declarator),
+                &nested.name,
+                nested.def,
+                FunctionInit::Body(&nested.body),
+            )?;
         }
         Ok(())
     }
@@ -708,20 +751,67 @@ impl<'a> Compiler<'a> {
         Ok(self.program.def(place).at(span)?.ofs)
     }
 
+    /// FTEF-18.2: a function defined in another's body takes the next record after its outer
+    /// function's and those nested before it, its own nested functions after it; its local is
+    /// stored with that record's number by `STORE_FNC`, unless it is static, whose word holds
+    /// the number; and its body is compiled once the outer function's record is made.
+    fn nested_function(
+        &mut self,
+        written: Written,
+        declarator: &ast::Declarator,
+        name: &SyntaxToken,
+        (id, place): (DefId, usize),
+        body: &ast::FunctionBody,
+    ) -> Lowered<()> {
+        let span = name.span();
+        let number = self.next_nested;
+        let records = body
+            .syntax()
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::FunctionBody)
+            .count();
+        self.next_nested = number.checked_add(records).at(span)?;
+        let word = u32::from_ne_bytes(operand_index(number).at(span)?.to_ne_bytes());
+        let ofs = self.program.def(place).at(span)?.ofs;
+        if written.nested {
+            // `tmp = QCC_MakeIntConst(f - functions)`, stored as any local's initialiser.
+            let constant = self
+                .program
+                .immediate(&Literal::Float(f32::from_bits(word)))
+                .at(span)?;
+            let from = self.program.def(constant).at(span)?.ofs;
+            self.program.emit(
+                Opcode::StoreFnc,
+                operand(from).at(span)?,
+                operand(ofs).at(span)?,
+            );
+        } else {
+            self.program.set_words(ofs, &[word]).at(span)?;
+        }
+        self.nested.push(Nested {
+            written,
+            declarator: declarator.clone(),
+            name: name.clone(),
+            def: (id, place),
+            body: body.clone(),
+        });
+        Ok(())
+    }
+
     /// FTEF-15.11: for a `wrap` definition's body, the function it wraps moves to a new
     /// record at the end, `prior*NAME`, as `QCC_PR_GenerateQCFunction` moves it, and `prior` in
     /// the body is a constant of its number; the wrapper takes the old record's number, which
     /// is returned. `None` for any other definition.
     fn wrap(
         &mut self,
-        declaration: &ast::Declaration,
+        written: &Written,
         def: &program::Def,
         init: FunctionInit<'_>,
         span: Span,
     ) -> Lowered<Option<usize>> {
         let wraps = self.dialect.has_fteqcc_extensions()
             && matches!(init, FunctionInit::Body(_))
-            && declares_wrap(declaration);
+            && written.wrap;
         let number = usize::try_from(self.program.word(def.ofs))
             .map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
         if !wraps || number == 0 {
@@ -750,11 +840,11 @@ impl<'a> Compiler<'a> {
     /// FTEQCC's C-style definition `float f(float x) { ... }` (FTE-17.1).
     fn parameters(
         &mut self,
-        declaration: &ast::Declaration,
+        ty: Option<&ast::Type>,
         declarator: &ast::Declarator,
         span: Span,
     ) -> Lowered<()> {
-        let list = match (declarator.params(), declaration.ty()) {
+        let list = match (declarator.params(), ty) {
             (Some(list), _) => list,
             (None, Some(ast::Type::Function(function))) => match function.params() {
                 Some(list) => list,
@@ -952,6 +1042,17 @@ impl<'a> Compiler<'a> {
                         );
                     }
                 }
+                // FTEF-18.2: a function-typed local given a body is a function of its own,
+                // compiled after this one.
+                Some(ast::Initializer::Body(body)) if self.dialect.has_fteqcc_extensions() => {
+                    let written = Written {
+                        ty: local.ty(),
+                        wrap: false,
+                        nested: !declares(local.syntax(), &Qualifier::Static),
+                    };
+                    let id = self.def_of(&name)?;
+                    self.nested_function(written, &declarator, &name, (id, place), &body)?;
+                }
                 // FTEF-32.13: a constant local's aggregate is its value at compile time, as a
                 // global's is.
                 Some(ast::Initializer::Aggregate(aggregate))
@@ -962,6 +1063,17 @@ impl<'a> Compiler<'a> {
                     let (ty, count) = (def.ty.clone(), def.count);
                     let words = self.aggregate_words(&ty, count, &aggregate)?;
                     self.program.initialise_words(place, &words).at(span)?;
+                }
+                // FTEF-32.15: a local array that is no constant stores each element's value
+                // to its element in turn, each time the function runs.
+                Some(ast::Initializer::Aggregate(aggregate))
+                    if self.dialect.has_fteqcc_extensions()
+                        && self
+                            .program
+                            .def(place)
+                            .is_some_and(|def| def.count.is_some()) =>
+                {
+                    self.store_elements(place, &aggregate)?;
                 }
                 Some(
                     ast::Initializer::Body(_)
@@ -1099,6 +1211,40 @@ impl<'a> Compiler<'a> {
     /// or not yet.
     fn declared_constant(&self, place: usize) -> bool {
         self.program.def(place).is_some_and(|def| def.constant)
+    }
+
+    /// FTEF-32.15: `QCC_PR_GenerateInitializerType`'s `finalnotconst` path for the local array
+    /// at `place`: each element of `aggregate` stored to its element by the `STORE_*` of its
+    /// type, or folded into the statement that made it (FTEF-29.13); elements past the last
+    /// written are left as they are, and more than the array has is an error.
+    fn store_elements(&mut self, place: usize, aggregate: &ast::AggregateInit) -> Lowered<()> {
+        let span = aggregate.syntax().span();
+        let def = self.program.def(place).at(span)?;
+        let (base, count) = (def.ofs, def.count.at(span)?);
+        let words = program::type_words(self.index, &def.ty);
+        let elements: Vec<ast::Expr> = aggregate.elements().collect();
+        if aggregate.syntax().children().count() != elements.len()
+            || u32::try_from(elements.len()).map_or(true, |n| n > count)
+        {
+            return Err(Abort::Internal(Internal::Unsupported, span));
+        }
+        for (i, element) in (0_u32..).zip(&elements) {
+            let at = element.syntax().span();
+            let ofs = i
+                .checked_mul(words)
+                .and_then(|w| w.checked_add(base))
+                .at(at)?;
+            let to = Value {
+                ofs,
+                kind: ValueKind::Def(place),
+            };
+            let value = self.expr(element)?;
+            let value = self.null_as(value, &self.type_of(&to));
+            if !self.fold_store(&to, &value) {
+                self.store_to(&to, &value, at)?;
+            }
+        }
+        Ok(())
     }
 
     fn constant(&self, place: usize) -> bool {
@@ -2709,6 +2855,15 @@ impl Compiler<'_> {
             kind: ValueKind::Return,
         })
     }
+}
+
+/// What a function's declaration writes besides its declarator: its type, whether it is a
+/// `wrap` definition (FTEF-15.11), and whether it is a nested function with no name of its own
+/// (FTEF-18.2).
+struct Written {
+    ty: Option<ast::Type>,
+    wrap: bool,
+    nested: bool,
 }
 
 /// What initialises a function.
