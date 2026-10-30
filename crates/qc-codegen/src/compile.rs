@@ -20,7 +20,7 @@ use qc_diag::{Code, Diagnostic, Span};
 use qc_progs::Function;
 use qc_progs::opcode::Opcode;
 use qc_sema::lower::declares_wrap;
-use qc_sema::{DefId, FileDiagnostic, FileId, FunctionType, ModuleIndex};
+use qc_sema::{DefId, DefKind, FileDiagnostic, FileId, FunctionType, ModuleIndex};
 use qc_syntax::ast::{self, AstNode};
 use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{Dialect, Parse, SyntaxToken};
@@ -318,7 +318,7 @@ impl<'a> Compiler<'a> {
             return;
         };
         // FTE-18.8: with autoprototyping a default the first pass did not find initialised, any
-        // but a literal, is no default.
+        // but a literal or a field, is no default.
         let kept = |value: &ast::Expr| {
             !self.autoproto || {
                 let mut value = value.clone();
@@ -328,7 +328,15 @@ impl<'a> Compiler<'a> {
                         None => break,
                     }
                 }
-                matches!(value, ast::Expr::Literal(_))
+                match &value {
+                    ast::Expr::Literal(_) => true,
+                    ast::Expr::Name(name) => name
+                        .name()
+                        .and_then(|token| self.names.def(self.file, token.span(), None))
+                        .and_then(|id| self.index.def(id))
+                        .is_some_and(|def| def.kind == DefKind::Field),
+                    _ => false,
+                }
             }
         };
         let defaults: Vec<Option<(FileId, ast::Expr)>> = list

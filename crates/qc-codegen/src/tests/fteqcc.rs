@@ -1563,15 +1563,17 @@ fn a_cast_default_passes_its_operand() {
     assert_eq!(t[0], st(StoreF, global(&p, "yes"), 4, 0));
 }
 
-// spec FTE-18.8: with autoprototyping a default naming a definition is no default, so the call
-// passes nothing for it, and a literal default is still passed
+// spec FTE-18.8: with autoprototyping a default naming a function is no default, so the call
+// passes nothing for it, and a literal or a field default is still passed
 #[test]
 fn autoprototyping_drops_a_named_default() {
     let p = fte_progs(
-        "#pragma autoproto\nfloat(entity e) yes = { return 1; };\n\
-         void(float a = 5, float(entity e) p = yes) f = {};\nvoid() t = { f(); };\n",
+        "#pragma autoproto\nfloat(entity e) yes = { return 1; };\n.string target;\n\
+         void(float a = 5, .string s = target, float(entity e) p = yes) f = {};\n\
+         void() t = { f(); };\n",
     );
     let t = body(&p, "t");
     assert_eq!(t[0], st(StoreF, immediate(&p, 5.0), 4, 0));
-    assert_eq!(t[1].op, u32::from(Opcode::Call1.number()));
+    assert_eq!(t[1], st(StoreF, global(&p, "target"), 7, 0));
+    assert_eq!(t[2].op, u32::from(Opcode::Call2.number()));
 }
