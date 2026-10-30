@@ -1186,3 +1186,20 @@ fn a_cast_within_a_basic_type_is_the_value() {
     );
     assert_eq!(t[1].op, u32::from(Done.number()));
 }
+
+// spec FTEF-23.4: with no row for a function and a float, a null operand converts to the
+// function's type, so `g != __NULL__` is NE_FNC
+#[test]
+fn a_null_compared_with_a_function_takes_its_type() {
+    let p = fte_progs("var void() g;\nfloat x;\nvoid() t = { x = g != __NULL__; x = 0 == g; };\n");
+    let t = body(&p, "t");
+    let null = immediate(&p, 0.0);
+    assert_eq!(
+        t[0],
+        st(Opcode::NeFnc, global(&p, "g"), null, global(&p, "x"))
+    );
+    assert_eq!(
+        t[1],
+        st(Opcode::EqFnc, null, global(&p, "g"), global(&p, "x"))
+    );
+}

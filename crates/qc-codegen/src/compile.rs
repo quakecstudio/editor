@@ -1434,7 +1434,9 @@ impl<'a> Compiler<'a> {
         // right operand retypes the return value the left one may be (QC-18.6).
         let a = self.type_of(left).etype();
         let b = self.type_of(right).etype();
-        let Some(row) = ops::select(operator, a, b, None) else {
+        let Some(row) =
+            ops::select(operator, a, b, None).or_else(|| self.null_row(operator, left, right))
+        else {
             if self.dialect.has_fteqcc_extensions()
                 && matches!(operator, Operator::And | Operator::Or)
             {
@@ -1464,6 +1466,27 @@ impl<'a> Compiler<'a> {
             ofs,
             kind: ValueKind::Temp(ValueType::simple(row.c)),
         })
+    }
+
+    /// FTEF-23.3, FTEF-23.4: under FTEQCC, with no row for the two types, the row whose operand
+    /// types are the other operand's twice when one operand is a null, a float constant whose
+    /// word is 0 such as `__NULL__`, which converts to any type at cost 2: `f != __NULL__` of a
+    /// function is `NE_FNC`.
+    fn null_row(&self, operator: Operator, left: &Value, right: &Value) -> Option<ops::Row> {
+        if !self.dialect.has_fteqcc_extensions() {
+            return None;
+        }
+        let null = |value: &Value| {
+            self.type_of(value).etype() == Etype::Float && self.constant_word(value) == Some(0)
+        };
+        let (a, b) = (self.type_of(left).etype(), self.type_of(right).etype());
+        if null(right) {
+            ops::select(operator, a, a, None)
+        } else if null(left) {
+            ops::select(operator, b, b, None)
+        } else {
+            None
+        }
     }
 
     /// FTEQCC's `&&` and `||` of operands that are not both floats, `OP_AND_ANY` and
