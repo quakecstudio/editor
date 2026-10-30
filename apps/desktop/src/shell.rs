@@ -213,6 +213,11 @@ impl Shell {
             .map(|editor| editor.view.state().buffer().text())
     }
 
+    /// Gives the editor the keyboard, as a click in it does.
+    pub fn focus_editor(&self, ctx: &egui::Context) {
+        ctx.memory_mut(|m| m.request_focus(Id::new(EDITOR_AREA)));
+    }
+
     /// Opens the project in `path`, through its command.
     ///
     /// # Errors
