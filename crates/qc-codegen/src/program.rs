@@ -575,18 +575,25 @@ pub(crate) fn operand(ofs: u32) -> Result<i32, Internal> {
     i32::try_from(ofs).map_err(|_| Internal::TooLarge)
 }
 
-/// The component `suffix` of vector definition `vector`: the definition `PR_GetDef` finds for
-/// the component's name in the vector's scope, the first with that name that is a global or
-/// belongs to the same function (QC-12.2), which the semantic model made with the vector or
-/// before it (QC-11.7).
+/// The component `suffix` of vector definition `vector`: the one the semantic model made with
+/// the vector, at its name and in its function (QC-11.7); else the first with that name that
+/// is a global or belongs to the same function (QC-12.2).
 pub(crate) fn component(index: &ModuleIndex, vector: DefId, suffix: &str) -> Option<DefId> {
     let base = index.def(vector)?;
     let name = format!("{}{suffix}", base.name);
-    index
+    let named = |d: &&qc_sema::Definition| d.name == name && d.member_of.is_none();
+    // QC-11.7: the components are made at the vector's name, so a local vector's are its own,
+    // not a global's of the same names, such as a field `velocity`'s `velocity_z`.
+    let made_with = index
         .defs
         .iter()
-        .position(|d| {
-            d.name == name && d.member_of.is_none() && (d.owner.is_none() || d.owner == base.owner)
+        .position(|d| named(&d) && d.location == base.location && d.owner == base.owner);
+    made_with
+        .or_else(|| {
+            index
+                .defs
+                .iter()
+                .position(|d| named(&d) && (d.owner.is_none() || d.owner == base.owner))
         })
         .map(DefId)
 }

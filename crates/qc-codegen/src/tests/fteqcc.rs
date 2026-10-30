@@ -1511,3 +1511,19 @@ fn a_field_parameter_makes_no_field_definition() {
         .collect();
     assert_eq!(fields, ["target"]);
 }
+
+// spec QC-11.7: a local vector's components are at its own words, not a field's components of
+// the same names
+#[test]
+fn a_local_vectors_components_are_its_own() {
+    let p = fte_progs(
+        ".vector velocity;\nvoid() t = { vector velocity; velocity = '1 2 3'; velocity_z = 200; };\n",
+    );
+    let t = body(&p, "t");
+    let local = t[0].b;
+    assert_eq!(
+        t[0],
+        st(StoreV, immediate_vector(&p, [1.0, 2.0, 3.0]), local, 0)
+    );
+    assert_eq!(t[1], st(StoreF, immediate(&p, 200.0), local + 2, 0));
+}
