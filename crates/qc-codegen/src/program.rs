@@ -528,6 +528,12 @@ impl Program {
     ) -> Result<u32, Internal> {
         let words = if result == Etype::Vector { 3 } else { 1 };
         let c = self.allocate(words)?;
+        self.emit_into(op, a, b, c)?;
+        Ok(c)
+    }
+
+    /// `QCC_PR_SimpleStatement`: `op` of `a` and `b` into the global `c` the caller chose.
+    pub(crate) fn emit_into(&mut self, op: Opcode, a: u32, b: u32, c: u32) -> Result<(), Internal> {
         self.origins.push(self.origin);
         self.statements.push(Statement {
             op: u32::from(op.number()),
@@ -535,7 +541,7 @@ impl Program {
             b: operand(b)?,
             c: operand(c)?,
         });
-        Ok(c)
+        Ok(())
     }
 }
 

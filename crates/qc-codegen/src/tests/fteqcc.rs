@@ -1388,3 +1388,23 @@ fn a_wrap_calls_the_body_it_moved() {
         st(Opcode::Call0, global(&p, "b"), 0, 0)
     );
 }
+
+// spec FTE-19.12: `v & w` of vectors is BITAND_F of each component into a vector temporary, and
+// `v ^ w` is `(v & ~w) | (w & ~v)` with each `~` as SUB_V from '-1 -1 -1'
+#[test]
+fn vector_bit_operators_work_by_component() {
+    let p = fte_progs("vector v, w, r;\nvoid() t = { r = v & w; r = v ^ w; };\n");
+    let (v, w) = (global(&p, "v"), global(&p, "w"));
+    let t = body(&p, "t");
+    let c = t[0].c;
+    for i in 0..3 {
+        let s = t[usize::try_from(i).unwrap()];
+        assert_eq!(s, st(BitAnd, v + i, w + i, c + i));
+    }
+    assert_eq!(t[3], st(StoreV, c, global(&p, "r"), 0));
+    let minus_one = immediate_vector(&p, [-1.0; 3]);
+    assert_eq!(t[4], st(SubV, minus_one, w, t[4].c));
+    assert_eq!(t[5], st(BitAnd, v, t[4].c, t[5].c));
+    assert_eq!(t[8], st(SubV, minus_one, v, t[8].c));
+    assert_eq!(t[12].op, u32::from(BitOr.number()));
+}

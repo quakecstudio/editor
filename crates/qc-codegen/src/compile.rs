@@ -1523,15 +1523,24 @@ impl<'a> Compiler<'a> {
         self.operate(operator, &left, &right, (op_span, span))
     }
 
-    /// FTEQCC's `a ^ b` on the vanilla opcodes (FTE-19.7), `OP_BITXOR_F`'s emulation:
-    /// `(a & ~b) | (b & ~a)`, each `~` as `-1 - x`.
+    /// FTEQCC's `a ^ b` on the vanilla opcodes (FTE-19.7, FTE-19.12), `OP_BITXOR_F`'s and
+    /// `OP_BITXOR_V`'s emulation: `(a & ~b) | (b & ~a)`, each `~` as `-1 - x`, a vector's
+    /// `'-1 -1 -1' - x`.
     fn xor(&mut self, left: &Value, right: &Value, spans: (Span, Span)) -> Lowered<Value> {
         let span = spans.1;
-        if self.type_of(left).etype() != Etype::Float || self.type_of(right).etype() != Etype::Float
-        {
+        let etype = self.type_of(left).etype();
+        if !matches!(etype, Etype::Float | Etype::Vector) || self.type_of(right).etype() != etype {
             return Err(Abort::Internal(Internal::Unsupported, spans.0));
         }
-        let minus_one = self.float_literal(-1.0, span)?;
+        let minus_one = if etype == Etype::Vector {
+            let place = self
+                .program
+                .immediate(&Literal::Vector([-1.0; 3]))
+                .at(span)?;
+            self.def_value(place, span)?
+        } else {
+            self.float_literal(-1.0, span)?
+        };
         let not_b = self.operate(Operator::Sub, &minus_one, right, spans)?;
         let a_only = self.operate(Operator::BitAnd, left, &not_b, spans)?;
         let not_a = self.operate(Operator::Sub, &minus_one, left, spans)?;
@@ -1559,6 +1568,14 @@ impl<'a> Compiler<'a> {
                 && matches!(operator, Operator::And | Operator::Or)
             {
                 return self.any_logic(operator, left, right, op_span);
+            }
+            // FTE-19.12: `v & w` and `v | w` of vectors are `BITAND_F` or `BITOR_F` of each
+            // component into a vector temporary.
+            if self.dialect.has_fteqcc_extensions()
+                && matches!(operator, Operator::BitAnd | Operator::BitOr)
+                && (a, b) == (Etype::Vector, Etype::Vector)
+            {
+                return self.vector_bits(operator, left, right, span);
             }
             // FTE-19.9: `v / f` is `OP_DIV_VF`'s emulation, `v * (1 / f)`.
             if self.dialect.has_fteqcc_extensions()
@@ -1623,6 +1640,33 @@ impl<'a> Compiler<'a> {
         } else {
             None
         }
+    }
+
+    /// FTE-19.12: `OP_BITAND_V` or `OP_BITOR_V` on the vanilla opcodes, the float opcode of
+    /// each component pair into the matching word of a vector temporary.
+    fn vector_bits(
+        &mut self,
+        operator: Operator,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> Lowered<Value> {
+        let op = if operator == Operator::BitAnd {
+            Opcode::BitAnd
+        } else {
+            Opcode::BitOr
+        };
+        let temp = self.program.allocate(3).at(span)?;
+        for word in 0..3_u32 {
+            let a = left.ofs.checked_add(word).at(span)?;
+            let b = right.ofs.checked_add(word).at(span)?;
+            let c = temp.checked_add(word).at(span)?;
+            self.program.emit_into(op, a, b, c).at(span)?;
+        }
+        Ok(Value {
+            ofs: temp,
+            kind: ValueKind::Temp(ValueType::simple(Etype::Vector)),
+        })
     }
 
     /// FTEQCC's `&&` and `||` of operands that are not both floats, `OP_AND_ANY` and

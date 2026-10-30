@@ -692,6 +692,13 @@ and sets flags with `self.flags &~= FL_ONGROUND` and `other.flags (+) FL_INSHELT
   defined: cannot emulate OP_LSHIFT_F*", which this profile does not lower. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_StatementFlags`.
+- **FTE-19.12** `v & w` and `v | w` of vectors are `OP_BITAND_V` and `OP_BITOR_V`, emulated on
+  the vanilla opcodes as `BITAND_F` or `BITOR_F` of each component pair into the matching word of
+  a vector temporary (`QCC_PR_SimpleStatement(op, var_a, var_b, var_c, true); var_a.ofs++;
+  var_b.ofs++; var_c.ofs++;` three times), and `v ^ w` of vectors is `OP_BITXOR_V`'s `(a & ~b) |
+  (b & ~a)` with each `~` as `OP_BITNOT_V`, `'-1 -1 -1' - x` by `SUB_V`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags`.
 ## FTE-20 Further literals
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_Lex`, `QCC_PR_LexNumber` and `QCC_PR_LexEscapedCodepoint`,
