@@ -33,8 +33,14 @@ type H = Harness<'static, Option<App>>;
 
 /// A headless window with `project` open and `file` in the editor, which has the keyboard.
 fn harness_in(project: &Path, file: &str) -> H {
+    harness_stepping(project, file, 0.25)
+}
+
+/// [`harness_in`] whose steps are `dt` seconds apart.
+fn harness_stepping(project: &Path, file: &str, dt: f32) -> H {
     let mut harness = Harness::builder()
         .with_size([1440.0, 900.0])
+        .with_step_dt(dt)
         .build_ui_state(
             |ui, app: &mut Option<App>| {
                 if let Some(app) = app {
@@ -491,7 +497,8 @@ fn the_find_field_finds_on_enter_only() {
 
 #[test]
 fn switching_files_sends_the_edits_at_once() {
-    let mut harness = harness("src/world.qc");
+    // Steps of 50 ms, so the switch comes well before typing could settle.
+    let mut harness = harness_stepping(&fixture(), "src/world.qc", 0.05);
     let world = fixture().join("src/world.qc");
     let in_world = |harness: &H| {
         let problems = app(harness).shell().workbench().problems();
@@ -499,11 +506,21 @@ fn switching_files_sends_the_edits_at_once() {
     };
     let before = in_world(&harness);
     harness.event(Event::Text("float = 1; ".to_owned()));
-    // One step types it; a quarter of a second is not long enough for typing to settle.
     harness.step();
-    assert_eq!(in_world(&harness), before, "not sent yet");
+    harness.step();
+    assert_eq!(
+        in_world(&harness),
+        before,
+        "not sent while the editor stays"
+    );
     harness.get_by_label("defs.qc").click();
-    harness.step();
+    for _ in 0..3 {
+        harness.step();
+    }
+    assert_eq!(
+        app(&harness).shell().workbench().open().unwrap().path(),
+        fixture().join("defs.qc")
+    );
     assert!(in_world(&harness) > before, "sent when the editor moved on");
 }
 
