@@ -8,6 +8,7 @@
 //! moves.
 
 use qc_builtins::math::{f64_to_f32_public, float_to_int};
+use qc_edict::EdictNumber;
 use qc_types::Slot;
 use qc_vm::{ErrorKind, RunError};
 
@@ -100,7 +101,7 @@ impl SimCall<'_, '_, '_> {
         self.context
             .machine_view()
             .edicts()
-            .is_free(n)
+            .is_free(EdictNumber::new(n))
             .unwrap_or(true)
     }
 

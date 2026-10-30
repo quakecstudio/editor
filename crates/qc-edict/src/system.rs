@@ -27,676 +27,224 @@ pub struct SysVar {
     pub etype: Etype,
 }
 
-/// The 64 system globals, slots 28 to 91, in slot order.
-///
-/// Implements EDICT-2.1, from `globalvars_t` in `WinQuake/progdefs.q1`: the 64 slots from
-/// `PROGS_RESERVED_OFS` (28) up to but not including `end_sys_globals` (92). `end_sys_globals`
-/// is not itself a system global (EDICT-2.2).
-pub const SYSTEM_GLOBALS: &[SysVar] = &[
-    SysVar {
-        name: "self",
-        slot: 28,
-        etype: Etype::Entity,
-    },
-    SysVar {
-        name: "other",
-        slot: 29,
-        etype: Etype::Entity,
-    },
-    SysVar {
-        name: "world",
-        slot: 30,
-        etype: Etype::Entity,
-    },
-    SysVar {
-        name: "time",
-        slot: 31,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "frametime",
-        slot: 32,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "force_retouch",
-        slot: 33,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "mapname",
-        slot: 34,
-        etype: Etype::String,
-    },
-    SysVar {
-        name: "deathmatch",
-        slot: 35,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "coop",
-        slot: 36,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "teamplay",
-        slot: 37,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "serverflags",
-        slot: 38,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "total_secrets",
-        slot: 39,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "total_monsters",
-        slot: 40,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "found_secrets",
-        slot: 41,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "killed_monsters",
-        slot: 42,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm1",
-        slot: 43,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm2",
-        slot: 44,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm3",
-        slot: 45,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm4",
-        slot: 46,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm5",
-        slot: 47,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm6",
-        slot: 48,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm7",
-        slot: 49,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm8",
-        slot: 50,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm9",
-        slot: 51,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm10",
-        slot: 52,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm11",
-        slot: 53,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm12",
-        slot: 54,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm13",
-        slot: 55,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm14",
-        slot: 56,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm15",
-        slot: 57,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "parm16",
-        slot: 58,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "v_forward",
-        slot: 59,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "v_up",
-        slot: 62,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "v_right",
-        slot: 65,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "trace_allsolid",
-        slot: 68,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "trace_startsolid",
-        slot: 69,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "trace_fraction",
-        slot: 70,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "trace_endpos",
-        slot: 71,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "trace_plane_normal",
-        slot: 74,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "trace_plane_dist",
-        slot: 77,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "trace_ent",
-        slot: 78,
-        etype: Etype::Entity,
-    },
-    SysVar {
-        name: "trace_inopen",
-        slot: 79,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "trace_inwater",
-        slot: 80,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "msg_entity",
-        slot: 81,
-        etype: Etype::Entity,
-    },
-    SysVar {
-        name: "main",
-        slot: 82,
-        etype: Etype::Function,
-    },
-    SysVar {
-        name: "StartFrame",
-        slot: 83,
-        etype: Etype::Function,
-    },
-    SysVar {
-        name: "PlayerPreThink",
-        slot: 84,
-        etype: Etype::Function,
-    },
-    SysVar {
-        name: "PlayerPostThink",
-        slot: 85,
-        etype: Etype::Function,
-    },
-    SysVar {
-        name: "ClientKill",
-        slot: 86,
-        etype: Etype::Function,
-    },
-    SysVar {
-        name: "ClientConnect",
-        slot: 87,
-        etype: Etype::Function,
-    },
-    SysVar {
-        name: "PutClientInServer",
-        slot: 88,
-        etype: Etype::Function,
-    },
-    SysVar {
-        name: "ClientDisconnect",
-        slot: 89,
-        etype: Etype::Function,
-    },
-    SysVar {
-        name: "SetNewParms",
-        slot: 90,
-        etype: Etype::Function,
-    },
-    SysVar {
-        name: "SetChangeParms",
-        slot: 91,
-        etype: Etype::Function,
-    },
-];
+/// Declares a table of system variables and an enum with one variant each, from one list, so
+/// the two cannot disagree: `$table` is the `[SysVar]` in slot order, `$enum` names each entry,
+/// and `$enum::var` is its row.
+macro_rules! system_vars {
+    (
+        $(#[$table_meta:meta])*
+        $table:ident;
+        $(#[$enum_meta:meta])*
+        $enum:ident;
+        $($variant:ident = ($name:literal, $slot:literal, $etype:ident),)*
+    ) => {
+        $(#[$table_meta])*
+        pub const $table: &[SysVar] = &[$(SysVar {
+            name: $name,
+            slot: $slot,
+            etype: Etype::$etype,
+        }),*];
 
-/// The 105 system fields, slots 0 to 104, in slot order.
-///
-/// Implements EDICT-3.1, from `entvars_t` in `WinQuake/progdefs.q1`: every field slot up to
-/// but not including `end_sys_fields` (105). A mod's own fields follow from slot 105
-/// (EDICT-3.2).
-pub const SYSTEM_FIELDS: &[SysVar] = &[
-    SysVar {
-        name: "modelindex",
-        slot: 0,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "absmin",
-        slot: 1,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "absmax",
-        slot: 4,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "ltime",
-        slot: 7,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "movetype",
-        slot: 8,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "solid",
-        slot: 9,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "origin",
-        slot: 10,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "oldorigin",
-        slot: 13,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "velocity",
-        slot: 16,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "angles",
-        slot: 19,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "avelocity",
-        slot: 22,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "punchangle",
-        slot: 25,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "classname",
-        slot: 28,
-        etype: Etype::String,
-    },
-    SysVar {
-        name: "model",
-        slot: 29,
-        etype: Etype::String,
-    },
-    SysVar {
-        name: "frame",
-        slot: 30,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "skin",
-        slot: 31,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "effects",
-        slot: 32,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "mins",
-        slot: 33,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "maxs",
-        slot: 36,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "size",
-        slot: 39,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "touch",
-        slot: 42,
-        etype: Etype::Function,
-    },
-    SysVar {
-        name: "use",
-        slot: 43,
-        etype: Etype::Function,
-    },
-    SysVar {
-        name: "think",
-        slot: 44,
-        etype: Etype::Function,
-    },
-    SysVar {
-        name: "blocked",
-        slot: 45,
-        etype: Etype::Function,
-    },
-    SysVar {
-        name: "nextthink",
-        slot: 46,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "groundentity",
-        slot: 47,
-        etype: Etype::Entity,
-    },
-    SysVar {
-        name: "health",
-        slot: 48,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "frags",
-        slot: 49,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "weapon",
-        slot: 50,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "weaponmodel",
-        slot: 51,
-        etype: Etype::String,
-    },
-    SysVar {
-        name: "weaponframe",
-        slot: 52,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "currentammo",
-        slot: 53,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "ammo_shells",
-        slot: 54,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "ammo_nails",
-        slot: 55,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "ammo_rockets",
-        slot: 56,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "ammo_cells",
-        slot: 57,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "items",
-        slot: 58,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "takedamage",
-        slot: 59,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "chain",
-        slot: 60,
-        etype: Etype::Entity,
-    },
-    SysVar {
-        name: "deadflag",
-        slot: 61,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "view_ofs",
-        slot: 62,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "button0",
-        slot: 65,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "button1",
-        slot: 66,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "button2",
-        slot: 67,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "impulse",
-        slot: 68,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "fixangle",
-        slot: 69,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "v_angle",
-        slot: 70,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "idealpitch",
-        slot: 73,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "netname",
-        slot: 74,
-        etype: Etype::String,
-    },
-    SysVar {
-        name: "enemy",
-        slot: 75,
-        etype: Etype::Entity,
-    },
-    SysVar {
-        name: "flags",
-        slot: 76,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "colormap",
-        slot: 77,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "team",
-        slot: 78,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "max_health",
-        slot: 79,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "teleport_time",
-        slot: 80,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "armortype",
-        slot: 81,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "armorvalue",
-        slot: 82,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "waterlevel",
-        slot: 83,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "watertype",
-        slot: 84,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "ideal_yaw",
-        slot: 85,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "yaw_speed",
-        slot: 86,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "aiment",
-        slot: 87,
-        etype: Etype::Entity,
-    },
-    SysVar {
-        name: "goalentity",
-        slot: 88,
-        etype: Etype::Entity,
-    },
-    SysVar {
-        name: "spawnflags",
-        slot: 89,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "target",
-        slot: 90,
-        etype: Etype::String,
-    },
-    SysVar {
-        name: "targetname",
-        slot: 91,
-        etype: Etype::String,
-    },
-    SysVar {
-        name: "dmg_take",
-        slot: 92,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "dmg_save",
-        slot: 93,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "dmg_inflictor",
-        slot: 94,
-        etype: Etype::Entity,
-    },
-    SysVar {
-        name: "owner",
-        slot: 95,
-        etype: Etype::Entity,
-    },
-    SysVar {
-        name: "movedir",
-        slot: 96,
-        etype: Etype::Vector,
-    },
-    SysVar {
-        name: "message",
-        slot: 99,
-        etype: Etype::String,
-    },
-    SysVar {
-        name: "sounds",
-        slot: 100,
-        etype: Etype::Float,
-    },
-    SysVar {
-        name: "noise",
-        slot: 101,
-        etype: Etype::String,
-    },
-    SysVar {
-        name: "noise1",
-        slot: 102,
-        etype: Etype::String,
-    },
-    SysVar {
-        name: "noise2",
-        slot: 103,
-        etype: Etype::String,
-    },
-    SysVar {
-        name: "noise3",
-        slot: 104,
-        etype: Etype::String,
-    },
-];
+        $(#[$enum_meta])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub enum $enum {
+            $(
+                #[doc = concat!("`", $name, "`, slot ", stringify!($slot), ".")]
+                $variant,
+            )*
+        }
+
+        impl $enum {
+            /// Every one, in slot order.
+            pub const ALL: &[Self] = &[$(Self::$variant),*];
+
+            /// Its row of the table: name, first slot and type.
+            #[must_use]
+            pub const fn var(self) -> SysVar {
+                match self {
+                    $(Self::$variant => SysVar {
+                        name: $name,
+                        slot: $slot,
+                        etype: Etype::$etype,
+                    },)*
+                }
+            }
+
+            /// The slot its value starts at.
+            #[must_use]
+            pub const fn slot(self) -> usize {
+                self.var().slot
+            }
+
+            /// The slot its value starts at, as the VM addresses globals and fields.
+            #[must_use]
+            pub const fn ofs(self) -> i32 {
+                match self {
+                    $(Self::$variant => $slot,)*
+                }
+            }
+
+            /// Its name, as QuakeC source writes it.
+            #[must_use]
+            pub const fn name(self) -> &'static str {
+                self.var().name
+            }
+        }
+    };
+}
+
+system_vars! {
+    /// The 64 system globals, slots 28 to 91, in slot order.
+    ///
+    /// Implements EDICT-2.1, from `globalvars_t` in `WinQuake/progdefs.q1`: the 64 slots from
+    /// `PROGS_RESERVED_OFS` (28) up to but not including `end_sys_globals` (92). `end_sys_globals`
+    /// is not itself a system global (EDICT-2.2).
+    SYSTEM_GLOBALS;
+    /// One system global, by its name in `progdefs.q1`; its row of [`SYSTEM_GLOBALS`] is [`SysGlobal::var`].
+    SysGlobal;
+    SelfEntity = ("self", 28, Entity),
+    Other = ("other", 29, Entity),
+    World = ("world", 30, Entity),
+    Time = ("time", 31, Float),
+    Frametime = ("frametime", 32, Float),
+    ForceRetouch = ("force_retouch", 33, Float),
+    Mapname = ("mapname", 34, String),
+    Deathmatch = ("deathmatch", 35, Float),
+    Coop = ("coop", 36, Float),
+    Teamplay = ("teamplay", 37, Float),
+    Serverflags = ("serverflags", 38, Float),
+    TotalSecrets = ("total_secrets", 39, Float),
+    TotalMonsters = ("total_monsters", 40, Float),
+    FoundSecrets = ("found_secrets", 41, Float),
+    KilledMonsters = ("killed_monsters", 42, Float),
+    Parm1 = ("parm1", 43, Float),
+    Parm2 = ("parm2", 44, Float),
+    Parm3 = ("parm3", 45, Float),
+    Parm4 = ("parm4", 46, Float),
+    Parm5 = ("parm5", 47, Float),
+    Parm6 = ("parm6", 48, Float),
+    Parm7 = ("parm7", 49, Float),
+    Parm8 = ("parm8", 50, Float),
+    Parm9 = ("parm9", 51, Float),
+    Parm10 = ("parm10", 52, Float),
+    Parm11 = ("parm11", 53, Float),
+    Parm12 = ("parm12", 54, Float),
+    Parm13 = ("parm13", 55, Float),
+    Parm14 = ("parm14", 56, Float),
+    Parm15 = ("parm15", 57, Float),
+    Parm16 = ("parm16", 58, Float),
+    VForward = ("v_forward", 59, Vector),
+    VUp = ("v_up", 62, Vector),
+    VRight = ("v_right", 65, Vector),
+    TraceAllsolid = ("trace_allsolid", 68, Float),
+    TraceStartsolid = ("trace_startsolid", 69, Float),
+    TraceFraction = ("trace_fraction", 70, Float),
+    TraceEndpos = ("trace_endpos", 71, Vector),
+    TracePlaneNormal = ("trace_plane_normal", 74, Vector),
+    TracePlaneDist = ("trace_plane_dist", 77, Float),
+    TraceEnt = ("trace_ent", 78, Entity),
+    TraceInopen = ("trace_inopen", 79, Float),
+    TraceInwater = ("trace_inwater", 80, Float),
+    MsgEntity = ("msg_entity", 81, Entity),
+    Main = ("main", 82, Function),
+    Startframe = ("StartFrame", 83, Function),
+    Playerprethink = ("PlayerPreThink", 84, Function),
+    Playerpostthink = ("PlayerPostThink", 85, Function),
+    Clientkill = ("ClientKill", 86, Function),
+    Clientconnect = ("ClientConnect", 87, Function),
+    Putclientinserver = ("PutClientInServer", 88, Function),
+    Clientdisconnect = ("ClientDisconnect", 89, Function),
+    Setnewparms = ("SetNewParms", 90, Function),
+    Setchangeparms = ("SetChangeParms", 91, Function),
+}
+
+system_vars! {
+    /// The 105 system fields, slots 0 to 104, in slot order.
+    ///
+    /// Implements EDICT-3.1, from `entvars_t` in `WinQuake/progdefs.q1`: every field slot up to
+    /// but not including `end_sys_fields` (105). A mod's own fields follow from slot 105
+    /// (EDICT-3.2).
+    SYSTEM_FIELDS;
+    /// One system field, by its name in `progdefs.q1`; its row of [`SYSTEM_FIELDS`] is [`SysField::var`].
+    SysField;
+    Modelindex = ("modelindex", 0, Float),
+    Absmin = ("absmin", 1, Vector),
+    Absmax = ("absmax", 4, Vector),
+    Ltime = ("ltime", 7, Float),
+    Movetype = ("movetype", 8, Float),
+    Solid = ("solid", 9, Float),
+    Origin = ("origin", 10, Vector),
+    Oldorigin = ("oldorigin", 13, Vector),
+    Velocity = ("velocity", 16, Vector),
+    Angles = ("angles", 19, Vector),
+    Avelocity = ("avelocity", 22, Vector),
+    Punchangle = ("punchangle", 25, Vector),
+    Classname = ("classname", 28, String),
+    Model = ("model", 29, String),
+    Frame = ("frame", 30, Float),
+    Skin = ("skin", 31, Float),
+    Effects = ("effects", 32, Float),
+    Mins = ("mins", 33, Vector),
+    Maxs = ("maxs", 36, Vector),
+    Size = ("size", 39, Vector),
+    Touch = ("touch", 42, Function),
+    Use = ("use", 43, Function),
+    Think = ("think", 44, Function),
+    Blocked = ("blocked", 45, Function),
+    Nextthink = ("nextthink", 46, Float),
+    Groundentity = ("groundentity", 47, Entity),
+    Health = ("health", 48, Float),
+    Frags = ("frags", 49, Float),
+    Weapon = ("weapon", 50, Float),
+    Weaponmodel = ("weaponmodel", 51, String),
+    Weaponframe = ("weaponframe", 52, Float),
+    Currentammo = ("currentammo", 53, Float),
+    AmmoShells = ("ammo_shells", 54, Float),
+    AmmoNails = ("ammo_nails", 55, Float),
+    AmmoRockets = ("ammo_rockets", 56, Float),
+    AmmoCells = ("ammo_cells", 57, Float),
+    Items = ("items", 58, Float),
+    Takedamage = ("takedamage", 59, Float),
+    Chain = ("chain", 60, Entity),
+    Deadflag = ("deadflag", 61, Float),
+    ViewOfs = ("view_ofs", 62, Vector),
+    Button0 = ("button0", 65, Float),
+    Button1 = ("button1", 66, Float),
+    Button2 = ("button2", 67, Float),
+    Impulse = ("impulse", 68, Float),
+    Fixangle = ("fixangle", 69, Float),
+    VAngle = ("v_angle", 70, Vector),
+    Idealpitch = ("idealpitch", 73, Float),
+    Netname = ("netname", 74, String),
+    Enemy = ("enemy", 75, Entity),
+    Flags = ("flags", 76, Float),
+    Colormap = ("colormap", 77, Float),
+    Team = ("team", 78, Float),
+    MaxHealth = ("max_health", 79, Float),
+    TeleportTime = ("teleport_time", 80, Float),
+    Armortype = ("armortype", 81, Float),
+    Armorvalue = ("armorvalue", 82, Float),
+    Waterlevel = ("waterlevel", 83, Float),
+    Watertype = ("watertype", 84, Float),
+    IdealYaw = ("ideal_yaw", 85, Float),
+    YawSpeed = ("yaw_speed", 86, Float),
+    Aiment = ("aiment", 87, Entity),
+    Goalentity = ("goalentity", 88, Entity),
+    Spawnflags = ("spawnflags", 89, Float),
+    Target = ("target", 90, String),
+    Targetname = ("targetname", 91, String),
+    DmgTake = ("dmg_take", 92, Float),
+    DmgSave = ("dmg_save", 93, Float),
+    DmgInflictor = ("dmg_inflictor", 94, Entity),
+    Owner = ("owner", 95, Entity),
+    Movedir = ("movedir", 96, Vector),
+    Message = ("message", 99, String),
+    Sounds = ("sounds", 100, Float),
+    Noise = ("noise", 101, String),
+    Noise1 = ("noise1", 102, String),
+    Noise2 = ("noise2", 103, String),
+    Noise3 = ("noise3", 104, String),
+}
 
 /// The system global at slot `slot`, if one starts there.
 ///

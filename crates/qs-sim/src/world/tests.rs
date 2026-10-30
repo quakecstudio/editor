@@ -9,6 +9,7 @@
     reason = "test code: a failed unwrap, index or overflow is a failed test"
 )]
 
+use qc_edict::EdictNumber;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
@@ -204,7 +205,7 @@ impl World {
     fn float(&self, n: usize, name: &str) -> f32 {
         self.machine
             .edicts()
-            .field(n, field_slot(name))
+            .field(EdictNumber::new(n), field_slot(name))
             .map_or(f32::NAN, Slot::as_f32)
     }
 
@@ -213,7 +214,7 @@ impl World {
         [0, 1, 2].map(|i| {
             self.machine
                 .edicts()
-                .field(n, first + i)
+                .field(EdictNumber::new(n), first + i)
                 .map_or(f32::NAN, Slot::as_f32)
         })
     }
@@ -221,7 +222,7 @@ impl World {
     fn entity_field(&self, n: usize, name: &str) -> i32 {
         self.machine
             .edicts()
-            .field(n, field_slot(name))
+            .field(EdictNumber::new(n), field_slot(name))
             .map_or(-1, Slot::as_i32)
     }
 
@@ -467,7 +468,10 @@ fn placing_links_and_removing_unlinks() {
 fn spawning_frees_unknown_classes() {
     let world = world("", &entity("nothing_here", "0 0 0", ""));
     assert!(!world.linked(2));
-    assert_eq!(world.machine.edicts().is_free(2), Some(true));
+    assert_eq!(
+        world.machine.edicts().is_free(EdictNumber::new(2)),
+        Some(true)
+    );
 }
 
 /// A BSP29 file of `spec`'s planes, nodes, leaves and clipnodes and one model over them.
@@ -1476,7 +1480,12 @@ fn connecting_runs_the_entry_points() {
     run.world
         .machine
         .edicts_mut()
-        .set_field(P, field_slot("armorvalue"), Slot::from_f32(9.0));
+        .set_field(
+            EdictNumber::new(P),
+            field_slot("armorvalue"),
+            Slot::from_f32(9.0),
+        )
+        .unwrap();
     assert!(run.world.player_view().is_none());
     run.connect();
     let w = &run.world;
@@ -2279,11 +2288,15 @@ fn falls_and_their_sound() {
     let mut run = run_on(&ledge(), &source, &entities);
     for n in 2..6 {
         if n == 5 {
-            run.world.machine.edicts_mut().set_field(
-                n,
-                field_slot("velocity") + 2,
-                Slot::from_f32(-400.0),
-            );
+            run.world
+                .machine
+                .edicts_mut()
+                .set_field(
+                    EdictNumber::new(n),
+                    field_slot("velocity") + 2,
+                    Slot::from_f32(-400.0),
+                )
+                .unwrap();
         }
     }
     run.frames(1, 0.1).unwrap();

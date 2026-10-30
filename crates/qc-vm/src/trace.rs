@@ -10,6 +10,7 @@
 //! is a format of this project, not a port.
 
 use qc_edict::EDICT_HEADER_SIZE;
+use qc_edict::EdictNumber;
 use qc_progs::Progs;
 use qc_trace::{Changes, FieldChange, GlobalChange, Header, Record, Text, Trace as TraceData};
 use qc_types::Slot;
@@ -127,7 +128,10 @@ impl Trace {
 fn snapshot_fields(machine: &Machine) -> Vec<Vec<Slot>> {
     let mut out = Vec::new();
     for number in 0..machine.edicts().num_edicts() {
-        let slots = machine.edicts().fields(number).unwrap_or(&[]);
+        let slots = machine
+            .edicts()
+            .fields(EdictNumber::new(number))
+            .unwrap_or(&[]);
         out.push(slots.to_vec());
     }
     out

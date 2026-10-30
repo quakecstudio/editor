@@ -17,6 +17,8 @@ use core::fmt;
 use qc_progs::limits::LIMIT_MAX_EDICTS;
 use qc_types::{EntityRef, Slot};
 
+use crate::EdictNumber;
+use crate::system::SysField;
 use crate::{EDICT_FREED_NEXTTHINK, EDICT_REUSE_DELAY, EDICT_REUSE_GRACE, EdictLayout};
 
 /// The field slots id's `ED_Free` sets to 0 (EDICT-7.1), by their slots from EDICT-3.1.
@@ -26,10 +28,20 @@ use crate::{EDICT_FREED_NEXTTHINK, EDICT_REUSE_DELAY, EDICT_REUSE_GRACE, EdictLa
 /// are vectors, each cleared in full. `nextthink` (46) goes to [`EDICT_FREED_NEXTTHINK`]
 /// instead. `absmin` and `absmax` are not cleared. From id's `ED_Free` in
 /// `WinQuake/pr_edict.c`.
-const FREE_ZEROED_SLOTS: [usize; 13] = [29, 59, 0, 77, 31, 30, 9, 10, 11, 12, 19, 20, 21];
+const FREE_ZEROED: [SysField; 9] = [
+    SysField::Model,
+    SysField::Takedamage,
+    SysField::Modelindex,
+    SysField::Colormap,
+    SysField::Skin,
+    SysField::Frame,
+    SysField::Solid,
+    SysField::Origin,
+    SysField::Angles,
+];
 
 /// The `nextthink` field slot (EDICT-3.1), which `ED_Free` sets to -1, not 0.
-const FREE_NEXTTHINK_SLOT: usize = 46;
+const FREE_NEXTTHINK_SLOT: usize = SysField::Nextthink.slot();
 
 /// One edict: the header fields the store models and its field slots.
 ///
@@ -78,6 +90,13 @@ pub enum EdictError {
         /// The count asked for.
         maxclients: usize,
     },
+    /// A field write names an edict the array does not hold, or a slot past its fields.
+    NoField {
+        /// The edict.
+        number: EdictNumber,
+        /// The field slot.
+        field: usize,
+    },
 }
 
 impl fmt::Display for EdictError {
@@ -88,6 +107,9 @@ impl fmt::Display for EdictError {
             Self::NoFreeEdicts => f.write_str("ED_Alloc: no free edicts"),
             Self::BadMaxclients { maxclients } => {
                 write!(f, "maxclients {maxclients} is not 0 to 16")
+            }
+            Self::NoField { number, field } => {
+                write!(f, "edict {number} has no field slot {field}")
             }
         }
     }
@@ -158,20 +180,27 @@ impl EdictStore {
         self.maxclients
     }
 
+    /// Whether edict `number` is a client's: 1 to [`maxclients`](Self::maxclients)
+    /// (EDICT-5.1), the range id's builtins test as `entnum < 1 || entnum > svs.maxclients`.
+    #[must_use]
+    pub const fn is_client(&self, number: EdictNumber) -> bool {
+        number.index() >= 1 && number.index() <= self.maxclients
+    }
+
     /// Whether edict `number` is free, id's `edict_t.free`.
     ///
     /// Implements EDICT-6.1. Returns `None` for a number the array does not hold.
     #[must_use]
-    pub fn is_free(&self, number: usize) -> Option<bool> {
-        self.edicts.get(number).map(|edict| edict.free)
+    pub fn is_free(&self, number: EdictNumber) -> Option<bool> {
+        self.edicts.get(number.index()).map(|edict| edict.free)
     }
 
     /// The server time edict `number` was last freed, id's `edict_t.freetime` (EDICT-1.2).
     ///
     /// Returns `None` for a number the array does not hold.
     #[must_use]
-    pub fn freetime(&self, number: usize) -> Option<f32> {
-        self.edicts.get(number).map(|edict| edict.freetime)
+    pub fn freetime(&self, number: EdictNumber) -> Option<f32> {
+        self.edicts.get(number.index()).map(|edict| edict.freetime)
     }
 
     /// Edict `number`'s field slots, id's `edict_t.v`.
@@ -180,16 +209,18 @@ impl EdictStore {
     /// whether or not the edict is in use or free, since the array holds every edict
     /// (EDICT-1.9, EDICT-7.2).
     #[must_use]
-    pub fn fields(&self, number: usize) -> Option<&[Slot]> {
-        self.edicts.get(number).map(|edict| &*edict.fields)
+    pub fn fields(&self, number: EdictNumber) -> Option<&[Slot]> {
+        self.edicts.get(number.index()).map(|edict| &*edict.fields)
     }
 
     /// Edict `number`'s field slots for writing.
     ///
     /// Returns `None` for a number the array does not hold.
     #[must_use]
-    pub fn fields_mut(&mut self, number: usize) -> Option<&mut [Slot]> {
-        self.edicts.get_mut(number).map(|edict| &mut *edict.fields)
+    pub fn fields_mut(&mut self, number: EdictNumber) -> Option<&mut [Slot]> {
+        self.edicts
+            .get_mut(number.index())
+            .map(|edict| &mut *edict.fields)
     }
 
     /// Field slot `field` of edict `number`, read by offset.
@@ -197,28 +228,32 @@ impl EdictStore {
     /// Implements the field access of EDICT-1.6: a field is addressed by its slot offset.
     /// Returns `None` when the edict or the slot does not exist.
     #[must_use]
-    pub fn field(&self, number: usize, field: usize) -> Option<Slot> {
+    pub fn field(&self, number: EdictNumber, field: usize) -> Option<Slot> {
         self.edicts
-            .get(number)
+            .get(number.index())
             .and_then(|edict| edict.fields.get(field).copied())
     }
 
     /// Sets field slot `field` of edict `number`, written by offset.
     ///
-    /// Implements the field access of EDICT-1.6. Returns `false`, writing nothing, when the
-    /// edict or the slot does not exist.
-    pub fn set_field(&mut self, number: usize, field: usize, value: Slot) -> bool {
-        match self
+    /// Implements the field access of EDICT-1.6.
+    ///
+    /// # Errors
+    ///
+    /// [`EdictError::NoField`], writing nothing, when the edict or the slot does not exist.
+    pub fn set_field(
+        &mut self,
+        number: EdictNumber,
+        field: usize,
+        value: Slot,
+    ) -> Result<(), EdictError> {
+        let slot = self
             .edicts
-            .get_mut(number)
+            .get_mut(number.index())
             .and_then(|edict| edict.fields.get_mut(field))
-        {
-            Some(slot) => {
-                *slot = value;
-                true
-            }
-            None => false,
-        }
+            .ok_or(EdictError::NoField { number, field })?;
+        *slot = value;
+        Ok(())
     }
 
     /// Turns an edict number into its entity value, id's `EDICT_NUM` then `EDICT_TO_PROG`.
@@ -234,8 +269,8 @@ impl EdictStore {
         if number < 0 || number >= max {
             return Err(EdictError::BadNumber { number });
         }
-        self.layout
-            .entity_value(number)
+        EdictNumber::from_i32(number)
+            .and_then(|edict| self.layout.entity_value(edict))
             .ok_or(EdictError::BadNumber { number })
     }
 
@@ -248,13 +283,12 @@ impl EdictStore {
     /// # Errors
     ///
     /// [`EdictError::BadPointer`] for a value that names no edict below `num_edicts`.
-    pub fn num_for_edict(&self, value: EntityRef) -> Result<usize, EdictError> {
+    pub fn num_for_edict(&self, value: EntityRef) -> Result<EdictNumber, EdictError> {
         let number = self
             .layout
             .edict_number(value)
             .ok_or(EdictError::BadPointer)?;
-        let number = usize::try_from(number).map_err(|_| EdictError::BadPointer)?;
-        if number >= self.num_edicts {
+        if number.index() >= self.num_edicts {
             return Err(EdictError::BadPointer);
         }
         Ok(number)
@@ -265,8 +299,8 @@ impl EdictStore {
     /// Implements EDICT-6.5: `memset(&e->v, 0, entityfields * 4); e->free = false`. The header
     /// is otherwise left as it was, including `freetime` (EDICT-6.5). Does nothing for a
     /// number the array does not hold.
-    pub fn clear_edict(&mut self, number: usize) {
-        if let Some(edict) = self.edicts.get_mut(number) {
+    pub fn clear_edict(&mut self, number: EdictNumber) {
+        if let Some(edict) = self.edicts.get_mut(number.index()) {
             edict.fields.fill(Slot::ZERO);
             edict.free = false;
         }
@@ -286,11 +320,11 @@ impl EdictStore {
     ///
     /// [`EdictError::NoFreeEdicts`] when `num_edicts` is already [`LIMIT_MAX_EDICTS`] and no
     /// scanned edict qualifies (EDICT-6.2).
-    pub fn alloc(&mut self, now: f64) -> Result<usize, EdictError> {
+    pub fn alloc(&mut self, now: f64) -> Result<EdictNumber, EdictError> {
         // EDICT-6.1: for (i = maxclients + 1; i < num_edicts; i++).
         let start = self.maxclients.saturating_add(1);
-        for number in start..self.num_edicts {
-            let qualifies = self.edicts.get(number).is_some_and(|edict| {
+        for number in (start..self.num_edicts).map(EdictNumber::new) {
+            let qualifies = self.edicts.get(number.index()).is_some_and(|edict| {
                 // EDICT-6.3: e->freetime < 2 || sv.time - e->freetime > 0.5, the delay in
                 // double precision against the f32 freetime, strict.
                 // EDICT-6.1: free and old enough to reuse.
@@ -307,7 +341,7 @@ impl EdictStore {
         if self.num_edicts >= LIMIT_MAX_EDICTS {
             return Err(EdictError::NoFreeEdicts);
         }
-        let number = self.num_edicts;
+        let number = EdictNumber::new(self.num_edicts);
         self.num_edicts = self.num_edicts.saturating_add(1);
         self.clear_edict(number);
         Ok(number)
@@ -321,19 +355,22 @@ impl EdictStore {
     /// Every other field keeps its value (EDICT-7.2). Freeing an already-free edict does it
     /// all again (EDICT-7.4). The clock `now` is `sv.time`, a `double`. Does nothing for a
     /// number the array does not hold.
-    pub fn free(&mut self, number: usize, now: f64) {
-        let Some(edict) = self.edicts.get_mut(number) else {
+    pub fn free(&mut self, number: EdictNumber, now: f64) {
+        let Some(edict) = self.edicts.get_mut(number.index()) else {
             return;
         };
         edict.free = true;
         // EDICT-7.1: ed->v.model = 0, takedamage = 0, modelindex = 0, colormap = 0, skin = 0,
         // frame = 0, solid = 0, origin = 0 0 0, angles = 0 0 0, nextthink = -1.
-        for slot in FREE_ZEROED_SLOTS {
-            if let Some(cell) = edict.fields.get_mut(slot) {
-                *cell = Slot::ZERO;
+        for field in FREE_ZEROED {
+            let var = field.var();
+            for slot in var.slot..var.slot.saturating_add(var.etype.slot_count()) {
+                if let Some(cell) = edict.fields.get_mut(slot) {
+                    *cell = Slot::ZERO;
+                }
             }
         }
-        // nextthink (46) to -1, not 0.
+        // nextthink to -1, not 0.
         if let Some(cell) = edict.fields.get_mut(FREE_NEXTTHINK_SLOT) {
             *cell = Slot::from_f32(EDICT_FREED_NEXTTHINK);
         }

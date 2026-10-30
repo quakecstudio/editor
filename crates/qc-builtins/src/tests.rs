@@ -684,8 +684,8 @@ mod bodies {
 
     use crate::mock::{MessageDest, MockEngine};
     use crate::{BuiltinError, MockBuiltins};
-    use qc_edict::EDICT_SYS_GLOBALS_END;
     use qc_edict::system::{SYSTEM_GLOBALS, field_by_name, global_by_name};
+    use qc_edict::{EDICT_SYS_GLOBALS_END, EdictNumber};
     use qc_progs::opcode::Opcode;
     use qc_progs::{Function, Progs, ProgsFile, Statement, write};
     use qc_types::{Etype, PROGS_OFS_PARM0, PROGS_OFS_RETURN, PROGS_PARM_SLOTS, Slot};
@@ -831,7 +831,8 @@ mod bodies {
             let slot = field_by_name(name).unwrap().slot;
             self.machine
                 .edicts_mut()
-                .set_field(number, slot, Slot::from_f32(value));
+                .set_field(EdictNumber::new(number), slot, Slot::from_f32(value))
+                .unwrap();
         }
 
         /// Sets a vector field of edict `number`.
@@ -840,35 +841,48 @@ mod bodies {
             for (i, c) in value.into_iter().enumerate() {
                 self.machine
                     .edicts_mut()
-                    .set_field(number, slot + i, Slot::from_f32(c));
+                    .set_field(EdictNumber::new(number), slot + i, Slot::from_f32(c))
+                    .unwrap();
             }
         }
 
         /// Reads a scalar field of edict `number` as a float.
         fn field_f(&self, number: usize, name: &str) -> f32 {
             let slot = field_by_name(name).unwrap().slot;
-            self.machine.edicts().field(number, slot).unwrap().as_f32()
+            self.machine
+                .edicts()
+                .field(EdictNumber::new(number), slot)
+                .unwrap()
+                .as_f32()
         }
 
         /// Reads a scalar field of edict `number` as an i32.
         fn field_i(&self, number: usize, name: &str) -> i32 {
             let slot = field_by_name(name).unwrap().slot;
-            self.machine.edicts().field(number, slot).unwrap().as_i32()
+            self.machine
+                .edicts()
+                .field(EdictNumber::new(number), slot)
+                .unwrap()
+                .as_i32()
         }
 
         /// Reads a vector field of edict `number`.
         fn field_v(&self, number: usize, name: &str) -> [f32; 3] {
             let slot = field_by_name(name).unwrap().slot;
             [
-                self.machine.edicts().field(number, slot).unwrap().as_f32(),
                 self.machine
                     .edicts()
-                    .field(number, slot + 1)
+                    .field(EdictNumber::new(number), slot)
                     .unwrap()
                     .as_f32(),
                 self.machine
                     .edicts()
-                    .field(number, slot + 2)
+                    .field(EdictNumber::new(number), slot + 1)
+                    .unwrap()
+                    .as_f32(),
+                self.machine
+                    .edicts()
+                    .field(EdictNumber::new(number), slot + 2)
                     .unwrap()
                     .as_f32(),
             ]
@@ -938,13 +952,17 @@ mod bodies {
             let slot = field_by_name(name).unwrap().slot;
             self.machine
                 .edicts_mut()
-                .set_field(number, slot, Slot::from_i32(value));
+                .set_field(EdictNumber::new(number), slot, Slot::from_i32(value))
+                .unwrap();
         }
     }
 
     /// Spawns edict `number` (clears its free flag) so field access and links work.
     fn in_use(fixture: &mut Fixture, number: usize) {
-        fixture.machine.edicts_mut().clear_edict(number);
+        fixture
+            .machine
+            .edicts_mut()
+            .clear_edict(EdictNumber::new(number));
     }
 
     // ----- BUILTIN-8: entities -----
@@ -963,7 +981,10 @@ mod bodies {
             .edict_num(i32::try_from(before).unwrap())
             .unwrap();
         assert_eq!(f.return_i(), value.bits());
-        assert_eq!(f.machine.edicts().is_free(before), Some(false));
+        assert_eq!(
+            f.machine.edicts().is_free(EdictNumber::new(before)),
+            Some(false)
+        );
     }
 
     // spec BUILTIN-8.2: remove frees the edict, refusing nothing.
@@ -976,7 +997,7 @@ mod bodies {
         let value = f.machine.edicts().edict_num(1).unwrap();
         f.set_parm_i(0, value.bits());
         f.run_ok(ServerState::Active);
-        assert_eq!(f.machine.edicts().is_free(1), Some(true));
+        assert_eq!(f.machine.edicts().is_free(EdictNumber::new(1)), Some(true));
     }
 
     // spec BUILTIN-8.4: nextent returns the first non-free edict after e, else the world.
@@ -985,7 +1006,7 @@ mod bodies {
         let mut f = Fixture::new(47, 1, vec![0], 0);
         f.machine.edicts_mut().alloc(1.0).unwrap(); // edict 1, in use
         f.machine.edicts_mut().alloc(1.0).unwrap(); // edict 2, in use
-        f.machine.edicts_mut().free(1, 1.0); // free edict 1
+        f.machine.edicts_mut().free(EdictNumber::new(1), 1.0); // free edict 1
         // nextent(world) starts at edict 1, which is free, so it reaches edict 2.
         f.set_parm_i(0, 0);
         f.run_ok(ServerState::Active);
@@ -1004,7 +1025,8 @@ mod bodies {
         let classname = field_by_name("classname").unwrap().slot;
         f.machine
             .edicts_mut()
-            .set_field(2, classname, Slot::from_i32(offsets[0]));
+            .set_field(EdictNumber::new(2), classname, Slot::from_i32(offsets[0]))
+            .unwrap();
         let world = f.machine.edicts().edict_num(0).unwrap();
         f.set_parm_i(0, world.bits()); // start
         f.set_parm_i(1, i32::try_from(classname).unwrap()); // field
@@ -1033,10 +1055,21 @@ mod bodies {
         let e1 = f.machine.edicts().edict_num(1).unwrap();
         let chain = field_by_name("chain").unwrap().slot;
         assert_eq!(
-            f.machine.edicts().field(2, chain).unwrap().as_i32(),
+            f.machine
+                .edicts()
+                .field(EdictNumber::new(2), chain)
+                .unwrap()
+                .as_i32(),
             e1.bits()
         );
-        assert_eq!(f.machine.edicts().field(1, chain).unwrap().as_i32(), 0);
+        assert_eq!(
+            f.machine
+                .edicts()
+                .field(EdictNumber::new(1), chain)
+                .unwrap()
+                .as_i32(),
+            0
+        );
     }
 
     // spec BUILTIN-8.7: setspawnparms of an edict outside 1..maxclients is a runtime error.
@@ -1300,7 +1333,7 @@ mod bodies {
         f.set_parm_i(0, e1.bits());
         f.run_ok(ServerState::Active);
         assert!(f.engine().buffers.signon > 0);
-        assert_eq!(f.machine.edicts().is_free(1), Some(true));
+        assert_eq!(f.machine.edicts().is_free(EdictNumber::new(1)), Some(true));
     }
 
     // ----- BUILTIN-13: network messages -----
@@ -1365,7 +1398,7 @@ mod bodies {
         f.set_global_entity("self", 1);
         f.set_parm_i(0, offsets[0]);
         f.run_err(ServerState::Active, "oops");
-        assert_eq!(f.machine.edicts().is_free(1), Some(true));
+        assert_eq!(f.machine.edicts().is_free(EdictNumber::new(1)), Some(true));
     }
 
     // spec BUILTIN-3.2: error and objerror are host errors: they reach the VM as one and leave
@@ -1767,7 +1800,14 @@ mod bodies {
         let e1 = f.machine.edicts().edict_num(1).unwrap();
         assert_eq!(f.return_i(), e1.bits());
         let chain = field_by_name("chain").unwrap().slot;
-        assert_eq!(f.machine.edicts().field(1, chain).unwrap().as_i32(), 0);
+        assert_eq!(
+            f.machine
+                .edicts()
+                .field(EdictNumber::new(1), chain)
+                .unwrap()
+                .as_i32(),
+            0
+        );
     }
 
     // ----- BUILTIN-13: the remaining Write* builtins and their byte counts -----
@@ -2172,7 +2212,7 @@ mod bodies {
     fn nextent_past_the_last_is_world() {
         let mut f = Fixture::new(47, 1, vec![0], 0);
         f.machine.edicts_mut().alloc(1.0).unwrap(); // edict 1, num_edicts now 2
-        f.machine.edicts_mut().free(1, 1.0); // free edict 1
+        f.machine.edicts_mut().free(EdictNumber::new(1), 1.0); // free edict 1
         // nextent(world): slot 1 is free, so none qualifies below num_edicts (2) -> world.
         f.set_parm_i(0, 0);
         f.run_ok(ServerState::Active);
@@ -2189,7 +2229,8 @@ mod bodies {
         let classname = field_by_name("classname").unwrap().slot;
         f.machine
             .edicts_mut()
-            .set_field(1, classname, Slot::from_i32(offsets[1]));
+            .set_field(EdictNumber::new(1), classname, Slot::from_i32(offsets[1]))
+            .unwrap();
         let world = f.machine.edicts().edict_num(0).unwrap();
         f.set_parm_i(0, world.bits());
         f.set_parm_i(1, i32::try_from(classname).unwrap());
