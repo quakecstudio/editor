@@ -1041,3 +1041,16 @@ fn a_folded_constant_folds_where_it_is_named() {
     assert_eq!(value("P"), 256.0);
     assert_eq!(value("R"), 255.0);
 }
+
+// spec FTEF-31.4: the address of an entity's field is its OP_ADDRESS, a pointer to the field's
+// type, so its store to a pointer folds into it (FTEF-29.13)
+#[test]
+fn the_address_of_an_entitys_field_is_its_address() {
+    let p = fte_progs(
+        "entity world;\n.float sounds;\nfloat *cd;\nvoid() t = { cd = &world.sounds; };\n",
+    );
+    let (w, f, cd) = (global(&p, "world"), global(&p, "sounds"), global(&p, "cd"));
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(Opcode::Address, w, f, cd));
+    assert_eq!(t[1].op, u32::from(Done.number()));
+}

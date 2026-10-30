@@ -1151,10 +1151,32 @@ impl<'a> Compiler<'a> {
                 };
                 self.operate(Operator::Sub, &minus_one, &value, (span, span))
             }
-            ast::UnaryOp::AddressOf | ast::UnaryOp::Deref | ast::UnaryOp::AsString => {
+            ast::UnaryOp::AddressOf => self.address_of(&operand, span),
+            ast::UnaryOp::Deref | ast::UnaryOp::AsString => {
                 Err(Abort::Internal(Internal::Unsupported, span))
             }
         }
+    }
+
+    /// `&e.f` (FTEF-31.4): `ADDRESS` of the entity and the field, a pointer to what the field
+    /// holds, as `QCC_PR_GenerateAddressOf` makes for a field's reference. Other operands are not
+    /// lowered yet.
+    fn address_of(&mut self, operand: &ast::Expr, span: Span) -> Lowered<Value> {
+        let Some(ast::Expr::Field(field)) = unparenthesized(operand) else {
+            return Err(Abort::Internal(Internal::Unsupported, span));
+        };
+        let Member::Base(base) = self.member(&field, true, span)? else {
+            return Err(Abort::Internal(Internal::Unsupported, span));
+        };
+        let slot = self.field_slot(&base, &field, span)?;
+        let ofs = self
+            .program
+            .emit_result(Opcode::Address, slot.entity, slot.field, Etype::Pointer)
+            .at(span)?;
+        Ok(Value {
+            ofs,
+            kind: ValueKind::Temp(slot.ty.pointer_to()),
+        })
     }
 
     /// A vector's component by a constant index, `v[0]` to `v[2]` (FTE-13.2): the component's
