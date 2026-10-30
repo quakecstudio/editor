@@ -806,7 +806,18 @@ impl Compiler<'_> {
             return Ok(());
         }
         let expr = ast::Expr::cast(item.clone()).at(span)?;
-        let value = match literal_of(&expr, self.dialect) {
+        let value = self.value_words(ty, &expr)?;
+        let start = usize::try_from(at).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
+        let end = start.checked_add(value.len()).at(span)?;
+        words.get_mut(start..end).at(span)?.copy_from_slice(&value);
+        Ok(())
+    }
+
+    /// The words a value `expr` given to a definition of type `ty` at compile time holds: a
+    /// literal's, a null's (zeros), or a constant's (FTE-13.10).
+    pub(super) fn value_words(&mut self, ty: &ValueType, expr: &ast::Expr) -> Lowered<Vec<u32>> {
+        let span = expr.syntax().span();
+        Ok(match literal_of(expr, self.dialect) {
             Some(literal) if literal.ty().etype() == ty.etype() => {
                 self.program.literal_words(&literal).at(span)?
             }
@@ -820,12 +831,8 @@ impl Compiler<'_> {
                 ]
             }
             Some(_) => return Err(Abort::Internal(Internal::Unsupported, span)),
-            None => self.constant_words(ty, &expr)?,
-        };
-        let start = usize::try_from(at).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
-        let end = start.checked_add(value.len()).at(span)?;
-        words.get_mut(start..end).at(span)?.copy_from_slice(&value);
-        Ok(())
+            None => self.constant_words(ty, expr)?,
+        })
     }
 
     /// FTE-13.10: the words of an initialiser's value that is no literal but a constant of type

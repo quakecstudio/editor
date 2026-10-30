@@ -1289,3 +1289,14 @@ fn a_vector_arrays_setter_takes_the_elements_index() {
     let s = body(&p, "ArraySet*a");
     assert!(s.contains(&st(StoreV, f.parm_start + 1, global(&p, "a") + 3, 0)));
 }
+
+// spec FTEF-17.17: `autocvar(name, default)` is the global `autocvar_name`, given the default's
+// value, with no statement of its own
+#[test]
+fn autocvar_is_its_global_given_the_default() {
+    let p = fte_progs("float x;\nvoid() t = { x = autocvar(sv_x, 4); };\n");
+    let cvar = global(&p, "autocvar_sv_x");
+    assert_eq!(words(&p, cvar, 1), [4.0_f32.to_bits()]);
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, cvar, global(&p, "x"), 0));
+}

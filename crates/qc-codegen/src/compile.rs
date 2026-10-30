@@ -1295,6 +1295,28 @@ impl<'a> Compiler<'a> {
         })
     }
 
+    /// FTEF-17.17: `autocvar(name, default[, "description"])`, an intrinsic when no definition
+    /// is named `autocvar`: the global `autocvar_name`, made now if it is new and given the
+    /// default's words when it has no value yet; the call is that global, with no statement.
+    fn autocvar(&mut self, args: &[ast::Expr], span: Span) -> Lowered<Value> {
+        let Some(ast::Expr::Name(name)) = args.first() else {
+            return Err(Abort::Internal(Internal::Unlowered, span));
+        };
+        let name = name.name().at(span)?.text_lossless();
+        let id = self
+            .names
+            .global(&format!("autocvar_{name}"))
+            .ok_or(Abort::Internal(Internal::Unresolved, span))?;
+        let place = self.program.get_def(self.index, id).at(span)?;
+        let def = self.program.def(place).at(span)?;
+        if !def.initialized {
+            let ty = def.ty.clone();
+            let words = self.value_words(&ty, args.get(1).at(span)?)?;
+            self.program.initialise_words(place, &words).at(span)?;
+        }
+        self.def_value(place, span)
+    }
+
     /// `&e.f` (FTEF-31.4): `ADDRESS` of the entity and the field, a pointer to what the field
     /// holds, as `QCC_PR_GenerateAddressOf` makes for a field's reference. Other operands are not
     /// lowered yet.
@@ -2127,6 +2149,18 @@ impl<'a> Compiler<'a> {
     /// its parameter slot, then `CALLn`; the value is the return global, typed as the
     /// function's return type.
     fn call(&mut self, call: &ast::CallExpr, span: Span) -> Lowered<Value> {
+        let args: Vec<ast::Expr> = call.args().map(|a| a.args().collect()).unwrap_or_default();
+        if self.dialect.has_fteqcc_extensions()
+            && let Some(ast::Expr::Name(name)) = call.callee()
+            && let Some(token) = name.name()
+            && token.text_lossless() == "autocvar"
+            && self
+                .names
+                .def(self.file, token.span(), self.scope)
+                .is_none()
+        {
+            return self.autocvar(&args, span);
+        }
         let callee = self.expr(&call.callee().at(span)?)?;
         let callee_type = self.type_of(&callee);
         let Some(function) = callee_type.function().cloned() else {
@@ -2138,7 +2172,6 @@ impl<'a> Compiler<'a> {
         };
         let fixed = (!function.variadic).then_some(function.params.len());
         let mut count = 0_usize;
-        let args: Vec<ast::Expr> = call.args().map(|a| a.args().collect()).unwrap_or_default();
         // Under FTEQCC the semantic model has judged the call (FTEF-32.3): fewer arguments
         // than parameters leave the rest as the parameter slots hold them, and an argument past
         // the last parameter is read and ignored ("too many parameters ... will be ignored").
