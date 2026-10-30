@@ -20,6 +20,7 @@ use qs_layout::{Layout, Panel};
 
 use crate::icons::Icon;
 use crate::keymap;
+use crate::palette::highlighted;
 use crate::shell::dragged_size;
 use crate::strings::{Text, command_count};
 use crate::theme::{Mode, Theme, ThemeError, Token, semibold};
@@ -605,7 +606,7 @@ fn a_shortcut_runs_its_command() {
 fn the_count_and_the_highlight() {
     assert_eq!(command_count(1, 5), "1 of 5 commands");
     let font = FontId::monospace(13.0);
-    let job = crate::palette::highlighted(
+    let job = highlighted(
         "play.start",
         &[0..2, 5..6],
         egui::Color32::GRAY,
@@ -671,7 +672,7 @@ fn the_footer_and_the_first_field() {
         panel < size,
         "required fields by name: the choice comes before the text"
     );
-    let choice = prompt.inputs.get_mut(panel).unwrap();
+    let choice = prompt.inputs.iter_mut().nth(panel).unwrap();
     *choice = Input::Choice(Some(0));
     frame_with(&ctx, &mut app, Vec::new());
     frame_with(&ctx, &mut app, vec![egui::Event::Text("300".to_owned())]);
