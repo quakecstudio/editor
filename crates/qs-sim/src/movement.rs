@@ -8,7 +8,8 @@
 //! Monster movement (`docs/spec/engine/move.md`): whether the ground is under a box, one
 //! step, a step in a direction, choosing a new one, and moving toward a goal.
 
-use qc_builtins::math::{anglemod, f64_to_f32_public, float_to_int, int_to_f32_public};
+use qc_builtins::math::anglemod;
+use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
 use qc_vm::{Builtins as _, RunError};
 
 use crate::builtins::{FL_ONGROUND, SimCall, Vm, parm_float};
@@ -218,9 +219,7 @@ impl SimCall<'_, '_, '_> {
     )]
     fn new_chase_dir(&mut self, actor: usize, enemy: usize, dist: f32) -> Result<(), RunError> {
         let ideal = self.float(actor, "ideal_yaw");
-        let olddir = anglemod(int_to_f32_public(
-            float_to_int(ideal / 45.0).wrapping_mul(45),
-        ));
+        let olddir = anglemod(int_to_float(float_to_int(ideal / 45.0).wrapping_mul(45)));
         let turnaround = anglemod(olddir - 180.0);
         let [ex, ey, _] = self.vector(enemy, "origin");
         let [ax, ay, _] = self.vector(actor, "origin");
@@ -341,13 +340,13 @@ impl SimCall<'_, '_, '_> {
 /// `(cos(y)*dist, sin(y)*dist, 0)` with `y = yaw*M_PI*2 / 360` in `double` stored in `float`
 /// (MOVE-3.1).
 fn step(yaw: f32, dist: f32) -> [f32; 3] {
-    let y = f64::from(f64_to_f32_public(
+    let y = f64::from(double_to_float(
         f64::from(yaw) * core::f64::consts::PI * 2.0 / 360.0,
     ));
     let d = f64::from(dist);
     [
-        f64_to_f32_public(y.cos() * d),
-        f64_to_f32_public(y.sin() * d),
+        double_to_float(y.cos() * d),
+        double_to_float(y.sin() * d),
         0.0,
     ]
 }

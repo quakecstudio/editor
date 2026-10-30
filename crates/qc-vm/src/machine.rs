@@ -59,9 +59,9 @@ pub struct Machine {
     pub(crate) xstatement: i32,
     /// The argument count of the last call, id's `pr_argc` (VM-14.1).
     pub(crate) argc: usize,
-    /// The statement trace flag id's `traceon` builtin sets, cleared at the start of each run
-    /// (VM-2.3). This VM traces every statement through its own hook; this flag mirrors id's
-    /// so a builtin can read and set it.
+    /// The statement trace flag, id's `pr_trace`: set by the `traceon` builtin (BUILTIN-16.4)
+    /// and cleared at the start of each run (VM-2.3). This VM traces every statement through
+    /// its own hook, so the flag changes nothing observable (DIFF-6.7).
     pub(crate) trace_flag: bool,
 }
 
@@ -128,11 +128,6 @@ impl Machine {
         self.localstack_used
     }
 
-    /// Reads one global slot, bounds-checked (VM-1.3, VM-1.4).
-    ///
-    /// # Errors
-    ///
-    /// [`GlobalAccessError`] when `slot` is negative or not less than `numglobals`.
     /// Sets a global slot for tests, ignoring an out-of-range slot.
     #[cfg(test)]
     pub(crate) fn set_global_test(&mut self, slot: i32, value: Slot) {
@@ -141,10 +136,15 @@ impl Machine {
         }
     }
 
-    /// The statement trace flag, for tests (VM-2.3, VM-18.3).
-    #[cfg(test)]
-    pub(crate) const fn trace_flag_for_test(&self) -> bool {
+    /// Whether the statement trace flag is set, id's `pr_trace` (VM-2.3, BUILTIN-16.4).
+    #[must_use]
+    pub const fn tracing(&self) -> bool {
         self.trace_flag
+    }
+
+    /// Sets or clears the statement trace flag, as `traceon` and `traceoff` do (BUILTIN-16.4).
+    pub const fn set_tracing(&mut self, on: bool) {
+        self.trace_flag = on;
     }
 
     /// Reads one global slot, bounds-checked (VM-1.3, VM-1.4).

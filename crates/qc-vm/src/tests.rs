@@ -22,8 +22,8 @@ mod vectors;
 
 use qc_progs::Progs;
 
-use crate::Machine;
-use crate::exec::{NoBuiltins, NoObserver, ServerState};
+use crate::exec::{Builtins, Context, NoBuiltins, NoObserver, ServerState};
+use crate::{Machine, RunError};
 
 // spec VM-1.1: the machine state persists between runs; a fresh machine has empty stacks.
 #[test]
@@ -212,10 +212,28 @@ fn nested_run_continues_outer_after_return() {
     assert_eq!(exits, 2, "both runs return");
 }
 
+// spec VM-2.3: a run clears the statement trace flag when it starts
 // spec VM-18.3: a nested run clears the statement trace flag, so tracing started before it is
 // off after it.
 #[test]
 fn nested_run_clears_trace_flag() {
+    /// Turns tracing on, then runs function 3 nested, as `traceon(); f3();` from a builtin.
+    struct TraceThenNest {
+        before_nested: Option<bool>,
+        after_nested: Option<bool>,
+    }
+    impl Builtins for TraceThenNest {
+        fn call(&mut self, _number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
+            context.machine().set_tracing(true);
+            self.before_nested = Some(context.machine_view().tracing());
+            context.execute_program(self, 3)?;
+            self.after_nested = Some(context.machine_view().tracing());
+            Ok(())
+        }
+        fn engine_string(&self, _value: i32) -> Option<&[u8]> {
+            None
+        }
+    }
     let bytes = nested_run_progs();
     let progs = Progs::read_with(
         &bytes,
@@ -227,19 +245,30 @@ fn nested_run_clears_trace_flag() {
     let mut machine = Machine::new(&progs, 0).unwrap();
     machine.set_global_test(100, Slot::from_i32(3));
     machine.set_global_test(101, Slot::from_i32(2));
-    machine.set_global_test(102, Slot::from_f32(8.0));
+    machine.set_tracing(true);
+    assert!(machine.tracing());
+    let mut builtins = TraceThenNest {
+        before_nested: None,
+        after_nested: None,
+    };
     machine
         .execute_program(
             &progs,
             ServerState::Active,
-            &mut StubBuiltins,
+            &mut builtins,
             &mut NoObserver,
             1,
         )
         .unwrap();
+    assert_eq!(builtins.before_nested, Some(true), "set_tracing set it");
+    assert_eq!(
+        builtins.after_nested,
+        Some(false),
+        "the nested run cleared it"
+    );
     assert!(
-        !machine.trace_flag_for_test(),
-        "the trace flag is clear after a run"
+        !machine.tracing(),
+        "nothing set it again after the nested run"
     );
 }
 
@@ -393,7 +422,7 @@ mod coverage {
         let (_m, result) = run(&bytes);
         let error = result.unwrap_err();
         assert!(
-            matches!(error.kind, ErrorKind::Divergence { statement, .. } if statement == "VM-14.4"),
+            matches!(error.kind, ErrorKind::Divergence(d) if d.statement() == "VM-14.4"),
             "NoBuiltins fails a builtin call with VM-14.4, got {:?}",
             error.kind
         );

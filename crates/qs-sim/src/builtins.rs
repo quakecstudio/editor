@@ -8,13 +8,13 @@
 //! The server's builtins: `qc-builtins`' for the engine state it keeps, and the world builtins
 //! on this crate's collision (WORLD-8) and movement (MOVE).
 
-use qc_builtins::math::{f64_to_f32_public, float_to_int, int_to_f32_public};
 use qc_builtins::mock::ModelBounds;
 use qc_builtins::{Engine, MockBuiltins, MockEngine};
 use qc_edict::EdictNumber;
 use qc_edict::system::{field_by_name, global_by_name};
 use qc_progs::Progs;
 use qc_types::{EntityRef, PROGS_OFS_RETURN, Slot, ofs_parm};
+use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
 use qc_vm::{Builtins, Context, ErrorKind, Machine, NoObserver, RunError, ServerState};
 use qs_bsp::{Bsp, BspLoader};
 use qs_mdl::Sprite;
@@ -409,7 +409,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
     }
 
     pub(crate) fn set_flags(&mut self, n: usize, flags: i32) {
-        self.set_float(n, "flags", int_to_f32_public(flags));
+        self.set_float(n, "flags", int_to_float(flags));
     }
 
     pub(crate) fn global(&self, name: &str) -> Slot {
@@ -564,7 +564,7 @@ impl Host for SimCall<'_, '_, '_> {
         let other_value = self.value_of(other);
         self.set_global("self", Slot::from_i32(trigger_value));
         self.set_global("other", Slot::from_i32(other_value));
-        let time = f64_to_f32_public(self.sim.mock.engine().clock);
+        let time = double_to_float(self.sim.mock.engine().clock);
         self.set_global("time", Slot::from_f32(time));
         let result = self.context.execute_program(self.sim, function);
         self.set_global("self", old_self);

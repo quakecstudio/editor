@@ -18,7 +18,7 @@ use qc_types::Slot;
 
 use super::harness::{self, Stmt};
 use crate::exec::{Context, NoObserver, ServerState};
-use crate::{Builtins, ErrorKind, Machine, RunError};
+use crate::{Builtins, Divergence, ErrorKind, Machine, RunError};
 
 /// A [`Builtins`] that holds engine-allocated strings by their negative value, as the mock
 /// engine represents them (EDICT-13.3). `call` is never reached: these progs make no `CALL`.
@@ -38,10 +38,11 @@ impl EngineStringBuiltins {
 
 impl Builtins for EngineStringBuiltins {
     fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
-        Err(context.run_error(ErrorKind::Divergence {
-            statement: "VM-14.4",
-            detail: format!("no builtin {number} in this test"),
-        }))
+        Err(
+            context.run_error(ErrorKind::Divergence(Divergence::UnregisteredBuiltin {
+                number,
+            })),
+        )
     }
 
     fn engine_string(&self, value: i32) -> Option<&[u8]> {
@@ -193,7 +194,7 @@ fn eq_s_unknown_value_is_runtime_error() {
     )
     .unwrap_err();
     match error.kind {
-        ErrorKind::Divergence { statement, .. } => assert_eq!(statement, "VM-7.3"),
+        ErrorKind::Divergence(d) => assert_eq!(d.statement(), "VM-7.3"),
         other => panic!("expected a VM-7.3 divergence, got {other:?}"),
     }
 }
@@ -210,7 +211,7 @@ fn not_s_unknown_value_is_runtime_error() {
     )
     .unwrap_err();
     match error.kind {
-        ErrorKind::Divergence { statement, .. } => assert_eq!(statement, "VM-7.3"),
+        ErrorKind::Divergence(d) => assert_eq!(d.statement(), "VM-7.3"),
         other => panic!("expected a VM-7.3 divergence, got {other:?}"),
     }
 }
