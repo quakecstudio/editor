@@ -547,12 +547,19 @@ impl Compiler<'_> {
         }
         let expr = ast::Expr::cast(item.clone()).at(span)?;
         let value = match literal_of(&expr, self.dialect) {
-            Some(literal) => {
-                if literal.ty().etype() != ty.etype() {
-                    return Err(Abort::Internal(Internal::Unsupported, span));
-                }
+            Some(literal) if literal.ty().etype() == ty.etype() => {
                 self.program.literal_words(&literal).at(span)?
             }
+            // FTEF-19.31: a null, a constant whose word is 0 such as `__NULL__`, casts to any
+            // type, its words all 0.
+            Some(Literal::Float(zero)) if zero.to_bits() == 0 => {
+                vec![
+                    0;
+                    usize::try_from(ty.words())
+                        .map_err(|_| Abort::Internal(Internal::TooLarge, span))?
+                ]
+            }
+            Some(_) => return Err(Abort::Internal(Internal::Unsupported, span)),
             None => self.constant_words(ty, &expr)?,
         };
         let start = usize::try_from(at).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;

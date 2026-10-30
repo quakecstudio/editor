@@ -1160,3 +1160,14 @@ fn a_global_past_32767_is_its_low_bits_in_version_6() {
     assert_eq!(store.b, x.wrapping_sub(0x1_0000));
     assert!(qc_progs::write(&p).is_ok());
 }
+
+// spec FTEF-19.31: a null in an aggregate initialiser, `__NULL__`, is the zero of the element's
+// type
+#[test]
+fn a_null_in_an_aggregate_is_zero() {
+    let p = fte_progs("const string s[2] = { \"a\", __NULL__ };\nvoid() t = {};\n");
+    let at = global(&p, "s");
+    let word = |i: i32| p.globals[usize::try_from(at + i).unwrap()].bits();
+    assert_ne!(word(0), 0);
+    assert_eq!(word(1), 0);
+}
