@@ -8,11 +8,12 @@
 )]
 
 use qs_bsp::{
-    BSP_HEADER_LUMPS, BSP_MAX_MAP_HULLS, BSP_MIPTEX_HEADER_SIZE, Bsp, BspVersion, Face, Lump,
+    BSP_HEADER_LUMPS, BSP_MAX_MAP_HULLS, BSP_MIPTEX_HEADER_SIZE, Bsp, BspVersion, Face, Lit, Lump,
     Model, Node, Plane, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo, Texture,
 };
 
 use super::{MapMesh, MeshBuilder, MeshError, Palette, Placement};
+use crate::styles::LightStyles;
 
 /// One face of a test map: a 64 by 32 rectangle in the z = 0 plane, lit by `lighting`.
 pub(crate) struct MapSpec {
@@ -223,7 +224,7 @@ fn lightmap_coordinates_map_texels_to_the_surface() {
     );
 }
 
-// spec REND-1.4: a texel is the sum of each style's sample times 256, shifted right by 7 and
+// spec REND-1.13: a texel is the sum of each style's sample times 256, shifted right by 7 and
 // capped at 255, over the styles until one is 255
 #[test]
 fn light_texels_sum_the_styles() {
@@ -575,4 +576,104 @@ fn zfix_moves_an_entity_back_a_32nd() {
     assert_eq!(fixed.origin, [9.968_75, 19.968_75, -66.031_25]);
     assert_eq!(fixed.angles, lift.angles);
     assert_eq!(fixed.model, 3);
+}
+
+/// The texel at the face's corner, first of its row, in the image `mesh` made for `styles`.
+fn texel_for(mesh: &MapMesh, styles: &LightStyles) -> [u8; 4] {
+    let image = mesh.lightmaps.image(styles);
+    image.rgba[4..8].try_into().unwrap()
+}
+
+/// Style `style`'s string is `string`; the others have none.
+fn style(style: usize, string: &'static [u8]) -> LightStyles {
+    LightStyles::at(move |s| (s == style).then_some(string), 0.0)
+}
+
+// spec REND-1.13: a texel sums each of its styles' samples times the style's value at the time,
+// shifted right by 7 and capped at 255
+#[test]
+fn a_texel_sums_its_styles_at_their_values() {
+    let spec = MapSpec {
+        styles: [0, 3, 255, 2],
+        ..MapSpec::default()
+    };
+    let mesh = build(&spec, &samples(&[30, 40, 90]));
+    assert_eq!(
+        texel_for(&mesh, &LightStyles::unset()),
+        [140, 140, 140, 255]
+    );
+    // Style 3 at 'a' (0): only style 0's 30 * 256 >> 7 = 60.
+    assert_eq!(texel_for(&mesh, &style(3, b"a")), [60, 60, 60, 255]);
+    // Style 3 at 'z' (550): 30*2 + 40*550/128 = 60 + 171.
+    assert_eq!(texel_for(&mesh, &style(3, b"z")), [231, 231, 231, 255]);
+    // Style 2 is past the 255 that ends the list, so it is never read.
+    assert_eq!(texel_for(&mesh, &style(2, b"z")), [140, 140, 140, 255]);
+    let bright = build(&MapSpec::default(), &samples(&[200]));
+    assert_eq!(texel_for(&bright, &style(0, b"z"))[0], 255, "capped");
+}
+
+// spec REND-5.4: the unsigned sum is read as a signed int: a negative one, from a letter
+// before a, is drawn as its low byte after the shift
+#[test]
+fn a_negative_sum_keeps_its_low_byte() {
+    let mesh = build(&MapSpec::default(), &samples(&[1]));
+    // '0' is -1078: 1 * -1078 = -1078, >> 7 = -9 (arithmetic), low byte 247.
+    assert_eq!(texel_for(&mesh, &style(0, b"0"))[0], 247);
+}
+
+// spec REND-5.5: the lightmap is made again only when a style some face reads changed
+#[test]
+fn relighting_waits_for_a_style_a_face_reads() {
+    let mut mesh = build(&MapSpec::default(), &samples(&[50]));
+    let first = mesh.lightmap.clone();
+    assert!(!mesh.relight(&LightStyles::unset()), "nothing changed");
+    assert!(!mesh.relight(&style(5, b"a")), "style 5 is no face's");
+    assert!(mesh.relight(&style(0, b"a")));
+    assert_ne!(mesh.lightmap, first);
+    assert_eq!(&mesh.lightmap.rgba[4..8], [0, 0, 0, 255]);
+    assert!(!mesh.relight(&style(0, b"a")), "applied already");
+    assert!(mesh.relight(&LightStyles::unset()));
+    assert_eq!(mesh.lightmap, first);
+    // A map with no lighting lump, or a face with no samples, reads no style.
+    let mut full = build(&MapSpec::default(), &[]);
+    assert!(!full.relight(&style(0, b"a")));
+    let dark = MapSpec {
+        lightofs: -1,
+        ..MapSpec::default()
+    };
+    let mut dark = build(&dark, &samples(&[50]));
+    assert!(!dark.relight(&style(0, b"a")));
+    assert_eq!(&dark.lightmap.rgba[4..8], [0, 0, 0, 255]);
+}
+
+/// A `.lit` file for `lighting`: each byte's triple `(b, 2b, 3b)`, wrapped.
+fn lit_file(lighting: &[u8]) -> Vec<u8> {
+    let mut file = b"QLIT".to_vec();
+    file.extend(1_i32.to_le_bytes());
+    for &b in lighting {
+        file.extend([b, b.wrapping_mul(2), b.wrapping_mul(3)]);
+    }
+    file
+}
+
+// spec REND-6.1: with a .lit file a face's samples are its triples at lightofs * 3
+// spec REND-6.2: each channel sums as a grey texel does, shifted and capped at 255
+#[test]
+fn a_lit_file_lights_each_channel() {
+    let lighting = samples(&[50]);
+    let file = lit_file(&lighting);
+    let lit = Lit::read(&file, lighting.len()).unwrap();
+    let map = bsp(&MapSpec::default(), &lighting);
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette);
+    builder
+        .add_lit(&map, Some(&lit), &[Placement::WORLD])
+        .unwrap();
+    let mesh = builder.finish();
+    // 50, 100, 150 at 256 >> 7: 100, 200, 300 capped to 255.
+    assert_eq!(&mesh.lightmap.rgba[4..8], [100, 200, 255, 255]);
+    assert_eq!(texel_for(&mesh, &style(0, b"a")), [0, 0, 0, 255]);
+    // REND-6.2: an unsigned sum shifts as unsigned, so a letter before a is bright, not
+    // its low byte.
+    assert_eq!(texel_for(&mesh, &style(0, b"0"))[0], 255);
 }

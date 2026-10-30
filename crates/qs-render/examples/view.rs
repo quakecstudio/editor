@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
-use qs_render::{Camera, MapCallback, MapRenderer, View};
+use qs_render::{Camera, MapCallback, MapMesh, MapRenderer, View};
 
 mod common;
 
@@ -68,6 +68,7 @@ fn main() -> Result<(), String> {
             state.renderer.write().callback_resources.insert(renderer);
             Ok(Box::new(Viewer {
                 map,
+                mesh,
                 camera,
                 triangles,
                 models,
@@ -84,6 +85,7 @@ fn main() -> Result<(), String> {
 
 struct Viewer {
     map: String,
+    mesh: MapMesh,
     camera: Camera,
     triangles: usize,
     models: common::Models,
@@ -115,6 +117,10 @@ impl eframe::App for Viewer {
         let time = now.duration_since(self.started);
 
         self.models.update(&self.sim);
+        let lightmap = self
+            .mesh
+            .relight(&self.sim.light_styles())
+            .then(|| self.mesh.lightmap.clone());
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
             rect,
             MapCallback {
@@ -125,6 +131,7 @@ impl eframe::App for Viewer {
                 },
                 models: self.models.frame(self.sim.time()),
                 placements: self.models.placements(),
+                lightmap,
             },
         ));
         // egui's fonts are not bundled (their licenses are outside deny.toml's), so the stats

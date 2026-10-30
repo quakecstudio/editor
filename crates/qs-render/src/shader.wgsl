@@ -71,11 +71,11 @@ fn vertex(input: In) -> Out {
     return out;
 }
 
-// REND-1.7: the texture's colour times the light.
+// REND-1.7: the texture's colour times the light, each channel by its own (REND-6).
 @fragment
 fn fragment(input: Out) -> @location(0) vec4<f32> {
     let colour = textureSample(surface, surface_sampler, input.texture);
-    let light = textureSample(lightmap, lightmap_sampler, input.light).r;
+    let light = textureSample(lightmap, lightmap_sampler, input.light).rgb;
     return vec4<f32>(colour.rgb * light, OPAQUE);
 }
 

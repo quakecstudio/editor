@@ -33,7 +33,8 @@ texture darkened by the lightmap. The map view and the preview host draw the wor
   128 by 128 blocks; this renderer packs them into one texture, whose width and height take
   the place of `BLOCK_WIDTH` and `BLOCK_HEIGHT`, which keeps the mapping from a face's texels
   to its surface.
-- **REND-1.4** A lightmap texel is `t = (sum of sample * scale) >> 7`, capped at 255, summed over
+- **REND-1.4** **Withdrawn** 2026-10-30: it held every style at 256 until lightstyles animate,
+  which they now do; replaced by REND-1.13 and REND-5. A lightmap texel is `t = (sum of sample * scale) >> 7`, capped at 255, summed over
   the face's styles until one is 255, at most four, `scale` being the style's value
   (`R_BuildLightMap`). A style is 256 while no light string is set for it, and otherwise
   `(letter - 'a') * 22` for the letter its string has at the time, so `m`, "normal light", is
@@ -78,6 +79,9 @@ texture darkened by the lightmap. The map view and the preview host draw the wor
   moves it back, `DIST_EPSILON` being `(0.03125)` (`Quake/quakedef.h`). The renderer offers the
   same; the viewer turns it on unless asked for GLQuake's drawing, since it removes a visible
   flicker the map's author did not intend.
+- **REND-1.13** A lightmap texel is `t = (sum of sample * scale) >> 7`, capped at 255, summed
+  over the face's styles until one is 255, at most four, `scale` being the style's value at
+  the time (`R_BuildLightMap`; REND-5 gives the values and the arithmetic).
 
 ## REND-2 Moving textures
 
@@ -209,7 +213,9 @@ world's light below the entity.
   (scale_origin)`, `glScalef (scale)`), turned and moved by `R_RotateForEntity`: roll about x,
   then `-angles[0]` about y, then yaw about z, then the origin. Unlike a brush model
   (REND-1.9) the pitch is not negated first.
-- **REND-4.6** `R_LightPoint (p)` is 255 in a map with no lighting lump. Otherwise it follows
+- **REND-4.6** **Withdrawn** 2026-10-30: it held every style at `REND_UNSET_STYLE`, which
+  lightstyles now replace with their values; replaced by REND-4.10 and REND-5.6.
+  `R_LightPoint (p)` is 255 in a map with no lighting lump. Otherwise it follows
   the line from `p` to 2048 units below it through the world's nodes from node 0: on a node it
   goes down the side `front < 0` of `start`, and when `end` is on the same side, only there;
   else to the crossing `mid = start + (end - start) * front/(front-back)`, then the node's faces,
@@ -235,6 +241,18 @@ world's light below the entity.
   `bobjrotate = anglemod(100*cl.time)` (`CL_RelinkEntities`), with `anglemod (a)` of the float
   `a` being `(360.0/65536) * ((int)(a*(65536/360.0)) & 65535)`.
 
+- **REND-4.10** `R_LightPoint (p)` is 255 in a map with no lighting lump. Otherwise it follows
+  the line from `p` to 2048 units below it through the world's nodes from node 0: on a node it
+  goes down the side `front < 0` of `start`, and when `end` is on the same side, only there;
+  else to the crossing `mid = start + (end - start) * front/(front-back)`, then the node's faces,
+  then the far side from `mid`. A face drawn tiled (sky, water) is skipped. For the others,
+  `s` and `t` are the texinfo's dot products at `mid` with their offsets, truncated to ints; a
+  face is hit when `s - texturemins[0]` and `t - texturemins[1]` are each from 0 to its
+  extents. A face hit with no samples gives 0; one with samples gives
+  `(sum over its styles of sample * style value) >> 8` at sample `(dt>>4) *
+  ((extents[0]>>4)+1) + (ds>>4)`, the style values as REND-5.6 says. A leaf hit with nothing
+  gives 0.
+
 ### Constants
 
 | Name | Value | Source |
@@ -243,3 +261,52 @@ world's light below the entity.
 | `REND_SHADE_SCALE` | 200 | `WinQuake/gl_rmain.c`, `shadelight = shadelight / 200.0` in `R_DrawAliasModel` |
 | `REND_LIGHT_DEPTH` | 2048 | `WinQuake/gl_rlight.c`, `end[2] = p[2] - 2048` in `R_LightPoint` |
 | `REND_ROTATE_RATE` | 100 degrees a second | `WinQuake/cl_main.c`, `anglemod(100*cl.time)` in `CL_RelinkEntities` |
+
+## REND-5 Light styles
+
+**Source:** `WinQuake/gl_rlight.c`, `R_AnimateLight` and `R_LightPoint`; `WinQuake/gl_rsurf.c`,
+`R_BuildLightMap` and `R_RenderBrushPoly`; `WinQuake/r_main.c`, `d_lightstylevalue`
+(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
+
+A face's lightmaps are one per light style it lists. The progs sets each style's string with
+`lightstyle`, a letter a tenth of a second; GLQuake turns the letters into a scale for each
+style every frame and rebuilds the lightmaps of the faces whose styles changed.
+
+### Behaviour
+
+- **REND-5.1** There are 64 styles (`MAX_LIGHTSTYLES`). A face lists up to four, ended by 255
+  (`MAXLIGHTMAPS`).
+- **REND-5.2** A style with no string, or an empty one (`!cl_lightstyle[j].length`), is 256.
+- **REND-5.3** Otherwise its value at time `cl.time` is `(map[k] - 'a') * 22` with
+  `k = (int)(cl.time*10) % length`, so `a` is 0, `m` ("normal light") 264 and `z` ("double
+  bright") 550. A letter before `a` gives a negative value, as id's code does. A negative time
+  makes id's `k` negative and reads before the string; this renderer reads the first letter
+  then, our choice, since the result in id's code is undefined.
+- **REND-5.4** `d_lightstylevalue` is an `int` and `R_BuildLightMap`'s `scale` an `unsigned`, so
+  the products and their sum are unsigned and wrap. The sum is then read into the signed `int t`,
+  shifted right by 7 and capped at 255; GLQuake's luminance texture keeps `255 - t` as a byte,
+  so the light drawn is the low byte of `t` when `t` is below 256, and 255 above it.
+- **REND-5.5** GLQuake rebuilds a face's lightmap when one of its styles' values differs from
+  the value it was built with (`R_RenderBrushPoly`: `d_lightstylevalue[fa->styles[maps]] !=
+  fa->cached_light[maps]`). This renderer builds the whole atlas again in that case; the
+  texels are the same.
+- **REND-5.6** `R_LightPoint` sums `sample * scale` with the same style values into the `int r`,
+  so its products wrap the same way, and shifts it right by 8 (`RecursiveLightPoint`).
+
+## REND-6 Coloured light
+
+**Source:** `Quake/gl_model.c`, `Mod_LoadLighting`, and `Quake/r_brush.c`, `R_BuildLightMap`
+(sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`). A `.lit` file is read as BSP-18
+says.
+
+QuakeSpasm, through LordHavoc's `.lit` support, lights a map in colour when a `.lit` file sits
+beside it: a red, green and blue sample for each byte of the lighting lump.
+
+### Behaviour
+
+- **REND-6.1** With a `.lit` file the samples of a face are its triples, from `lightdata +
+  (lofs * 3)` ("lit support via lordhavoc"); without one, each byte of the lighting lump is
+  its own red, green and blue ("expand the white lighting data to color").
+- **REND-6.2** Each channel is summed as REND-1.13 sums a texel, into an `unsigned` that wraps,
+  shifted right by 7 (`r = *bl++ >> 7`) and capped at 255. The renderer draws a map without a
+  `.lit` file as GLQuake does (REND-5.4), and one with it as QuakeSpasm does.

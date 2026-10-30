@@ -6,11 +6,16 @@
 
 //! A BSP's world surfaces as the GPU draws them (REND-1): each face a fan of triangles with its
 //! texture and lightmap coordinates, the textures through the palette, and every face's light
-//! packed into one lightmap atlas.
+//! packed into one lightmap atlas, made again as the light styles change (REND-5).
+//!
+//! Coloured light from a `.lit` file (REND-6) follows QuakeSpasm's `R_BuildLightMap`, cited in
+//! `docs/spec/render.md` for its behaviour, as `qs-bsp` reads the file; none of its code is
+//! ported.
 
-use qs_bsp::{Bsp, Face, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo};
+use qs_bsp::{Bsp, Face, Lit, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo};
 
 use crate::alias::rotate_for_entity;
+use crate::styles::LightStyles;
 
 /// GLQuake's `vid_gamma` on any card but a 3Dfx, "default to 0.7 on non-3dfx hardware"
 /// (REND-3.1).
@@ -18,10 +23,8 @@ pub const GAMMA: f32 = 0.7;
 
 /// The bytes of `gfx/palette.lmp`: 256 colours of three bytes (REND-1.8).
 const PALETTE_BYTES: usize = 768;
-/// `t >>= 7` in `R_BuildLightMap` (REND-1.4).
+/// `t >>= 7` in `R_BuildLightMap` (REND-1.13).
 const LIGHT_SHIFT: u32 = 7;
-/// A style's value while no light string is set for it (REND-1.4).
-pub(crate) const UNSET_STYLE: u32 = 256;
 /// QuakeSpasm's `DIST_EPSILON`, `(0.03125)`, by which `gl_zfix` moves a brush entity
 /// (REND-1.12).
 const ZFIX: f32 = 0.031_25;
@@ -188,8 +191,10 @@ pub struct MapMesh {
     pub skies: Vec<Option<[Image; 2]>>,
     /// Each texture's frames, `None` for one that does not animate (REND-2.1).
     pub animations: Vec<Option<Animation>>,
-    /// Every face's light, one byte repeated in red, green and blue (REND-1.4).
+    /// Every face's light for the styles last applied (REND-1.13, REND-5, REND-6).
     pub lightmap: Image,
+    /// What [`MapMesh::lightmap`] is made from, to make it again as the styles change.
+    pub lightmaps: Lightmaps,
     /// The world model's bounds.
     pub mins: [f32; 3],
     /// The world model's bounds.
@@ -210,6 +215,17 @@ impl MapMesh {
         let mut builder = MeshBuilder::new(palette);
         builder.add(bsp, &[Placement::WORLD])?;
         Ok(builder.finish())
+    }
+
+    /// Makes [`MapMesh::lightmap`] again for `styles` when a style some face reads changed
+    /// since it was made; whether it did (REND-5.5).
+    pub fn relight(&mut self, styles: &LightStyles) -> bool {
+        if !self.lightmaps.stale(styles) {
+            return false;
+        }
+        self.lightmap = self.lightmaps.image(styles);
+        self.lightmaps.applied = *styles;
+        true
     }
 }
 
@@ -274,7 +290,7 @@ impl Placement {
 /// one atlas.
 pub struct MeshBuilder<'p> {
     palette: &'p Palette,
-    atlas: Atlas,
+    atlas: Lightmaps,
     textures: Vec<Image>,
     skies: Vec<Option<[Image; 2]>>,
     animations: Vec<Option<Animation>>,
@@ -290,7 +306,7 @@ impl<'p> MeshBuilder<'p> {
     pub fn new(palette: &'p Palette) -> Self {
         Self {
             palette,
-            atlas: Atlas::new(),
+            atlas: Lightmaps::new(),
             textures: Vec::new(),
             skies: Vec::new(),
             animations: Vec::new(),
@@ -309,6 +325,21 @@ impl<'p> MeshBuilder<'p> {
     /// [`MeshError::NoWorld`] when a placement names a model the BSP does not have, and
     /// [`MeshError::AtlasTooLarge`] when the lightmaps do not fit one texture.
     pub fn add(&mut self, bsp: &Bsp<'_>, placements: &[Placement]) -> Result<(), MeshError> {
+        self.add_lit(bsp, None, placements)
+    }
+
+    /// [`MeshBuilder::add`], the faces lit in colour by `lit`, the map's `.lit` file, when
+    /// there is one (REND-6.1).
+    ///
+    /// # Errors
+    ///
+    /// As [`MeshBuilder::add`].
+    pub fn add_lit(
+        &mut self,
+        bsp: &Bsp<'_>,
+        lit: Option<&Lit<'_>>,
+        placements: &[Placement],
+    ) -> Result<(), MeshError> {
         let base = self.textures.len();
         let mut surfaces = vec![Surface::Lit; bsp.textures.len()];
         let mut by_texture: Vec<Vec<Polygon>> = vec![Vec::new(); bsp.textures.len()];
@@ -345,7 +376,7 @@ impl<'p> MeshBuilder<'p> {
                 };
                 let place = match placed.get(number).copied().flatten() {
                     Some(place) => place,
-                    None if surface == Surface::Lit => self.atlas.place(face, bsp)?,
+                    None if surface == Surface::Lit => self.atlas.place(face, bsp, lit)?,
                     None => self.atlas.full_bright(),
                 };
                 if let Some(slot) = placed.get_mut(number) {
@@ -409,7 +440,8 @@ impl<'p> MeshBuilder<'p> {
             textures: self.textures,
             skies: self.skies,
             animations: self.animations,
-            lightmap: self.atlas.image(),
+            lightmap: self.atlas.image(&LightStyles::unset()),
+            lightmaps: self.atlas.clone(),
             mins,
             maxs,
             models: self.models.clone(),
@@ -531,30 +563,62 @@ fn dot(v: &[f32; 3], axis: [f32; 4]) -> f32 {
     v[0] * axis[0] + v[1] * axis[1] + v[2] * axis[2] + axis[3]
 }
 
-/// Every face's lightmap packed into rows of one texture, with a full-bright texel at its
-/// corner for the faces that have no lightmap.
-struct Atlas {
-    texels: Vec<u8>,
+/// Where one face's light comes from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum FaceLight {
+    /// A map with no lighting lump: full bright, whatever the styles (REND-1.13).
+    Full,
+    /// No samples (`lightofs` of -1): black (REND-1.5).
+    Dark,
+    /// The face's styles and, for each, its samples: grey from the lighting lump, summed as
+    /// GLQuake does (REND-5.4), or coloured from a `.lit` file, summed as QuakeSpasm does
+    /// (REND-6.2).
+    Samples {
+        styles: Vec<u8>,
+        maps: Vec<Vec<[u8; 3]>>,
+        colour: Colour,
+    },
+}
+
+/// Whether a face's samples are the lighting lump's grey or a `.lit` file's colour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Colour {
+    Grey,
+    Lit,
+}
+
+/// One face's light and where it is in the atlas.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PlacedLight {
+    at: [usize; 2],
+    size: [usize; 2],
+    light: FaceLight,
+}
+
+/// Every face's light, packed into rows of one texture with a full-bright texel at its corner
+/// for the faces that have no lightmap, and made into an image for the light styles' values
+/// at a time (REND-1.3 to REND-1.6, REND-5, REND-6).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Lightmaps {
+    faces: Vec<PlacedLight>,
     /// The next free column of the current row, the row's top and its height.
     cursor: [usize; 3],
     height: usize,
+    /// The styles the image was last made for.
+    applied: LightStyles,
 }
 
 /// The tallest atlas, the height every GPU wgpu supports.
 const ATLAS_MAX_HEIGHT: usize = 8192;
 
-impl Atlas {
+impl Lightmaps {
     fn new() -> Self {
-        let mut atlas = Self {
-            texels: Vec::new(),
+        Self {
+            faces: Vec::new(),
             cursor: [1, 0, 1],
             height: 1,
-        };
-        atlas.grow(1);
-        if let Some(texel) = atlas.texels.first_mut() {
-            *texel = 255;
+            applied: LightStyles::unset(),
         }
-        atlas
     }
 
     /// The texel that is always 255 (REND-1.6).
@@ -562,16 +626,14 @@ impl Atlas {
         [0, 0]
     }
 
-    /// Makes the atlas `height` rows tall.
-    fn grow(&mut self, height: usize) {
-        self.height = self.height.max(height);
-        self.texels
-            .resize(ATLAS_WIDTH.saturating_mul(self.height), 0);
-    }
-
-    /// Places `face`'s lightmap and writes its texels (REND-1.3 to REND-1.5); returns its
-    /// position.
-    fn place(&mut self, face: &Face, bsp: &Bsp<'_>) -> Result<[usize; 2], MeshError> {
+    /// Places `face`'s lightmap, its samples from `bsp` or, coloured, from `lit`; returns its
+    /// position (REND-1.3).
+    fn place(
+        &mut self,
+        face: &Face,
+        bsp: &Bsp<'_>,
+        lit: Option<&Lit<'_>>,
+    ) -> Result<[usize; 2], MeshError> {
         let [smax, tmax] = face.lightmap_size;
         let [mut column, mut top, mut row_height] = self.cursor;
         if column.saturating_add(smax) > ATLAS_WIDTH {
@@ -584,25 +646,13 @@ impl Atlas {
         if bottom > ATLAS_MAX_HEIGHT || smax > ATLAS_WIDTH {
             return Err(MeshError::AtlasTooLarge);
         }
-        self.grow(bottom);
+        self.height = self.height.max(bottom);
         self.cursor = [column.saturating_add(smax), top, row_height];
-        let texels = light_texels(face, bsp);
-        for t in 0..tmax {
-            for s in 0..smax {
-                let value = texels
-                    .get(t.saturating_mul(smax).saturating_add(s))
-                    .copied()
-                    .unwrap_or(0);
-                let at = top
-                    .saturating_add(t)
-                    .saturating_mul(ATLAS_WIDTH)
-                    .saturating_add(column)
-                    .saturating_add(s);
-                if let Some(texel) = self.texels.get_mut(at) {
-                    *texel = value;
-                }
-            }
-        }
+        self.faces.push(PlacedLight {
+            at: [column, top],
+            size: [smax, tmax],
+            light: face_light(face, bsp, lit),
+        });
         Ok([column, top])
     }
 
@@ -610,36 +660,148 @@ impl Atlas {
         (f32_of_usize(ATLAS_WIDTH), f32_of_usize(self.height))
     }
 
-    /// The atlas as an image, each texel's light in red, green and blue.
-    fn image(&self) -> Image {
+    /// The atlas for `styles`: each texel's light in red, green and blue.
+    #[must_use]
+    pub fn image(&self, styles: &LightStyles) -> Image {
+        let mut rgba = vec![0_u8; ATLAS_WIDTH.saturating_mul(self.height).saturating_mul(4)];
+        if let Some(corner) = rgba.get_mut(..4) {
+            corner.copy_from_slice(&[255; 4]);
+        }
+        for face in &self.faces {
+            let [smax, tmax] = face.size;
+            let texels = face.light.texels(smax.saturating_mul(tmax), styles);
+            for t in 0..tmax {
+                for s in 0..smax {
+                    let [r, g, b] = texels
+                        .get(t.saturating_mul(smax).saturating_add(s))
+                        .copied()
+                        .unwrap_or_default();
+                    let at = face.at[1]
+                        .saturating_add(t)
+                        .saturating_mul(ATLAS_WIDTH)
+                        .saturating_add(face.at[0])
+                        .saturating_add(s)
+                        .saturating_mul(4);
+                    if let Some(texel) = rgba.get_mut(at..at.saturating_add(4)) {
+                        texel.copy_from_slice(&[r, g, b, 255]);
+                    }
+                }
+            }
+        }
         Image {
             width: u32_of(ATLAS_WIDTH),
             height: u32_of(self.height),
-            rgba: self.texels.iter().flat_map(|&l| [l, l, l, 255]).collect(),
+            rgba,
+        }
+    }
+
+    /// Whether `styles` differ from the styles the image was made for in a style some face
+    /// reads, as `R_RenderDynamicLightmaps` compares `cached_light` (REND-5.5).
+    fn stale(&self, styles: &LightStyles) -> bool {
+        self.faces.iter().any(|face| match &face.light {
+            FaceLight::Samples { styles: used, .. } => used
+                .iter()
+                .any(|&style| styles.value(style) != self.applied.value(style)),
+            FaceLight::Full | FaceLight::Dark => false,
+        })
+    }
+}
+
+impl FaceLight {
+    /// The face's `size` texels for `styles`.
+    fn texels(&self, size: usize, styles: &LightStyles) -> Vec<[u8; 3]> {
+        match self {
+            Self::Full => vec![[255; 3]; size],
+            Self::Dark => vec![[0; 3]; size],
+            Self::Samples {
+                styles: used,
+                maps,
+                colour,
+            } => {
+                let mut sums = vec![[0_u32; 3]; size];
+                for (&style, map) in used.iter().zip(maps) {
+                    let scale = styles.scale(style);
+                    for (sum, sample) in sums.iter_mut().zip(map) {
+                        for (channel, &value) in sum.iter_mut().zip(sample) {
+                            *channel = channel.wrapping_add(u32::from(value).wrapping_mul(scale));
+                        }
+                    }
+                }
+                sums.iter()
+                    .map(|sum| sum.map(|channel| colour.texel(channel)))
+                    .collect()
+            }
         }
     }
 }
 
-/// REND-1.4, REND-1.5: `face`'s light texels, `smax * tmax` of them.
-fn light_texels(face: &Face, bsp: &Bsp<'_>) -> Vec<u8> {
-    let [smax, tmax] = face.lightmap_size;
-    let size = smax.saturating_mul(tmax);
-    // "set to full bright if no light data"
-    if bsp.lighting.is_empty() {
-        return vec![255; size];
-    }
-    let mut sums = vec![0_u32; size];
-    if let Some(samples) = bsp.face_samples(face) {
-        // Every style is the unset value until lightstyles animate (REND-1.4).
-        for map in samples.chunks_exact(size.max(1)).take(face.style_count()) {
-            for (sum, &sample) in sums.iter_mut().zip(map) {
-                *sum = sum.saturating_add(u32::from(sample).saturating_mul(UNSET_STYLE));
+impl Colour {
+    /// One channel's texel from its sum.
+    fn texel(self, sum: u32) -> u8 {
+        match self {
+            // REND-5.4: GLQuake reads the sum into a signed `t`, shifts it and caps it at
+            // 255; the GL texture keeps the low byte of what is left.
+            Self::Grey => {
+                let t = sum.cast_signed() >> LIGHT_SHIFT;
+                if t > 255 {
+                    u8::MAX
+                } else {
+                    u8::try_from(t.rem_euclid(256)).unwrap_or(0)
+                }
             }
+            // REND-6.2: QuakeSpasm shifts the unsigned sum and caps it at 255.
+            Self::Lit => u8::try_from(sum >> LIGHT_SHIFT).unwrap_or(u8::MAX),
         }
     }
-    sums.iter()
-        .map(|&sum| u8::try_from(sum >> LIGHT_SHIFT).unwrap_or(u8::MAX))
-        .collect()
+}
+
+/// Where `face`'s light comes from (REND-1.13, REND-1.5, REND-6.1).
+fn face_light(face: &Face, bsp: &Bsp<'_>, lit: Option<&Lit<'_>>) -> FaceLight {
+    // "set to full bright if no light data"
+    if bsp.lighting.is_empty() {
+        return FaceLight::Full;
+    }
+    let Some(samples) = bsp.face_samples(face) else {
+        return FaceLight::Dark;
+    };
+    let [smax, tmax] = face.lightmap_size;
+    let size = smax.saturating_mul(tmax).max(1);
+    let styles: Vec<u8> = face
+        .styles
+        .iter()
+        .copied()
+        .take(face.style_count())
+        .collect();
+    let start = usize::try_from(face.lightofs).unwrap_or(0);
+    let (maps, colour) = match lit {
+        Some(lit) => (
+            (0..styles.len())
+                .map(|map| {
+                    (0..size)
+                        .map(|i| {
+                            let index = start
+                                .saturating_add(map.saturating_mul(size))
+                                .saturating_add(i);
+                            lit.sample(index).unwrap_or_default()
+                        })
+                        .collect()
+                })
+                .collect(),
+            Colour::Lit,
+        ),
+        None => (
+            samples
+                .chunks_exact(size)
+                .map(|map| map.iter().map(|&v| [v; 3]).collect())
+                .collect(),
+            Colour::Grey,
+        ),
+    };
+    FaceLight::Samples {
+        styles,
+        maps,
+        colour,
+    }
 }
 
 /// The texture `texture`'s first mip level through `palette` (REND-1.8).

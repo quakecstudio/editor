@@ -40,6 +40,8 @@ pub struct MapRenderer {
     models: Buffer,
     model_group: BindGroup,
     model_count: usize,
+    /// The lightmap atlas, written again as the light styles change (REND-5.5).
+    lightmap: wgpu::Texture,
 }
 
 /// The bytes between two models' matrices: the dynamic offset alignment every device allows.
@@ -267,7 +269,13 @@ impl MapRenderer {
             wgpu::FilterMode::Linear,
             wgpu::AddressMode::ClampToEdge,
         );
-        let lightmap = upload(device, queue, &mesh.lightmap);
+        let lightmap_texture = upload_texture(
+            device,
+            queue,
+            core::slice::from_ref(&mesh.lightmap),
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        );
+        let lightmap = lightmap_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let shared = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("qs-render view and lightmap"),
             layout: &shared_layout,
@@ -353,6 +361,7 @@ impl MapRenderer {
             models,
             model_group,
             model_count,
+            lightmap: lightmap_texture,
         }
     }
 
@@ -384,6 +393,26 @@ impl MapRenderer {
             queue.write_buffer(buffer, 0, &bytes);
         }
         self.alias_draws.clone_from(&models.draws);
+    }
+
+    /// Writes `image`, the mesh's lightmap made again for new light styles
+    /// ([`crate::MapMesh::relight`]), over the one drawn (REND-5.5). An image of another size
+    /// than the mesh's lightmap is not written.
+    pub fn set_lightmap(&self, queue: &Queue, image: &Image) {
+        let size = self.lightmap.size();
+        if (image.width, image.height) != (size.width, size.height) {
+            return;
+        }
+        queue.write_texture(
+            self.lightmap.as_image_copy(),
+            &image.rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(image.width.saturating_mul(4)),
+                rows_per_image: Some(image.height),
+            },
+            size,
+        );
     }
 
     /// Sets the view for the next draw: the matrix from map coordinates to clip space, the
@@ -530,29 +559,38 @@ fn upload(device: &Device, queue: &Queue, image: &Image) -> wgpu::TextureView {
 
 /// The mip levels `levels`, largest first, as one texture's view.
 fn upload_levels(device: &Device, queue: &Queue, levels: &[Image]) -> wgpu::TextureView {
+    upload_texture(device, queue, levels, wgpu::TextureUsages::TEXTURE_BINDING)
+        .create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// The mip levels `levels`, largest first, as one texture used as `usage` says.
+fn upload_texture(
+    device: &Device,
+    queue: &Queue,
+    levels: &[Image],
+    usage: wgpu::TextureUsages,
+) -> wgpu::Texture {
     let first = levels.first();
     let data: Vec<u8> = levels.iter().flat_map(|l| l.rgba.iter().copied()).collect();
-    device
-        .create_texture_with_data(
-            queue,
-            &wgpu::TextureDescriptor {
-                label: Some("qs-render"),
-                size: wgpu::Extent3d {
-                    width: first.map_or(1, |l| l.width),
-                    height: first.map_or(1, |l| l.height),
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: u32::try_from(levels.len()).unwrap_or(1).max(1),
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
+    device.create_texture_with_data(
+        queue,
+        &wgpu::TextureDescriptor {
+            label: Some("qs-render"),
+            size: wgpu::Extent3d {
+                width: first.map_or(1, |l| l.width),
+                height: first.map_or(1, |l| l.height),
+                depth_or_array_layers: 1,
             },
-            TextureDataOrder::LayerMajor,
-            &data,
-        )
-        .create_view(&wgpu::TextureViewDescriptor::default())
+            mip_level_count: u32::try_from(levels.len()).unwrap_or(1).max(1),
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage,
+            view_formats: &[],
+        },
+        TextureDataOrder::LayerMajor,
+        &data,
+    )
 }
 
 /// What one frame of the map view is drawn with.
@@ -575,6 +613,8 @@ pub struct MapCallback {
     pub models: ModelFrame,
     /// Each of the mesh's models' matrices, the world's first.
     pub placements: Vec<[[f32; 4]; 4]>,
+    /// The lightmap made again for this frame's light styles, when they changed (REND-5.5).
+    pub lightmap: Option<Image>,
 }
 
 impl CallbackTrait for MapCallback {
@@ -591,6 +631,9 @@ impl CallbackTrait for MapCallback {
             renderer.set_models(device, queue, &self.models);
             if !self.placements.is_empty() {
                 renderer.set_placements(queue, &self.placements);
+            }
+            if let Some(lightmap) = &self.lightmap {
+                renderer.set_lightmap(queue, lightmap);
             }
         }
         Vec::new()
@@ -669,6 +712,7 @@ mod tests {
 
     // spec REND-1.7: the surface is its texture's colour times the lightmap's light, in a
     // shader every backend accepts
+    // spec REND-6.2: each channel by the lightmap's own channel
     #[test]
     fn the_shader_validates_and_darkens_the_texture_by_the_light() {
         let module = wgsl::parse_str(SHADER).unwrap();
@@ -676,8 +720,9 @@ mod tests {
             .validate(&module)
             .unwrap();
         assert!(
-            SHADER
-                .contains("let light = textureSample(lightmap, lightmap_sampler, input.light).r;")
+            SHADER.contains(
+                "let light = textureSample(lightmap, lightmap_sampler, input.light).rgb;"
+            )
         );
         assert!(SHADER.contains("return vec4<f32>(colour.rgb * light, OPAQUE);"));
     }

@@ -6,18 +6,24 @@ the map view and the preview host share one renderer.
 
 - **Layer:** L7 UI. It depends on `qs-bsp` and `qs-mdl` (L0), `egui-wgpu` and `epaint`; its examples also
   on `qs-vfs`, `qc-progs` and `qs-sim`.
-- **Spec sections:** REND-1 to REND-4 of [`render.md`](../../docs/spec/render.md).
+- **Spec sections:** REND-1 to REND-6 of [`render.md`](../../docs/spec/render.md).
 - **Ported from:** id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`,
   `WinQuake/gl_rsurf.c` (`BuildSurfaceDisplayList`, `GL_CreateSurfaceLightmap`,
   `R_BuildLightMap`, `R_DrawBrushModel`), `WinQuake/gl_rmain.c` (`R_RotateForEntity`); `R_AnimateLight`'s value for a style with no light string is from
-  `WinQuake/gl_rlight.c`.
+  `WinQuake/gl_rlight.c`; `R_AnimateLight` is ported in `src/styles.rs`. Coloured light (REND-6)
+  is QuakeSpasm's behaviour, described in the spec; none of its code is ported.
 - **Shipped:** yes.
 
 ## Public shape
 
 - `MapMesh::build(bsp, palette)`: the world model as vertices, a fan of triangles per face,
   batches by texture, the textures through `Palette`, and every face's light in one lightmap
-  atlas (REND-1.1 to REND-1.6, REND-1.8).
+  atlas (REND-1.1 to REND-1.6, REND-1.8). `MapMesh::relight(styles)` makes the atlas again
+  when a style a face reads changes (REND-5.5), and `MapRenderer::set_lightmap` writes it.
+- `LightStyles::at(strings, time)`: `R_AnimateLight`, every style's value from the strings the
+  progs set with `lightstyle` (REND-5).
+- `MeshBuilder::add_lit(bsp, lit, placements)`: a model lit in colour by its map's `.lit`
+  file (REND-6).
 - `MeshBuilder`: the same for several models of several BSPs, each `Placement` at its
   entity's origin and angles, such as a map's doors and lifts and its item boxes (REND-1.9).
 - `AliasModel::read(name, bytes, palette)`: an `.mdl`'s skins, poses and triangles;
@@ -31,10 +37,8 @@ the map view and the preview host share one renderer.
 
 ## What it is not, yet
 
-Lightstyles do not animate (every style is drawn at the value of a style with no light
-string, REND-1.4); dynamic lights, sprites, particles, the view model, player colours and
-`.lit` files are not drawn; BSP2 batching limits and picking are not done. These are the rest
-of P5-05. Each model has its own matrix (`MapRenderer::set_placements`), so the viewer draws
+Dynamic lights, sprites, particles, the view model and player colours are not drawn. Each
+model has its own matrix (`MapRenderer::set_placements`), so the viewer draws
 doors and lifts where `qs-sim`'s server frames move them.
 
 ## Trying it

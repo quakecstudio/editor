@@ -2,11 +2,13 @@
 
 //! What the examples share: reading a map from a Quake install and where to stand in it.
 
+use std::io::Write as _;
+
 use qc_progs::Progs;
-use qs_bsp::{Bsp, BspLoader};
+use qs_bsp::{Bsp, BspLoader, Lit};
 use qs_render::{
-    AliasDraw, AliasEntity, AliasModel, Camera, GAMMA, Image, MapMesh, MeshBuilder, ModelFrame,
-    Palette, Placement, Surface, bob_rotate, light_point,
+    AliasDraw, AliasEntity, AliasModel, Camera, GAMMA, Image, LightStyles, MapMesh, MeshBuilder,
+    ModelFrame, Palette, Placement, Surface, bob_rotate, light_point,
 };
 use qs_sim::World;
 use qs_vfs::{LoadedFile, StdFs, Vfs};
@@ -78,6 +80,19 @@ impl Sim {
     pub(crate) fn time(&self) -> f64 {
         self.world.time()
     }
+
+    /// The light styles' values at the server's time, from the strings its progs set
+    /// (REND-5).
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the server's time in seconds, far inside f32's range"
+    )]
+    pub(crate) fn light_styles(&self) -> LightStyles {
+        LightStyles::at(
+            |style| self.world.light_style(style).map(str::as_bytes),
+            self.world.time() as f32,
+        )
+    }
 }
 
 /// The alias models the map's entities show.
@@ -121,7 +136,7 @@ impl Models {
         for (number, _, entity) in &mut self.entities {
             if let Some(e) = now.iter().find(|e| e.number == *number) {
                 if e.origin.map(f32::to_bits) != entity.origin.map(f32::to_bits) {
-                    entity.light = light_point(&sim.bsp, e.origin);
+                    entity.light = light_point(&sim.bsp, &sim.light_styles(), e.origin);
                 }
                 entity.origin = e.origin;
                 entity.angles = e.angles;
@@ -285,7 +300,7 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
                     angles: entity.angles,
                     frame: index_of(entity.frame),
                     skin: index_of(entity.skin),
-                    light: light_point(&bsp, entity.origin),
+                    light: light_point(&bsp, &LightStyles::unset(), entity.origin),
                 },
             ));
             continue;
@@ -310,8 +325,22 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
             }
         }
     }
+    // A `.lit` beside the map lights it in colour (REND-6, BSP-18); one that is not usable is
+    // reported and left out, as QuakeSpasm does. BSP-18.4's game-directory priority is not
+    // checked here.
+    let lit_bytes = read(&format!("maps/{map}.lit")).ok();
+    let lit = lit_bytes.as_deref().and_then(|bytes| {
+        Lit::read(bytes, bsp.lighting.len())
+            .map_err(|error| {
+                let mut err = std::io::stderr().lock();
+                writeln!(err, "maps/{map}.lit: {error}").ok();
+            })
+            .ok()
+    });
     let mut builder = MeshBuilder::new(&palette);
-    builder.add(&bsp, &placements).map_err(|e| e.to_string())?;
+    builder
+        .add_lit(&bsp, lit.as_ref(), &placements)
+        .map_err(|e| e.to_string())?;
     brushes.extend(
         others
             .iter()
