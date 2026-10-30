@@ -3513,6 +3513,15 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   enum's item is its base type's constant, and its 0 casts to a string with no message. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_TryEvaluateCast`, `QCC_PR_ParseEnum`.
+- **FTEF-19.76** A field defined with a value, `.float b = a;` of a field `a`, names the field
+  `a` names, and takes no field space of its own: `QCC_PR_ParseDefs` gives a field
+  `pr.size_fields` only when it has no initialiser ("fields are const by default, even when not
+  initialised (as they are initialised behind the scenes)", in the branch with no `=`), and
+  `QCC_PR_GenerateInitializerType` copies the value's words into the field's global. The field
+  table lists `b` at `a`'s offset. The FTEQCC profile lowers a field of one word so; a vector
+  field, whose components are definitions of their own, is not lowered. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefs`, `QCC_PR_GenerateInitializerType`.
 
 ## FTEF-20 Keywords
 

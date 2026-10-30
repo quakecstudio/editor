@@ -332,6 +332,29 @@ impl Program {
         Ok(place)
     }
 
+    /// FTEF-19.76: makes the field at `place` name the entity field the field at `other`
+    /// names: its word becomes `other`'s, and the field space `get_def` allocated for it, when
+    /// it was the last allocated, is given back, since FTEQCC allocates none for a field
+    /// defined with a value. A vector field, whose components are definitions of their own, is
+    /// not lowered.
+    pub(crate) fn alias_field(&mut self, place: usize, other: usize) -> Result<(), Internal> {
+        let def = self.defs.get(place).ok_or(Internal::NoDefinition)?;
+        let inner = def.ty.field_inner().ok_or(Internal::Unsupported)?;
+        if inner.etype() == Etype::Vector {
+            return Err(Internal::Unsupported);
+        }
+        let own = self.word(def.ofs);
+        let source = self.defs.get(other).ok_or(Internal::NoDefinition)?;
+        if source.ty != def.ty {
+            return Err(Internal::Unsupported);
+        }
+        let target = self.word(source.ofs);
+        if own.checked_add(inner.words()) == Some(self.size_fields) {
+            self.size_fields = own;
+        }
+        self.initialise_words(place, &[target])
+    }
+
     /// Marks the definition at `place` initialised and stores `literal` in its words, as
     /// `PR_ParseDefs` copies `pr_immediate` (QC-11.6, QC-11.10). A string's text is copied to
     /// the string table first and the definition holds its offset, where id's `qcc` stores a

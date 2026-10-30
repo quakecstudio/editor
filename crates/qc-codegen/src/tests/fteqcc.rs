@@ -981,3 +981,26 @@ fn an_fteqcc_record_counts_its_parameters_among_its_locals() {
     let vanilla = super::progs(source);
     assert_eq!(function(&vanilla, "f").locals, 0);
 }
+
+// spec FTEF-19.76: a field defined with another field as its value names the same entity
+// field, and takes no field space of its own
+#[test]
+fn a_field_defined_with_a_field_names_the_same_field() {
+    let p = fte_progs(".float length;\n.float t_length = length;\n.float after;\nvoid() t = {};\n");
+    let word = |name: &str| p.globals[usize::try_from(global(&p, name)).unwrap()].bits();
+    assert_eq!(word("t_length"), word("length"));
+    assert_eq!(
+        word("after"),
+        word("length") + 1,
+        "no slot was taken for t_length"
+    );
+    let fields: Vec<(String, u32)> = p
+        .field_defs
+        .iter()
+        .map(|f| (string(&p, f.s_name).to_owned(), f.ofs))
+        .collect();
+    assert!(
+        fields.contains(&("t_length".to_owned(), word("length"))),
+        "{fields:?}"
+    );
+}

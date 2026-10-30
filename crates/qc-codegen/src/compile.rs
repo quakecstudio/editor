@@ -298,7 +298,9 @@ impl<'a> Compiler<'a> {
                     let span = expr.syntax().span();
                     // A literal is stored as it is (QC-20); under FTEQCC an expression is the
                     // value the semantic model folded it to (FTEF-34.9).
-                    if let Some(word) = self.integer_literal(place, &expr) {
+                    if let Some(other) = self.field_alias(place, &expr)? {
+                        self.program.alias_field(place, other).at(span)?;
+                    } else if let Some(word) = self.integer_literal(place, &expr) {
                         self.program.initialise_words(place, &[word]).at(span)?;
                     } else if let Some(literal) = literal_of(&expr, self.dialect) {
                         self.program.initialise(place, &literal).at(span)?;
@@ -335,6 +337,25 @@ impl<'a> Compiler<'a> {
             }
         }
         Ok(())
+    }
+
+    /// FTEF-19.76: under FTEQCC, the field `expr` names when the definition at `place`, a
+    /// field, is defined with it as its value; `None` for any other value.
+    fn field_alias(&mut self, place: usize, expr: &ast::Expr) -> Lowered<Option<usize>> {
+        let is_field = |program: &Program, place: usize| {
+            program
+                .def(place)
+                .is_some_and(|def| def.ty.field_inner().is_some())
+        };
+        if !self.dialect.has_fteqcc_extensions() || !is_field(&self.program, place) {
+            return Ok(None);
+        }
+        let ast::Expr::Name(name) = expr else {
+            return Ok(None);
+        };
+        let token = name.name().at(expr.syntax().span())?;
+        let other = self.declare(&token)?;
+        Ok(is_field(&self.program, other).then_some(other))
     }
 
     /// FTE-15.5: an `enum`'s items, each a constant global made in turn and initialised with
