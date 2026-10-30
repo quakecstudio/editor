@@ -189,6 +189,9 @@ fn compile_lowered(
     let mut compiler = Compiler::new(&index, &names);
     compiler.fold = options.fold;
     compiler.dialect = resolve.dialect;
+    if resolve.dialect == Dialect::Fteqcc {
+        compiler.program.literal_sharing = program::LiteralSharing::Constants;
+    }
     for (i, unit) in units.iter().enumerate() {
         compiler
             .compile_file(FileId(i), unit.name, unit.parse)

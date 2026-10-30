@@ -678,6 +678,15 @@ escapes `\n` and `\"` only (QC-6.2).
   (`else if (c == 't') c = '\t';	//tab` and the rest). The rerelease uses `\t`
   (`rerelease-mg1/misc_corpses.qc`). FTEQCC's other escapes are the full dialect's
   (`dialect-fteqcc.md` FTEF-13.11).
+- **FTE-20.5** A number's immediate is shared only with an immediate of its size and bits
+  (`QCC_Make32bitConst`: `if (((QCC_eval_t*)cn->symboldata)->_uint == value) return
+  QCC_MakeSRefForce(cn, 0, type);` over `floatconstdefstable`, else a new `"IMMEDIATE"` with
+  `cn->constant = true;`), and a constant takes the immediate's place when its value folds
+  (`dialect-fteqcc.md` FTEF-34.15). So a literal never shares a variable's word, unlike id's
+  `qcc`, which shares any initialised definition's (QC-20.2): after `var float two = 2;` the
+  literal `2` is its own immediate, and a store to `two` does not change it. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_Make32bitConst`.
 
 ## FTE-21 Declarations and statements in a body
 

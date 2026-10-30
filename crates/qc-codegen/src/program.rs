@@ -134,6 +134,9 @@ pub(crate) struct Def {
     /// Whether it has been initialised so far (QC-11.5): set where the initialiser is met, so a
     /// literal only reuses a constant initialised before it (QC-20.2).
     pub(crate) initialized: bool,
+    /// Whether the semantic model makes it a constant (`def->constant`): under FTEQCC only a
+    /// constant's word may hold a literal (FTE-20.5).
+    pub(crate) constant: bool,
     /// An array's elements, `arraysize`; `None` for no array (FTE-13.10).
     pub(crate) count: Option<u32>,
     /// The semantic model's definition it is; `None` for a literal and one the compiler makes.
@@ -162,6 +165,17 @@ impl Literal {
     }
 }
 
+/// Which definitions a literal may share a word with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LiteralSharing {
+    /// Any initialised definition, as id's `qcc`, whose initialised definitions are all
+    /// constants (QC-20.2).
+    Initialised,
+    /// Only a constant: FTEQCC's immediates are shared among themselves (`floatconstdefstable`),
+    /// and a constant takes an immediate's place when its value folds (FTE-20.5, FTEF-34.15).
+    Constants,
+}
+
 /// The program as compiled so far.
 #[derive(Debug)]
 pub(crate) struct Program {
@@ -185,6 +199,8 @@ pub(crate) struct Program {
     pub(crate) functions: Vec<Function>,
     /// The entity fields allocated so far, `pr.size_fields` (QC-21.3).
     pub(crate) size_fields: u32,
+    /// Which definitions a literal may share a word with.
+    pub(crate) literal_sharing: LiteralSharing,
 }
 
 impl Program {
@@ -202,6 +218,7 @@ impl Program {
             origin: None,
             functions: vec![Function::default()],
             size_fields: 0,
+            literal_sharing: LiteralSharing::Initialised,
         }
     }
 
@@ -309,6 +326,7 @@ impl Program {
             ofs,
             scope: definition.owner,
             initialized: false,
+            constant: index.constants.contains(&id),
             count,
             id: Some(id),
         });
@@ -410,6 +428,7 @@ impl Program {
             ofs,
             scope: None,
             initialized: false,
+            constant: false,
             count: None,
             id: None,
         });
@@ -443,7 +462,11 @@ impl Program {
     pub(crate) fn immediate(&mut self, literal: &Literal) -> Result<usize, Internal> {
         let ty = literal.ty();
         let found = self.defs.iter().position(|d| {
-            d.initialized && d.count.is_none() && d.ty == ty && self.holds(d.ofs, literal)
+            d.initialized
+                && (d.constant || self.literal_sharing == LiteralSharing::Initialised)
+                && d.count.is_none()
+                && d.ty == ty
+                && self.holds(d.ofs, literal)
         });
         if let Some(place) = found {
             return Ok(place);
@@ -456,6 +479,7 @@ impl Program {
             ofs,
             scope: None,
             initialized: true,
+            constant: true,
             count: None,
             id: None,
         });

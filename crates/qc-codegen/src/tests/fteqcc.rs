@@ -1217,3 +1217,16 @@ fn a_null_is_stored_by_the_targets_type() {
     assert_eq!(t[1].op, u32::from(Opcode::Address.number()));
     assert_eq!(t[2], st(Opcode::StorepFnc, null, t[1].c, 0));
 }
+
+// spec FTE-20.5: a literal never shares a variable's word, so an element of an array is still
+// named by a constant index whose value a variable holds
+#[test]
+fn a_literal_never_shares_a_variables_word() {
+    let p = fte_progs(
+        "var float two = 2;\nstring a[10];\nfloat x;\nvoid() t = { a[2] = \"\"; x = 2; };\n",
+    );
+    let two = global(&p, "two");
+    let t = body(&p, "t");
+    assert_ne!(t[1].a, two);
+    assert_eq!(words(&p, t[1].a, 1), [2.0_f32.to_bits()]);
+}
