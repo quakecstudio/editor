@@ -73,8 +73,10 @@ pub enum Text {
     LoggingOff,
     /// The palette's hint for the arrow keys.
     PaletteMove,
-    /// The palette's hint for Enter, and its Run button.
+    /// The palette's hint for Enter.
     PaletteRun,
+    /// The parameter prompt's Run button.
+    PaletteRunButton,
     /// The palette's hint for Escape.
     PaletteClose,
     /// The parameter prompt's Cancel button.
@@ -95,7 +97,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 42] = [
+    pub const ALL: [Self; 43] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -130,6 +132,7 @@ impl Text {
         Self::LoggingOff,
         Self::PaletteMove,
         Self::PaletteRun,
+        Self::PaletteRunButton,
         Self::PaletteClose,
         Self::PaletteCancel,
         Self::PaletteNoMatch,
@@ -178,6 +181,7 @@ impl Text {
             Self::LoggingOff => "logging is off",
             Self::PaletteMove => "move",
             Self::PaletteRun => "run",
+            Self::PaletteRunButton => "Run",
             Self::PaletteClose => "close",
             Self::PaletteCancel => "Cancel",
             Self::PaletteNoMatch => "No command matches.",
@@ -185,7 +189,7 @@ impl Text {
             Self::PaletteChoose => "Choose…",
             Self::KeyEscape => "esc",
             Self::KeyArrows => "\u{2191}\u{2193}",
-            Self::KeyEnter => "\u{21b5}",
+            Self::KeyEnter => "enter",
         }
     }
 }

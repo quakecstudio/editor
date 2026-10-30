@@ -21,6 +21,16 @@ and the agent land; the toolbar's game controls are disabled until then.
 Showing, hiding and resizing a panel runs a `qs-layout` command, from the toolbar, the macOS
 View menu or a drag of the panel's edge, and the layout is written back to `layout.toml`.
 
+## Snapshots
+
+`src/snapshots.rs` is the offscreen UI snapshot harness (P2-21, QA-3), on `egui_kittest`: each
+script starts the app in a 1440 by 900 window, runs its commands and keys, renders the window
+through wgpu with no window open, and compares it with its golden PNG in `snapshots/`. A
+mismatch leaves `<name>.new.png` and `<name>.diff.png` beside the golden, which CI keeps as an
+artifact. `make snapshots` writes the goldens again and `make screenshots` writes the same
+images to `docs/screenshots/` for the docs. The goldens are rendered on macOS; Linux and Windows
+may differ in a few pixels of anti-aliasing, within `max_failed_pixels`.
+
 ## The command palette
 
 Cmd+Shift+P (Ctrl+Shift+P off macOS) or the toolbar's search opens the palette of the approved

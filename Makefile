@@ -7,7 +7,7 @@ FUZZ_SECONDS ?= 60
 
 .DEFAULT_GOAL := help
 .PHONY: help fmt lint check test test-integration test-fuzz test-coverage test-mutants \
-	audit docs-build bench oracles ci
+	audit docs-build bench oracles snapshots screenshots ci
 
 help: ## List the targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -50,6 +50,12 @@ bench: ## Run the performance-budget benchmarks and record them in the history (
 
 oracles: ## Build the test-only oracles (id's VM and qcc, FTEQCC), check the VM oracle and the builtin differential (needs curl and a C compiler)
 	$(CARGO) xtask oracles
+
+snapshots: ## Write the UI snapshot harness's golden images again (apps/desktop/snapshots)
+	UPDATE_SNAPSHOTS=1 $(CARGO) nextest run --locked -p quakec-studio snapshots
+
+screenshots: ## Render the docs' screenshots of the app with the snapshot harness (docs/screenshots)
+	QS_SCREENSHOTS=$(CURDIR)/docs/screenshots $(CARGO) nextest run --locked -p quakec-studio snapshots
 
 ci: ## Run exactly what CI runs (cargo xtask ci)
 	$(CARGO) xtask ci

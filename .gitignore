@@ -20,3 +20,8 @@ __pycache__/
 *.pak
 
 /.claude/worktrees/
+
+# The snapshot harness's outputs beside each golden (apps/desktop/src/snapshots.rs).
+apps/desktop/snapshots/*.new.png
+apps/desktop/snapshots/*.diff.png
+apps/desktop/snapshots/*.old.png

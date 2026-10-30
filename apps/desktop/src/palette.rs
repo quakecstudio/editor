@@ -117,6 +117,7 @@ impl Palette {
                     .inner_margin(theme.space(2))
                     .show(ui, |ui| {
                         ui.set_width(WIDTH);
+                        ui.set_max_width(WIDTH);
                         chosen = match self.prompt.take() {
                             Some(prompt) => self.prompt_ui(ui, theme, prompt),
                             None => self.list_ui(ui, theme, registry),
@@ -240,12 +241,8 @@ impl Palette {
                 i.consume_key(Modifiers::NONE, Key::Escape),
             )
         });
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(prompt.summary).strong());
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(mono(prompt.id.as_str(), theme.color(Token::TextMuted)));
-            });
-        });
+        ui.add(egui::Label::new(RichText::new(prompt.summary).strong()).wrap());
+        ui.label(mono(prompt.id.as_str(), theme.color(Token::TextMuted)));
         ui.separator();
         let first_text = prompt
             .inputs
@@ -259,7 +256,7 @@ impl Palette {
         let mut run = enter;
         let mut cancel = escape;
         ui.horizontal(|ui| {
-            run |= ui.button(Text::PaletteRun.get()).clicked();
+            run |= ui.button(Text::PaletteRunButton.get()).clicked();
             cancel |= ui.button(Text::PaletteCancel.get()).clicked();
         });
         if cancel {
@@ -303,13 +300,8 @@ fn row(ui: &mut Ui, theme: &Theme, item: &PaletteMatch<'_>, selected: bool) -> e
     );
     let text = theme.color(Token::Text);
     let accent = theme.color(Token::Accent);
-    child.label(highlighted(
-        item.info.summary(),
-        &item.summary_hits,
-        text,
-        accent,
-        &FontId::proportional(theme.type_scale.body.size),
-    ));
+    // The id and the shortcut take their room on the right first; the summary is cut short
+    // in what is left, so a long one never runs under them.
     child.with_layout(Layout::right_to_left(Align::Center), |ui| {
         let shortcut =
             keymap::shortcut(item.info.id().as_str()).map(|s| ui.ctx().format_shortcut(&s));
@@ -326,6 +318,16 @@ fn row(ui: &mut Ui, theme: &Theme, item: &PaletteMatch<'_>, selected: bool) -> e
             accent,
             &FontId::monospace(theme.type_scale.body.size),
         ));
+        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+            let summary = highlighted(
+                item.info.summary(),
+                &item.summary_hits,
+                text,
+                accent,
+                &FontId::proportional(theme.type_scale.body.size),
+            );
+            ui.add(egui::Label::new(summary).truncate());
+        });
     });
     response
 }

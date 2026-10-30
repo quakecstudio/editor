@@ -30,6 +30,11 @@ serde_json = { workspace = true, features = ["std"] }
 toml = { workspace = true, features = ["parse", "serde", "std"] }
 tracing = { workspace = true, features = ["std"] }
 
+[dev-dependencies]
+# The offscreen snapshot harness (P2-21): egui's own, rendering through wgpu with no window and
+# comparing PNGs.
+egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = { workspace = true }
 

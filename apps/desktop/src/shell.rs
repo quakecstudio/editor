@@ -123,6 +123,19 @@ impl Shell {
         &self.session
     }
 
+    /// Runs the command `id` with `params`, as the palette, a key or a script does.
+    ///
+    /// # Errors
+    ///
+    /// [`CommandError`] when the command is unknown, its parameters are wrong or it fails.
+    pub fn execute(
+        &mut self,
+        id: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, CommandError> {
+        self.session.execute(id, params)
+    }
+
     /// Shows or hides `panel`, through its command.
     ///
     /// # Errors
@@ -315,10 +328,24 @@ impl Shell {
             .stroke(egui::Stroke::new(1.0, theme.color(Token::Border)));
         let bottom_tab = &mut self.bottom_tab;
         let mut expanded = state.visible;
+        // A size the layout was given by a command, not by a drag of the panel's edge, is
+        // drawn: egui keeps the size it last drew and reads `default_size` only the first time.
+        let drawn_size =
+            PanelState::load(ui.ctx(), Id::new(Area::Panel(panel))).map(|stored| match panel {
+                Panel::Left | Panel::Right => stored.size().x,
+                Panel::Bottom => stored.size().y,
+            });
+        let held = ui.input(|input| input.pointer.any_down());
+        let commanded = commanded_size(drawn_size, state.size, held);
+        // `exact_size` pins the size range to one point, so it comes after `min_size`, which
+        // would widen it again.
+        let builder = builder.resizable(true).min_size(qs_layout::MIN_PANEL_SIZE);
+        let builder = if commanded {
+            builder.exact_size(state.size)
+        } else {
+            builder.default_size(state.size)
+        };
         let shown = builder
-            .resizable(true)
-            .default_size(state.size)
-            .min_size(qs_layout::MIN_PANEL_SIZE)
             .frame(frame)
             .show_collapsible(ui, &mut expanded, |ui| {
                 // egui 0.36 stores a panel's size as its contents' rect, so the contents take
@@ -461,6 +488,13 @@ fn bottom(ui: &mut Ui, theme: &Theme, tab: &mut BottomTab) {
 }
 
 /// An icon and its label, as one string for a button.
+/// Whether `layout`, a panel's size in the layout, was set by a command rather than by a drag of
+/// the panel's edge, and so is drawn this frame: egui drew the panel at `drawn` last frame, the
+/// two differ by half a point or more, and no pointer button is held, as one is during a drag.
+pub(crate) fn commanded_size(drawn: Option<f32>, layout: f32, held: bool) -> bool {
+    drawn.is_some_and(|drawn| (drawn - layout).abs() >= 0.5) && !held
+}
+
 fn labelled(icon: Icon, text: Text) -> String {
     let mut label = String::from(icon.char());
     label.push(' ');
