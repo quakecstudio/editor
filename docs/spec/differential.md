@@ -715,12 +715,6 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   least one statement of its body no earlier call had, up to `EXTRA_ROUNDS` (4) times `rounds`
   in all. The calls stay deterministic, and a function whose body every call already covers
   costs no more.
-- **DIFF-12.17** In each odd round the fields drawn for the call's edicts are only those the
-  function's own statements read or write, each named by the operand `b` of a `LOAD_*` or
-  `ADDRESS` (the global that holds the field's slot), when it has any; in the other rounds every
-  drawable field is, as DIFF-12.2 says. The fields that decide a function's branches are then
-  set together more often: a flag's `cnt` and `owner` and its owner's `player_flag`
-  (`rerelease-ctf`'s `TeamCaptureFlagThink`).
 
 ## Test vectors
 
