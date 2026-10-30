@@ -23,6 +23,7 @@ mod host;
 mod hover;
 mod navigation;
 mod rename;
+mod symbols;
 
 use std::path::{Path, PathBuf};
 

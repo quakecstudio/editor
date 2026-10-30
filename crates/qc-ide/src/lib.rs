@@ -35,6 +35,7 @@ mod host;
 mod hover;
 mod navigation;
 mod rename;
+mod symbols;
 mod syntax;
 
 #[cfg(test)]
@@ -51,6 +52,7 @@ pub use qc_diag::{Code, Diagnostic, Severity, Span};
 pub use qc_engines::{Builtin, BuiltinRef, Engine};
 pub use qc_sema::DefKind;
 pub use rename::{Caution, EngineBinding, FileEdit, Rename, RenameError};
+pub use symbols::{Symbol, SymbolKind};
 
 /// A span of one file: where a definition or a use is, or a range to edit.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
