@@ -427,6 +427,12 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   unions as a struct's, as the model keeps no union apart from a struct, and a member that is an
   array as one definition. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qccmain.c`, `QCC_WriteData`; `engine/qclib/qcc_pr_comp.c`, `QCC_PR_DummyDef`.
+- **FTE-13.14** A field's definition is written only for a constant field at file level, a
+  static one or one initialised (`else if (def->type->type == ev_field && def->constant &&
+  (!def->scope || def->isstatic || def->initialized)) { QCC_GenerateFieldDefs(def, def->name, 0,
+  def->type->aux_type); continue; }`), so a parameter of a field type, `void(.string field)
+  f`, makes no field definition. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qccmain.c`, `QCC_WriteData`.
 
 ## FTE-14 `typedef struct` and member access
 

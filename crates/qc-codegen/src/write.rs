@@ -190,7 +190,11 @@ pub(crate) fn progs(
     let defs = std::mem::take(&mut program.defs);
     for def in &defs {
         let etype = def.ty.etype();
-        if let Some(inner) = def.ty.field_inner() {
+        // FTE-13.14: FTEQCC writes a field's definition only for a constant at file level or
+        // initialised, so a parameter of a field type makes none.
+        let field_record =
+            records == Records::Qcc || (def.constant && (def.scope.is_none() || def.initialized));
+        if let Some(inner) = def.ty.field_inner().filter(|_| field_record) {
             field_defs.push(DefRecord {
                 type_bits: u32::from(inner.etype().number()),
                 ofs: program.word(def.ofs),

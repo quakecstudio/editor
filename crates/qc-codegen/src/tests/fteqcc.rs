@@ -1498,3 +1498,16 @@ fn a_struct_value_is_written_as_its_members() {
         .collect();
     assert_eq!(names, ["p.m", "p.f"]);
 }
+
+// spec FTE-13.14: a parameter of a field type makes no field definition
+#[test]
+fn a_field_parameter_makes_no_field_definition() {
+    let p = fte_progs(".string target;\nvoid(.string field) f = {};\n");
+    let fields: Vec<String> = p
+        .field_defs
+        .iter()
+        .skip(1)
+        .map(|d| string(&p, d.s_name))
+        .collect();
+    assert_eq!(fields, ["target"]);
+}
