@@ -465,7 +465,6 @@ issues:
   - 'The fonts and icons ADR-0010 chose, IBM Plex Sans and JetBrains Mono (OFL-1.1) and Lucide (ISC), bundled and listed in ATTRIBUTION.md, with OFL-1.1 and ISC added to the asset licenses cargo xtask attribution accepts'
   acceptance:
   - Layout persists across restarts; every panel toggle is a command
-  - spikes/bench.sh run on the Windows and Linux reference machines shows p99 frame time at most 8.33 ms for the egui prototype; results committed under docs/spikes/data/ (ADR-0003)
   - Theme, type and spacing come from docs/design/tokens.toml and match the approved mockups (P0-25)
   - Every user-facing string comes from the single string catalog (CONV-16); a lint or test fails on string literals in UI code
   verify:
@@ -1766,6 +1765,7 @@ issues:
   - P2-145
   - P2-147
   - P2-148
+  - P2-149
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -3029,3 +3029,23 @@ issues:
   verify:
   - cargo test -p qs-settings
   - cargo xtask fuzz qs-settings --time 10m
+- key: P2-149
+  title: Measure the egui frame time on the Windows and Linux reference machines
+  labels:
+  - L7-ui
+  - area:editor
+  - type:test
+  - needs:human
+  size: S
+  reqs:
+  - UI-14
+  summary: |
+    Split from P2-17 (#73), whose app shell merged in #632 with every other criterion met. ADR-0003 chose egui on the macOS reference machine's numbers and says the Windows and Linux reference machines have not been measured; the acceptance criterion needs all three. Running the benchmark needs those machines, so a person runs it.
+  depends:
+  - P2-17
+  deliverable:
+  - 'docs/spikes/data/: spikes/bench.sh results from the Windows and Linux reference machines, beside ref-mac, with summary.md for each (ADR-0003)'
+  acceptance:
+  - spikes/bench.sh run on the Windows and Linux reference machines shows p99 frame time at most 8.33 ms for the egui prototype; results committed under docs/spikes/data/ (ADR-0003)
+  verify:
+  - QS_BENCH_HOST=ref-windows spikes/bench.sh and QS_BENCH_HOST=ref-linux spikes/bench.sh on the reference machines; the summary.md files
