@@ -1509,9 +1509,13 @@ impl<'a> Compiler<'a> {
                 };
                 return self.shift(shift, &left, &right, (op_span, span));
             }
+            // FTEF-18.5: `a, b` reads `a`, discards it, and is `b`.
+            ast::BinaryOp::Comma => {
+                self.discard(&binary.lhs().at(span)?)?;
+                return self.expr(&binary.rhs().at(span)?);
+            }
             ast::BinaryOp::ShlAssign
             | ast::BinaryOp::ShrAssign
-            | ast::BinaryOp::Comma
             | ast::BinaryOp::Pow
             | ast::BinaryOp::Cross
             | ast::BinaryOp::Spaceship => {

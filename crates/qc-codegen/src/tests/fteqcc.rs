@@ -1408,3 +1408,12 @@ fn vector_bit_operators_work_by_component() {
     assert_eq!(t[8], st(SubV, minus_one, v, t[8].c));
     assert_eq!(t[12].op, u32::from(BitOr.number()));
 }
+
+// spec FTEF-18.5: `a = b, c;` stores `b` and then reads `c`, whose value is discarded
+#[test]
+fn a_sequence_runs_each_expression_in_turn() {
+    let p = fte_progs("float a, b, c;\nfloat() f = #1;\nvoid() t = { a = b, f(); };\n");
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, global(&p, "b"), global(&p, "a"), 0));
+    assert_eq!(t[1], st(Opcode::Call0, global(&p, "f"), 0, 0));
+}
