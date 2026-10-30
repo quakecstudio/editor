@@ -11,6 +11,8 @@
     clippy::integer_division,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
+    clippy::float_cmp,
+    clippy::indexing_slicing,
     reason = "test code: a failed unwrap or a mismatched snapshot is a failed test; sizes are \
               small whole pixels"
 )]
@@ -292,4 +294,103 @@ fn the_map_view_draws_in_the_window() {
         .map_view()
         .unwrap();
     assert_eq!(shown.camera().origin, [-300.0, 0.0, 200.0]);
+}
+
+/// One headless frame of `view` in an 800 by 600 window with `events`, at `time` seconds.
+fn frame(view: &mut super::MapView, ctx: &egui::Context, time: f64, events: Vec<egui::Event>) {
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(800.0, 600.0),
+        )),
+        time: Some(time),
+        events,
+        ..Default::default()
+    };
+    let mut output = ctx.run_ui(input, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| view.ui(ui));
+    });
+    output.textures_delta.clear();
+}
+
+// MAP-17: dragging turns the view a quarter degree a point, the wheel moves it two map units
+// a point, and the time runs from when it opened
+#[test]
+fn dragging_turns_and_the_wheel_moves_the_view() {
+    let ctx = egui::Context::default();
+    let mut view = super::MapView::new(Camera::new([0.0; 3], 90.0));
+    let at = egui::pos2(400.0, 300.0);
+    let button = |pressed| egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    // A first frame lays the view out, so the press lands on it.
+    frame(&mut view, &ctx, 1.0, vec![egui::Event::PointerMoved(at)]);
+    frame(&mut view, &ctx, 1.01, vec![button(true)]);
+    // Past the drag threshold first, then 40 points right and 20 down, a step a frame.
+    let mut pointer = at + egui::vec2(10.0, 0.0);
+    frame(
+        &mut view,
+        &ctx,
+        1.05,
+        vec![egui::Event::PointerMoved(pointer)],
+    );
+    let start = *view.camera();
+    for step in 0..4 {
+        pointer += egui::vec2(10.0, 5.0);
+        let time = 1.1 + f64::from(step) * 0.01;
+        frame(
+            &mut view,
+            &ctx,
+            time,
+            vec![egui::Event::PointerMoved(pointer)],
+        );
+    }
+    frame(&mut view, &ctx, 1.2, vec![button(false)]);
+    let camera = view.camera();
+    assert!(
+        (camera.yaw - (start.yaw - 10.0)).abs() < 1e-3,
+        "40 points right turns 10 degrees right: {start:?} to {camera:?}"
+    );
+    assert!(
+        (camera.pitch - (start.pitch + 5.0)).abs() < 1e-3,
+        "20 points down looks 5 degrees down"
+    );
+    let before = camera.origin;
+    frame(
+        &mut view,
+        &ctx,
+        1.3,
+        vec![egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, 10.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        }],
+    );
+    for t in 0..30 {
+        frame(&mut view, &ctx, 1.4 + f64::from(t) * 0.1, Vec::new());
+    }
+    let after = view.camera().origin;
+    let travelled = (0..3)
+        .map(|i| (after[i] - before[i]).powi(2))
+        .sum::<f32>()
+        .sqrt();
+    assert!(
+        (travelled - 20.0).abs() < 0.5,
+        "10 points of wheel, 2 units each: {travelled}"
+    );
+    assert!(after[1] != before[1], "forward, along the turned yaw");
+    assert_eq!(
+        view.view(1.0, 3.5).time,
+        2.5,
+        "seconds since the first frame"
+    );
+    assert_eq!(view.view(2.0, 1.0).eye, after);
+    assert_ne!(
+        view.view(2.0, 1.0).clip_from_world,
+        view.view(1.0, 1.0).clip_from_world
+    );
 }

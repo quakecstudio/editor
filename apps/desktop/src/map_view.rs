@@ -60,16 +60,24 @@ impl MapView {
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
             rect,
             MapCallback {
-                view: View {
-                    clip_from_world: self.camera.clip_from_world(aspect),
-                    eye: self.camera.origin,
-                    time: seconds(now - self.started),
-                },
+                view: self.view(aspect, now),
                 models: qs_render::ModelFrame::default(),
                 placements: Vec::new(),
                 lightmap: None,
             },
         ));
+    }
+
+    /// What the map is drawn with at `now` seconds of egui's clock, in an image `aspect` wide
+    /// per unit of height: the camera's matrix and eye, and the time since the view opened,
+    /// which moves water and sky.
+    #[must_use]
+    pub fn view(&self, aspect: f32, now: f64) -> View {
+        View {
+            clip_from_world: self.camera.clip_from_world(aspect),
+            eye: self.camera.origin,
+            time: seconds(now - self.started),
+        }
     }
 }
 

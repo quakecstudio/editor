@@ -11,7 +11,7 @@
 //! # Layer
 //!
 //! apps. It depends on `qs-layout`, `qs-workbench` and `qs-commands` (L5), `qs-editor-view`
-//! (L7), `qs-log` and `qs-paths` (L0), and `eframe`.
+//! and `qs-render` (L7), `qs-log` and `qs-paths` (L0), and `eframe`.
 
 mod code_style;
 mod editor;
