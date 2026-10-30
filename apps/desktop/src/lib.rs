@@ -20,6 +20,8 @@ pub mod strings;
 pub mod theme;
 
 #[cfg(test)]
+mod snapshots;
+#[cfg(test)]
 mod tests;
 
 use std::path::PathBuf;

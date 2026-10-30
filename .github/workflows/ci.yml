@@ -195,8 +195,26 @@ jobs:
         with:
           shared-key: debug-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The UI snapshot harness (P2-21) renders through wgpu with no window: on Linux with
+      # Mesa's software Vulkan driver, on macOS with Metal and on Windows with WARP.
+      - name: Install a software Vulkan driver for the snapshot harness
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
       - if: env.CI_PATH == 'full'
         run: cargo nextest run --locked --workspace --all-features
+      # A snapshot that does not match leaves its new image and the difference beside the
+      # golden; they are kept so the change can be seen.
+      - name: Keep the snapshots that did not match
+        if: failure() && env.CI_PATH == 'full'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: snapshots-${{ matrix.name }}
+          path: |
+            apps/desktop/snapshots/*.new.png
+            apps/desktop/snapshots/*.diff.png
+          if-no-files-found: ignore
       - name: Test xtask, whose tests read the light files
         if: env.CI_PATH == 'light'
         run: cargo nextest run --locked -p xtask --all-features

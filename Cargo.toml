@@ -115,6 +115,7 @@ criterion = { version = "=0.8.2", default-features = false }
 eframe = { version = "=0.36.2", default-features = false }
 egui = { version = "=0.36.2", default-features = false }
 egui-wgpu = { version = "=0.36.2", default-features = false }
+egui_kittest = { version = "=0.36.2", default-features = false }
 epaint = { version = "=0.36.2", default-features = false }
 junction = { version = "=2.1.0", default-features = false }
 miniz_oxide = { version = "=0.9.1", default-features = false }

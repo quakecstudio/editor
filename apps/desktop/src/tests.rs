@@ -399,3 +399,18 @@ fn errors_say_what_went_wrong() {
     assert!(error.to_string().contains("at least 120 points"), "{error}");
     assert!(std::error::Error::source(&error).is_some());
 }
+
+// UI-2: a panel resized by its command, not by a drag, is drawn at the new size.
+#[test]
+fn a_panel_resized_by_command_is_drawn_at_its_size() {
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, None).unwrap();
+    frame(&ctx, &mut app);
+    app.shell.resize(Panel::Left, 300.0).unwrap();
+    app.shell.resize(Panel::Bottom, 260.0).unwrap();
+    frame(&ctx, &mut app);
+    frame(&ctx, &mut app);
+    assert_eq!(app.shell.drawn[0], Some(300.0));
+    assert_eq!(app.shell.drawn[2], Some(260.0));
+    assert!((app.shell().layout().left.size - 300.0).abs() < f32::EPSILON);
+}

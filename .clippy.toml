@@ -16,6 +16,7 @@ absolute-paths-allowed-crates = [
     "criterion",
     "eframe",
     "egui",
+    "egui_kittest",
     "egui_wgpu",
     "epaint",
     "junction",
