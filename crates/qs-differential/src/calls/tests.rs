@@ -708,7 +708,7 @@ fn against(oracle: Oracle, theirs: &str, ours: &str) -> Vec<Difference> {
         .collect()
 }
 
-// spec DIFF-12.9: against FTEQCC, which names fewer globals, ours may name more, but each of
+// spec DIFF-12.11: against FTEQCC, which names fewer globals, ours may name more, but each of
 // FTEQCC's must be among ours in the same order.
 #[test]
 fn against_fteqcc_ours_may_name_more_globals() {
@@ -727,7 +727,7 @@ fn against_fteqcc_ours_may_name_more_globals() {
     );
 }
 
-// spec DIFF-12.9: against FTEQCC a function's locals are not compared, so a global is paired
+// spec DIFF-12.11: against FTEQCC a function's locals are not compared, so a global is paired
 // with ours of its name outside every function's locals.
 #[test]
 fn against_fteqcc_a_local_is_not_paired_with_a_global() {
@@ -736,7 +736,7 @@ fn against_fteqcc_a_local_is_not_paired_with_a_global() {
     assert_eq!(against(Oracle::Fteqcc, theirs, ours), []);
 }
 
-// spec DIFF-12.9: against FTEQCC two calls that both run away agree, whatever each had done when
+// spec DIFF-12.11: against FTEQCC two calls that both run away agree, whatever each had done when
 // it was stopped; against qcc they must leave the same state.
 #[test]
 fn against_fteqcc_two_runaway_calls_agree() {
@@ -751,7 +751,7 @@ fn against_fteqcc_two_runaway_calls_agree() {
     ));
 }
 
-// spec DIFF-12.9: against FTEQCC a function definition inside a body's locals, as a state's
+// spec DIFF-12.11: against FTEQCC a function definition inside a body's locals, as a state's
 // `[frame, next]` declares `next` there, is a global and is paired with FTEQCC's.
 #[test]
 fn against_fteqcc_a_states_next_function_is_a_global() {
@@ -807,4 +807,40 @@ fn a_struct_typed_global_is_not_compared() {
     assert_ne!(run(&float_typed.0, &float_typed.1), 0);
     let struct_typed = (retyped(theirs, "s", 14), retyped(ours, "s", 14));
     assert_eq!(run(&struct_typed.0, &struct_typed.1), 0);
+}
+
+/// `bytes` with each one-letter global name `from` written as `to`.
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "test code: offsets inside a small progs the test compiled"
+)]
+fn renamed(mut bytes: Vec<u8>, from: u8, to: u8) -> Vec<u8> {
+    let word = |b: &[u8], at: usize| {
+        usize::try_from(i32::from_le_bytes(b[at..at + 4].try_into().unwrap())).unwrap()
+    };
+    let (defs, count, strings) = (word(&bytes, 16), word(&bytes, 20), word(&bytes, 40));
+    for i in 0..count {
+        let s_name = strings + word(&bytes, defs + i * 8 + 4);
+        if bytes[s_name] == from && bytes[s_name + 1] == 0 {
+            bytes[s_name] = to;
+        }
+    }
+    bytes
+}
+
+// spec DIFF-12.11: a context writes a global by name to a float or string definition of the
+// name, so a drawn float is not written to a field global of its name
+#[test]
+fn a_global_written_by_name_goes_to_a_scalar_definition() {
+    let bytes = compile(".float z;\nfloat y;\nvoid() f = { y = 1; };\n", false);
+    let bytes = renamed(bytes, b'y', b'z');
+    let progs = Progs::read(&bytes).unwrap();
+    let program = super::Program::new(&progs);
+    let slot = program.global_slots[b"z".as_slice()];
+    let float = program
+        .globals
+        .iter()
+        .find(|(name, ty, _)| name == b"z" && *ty == qc_types::DefType::Known(Etype::Float))
+        .unwrap();
+    assert_eq!(slot, float.2);
 }

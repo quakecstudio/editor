@@ -155,7 +155,7 @@ pub(super) struct Drawer<'a, 'p> {
     /// The named globals a value may be drawn for: float and string globals whose value in
     /// the progs is 0, so variables rather than constants, outside slot 0 and in a slot no
     /// other float or string definition names, as FTEQCC's merged constants share one
-    /// (DIFF-12.2, DIFF-12.9).
+    /// (DIFF-12.2, DIFF-12.11).
     variables: Vec<(Vec<u8>, DefType)>,
     /// The named fields of a type a value is drawn for.
     fields: Vec<(Vec<u8>, DefType)>,

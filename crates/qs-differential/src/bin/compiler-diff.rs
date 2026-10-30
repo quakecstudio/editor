@@ -14,7 +14,7 @@
 //! ```
 //!
 //! `--theirs` is the oracle compiler's progs: id's `qcc`'s for id 1.01, the pinned FTEQCC's
-//! for the rerelease (DIFF-12.8), named by `--oracle`, `qcc` when it is not given (DIFF-12.9). With `--summary`, a row of the results table is added to the
+//! for the rerelease (DIFF-12.8), named by `--oracle`, `qcc` when it is not given (DIFF-12.11). With `--summary`, a row of the results table is added to the
 //! file for each pair.
 //!
 //! `--mode fast` makes 32 rounds of calls to each function, `--mode full` 128 (DIFF-12.6).

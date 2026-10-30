@@ -187,20 +187,20 @@ impl CodebaseReport {
 }
 
 /// The compiler that wrote the first progs, which says how the two progs' global definitions
-/// must agree (DIFF-12.3, DIFF-12.9).
+/// must agree (DIFF-12.3, DIFF-12.11).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Oracle {
     /// id's `qcc`: the two progs name the same globals in the same order (DIFF-12.3).
     Qcc,
     /// The pinned FTEQCC, which leaves out definitions no statement uses: its named globals
-    /// are found in ours in the same order, and ours may name more (DIFF-12.9).
+    /// are found in ours in the same order, and ours may name more (DIFF-12.11).
     Fteqcc,
 }
 
 impl Oracle {
     /// Each named global of `theirs` paired with the global of `ours` it is compared with, as
     /// indices into the two programs' globals, or `None` when the definitions do not agree
-    /// (DIFF-12.3, DIFF-12.9).
+    /// (DIFF-12.3, DIFF-12.11).
     fn pair_globals(
         self,
         theirs: &Program<'_, '_>,
@@ -424,7 +424,7 @@ impl Pair {
         if theirs.error != ours.error {
             return Some(Difference::Ending(theirs.error.clone(), ours.error.clone()));
         }
-        // DIFF-12.9: where a loop is stopped depends on how many statements each pass takes,
+        // DIFF-12.11: where a loop is stopped depends on how many statements each pass takes,
         // which another compiler's progs need not share.
         let runaway = |outcome: &Outcome| outcome.kind == Some(ErrorKind::Runaway);
         if self.oracle == Oracle::Fteqcc && runaway(theirs) && runaway(ours) {
@@ -492,7 +492,7 @@ fn same_slots(a: &Machine, b: &Machine) -> bool {
 }
 
 /// The first named global or field whose value differs between the two worlds, the globals
-/// compared in the pairs `globals` gives (DIFF-12.3, DIFF-12.9).
+/// compared in the pairs `globals` gives (DIFF-12.3, DIFF-12.11).
 fn state_difference(
     a: &World<'_, '_, '_>,
     b: &World<'_, '_, '_>,
@@ -582,8 +582,8 @@ struct Program<'a, 'p> {
     progs: &'a Progs<'p>,
     /// The named globals, in definition order.
     globals: Vec<Global>,
-    /// The slot of each name a context writes by name: its first global outside every
-    /// function's locals, else its first (DIFF-12.9).
+    /// The slot of each name a context writes by name: its first float or string global
+    /// outside every function's locals, else its first (DIFF-12.11).
     global_slots: BTreeMap<Vec<u8>, usize>,
     /// The named fields, by name: the type and slot of the first definition of each.
     fields: BTreeMap<Vec<u8>, (DefType, usize)>,
@@ -645,13 +645,19 @@ impl<'a, 'p> Program<'a, 'p> {
             functions,
             locals,
         };
-        // DIFF-12.9: a context writes a global by name to its first definition outside every
-        // function's locals, else to its first.
+        // DIFF-12.11: a context writes a global by name, a float or a string, to its first
+        // float or string definition outside every function's locals, else to its first.
+        let scalar = |g: &&Global| matches!(g.1, DefType::Known(Etype::Float | Etype::String));
         let mut global_slots = BTreeMap::new();
-        for global in program.globals.iter().filter(|g| !program.is_local(g)) {
+        for global in program
+            .globals
+            .iter()
+            .filter(scalar)
+            .filter(|g| !program.is_local(g))
+        {
             global_slots.entry(global.0.clone()).or_insert(global.2);
         }
-        for (name, _, ofs) in &program.globals {
+        for (name, _, ofs) in program.globals.iter().filter(scalar) {
             global_slots.entry(name.clone()).or_insert(*ofs);
         }
         program.global_slots = global_slots;
