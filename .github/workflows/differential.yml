@@ -89,8 +89,8 @@ jobs:
       - name: Run the full differential VM suite
         run: cargo xtask differential --full
       # P2-09 and P2-10: the compiler differential's nightly run, 128 rounds of calls to every
-      # function of id 1.01 as qcc compiles it and of the six rerelease codebases as the pinned
-      # FTEQCC compiles them, against qc-codegen with fold off and on (DIFF-12, DIFF-12.8).
+      # function of id 1.01 as qcc compiles it and of the rerelease as the pinned FTEQCC compiles
+      # it, against qc-codegen with fold off and on (DIFF-12, DIFF-12.8).
       - name: Run the full compiler differential
         run: cargo xtask compiler-diff --full
       # DIFF-12.8: the results table, published even when a codebase fails.

@@ -1,19 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `cargo xtask compiler-diff`: the compiler differential suite against id's `qcc` (P2-09,
-//! COMP-4, COMP-7, `docs/spec/differential.md` DIFF-12).
+//! `cargo xtask compiler-diff`: the compiler differential suite (P2-09, P2-10, COMP-4, COMP-7,
+//! COMP-8, `docs/spec/differential.md` DIFF-12).
 //!
-//! For each vanilla corpus codebase, this compiles it with the oracle `qcc` and with
-//! `qc-codegen`, once with `--opt fold` off and once on (QC-27.20), writes the three progs under
+//! For each codebase, this compiles it with its oracle compiler, id's `qcc` for id 1.01 and the
+//! pinned FTEQCC for the rerelease, and with `qc-codegen` in the same dialect, once with
+//! `--opt fold` off and once on (QC-27.20), writes the three progs under
 //! `target/compiler-diff/<id>/`, and runs the `compiler-diff` binary of `qs-differential`,
-//! which calls every function of `qcc`'s progs and of each of ours in `qc-vm` and compares
-//! them (DIFF-12). It runs that binary with `cargo run`, as `cargo xtask differential` does,
-//! because `qs-differential` is a `tests`-layer crate nothing may depend on (`layers.toml`).
+//! which calls every function of the oracle's progs and of each of ours in `qc-vm` and compares
+//! them (DIFF-12, DIFF-12.9). It runs that binary with `cargo run`, as `cargo xtask
+//! differential` does, because `qs-differential` is a `tests`-layer crate nothing may depend on
+//! (`layers.toml`). Each pair adds a row to `target/compiler-diff/summary.md` (DIFF-12.8).
 //!
-//! - `cargo xtask compiler-diff` and `--fast`: the CI subset, fewer rounds of calls.
-//! - `cargo xtask compiler-diff --full`: the nightly run, more rounds.
+//! - `cargo xtask compiler-diff` and `--fast`: the CI subset, id 1.01, fewer rounds of calls.
+//! - `cargo xtask compiler-diff --full`: the nightly run, id 1.01 and the rerelease, more rounds.
+//! - Codebases named after the mode narrow the run; `--full` may also name the rerelease
+//!   codebases not yet at the bar.
 //!
-//! Both fail on any divergence and on a codebase whose `qcc` progs has less than 90% of its
+//! Both fail on any divergence and on a codebase whose oracle progs has less than 90% of its
 //! statements executed (DIFF-12.5). The codebases come from the asset cache
 //! (`$QS_TEST_ASSETS/codebase/<id>`, written by `cargo xtask corpus fetch`).
 
@@ -30,9 +34,13 @@ use crate::oracles::{self, Oracles, codegen, id101, rerelease};
 /// The vanilla corpus codebases, the ones id's `qcc` compiles (`corpus/manifest.toml`).
 const VANILLA: [&str; 1] = ["id-1.01"];
 
-/// The rerelease codebases, the ones the pinned FTEQCC compiles (`oracles/rerelease.rs`).
-const RERELEASE: [&str; 6] = [
-    "rerelease",
+/// The rerelease codebases the nightly run compares with the pinned FTEQCC's progs
+/// (`oracles/rerelease.rs`, DIFF-12.8).
+const RERELEASE: [&str; 1] = ["rerelease"];
+
+/// The other rerelease codebases the pinned FTEQCC compiles, not yet at DIFF-12.5's bar: a run
+/// names them to compare them, and each joins [`RERELEASE`] once it passes (P2-150).
+const PENDING: [&str; 5] = [
     "rerelease-hipnotic",
     "rerelease-rogue",
     "rerelease-mg1",
@@ -84,6 +92,15 @@ impl Mode {
         }
     }
 
+    /// The codebases a run of this mode may name: its own, and in the nightly run the rerelease
+    /// codebases not yet at the bar.
+    fn named(self) -> Vec<&'static str> {
+        match self {
+            Self::Fast => self.codebases(),
+            Self::Full => self.codebases().into_iter().chain(PENDING).collect(),
+        }
+    }
+
     /// The value of the binary's `--mode`.
     const fn arg(self) -> &'static str {
         match self {
@@ -105,9 +122,10 @@ fn parse(args: &[String]) -> Result<(Mode, Vec<&'static str>), String> {
     if named.is_empty() {
         return Ok((mode, all));
     }
+    let named_ok = mode.named();
     let mut selected = Vec::new();
     for name in named {
-        let id = all
+        let id = named_ok
             .iter()
             .find(|id| **id == name.as_str())
             .ok_or_else(|| format!("{name} is not a codebase this mode compares\n{USAGE}"))?;
@@ -214,7 +232,7 @@ mod tests {
 
     use qc_codegen::Options;
 
-    use super::{Mode, RERELEASE, VANILLA, parse, write_progs};
+    use super::{Mode, PENDING, RERELEASE, VANILLA, parse, write_progs};
     use crate::exec::{Fake, Reply};
     use crate::oracles::codegen::{self, Profile};
     use crate::oracles::rerelease;
@@ -339,15 +357,27 @@ mod tests {
         assert!(parse(&args(&["--fast", "--full"])).is_err());
     }
 
-    // spec DIFF-12.8: the CI subset compares id 1.01; the nightly run adds the six rerelease
-    // codebases, each one the FTEQCC oracle compiles.
+    // spec DIFF-12.8: the CI subset compares id 1.01; the nightly run adds the rerelease, and a
+    // run names the other rerelease codebases to compare them, each one the FTEQCC oracle
+    // compiles.
     #[test]
     fn the_nightly_run_adds_the_rerelease() {
         assert_eq!(Mode::Fast.codebases(), ["id-1.01"]);
-        let full = Mode::Full.codebases();
-        assert_eq!(full.len(), 7);
-        assert_eq!(full.first(), Some(&"id-1.01"));
-        assert_eq!(full.get(1..), Some(RERELEASE.as_slice()));
+        assert_eq!(Mode::Full.codebases(), ["id-1.01", "rerelease"]);
+        let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        for id in PENDING {
+            assert_eq!(
+                parse(&args(&["--full", id])).unwrap(),
+                (Mode::Full, vec![id])
+            );
+            assert!(parse(&args(&["--fast", id])).is_err());
+        }
+        assert_eq!(
+            PENDING.len() + RERELEASE.len(),
+            6,
+            "the six rerelease codebases"
+        );
+        assert!(PENDING.iter().all(|id| rerelease::compiles(id)));
         assert!(RERELEASE.iter().all(|id| rerelease::compiles(id)));
         assert!(VANILLA.iter().all(|id| !rerelease::compiles(id)));
     }

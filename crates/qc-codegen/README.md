@@ -75,9 +75,9 @@ lowered, and neither is a store through an array subscript by a value (FTE-13.7)
 - `cargo xtask compiler-diff` (P2-09, `docs/spec/differential.md` DIFF-12) compiles id 1.01
   with id's `qcc` and with this crate, `--opt fold` off and on, and calls every function of
   each progs in `qc-vm` from the differential scenarios' worlds: no divergence, and at least
-  90% of `qcc`'s statements executed. `--full` also compiles the six rerelease codebases with
-  the pinned FTEQCC and with this crate in the FTEQCC dialect, held to the same bar
-  (DIFF-12.8, DIFF-12.9).
+  90% of `qcc`'s statements executed. `--full` also compiles the rerelease with the pinned
+  FTEQCC and with this crate in the FTEQCC dialect, held to the same bar (DIFF-12.8, DIFF-12.9);
+  the mission packs and CTF are compared when named, until they pass (P2-150).
 - `cargo xtask oracles codegen` compiles the hand-written programs of
   `xtask/src/oracles/codegen/cases.rs` and 300 generated ones with both compilers: the two
   progs must be the same bytes, or both refused with `qcc`'s message among ours, but for the
