@@ -178,7 +178,7 @@ fn the_bundled_fonts_have_every_glyph() {
         }
     });
     let definitions = Theme::fonts();
-    assert_eq!(definitions.font_data.len(), 4);
+    assert_eq!(definitions.font_data.len(), 5);
     assert_eq!(definitions.families.len(), 3);
     let icons: BTreeSet<char> = Icon::ALL.iter().map(|icon| icon.char()).collect();
     assert_eq!(icons.len(), Icon::ALL.len());

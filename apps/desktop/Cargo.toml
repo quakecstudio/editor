@@ -21,6 +21,9 @@ path = "src/main.rs"
 # and without `accesskit` for now: its Linux backend pulls in zvariant and zbus_names, which
 # RUSTSEC-2026-0370 to -0372 mark unmaintained with no safe upgrade. Screen readers are P2-23's.
 eframe = { workspace = true, features = ["wayland", "wgpu", "x11"] }
+# The system's fonts, for the scripts the bundled fonts lack (ADR-0003): fontdb finds them,
+# ttf-parser reads which characters each covers.
+fontdb = { workspace = true, features = ["fontconfig", "fs", "std"] }
 qs-commands = { workspace = true }
 qs-editor-view = { workspace = true }
 qs-layout = { workspace = true }
@@ -29,6 +32,7 @@ qs-paths = { workspace = true }
 qs-workbench = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
+ttf-parser = { workspace = true, features = ["std"] }
 toml = { workspace = true, features = ["parse", "serde", "std"] }
 tracing = { workspace = true, features = ["std"] }
 

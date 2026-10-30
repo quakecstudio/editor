@@ -15,6 +15,7 @@
 
 mod code_style;
 mod editor;
+mod fallback;
 pub mod icons;
 pub mod keymap;
 #[cfg(target_os = "macos")]

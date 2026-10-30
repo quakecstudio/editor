@@ -29,6 +29,7 @@ use qs_workbench::{
 };
 
 use crate::editor::{Editor, Popup, Request};
+use crate::fallback::{SystemFonts, families};
 use crate::icons::Icon;
 use crate::keymap;
 use crate::palette::Palette;
@@ -112,6 +113,9 @@ pub struct Shell {
     pub(crate) palette: Palette,
     symbol_scope: SymbolScope,
     editor: Option<Editor>,
+    system_fonts: SystemFonts,
+    /// The editor's file and text revision whose characters have fonts.
+    covered: Option<(PathBuf, u64)>,
 }
 
 impl Shell {
@@ -145,6 +149,8 @@ impl Shell {
             palette: Palette::default(),
             symbol_scope: SymbolScope::default(),
             editor: None,
+            system_fonts: SystemFonts::new(&Theme::bundled_fonts()),
+            covered: None,
         })
     }
 
@@ -667,8 +673,30 @@ impl Shell {
         }
     }
 
+    /// Gives egui a system font for each character of the editor's text that the bundled fonts
+    /// lack: the whole text of a file just opened, then the caret's line as it is edited.
+    fn cover_characters(&mut self, ctx: &egui::Context) {
+        let Some(editor) = &self.editor else {
+            return;
+        };
+        let state = editor.view.state();
+        let now = (editor.path.clone(), state.revision());
+        if self.covered.as_ref() == Some(&now) {
+            return;
+        }
+        let text = match &self.covered {
+            Some((path, _)) if *path == now.0 => {
+                state.buffer().line(state.primary().head.line).to_owned()
+            }
+            Some(_) | None => state.buffer().text(),
+        };
+        self.system_fonts.cover(ctx, &families(), &text);
+        self.covered = Some(now);
+    }
+
     fn centre(&mut self, ui: &mut Ui) {
         self.sync_editor();
+        self.cover_characters(ui.ctx());
         let theme = &self.theme;
         egui::Frame::NONE
             .fill(theme.color(Token::SurfaceTabs))
