@@ -2,6 +2,7 @@
 
 #![expect(
     clippy::unwrap_used,
+    clippy::expect_used,
     clippy::arithmetic_side_effects,
     reason = "test code: a failed unwrap is a failed test; line numbers and depths are small, \
               and sizes are compared exactly as set"
@@ -13,11 +14,15 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use eframe::egui::{self, FontId, RawInput, Rect, Vec2};
+use qs_commands::palette::search;
+use qs_commands::params::{self, Input};
 use qs_layout::{Layout, Panel};
 
 use crate::icons::Icon;
+use crate::keymap;
+use crate::palette::highlighted;
 use crate::shell::dragged_size;
-use crate::strings::Text;
+use crate::strings::{Text, command_count};
 use crate::theme::{Mode, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
 
@@ -230,6 +235,7 @@ fn literal_lines(source: &str) -> Vec<(usize, &str)> {
 fn the_ui_code_has_no_string_literals() {
     for (name, source) in [
         ("shell.rs", include_str!("shell.rs")),
+        ("palette.rs", include_str!("palette.rs")),
         ("menu.rs", include_str!("menu.rs")),
         ("lib.rs", include_str!("lib.rs")),
         ("main.rs", include_str!("main.rs")),
@@ -398,4 +404,294 @@ fn errors_say_what_went_wrong() {
     let error = app.shell.resize(Panel::Left, 1.0).unwrap_err();
     assert!(error.to_string().contains("at least 120 points"), "{error}");
     assert!(std::error::Error::source(&error).is_some());
+}
+
+fn key(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+    egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers,
+    }
+}
+
+/// Opens the palette and gives its search field the focus.
+fn open_palette(ctx: &egui::Context, app: &mut App) {
+    app.shell.palette.open();
+    frame(ctx, app);
+}
+
+// UI-10: every registered command is the palette's first match for its own id, and Enter on
+// it runs it or asks for its parameters.
+#[test]
+fn every_registered_command_is_reachable_from_the_palette() {
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, None).unwrap();
+    let ids: Vec<String> = app
+        .shell()
+        .session()
+        .registry()
+        .commands()
+        .map(|c| c.id().as_str().to_owned())
+        .collect();
+    assert!(ids.len() >= 5, "the built-in and the layout commands");
+    let all = search(app.shell().session().registry().commands(), "");
+    assert_eq!(all.len(), ids.len(), "an empty query lists them all");
+    for id in &ids {
+        let found = search(app.shell().session().registry().commands(), id);
+        assert_eq!(
+            found.first().map(|m| m.info.id().as_str()),
+            Some(id.as_str())
+        );
+        open_palette(&ctx, &mut app);
+        frame_with(&ctx, &mut app, vec![egui::Event::Text(id.clone())]);
+        frame_with(
+            &ctx,
+            &mut app,
+            vec![key(egui::Key::Enter, egui::Modifiers::NONE)],
+        );
+        let palette = &mut app.shell.palette;
+        let prompted = palette.prompt_mut().map(|p| p.id.as_str().to_owned());
+        let ran = !palette.is_open() || palette.error().is_some();
+        assert!(
+            prompted.as_deref() == Some(id.as_str()) || (prompted.is_none() && ran),
+            "{id}: prompted {prompted:?}, ran {ran}"
+        );
+        app.shell.palette.close();
+    }
+}
+
+// UI-10: a command with parameters asks for them, and runs with what was entered.
+#[test]
+fn the_palette_asks_for_parameters_and_runs_the_command() {
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, None).unwrap();
+    open_palette(&ctx, &mut app);
+    frame_with(
+        &ctx,
+        &mut app,
+        vec![egui::Event::Text("toggle panel".to_owned())],
+    );
+    frame_with(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Enter, egui::Modifiers::NONE)],
+    );
+    let painted = frame_with(&ctx, &mut app, Vec::new());
+    assert!(
+        painted.iter().any(|t| t == "panel"),
+        "the field is drawn: {painted:?}"
+    );
+    assert!(painted.iter().any(|t| t == "bottom"), "with its choices");
+    frame_with(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Enter, egui::Modifiers::NONE)],
+    );
+    assert_eq!(app.shell.palette.error(), Some("`panel` is required"));
+    assert!(app.shell.palette.is_open());
+    let prompt = app.shell.palette.prompt_mut().unwrap();
+    assert_eq!(prompt.id.as_str(), "view.toggle_panel");
+    prompt.inputs = vec![Input::Choice(Some(2))];
+    frame_with(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Enter, egui::Modifiers::NONE)],
+    );
+    assert!(!app.shell.palette.is_open(), "it closes after running");
+    assert!(
+        !app.shell().layout().bottom.visible,
+        "the bottom panel was toggled"
+    );
+}
+
+// UI-10: Escape leaves the prompt for the list and closes the list; the arrow keys pick a row.
+#[test]
+fn the_palette_keys_move_go_back_and_close() {
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, None).unwrap();
+    frame_with(
+        &ctx,
+        &mut app,
+        vec![key(
+            egui::Key::P,
+            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        )],
+    );
+    assert!(app.shell.palette.is_open(), "Cmd+Shift+P opens it");
+    let none = egui::Modifiers::NONE;
+    frame_with(&ctx, &mut app, vec![key(egui::Key::ArrowUp, none)]);
+    for _ in 0..3 {
+        frame_with(&ctx, &mut app, vec![key(egui::Key::ArrowDown, none)]);
+    }
+    frame_with(&ctx, &mut app, vec![key(egui::Key::Enter, none)]);
+    let prompt = app
+        .shell
+        .palette
+        .prompt_mut()
+        .map(|p| p.id.as_str().to_owned());
+    assert_eq!(
+        prompt.as_deref(),
+        Some("view.resize_panel"),
+        "the fourth command in id order"
+    );
+    frame_with(&ctx, &mut app, vec![key(egui::Key::Escape, none)]);
+    assert!(app.shell.palette.prompt_mut().is_none(), "back to the list");
+    assert!(app.shell.palette.is_open());
+    frame_with(&ctx, &mut app, vec![key(egui::Key::Escape, none)]);
+    assert!(!app.shell.palette.is_open(), "closed");
+    open_palette(&ctx, &mut app);
+    frame_with(&ctx, &mut app, vec![egui::Event::Text("zzzz".to_owned())]);
+    let painted = frame_with(&ctx, &mut app, Vec::new());
+    assert!(painted.iter().any(|t| t == Text::PaletteNoMatch.get()));
+    frame_with(&ctx, &mut app, vec![key(egui::Key::Enter, none)]);
+    assert!(
+        app.shell.palette.is_open(),
+        "Enter with no match does nothing"
+    );
+}
+
+// UI-10: each row shows its command's id and shortcut, and the count of matches.
+#[test]
+fn a_row_shows_the_id_and_the_shortcut() {
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, None).unwrap();
+    open_palette(&ctx, &mut app);
+    let painted = frame_with(&ctx, &mut app, vec![egui::Event::Text("undo".to_owned())]);
+    let painted = [painted, frame_with(&ctx, &mut app, Vec::new())].concat();
+    let undo = ctx.format_shortcut(&keymap::shortcut("edit.undo").unwrap());
+    assert!(painted.contains(&undo), "{undo:?} in {painted:?}");
+    assert!(painted.iter().any(|t| t == "edit.undo"));
+    let registry = app.shell().session().registry();
+    let total = registry.commands().count();
+    let shown = search(registry.commands(), "undo").len();
+    let count = command_count(shown, total);
+    assert!(painted.contains(&count), "{count:?} in {painted:?}");
+}
+
+// PRIN-3: every key binding runs a registered command that takes no parameters.
+#[test]
+fn every_binding_names_a_registered_command_without_parameters() {
+    let ctx = egui::Context::default();
+    let app = App::new(&ctx, None).unwrap();
+    let registry = app.shell().session().registry();
+    for binding in keymap::BINDINGS {
+        let info = registry
+            .commands()
+            .find(|c| c.id().as_str() == binding.command)
+            .expect("every binding's command is registered");
+        assert!(params::fields(info.params()).is_empty());
+        assert_eq!(keymap::shortcut(binding.command), Some(binding.shortcut));
+    }
+    assert_eq!(keymap::shortcut("view.toggle_panel"), None);
+}
+
+// PRIN-3: a binding's shortcut runs its command, and is left alone while the palette is open.
+#[test]
+fn a_shortcut_runs_its_command() {
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, None).unwrap();
+    let undo = keymap::shortcut("edit.undo").unwrap();
+    let pressed = key(undo.logical_key, undo.modifiers);
+    frame_with(&ctx, &mut app, vec![pressed.clone()]);
+    assert!(!app.shell.palette.is_open());
+    open_palette(&ctx, &mut app);
+    frame_with(&ctx, &mut app, vec![pressed]);
+    assert!(app.shell.palette.is_open());
+}
+
+// UI-10: the palette's count, and a row's matched characters in the accent in the row's font.
+#[test]
+fn the_count_and_the_highlight() {
+    assert_eq!(command_count(1, 5), "1 of 5 commands");
+    let font = FontId::monospace(13.0);
+    let job = highlighted(
+        "play.start",
+        &[0..2, 5..6],
+        egui::Color32::GRAY,
+        egui::Color32::RED,
+        &font,
+    );
+    let sections: Vec<(String, egui::Color32)> = job
+        .sections
+        .iter()
+        .map(|s| {
+            let text = job
+                .text
+                .get(s.byte_range.start.0..s.byte_range.end.0)
+                .unwrap();
+            (text.to_owned(), s.format.color)
+        })
+        .filter(|(text, _)| !text.is_empty())
+        .collect();
+    let gray = egui::Color32::GRAY;
+    let red = egui::Color32::RED;
+    assert_eq!(
+        sections,
+        [
+            ("pl".to_owned(), red),
+            ("ay.".to_owned(), gray),
+            ("s".to_owned(), red),
+            ("tart".to_owned(), gray),
+        ]
+    );
+    assert!(job.sections.iter().all(|s| s.format.font_id == font));
+}
+
+// UI-10: the footer names the keys, and a prompt's first field takes what is typed.
+#[test]
+fn the_footer_and_the_first_field() {
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, None).unwrap();
+    open_palette(&ctx, &mut app);
+    let painted = frame_with(&ctx, &mut app, Vec::new());
+    for hint in [
+        Text::PaletteMove,
+        Text::PaletteRun,
+        Text::PaletteClose,
+        Text::KeyEscape,
+    ] {
+        assert!(painted.iter().any(|t| t == hint.get()), "{hint:?}");
+    }
+    frame_with(&ctx, &mut app, vec![egui::Event::Text("resize".to_owned())]);
+    frame_with(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Enter, egui::Modifiers::NONE)],
+    );
+    let prompt = app.shell.palette.prompt_mut().unwrap();
+    assert_eq!(prompt.id.as_str(), "view.resize_panel");
+    let size = prompt.fields.iter().position(|f| f.name == "size").unwrap();
+    let panel = prompt
+        .fields
+        .iter()
+        .position(|f| f.name == "panel")
+        .unwrap();
+    assert!(
+        panel < size,
+        "required fields by name: the choice comes before the text"
+    );
+    prompt.inputs = prompt
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            if i == panel {
+                Input::Choice(Some(0))
+            } else {
+                Input::empty(&f.kind)
+            }
+        })
+        .collect();
+    frame_with(&ctx, &mut app, Vec::new());
+    frame_with(&ctx, &mut app, vec![egui::Event::Text("300".to_owned())]);
+    frame_with(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Enter, egui::Modifiers::NONE)],
+    );
+    assert_eq!(app.shell.palette.error(), None);
+    assert!(!app.shell.palette.is_open());
+    assert!((app.shell().layout().left.size - 300.0).abs() < f32::EPSILON);
 }
