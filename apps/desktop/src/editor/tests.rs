@@ -397,17 +397,32 @@ fn a_hover_waits_for_the_pointer_to_rest() {
     let mut harness = harness("src/weapons.qc");
     caret_at(&mut harness, "bounces", 0, 2);
     harness.run();
-    let caret = editor(&harness).view.caret_rect().unwrap();
-    harness.event(Event::PointerMoved(caret.center()));
-    // Each step is a quarter of a second.
+    let on_bounces = editor(&harness).view.caret_rect().unwrap().center();
+    caret_at(&mut harness, "velocity", 0, 2);
+    harness.run();
+    let on_velocity = editor(&harness).view.caret_rect().unwrap().center();
+    // Each step is a quarter of a second; the first sees the pointer arrive.
+    harness.event(Event::PointerMoved(on_bounces));
     harness.step();
-    assert_eq!(popup(&harness), None, "not after a quarter of a second");
-    harness.run_steps(3);
-    let Some(Popup::Hover { at, .. }) = popup(&harness) else {
+    harness.step();
+    assert_eq!(
+        popup(&harness),
+        None,
+        "not after a quarter of a second at rest"
+    );
+    // Moving to another name starts the wait again.
+    harness.event(Event::PointerMoved(on_velocity));
+    harness.step();
+    harness.step();
+    assert_eq!(popup(&harness), None, "the wait restarted at the new name");
+    harness.step();
+    harness.step();
+    let Some(Popup::Hover { at, text }) = popup(&harness) else {
         panic!("{:?}", popup(&harness));
     };
+    assert!(text.contains(".vector velocity"), "{text}");
     harness.run_steps(4);
-    let shown = harness.get_by_label_contains(".float bounces").rect();
+    let shown = harness.get_by_label_contains(".vector velocity").rect();
     assert!(
         shown.top() > at.y && shown.top() < at.y + 40.0,
         "just below the pointer: {shown:?} for {at:?}"
@@ -477,18 +492,19 @@ fn the_find_field_finds_on_enter_only() {
 #[test]
 fn switching_files_sends_the_edits_at_once() {
     let mut harness = harness("src/world.qc");
-    let before = app(&harness).shell().workbench().problems().len();
-    // Typed and switched away in one frame, before typing could settle.
+    let world = fixture().join("src/world.qc");
+    let in_world = |harness: &H| {
+        let problems = app(harness).shell().workbench().problems();
+        problems.iter().filter(|p| p.path == world).count()
+    };
+    let before = in_world(&harness);
     harness.event(Event::Text("float = 1; ".to_owned()));
+    // One step types it; a quarter of a second is not long enough for typing to settle.
+    harness.step();
+    assert_eq!(in_world(&harness), before, "not sent yet");
     harness.get_by_label("defs.qc").click();
     harness.step();
-    harness.step();
-    let problems = app(&harness).shell().workbench().problems();
-    assert!(problems.len() > before, "{problems:?}");
-    assert_eq!(
-        app(&harness).shell().workbench().open().unwrap().path(),
-        fixture().join("defs.qc")
-    );
+    assert!(in_world(&harness) > before, "sent when the editor moved on");
 }
 
 #[test]
@@ -534,20 +550,19 @@ fn a_file_opened_with_such_a_character_gets_a_system_font() {
     let dir = std::env::temp_dir().join(format!("quakec-studio-glyph-{}", std::process::id()));
     let _ignored = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
+    let icon = Icon::Play.char();
     std::fs::write(dir.join("progs.src"), "progs.dat\na.qc\nb.qc\n").unwrap();
-    std::fs::write(dir.join("a.qc"), "float a;\n").unwrap();
-    std::fs::write(
-        dir.join("b.qc"),
-        format!("// {}\nfloat b;\n", Icon::Play.char()),
-    )
-    .unwrap();
+    std::fs::write(dir.join("a.qc"), format!("float a;\n// {icon}\n")).unwrap();
+    std::fs::write(dir.join("b.qc"), format!("float b;\n// {icon}\n")).unwrap();
     let mut harness = harness_in(&dir, "a.qc");
     let shell = harness.state_mut().as_mut().unwrap().shell_mut();
     shell.set_system_fonts(icons_from_the_system());
-    // The caret's line of a.qc has no icon; the whole of b.qc does, on its first line.
+    // An edit on a.qc's first line looks at that line alone, which has no icon.
     caret_at(&mut harness, "float", 0, 0);
+    harness.event(Event::Text("x".to_owned()));
     harness.run();
     assert_eq!(app(&harness).shell().system_fonts_added(), 0);
+    // Another file is looked at whole: its icon is on its second line.
     harness.get_by_label("b.qc").click();
     harness.run();
     let _ignored = std::fs::remove_dir_all(&dir);

@@ -26,6 +26,8 @@ pub(crate) struct SystemFonts {
     added: BTreeSet<fontdb::ID>,
     /// The characters looked for already, found or not.
     tried: BTreeSet<char>,
+    /// How many times the system's fonts were searched for a character.
+    searches: usize,
 }
 
 impl SystemFonts {
@@ -36,6 +38,7 @@ impl SystemFonts {
             db: None,
             added: BTreeSet::new(),
             tried: BTreeSet::new(),
+            searches: 0,
         }
     }
 
@@ -46,6 +49,12 @@ impl SystemFonts {
             db: Some(db),
             ..Self::new(bundled)
         }
+    }
+
+    /// How many times the system's fonts were searched for a character.
+    #[cfg(test)]
+    pub(crate) const fn searches(&self) -> usize {
+        self.searches
     }
 
     /// The number of system faces given to egui.
@@ -103,6 +112,7 @@ impl SystemFonts {
     /// The first system face not given to egui yet whose character map has `c`, with its
     /// file's bytes and its index in the file.
     fn face_with(&mut self, c: char) -> Option<(fontdb::ID, Vec<u8>, u32)> {
+        self.searches = self.searches.saturating_add(1);
         let db = self.db.get_or_insert_with(|| {
             let mut db = fontdb::Database::new();
             db.load_system_fonts();

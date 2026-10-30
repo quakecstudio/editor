@@ -60,6 +60,8 @@ fn a_character_no_system_font_has_is_looked_for_once() {
     let (ctx, mut fonts) = fallback(&[MONO], &[MONO]);
     let icon = Icon::Play.char();
     assert_eq!(fonts.cover(&ctx, &families(), &icon.to_string()), 0);
+    assert_eq!(fonts.cover(&ctx, &families(), &icon.to_string()), 0);
+    assert_eq!(fonts.searches(), 1, "a character is searched for once");
     assert_eq!(
         fonts.cover(&ctx, &families(), "\n\t"),
         0,
