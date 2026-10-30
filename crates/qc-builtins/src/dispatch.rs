@@ -20,7 +20,8 @@
 //! is given for [`MockBuiltins<MockEngine>`]. A real engine (`qs-sim`, P3-24) will provide its
 //! own dispatch.
 
-use qc_edict::system::{field_by_name, global_by_name};
+use qc_edict::EdictNumber;
+use qc_edict::system::{SysField, SysGlobal};
 use qc_types::{EntityRef, PROGS_OFS_RETURN, Slot, ofs_parm};
 use qc_vm::{Builtins, Context, ErrorKind, RunError};
 
@@ -182,9 +183,9 @@ impl MockBuiltins<MockEngine> {
     fn b_makevectors(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let ang = read_parm_vector(context, 0)?;
         let (forward, right, up) = math::makevectors(ang);
-        write_system_vector(context, "v_forward", forward)?;
-        write_system_vector(context, "v_right", right)?;
-        write_system_vector(context, "v_up", up)?;
+        write_system_vector(context, SysGlobal::VForward, forward)?;
+        write_system_vector(context, SysGlobal::VRight, right)?;
+        write_system_vector(context, SysGlobal::VUp, up)?;
         Ok(())
     }
 
@@ -321,16 +322,16 @@ fn num_for_edict_bad() -> BuiltinError {
 ///
 /// Unlike [`entity_num_for`] this accepts an edict at or above `num_edicts` and a free one
 /// (BUILTIN-2.7).
-fn checked_edict(context: &mut Context<'_, '_>, value: i32) -> Result<usize, BuiltinError> {
+fn checked_edict(context: &mut Context<'_, '_>, value: i32) -> Result<EdictNumber, BuiltinError> {
     let edict_size = context.machine().edicts().layout().edict_size();
-    match EntityRef::from_bits(value).number(edict_size) {
-        Some(number) if number >= 0 => usize::try_from(number).map_err(|_| invalid_entity()),
-        _ => Err(invalid_entity()),
-    }
+    EntityRef::from_bits(value)
+        .number(edict_size)
+        .and_then(EdictNumber::from_i32)
+        .ok_or_else(invalid_entity)
 }
 
 /// Reads entity parameter `n` with the `G_EDICT` check (BUILTIN-2.7).
-fn read_parm_edict(context: &mut Context<'_, '_>, n: u16) -> Result<usize, BuiltinError> {
+fn read_parm_edict(context: &mut Context<'_, '_>, n: u16) -> Result<EdictNumber, BuiltinError> {
     let value = read_parm_raw(context, n)?;
     checked_edict(context, value)
 }
@@ -338,16 +339,16 @@ fn read_parm_edict(context: &mut Context<'_, '_>, n: u16) -> Result<usize, Built
 /// Turns an entity value into its number as `G_EDICTNUM`/`NUM_FOR_EDICT` do (BUILTIN-2.4,
 /// BUILTIN-2.9): the `G_EDICT` check first (`invalid entity`), then `NUM_FOR_EDICT` (the fatal
 /// error when the number is at or above `num_edicts`).
-fn entity_num_for(context: &mut Context<'_, '_>, value: i32) -> Result<usize, BuiltinError> {
+fn entity_num_for(context: &mut Context<'_, '_>, value: i32) -> Result<EdictNumber, BuiltinError> {
     let number = checked_edict(context, value)?;
-    if number >= context.machine().edicts().num_edicts() {
+    if number.index() >= context.machine().edicts().num_edicts() {
         return Err(num_for_edict_bad());
     }
     Ok(number)
 }
 
 /// Reads entity parameter `n` with the `G_EDICTNUM` check (BUILTIN-2.4).
-fn read_parm_edictnum(context: &mut Context<'_, '_>, n: u16) -> Result<usize, BuiltinError> {
+fn read_parm_edictnum(context: &mut Context<'_, '_>, n: u16) -> Result<EdictNumber, BuiltinError> {
     let value = read_parm_raw(context, n)?;
     entity_num_for(context, value)
 }
@@ -462,10 +463,10 @@ fn write_return_vector(context: &mut Context<'_, '_>, value: [f32; 3]) -> Result
 /// Writes a vector to a named system global (`v_forward`, `v_right`, `v_up`) (BUILTIN-6.1).
 fn write_system_vector(
     context: &mut Context<'_, '_>,
-    name: &str,
+    global: SysGlobal,
     value: [f32; 3],
 ) -> Result<(), BuiltinError> {
-    let slot = system_global_slot(name)?;
+    let slot = system_global_slot(global)?;
     let slots = [
         Slot::from_f32(value[0]),
         Slot::from_f32(value[1]),
@@ -477,157 +478,153 @@ fn write_system_vector(
         .map_err(|_| BuiltinError::Runtime("system global slot out of range".to_string()))
 }
 
-/// The `i32` slot of system global `name`.
-fn system_global_slot(name: &str) -> Result<i32, BuiltinError> {
-    let sysvar = global_by_name(name)
-        .ok_or_else(|| BuiltinError::Runtime(format!("no system global {name}")))?;
-    i32::try_from(sysvar.slot)
+/// The `i32` slot of system global `global`.
+fn system_global_slot(global: SysGlobal) -> Result<i32, BuiltinError> {
+    i32::try_from(global.slot())
         .map_err(|_| BuiltinError::Runtime("system global slot out of range".to_string()))
 }
 
 /// Reads a scalar system global `name` as an `i32` of its bits.
-fn read_system_global_int(context: &mut Context<'_, '_>, name: &str) -> Result<i32, BuiltinError> {
-    let slot = system_global_slot(name)?;
+fn read_system_global_int(
+    context: &mut Context<'_, '_>,
+    global: SysGlobal,
+) -> Result<i32, BuiltinError> {
+    let slot = system_global_slot(global)?;
     context
         .machine()
         .global(slot)
         .map(Slot::as_i32)
-        .map_err(|_| BuiltinError::Runtime(format!("no system global {name}")))
+        .map_err(|_| BuiltinError::Runtime(format!("no system global {}", global.name())))
 }
 
 /// Writes a float to the scalar system global `name`.
 fn write_system_global_float(
     context: &mut Context<'_, '_>,
-    name: &str,
+    global: SysGlobal,
     value: f32,
 ) -> Result<(), BuiltinError> {
-    let slot = system_global_slot(name)?;
+    let slot = system_global_slot(global)?;
     context
         .machine()
         .set_global(slot, Slot::from_f32(value))
-        .map_err(|_| BuiltinError::Runtime(format!("no system global {name}")))
+        .map_err(|_| BuiltinError::Runtime(format!("no system global {}", global.name())))
 }
 
 /// The entity value in scalar system global `name` (`self`, `msg_entity`).
 fn read_system_global_entity(
     context: &mut Context<'_, '_>,
-    name: &str,
+    global: SysGlobal,
 ) -> Result<i32, BuiltinError> {
-    read_system_global_int(context, name)
-}
-
-/// The slot a named system field starts at.
-fn field_slot(name: &str) -> Result<usize, BuiltinError> {
-    field_by_name(name)
-        .map(|var| var.slot)
-        .ok_or_else(|| BuiltinError::Runtime(format!("no system field {name}")))
+    read_system_global_int(context, global)
 }
 
 /// Reads a scalar field of edict `number` by its system name.
 fn read_field_float(
     context: &mut Context<'_, '_>,
-    number: usize,
-    name: &str,
+    number: EdictNumber,
+    field: SysField,
 ) -> Result<f32, BuiltinError> {
-    let slot = field_slot(name)?;
+    let slot = field.slot();
     context
         .machine()
         .edicts()
         .field(number, slot)
         .map(Slot::as_f32)
-        .ok_or_else(|| BuiltinError::Runtime(format!("no field {name}")))
+        .ok_or_else(|| BuiltinError::Runtime(format!("no field {}", field.name())))
 }
 
 /// Reads an integer-valued field (an entity value, a flags word's integer) of edict `number`.
 fn read_field_int(
     context: &mut Context<'_, '_>,
-    number: usize,
-    name: &str,
+    number: EdictNumber,
+    field: SysField,
 ) -> Result<i32, BuiltinError> {
-    let slot = field_slot(name)?;
+    let slot = field.slot();
     context
         .machine()
         .edicts()
         .field(number, slot)
         .map(Slot::as_i32)
-        .ok_or_else(|| BuiltinError::Runtime(format!("no field {name}")))
+        .ok_or_else(|| BuiltinError::Runtime(format!("no field {}", field.name())))
 }
 
 /// Reads a vector field of edict `number` by its system name.
 fn read_field_vector(
     context: &mut Context<'_, '_>,
-    number: usize,
-    name: &str,
+    number: EdictNumber,
+    field: SysField,
 ) -> Result<[f32; 3], BuiltinError> {
-    let slot = field_slot(name)?;
+    let slot = field.slot();
     let edicts = context.machine().edicts();
     let x = edicts.field(number, slot);
     let y = slot.checked_add(1).and_then(|s| edicts.field(number, s));
     let z = slot.checked_add(2).and_then(|s| edicts.field(number, s));
     match (x, y, z) {
         (Some(x), Some(y), Some(z)) => Ok([x.as_f32(), y.as_f32(), z.as_f32()]),
-        _ => Err(BuiltinError::Runtime(format!("no vector field {name}"))),
+        _ => Err(BuiltinError::Runtime(format!(
+            "no vector field {}",
+            field.name()
+        ))),
     }
 }
 
 /// Writes a scalar field of edict `number` by its system name.
 fn write_field_float(
     context: &mut Context<'_, '_>,
-    number: usize,
-    name: &str,
+    number: EdictNumber,
+    field: SysField,
     value: f32,
 ) -> Result<(), BuiltinError> {
-    let slot = field_slot(name)?;
-    if context
+    context
         .machine()
         .edicts_mut()
-        .set_field(number, slot, Slot::from_f32(value))
-    {
-        Ok(())
-    } else {
-        Err(BuiltinError::Runtime(format!("no field {name}")))
-    }
+        .set_field(number, field.slot(), Slot::from_f32(value))
+        .map_err(|_| BuiltinError::Runtime(format!("no field {}", field.name())))
 }
 
 /// Writes an integer-valued field (a string or entity value) of edict `number`.
 fn write_field_int(
     context: &mut Context<'_, '_>,
-    number: usize,
-    name: &str,
+    number: EdictNumber,
+    field: SysField,
     value: i32,
 ) -> Result<(), BuiltinError> {
-    let slot = field_slot(name)?;
-    if context
+    context
         .machine()
         .edicts_mut()
-        .set_field(number, slot, Slot::from_i32(value))
-    {
-        Ok(())
-    } else {
-        Err(BuiltinError::Runtime(format!("no field {name}")))
-    }
+        .set_field(number, field.slot(), Slot::from_i32(value))
+        .map_err(|_| BuiltinError::Runtime(format!("no field {}", field.name())))
 }
 
 /// Writes a vector field of edict `number` by its system name.
 fn write_field_vector(
     context: &mut Context<'_, '_>,
-    number: usize,
-    name: &str,
+    number: EdictNumber,
+    field: SysField,
     value: [f32; 3],
 ) -> Result<(), BuiltinError> {
-    let slot = field_slot(name)?;
+    let slot = field.slot();
     let edicts = context.machine().edicts_mut();
-    let ok0 = edicts.set_field(number, slot, Slot::from_f32(value[0]));
-    let ok1 = slot
-        .checked_add(1)
-        .is_some_and(|s| edicts.set_field(number, s, Slot::from_f32(value[1])));
-    let ok2 = slot
-        .checked_add(2)
-        .is_some_and(|s| edicts.set_field(number, s, Slot::from_f32(value[2])));
+    let ok0 = edicts
+        .set_field(number, slot, Slot::from_f32(value[0]))
+        .is_ok();
+    let ok1 = slot.checked_add(1).is_some_and(|s| {
+        edicts
+            .set_field(number, s, Slot::from_f32(value[1]))
+            .is_ok()
+    });
+    let ok2 = slot.checked_add(2).is_some_and(|s| {
+        edicts
+            .set_field(number, s, Slot::from_f32(value[2]))
+            .is_ok()
+    });
     if ok0 && ok1 && ok2 {
         Ok(())
     } else {
-        Err(BuiltinError::Runtime(format!("no vector field {name}")))
+        Err(BuiltinError::Runtime(format!(
+            "no vector field {}",
+            field.name()
+        )))
     }
 }
 
@@ -674,7 +671,7 @@ impl MockBuiltins<MockEngine> {
             .edicts_mut()
             .alloc(now)
             .map_err(|_| BuiltinError::Fatal("ED_Alloc: no free edicts".to_string()))?;
-        let value = i32::try_from(number).map_err(|_| invalid_entity())?;
+        let value = number.to_i32().ok_or_else(invalid_entity)?;
         write_return_edict(context, value)
     }
 
@@ -697,8 +694,7 @@ impl MockBuiltins<MockEngine> {
         // The raw field value is read now, but checked only when an edict is examined.
         let field_value = read_parm_raw(context, 1)?;
         let num_edicts = context.machine().edicts().num_edicts();
-        let mut number = start.saturating_add(1);
-        while number < num_edicts {
+        for number in (start.index().saturating_add(1)..num_edicts).map(EdictNumber::new) {
             let is_free = context.machine().edicts().is_free(number).unwrap_or(true);
             if !is_free {
                 // BUILTIN-8.8: fld is checked (invalid field) at the first examined edict.
@@ -712,11 +708,10 @@ impl MockBuiltins<MockEngine> {
                     .ok_or_else(invalid_field)?;
                 let text = resolve_string(context, &self.engine, value)?;
                 if text == wanted {
-                    let found = i32::try_from(number).map_err(|_| invalid_entity())?;
+                    let found = number.to_i32().ok_or_else(invalid_entity)?;
                     return write_return_edict(context, found);
                 }
             }
-            number = number.saturating_add(1);
         }
         write_return_edict(context, 0)
     }
@@ -726,14 +721,12 @@ impl MockBuiltins<MockEngine> {
     fn b_nextent(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let e = read_parm_edictnum(context, 0)?;
         let num_edicts = context.machine().edicts().num_edicts();
-        let mut number = e.saturating_add(1);
-        while number < num_edicts {
+        for number in (e.index().saturating_add(1)..num_edicts).map(EdictNumber::new) {
             let is_free = context.machine().edicts().is_free(number).unwrap_or(true);
             if !is_free {
-                let next = i32::try_from(number).map_err(|_| invalid_entity())?;
+                let next = number.to_i32().ok_or_else(invalid_entity)?;
                 return write_return_edict(context, next);
             }
-            number = number.saturating_add(1);
         }
         write_return_edict(context, 0)
     }
@@ -745,29 +738,27 @@ impl MockBuiltins<MockEngine> {
         let rad = read_parm_float(context, 1)?;
         let num_edicts = context.machine().edicts().num_edicts();
         let mut chain = 0_i32; // the world
-        let mut number = 1;
-        while number < num_edicts {
+        for number in (1..num_edicts).map(EdictNumber::new) {
             let is_free = context.machine().edicts().is_free(number).unwrap_or(true);
-            let solid = read_field_float(context, number, "solid").unwrap_or(0.0);
+            let solid = read_field_float(context, number, SysField::Solid).unwrap_or(0.0);
             // BUILTIN-8.5: skip free edicts and those whose solid is SOLID_NOT (0).
             if !is_free && !exact_eq(solid, 0.0) {
-                let origin = read_field_vector(context, number, "origin")?;
-                let mins = read_field_vector(context, number, "mins")?;
-                let maxs = read_field_vector(context, number, "maxs")?;
+                let origin = read_field_vector(context, number, SysField::Origin)?;
+                let mins = read_field_vector(context, number, SysField::Mins)?;
+                let maxs = read_field_vector(context, number, SysField::Maxs)?;
                 let d = radius_delta(org, origin, mins, maxs);
                 // BUILTIN-8.5: included unless the length is greater than rad (NaN excludes).
                 if math::vlen(d) <= rad {
-                    let this = i32::try_from(number).map_err(|_| invalid_entity())?;
+                    let this = number.to_i32().ok_or_else(invalid_entity)?;
                     let value = context
                         .machine()
                         .edicts()
                         .edict_num(this)
                         .map_err(|_| invalid_entity())?;
-                    write_field_int(context, number, "chain", chain)?;
+                    write_field_int(context, number, SysField::Chain, chain)?;
                     chain = value.bits();
                 }
             }
-            number = number.saturating_add(1);
         }
         write_return_int(context, chain)
     }
@@ -778,8 +769,7 @@ impl MockBuiltins<MockEngine> {
     /// range error.
     fn b_setspawnparms(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let number = read_parm_edictnum(context, 0)?;
-        let maxclients = context.machine().edicts().maxclients();
-        if number < 1 || number > maxclients {
+        if !context.machine().edicts().is_client(number) {
             return Err(BuiltinError::Runtime("Entity is not a client".to_string()));
         }
         // The mock keeps no per-slot spawn parms, so parm1..parm16 are left unchanged
@@ -820,18 +810,19 @@ impl MockBuiltins<MockEngine> {
     fn link_edict(
         &mut self,
         context: &mut Context<'_, '_>,
-        number: usize,
+        number: EdictNumber,
     ) -> Result<(), BuiltinError> {
-        if number == 0 {
+        if number == EdictNumber::WORLD {
             return Ok(());
         }
         if context.machine().edicts().is_free(number).unwrap_or(true) {
             return Ok(());
         }
-        let origin = read_field_vector(context, number, "origin")?;
-        let mins = read_field_vector(context, number, "mins")?;
-        let maxs = read_field_vector(context, number, "maxs")?;
-        let flags = math::float_to_int(read_field_float(context, number, "flags").unwrap_or(0.0));
+        let origin = read_field_vector(context, number, SysField::Origin)?;
+        let mins = read_field_vector(context, number, SysField::Mins)?;
+        let maxs = read_field_vector(context, number, SysField::Maxs)?;
+        let flags =
+            math::float_to_int(read_field_float(context, number, SysField::Flags).unwrap_or(0.0));
         let (wx, wz) = if flags & BUILTIN_FL_ITEM != 0 {
             (15.0_f32, 0.0_f32)
         } else {
@@ -852,15 +843,15 @@ impl MockBuiltins<MockEngine> {
                 *cell = o + mx + w;
             }
         }
-        write_field_vector(context, number, "absmin", absmin)?;
-        write_field_vector(context, number, "absmax", absmax)
+        write_field_vector(context, number, SysField::Absmin, absmin)?;
+        write_field_vector(context, number, SysField::Absmax, absmax)
     }
 
     /// `setorigin(e, o)` (BUILTIN-9.1): set `e`'s `origin` to `o` and link it.
     fn b_setorigin(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let number = read_parm_edict(context, 0)?;
         let origin = read_parm_vector(context, 1)?;
-        write_field_vector(context, number, "origin", origin)?;
+        write_field_vector(context, number, SysField::Origin, origin)?;
         self.link_edict(context, number)
     }
 
@@ -878,10 +869,10 @@ impl MockBuiltins<MockEngine> {
                 return Err(BuiltinError::Runtime("backwards mins/maxs".to_string()));
             }
         }
-        write_field_vector(context, number, "mins", min)?;
-        write_field_vector(context, number, "maxs", max)?;
+        write_field_vector(context, number, SysField::Mins, min)?;
+        write_field_vector(context, number, SysField::Maxs, max)?;
         let size = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
-        write_field_vector(context, number, "size", size)?;
+        write_field_vector(context, number, SysField::Size, size)?;
         self.link_edict(context, number)
     }
 
@@ -897,19 +888,19 @@ impl MockBuiltins<MockEngine> {
             return Err(BuiltinError::Runtime(format!("no precache: {name}\n")));
         };
         // BUILTIN-9.4: model is the string value itself (BUILTIN-2.6), not the list's copy.
-        write_field_int(context, number, "model", model_value)?;
+        write_field_int(context, number, SysField::Model, model_value)?;
         let index_f = i32_to_f32(i32::try_from(index).unwrap_or(0));
-        write_field_float(context, number, "modelindex", index_f)?;
+        write_field_float(context, number, SysField::Modelindex, index_f)?;
         let bounds = self.engine.model_bounds_for(&name);
         // Set the size as setsize does, from the model's bounds (these never go backwards).
-        write_field_vector(context, number, "mins", bounds.mins)?;
-        write_field_vector(context, number, "maxs", bounds.maxs)?;
+        write_field_vector(context, number, SysField::Mins, bounds.mins)?;
+        write_field_vector(context, number, SysField::Maxs, bounds.maxs)?;
         let size = [
             bounds.maxs[0] - bounds.mins[0],
             bounds.maxs[1] - bounds.mins[1],
             bounds.maxs[2] - bounds.mins[2],
         ];
-        write_field_vector(context, number, "size", size)?;
+        write_field_vector(context, number, SysField::Size, size)?;
         self.link_edict(context, number)
     }
 }
@@ -1016,8 +1007,7 @@ impl MockBuiltins<MockEngine> {
         _header: usize,
     ) -> Result<(), BuiltinError> {
         let client = read_parm_edictnum(context, 0)?;
-        let maxclients = context.machine().edicts().maxclients();
-        if client < 1 || client > maxclients {
+        if !context.machine().edicts().is_client(client) {
             // BUILTIN-11.2: a console message, then return; not an error.
             return Ok(());
         }
@@ -1038,8 +1028,7 @@ impl MockBuiltins<MockEngine> {
     fn b_stuffcmd(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let _header = BUILTIN_SVC_STUFFTEXT;
         let client = read_parm_edictnum(context, 0)?;
-        let maxclients = context.machine().edicts().maxclients();
-        if client < 1 || client > maxclients {
+        if !context.machine().edicts().is_client(client) {
             return Err(BuiltinError::Runtime("Parm 0 not a client".to_string()));
         }
         let _text = read_parm_string(context, &self.engine, 1)?;
@@ -1225,7 +1214,7 @@ impl MockBuiltins<MockEngine> {
         let number = read_parm_edictnum(context, 0)?;
         // BUILTIN-12.8, BUILTIN-2.9: the model text is read here (invalid string if bad);
         // 0 for an empty model, the fatal error when not precached.
-        let model_value = read_field_int(context, number, "model")?;
+        let model_value = read_field_int(context, number, SysField::Model)?;
         let model_text = resolve_string(context, &self.engine, model_value)?;
         let name = String::from_utf8_lossy(&model_text).into_owned();
         let _index = if name.is_empty() {
@@ -1273,10 +1262,9 @@ impl MockBuiltins<MockEngine> {
         match to {
             0 => Ok(MessageDest::Broadcast),
             1 => {
-                let value = read_system_global_entity(context, "msg_entity")?;
+                let value = read_system_global_entity(context, SysGlobal::MsgEntity)?;
                 let number = entity_num_for(context, value)?;
-                let maxclients = context.machine().edicts().maxclients();
-                if number < 1 || number > maxclients {
+                if !context.machine().edicts().is_client(number) {
                     return Err(BuiltinError::Runtime("WriteDest: not a client".to_string()));
                 }
                 Ok(MessageDest::One)
@@ -1364,24 +1352,24 @@ impl MockBuiltins<MockEngine> {
         let _nomonsters = read_parm_float(context, 2)?;
         // forent is read with the G_EDICT check (BUILTIN-2.9), though the mock ignores it.
         let _forent = read_parm_edict(context, 3)?;
-        write_system_global_float(context, "trace_allsolid", 0.0)?;
-        write_system_global_float(context, "trace_startsolid", 0.0)?;
-        write_system_global_float(context, "trace_fraction", 1.0)?;
-        write_system_vector(context, "trace_endpos", v2)?;
-        write_system_vector(context, "trace_plane_normal", [0.0, 0.0, 0.0])?;
-        write_system_global_float(context, "trace_plane_dist", 0.0)?;
+        write_system_global_float(context, SysGlobal::TraceAllsolid, 0.0)?;
+        write_system_global_float(context, SysGlobal::TraceStartsolid, 0.0)?;
+        write_system_global_float(context, SysGlobal::TraceFraction, 1.0)?;
+        write_system_vector(context, SysGlobal::TraceEndpos, v2)?;
+        write_system_vector(context, SysGlobal::TracePlaneNormal, [0.0, 0.0, 0.0])?;
+        write_system_global_float(context, SysGlobal::TracePlaneDist, 0.0)?;
         let world = context
             .machine()
             .edicts()
             .edict_num(0)
             .map_err(|_| invalid_entity())?;
-        let slot = system_global_slot("trace_ent")?;
+        let slot = system_global_slot(SysGlobal::TraceEnt)?;
         context
             .machine()
             .set_global(slot, Slot::from(world))
             .map_err(|_| BuiltinError::Runtime("no system global trace_ent".to_string()))?;
-        write_system_global_float(context, "trace_inopen", 1.0)?;
-        write_system_global_float(context, "trace_inwater", 0.0)
+        write_system_global_float(context, SysGlobal::TraceInopen, 1.0)?;
+        write_system_global_float(context, SysGlobal::TraceInwater, 0.0)
     }
 
     /// `pointcontents(v)` (DIFF-7.2): returns -1 (`CONTENTS_EMPTY`).
@@ -1400,7 +1388,7 @@ impl MockBuiltins<MockEngine> {
     fn b_aim(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let _e = read_parm_edictnum(context, 0)?;
         let _speed = read_parm_float(context, 1)?;
-        let slot = system_global_slot("v_forward")?;
+        let slot = system_global_slot(SysGlobal::VForward)?;
         let v = context
             .machine()
             .global3(slot)
@@ -1421,13 +1409,13 @@ impl MockBuiltins<MockEngine> {
         }
         let chosen = self.engine.checkclient.last_check;
         // DIFF-7.3: the world when the chosen edict is free or its health is 0 or less.
-        let chosen_usize = usize::try_from(chosen).unwrap_or(0);
+        let chosen_number = EdictNumber::from_i32(chosen).unwrap_or(EdictNumber::WORLD);
         let free = context
             .machine()
             .edicts()
-            .is_free(chosen_usize)
+            .is_free(chosen_number)
             .unwrap_or(true);
-        let health = read_field_float(context, chosen_usize, "health").unwrap_or(0.0);
+        let health = read_field_float(context, chosen_number, SysField::Health).unwrap_or(0.0);
         if free || health <= 0.0 {
             return write_return_edict(context, 0);
         }
@@ -1450,14 +1438,15 @@ impl MockBuiltins<MockEngine> {
         let mut n = check;
         for _ in 0..maxclients {
             n = if n == max_i32 { 1 } else { n.saturating_add(1) };
-            let number = usize::try_from(n).unwrap_or(0);
+            let number = EdictNumber::from_i32(n).unwrap_or(EdictNumber::WORLD);
             let free = context.machine().edicts().is_free(number).unwrap_or(true);
             if free {
                 continue;
             }
-            let health = read_field_float(context, number, "health").unwrap_or(0.0);
-            let flags =
-                math::float_to_int(read_field_float(context, number, "flags").unwrap_or(0.0));
+            let health = read_field_float(context, number, SysField::Health).unwrap_or(0.0);
+            let flags = math::float_to_int(
+                read_field_float(context, number, SysField::Flags).unwrap_or(0.0),
+            );
             if health > 0.0 && flags & BUILTIN_FL_NOTARGET == 0 {
                 return Ok(n);
             }
@@ -1470,10 +1459,10 @@ impl MockBuiltins<MockEngine> {
     fn b_droptofloor(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let self_num = checked_self(context)?;
         self.link_edict(context, self_num)?;
-        let flags = math::float_to_int(read_field_float(context, self_num, "flags")?);
+        let flags = math::float_to_int(read_field_float(context, self_num, SysField::Flags)?);
         let new_flags = i32_to_f32(flags | BUILTIN_FL_ONGROUND);
-        write_field_float(context, self_num, "flags", new_flags)?;
-        write_field_int(context, self_num, "groundentity", 0)?;
+        write_field_float(context, self_num, SysField::Flags, new_flags)?;
+        write_field_int(context, self_num, SysField::Groundentity, 0)?;
         write_return_float(context, 1.0)
     }
 
@@ -1482,7 +1471,7 @@ impl MockBuiltins<MockEngine> {
         let yaw = read_parm_float(context, 0)?;
         let dist = read_parm_float(context, 1)?;
         let self_num = checked_self(context)?;
-        let flags = math::float_to_int(read_field_float(context, self_num, "flags")?);
+        let flags = math::float_to_int(read_field_float(context, self_num, SysField::Flags)?);
         if flags & (BUILTIN_FL_ONGROUND | BUILTIN_FL_FLY | BUILTIN_FL_SWIM) == 0 {
             return write_return_float(context, 0.0);
         }
@@ -1503,13 +1492,13 @@ impl MockBuiltins<MockEngine> {
     fn b_movetogoal(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let step = read_parm_float(context, 0)?;
         let self_num = checked_self(context)?;
-        let flags = math::float_to_int(read_field_float(context, self_num, "flags")?);
+        let flags = math::float_to_int(read_field_float(context, self_num, SysField::Flags)?);
         if flags & (BUILTIN_FL_ONGROUND | BUILTIN_FL_FLY | BUILTIN_FL_SWIM) == 0 {
             return write_return_float(context, 0.0);
         }
         self.change_yaw(context, self_num)?;
-        let yaw = read_field_float(context, self_num, "ideal_yaw")?;
-        let angles_y = read_field_vector(context, self_num, "angles")?[1];
+        let yaw = read_field_float(context, self_num, SysField::IdealYaw)?;
+        let angles_y = read_field_vector(context, self_num, SysField::Angles)?[1];
         // DIFF-7.8: step only when angles_y - ideal_yaw is not strictly between 45 and 315.
         let delta = angles_y - yaw;
         if !(delta > 45.0 && delta < 315.0) {
@@ -1527,7 +1516,7 @@ impl MockBuiltins<MockEngine> {
     fn step_self(
         &mut self,
         context: &mut Context<'_, '_>,
-        number: usize,
+        number: EdictNumber,
         a: f32,
         d: f32,
     ) -> Result<(), BuiltinError> {
@@ -1536,20 +1525,20 @@ impl MockBuiltins<MockEngine> {
         ));
         let move_x = math::f64_to_f32_public(y.cos() * f64::from(d));
         let move_y = math::f64_to_f32_public(y.sin() * f64::from(d));
-        let origin = read_field_vector(context, number, "origin")?;
+        let origin = read_field_vector(context, number, SysField::Origin)?;
         let new = [origin[0] + move_x, origin[1] + move_y, origin[2]];
-        write_field_vector(context, number, "origin", new)
+        write_field_vector(context, number, SysField::Origin, new)
     }
 
     /// The `ChangeYaw` turn of BUILTIN-15.4 on edict `number`.
     fn change_yaw(
         &mut self,
         context: &mut Context<'_, '_>,
-        number: usize,
+        number: EdictNumber,
     ) -> Result<(), BuiltinError> {
-        let angles_y = read_field_vector(context, number, "angles")?[1];
-        let ideal = read_field_float(context, number, "ideal_yaw")?;
-        let yaw_speed = read_field_float(context, number, "yaw_speed")?;
+        let angles_y = read_field_vector(context, number, SysField::Angles)?[1];
+        let ideal = read_field_float(context, number, SysField::IdealYaw)?;
+        let yaw_speed = read_field_float(context, number, SysField::YawSpeed)?;
         let current = math::anglemod(angles_y);
         if exact_eq(current, ideal) {
             return Ok(());
@@ -1570,18 +1559,18 @@ impl MockBuiltins<MockEngine> {
             mv = -yaw_speed;
         }
         let new_y = math::anglemod(current + mv);
-        let mut angles = read_field_vector(context, number, "angles")?;
+        let mut angles = read_field_vector(context, number, SysField::Angles)?;
         if let Some(cell) = angles.get_mut(1) {
             *cell = new_y;
         }
-        write_field_vector(context, number, "angles", angles)
+        write_field_vector(context, number, SysField::Angles, angles)
     }
 }
 
 /// Reads the global `self` with the `G_EDICT` check (BUILTIN-2.9): a `self` that names no edict
 /// is `invalid entity`.
-fn checked_self(context: &mut Context<'_, '_>) -> Result<usize, BuiltinError> {
-    let value = read_system_global_entity(context, "self")?;
+fn checked_self(context: &mut Context<'_, '_>) -> Result<EdictNumber, BuiltinError> {
+    let value = read_system_global_entity(context, SysGlobal::SelfEntity)?;
     checked_edict(context, value)
 }
 

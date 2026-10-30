@@ -20,7 +20,9 @@ use qc_progs::Progs;
 use qc_progs::limits::LIMIT_MAX_EDICTS;
 use qc_types::{EntityRef, PointerRef};
 
-use crate::{EDICT_HEADER_SIZE, EDICT_MAX_FIELDS, EDICT_SYS_FIELDS_END, EDICT_SYS_GLOBALS_END};
+use crate::{
+    EDICT_HEADER_SIZE, EDICT_MAX_FIELDS, EDICT_SYS_FIELDS_END, EDICT_SYS_GLOBALS_END, EdictNumber,
+};
 
 /// Why a progs cannot back an edict store.
 ///
@@ -158,8 +160,8 @@ impl EdictLayout {
     /// The value is the number times the edict size; edict 0 is the world, value 0. Returns
     /// `None` only when the product overflows an `i32`, which no valid edict number does.
     #[must_use]
-    pub fn entity_value(&self, number: i32) -> Option<EntityRef> {
-        EntityRef::from_number(number, self.edict_size)
+    pub fn entity_value(&self, number: EdictNumber) -> Option<EntityRef> {
+        EntityRef::from_number(number.to_i32()?, self.edict_size)
     }
 
     /// The edict number an entity value names, if it names one, id's `PROG_TO_EDICT` read back
@@ -170,11 +172,11 @@ impl EdictLayout {
     /// any other value names none. It does not check whether edict `n` is in use or free: the
     /// array holds all the edicts.
     #[must_use]
-    pub fn edict_number(&self, value: EntityRef) -> Option<i32> {
+    pub fn edict_number(&self, value: EntityRef) -> Option<EdictNumber> {
         let number = value.number(self.edict_size)?;
         let max = i32::try_from(LIMIT_MAX_EDICTS).ok()?;
         if number >= 0 && number < max {
-            Some(number)
+            EdictNumber::from_i32(number)
         } else {
             None
         }
@@ -186,16 +188,36 @@ impl EdictLayout {
     /// The value is `number * edict_size + 96 + 4 * field`. Returns `None` when the slot is
     /// not below [`entityfields`](Self::entityfields) or the arithmetic overflows an `i32`.
     #[must_use]
-    pub fn pointer_value(&self, number: i32, field: usize) -> Option<PointerRef> {
+    pub fn pointer_value(&self, number: EdictNumber, field: usize) -> Option<PointerRef> {
         if field >= self.entityfields {
             return None;
         }
         let field = i32::try_from(field).ok()?;
-        let base = number.checked_mul(self.edict_size)?;
+        let base = number.to_i32()?.checked_mul(self.edict_size)?;
         let offset = field
             .checked_mul(4)
             .and_then(|bytes| bytes.checked_add(EDICT_HEADER_SIZE))
             .and_then(|header_and_field| base.checked_add(header_and_field))?;
         Some(PointerRef::from_bits(offset))
+    }
+
+    /// The edict number and field slot `pointer` names, the inverse of
+    /// [`pointer_value`](Self::pointer_value) (EDICT-1.6): `None` for a negative value, one
+    /// inside an edict's header, one not on a field slot's 4-byte boundary, or a slot not below
+    /// [`entityfields`](Self::entityfields). Whether the edict exists is the store's to say.
+    #[must_use]
+    pub fn pointer_slot(&self, pointer: PointerRef) -> Option<(EdictNumber, usize)> {
+        let value = pointer.bits();
+        let number = value.checked_div(self.edict_size)?;
+        // A negative value has a remainder of 0 or less, so it lands in the header below.
+        let within = value.checked_rem(self.edict_size)?;
+        let from_fields = within.checked_sub(EDICT_HEADER_SIZE)?;
+        if from_fields < 0 || from_fields.checked_rem(4) != Some(0) {
+            return None;
+        }
+        // The edict size is exactly the header and `entityfields` slots (EDICT-1.1), so a
+        // remainder below it is always a slot below `entityfields`.
+        let field = usize::try_from(from_fields.checked_div(4)?).ok()?;
+        Some((EdictNumber::from_i32(number)?, field))
     }
 }

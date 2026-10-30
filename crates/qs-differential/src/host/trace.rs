@@ -13,6 +13,7 @@
 //! change-set algorithm is the same: snapshot the globals and every in-use edict's fields, and
 //! list what differs.
 
+use qc_edict::EdictNumber;
 use std::cell::Cell;
 
 use qc_builtins::{MockBuiltins, MockEngine};
@@ -269,7 +270,13 @@ impl TraceBuilder {
 /// A snapshot of the fields of every edict in use (TRACE-3.4): edicts 0 to num_edicts - 1.
 fn snapshot_fields(machine: &Machine) -> Vec<Vec<Slot>> {
     (0..machine.edicts().num_edicts())
-        .map(|number| machine.edicts().fields(number).unwrap_or(&[]).to_vec())
+        .map(|number| {
+            machine
+                .edicts()
+                .fields(EdictNumber::new(number))
+                .unwrap_or(&[])
+                .to_vec()
+        })
         .collect()
 }
 

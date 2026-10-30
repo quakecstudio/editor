@@ -13,6 +13,7 @@
 //! frees each entity (EDICT-8.6, EDICT-8.5). The clock stays at 1 throughout (EDICT-8.1), so a
 //! freed entity is reused at once (EDICT-8.7).
 
+use qc_edict::EdictNumber;
 use qc_progs::Progs;
 use qc_types::{DefType, Slot};
 
@@ -46,6 +47,7 @@ impl SpawnHost for Spawner<'_, '_, '_> {
                 .machine
                 .edicts_mut()
                 .alloc(clock)
+                .map(EdictNumber::index)
                 .map_err(|_| SpawnError::NoFreeEdicts)
         }
     }
@@ -108,6 +110,9 @@ impl SpawnHost for Spawner<'_, '_, '_> {
     fn free(&mut self, edict: usize) {
         // EDICT-7: ED_Free at the map-start clock.
         let clock = self.host.builtins.engine().clock;
-        self.host.machine.edicts_mut().free(edict, clock);
+        self.host
+            .machine
+            .edicts_mut()
+            .free(EdictNumber::new(edict), clock);
     }
 }

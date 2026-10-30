@@ -11,6 +11,8 @@
 //! arithmetic that id's C does with `+`, `-`, string compares and float-to-int conversions is
 //! written out with the wrap, truncation or exact comparison the spec fixes.
 
+use qc_edict::EdictNumber;
+use qc_edict::system::{SysField, SysGlobal};
 use qc_progs::opcode::Opcode;
 use qc_progs::{Progs, Statement};
 use qc_types::{EntityRef, PROGS_OFS_RETURN, PointerRef, Slot};
@@ -680,7 +682,7 @@ fn load_target(
     machine: &Machine,
     progs: &Progs<'_>,
     st: &Statement,
-) -> Result<(usize, usize), RunError> {
+) -> Result<(EdictNumber, usize), RunError> {
     let entity = machine
         .global(st.a)
         .map_err(|e| exec::global_error(machine, progs, e))?
@@ -796,7 +798,6 @@ fn address(
         .edicts
         .num_for_edict(EntityRef::from_bits(entity))
         .map_err(|_| address_divergence(machine, progs, "entity value does not name an edict"))?;
-    let number_i32 = i32_from(number);
     let field_index = usize::try_from(field)
         .ok()
         .filter(|f| *f < machine.edicts.layout().entityfields())
@@ -804,7 +805,7 @@ fn address(
     let pointer = machine
         .edicts
         .layout()
-        .pointer_value(number_i32, field_index)
+        .pointer_value(number, field_index)
         .ok_or_else(|| address_divergence(machine, progs, "pointer out of range"))?;
     write_slot(machine, progs, st.c, Slot::from(pointer))?;
     Ok(NEXT)
@@ -815,7 +816,7 @@ fn storep_target(
     machine: &Machine,
     progs: &Progs<'_>,
     pointer_slot: i32,
-) -> Result<(usize, usize), RunError> {
+) -> Result<(EdictNumber, usize), RunError> {
     let pointer = machine
         .global(pointer_slot)
         .map_err(|e| exec::global_error(machine, progs, e))?
@@ -827,27 +828,12 @@ fn storep_target(
 }
 
 /// The edict number and field slot a pointer value names, by inverting EDICT-1.6.
-fn pointer_target(machine: &Machine, pointer: PointerRef) -> Option<(usize, usize)> {
-    let edict_size = machine.edicts.layout().edict_size();
-    let header = qc_edict::EDICT_HEADER_SIZE;
-    let value = pointer.bits();
-    if value < 0 {
-        return None;
-    }
-    let number = value.checked_div(edict_size)?;
-    let within = value.checked_rem(edict_size)?;
-    let from_fields = within.checked_sub(header)?;
-    if from_fields < 0 || from_fields.checked_rem(4) != Some(0) {
-        return None;
-    }
-    let field = from_fields.checked_div(4)?;
-    let number = usize::try_from(number).ok()?;
-    let field = usize::try_from(field).ok()?;
-    if number < machine.edicts.num_edicts() && field < machine.edicts.layout().entityfields() {
-        Some((number, field))
-    } else {
-        None
-    }
+fn pointer_target(machine: &Machine, pointer: PointerRef) -> Option<(EdictNumber, usize)> {
+    machine
+        .edicts
+        .layout()
+        .pointer_slot(pointer)
+        .filter(|&(number, _)| number.index() < machine.edicts.num_edicts())
 }
 
 /// `STOREP_F`, `STOREP_S`, `STOREP_ENT`, `STOREP_FLD`, `STOREP_FNC` (VM-12.4): copy a to the
@@ -861,7 +847,8 @@ fn storep_scalar(
     let value = machine
         .global(st.a)
         .map_err(|e| exec::global_error(machine, progs, e))?;
-    machine.edicts.set_field(number, field, value);
+    // The pointer names an edict's field slot (VM-12.4), so the write cannot miss.
+    let _written = machine.edicts.set_field(number, field, value);
     Ok(NEXT)
 }
 
@@ -887,7 +874,8 @@ fn storep_vector(
         let value = machine
             .global(add_operand(machine, progs, st.a, i32_from(i))?)
             .map_err(|e| exec::global_error(machine, progs, e))?;
-        machine
+        // A vector whose y or z would fall past the edict's last field drops that component.
+        let _written = machine
             .edicts
             .set_field(number, field.wrapping_add(i), value);
     }
@@ -1057,7 +1045,9 @@ fn state(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Con
         .map_err(|e| exec::global_error(machine, progs, e))?
         .as_f32();
     let next_think = state_think_time(time);
-    machine
+    // A progs with fewer fields than nextthink, frame or think has nowhere to write them; the
+    // write is dropped.
+    let _written = machine
         .edicts
         .set_field(number, FIELD_NEXTTHINK, Slot::from_f32(next_think));
 
@@ -1077,14 +1067,14 @@ fn state(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Con
     )]
     let differs = a.as_f32() != frame_now.as_f32();
     if differs {
-        machine.edicts.set_field(number, FIELD_FRAME, a);
+        let _written = machine.edicts.set_field(number, FIELD_FRAME, a);
     }
 
     // VM-17.3: think = the 32-bit pattern in b, a function index, not checked.
     let b = machine
         .global(st.b)
         .map_err(|e| exec::global_error(machine, progs, e))?;
-    machine.edicts.set_field(number, FIELD_THINK, b);
+    let _written = machine.edicts.set_field(number, FIELD_THINK, b);
     Ok(NEXT)
 }
 
@@ -1103,12 +1093,12 @@ fn state_think_time(time: f32) -> f32 {
 const VM_STATE_THINK_INTERVAL: f64 = 0.1;
 
 /// The `self` and `time` global slots and the `frame`, `think` and `nextthink` field slots
-/// from id's `progdefs.q1` (VM-17.4): self 28, time 31, frame 30, think 44, nextthink 46.
-const SELF_SLOT: i32 = 28;
-const TIME_SLOT: i32 = 31;
-const FIELD_FRAME: usize = 30;
-const FIELD_THINK: usize = 44;
-const FIELD_NEXTTHINK: usize = 46;
+/// from id's `progdefs.q1` (VM-17.4).
+const SELF_SLOT: i32 = SysGlobal::SelfEntity.ofs();
+const TIME_SLOT: i32 = SysGlobal::Time.ofs();
+const FIELD_FRAME: usize = SysField::Frame.slot();
+const FIELD_THINK: usize = SysField::Think.slot();
+const FIELD_NEXTTHINK: usize = SysField::Nextthink.slot();
 
 /// The VM-17.4 divergence error for a `self` that does not name an edict.
 fn state_divergence(machine: &Machine, progs: &Progs<'_>, detail: &str) -> RunError {
