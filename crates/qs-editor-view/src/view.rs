@@ -172,22 +172,23 @@ impl EditorView {
         self.refresh_diff();
         let line_count = self.state.buffer().line_count();
         let diff = self.diff.as_ref().map(|state| &state.diff);
-        let mut rows = Vec::with_capacity(count);
-        let mut line = first;
-        while rows.len() < count && line <= line_count {
-            if let Some(diff) = diff {
-                for removed in diff.removed_before(line) {
-                    rows.push(Row::Removed(removed.clone()));
-                }
-            }
-            if line < line_count {
-                let added = diff.is_some_and(|d| d.is_added(line));
-                rows.push(Row::Line { line, added });
-            }
-            line = line.saturating_add(1);
-        }
-        rows.truncate(count);
-        rows
+        // The line count itself stands for the end, after the last line, where lines removed
+        // at the end are drawn.
+        (first..=line_count)
+            .flat_map(|line| {
+                let removed = diff
+                    .map(|d| d.removed_before(line))
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|text| Row::Removed(text.clone()));
+                let this = (line < line_count).then(|| Row::Line {
+                    line,
+                    added: diff.is_some_and(|d| d.is_added(line)),
+                });
+                removed.chain(this)
+            })
+            .take(count)
+            .collect()
     }
 
     /// Where the primary caret was in the last frame, `None` when it was off screen: where a
@@ -325,7 +326,10 @@ impl EditorView {
         // after every line drawn above it.
         let rows = self.rows(self.first_line, row.saturating_add(1));
         let above = rows.get(..row).unwrap_or_default();
-        let lines_above = above.iter().filter(|r| r.line().is_some()).count();
+        let lines_above = above
+            .iter()
+            .filter(|r| matches!(r, Row::Line { .. }))
+            .count();
         let line = self.first_line.saturating_add(lines_above);
         match rows.get(row) {
             Some(Row::Removed(_)) if line > last => return self.state.buffer().end(),
@@ -579,14 +583,14 @@ impl EditorView {
                     let galley = ui.fonts_mut(|f| {
                         f.layout_job(line_job(&text, &[], &style.font, style.removed_text, None))
                     });
-                    let text_top = top + (row_height - galley.size().y).max(0.0) / 2.0;
-                    painter.galley(Pos2::new(text_left, text_top), galley, style.removed_text);
-                    painter.text(
-                        Pos2::new(text_left - GUTTER_PAD, text_top),
-                        egui::Align2::RIGHT_TOP,
-                        REMOVED_MARK,
-                        style.font.clone(),
-                        style.removed_text,
+                    let gutter = (REMOVED_MARK.to_owned(), style.removed_text);
+                    text_row(
+                        &painter,
+                        style,
+                        galley,
+                        (top, row_height),
+                        text_left,
+                        gutter,
                     );
                     continue;
                 }
@@ -636,18 +640,14 @@ impl EditorView {
                 );
                 painter.rect_filled(band, CornerRadius::ZERO, style.selection);
             }
-            let text_top = top + (row_height - galley.size().y).max(0.0) / 2.0;
-            painter.galley(
-                Pos2::new(text_left, text_top),
+            let number = (line.saturating_add(1).to_string(), style.line_number);
+            text_row(
+                &painter,
+                style,
                 Arc::clone(&galley),
-                style.text,
-            );
-            painter.text(
-                Pos2::new(text_left - GUTTER_PAD, text_top),
-                egui::Align2::RIGHT_TOP,
-                line.saturating_add(1).to_string(),
-                style.font.clone(),
-                style.line_number,
+                (top, row_height),
+                text_left,
+                number,
             );
             for selection in selections.iter().filter(|s| s.head.line == line) {
                 let mut col = selection.head.col;
@@ -795,12 +795,25 @@ enum Row {
     Removed(String),
 }
 
-impl Row {
-    /// The text's line the row draws, `None` for a removed line.
-    const fn line(&self) -> Option<usize> {
-        match self {
-            Self::Line { line, .. } => Some(*line),
-            Self::Removed(_) => None,
-        }
-    }
+/// Draws one row's text `galley` at `text_left`, centred in the row at `top` of `row_height`,
+/// and `gutter`'s text right-aligned before it in its colour: a line's number, or a removed
+/// line's mark.
+fn text_row(
+    painter: &egui::Painter,
+    style: &ViewStyle,
+    galley: Arc<Galley>,
+    (top, row_height): (f32, f32),
+    text_left: f32,
+    gutter: (String, Color32),
+) {
+    let text_top = top + (row_height - galley.size().y).max(0.0) / 2.0;
+    let (label, color) = gutter;
+    painter.galley(Pos2::new(text_left, text_top), galley, style.text);
+    painter.text(
+        Pos2::new(text_left - GUTTER_PAD, text_top),
+        egui::Align2::RIGHT_TOP,
+        label,
+        style.font.clone(),
+        color,
+    );
 }

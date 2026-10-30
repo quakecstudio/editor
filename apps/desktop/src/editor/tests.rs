@@ -11,15 +11,18 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, Event, Key, Modifiers};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT as _, Queryable};
 use qs_editor_view::find::Case;
-use qs_editor_view::{Position, Selection};
+use qs_editor_view::{Position, Selection, Styler};
 use serde_json::json;
 
 use super::{Editor, Popup, place_text};
 use crate::App;
-use crate::shell::EDITOR_AREA;
+use crate::fallback::SystemFonts;
+use crate::icons::Icon;
+use crate::shell::{EDITOR_AREA, view_style};
 use crate::strings::{Text, match_count};
+use crate::theme::{Mode, Theme, Token};
 
 /// The test project: `defs.qc` declares `bounces` and the rest; `src/weapons.qc` uses them.
 fn fixture() -> PathBuf {
@@ -367,4 +370,200 @@ fn another_files_edits_are_kept_when_the_editor_moves_on() {
     harness.get_by_label("world.qc").click();
     harness.run();
     assert!(text(&harness).starts_with("// kept "));
+}
+
+#[test]
+fn the_colours_follow_each_check_of_the_text() {
+    let mut harness = harness("src/world.qc");
+    let before = Styler::revision(&editor(&harness).styler);
+    caret_at(&mut harness, "self.health", 0, 0);
+    harness.event(Event::Text("return; ".to_owned()));
+    harness.run();
+    let open = app(&harness).shell().workbench().open().unwrap();
+    let styler = &editor(&harness).styler;
+    assert_ne!(Styler::revision(styler), before);
+    assert_eq!(Styler::revision(styler), open.revision());
+    let line = text(&harness)
+        .lines()
+        .position(|l| l.contains("return;"))
+        .unwrap();
+    let spans = Styler::spans(styler, line, "");
+    let keyword = Theme::load(Mode::Dark).unwrap().color(Token::CodeKeyword);
+    assert!(spans.iter().any(|s| s.color == keyword), "{spans:?}");
+}
+
+#[test]
+fn a_hover_waits_for_the_pointer_to_rest() {
+    let mut harness = harness("src/weapons.qc");
+    caret_at(&mut harness, "bounces", 0, 2);
+    harness.run();
+    let caret = editor(&harness).view.caret_rect().unwrap();
+    harness.event(Event::PointerMoved(caret.center()));
+    // Each step is a quarter of a second.
+    harness.step();
+    assert_eq!(popup(&harness), None, "not after a quarter of a second");
+    harness.run_steps(3);
+    let Some(Popup::Hover { at, .. }) = popup(&harness) else {
+        panic!("{:?}", popup(&harness));
+    };
+    harness.run_steps(4);
+    let shown = harness.get_by_label_contains(".float bounces").rect();
+    assert!(
+        shown.top() > at.y && shown.top() < at.y + 40.0,
+        "just below the pointer: {shown:?} for {at:?}"
+    );
+}
+
+#[test]
+fn the_picked_candidate_is_drawn_selected() {
+    let mut harness = harness("src/weapons.qc");
+    caret_at(&mut harness, "ember.speed", 0, 0);
+    harness.event(Event::Text("bo".to_owned()));
+    harness.run();
+    press(&mut harness, Modifiers::CTRL, Key::Space);
+    let toggled = |harness: &H, label: &str| {
+        harness
+            .get_by_label_contains(label)
+            .accesskit_node()
+            .toggled()
+            == Some(egui::accesskit::Toggled::True)
+    };
+    // `bo` matches `bounces` and `BOUNCE_SPEED`, case aside, in that order.
+    let Some(Popup::Complete { candidates, .. }) = popup(&harness) else {
+        panic!("{:?}", popup(&harness));
+    };
+    let shown: Vec<String> = editor(&harness)
+        .matching(&candidates)
+        .iter()
+        .map(|c| c.label.clone())
+        .collect();
+    assert_eq!(shown, ["bounces", "BOUNCE_SPEED"]);
+    assert!(toggled(&harness, "bounces"));
+    assert!(!toggled(&harness, "BOUNCE_SPEED"));
+    press(&mut harness, Modifiers::NONE, Key::ArrowDown);
+    assert!(!toggled(&harness, "bounces"));
+    assert!(toggled(&harness, "BOUNCE_SPEED"));
+}
+
+#[test]
+fn the_find_field_finds_on_enter_only() {
+    let mut harness = harness("src/weapons.qc");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+    harness.run_steps(3);
+    let field = harness
+        .get_all_by_role(egui::accesskit::Role::TextInput)
+        .next()
+        .unwrap();
+    field.click();
+    harness.run_steps(2);
+    harness.event(Event::Text("bounces".to_owned()));
+    harness.run_steps(2);
+    let start = editor(&harness).view.state().primary();
+    // Leaving the field without Enter finds nothing.
+    harness.get_by_label(Text::MatchCase.get()).click();
+    harness.run_steps(2);
+    assert_eq!(editor(&harness).view.state().primary(), start);
+    let field = harness
+        .get_all_by_role(egui::accesskit::Role::TextInput)
+        .next()
+        .unwrap();
+    field.click();
+    harness.run_steps(2);
+    harness.key_press(Key::Enter);
+    harness.run_steps(3);
+    assert_ne!(editor(&harness).view.state().primary(), start);
+}
+
+#[test]
+fn switching_files_sends_the_edits_at_once() {
+    let mut harness = harness("src/world.qc");
+    let before = app(&harness).shell().workbench().problems().len();
+    // Typed and switched away in one frame, before typing could settle.
+    harness.event(Event::Text("float = 1; ".to_owned()));
+    harness.get_by_label("defs.qc").click();
+    harness.step();
+    harness.step();
+    let problems = app(&harness).shell().workbench().problems();
+    assert!(problems.len() > before, "{problems:?}");
+    assert_eq!(
+        app(&harness).shell().workbench().open().unwrap().path(),
+        fixture().join("defs.qc")
+    );
+}
+
+#[test]
+fn focus_editor_gives_the_editor_the_keyboard() {
+    let mut harness = harness("src/world.qc");
+    let id = egui::Id::new(EDITOR_AREA);
+    harness.ctx.memory_mut(|m| m.surrender_focus(id));
+    harness.run();
+    assert!(!harness.ctx.memory(|m| m.has_focus(id)));
+    let ctx = harness.ctx.clone();
+    app(&harness).shell().focus_editor(&ctx);
+    harness.run();
+    assert!(harness.ctx.memory(|m| m.has_focus(id)));
+}
+
+/// Plex Sans as the only bundled font, and Lucide's icon font as the "system"'s only one.
+fn icons_from_the_system() -> SystemFonts {
+    const PLEX: &[u8] = include_bytes!("../../assets/fonts/IBMPlexSans-Regular.ttf");
+    const LUCIDE: &[u8] = include_bytes!("../../assets/fonts/lucide.ttf");
+    let mut db = fontdb::Database::new();
+    db.load_font_data(LUCIDE.to_vec());
+    SystemFonts::with_database(&[PLEX], db)
+}
+
+#[test]
+fn a_character_typed_that_no_bundled_font_has_gets_a_system_font() {
+    let mut harness = harness("src/world.qc");
+    let shell = harness.state_mut().as_mut().unwrap().shell_mut();
+    shell.set_system_fonts(icons_from_the_system());
+    harness.run();
+    assert_eq!(
+        app(&harness).shell().system_fonts_added(),
+        0,
+        "the file has none"
+    );
+    harness.event(Event::Text(Icon::Play.char().to_string()));
+    harness.run();
+    assert_eq!(app(&harness).shell().system_fonts_added(), 1);
+}
+
+#[test]
+fn a_file_opened_with_such_a_character_gets_a_system_font() {
+    let dir = std::env::temp_dir().join(format!("quakec-studio-glyph-{}", std::process::id()));
+    let _ignored = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("progs.src"), "progs.dat\na.qc\nb.qc\n").unwrap();
+    std::fs::write(dir.join("a.qc"), "float a;\n").unwrap();
+    std::fs::write(
+        dir.join("b.qc"),
+        format!("// {}\nfloat b;\n", Icon::Play.char()),
+    )
+    .unwrap();
+    let mut harness = harness_in(&dir, "a.qc");
+    let shell = harness.state_mut().as_mut().unwrap().shell_mut();
+    shell.set_system_fonts(icons_from_the_system());
+    // The caret's line of a.qc has no icon; the whole of b.qc does, on its first line.
+    caret_at(&mut harness, "float", 0, 0);
+    harness.run();
+    assert_eq!(app(&harness).shell().system_fonts_added(), 0);
+    harness.get_by_label("b.qc").click();
+    harness.run();
+    let _ignored = std::fs::remove_dir_all(&dir);
+    assert_eq!(app(&harness).shell().system_fonts_added(), 1);
+}
+
+#[test]
+fn the_editors_colours_are_the_themes() {
+    let light = Theme::load(Mode::Light).unwrap();
+    let style = view_style(&light);
+    assert_eq!(style.background, light.color(Token::SurfaceEditor));
+    assert_eq!(style.text, light.color(Token::TextCode));
+    assert_eq!(style.removed_text, light.color(Token::TextOnError));
+    assert_ne!(
+        style,
+        qs_editor_view::ViewStyle::default(),
+        "not the dark defaults"
+    );
 }

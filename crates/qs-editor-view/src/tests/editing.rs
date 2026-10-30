@@ -54,6 +54,28 @@ fn typing_is_one_undo_step_until_the_caret_moves_or_a_line_breaks() {
 }
 
 #[test]
+fn text_with_a_line_break_is_a_step_of_its_own() {
+    let mut state = EditState::new("");
+    state.insert("a");
+    state.insert("b\nc");
+    assert!(state.undo());
+    assert_eq!(
+        state.buffer().text(),
+        "a",
+        "the pasted lines, not the typing before them"
+    );
+    // Typing over a selection is a step of its own too.
+    state.insert("xy");
+    state.set_selections(&[Selection {
+        anchor: pos(0, 1),
+        head: pos(0, 3),
+    }]);
+    state.insert("z");
+    assert!(state.undo());
+    assert_eq!(state.buffer().text(), "axy");
+}
+
+#[test]
 fn a_moved_caret_or_a_new_edit_starts_a_new_step_and_drops_the_redo() {
     let mut state = EditState::new("");
     state.insert("ab");
@@ -216,6 +238,12 @@ fn the_undo_keys_undo_and_redo() {
     assert_eq!(harness.view.state().buffer().text(), "ab");
     harness.key(Key::Z, Modifiers::COMMAND | Modifiers::SHIFT);
     assert_eq!(harness.view.state().buffer().text(), "cab");
+    harness.key(Key::Z, Modifiers::NONE);
+    assert_eq!(
+        harness.view.state().buffer().text(),
+        "cab",
+        "Z alone is a letter, typed as text, not undo"
+    );
 }
 
 #[test]
@@ -225,6 +253,7 @@ fn the_hovered_position_follows_the_pointer_over_the_text() {
     harness.frame(vec![Event::PointerMoved(Pos2::new(400.0, 30.0))], &Plain);
     let over_text = harness.view.hovered();
     assert!(over_text.is_some_and(|p| p.line <= 1), "{over_text:?}");
-    harness.frame(vec![Event::PointerMoved(Pos2::new(1.0, 10.0))], &Plain);
+    // The panel starts at x = 8; the numbers fill the gutter after it.
+    harness.frame(vec![Event::PointerMoved(Pos2::new(12.0, 10.0))], &Plain);
     assert_eq!(harness.view.hovered(), None, "over the line numbers");
 }

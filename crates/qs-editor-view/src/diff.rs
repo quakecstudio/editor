@@ -135,9 +135,12 @@ fn script(a: &[&str], b: &[&str]) -> Option<Vec<Op>> {
                 prev(k.checked_sub(1)?)?.checked_add(1)?
             };
             let mut y = x.checked_sub(k)?;
-            while x < n
-                && y < m
-                && a.get(usize::try_from(x).ok()?) == b.get(usize::try_from(y).ok()?)
+            // Follow the diagonal while both lines exist and match; past either end `get` is
+            // `None` and the walk stops.
+            while let (Some(p), Some(q)) = (
+                a.get(usize::try_from(x).ok()?),
+                b.get(usize::try_from(y).ok()?),
+            ) && p == q
             {
                 x = x.checked_add(1)?;
                 y = y.checked_add(1)?;

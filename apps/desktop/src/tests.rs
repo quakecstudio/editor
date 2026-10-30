@@ -22,7 +22,7 @@ use crate::icons::Icon;
 use crate::keymap;
 use crate::palette::highlighted;
 use crate::shell::{commanded_size, dragged_size};
-use crate::strings::{Text, command_count};
+use crate::strings::{Text, command_count, match_count};
 use crate::theme::{Mode, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
 
@@ -734,4 +734,12 @@ fn a_size_set_by_command_is_told_from_a_drag() {
         !commanded_size(None, 300.0, false),
         "never drawn: default_size applies"
     );
+}
+
+// UI-4: the find bar counts its matches in words.
+#[test]
+fn the_match_count_reads_as_words() {
+    assert_eq!(match_count(0), "0 matches");
+    assert_eq!(match_count(1), "1 match");
+    assert_eq!(match_count(12), "12 matches");
 }

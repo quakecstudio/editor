@@ -205,6 +205,18 @@ impl Shell {
         self.editor.as_mut()
     }
 
+    /// Replaces the system font fallback, as a test does to choose what the "system" has.
+    #[cfg(test)]
+    pub(crate) fn set_system_fonts(&mut self, fonts: SystemFonts) {
+        self.system_fonts = fonts;
+    }
+
+    /// The system fonts given to egui so far.
+    #[cfg(test)]
+    pub(crate) fn system_fonts_added(&self) -> usize {
+        self.system_fonts.added()
+    }
+
     /// The editor's text, edits included, once the editor has drawn a file.
     #[must_use]
     pub fn editor_text(&self) -> Option<String> {
@@ -558,11 +570,8 @@ impl Shell {
                 return;
             };
             let path = editor.path.clone();
-            let unsent = match &request {
-                Request::Update(_) => None,
-                _ => editor.unsent(),
-            };
-            if let Some(text) = unsent {
+            // An update's text is marked sent already, so this sends only edits made since.
+            if let Some(text) = editor.unsent() {
                 let _: Option<()> = self.run(
                     UPDATE_FILE,
                     &UpdateFileParams {
@@ -811,7 +820,7 @@ fn left(
 }
 
 /// The editor's colours and font, from the theme's tokens.
-fn view_style(theme: &Theme) -> ViewStyle {
+pub(crate) fn view_style(theme: &Theme) -> ViewStyle {
     ViewStyle {
         font: egui::FontId::monospace(theme.type_scale.code.size),
         background: theme.color(Token::SurfaceEditor),

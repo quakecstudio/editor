@@ -29,7 +29,16 @@ fn styler(name: &str, text: &str) -> (CodeStyler, Theme) {
     workbench.open_file(&dir.join("a.qc"), 0).unwrap();
     let theme = Theme::load(Mode::Dark).unwrap();
     let styler = CodeStyler::new(workbench.open().unwrap(), &theme);
-    assert!(styler.is_current(workbench.open().unwrap()));
+    let open = workbench.open().unwrap();
+    assert!(styler.is_current(open));
+    assert_eq!(styler.revision(), open.revision());
+    workbench
+        .update(&dir.join("a.qc"), format!("{text}\n").into_bytes())
+        .unwrap();
+    assert!(
+        !styler.is_current(workbench.open().unwrap()),
+        "an update makes it stale"
+    );
     let _ignored = std::fs::remove_dir_all(Path::new(&dir));
     (styler, theme)
 }

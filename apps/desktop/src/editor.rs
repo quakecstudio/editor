@@ -38,6 +38,10 @@ pub(crate) const HOVER_DELAY: f64 = 0.5;
 /// How many lines show above the caret when a file is opened at a place.
 const CONTEXT_LINES: usize = 5;
 
+/// The find bar's query and replacement fields' widths, in points.
+const FIND_WIDTH: f32 = 192.0;
+const REPLACE_WIDTH: f32 = 144.0;
+
 /// The most completion candidates the popup lists.
 const MAX_CANDIDATES: usize = 12;
 
@@ -510,7 +514,7 @@ fn find_bar(ui: &mut Ui, theme: &Theme, find: &mut FindBar, state: &mut qs_edito
                 let field = ui.add(
                     TextEdit::singleline(&mut find.query)
                         .hint_text(Text::Find.get())
-                        .desired_width(theme.space(5) * 8.0),
+                        .desired_width(FIND_WIDTH),
                 );
                 if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                     state.find_next(&query);
@@ -537,7 +541,7 @@ fn find_bar(ui: &mut Ui, theme: &Theme, find: &mut FindBar, state: &mut qs_edito
                 ui.add(
                     TextEdit::singleline(&mut find.with)
                         .hint_text(Text::Replace.get())
-                        .desired_width(theme.space(5) * 6.0),
+                        .desired_width(REPLACE_WIDTH),
                 );
                 if ui.button(Text::Replace.get()).clicked() {
                     state.replace_next(&query, &find.with);

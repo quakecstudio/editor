@@ -318,6 +318,17 @@ fn the_inline_diff_tints_new_lines_and_shows_removed_ones_as_rows() {
     assert_eq!(b.galley.job.sections[0].format.color, style.removed_text);
     text_shape(&output, "d");
     assert!(removed[0].top() < added[0].top() && added[0].top() < removed[1].top());
+    // A removed line's text sits where a line's does in its row, its mark where a number is.
+    assert_eq!(b.pos.x, new_b.pos.x);
+    assert_eq!(b.pos.y - removed[0].top(), new_b.pos.y - added[0].top());
+    let mark = text_shape(&output, "-");
+    let number = text_shape(&output, "2");
+    assert_eq!(mark.pos.y - removed[0].top(), number.pos.y - added[0].top());
+    assert!(mark.pos.x + mark.galley.size().x <= b.pos.x);
+    assert_eq!(
+        mark.pos.x + mark.galley.size().x,
+        number.pos.x + number.galley.size().x
+    );
     assert_eq!(harness.view.diff().unwrap().removed_before(1), ["b"]);
     // An edit is diffed again on the next frame.
     harness
@@ -359,6 +370,13 @@ fn a_click_on_a_removed_row_places_the_caret_at_the_line_after_it() {
     );
     assert_eq!(harness.view.state().primary().head, pos(1, 0));
     assert_eq!(harness.view.hovered(), Some(pos(1, 0)));
+    // A line removed after the last one places the caret at the end of the text.
+    let mut harness = Harness::new("a\nbc");
+    harness.view.set_diff_base(Some("a\nbc\nd".to_owned()));
+    let output = harness.frame(Vec::new(), &Plain);
+    let removed = filled(&output, harness.style.removed)[0];
+    harness.frame(vec![Event::PointerMoved(removed.center())], &Plain);
+    assert_eq!(harness.view.hovered(), Some(pos(1, 2)));
 }
 
 #[test]

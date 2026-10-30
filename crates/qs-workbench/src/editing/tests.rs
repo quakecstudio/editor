@@ -35,7 +35,7 @@ const CODE: &str = "void(float d) hurt = { self.health = self.health - d; };\n";
 
 /// A project of `defs.qc`, which declares `health` and `hurt`, and `code.qc`, which uses
 /// `health` and defines `hurt`, with `defs.qc` open.
-fn session() -> Session<Workbench<MemoryLoader>> {
+fn workbench() -> Workbench<MemoryLoader> {
     let mut loader = MemoryLoader::new();
     loader.insert(path("progs.src"), b"progs.dat\ndefs.qc\ncode.qc\n".to_vec());
     loader.insert(
@@ -46,9 +46,13 @@ fn session() -> Session<Workbench<MemoryLoader>> {
     let mut workbench = Workbench::new(loader, Config::default());
     workbench.open_project(Path::new(ROOT)).unwrap();
     workbench.open_file(&path("defs.qc"), 0).unwrap();
+    workbench
+}
+
+fn session() -> Session<Workbench<MemoryLoader>> {
     let mut registry = Registry::new();
     register(&mut registry).unwrap();
-    Session::new(workbench, registry)
+    Session::new(workbench(), registry)
 }
 
 /// The byte offset of the `n`th `needle` in `text`.
@@ -103,6 +107,20 @@ fn an_update_checks_the_project_again_and_keeps_the_editors_version() {
         now.classes()
     );
     assert_eq!(session.undo_depth(), 0);
+}
+
+#[test]
+fn a_files_text_is_the_editors_else_the_disks() {
+    let mut workbench = workbench();
+    workbench
+        .update(&path("code.qc"), b"float c;\n".to_vec())
+        .unwrap();
+    assert_eq!(workbench.text(&path("code.qc")).unwrap(), b"float c;\n");
+    assert_eq!(
+        workbench.text(&path("defs.qc")).unwrap(),
+        format!("entity self;\n{DEFS}").as_bytes()
+    );
+    assert_eq!(workbench.text(&path("nowhere.qc")), None);
 }
 
 #[test]

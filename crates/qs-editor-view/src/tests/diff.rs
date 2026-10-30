@@ -60,6 +60,12 @@ fn an_unchanged_text_has_no_diff() {
 }
 
 #[test]
+fn a_diff_with_only_added_or_only_removed_lines_is_not_empty() {
+    assert!(!Diff::new("a", "a\nb").is_empty(), "a line added");
+    assert!(!Diff::new("a\nb", "a").is_empty(), "a line removed");
+}
+
+#[test]
 fn added_changed_and_removed_lines_are_placed() {
     let diff = Diff::new("a\nb\nc\nd", "a\nB\nc\nd\ne");
     assert!(!diff.is_empty());

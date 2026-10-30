@@ -48,6 +48,12 @@ impl SystemFonts {
         }
     }
 
+    /// The number of system faces given to egui.
+    #[cfg(test)]
+    pub(crate) fn added(&self) -> usize {
+        self.added.len()
+    }
+
     /// Whether a font egui has draws `c`. egui's own `has_glyph` cannot say: it is false for
     /// every character of the face that also draws its replacement character.
     fn has(&self, c: char) -> bool {
