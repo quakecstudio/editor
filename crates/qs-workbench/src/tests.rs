@@ -287,7 +287,11 @@ fn the_commands_open_a_project_and_a_file_outside_the_history() {
         .unwrap();
     assert_eq!(
         file,
-        json!({ "path": "/p/defs.qc", "location": { "line": 2, "column": 1 } })
+        json!({
+            "path": qc_project::normalize(&path("defs.qc")),
+            "location": { "line": 2, "column": 1 }
+        }),
+        "the path as the project graph names it, with this OS's separators"
     );
     let start = session
         .execute(OPEN_FILE, json!({ "path": "/p/defs.qc" }))
