@@ -12,6 +12,7 @@ publish.workspace = true
 egui = { workspace = true }
 
 [dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
 # The frame-time benchmark (examples/bench.rs) runs the view in a window, as the app does.
 eframe = { workspace = true, features = ["wayland", "wgpu", "x11"] }
 

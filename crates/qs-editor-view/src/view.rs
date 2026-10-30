@@ -12,6 +12,7 @@ use egui::{
 };
 
 use crate::buffer::Position;
+use crate::diff::Diff;
 use crate::layout::{LayoutCache, Preedit, Styler, line_job};
 use crate::selection::{EditState, Extend, Motion, Selection};
 
@@ -32,6 +33,13 @@ pub struct ViewStyle {
     pub line_number: Color32,
     /// The carets, `accent`.
     pub caret: Color32,
+    /// The background of a line new since the diff's base, `diff.added`.
+    pub added: Color32,
+    /// The background of a line the diff's base had and the text no longer does,
+    /// `status.error_bg`.
+    pub removed: Color32,
+    /// The text of such a line, `text.on_error`.
+    pub removed_text: Color32,
 }
 
 impl Default for ViewStyle {
@@ -45,6 +53,9 @@ impl Default for ViewStyle {
             text: Color32::from_rgb(0xd9, 0xd2, 0xc7),
             line_number: Color32::from_rgb(0x8e, 0x87, 0x7d),
             caret: Color32::from_rgb(0xee, 0x8b, 0x45),
+            added: Color32::from_rgb(0x24, 0x33, 0x1f),
+            removed: Color32::from_rgb(0x3a, 0x22, 0x20),
+            removed_text: Color32::from_rgb(0xf2, 0xd2, 0xcc),
         }
     }
 }
@@ -53,6 +64,8 @@ impl Default for ViewStyle {
 const GUTTER_PAD: f32 = 12.0;
 /// The caret's width in points.
 const CARET_WIDTH: f32 = 2.0;
+/// The gutter's mark on a removed line's row.
+const REMOVED_MARK: &str = "-";
 /// The accessible name of the editor.
 const LABEL: &str = "Code editor";
 
@@ -71,6 +84,8 @@ pub struct EditorView {
     preedit: Option<String>,
     /// The text position under the pointer in the last frame, if it was over the text.
     hovered: Option<Position>,
+    /// The base text the inline diff is from, and the diff with the text at a revision.
+    diff: Option<DiffState>,
     cache: LayoutCache,
 }
 
@@ -86,6 +101,7 @@ impl EditorView {
             visible: 1,
             preedit: None,
             hovered: None,
+            diff: None,
             cache: LayoutCache::default(),
         }
     }
@@ -117,6 +133,58 @@ impl EditorView {
     /// Scrolls so `line` is the first visible line, clamped to the text.
     pub fn scroll_to(&mut self, line: usize) {
         self.first_line = line.min(self.state.buffer().line_count().saturating_sub(1));
+    }
+
+    /// Shows the text's changes since `base` inline: new lines tinted, and the base's removed
+    /// lines as rows of their own above where they were; `None` shows no diff.
+    pub fn set_diff_base(&mut self, base: Option<String>) {
+        self.diff = base.map(|base| DiffState {
+            diff: Diff::new(&base, &self.state.buffer().text()),
+            revision: self.state.revision(),
+            base,
+        });
+    }
+
+    /// The inline diff as of the text's current revision, if one is shown.
+    #[must_use]
+    pub fn diff(&mut self) -> Option<&Diff> {
+        self.refresh_diff();
+        self.diff.as_ref().map(|state| &state.diff)
+    }
+
+    /// Works the diff out again when the text changed since it was.
+    fn refresh_diff(&mut self) {
+        let revision = self.state.revision();
+        if let Some(state) = self.diff.as_mut()
+            && state.revision != revision
+        {
+            state.diff = Diff::new(&state.base, &self.state.buffer().text());
+            state.revision = revision;
+        }
+    }
+
+    /// The rows from line `first`, at most `count`: each line, after the diff's removed lines
+    /// before it.
+    fn rows(&mut self, first: usize, count: usize) -> Vec<Row> {
+        self.refresh_diff();
+        let line_count = self.state.buffer().line_count();
+        let diff = self.diff.as_ref().map(|state| &state.diff);
+        let mut rows = Vec::with_capacity(count);
+        let mut line = first;
+        while rows.len() < count && line <= line_count {
+            if let Some(diff) = diff {
+                for removed in diff.removed_before(line) {
+                    rows.push(Row::Removed(removed.clone()));
+                }
+            }
+            if line < line_count {
+                let added = diff.is_some_and(|d| d.is_added(line));
+                rows.push(Row::Line { line, added });
+            }
+            line = line.saturating_add(1);
+        }
+        rows.truncate(count);
+        rows
     }
 
     /// The text position under the pointer in the last frame, `None` when the pointer is not
@@ -242,10 +310,19 @@ impl EditorView {
         row_height: f32,
     ) -> Position {
         let row = whole(((pos.y - top) / row_height).max(0.0));
-        let line = self
-            .first_line
-            .saturating_add(row)
-            .min(self.state.buffer().line_count().saturating_sub(1));
+        let last = self.state.buffer().line_count().saturating_sub(1);
+        // A removed line's row places the caret at the start of the line after it: the line
+        // after every line drawn above it.
+        let rows = self.rows(self.first_line, row.saturating_add(1));
+        let above = rows.get(..row).unwrap_or_default();
+        let lines_above = above.iter().filter(|r| r.line().is_some()).count();
+        let line = self.first_line.saturating_add(lines_above);
+        match rows.get(row) {
+            Some(Row::Removed(_)) if line > last => return self.state.buffer().end(),
+            Some(Row::Removed(_)) => return Position::new(line, 0),
+            Some(Row::Line { .. }) | None => {}
+        }
+        let line = line.min(last);
         let galley = self.galley(ui, style, styler, line, None);
         let cursor = galley.cursor_from_pos(Vec2::new(pos.x - text_left, 0.0));
         Position::new(line, self.state.buffer().byte_column(line, cursor.index.0))
@@ -472,20 +549,41 @@ impl EditorView {
         painter.rect_filled(rect, CornerRadius::ZERO, style.background);
         let line_count = self.state.buffer().line_count();
         let first = self.first_line.min(line_count.saturating_sub(1));
-        let end = first.saturating_add(self.visible).min(line_count);
+        let rows = self.rows(first, self.visible);
         let primary = self.state.primary();
         let selections = self.state.selections().to_vec();
         let composing = self.preedit.clone();
         let text_left = rect.left() + gutter;
         let mut ime_caret = None;
         let mut runs: Vec<(Rect, String, Vec<u8>)> = Vec::new();
-        for (row, line) in (first..end).enumerate() {
+        for (row, kind) in rows.into_iter().enumerate() {
             let top = rect.top() + points(row) * row_height;
             let row_rect = Rect::from_min_size(
                 Pos2::new(rect.left(), top),
                 Vec2::new(rect.width(), row_height),
             );
-            if line == primary.head.line {
+            let (line, added) = match kind {
+                Row::Line { line, added } => (line, added),
+                Row::Removed(text) => {
+                    painter.rect_filled(row_rect, CornerRadius::ZERO, style.removed);
+                    let galley = ui.fonts_mut(|f| {
+                        f.layout_job(line_job(&text, &[], &style.font, style.removed_text, None))
+                    });
+                    let text_top = top + (row_height - galley.size().y).max(0.0) / 2.0;
+                    painter.galley(Pos2::new(text_left, text_top), galley, style.removed_text);
+                    painter.text(
+                        Pos2::new(text_left - GUTTER_PAD, text_top),
+                        egui::Align2::RIGHT_TOP,
+                        REMOVED_MARK,
+                        style.font.clone(),
+                        style.removed_text,
+                    );
+                    continue;
+                }
+            };
+            if added {
+                painter.rect_filled(row_rect, CornerRadius::ZERO, style.added);
+            } else if line == primary.head.line {
                 painter.rect_filled(row_rect, CornerRadius::ZERO, style.current_line);
             }
             let preedit = match &composing {
@@ -667,4 +765,31 @@ fn points(n: usize) -> f32 {
 )]
 fn whole(x: f32) -> usize {
     usize::from(x.clamp(0.0, f32::from(u16::MAX)) as u16)
+}
+
+/// The inline diff's base text, and its diff with the text as of a revision.
+#[derive(Debug)]
+struct DiffState {
+    base: String,
+    diff: Diff,
+    revision: u64,
+}
+
+/// One row the view draws: a line of the text, or a line the diff's base had.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Row {
+    /// A line of the text, and whether it is new since the diff's base.
+    Line { line: usize, added: bool },
+    /// A line of the base that the text no longer has.
+    Removed(String),
+}
+
+impl Row {
+    /// The text's line the row draws, `None` for a removed line.
+    const fn line(&self) -> Option<usize> {
+        match self {
+            Self::Line { line, .. } => Some(*line),
+            Self::Removed(_) => None,
+        }
+    }
 }

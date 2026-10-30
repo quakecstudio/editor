@@ -7,6 +7,7 @@
 //! - [`selection`]: selections and multiple carets, the movements and the edits made at each,
 //!   with their undo history.
 //! - [`find`]: finding and replacing text.
+//! - [`diff`]: the line diff from a base text the view shows inline.
 //! - [`layout`]: the [`Styler`] hook that colours lines and the [`LayoutCache`].
 //! - [`view`]: [`EditorView`], which draws only the visible lines, turns egui's keyboard,
 //!   pointer, clipboard and IME events into edits, places the IME candidate window at the
@@ -17,6 +18,7 @@
 //! L7 UI. It depends on `egui` alone; the app gives it its fonts and colours.
 
 pub mod buffer;
+pub mod diff;
 pub mod find;
 mod history;
 pub mod layout;

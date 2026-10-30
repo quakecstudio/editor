@@ -2399,6 +2399,7 @@ version = "2026.10.0"
 dependencies = [
  "eframe",
  "egui",
+ "proptest",
 ]
 
 [[package]]

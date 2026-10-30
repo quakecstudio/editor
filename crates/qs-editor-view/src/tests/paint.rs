@@ -298,3 +298,65 @@ fn a_click_focuses_the_view_and_places_the_caret_at_its_column() {
     harness.frame(click(at(&m, 4.7), m.view.top() + 1.0), &Plain);
     assert_eq!(harness.view.state().primary().head, pos(0, 5));
 }
+
+#[test]
+fn the_inline_diff_tints_new_lines_and_shows_removed_ones_as_rows() {
+    let mut harness = Harness::new("a\nB\nc");
+    harness.view.set_diff_base(Some("a\nb\nc\nd".to_owned()));
+    let output = harness.frame(Vec::new(), &Plain);
+    let style = harness.style.clone();
+    let added = filled(&output, style.added);
+    let removed = filled(&output, style.removed);
+    assert_eq!(added.len(), 1, "line B");
+    assert_eq!(removed.len(), 2, "b above B, and d at the end");
+    let b = text_shape(&output, "b");
+    let new_b = text_shape(&output, "B");
+    assert!(
+        b.pos.y < new_b.pos.y,
+        "a removed line is drawn above where it was"
+    );
+    assert_eq!(b.galley.job.sections[0].format.color, style.removed_text);
+    text_shape(&output, "d");
+    assert!(removed[0].top() < added[0].top() && added[0].top() < removed[1].top());
+    assert_eq!(harness.view.diff().unwrap().removed_before(1), ["b"]);
+    // An edit is diffed again on the next frame.
+    harness
+        .view
+        .state_mut()
+        .set_selections(&[Selection::caret(pos(1, 0))]);
+    harness.view.state_mut().delete();
+    harness.view.state_mut().insert("b");
+    assert!(!harness.view.diff().unwrap().is_added(1));
+    harness.view.set_diff_base(None);
+    let output = harness.frame(Vec::new(), &Plain);
+    assert!(filled(&output, style.removed).is_empty());
+    assert!(harness.view.diff().is_none());
+}
+
+#[test]
+fn a_click_on_a_removed_row_places_the_caret_at_the_line_after_it() {
+    let mut harness = Harness::new("a\nc");
+    harness.view.set_diff_base(Some("a\nb\nc".to_owned()));
+    let output = harness.frame(Vec::new(), &Plain);
+    let removed = filled(&output, harness.style.removed)[0];
+    harness.frame(
+        vec![
+            Event::PointerMoved(removed.center()),
+            Event::PointerButton {
+                pos: removed.center(),
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Modifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: removed.center(),
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Modifiers::NONE,
+            },
+        ],
+        &Plain,
+    );
+    assert_eq!(harness.view.state().primary().head, pos(1, 0));
+    assert_eq!(harness.view.hovered(), Some(pos(1, 0)));
+}
