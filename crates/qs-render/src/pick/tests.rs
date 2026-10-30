@@ -5,7 +5,7 @@
     reason = "test code: a failed unwrap is a failed test"
 )]
 
-use super::intersect;
+use super::{add, cross, intersect, sub, transform};
 use crate::camera::Camera;
 use crate::mesh::tests::{MapSpec, bsp, palette, samples};
 use crate::mesh::{MapMesh, MeshBuilder, Placement};
@@ -92,6 +92,12 @@ fn a_triangle_is_hit_inside_and_on_its_edges_only() {
 
 #[test]
 fn the_camera_ray_goes_through_the_point_of_the_image() {
+    // A narrower view: the edge of the image is 30 degrees off the centre.
+    let mut narrow = Camera::new([0.0; 3], 0.0);
+    narrow.fov_x = 60.0;
+    let (_, edge) = narrow.ray(1.0, [1.0, 0.0]);
+    let angle = edge[1].atan2(edge[0]).to_degrees();
+    assert!((angle + 30.0).abs() < 1e-3, "{angle}");
     let camera = Camera::new([1.0, 2.0, 3.0], 0.0);
     let (origin, centre) = camera.ray(1.0, [0.0, 0.0]);
     assert_eq!(origin, [1.0, 2.0, 3.0]);
@@ -109,5 +115,62 @@ fn the_camera_ray_goes_through_the_point_of_the_image() {
     assert!(
         (top.iter().map(|v| v * v).sum::<f32>() - 1.0).abs() < 1e-6,
         "a unit vector"
+    );
+}
+
+#[test]
+fn a_tie_goes_to_the_surface_drawn_first() {
+    let lighting = samples(&[50]);
+    let world = bsp(&MapSpec::default(), &lighting);
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette);
+    builder
+        .add(&world, &[Placement::WORLD, Placement::WORLD])
+        .unwrap();
+    let mesh = builder.finish();
+    let hit = mesh.pick([16.0, 8.0, 100.0], DOWN, &[]).unwrap();
+    assert_eq!(
+        hit.model, 0,
+        "the world, before the entity in the same place"
+    );
+}
+
+#[test]
+fn a_slanted_ray_hits_where_it_crosses() {
+    let mesh = two_floors();
+    // From (0, 0, 20) towards (20, 10, 0): it crosses z = 10 half way, at (10, 5).
+    let length = (20.0_f32 * 20.0 + 10.0 * 10.0 + 20.0 * 20.0).sqrt();
+    let direction = [20.0 / length, 10.0 / length, -20.0 / length];
+    let hit = mesh.pick([0.0, 0.0, 20.0], direction, &[]).unwrap();
+    assert_eq!(hit.model, 1);
+    let [x, y, z] = hit.point;
+    assert!((x - 10.0).abs() < 1e-4 && (y - 5.0).abs() < 1e-4 && (z - 10.0).abs() < 1e-4);
+}
+
+#[test]
+fn the_vector_helpers_are_componentwise() {
+    assert_eq!(sub([5.0, 7.0, 9.0], [1.0, 2.0, 3.0]), [4.0, 5.0, 6.0]);
+    assert_eq!(add([5.0, 7.0, 9.0], [1.0, 2.0, 3.0]), [6.0, 9.0, 12.0]);
+    assert_eq!(cross([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]), [0.0, 0.0, 1.0]);
+    assert_eq!(cross([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]), [1.0, 0.0, 0.0]);
+    assert_eq!(cross([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]), [0.0, 1.0, 0.0]);
+    assert_eq!(cross([2.0, 3.0, 4.0], [5.0, 6.0, 7.0]), [-3.0, 6.0, -3.0]);
+    // A column-major matrix: x to y, y to z, z to x, then moved by (10, 20, 30).
+    let matrix = [
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [10.0, 20.0, 30.0, 1.0],
+    ];
+    assert_eq!(transform(&matrix, [1.0, 2.0, 3.0]), [13.0, 21.0, 32.0]);
+}
+
+#[test]
+fn a_ray_along_a_triangle_misses_it() {
+    let triangle = [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0]];
+    assert_eq!(intersect([-1.0, 1.0, 0.0], [1.0, 0.0, 0.0], triangle), None);
+    assert_eq!(
+        intersect([1.0, 1.0, 1.0], [0.0, 0.0, -1.0], triangle),
+        Some(1.0)
     );
 }

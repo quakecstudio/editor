@@ -24,9 +24,6 @@ pub struct Hit {
     pub point: [f32; 3],
 }
 
-/// Below this a ray runs along a triangle's plane, and misses it.
-const PARALLEL: f32 = 1e-6;
-
 impl MapMesh {
     /// The nearest triangle the ray from `origin` along `direction` hits from either side,
     /// each model placed by `placements`' matrix, the world's first, as
@@ -104,11 +101,11 @@ fn intersect(origin: [f32; 3], direction: [f32; 3], [a, b, c]: [[f32; 3]; 3]) ->
     let e1 = sub(b, a);
     let e2 = sub(c, a);
     let p = cross(direction, e2);
-    let det = dot(e1, p);
-    if det.abs() < PARALLEL {
+    // A ray along the triangle's plane has no crossing: its inverse is not finite.
+    let inverse = 1.0 / dot(e1, p);
+    if !inverse.is_finite() {
         return None;
     }
-    let inverse = 1.0 / det;
     let t_vector = sub(origin, a);
     let u = dot(t_vector, p) * inverse;
     if !(0.0..=1.0).contains(&u) {

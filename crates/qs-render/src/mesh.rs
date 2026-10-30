@@ -764,11 +764,7 @@ impl Colour {
             // 255; the GL texture keeps the low byte of what is left.
             Self::Grey => {
                 let t = sum.cast_signed() >> LIGHT_SHIFT;
-                if t > 255 {
-                    u8::MAX
-                } else {
-                    u8::try_from(t.rem_euclid(256)).unwrap_or(0)
-                }
+                u8::try_from(t.min(255).rem_euclid(256)).unwrap_or(u8::MAX)
             }
             // REND-6.2: QuakeSpasm shifts the unsigned sum and caps it at 255.
             Self::Lit => u8::try_from(sum >> LIGHT_SHIFT).unwrap_or(u8::MAX),
