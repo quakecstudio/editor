@@ -85,6 +85,13 @@ enum ValueKind {
     Cast(ValueType),
 }
 
+/// `a[i].m` as a member access names it: the array, the index and the member's word and type.
+struct ArrayMember {
+    array: arrays::Array,
+    index: ast::Expr,
+    member: (u32, ValueType),
+}
+
 /// An entity's field as an access names it: the entity's and the field's globals, and the
 /// `LOAD_*` row that reads it into a temporary of type `ty` (QC-16.1).
 #[derive(Clone, Debug)]
@@ -119,6 +126,8 @@ enum Target {
     /// `STOREP_*` through the pointer at `address` to a value of type `ty`, `*p = x`
     /// (FTEF-6.18).
     Pointer { address: u32, ty: ValueType },
+    /// A call of an array's setter, for an element by an index that is a value (FTE-13.11).
+    Element(arrays::ElementStore),
 }
 
 /// A store's target as the value it computes reads it: a global, or a field read only when
@@ -168,8 +177,9 @@ pub(crate) struct Compiler<'a> {
     /// The loops and switches the statement is in, innermost last, with the jumps their
     /// `break` and `continue` statements left to patch.
     jumps: Vec<Jumps>,
-    /// The array getters made so far, emitted after every file (FTE-13.8).
-    getters: Vec<arrays::Getter>,
+    /// The array getters and setters made so far, emitted after every file (FTE-13.8,
+    /// FTE-13.11).
+    array_functions: Vec<arrays::ArrayFunction>,
     /// Each file's `s_file`, which a getter's function record takes from its array's file.
     s_files: HashMap<FileId, i32>,
 }
@@ -201,7 +211,7 @@ impl<'a> Compiler<'a> {
             flags: Vec::new(),
             lex_flags: Vec::new(),
             jumps: Vec::new(),
-            getters: Vec::new(),
+            array_functions: Vec::new(),
             s_files: HashMap::new(),
         }
     }
@@ -1292,7 +1302,7 @@ impl<'a> Compiler<'a> {
         let Some(ast::Expr::Field(field)) = unparenthesized(operand) else {
             return Err(Abort::Internal(Internal::Unsupported, span));
         };
-        let Member::Base(base) = self.member(&field, true, span)? else {
+        let Member::Base(base) = self.member(&field, span)? else {
             return Err(Abort::Internal(Internal::Unsupported, span));
         };
         let slot = self.field_slot(&base, &field, span)?;
@@ -1312,7 +1322,7 @@ impl<'a> Compiler<'a> {
         let base_expr = index.base().at(span)?;
         let at = index.index().at(span)?;
         if let Some(array) = self.array_named(&base_expr)? {
-            return self.element(&array, &at, None, false);
+            return self.element(&array, &at, None);
         }
         let base = self.expr(&base_expr)?;
         if self.type_of(&base).etype() != Etype::Vector {
@@ -1634,7 +1644,7 @@ impl<'a> Compiler<'a> {
     /// A field access `e.f` (QC-16.1, QC-16.6): the entity, the field, then `LOAD_*` by the
     /// field's type into a temporary of that type.
     fn field(&mut self, field: &ast::FieldExpr, span: Span) -> Lowered<Value> {
-        let base = match self.member(field, false, span)? {
+        let base = match self.member(field, span)? {
             Member::Done(value) => return Ok(value),
             Member::Base(base) => base,
         };
@@ -1647,22 +1657,13 @@ impl<'a> Compiler<'a> {
     /// The member forms of `base.name` FTEQCC adds (FTE-13.9, FTE-14.5): an array's `length`,
     /// a member of an array's element, `a[i].m`, or a member of a struct value; else the base
     /// read for an entity's field or a vector's component.
-    fn member(&mut self, field: &ast::FieldExpr, writing: bool, span: Span) -> Lowered<Member> {
+    fn member(&mut self, field: &ast::FieldExpr, span: Span) -> Lowered<Member> {
         let base_expr = field.base().at(span)?;
-        let name = match field.field() {
-            Some(ast::Expr::Name(name)) if self.dialect.has_fteqcc_extensions() => {
-                name.name().map(|t| t.text_lossless())
-            }
-            _ => None,
-        };
+        let name = self.member_name(field);
         if let Some(name) = &name {
-            if let ast::Expr::Index(index) = &base_expr
-                && let Some(array) = self.array_named(&index.base().at(span)?)?
-                && let Some(member) = self.member_of(&array.elem, name)
-            {
-                let at = index.index().at(span)?;
+            if let Some(found) = self.array_member(&base_expr, name, span)? {
                 return self
-                    .element(&array, &at, Some(member), writing)
+                    .element(&found.array, &found.index, Some(found.member))
                     .map(Member::Done);
             }
             if name == "length"
@@ -1681,6 +1682,39 @@ impl<'a> Compiler<'a> {
             }));
         }
         Ok(Member::Base(base))
+    }
+
+    /// The name after `.` under FTEQCC, which may name a member (FTE-14.5).
+    fn member_name(&self, field: &ast::FieldExpr) -> Option<String> {
+        match field.field() {
+            Some(ast::Expr::Name(name)) if self.dialect.has_fteqcc_extensions() => {
+                name.name().map(|t| t.text_lossless())
+            }
+            _ => None,
+        }
+    }
+
+    /// `a[i].m` of an array of structs: the array, the index and the member (FTE-14.5).
+    fn array_member(
+        &mut self,
+        base: &ast::Expr,
+        name: &str,
+        span: Span,
+    ) -> Lowered<Option<ArrayMember>> {
+        let ast::Expr::Index(index) = base else {
+            return Ok(None);
+        };
+        let Some(array) = self.array_named(&index.base().at(span)?)? else {
+            return Ok(None);
+        };
+        let Some(member) = self.member_of(&array.elem, name) else {
+            return Ok(None);
+        };
+        Ok(Some(ArrayMember {
+            array,
+            index: index.index().at(span)?,
+            member,
+        }))
     }
 
     /// FTEQCC's `v.x`, `v.y` and `v.z` of a vector `v` (FTE-9.1): the component's word.
@@ -1835,8 +1869,15 @@ impl<'a> Compiler<'a> {
                         self.entity_component(&field.base().at(span)?, which, span)?
                 {
                     target
+                } else if let Some(name) = self.member_name(&field)
+                    && let Some(found) = self.array_member(&field.base().at(span)?, &name, span)?
+                {
+                    match self.element_target(&found.array, &found.index, Some(found.member))? {
+                        Ok(element) => Target::Value(element),
+                        Err(store) => Target::Element(store),
+                    }
                 } else {
-                    match self.member(&field, true, span)? {
+                    match self.member(&field, span)? {
                         Member::Done(member) => Target::Value(member),
                         Member::Base(base) => match self.component(&base, &field, span)? {
                             Some(component) => Target::Value(component),
@@ -1857,7 +1898,10 @@ impl<'a> Compiler<'a> {
                 let base = index.base().at(span)?;
                 let at = index.index().at(span)?;
                 if let Some(array) = self.array_named(&base)? {
-                    Target::Value(self.element(&array, &at, None, true)?)
+                    match self.element_target(&array, &at, None)? {
+                        Ok(element) => Target::Value(element),
+                        Err(store) => Target::Element(store),
+                    }
                 } else if let Some(which) = self.vector_index(&at)
                     && let Some(target) = self.entity_component(&base, which, span)?
                 {
@@ -1872,8 +1916,9 @@ impl<'a> Compiler<'a> {
             (_, false) => None,
             (Target::Value(to), true) => Some(Pending::Value(to.clone())),
             (Target::Field { slot, .. }, true) => Some(Pending::Field(slot.clone())),
-            // A read through a pointer, `LOADP_*`, is not lowered yet.
-            (Target::Pointer { .. }, true) => {
+            // A read through a pointer, `LOADP_*`, and a read of an element a setter stores
+            // are not lowered yet.
+            (Target::Pointer { .. } | Target::Element(_), true) => {
                 return Err(Abort::Internal(Internal::Unsupported, span));
             }
         };
@@ -1902,6 +1947,11 @@ impl<'a> Compiler<'a> {
                 (to, slot.ty)
             }
             Target::Pointer { address, ty } => (address, ty),
+            Target::Element(store) => {
+                let value = self.null_as(value, &store.ty);
+                self.store_element(&store, &value, op_span)?;
+                return Ok(value);
+            }
         };
         let value = self.null_as(value, &inner);
         let inner = inner.etype();

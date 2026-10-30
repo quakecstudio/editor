@@ -352,7 +352,8 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   returns false when `QCC_SRef_EvalConst(ref->index)` ("can short it"). A constant index
   outside the array, which FTEQCC warns of and reads anyway (WARN_BOUNDS), is not lowered.
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`, `QCC_RefNeedsCalls`.
-- **FTE-13.7** A subscript by a float value on the vanilla opcodes, which have no `LOADA`,
+- **FTE-13.7** **Withdrawn** 2026-10-30: it said a store through a subscript by a value is not
+  lowered, which FTE-13.11 now lowers; replaced by FTE-13.12. A subscript by a float value on the vanilla opcodes, which have no `LOADA`,
   `GLOAD` or `FETCH_GBL`, calls the array's getter, `ArrayGet*NAME` of type `T(float)`
   (`QCC_LoadFromArray`, `accel` 0). The index is in words: `MUL_F` by the element's words when
   they are not 1 (`else if (t->size != 1)`), then `ADD_F` of a struct member's word (an `ADD_F`
@@ -388,6 +389,32 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   constant's (QC-20.2). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_ParseInitializerType`,
   `QCC_PR_GenerateInitializerType`.
+- **FTE-13.11** On the vanilla opcodes a store to an element by an index that is a value calls
+  the array's setter, `ArraySet*NAME` of type `void(float, T)`, made at the first such store
+  and emitted with the getters after every file in the order the two kinds were made
+  (`QCC_StoreToArray`; `qccmain.c` emits each `ArraySet*` definition by
+  `QCC_PR_EmitArraySetFunction`): the index in words is read as a getter's is (FTE-13.12), then
+  the value; a vector array's index is divided by 3 (`OP_DIV_F`); then `STORE_F` of the index to
+  the first parameter, the value to the second by its type, and `CALL2`. A null value is a float
+  0, or `'0 0 0'` for a vector array. The setter has the parameters `indexs___` and `value___`;
+  with bound checks on, `LT_F index, 0` and `IF`, then `GE_F index, slots` and `IF`, both to the
+  bounds error; then `QCC_PR_ArraySetRecurseDivide` over the slots: one slot `min` is `LT_F
+  index, min+1`, `IFNOT` over three statements (`st->b.ofs = 3;`), `STORE_V` of the value for a
+  vector array or else `STORE_F` to the slot's word, and `RETURN`; more are halved at `mid = min +
+  (max-min)/2`, with `LT_F index, mid+1` and `IFNOT` past the lower half when more than four
+  remain. The bounds error calls `error("bounds check failed\n")`, and `DONE` ends the function.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreToArray`, `QCC_PR_EmitArraySetFunction`, `QCC_PR_ArraySetRecurseDivide`.
+- **FTE-13.12** A subscript by a float value on the vanilla opcodes, which have no `LOADA`,
+  `GLOAD` or `FETCH_GBL`, calls the array's getter, `ArrayGet*NAME` of type `T(float)`
+  (`QCC_LoadFromArray`, `accel` 0). The index is in words: `MUL_F` by the element's words when
+  they are not 1 (`else if (t->size != 1)`), then `ADD_F` of a struct member's word (an `ADD_F`
+  of 0 is left out here). The argument is stored with `STORE_F` to the first parameter and
+  `CALL1` made; a vector array's index is divided by 3 first (`OP_DIV_F ... 3`); a value of
+  more than one word is read a word at a time, the index plus `w` for word `w`, each result
+  stored with `STORE_F` to a temporary. A store through a subscript by a value calls the
+  array's setter (FTE-13.11). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_LoadFromArray`,
+  `QCC_PR_ParseRefArrayPointer`.
 
 ## FTE-14 `typedef struct` and member access
 
@@ -412,7 +439,7 @@ Vanilla `qcc` has `void`, `float`, `vector`, `string` and `entity` only (QC-10.1
   rerelease (FTE-1.1); the exact layout is fixed by P2-06 and recorded then.
 - **FTE-14.5** A struct value takes its layout's words (FTEF-6.13), and `v.f` is the global at
   `v`'s offset plus the member's word, read and stored with no statement of its own; an array
-  element's member `a[i].f` is the element's word plus the member's (FTE-13.6, FTE-13.7).
+  element's member `a[i].f` is the element's word plus the member's (FTE-13.6, FTE-13.12).
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
 - **FTE-14.6** A struct value stored to another of its type is copied a word group at a time,
   `STORE_V` for each three words and `STORE_F` for the rest. Source:

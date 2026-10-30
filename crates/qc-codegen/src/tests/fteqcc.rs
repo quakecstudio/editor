@@ -94,7 +94,7 @@ fn a_constant_index_outside_the_array_is_not_lowered() {
     );
 }
 
-// spec FTE-13.7: a subscript by a value calls the array's getter with the index
+// spec FTE-13.12: a subscript by a value calls the array's getter with the index
 #[test]
 fn a_subscript_by_a_value_calls_the_getter() {
     let p = fte_progs(
@@ -114,7 +114,7 @@ fn a_subscript_by_a_value_calls_the_getter() {
     );
 }
 
-// spec FTE-13.7: a struct element's member is read at the index times the element's words
+// spec FTE-13.12: a struct element's member is read at the index times the element's words
 // plus the member's word; a whole element a word at a time
 #[test]
 fn a_struct_elements_words_are_read_one_at_a_time() {
@@ -146,7 +146,7 @@ fn a_struct_elements_words_are_read_one_at_a_time() {
     assert_eq!(u[9], st(StoreF, temp + 1, q + 1, 0));
 }
 
-// spec FTE-13.7: a vector array's index in words is divided by 3 for the getter
+// spec FTE-13.12: a vector array's index in words is divided by 3 for the getter
 #[test]
 fn a_vector_elements_index_is_divided_by_three() {
     let p = fte_progs(
@@ -157,24 +157,6 @@ fn a_vector_elements_index_is_divided_by_three() {
     let three = immediate(&p, 3.0);
     assert_eq!((t[0].b, t[1].a, t[1].b), (three, t[0].c, three));
     assert_eq!(t[4], st(StoreV, 1, global(&p, "r"), 0));
-}
-
-// spec FTE-13.7: a store through a subscript by a value is not lowered
-#[test]
-fn a_store_through_a_subscript_by_a_value_is_not_lowered() {
-    let result = compile_fteqcc(
-        "void(string e) error = #10;\nfloat f[3];\nvoid(float i) t = { f[i] = 1; };\n",
-    );
-    assert!(
-        matches!(
-            result,
-            Err(CompileError::Internal {
-                internal: Internal::Unsupported,
-                ..
-            })
-        ),
-        "{result:?}"
-    );
 }
 
 // spec FTE-13.8: a getter checks the index is not negative, returns the word the ladder finds,
@@ -884,7 +866,7 @@ fn continue_in_a_switch_in_a_do_loop_belongs_to_the_loop() {
     assert_eq!(t[1], st(Goto, i32::try_from(condition).unwrap() - 1, 0, 0));
 }
 
-// spec FTE-13.7: an initialised `var` is no constant, so its subscript calls the getter
+// spec FTE-13.12: an initialised `var` is no constant, so its subscript calls the getter
 #[test]
 fn a_variable_index_calls_the_getter() {
     let p = fte_progs(
@@ -1240,4 +1222,70 @@ fn a_constant_locals_aggregate_is_its_value() {
     assert_eq!(words(&p, tab, 2), [4.0_f32, 5.0].map(f32::to_bits));
     let t = body(&p, "t");
     assert_eq!(t[0], st(StoreF, tab + 1, global(&p, "x"), 0));
+}
+
+// spec FTE-13.11: a store by an index that is a value calls the array's setter with the index
+// and the value, after the value is read
+#[test]
+fn a_store_by_a_value_index_calls_the_setter() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nfloat a[3];\nfloat i;\nvoid() t = { a[i] = 5; };\n",
+    );
+    let setter = global(&p, "ArraySet*a");
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, global(&p, "i"), 4, 0));
+    assert_eq!(t[1], st(StoreF, immediate(&p, 5.0), 7, 0));
+    assert_eq!(t[2], st(Call2, setter, 0, 0));
+    assert_eq!(t[3].op, u32::from(Done.number()));
+}
+
+// spec FTE-13.11: the setter tests both bounds, halves its slots and stores the value to the
+// slot the index names, then calls error
+#[test]
+fn a_setter_stores_the_slot_its_index_names() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nfloat a[3];\nfloat i;\nvoid() t = { a[i] = 5; };\n",
+    );
+    let f = function(&p, "ArraySet*a");
+    assert_eq!((f.numparms, f.parm_size[0], f.parm_size[1]), (2, 1, 1));
+    let (index, value) = (f.parm_start, f.parm_start + 1);
+    let a = global(&p, "a");
+    let s = body(&p, "ArraySet*a");
+    assert_eq!(s[0], st(Lt, index, immediate(&p, 0.0), s[0].c));
+    assert_eq!(s[1], st(If, s[0].c, 15, 0));
+    assert_eq!(s[2], st(Opcode::Ge, index, immediate(&p, 3.0), s[2].c));
+    assert_eq!(s[3], st(If, s[2].c, 13, 0));
+    for (slot, at) in [(0, 4), (1, 8), (2, 12)] {
+        let bound = immediate(&p, f32::from(u8::try_from(slot + 1).unwrap()));
+        assert_eq!(s[at], st(Lt, index, bound, s[at].c));
+        assert_eq!(s[at + 1], st(IfNot, s[at].c, 3, 0));
+        assert_eq!(s[at + 2], st(StoreF, value, a + slot, 0));
+        assert_eq!(s[at + 3], st(Return, 0, 0, 0));
+    }
+    assert_eq!(s[16].a, immediate_string(&p, "bounds check failed\n"));
+    assert_eq!(s[17], st(Opcode::Call1, global(&p, "error"), 0, 0));
+    assert_eq!(s[18].op, u32::from(Done.number()));
+}
+
+// spec FTE-13.11: a vector array's setter takes the element's index, the words divided by 3,
+// and stores by STORE_V
+#[test]
+fn a_vector_arrays_setter_takes_the_elements_index() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nvector a[2];\nfloat i;\nvoid() t = { a[i] = '1 2 3'; };\n",
+    );
+    let t = body(&p, "t");
+    assert_eq!(
+        t[0],
+        st(Opcode::MulF, global(&p, "i"), immediate(&p, 3.0), t[0].c)
+    );
+    assert_eq!(t[1], st(DivF, t[0].c, immediate(&p, 3.0), t[1].c));
+    assert_eq!(t[2], st(StoreF, t[1].c, 4, 0));
+    assert_eq!(
+        t[3],
+        st(StoreV, immediate_vector(&p, [1.0, 2.0, 3.0]), 7, 0)
+    );
+    let f = function(&p, "ArraySet*a");
+    let s = body(&p, "ArraySet*a");
+    assert!(s.contains(&st(StoreV, f.parm_start + 1, global(&p, "a") + 3, 0)));
 }

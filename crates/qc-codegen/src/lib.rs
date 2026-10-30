@@ -202,7 +202,7 @@ fn compile_lowered(
             })?;
     }
     compiler
-        .emit_getters()
+        .emit_array_functions()
         .map_err(|(internal, file, span)| CompileError::Internal {
             file,
             span,
