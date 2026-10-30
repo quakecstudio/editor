@@ -166,8 +166,9 @@ fn a_problems_row_says_what_and_where() {
     assert_eq!(
         problem_text(error, Some(&root)),
         format!(
-            "{} E0301 Unknown value \"speed\"  src/weapons.qc:15:8",
-            Icon::Error.char()
+            "{} E0301 Unknown value \"speed\"  {}:15:8",
+            Icon::Error.char(),
+            Path::new("src").join("weapons.qc").display()
         )
     );
     let warning = problems
@@ -180,8 +181,7 @@ fn a_problems_row_says_what_and_where() {
         problem_text(warning, None)
     );
     assert!(
-        problem_text(warning, None)
-            .ends_with(&format!("{}:5:14", root.join("src/world.qc").display())),
+        problem_text(warning, None).ends_with(&format!("{}:5:14", warning.path.display())),
         "a file outside the root keeps its whole path"
     );
 }
