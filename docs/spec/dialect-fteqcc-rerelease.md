@@ -1022,3 +1022,21 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   line number. A string (`#define N "ex_a"`) FTEQCC casts with the warning `W0220` "Implicit
   cast from string to void()" and makes no builtin function, as this profile makes none; the
   differential reads that as accepted with no builtin number.
+
+## FTE-24 The output format
+
+**Source:** `qccmain.c`, `QCC_WriteData`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+### Behaviour
+
+- **FTE-24.1** On the standard target a program is written in FTE's 32-bit layout (PROGS-20)
+  when it has more than 65530 globals (`else if (numpr_globals > 65530) ... outputsttype =
+  PST_FTE32;`) or a statement whose first operand is no symbol, a `GOTO`'s offset, is past
+  `0x7fff` either way (`if (!statements[i].a.sym && ((int)statements[i].a.ofs > 0x7fff ||
+  (int)statements[i].a.ofs < -0x7fff)) break;`, the test written three times for `a`, so an
+  `IF`'s or `IFNOT`'s offset in `b` is never tested); otherwise in version 6. Statements,
+  globals and definitions are the same either way.
+- **FTE-24.2** In version 6 each operand is written as its low 16 bits, `statements16[i].a =
+  (unsigned short)PRLittleShort((unsigned short)a);`, so a global from 32768 to 65530 is
+  written where id's `short` reads it as that global less 65536 (FTEQCC prints "Globals exceeds
+  32k - an enhanced QCVM will be required" and writes the file).

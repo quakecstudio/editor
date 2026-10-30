@@ -45,7 +45,7 @@ mod tests;
 
 use qc_diag::{Severity, Span};
 use qc_lno::LnoFile;
-use qc_progs::{ProgsFile, WriteError};
+use qc_progs::{Format, ProgsFile, WriteError};
 use qc_sema::lower::{FileDecls, lower_file};
 use qc_sema::{Db, FileDiagnostic, FileId, ModuleInput, ResolveOptions, resolve_module};
 use qc_syntax::{Dialect, Parse};
@@ -216,11 +216,19 @@ fn compile_lowered(
         .iter()
         .map(|origin| origin.map_or(0, |(file, at)| line_of(file, at)))
         .collect();
-    let progs = write::progs(compiler.program, crc).map_err(|internal| CompileError::Internal {
-        file: FileId(0),
-        span: Span::new(0, 0),
-        internal,
-    })?;
+    let mut progs =
+        write::progs(compiler.program, crc).map_err(|internal| CompileError::Internal {
+            file: FileId(0),
+            span: Span::new(0, 0),
+            internal,
+        })?;
+    if compiler.dialect == Dialect::Fteqcc {
+        if write::needs_fte32(&progs) {
+            progs.format = Format::Fte32;
+        } else {
+            write::wrap_short_operands(&mut progs);
+        }
+    }
     // PROGS-22.4: a table or operand past the version 6 format's integers is refused here,
     // not when the caller writes the file.
     qc_progs::write(&progs).map_err(CompileError::Write)?;

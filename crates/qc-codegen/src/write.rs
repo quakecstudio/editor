@@ -8,6 +8,7 @@
 //! progs.dat tables `WriteData` writes.
 
 use qc_progs::crc::crc_block;
+use qc_progs::opcode::Opcode;
 use qc_progs::{Def as DefRecord, PROGS_DEF_SAVEGLOBAL, ProgsFile};
 use qc_types::{Etype, Slot};
 
@@ -89,6 +90,31 @@ fn skip_components<'d>(def: &Def, defs: &mut std::iter::Peekable<impl Iterator<I
 /// table first, each name copied to the string table again (QC-25.3, QC-25.4). A global is
 /// marked to be saved when it is not initialised, not a function or field and not local
 /// (QC-21.6). The string table is padded to a multiple of 4 (QC-25.4).
+/// FTE-24.1: whether FTEQCC writes `progs` in the 32-bit layout, for more than 65530 globals or
+/// a `GOTO` offset past `0x7fff`.
+pub(crate) fn needs_fte32(progs: &ProgsFile) -> bool {
+    const FTE32_GLOBALS: usize = 65530;
+    const BIG_JUMP: i32 = 0x7fff;
+    let goto = u32::from(Opcode::Goto.number());
+    progs.globals.len() > FTE32_GLOBALS
+        || progs
+            .statements
+            .iter()
+            .any(|statement| statement.op == goto && !(-BIG_JUMP..=BIG_JUMP).contains(&statement.a))
+}
+
+/// FTE-24.2: each version 6 operand from 32768 to 65535 as the `short` its low 16 bits are.
+pub(crate) fn wrap_short_operands(progs: &mut ProgsFile) {
+    const SHORT_SPAN: i32 = 0x1_0000;
+    for statement in &mut progs.statements {
+        for operand in [&mut statement.a, &mut statement.b, &mut statement.c] {
+            if (0x8000..SHORT_SPAN).contains(operand) {
+                *operand = operand.wrapping_sub(SHORT_SPAN);
+            }
+        }
+    }
+}
+
 pub(crate) fn progs(mut program: Program, crc: u16) -> Result<ProgsFile, Internal> {
     let mut global_defs = vec![DefRecord::default()];
     let mut field_defs = vec![DefRecord::default()];

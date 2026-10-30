@@ -3,10 +3,13 @@
 //! Program output and precache lists: QC-22.3, QC-25, QC-26 and QC-27.13.
 
 use qc_progs::crc::crc_block;
-use qc_progs::{Def, Function, Statement};
+use qc_progs::opcode::Opcode;
+use qc_progs::{Def, Function, ProgsFile, Statement};
+use qc_types::Slot;
 
 use super::{compile_files, compile_source, global, progs, string};
 use crate::Precache;
+use crate::write::{needs_fte32, wrap_short_operands};
 
 // spec QC-25.1: statement 0, function 0, global and field definition 0 and string 0 are
 // placeholders.
@@ -306,4 +309,60 @@ fn every_statement_maps_to_its_source_line() {
         .unwrap()
         .header();
     assert_eq!(lno.matches_header(&header), Ok(()));
+}
+
+fn with_statement(statement: Statement) -> ProgsFile {
+    ProgsFile {
+        statements: vec![Statement::default(), statement],
+        ..ProgsFile::default()
+    }
+}
+
+// spec FTE-24.1: FTEQCC writes the 32-bit layout for more than 65530 globals or a GOTO past
+// 0x7fff, and tests no IF's offset
+#[test]
+fn a_big_program_takes_the_32_bit_layout() {
+    let goto = u32::from(Opcode::Goto.number());
+    let if_op = u32::from(Opcode::If.number());
+    let jump = |op, a, b| with_statement(Statement { op, a, b, c: 0 });
+    assert!(!needs_fte32(&jump(goto, 0x7fff, 0)));
+    assert!(!needs_fte32(&jump(goto, -0x7fff, 0)));
+    assert!(needs_fte32(&jump(goto, 0x8000, 0)));
+    assert!(needs_fte32(&jump(goto, -0x8000, 0)));
+    assert!(!needs_fte32(&jump(if_op, 0x8000, 0x8000)));
+    let mut globals = ProgsFile {
+        globals: vec![Slot::from_bits(0); 65530],
+        ..ProgsFile::default()
+    };
+    assert!(!needs_fte32(&globals));
+    globals.globals.push(Slot::from_bits(0));
+    assert!(needs_fte32(&globals));
+}
+
+// spec FTE-24.2: a version 6 operand from 32768 to 65535 is written as its low 16 bits
+#[test]
+fn a_global_past_32767_is_written_as_its_low_bits() {
+    let mut p = with_statement(Statement {
+        op: 1,
+        a: 0x7fff,
+        b: 0x8000,
+        c: 0xffff,
+    });
+    wrap_short_operands(&mut p);
+    assert_eq!(
+        (p.statements[1].a, p.statements[1].b, p.statements[1].c),
+        (0x7fff, -0x8000, -1)
+    );
+    let mut negative = with_statement(Statement {
+        op: 1,
+        a: -5,
+        b: 0x1_0000,
+        c: 0,
+    });
+    wrap_short_operands(&mut negative);
+    assert_eq!(
+        (negative.statements[1].a, negative.statements[1].b),
+        (-5, 0x1_0000)
+    );
+    assert!(qc_progs::write(&p).is_ok());
 }

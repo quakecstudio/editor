@@ -1139,3 +1139,24 @@ fn a_vector_constructor_holds_a_call_before_another() {
     assert_eq!(t[3].a, t[1].b);
     assert_eq!(t[4].a, 1);
 }
+
+// spec FTE-24.1: more than 65530 globals make FTEQCC's program the 32-bit layout
+#[test]
+fn a_program_of_many_globals_is_32_bit() {
+    let p = fte_progs("float big[65531];\nvoid() t = {};\n");
+    assert_eq!(p.format, qc_progs::Format::Fte32);
+    assert!(qc_progs::write(&p).is_ok());
+    assert_eq!(fte_progs("void() t = {};\n").format, qc_progs::Format::V6);
+}
+
+// spec FTE-24.2: a global past 32767 in a version 6 program is its operand's low 16 bits
+#[test]
+fn a_global_past_32767_is_its_low_bits_in_version_6() {
+    let p = fte_progs("float big[40000];\nfloat x;\nvoid() t = { x = 1; };\n");
+    assert_eq!(p.format, qc_progs::Format::V6);
+    let x = global(&p, "x");
+    assert!(x > 0x8000);
+    let store = body(&p, "t")[0];
+    assert_eq!(store.b, x.wrapping_sub(0x1_0000));
+    assert!(qc_progs::write(&p).is_ok());
+}
