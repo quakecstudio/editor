@@ -541,9 +541,7 @@ fn focus_editor_gives_the_editor_the_keyboard() {
 fn icons_from_the_system() -> SystemFonts {
     const PLEX: &[u8] = include_bytes!("../../assets/fonts/IBMPlexSans-Regular.ttf");
     const LUCIDE: &[u8] = include_bytes!("../../assets/fonts/lucide.ttf");
-    let mut db = fontdb::Database::new();
-    db.load_font_data(LUCIDE.to_vec());
-    SystemFonts::with_database(&[PLEX], db)
+    SystemFonts::with_files(&[PLEX], &[LUCIDE])
 }
 
 #[test]

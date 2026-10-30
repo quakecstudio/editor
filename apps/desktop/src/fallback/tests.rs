@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "test code: a failed unwrap is a failed test"
+)]
+
 use eframe::egui::{self, FontDefinitions, FontFamily, RawInput};
 
 use super::{SystemFonts, families};
@@ -15,11 +20,7 @@ const ICONS: &[u8] = include_bytes!("../../assets/fonts/lucide.ttf");
 fn fallback(bundled: &[&'static [u8]], system: &[&'static [u8]]) -> (egui::Context, SystemFonts) {
     let ctx = egui::Context::default();
     ctx.set_fonts(FontDefinitions::empty());
-    let mut db = fontdb::Database::new();
-    for font in system {
-        db.load_font_data(font.to_vec());
-    }
-    (ctx, SystemFonts::with_database(bundled, db))
+    (ctx, SystemFonts::with_files(bundled, system))
 }
 
 /// The number of fonts egui has after the next frame.
@@ -75,4 +76,35 @@ fn the_bundled_fonts_cover_chinese_and_japanese() {
     for c in "中文日本語かなカナ".chars() {
         assert!(fonts.has(c), "{c}");
     }
+}
+
+#[test]
+fn the_system_folders_are_searched_for_font_files_to_any_depth() {
+    let dir = std::env::temp_dir().join(format!("quakec-studio-fonts-{}", std::process::id()));
+    let _ignored = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("deep/er")).unwrap();
+    std::fs::write(dir.join("deep/er/icons.TTF"), ICONS).unwrap();
+    std::fs::write(dir.join("notes.txt"), "not a font").unwrap();
+    std::fs::write(dir.join("broken.otf"), "not a font either").unwrap();
+    let files = super::font_files(&[dir.clone(), dir.join("missing")]);
+    assert_eq!(
+        files,
+        [dir.join("broken.otf"), dir.join("deep/er/icons.TTF")]
+    );
+    let ctx = egui::Context::default();
+    ctx.set_fonts(FontDefinitions::empty());
+    let mut fonts = SystemFonts::over(
+        &[MONO],
+        super::Source::Folders {
+            dirs: vec![dir.clone()],
+            files: None,
+        },
+    );
+    let icon = Icon::Play.char().to_string();
+    assert_eq!(
+        fonts.cover(&ctx, &families(), &icon),
+        1,
+        "found past a broken file"
+    );
+    let _ignored = std::fs::remove_dir_all(&dir);
 }

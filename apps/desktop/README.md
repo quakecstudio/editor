@@ -5,8 +5,8 @@ The desktop app (P2-17, ADR-0006): the window, its toolbar and its docked panels
 Sans, JetBrains Mono and Lucide's icons (ADR-0010), and the macOS menu bar through `muda`.
 
 - **Layer:** apps. It depends on `qs-layout`, `qs-workbench` and `qs-commands` (L5),
-  `qs-editor-view` (L7), `qs-log` and `qs-paths` (L0), `eframe`, `fontdb` and `ttf-parser` for
-  the system font fallback, and on macOS `muda`.
+  `qs-editor-view` (L7), `qs-log` and `qs-paths` (L0), `eframe`, `skrifa` for the system font
+  fallback, and on macOS `muda`.
 - **Spec sections:** none; it implements plan requirements UI-2, UI-14, UI-15 and CONV-16.
 - **Shipped:** yes.
 
@@ -69,7 +69,8 @@ font (ISC, with MIT for the icons it takes from Feather), and Noto Sans SC 2.004
 the fallback for Chinese and Japanese text (ADR-0003). Each has its license file and a row in
 `ATTRIBUTION.md`. A character none of them has is drawn in a system font that has it
 (`src/fallback.rs`): the first time one appears in the editor, the system's fonts are listed
-with `fontdb` and the first face whose character map has it is given to egui.
+in the folders `qs_paths::current_font_dirs` names, and the first face whose character map
+has it (read with `skrifa`, as egui reads fonts) is given to egui.
 
 ## Snapshots
 

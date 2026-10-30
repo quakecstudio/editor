@@ -19,7 +19,6 @@ absolute-paths-allowed-crates = [
     "egui_kittest",
     "egui_wgpu",
     "epaint",
-    "fontdb",
     "junction",
     "miniz_oxide",
     "muda",
@@ -27,11 +26,11 @@ absolute-paths-allowed-crates = [
     "schemars",
     "serde",
     "serde_json",
+    "skrifa",
     "toml",
     "toml_edit",
     "tracing",
     "tracing_subscriber",
-    "ttf_parser",
 ]
 
 # Allow breaking the exported API (we're pre-1.0)
