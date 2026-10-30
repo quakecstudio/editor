@@ -17,6 +17,7 @@ mod camera;
 mod gpu;
 mod light;
 mod mesh;
+mod pick;
 mod styles;
 
 pub use alias::{AliasEntity, AliasError, AliasModel, AliasVertex, bob_rotate, shade_light};
@@ -27,4 +28,5 @@ pub use mesh::{
     Animation, Batch, GAMMA, Image, Lightmaps, MapMesh, MeshBuilder, MeshError, Palette, Placement,
     Surface, Vertex, frame, mip_levels,
 };
+pub use pick::Hit;
 pub use styles::{LightStyles, MAX_LIGHTSTYLES};
