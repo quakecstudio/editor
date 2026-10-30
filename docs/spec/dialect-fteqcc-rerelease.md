@@ -654,6 +654,23 @@ name (QC-10.3), and nothing follows the name.
   `.string field = fog_info_entity`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseFunctionCall`.
+- **FTE-18.8** With `-Fautoproto` a default value that names a definition is no default: the
+  first pass reads the function's type, which the second keeps (FTEF-19.6's comparison accepts a
+  default where the other has none), and initialises nothing, so `QCC_PR_ParseDefaultInitialiser`
+  finds the value uninitialised and gives none (`if (!ref.sym->initialized) { if
+  (autoprototype) return nullsref; ...`). A call then passes nothing for it (FTE-18.7 stops at
+  a parameter without a default), and `rerelease-mg3`'s `SUB_CountTargets(self)` leaves its
+  `predicate = (float(entity e))SUB_True` slot as it was, which FTEQCC's program then calls. A
+  literal, an immediate the first pass makes initialised, stays the default; an enum item, which
+  the first pass also initialises, is not modelled as one. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefaultInitialiser`.
+- **FTE-18.9** Each argument is stored to its parameter slot by its own size once every
+  argument is read (`if (args[i].ref.cast->size == 3) ... OP_STORE_V ... else if
+  (args[i].ref.cast->size == 1) ... OP_STORE_F`), so a one-word argument leaves the slot's other
+  two words as they were, where vanilla `qcc` stores every argument by `STORE_V` (QC-18.3).
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`.
 
 ## FTE-19 Further operators
 

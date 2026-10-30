@@ -189,6 +189,7 @@ fn compile_lowered(
     let mut compiler = Compiler::new(&index, &names);
     compiler.fold = options.fold;
     compiler.dialect = resolve.dialect;
+    compiler.autoproto = resolve.autoproto;
     if resolve.dialect.has_fteqcc_extensions() && resolve.autoproto {
         for (i, unit) in units.iter().enumerate() {
             compiler

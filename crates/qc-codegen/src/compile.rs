@@ -181,6 +181,8 @@ pub(crate) struct Compiler<'a> {
     /// The default value of each parameter of each function declared so far, an expression of
     /// the file it is written in (FTE-18.7).
     defaults: HashMap<DefId, Vec<Option<(FileId, ast::Expr)>>>,
+    /// Whether the module is compiled with FTEQCC's `-Fautoproto` (FTE-22.3, FTE-18.8).
+    pub(crate) autoproto: bool,
     /// The `$parmN` globals made for the parameter slots past the eighth (FTE-18.6).
     extra_parms: HashMap<usize, u32>,
     /// In a `wrap` function's body, the definition `prior` names (FTEF-15.11).
@@ -223,6 +225,7 @@ impl<'a> Compiler<'a> {
             prior: None,
             extra_parms: HashMap::new(),
             defaults: HashMap::new(),
+            autoproto: false,
             s_files: HashMap::new(),
         }
     }
@@ -314,9 +317,28 @@ impl<'a> Compiler<'a> {
         let Some(list) = list else {
             return;
         };
+        // FTE-18.8: with autoprototyping a default the first pass did not find initialised, any
+        // but a literal, is no default.
+        let kept = |value: &ast::Expr| {
+            !self.autoproto || {
+                let mut value = value.clone();
+                while let ast::Expr::Cast(cast) = &value {
+                    match cast.operand() {
+                        Some(operand) => value = operand,
+                        None => break,
+                    }
+                }
+                matches!(value, ast::Expr::Literal(_))
+            }
+        };
         let defaults: Vec<Option<(FileId, ast::Expr)>> = list
             .params()
-            .map(|param| param.default_value().map(|value| (self.file, value)))
+            .map(|param| {
+                param
+                    .default_value()
+                    .filter(|value| kept(value))
+                    .map(|value| (self.file, value))
+            })
             .collect();
         if defaults.iter().any(Option::is_some) {
             self.defaults.insert(id, defaults);
@@ -2584,8 +2606,15 @@ impl Compiler<'_> {
                 self.precaches.record(name, &self.program, value.ofs);
             }
             let to = parm_slot(slot).at(*arg_span)?;
+            // FTE-18.9: each argument is stored by its size, `STORE_V` for three words and
+            // `STORE_F` for one, so a slot's other words keep what they held.
+            let store = if self.type_of(value).words() == 3 {
+                Opcode::StoreV
+            } else {
+                Opcode::StoreF
+            };
             self.program.emit(
-                Opcode::StoreV,
+                store,
                 operand(value.ofs).at(*arg_span)?,
                 operand(to).at(*arg_span)?,
             );

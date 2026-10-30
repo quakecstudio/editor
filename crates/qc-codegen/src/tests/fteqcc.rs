@@ -614,13 +614,14 @@ fn extra_arguments_are_read_and_dropped() {
     let t = body(&p, "t");
     assert_eq!(
         opcodes(&t),
-        ops(&[AddF, StoreV, Call1, Opcode::Call0, Done])
+        ops(&[AddF, StoreF, Call1, Opcode::Call0, Done])
     );
-    assert_eq!(t[1], st(StoreV, global(&p, "a"), 4, 0));
+    assert_eq!(t[1], st(StoreF, global(&p, "a"), 4, 0));
 }
 
 // spec FTE-18.4: a call's value is copied out of the return global before a later argument
 // calls again, so neither call overwrites the other's slot
+// spec FTE-18.9: a one-word argument is stored to its slot by STORE_F
 #[test]
 fn a_call_in_an_argument_is_copied_before_the_next() {
     let p = fte_progs(
@@ -632,14 +633,14 @@ fn a_call_in_an_argument_is_copied_before_the_next() {
     assert_eq!(
         opcodes(&t),
         ops(&[
-            StoreV, Call1, StoreF, StoreV, Call1, StoreV, StoreV, Call2, Done
+            StoreF, Call1, StoreF, StoreF, Call1, StoreF, StoreF, Call2, Done
         ])
     );
     assert_eq!(t[1], st(Call1, g, 0, 0));
     let copy = t[2].b;
     assert_eq!(t[2], st(StoreF, 1, copy, 0));
-    assert_eq!(t[5], st(StoreV, copy, 4, 0));
-    assert_eq!(t[6], st(StoreV, 1, 7, 0));
+    assert_eq!(t[5], st(StoreF, copy, 4, 0));
+    assert_eq!(t[6], st(StoreF, 1, 7, 0));
 }
 
 // spec FTE-22.3: a name used before its definition is read resolves to that definition
@@ -1356,7 +1357,7 @@ fn a_folded_builtin_call_makes_no_call() {
     );
     let t = body(&p, "t");
     assert_eq!(t[0], st(StoreF, immediate(&p, 2.0), global(&p, "x"), 0));
-    assert_eq!(t[1], st(StoreV, global(&p, "x"), 4, 0));
+    assert_eq!(t[1], st(StoreF, global(&p, "x"), 4, 0));
 }
 
 // spec FTEF-15.11: a wrap definition takes over its function's number, the wrapped body moves
@@ -1543,12 +1544,12 @@ fn a_call_passes_its_parameters_defaults() {
         immediate(&p, 7.0),
         immediate(&p, 9.0),
     );
-    assert_eq!(t[0], st(StoreV, one, 4, 0));
-    assert_eq!(t[1], st(StoreV, seven, 7, 0));
-    assert_eq!(t[2], st(StoreV, nine, 10, 0));
+    assert_eq!(t[0], st(StoreF, one, 4, 0));
+    assert_eq!(t[1], st(StoreF, seven, 7, 0));
+    assert_eq!(t[2], st(StoreF, nine, 10, 0));
     assert_eq!(t[3].op, u32::from(Opcode::Call3.number()));
-    assert_eq!(t[6], st(StoreV, seven, 7, 0));
-    assert_eq!(t[7], st(StoreV, two, 10, 0));
+    assert_eq!(t[6], st(StoreF, seven, 7, 0));
+    assert_eq!(t[7], st(StoreF, two, 10, 0));
 }
 
 // spec FTE-18.7: a default that is a cast within its basic type passes its operand's value
@@ -1559,5 +1560,18 @@ fn a_cast_default_passes_its_operand() {
          void(float(entity e) p = (float(entity e))yes) f = {};\nvoid() t = { f(); };\n",
     );
     let t = body(&p, "t");
-    assert_eq!(t[0], st(StoreV, global(&p, "yes"), 4, 0));
+    assert_eq!(t[0], st(StoreF, global(&p, "yes"), 4, 0));
+}
+
+// spec FTE-18.8: with autoprototyping a default naming a definition is no default, so the call
+// passes nothing for it, and a literal default is still passed
+#[test]
+fn autoprototyping_drops_a_named_default() {
+    let p = fte_progs(
+        "#pragma autoproto\nfloat(entity e) yes = { return 1; };\n\
+         void(float a = 5, float(entity e) p = yes) f = {};\nvoid() t = { f(); };\n",
+    );
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, immediate(&p, 5.0), 4, 0));
+    assert_eq!(t[1].op, u32::from(Opcode::Call1.number()));
 }
