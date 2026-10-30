@@ -156,6 +156,20 @@ registry and the history rather than the context:
 - `commands.list`: every command with its id, summary and parameter schema;
 - `edit.undo` and `edit.redo`: walk the undo history.
 
+## The palette's search and parameter forms
+
+Two modules serve the command palette (UI-10), and any other front end that lists or prompts
+for commands:
+
+- `palette::search` matches a query against every command's summary and id, as Zed's and VS
+  Code's palettes do: the query's characters in order, ignoring case and spaces, ranked by
+  runs, word starts, how early the match starts and whether it is in the summary, with the
+  matched byte ranges for highlighting. An empty query lists every command in registry order.
+- `params::fields` reads a command's parameter schema into form fields (a choice for an
+  `enum` or a `oneOf` of constants, text, number, whole number, boolean, or JSON), following
+  `$ref`s into `$defs`; `params::object` turns what was entered into the parameter object,
+  leaving out empty optional fields and refusing empty required ones and malformed values.
+
 ## The reference
 
 `Registry::markdown` renders `docs/commands.md`. `cargo xtask commands` writes it from the
