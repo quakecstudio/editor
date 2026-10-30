@@ -333,22 +333,33 @@ impl Program {
     }
 
     /// FTEF-19.76: makes the field at `place` name the entity field the field at `other`
-    /// names: its word becomes `other`'s, and the field space `get_def` allocated for it, when
-    /// it was the last allocated, is given back, since FTEQCC allocates none for a field
-    /// defined with a value. A vector field, whose components are definitions of their own, is
-    /// not lowered.
-    pub(crate) fn alias_field(&mut self, place: usize, other: usize) -> Result<(), Internal> {
+    /// names: its word becomes `other`'s, a vector field's components each their
+    /// counterpart's, and the field space `get_def` allocated for it, when it was the last
+    /// allocated, is given back, since FTEQCC allocates none for a field defined with a value.
+    pub(crate) fn alias_field(
+        &mut self,
+        index: &ModuleIndex,
+        place: usize,
+        other: usize,
+    ) -> Result<(), Internal> {
         let def = self.defs.get(place).ok_or(Internal::NoDefinition)?;
         let inner = def.ty.field_inner().ok_or(Internal::Unsupported)?;
-        if inner.etype() == Etype::Vector {
-            return Err(Internal::Unsupported);
-        }
-        let own = self.word(def.ofs);
+        let (own, id) = (self.word(def.ofs), def.id);
         let source = self.defs.get(other).ok_or(Internal::NoDefinition)?;
         if source.ty != def.ty {
             return Err(Internal::Unsupported);
         }
-        let target = self.word(source.ofs);
+        let (target, source_id) = (self.word(source.ofs), source.id);
+        if inner.etype() == Etype::Vector {
+            let (id, source_id) = id.zip(source_id).ok_or(Internal::NoDefinition)?;
+            for suffix in COMPONENTS {
+                let mine = component(index, id, suffix).ok_or(Internal::NoDefinition)?;
+                let theirs = component(index, source_id, suffix).ok_or(Internal::NoDefinition)?;
+                let (mine, theirs) = (self.get_def(index, mine)?, self.get_def(index, theirs)?);
+                let word = self.word(self.def(theirs).ok_or(Internal::NoDefinition)?.ofs);
+                self.initialise_words(mine, &[word])?;
+            }
+        }
         if own.checked_add(inner.words()) == Some(self.size_fields) {
             self.size_fields = own;
         }

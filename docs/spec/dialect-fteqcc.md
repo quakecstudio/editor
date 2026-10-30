@@ -3518,8 +3518,8 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `pr.size_fields` only when it has no initialiser ("fields are const by default, even when not
   initialised (as they are initialised behind the scenes)", in the branch with no `=`), and
   `QCC_PR_GenerateInitializerType` copies the value's words into the field's global. The field
-  table lists `b` at `a`'s offset. The FTEQCC profile lowers a field of one word so; a vector
-  field, whose components are definitions of their own, is not lowered. Source:
+  table lists `b` at `a`'s offset; a vector field's `_x`, `_y` and `_z`, which
+  `QCC_PR_DummyDef` makes at its global's three words, name `a`'s three. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseDefs`, `QCC_PR_GenerateInitializerType`.
 

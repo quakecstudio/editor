@@ -299,7 +299,9 @@ impl<'a> Compiler<'a> {
                     // A literal is stored as it is (QC-20); under FTEQCC an expression is the
                     // value the semantic model folded it to (FTEF-34.9).
                     if let Some(other) = self.field_alias(place, &expr)? {
-                        self.program.alias_field(place, other).at(span)?;
+                        self.program
+                            .alias_field(self.index, place, other)
+                            .at(span)?;
                     } else if let Some(word) = self.integer_literal(place, &expr) {
                         self.program.initialise_words(place, &[word]).at(span)?;
                     } else if let Some(literal) = literal_of(&expr, self.dialect) {

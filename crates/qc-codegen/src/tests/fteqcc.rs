@@ -1004,3 +1004,26 @@ fn a_field_defined_with_a_field_names_the_same_field() {
         "{fields:?}"
     );
 }
+
+// spec FTEF-19.76: a vector field defined with another names its three words, each component
+// its counterpart's
+#[test]
+fn a_vector_field_defined_with_another_names_its_words() {
+    let p = fte_progs(
+        ".vector fog_color;\n.vector fadecolor = fog_color;\n.float after;\nvoid() t = {};\n",
+    );
+    let word = |name: &str| p.globals[usize::try_from(global(&p, name)).unwrap()].bits();
+    assert_eq!(word("fadecolor"), word("fog_color"));
+    for axis in ["_x", "_y", "_z"] {
+        assert_eq!(
+            word(&format!("fadecolor{axis}")),
+            word(&format!("fog_color{axis}"))
+        );
+    }
+    assert_eq!(word("fog_color_z") - word("fog_color_x"), 2);
+    assert_eq!(
+        word("after"),
+        word("fog_color") + 3,
+        "no slots were taken for fadecolor"
+    );
+}
