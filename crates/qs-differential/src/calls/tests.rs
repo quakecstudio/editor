@@ -844,3 +844,30 @@ fn a_global_written_by_name_goes_to_a_scalar_definition() {
         .unwrap();
     assert_eq!(slot, float.2);
 }
+
+// spec DIFF-12.12: a context clears the parameter slots past the parameters it draws, so a call
+// reads none of what earlier calls left there
+#[test]
+fn a_context_clears_the_slots_past_its_parameters() {
+    let progs = compile("float x;\n", false);
+    let progs = Progs::read(&progs).unwrap();
+    let scenario = scenario();
+    let mut world = World::new(&progs, &scenario, WORLD).unwrap();
+    for slot in 4..28 {
+        world
+            .host
+            .set_global_slot(slot, qc_types::Slot::from_f32(7.0));
+    }
+    let context = super::draw::Context {
+        self_edict: 0,
+        other_edict: 0,
+        fields: Vec::new(),
+        globals: Vec::new(),
+        parms: vec![Draw::Float(1.0)],
+        server: ServerState::Active,
+    };
+    context.apply(&mut world.host, &world.program);
+    let slot = |n: i32| world.host.machine.global(n).unwrap();
+    assert_eq!(slot(4), qc_types::Slot::from_f32(1.0));
+    assert!((7..28).all(|n| slot(n) == qc_types::Slot::ZERO));
+}

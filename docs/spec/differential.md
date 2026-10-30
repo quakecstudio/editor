@@ -682,6 +682,11 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   two calls that both stop with `runaway loop error` (VM-2.3) agree, with nothing else compared:
   where a loop is stopped depends on how many statements each pass takes, which two compilers
   need not share.
+- **DIFF-12.12** Before each call, in both progs, the parameter slots past the parameters drawn
+  for it, up to the eighth, are set to 0: a variadic function copies every slot
+  (`dialect-fteqcc-rerelease.md` FTE-18.6), and what earlier calls left in a slot no parameter
+  takes depends on which statements each compiler emitted, as `rerelease-mg3`'s `float(...)
+  SUB_True` showed.
 
 ## Test vectors
 

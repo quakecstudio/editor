@@ -84,6 +84,15 @@ impl Context {
         for (n, draw) in self.parms.iter().enumerate() {
             write_globals(host, n.saturating_mul(3).saturating_add(OFS_PARM0), draw);
         }
+        // DIFF-12.12: the slots past the drawn parameters are cleared, so neither call reads
+        // what earlier calls of its progs left there.
+        let past = self.parms.len().saturating_mul(3).saturating_add(OFS_PARM0);
+        let end = MAX_PARMS.saturating_mul(3).saturating_add(OFS_PARM0);
+        for slot in past..end {
+            if let Ok(slot) = i32::try_from(slot) {
+                host.set_global_slot(slot, Slot::ZERO);
+            }
+        }
     }
 }
 
