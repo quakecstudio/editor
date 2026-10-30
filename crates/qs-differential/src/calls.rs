@@ -20,7 +20,7 @@ use qc_edict::EdictNumber;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use qc_builtins::{MockBuiltins, MockEngine};
+use qc_builtins::MockBuiltins;
 use qc_progs::{Def, Progs};
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::{Machine, Observer, RunError};
@@ -545,7 +545,7 @@ struct World<'a, 'p, 's> {
     program: Program<'a, 'p>,
     host: Host<'s>,
     machine: Machine,
-    builtins: MockBuiltins<MockEngine>,
+    builtins: MockBuiltins,
     /// The statements the setup executed (DIFF-12.5).
     setup_executed: BTreeSet<i32>,
     /// How the setup went: the statements and builtins it executed, compared with the other

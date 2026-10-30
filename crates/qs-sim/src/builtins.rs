@@ -9,7 +9,7 @@
 //! on this crate's collision (WORLD-8) and movement (MOVE).
 
 use qc_builtins::mock::ModelBounds;
-use qc_builtins::{Engine, MockBuiltins, MockEngine};
+use qc_builtins::{MockBuiltins, MockEngine};
 use qc_edict::EdictNumber;
 use qc_edict::system::{field_by_name, global_by_name};
 use qc_progs::Progs;
@@ -63,7 +63,7 @@ pub type ModelFiles = Box<dyn Fn(&str) -> Option<Vec<u8>>>;
 /// The builtins a world runs its progs with.
 pub struct SimBuiltins {
     /// The engine state builtins read and write, and every builtin but the world's.
-    pub(crate) mock: MockBuiltins<MockEngine>,
+    pub(crate) mock: MockBuiltins,
     /// The world's collision.
     pub(crate) collision: Collision,
     /// The sounds the server started, oldest first (PHYS-4.4, PHYS-5.1).
@@ -446,7 +446,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
 
     /// One draw of the engine's random source, id's `rand()`.
     pub(crate) fn rand(&mut self) -> u32 {
-        Engine::next_rand(self.sim.mock.engine_mut())
+        self.sim.mock.engine_mut().rng.next_rand()
     }
 
     // ---- the world builtins (WORLD-8) ----

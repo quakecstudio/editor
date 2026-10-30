@@ -6,19 +6,16 @@
 //! id's engine exposes 78 builtins to QuakeC, numbers 1 to 78, dispatched by number from
 //! `pr_builtins` (BUILTIN-1). This crate holds the table of their numbers, names, prototypes
 //! and mock classes ([`table`]), the pure math and string builtins that need no engine
-//! ([`math`]), a deterministic [`mock`] engine implementing `differential.md`'s fixture
-//! (DIFF-6, DIFF-7) for unit and differential tests, and an [`Engine`] trait a real engine
-//! (`qs-sim`, P3-24) implements.
+//! ([`math`]), and a deterministic [`mock`] engine implementing `differential.md`'s fixture
+//! (DIFF-6, DIFF-7), which the unit and differential tests and `qs-sim` run on.
 //!
-//! [`MockBuiltins<MockEngine>`] implements [`qc_vm::Builtins`], so a [`qc_vm::Machine`] can run
+//! [`MockBuiltins`] implements [`qc_vm::Builtins`], so a [`qc_vm::Machine`] can run
 //! a progs that calls builtins: it reads each builtin's arguments from the parameter slots,
 //! writes the result to `OFS_RETURN`, the system globals or the edicts, and updates the mock
 //! engine (PROGS-18, BUILTIN-1.3, BUILTIN-1.4). Every vanilla builtin has a body: the pure
 //! math and strings (BUILTIN-6, BUILTIN-7), the class state, output and world builtins against
 //! the mock fixture (BUILTIN-8 to BUILTIN-13, BUILTIN-16) and by DIFF-7 (BUILTIN-14,
 //! BUILTIN-15), with the argument checks of BUILTIN-2 raising the runtime errors of DIFF-6.6.
-//! A caller using [`NoEngine`] has no world builtins and gets a typed
-//! [`BuiltinError::EngineOnly`].
 //!
 //! Implements `docs/spec/builtins.md` (BUILTIN-1 to BUILTIN-16) and the mock engine of
 //! `docs/spec/differential.md` (DIFF-6, DIFF-7). The builtin numbers, value encodings and the
@@ -30,7 +27,7 @@
 //! L0), and nothing higher.
 
 mod dispatch;
-mod engine;
+mod error;
 pub mod math;
 pub mod mock;
 pub mod table;
@@ -39,6 +36,6 @@ pub mod table;
 mod tests;
 
 pub use dispatch::MockBuiltins;
-pub use engine::{BuiltinError, Engine, NoEngine};
+pub use error::{BuiltinError, FatalError, RuntimeError};
 pub use mock::MockEngine;
 pub use table::{BUILTIN_MAX_NUMBER, Builtin, Class, lookup};

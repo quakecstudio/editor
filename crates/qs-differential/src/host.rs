@@ -197,7 +197,7 @@ impl<'s> Host<'s> {
 /// The whole running server: the VM, the mock engine, the trace and the scenario (DIFF-1.2).
 pub(crate) struct Host<'s> {
     pub(crate) machine: Machine,
-    pub(crate) builtins: MockBuiltins<MockEngine>,
+    pub(crate) builtins: MockBuiltins,
     pub(crate) trace: TraceBuilder,
     pub(crate) scenario: &'s Scenario,
     /// Whether each client slot's player has entered (DIFF-4.2); index `n - 1` is slot `n`.

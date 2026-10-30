@@ -393,12 +393,12 @@ mod mock_engine {
         reason = "test code: a failed unwrap or index is a failed test"
     )]
 
-    use crate::engine::{Engine, NoEngine};
     use crate::mock::{
         BUILTIN_SIGNON_SIZE, Buffers, Cvars, EngineStrings, LIMIT_MAX_DATAGRAM, MessageDest,
-        MockEngine, ModelBounds, Rng,
+        MockEngine, ModelBounds, Overflow, Precache, Rng,
     };
-    use crate::{BuiltinError, Class, table};
+    use crate::{BuiltinError, Class, FatalError, RuntimeError, table};
+    use qc_edict::system::{SysField, SysGlobal};
 
     // spec DIFF-2.4: a known setting reads and sets its text; an unknown one reads None and
     // set leaves it unchanged, reporting whether it existed.
@@ -509,17 +509,23 @@ mod mock_engine {
     #[test]
     fn precache_and_index() {
         let mut engine = MockEngine::new("start", 0, 1);
-        assert_eq!(engine.sound_index("x.wav"), None);
-        assert!(!engine.precache_sound_name("x.wav"));
-        assert_eq!(engine.sound_index("x.wav"), Some(1));
+        assert_eq!(engine.precache_index(Precache::Sound, "x.wav"), None);
+        assert_eq!(engine.precache(Precache::Sound, "x.wav"), Ok(()));
+        assert_eq!(engine.precache_index(Precache::Sound, "x.wav"), Some(1));
         // A second precache of the same name does not add a second entry.
-        assert!(!engine.precache_sound_name("x.wav"));
-        assert_eq!(engine.sound_index("x.wav"), Some(1));
-        assert_eq!(engine.sound_index(""), Some(0));
+        assert_eq!(engine.precache(Precache::Sound, "x.wav"), Ok(()));
+        assert_eq!(engine.precache_index(Precache::Sound, "x.wav"), Some(1));
+        assert_eq!(engine.precache_index(Precache::Sound, ""), Some(0));
         // model_precache starts with "", "maps/start.bsp".
-        assert_eq!(engine.model_index("maps/start.bsp"), Some(1));
-        assert!(!engine.precache_model_name("progs/x.mdl"));
-        assert_eq!(engine.model_index("progs/x.mdl"), Some(2));
+        assert_eq!(
+            engine.precache_index(Precache::Model, "maps/start.bsp"),
+            Some(1)
+        );
+        assert_eq!(engine.precache(Precache::Model, "progs/x.mdl"), Ok(()));
+        assert_eq!(
+            engine.precache_index(Precache::Model, "progs/x.mdl"),
+            Some(2)
+        );
     }
 
     // spec BUILTIN-13.3: append_message adds to the buffer up to its limit; an append that
@@ -528,19 +534,28 @@ mod mock_engine {
     #[test]
     fn append_message_limit() {
         let mut engine = MockEngine::new("start", 0, 1);
-        assert!(!engine.append_message(MessageDest::Broadcast, 10));
+        assert_eq!(engine.append_message(MessageDest::Broadcast, 10), Ok(()));
         assert_eq!(engine.buffers.unreliable, 10);
         // Exactly at the limit fits.
-        assert!(!engine.append_message(MessageDest::Broadcast, LIMIT_MAX_DATAGRAM - 10));
+        assert_eq!(
+            engine.append_message(MessageDest::Broadcast, LIMIT_MAX_DATAGRAM - 10),
+            Ok(())
+        );
         assert_eq!(engine.buffers.unreliable, LIMIT_MAX_DATAGRAM);
         // One more byte overflows and does not change the size.
-        assert!(engine.append_message(MessageDest::Broadcast, 1));
+        assert_eq!(
+            engine.append_message(MessageDest::Broadcast, 1),
+            Err(Overflow)
+        );
         assert_eq!(engine.buffers.unreliable, LIMIT_MAX_DATAGRAM);
         // MSG_ONE is not kept and never overflows.
-        assert!(!engine.append_message(MessageDest::One, 1_000_000));
+        assert_eq!(engine.append_message(MessageDest::One, 1_000_000), Ok(()));
         // The signon buffer has its own larger limit.
-        assert!(!engine.append_message(MessageDest::Init, BUILTIN_SIGNON_SIZE));
-        assert!(engine.append_message(MessageDest::Init, 1));
+        assert_eq!(
+            engine.append_message(MessageDest::Init, BUILTIN_SIGNON_SIZE),
+            Ok(())
+        );
+        assert_eq!(engine.append_message(MessageDest::Init, 1), Err(Overflow));
     }
 
     // spec BUILTIN-11.5: append_command appends while the total stays below the buffer size;
@@ -548,22 +563,22 @@ mod mock_engine {
     #[test]
     fn append_command_limit() {
         let mut engine = MockEngine::new("start", 0, 1);
-        assert!(!engine.append_command(b"quit\n"));
+        assert_eq!(engine.append_command(b"quit\n"), Ok(()));
         assert_eq!(engine.command_buffer, b"quit\n");
         // A text that would reach BUILTIN_CMD_TEXT_SIZE overflows and changes nothing.
         let big = vec![b'x'; 8192];
-        assert!(engine.append_command(&big));
+        assert_eq!(engine.append_command(&big), Err(Overflow));
         assert_eq!(engine.command_buffer, b"quit\n");
         // Exactly BUILTIN_CMD_TEXT_SIZE bytes into a fresh buffer reaches the size, so it is
         // dropped (the bound is strictly less-than); pins the `< BUILTIN_CMD_TEXT_SIZE` test.
         let mut fresh = MockEngine::new("start", 0, 1);
         let exact = vec![b'y'; 8192];
-        assert!(fresh.append_command(&exact));
+        assert_eq!(fresh.append_command(&exact), Err(Overflow));
         assert!(fresh.command_buffer.is_empty());
         // One byte under the size fits.
         let mut fresh2 = MockEngine::new("start", 0, 1);
         let under = vec![b'z'; 8191];
-        assert!(!fresh2.append_command(&under));
+        assert_eq!(fresh2.append_command(&under), Ok(()));
         assert_eq!(fresh2.command_buffer.len(), 8191);
     }
 
@@ -607,24 +622,14 @@ mod mock_engine {
         engine.set_lightstyle(1000, b"z".to_vec());
     }
 
-    // spec DIFF-6.1: the mock answers the class world builtins, so has_world is true and its
-    // next_rand draws from the DIFF-6.2 source.
+    // spec DIFF-6.1: the mock engine's random source is the DIFF-6.2 one, seeded as given
     #[test]
-    fn mock_engine_has_world_and_random() {
+    fn mock_engine_draws_from_its_seeded_source() {
         let mut engine = MockEngine::new("start", 0, 7);
-        assert!(engine.has_world());
-        let first = engine.next_rand();
+        let first = engine.rng.next_rand();
         // Same as a fresh Rng seeded with 7.
         let mut rng = Rng::new(7);
         assert_eq!(first, rng.next_rand());
-    }
-
-    // spec BUILTIN-4.4: NoEngine has no world builtins and its random source draws 0.
-    #[test]
-    fn no_engine_has_no_world() {
-        let mut engine = NoEngine;
-        assert!(!engine.has_world());
-        assert_eq!(engine.next_rand(), 0);
     }
 
     // spec BUILTIN-4.4: the default Buffers start empty.
@@ -636,21 +641,110 @@ mod mock_engine {
         assert_eq!(buffers.signon, 0);
     }
 
-    // spec BUILTIN-3.1, BUILTIN-3.2, BUILTIN-3.3, BUILTIN-4.4: each BuiltinError kind reports
-    // its message, including the formatted engine-only one, and Display forwards to it.
+    // spec BUILTIN-3.1, BUILTIN-3.2, BUILTIN-3.3: each BuiltinError kind reports its message
     #[test]
     fn builtin_error_messages() {
-        assert_eq!(BuiltinError::Runtime("r".to_string()).message(), "r");
+        assert_eq!(
+            BuiltinError::from(RuntimeError::InvalidEntity).message(),
+            "invalid entity"
+        );
         assert_eq!(BuiltinError::Host("h".to_string()).message(), "h");
-        assert_eq!(BuiltinError::Fatal("f".to_string()).message(), "f");
-        let only = BuiltinError::EngineOnly {
-            number: 16,
-            name: "traceline",
-        };
-        assert_eq!(only.message(), "builtin 16 (traceline) needs an engine");
-        // Display forwards to message (not the Default empty string).
-        assert_eq!(format!("{only}"), "builtin 16 (traceline) needs an engine");
-        assert_eq!(format!("{}", BuiltinError::Runtime("hi".to_string())), "hi");
+        assert_eq!(
+            BuiltinError::from(FatalError::BreakStatement).message(),
+            "break statement"
+        );
+        assert_eq!(BuiltinError::Host("h".to_string()).to_string(), "h");
+    }
+
+    // spec DIFF-8.2: every runtime error's message, byte for byte, as the trace records it
+    // spec BUILTIN-1.2: a PF_Fixme number's message keeps id's spelling
+    #[test]
+    fn runtime_error_messages() {
+        let cases = [
+            (RuntimeError::Unimplemented, "unimplemented bulitin"),
+            (RuntimeError::InvalidEntity, "invalid entity"),
+            (RuntimeError::InvalidString, "invalid string"),
+            (RuntimeError::InvalidField, "invalid field"),
+            (RuntimeError::InvalidLightstyle, "invalid lightstyle"),
+            (RuntimeError::BackwardsBounds, "backwards mins/maxs"),
+            (
+                RuntimeError::NoPrecache {
+                    name: "progs/x.mdl".to_string(),
+                },
+                "no precache: progs/x.mdl\n",
+            ),
+            (
+                RuntimeError::PrecacheOutsideSpawn,
+                "PF_Precache_*: Precache can only be done in spawn functions",
+            ),
+            (RuntimeError::BadString, "Bad string"),
+            (RuntimeError::EntityNotClient, "Entity is not a client"),
+            (RuntimeError::ParmNotClient, "Parm 0 not a client"),
+            (RuntimeError::WriteDestNotClient, "WriteDest: not a client"),
+            (RuntimeError::WriteDestBad, "WriteDest: bad destination"),
+            (RuntimeError::NoParameter { number: 8 }, "no parameter 8"),
+            (
+                RuntimeError::ParameterOutOfRange,
+                "builtin parameter out of range",
+            ),
+            (RuntimeError::ReturnOutOfRange, "return slot out of range"),
+            (
+                RuntimeError::NoSystemGlobal(SysGlobal::VForward),
+                "no system global v_forward",
+            ),
+            (RuntimeError::NoField(SysField::Health), "no field health"),
+            (
+                RuntimeError::NoVectorField(SysField::Origin),
+                "no vector field origin",
+            ),
+        ];
+        for (error, text) in cases {
+            assert_eq!(BuiltinError::from(error).to_string(), text);
+        }
+    }
+
+    // spec DIFF-8.2: every fatal error's message, byte for byte, as Sys_Error formats it
+    // spec BUILTIN-12.1: the sound errors name the volume, attenuation and channel
+    #[test]
+    fn fatal_error_messages() {
+        let cases = [
+            (FatalError::BreakStatement, "break statement"),
+            (FatalError::BadPointer, "NUM_FOR_EDICT: bad pointer"),
+            (FatalError::NoFreeEdicts, "ED_Alloc: no free edicts"),
+            (FatalError::SoundIndexOverflow, "SV_SoundIndex: overflow"),
+            (FatalError::ModelIndexOverflow, "SV_ModelIndex: overflow"),
+            (
+                FatalError::ModelNotPrecached {
+                    name: "progs/x.mdl".to_string(),
+                },
+                "SV_ModelIndex: model progs/x.mdl not precached",
+            ),
+            (
+                FatalError::SoundVolume { volume: 256 },
+                "SV_StartSound: volume = 256",
+            ),
+            (
+                FatalError::SoundAttenuation { atten: 4.5 },
+                "SV_StartSound: attenuation = 4.5",
+            ),
+            (
+                FatalError::SoundAttenuation {
+                    atten: f32::INFINITY,
+                },
+                "SV_StartSound: attenuation = inf",
+            ),
+            (
+                FatalError::SoundChannel { channel: -1 },
+                "SV_StartSound: channel = -1",
+            ),
+            (
+                FatalError::MessageOverflow,
+                "SZ_GetSpace: overflow without allowoverflow set",
+            ),
+        ];
+        for (error, text) in cases {
+            assert_eq!(BuiltinError::from(error).to_string(), text);
+        }
     }
 
     // spec BUILTIN-5.1, BUILTIN-5.2: lookup finds a present number with its class and name, and
@@ -683,8 +777,8 @@ mod bodies {
         reason = "test code: a failed unwrap, index, expect or overflow is a failed test"
     )]
 
-    use crate::mock::{MessageDest, MockEngine};
-    use crate::{BuiltinError, MockBuiltins};
+    use crate::MockBuiltins;
+    use crate::mock::{MessageDest, MockEngine, Precache};
     use qc_edict::system::{SYSTEM_GLOBALS, field_by_name, global_by_name};
     use qc_edict::{EDICT_SYS_GLOBALS_END, EdictNumber};
     use qc_progs::opcode::Opcode;
@@ -702,7 +796,7 @@ mod bodies {
     /// A fixture that runs one builtin and gives access to the machine and engine after.
     struct Fixture {
         machine: Machine,
-        builtins: MockBuiltins<MockEngine>,
+        builtins: MockBuiltins,
         progs_bytes: Vec<u8>,
     }
 
@@ -1144,7 +1238,10 @@ mod bodies {
     fn setmodel_sets_bounds() {
         let (strings, offsets) = string_table(&["progs/x.mdl"]);
         let mut f = Fixture::new(3, 2, strings, 0);
-        f.builtins.engine_mut().precache_model_name("progs/x.mdl");
+        f.builtins
+            .engine_mut()
+            .precache(Precache::Model, "progs/x.mdl")
+            .unwrap();
         f.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = f.machine.edicts().edict_num(1).unwrap();
         f.set_parm_i(0, e1.bits());
@@ -1177,7 +1274,10 @@ mod bodies {
         f.set_parm_i(0, offsets[0]);
         f.run_ok(ServerState::Loading);
         assert_eq!(f.return_i(), offsets[0]);
-        assert_eq!(f.engine().sound_index("misc/x.wav"), Some(1));
+        assert_eq!(
+            f.engine().precache_index(Precache::Sound, "misc/x.wav"),
+            Some(1)
+        );
     }
 
     // spec BUILTIN-10.2: an empty string precache is the runtime error Bad string.
@@ -1205,7 +1305,10 @@ mod bodies {
         let mut f = Fixture::new(75, 1, strings, 0);
         f.set_parm_i(0, offsets[0]);
         f.run_ok(ServerState::Loading);
-        assert_eq!(f.engine().model_index("progs/x.mdl"), Some(2));
+        assert_eq!(
+            f.engine().precache_index(Precache::Model, "progs/x.mdl"),
+            Some(2)
+        );
     }
 
     // ----- BUILTIN-11: printing, commands, settings -----
@@ -1278,7 +1381,10 @@ mod bodies {
     fn sound_bad_volume() {
         let (strings, offsets) = string_table(&["misc/x.wav"]);
         let mut f = Fixture::new(8, 5, strings, 0);
-        f.builtins.engine_mut().precache_sound_name("misc/x.wav");
+        f.builtins
+            .engine_mut()
+            .precache(Precache::Sound, "misc/x.wav")
+            .unwrap();
         f.set_parm_f(1, 0.0); // channel
         f.set_parm_i(2, offsets[0]); // sample
         f.set_parm_f(3, 2.0); // volume * 255 = 510, out of range
@@ -1291,7 +1397,10 @@ mod bodies {
     fn sound_appends_to_datagram() {
         let (strings, offsets) = string_table(&["misc/x.wav"]);
         let mut f = Fixture::new(8, 5, strings, 0);
-        f.builtins.engine_mut().precache_sound_name("misc/x.wav");
+        f.builtins
+            .engine_mut()
+            .precache(Precache::Sound, "misc/x.wav")
+            .unwrap();
         f.machine.edicts_mut().alloc(1.0).unwrap(); // edict 1
         let e1 = f.machine.edicts().edict_num(1).unwrap();
         f.set_parm_i(0, e1.bits());
@@ -1624,7 +1733,7 @@ mod bodies {
     fn message_dest_variants() {
         let sizes = |dest: MessageDest| {
             let mut engine = MockEngine::new("start", 0, 1);
-            assert!(!engine.append_message(dest, 3));
+            assert_eq!(engine.append_message(dest, 3), Ok(()));
             let b = &engine.buffers;
             (b.unreliable, b.reliable, b.signon)
         };
@@ -1632,11 +1741,6 @@ mod bodies {
         assert_eq!(sizes(MessageDest::All), (0, 3, 0));
         assert_eq!(sizes(MessageDest::Init), (0, 0, 3));
         assert_eq!(sizes(MessageDest::One), (0, 0, 0));
-        let error = BuiltinError::EngineOnly {
-            number: 16,
-            name: "traceline",
-        };
-        assert_eq!(error.message(), "builtin 16 (traceline) needs an engine");
     }
 
     // ----- BUILTIN-6, BUILTIN-7: the pure math and string builtins through dispatch -----
@@ -1751,6 +1855,68 @@ mod bodies {
         assert!(!off.machine.tracing());
     }
 
+    // spec BUILTIN-16.4: traceoff clears the flag traceon set earlier in the same run
+    #[test]
+    fn traceoff_clears_a_flag_traceon_set_in_the_run() {
+        let mut globals = vec![Slot::ZERO; 128];
+        globals[usize::try_from(CALL_TARGET_SLOT).unwrap()] = Slot::from_i32(2);
+        globals[usize::try_from(CALL_TARGET_SLOT + 1).unwrap()] = Slot::from_i32(3);
+        let call = |slot: i32| Statement {
+            op: u32::from(Opcode::Call0.number()),
+            a: slot,
+            b: 0,
+            c: 0,
+        };
+        let done = Statement {
+            op: u32::from(Opcode::Done.number()),
+            a: 0,
+            b: 0,
+            c: 0,
+        };
+        let builtin = |number: i32| Function {
+            first_statement: -number,
+            ..Function::default()
+        };
+        let file = ProgsFile {
+            entityfields: ENTITY_FIELDS,
+            statements: vec![call(CALL_TARGET_SLOT), call(CALL_TARGET_SLOT + 1), done],
+            functions: vec![
+                Function::default(),
+                Function::default(),
+                builtin(29),
+                builtin(30),
+            ],
+            globals,
+            strings: vec![0],
+            ..ProgsFile::default()
+        };
+        let bytes = write(&file).unwrap();
+        let progs = Progs::read(&bytes).unwrap();
+        let mut machine = Machine::new(&progs, 1).unwrap();
+        let mut builtins = MockBuiltins::default();
+        machine
+            .execute_program(
+                &progs,
+                ServerState::Active,
+                &mut builtins,
+                &mut NoObserver,
+                1,
+            )
+            .unwrap();
+        assert!(!machine.tracing());
+    }
+
+    // spec BUILTIN-2.7: G_EDICT accepts any whole edict value, so setorigin of edict 600, past
+    // the edict array (EDICT-1.4), reaches the origin write, which has no edict to write
+    #[test]
+    fn a_vector_write_past_the_edicts_is_an_error() {
+        let mut f = Fixture::new(2, 2, vec![0], 0);
+        let past = 600 * f.machine.edicts().layout().edict_size();
+        f.set_parm_i(0, past);
+        f.set_parm_v(1, [1.0, 2.0, 3.0]);
+        f.run_err(ServerState::Active, "no vector field origin");
+    }
+
     // spec BUILTIN-1.2: a PF_Fixme gap number is the runtime error with id's spelling.
     #[test]
     fn fixme_gap_errors() {
@@ -1773,7 +1939,10 @@ mod bodies {
     fn setmodel_sets_modelindex_and_size() {
         let (strings, offsets) = string_table(&["progs/x.mdl"]);
         let mut f = Fixture::new(3, 2, strings, 0);
-        f.builtins.engine_mut().precache_model_name("progs/x.mdl");
+        f.builtins
+            .engine_mut()
+            .precache(Precache::Model, "progs/x.mdl")
+            .unwrap();
         f.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = f.machine.edicts().edict_num(1).unwrap();
         f.set_parm_i(0, e1.bits());
@@ -1894,7 +2063,10 @@ mod bodies {
     fn ambientsound_appends_to_signon() {
         let (strings, offsets) = string_table(&["ambient/x.wav"]);
         let mut f = Fixture::new(74, 4, strings, 0);
-        f.builtins.engine_mut().precache_sound_name("ambient/x.wav");
+        f.builtins
+            .engine_mut()
+            .precache(Precache::Sound, "ambient/x.wav")
+            .unwrap();
         f.set_parm_v(0, [1.0, 2.0, 3.0]);
         f.set_parm_i(1, offsets[0]);
         f.set_parm_f(2, 1.0);
@@ -1935,7 +2107,10 @@ mod bodies {
         let (strings, offsets) = string_table(&["misc/x.wav"]);
         // Default volume (1.0 * 255 = 255) and attenuation 1.0: both flags saved.
         let mut f = Fixture::new(8, 5, strings.clone(), 0);
-        f.builtins.engine_mut().precache_sound_name("misc/x.wav");
+        f.builtins
+            .engine_mut()
+            .precache(Precache::Sound, "misc/x.wav")
+            .unwrap();
         f.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = f.machine.edicts().edict_num(1).unwrap();
         f.set_parm_i(0, e1.bits());
@@ -1948,7 +2123,10 @@ mod bodies {
 
         // A non-default volume and attenuation keep both bytes.
         let mut g = Fixture::new(8, 5, strings, 0);
-        g.builtins.engine_mut().precache_sound_name("misc/x.wav");
+        g.builtins
+            .engine_mut()
+            .precache(Precache::Sound, "misc/x.wav")
+            .unwrap();
         g.machine.edicts_mut().alloc(1.0).unwrap();
         let ge1 = g.machine.edicts().edict_num(1).unwrap();
         g.set_parm_i(0, ge1.bits());
@@ -2010,7 +2188,15 @@ mod bodies {
         f.machine
             .set_global3(i32::from(PROGS_OFS_RETURN), [Slot::from_f32(-9.0); 3])
             .unwrap();
+        let v_forward = global_by_name("v_forward").unwrap().slot;
+        f.machine
+            .set_global3(
+                i32::try_from(v_forward).unwrap(),
+                [0.5, -0.25, 1.0].map(Slot::from_f32),
+            )
+            .unwrap();
         f.run_ok(ServerState::Active);
+        assert_eq!(f.return_v(), [0.5, -0.25, 1.0]);
         // aim copies v_forward into RETURN, so the two agree whatever v_forward holds.
         assert_eq!(f.return_v(), f.sysglobal_v("v_forward"));
         // And it is not the poison value.
@@ -2299,7 +2485,10 @@ mod bodies {
     fn sound_full_message_is_thirteen_bytes() {
         let (strings, offsets) = string_table(&["misc/x.wav"]);
         let mut f = Fixture::new(8, 5, strings, 0);
-        f.builtins.engine_mut().precache_sound_name("misc/x.wav");
+        f.builtins
+            .engine_mut()
+            .precache(Precache::Sound, "misc/x.wav")
+            .unwrap();
         f.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = f.machine.edicts().edict_num(1).unwrap();
         f.set_parm_i(0, e1.bits());
@@ -2330,7 +2519,10 @@ mod bodies {
     fn ambientsound_message_is_ten_bytes() {
         let (strings, offsets) = string_table(&["ambient/x.wav"]);
         let mut f = Fixture::new(74, 4, strings, 0);
-        f.builtins.engine_mut().precache_sound_name("ambient/x.wav");
+        f.builtins
+            .engine_mut()
+            .precache(Precache::Sound, "ambient/x.wav")
+            .unwrap();
         f.set_parm_v(0, [1.0, 2.0, 3.0]);
         f.set_parm_i(1, offsets[0]);
         f.set_parm_f(2, 1.0);
@@ -2361,7 +2553,8 @@ mod bodies {
         atten
             .builtins
             .engine_mut()
-            .precache_sound_name("misc/x.wav");
+            .precache(Precache::Sound, "misc/x.wav")
+            .unwrap();
         atten.set_parm_f(1, 0.0); // channel ok
         atten.set_parm_i(2, offsets[0]);
         atten.set_parm_f(3, 1.0); // volume 255 ok
@@ -2369,7 +2562,10 @@ mod bodies {
         atten.run_err(ServerState::Active, "SV_StartSound: attenuation = 5");
 
         let mut chan = Fixture::new(8, 5, strings, 0);
-        chan.builtins.engine_mut().precache_sound_name("misc/x.wav");
+        chan.builtins
+            .engine_mut()
+            .precache(Precache::Sound, "misc/x.wav")
+            .unwrap();
         chan.set_parm_f(1, 9.0); // channel > 7: the channel error
         chan.set_parm_i(2, offsets[0]);
         chan.set_parm_f(3, 1.0); // volume ok
@@ -2567,7 +2763,10 @@ mod bodies {
         let mut f = Fixture::new(3, 2, vec![0], 0);
         f.machine.edicts_mut().alloc(1.0).unwrap();
         // Precache a model and make an engine string naming it.
-        f.builtins.engine_mut().precache_model_name("progs/e.mdl");
+        f.builtins
+            .engine_mut()
+            .precache(Precache::Model, "progs/e.mdl")
+            .unwrap();
         let value = f
             .builtins
             .engine_mut()
@@ -2587,7 +2786,7 @@ mod bodies {
     // string opcodes can resolve one. Pins MockBuiltins::engine_string's bytes.
     #[test]
     fn engine_string_returns_the_held_text() {
-        let mut builtins = MockBuiltins::<MockEngine>::default();
+        let mut builtins = MockBuiltins::default();
         let value = builtins.engine_mut().strings.make(b"netname".to_vec());
         assert_eq!(
             qc_vm::Builtins::engine_string(&builtins, value),
@@ -2632,7 +2831,10 @@ mod bodies {
         let (strings, offsets) = string_table(&["misc/x.wav"]);
         for vol in [0.0f32, 1.0] {
             let mut f = Fixture::new(8, 5, strings.clone(), 0);
-            f.builtins.engine_mut().precache_sound_name("misc/x.wav");
+            f.builtins
+                .engine_mut()
+                .precache(Precache::Sound, "misc/x.wav")
+                .unwrap();
             f.machine.edicts_mut().alloc(1.0).unwrap();
             let e1 = f.machine.edicts().edict_num(1).unwrap();
             f.set_parm_i(0, e1.bits());
@@ -2644,7 +2846,10 @@ mod bodies {
         }
         // Just above 255 (vol slightly over 1) is out of range.
         let mut over = Fixture::new(8, 5, strings, 0);
-        over.builtins.engine_mut().precache_sound_name("misc/x.wav");
+        over.builtins
+            .engine_mut()
+            .precache(Precache::Sound, "misc/x.wav")
+            .unwrap();
         over.set_parm_f(1, 0.0);
         over.set_parm_i(2, offsets[0]);
         over.set_parm_f(3, 256.0 / 255.0); // 256
@@ -2660,10 +2865,14 @@ mod bodies {
         let (strings, offsets) = string_table(&["misc/x.wav"]);
         // Exactly 1008 bytes used: a sound still appends (1008 > 1008 is false).
         let mut at = Fixture::new(8, 5, strings.clone(), 0);
-        at.builtins.engine_mut().precache_sound_name("misc/x.wav");
         at.builtins
             .engine_mut()
-            .append_message(MessageDest::Broadcast, 1008);
+            .precache(Precache::Sound, "misc/x.wav")
+            .unwrap();
+        at.builtins
+            .engine_mut()
+            .append_message(MessageDest::Broadcast, 1008)
+            .unwrap();
         at.machine.edicts_mut().alloc(1.0).unwrap();
         let e1 = at.machine.edicts().edict_num(1).unwrap();
         at.set_parm_i(0, e1.bits());
@@ -2676,10 +2885,14 @@ mod bodies {
 
         // One past the threshold (1009): the sound is dropped, size unchanged.
         let mut past = Fixture::new(8, 5, strings, 0);
-        past.builtins.engine_mut().precache_sound_name("misc/x.wav");
         past.builtins
             .engine_mut()
-            .append_message(MessageDest::Broadcast, 1009);
+            .precache(Precache::Sound, "misc/x.wav")
+            .unwrap();
+        past.builtins
+            .engine_mut()
+            .append_message(MessageDest::Broadcast, 1009)
+            .unwrap();
         past.set_parm_i(0, past.machine.edicts().edict_num(0).unwrap().bits());
         past.set_parm_f(1, 0.0);
         past.set_parm_i(2, offsets[0]);
@@ -2697,7 +2910,8 @@ mod bodies {
         let mut at = Fixture::new(48, 4, vec![0], 0);
         at.builtins
             .engine_mut()
-            .append_message(MessageDest::Broadcast, 1008);
+            .append_message(MessageDest::Broadcast, 1008)
+            .unwrap();
         at.set_parm_v(0, [0.0, 0.0, 0.0]);
         at.set_parm_v(1, [0.0, 0.0, 0.0]);
         at.set_parm_f(2, 1.0);
@@ -2708,7 +2922,8 @@ mod bodies {
         let mut past = Fixture::new(48, 4, vec![0], 0);
         past.builtins
             .engine_mut()
-            .append_message(MessageDest::Broadcast, 1009);
+            .append_message(MessageDest::Broadcast, 1009)
+            .unwrap();
         past.set_parm_v(0, [0.0, 0.0, 0.0]);
         past.set_parm_v(1, [0.0, 0.0, 0.0]);
         past.set_parm_f(2, 1.0);
@@ -2795,7 +3010,10 @@ mod bodies {
         let (strings, offsets) = string_table(&["misc/x.wav"]);
         for atten in [0.0f32, 4.0] {
             let mut f = Fixture::new(8, 5, strings.clone(), 0);
-            f.builtins.engine_mut().precache_sound_name("misc/x.wav");
+            f.builtins
+                .engine_mut()
+                .precache(Precache::Sound, "misc/x.wav")
+                .unwrap();
             f.machine.edicts_mut().alloc(1.0).unwrap();
             let e1 = f.machine.edicts().edict_num(1).unwrap();
             f.set_parm_i(0, e1.bits());
@@ -2807,7 +3025,10 @@ mod bodies {
         }
         // Just below 0 is out of range.
         let mut low = Fixture::new(8, 5, strings, 0);
-        low.builtins.engine_mut().precache_sound_name("misc/x.wav");
+        low.builtins
+            .engine_mut()
+            .precache(Precache::Sound, "misc/x.wav")
+            .unwrap();
         low.set_parm_f(1, 0.0);
         low.set_parm_i(2, offsets[0]);
         low.set_parm_f(3, 0.5);
@@ -2822,7 +3043,10 @@ mod bodies {
         let (strings, offsets) = string_table(&["misc/x.wav"]);
         for chan in [0.0f32, 7.0] {
             let mut f = Fixture::new(8, 5, strings.clone(), 0);
-            f.builtins.engine_mut().precache_sound_name("misc/x.wav");
+            f.builtins
+                .engine_mut()
+                .precache(Precache::Sound, "misc/x.wav")
+                .unwrap();
             f.machine.edicts_mut().alloc(1.0).unwrap();
             let e1 = f.machine.edicts().edict_num(1).unwrap();
             f.set_parm_i(0, e1.bits());
@@ -2833,7 +3057,10 @@ mod bodies {
             f.run_ok(ServerState::Active);
         }
         let mut over = Fixture::new(8, 5, strings, 0);
-        over.builtins.engine_mut().precache_sound_name("misc/x.wav");
+        over.builtins
+            .engine_mut()
+            .precache(Precache::Sound, "misc/x.wav")
+            .unwrap();
         over.set_parm_f(1, 8.0); // channel 8 > 7
         over.set_parm_i(2, offsets[0]);
         over.set_parm_f(3, 0.5);
