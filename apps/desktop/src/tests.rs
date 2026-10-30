@@ -672,8 +672,18 @@ fn the_footer_and_the_first_field() {
         panel < size,
         "required fields by name: the choice comes before the text"
     );
-    let choice = prompt.inputs.iter_mut().nth(panel).unwrap();
-    *choice = Input::Choice(Some(0));
+    prompt.inputs = prompt
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            if i == panel {
+                Input::Choice(Some(0))
+            } else {
+                Input::empty(&f.kind)
+            }
+        })
+        .collect();
     frame_with(&ctx, &mut app, Vec::new());
     frame_with(&ctx, &mut app, vec![egui::Event::Text("300".to_owned())]);
     frame_with(
