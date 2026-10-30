@@ -13,6 +13,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`settings.list`](#settingslist) | Lists every setting with its default, its value and where the value comes from. |
 | [`settings.reset`](#settingsreset) | Removes a setting from the user's or the project's settings file and writes the file. |
 | [`settings.set`](#settingsset) | Sets a setting in the user's or the project's settings file and writes the file. |
+| [`view.resize_panel`](#viewresize_panel) | Sets the width of the left or right panel, or the height of the bottom panel, in points. |
+| [`view.toggle_panel`](#viewtoggle_panel) | Shows or hides a panel: Project and Entities on the left, Properties and the agent on the right, or Problems, Console and the debugger at the bottom. |
 
 ## `commands.list`
 
@@ -244,6 +246,106 @@ Parameters:
     "value"
   ],
   "title": "SetParams",
+  "type": "object"
+}
+```
+
+## `view.resize_panel`
+
+Sets the width of the left or right panel, or the height of the bottom panel, in points.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Panel": {
+      "description": "One of the panels around the centre (UI-2).",
+      "oneOf": [
+        {
+          "const": "left",
+          "description": "Project and Entities.",
+          "type": "string"
+        },
+        {
+          "const": "right",
+          "description": "Properties and the agent.",
+          "type": "string"
+        },
+        {
+          "const": "bottom",
+          "description": "Problems, Console and the debugger.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `view.resize_panel`.",
+  "properties": {
+    "panel": {
+      "$ref": "#/$defs/Panel",
+      "description": "The panel: `left`, `right` or `bottom`."
+    },
+    "size": {
+      "description": "Its new width, or height for the bottom panel, in points: at least 120.",
+      "format": "float",
+      "type": "number"
+    }
+  },
+  "required": [
+    "panel",
+    "size"
+  ],
+  "title": "ResizePanelParams",
+  "type": "object"
+}
+```
+
+## `view.toggle_panel`
+
+Shows or hides a panel: Project and Entities on the left, Properties and the agent on the right, or Problems, Console and the debugger at the bottom.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Panel": {
+      "description": "One of the panels around the centre (UI-2).",
+      "oneOf": [
+        {
+          "const": "left",
+          "description": "Project and Entities.",
+          "type": "string"
+        },
+        {
+          "const": "right",
+          "description": "Properties and the agent.",
+          "type": "string"
+        },
+        {
+          "const": "bottom",
+          "description": "Problems, Console and the debugger.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `view.toggle_panel`.",
+  "properties": {
+    "panel": {
+      "$ref": "#/$defs/Panel",
+      "description": "The panel: `left` (Project and Entities), `right` (Properties and the agent) or\n`bottom` (Problems, Console and the debugger)."
+    }
+  },
+  "required": [
+    "panel"
+  ],
+  "title": "TogglePanelParams",
   "type": "object"
 }
 ```

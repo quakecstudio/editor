@@ -1,0 +1,37 @@
+[package]
+name = "quakec-studio"
+description = "QuakeC Studio, the desktop app: the window, its toolbar and its docked panels, on egui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "quakec_studio"
+path = "src/lib.rs"
+
+[[bin]]
+name = "quakec-studio"
+path = "src/main.rs"
+
+[dependencies]
+# eframe's defaults without `default_fonts`, whose fonts are not bundled (ADR-0003, ADR-0010),
+# and without `accesskit` for now: its Linux backend pulls in zvariant and zbus_names, which
+# RUSTSEC-2026-0370 to -0372 mark unmaintained with no safe upgrade. Screen readers are P2-23's.
+eframe = { workspace = true, features = ["wayland", "wgpu", "x11"] }
+qs-commands = { workspace = true }
+qs-layout = { workspace = true }
+qs-log = { workspace = true }
+qs-paths = { workspace = true }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+toml = { workspace = true, features = ["parse", "serde", "std"] }
+tracing = { workspace = true, features = ["std"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+muda = { workspace = true }
+
+[lints]
+workspace = true
