@@ -10,11 +10,18 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`edit.redo`](#editredo) | Makes the most recently undone change again. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
 | [`file.open`](#fileopen) | Opens a file in the editor, with the caret at a byte offset or at the start. |
+| [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
+| [`file.update`](#fileupdate) | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
 | [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
 | [`settings.get`](#settingsget) | Gives one setting's value and where it comes from. |
 | [`settings.list`](#settingslist) | Lists every setting with its default, its value and where the value comes from. |
 | [`settings.reset`](#settingsreset) | Removes a setting from the user's or the project's settings file and writes the file. |
 | [`settings.set`](#settingsset) | Sets a setting in the user's or the project's settings file and writes the file. |
+| [`symbol.complete`](#symbolcomplete) | Lists the names that may be written at a place. |
+| [`symbol.definition`](#symboldefinition) | Finds where the name at a place is defined. |
+| [`symbol.hover`](#symbolhover) | Says what the name at a place is: its declaration and its comment. |
+| [`symbol.references`](#symbolreferences) | Finds every declaration and use of the name at a place, in every file. |
+| [`symbol.rename`](#symbolrename) | Renames the name at a place everywhere it is written, in the editor's text of each file; nothing is saved. |
 | [`view.resize_panel`](#viewresize_panel) | Sets the width of the left or right panel, or the height of the bottom panel, in points. |
 | [`view.toggle_panel`](#viewtoggle_panel) | Shows or hides a panel: Project and Entities on the left, Properties and the agent on the right, or Problems, Console and the debugger at the bottom. |
 
@@ -97,6 +104,61 @@ Parameters:
     "path"
   ],
   "title": "OpenFileParams",
+  "type": "object"
+}
+```
+
+## `file.save`
+
+Writes a file's current text, as the editor has it, to disk.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `file.save`.",
+  "properties": {
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "SaveFileParams",
+  "type": "object"
+}
+```
+
+## `file.update`
+
+Takes the whole text of a file as an editor has it, unsaved, and checks the project again.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `file.update`.",
+  "properties": {
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    },
+    "text": {
+      "description": "Its whole new text.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "text"
+  ],
+  "title": "UpdateFileParams",
   "type": "object"
 }
 ```
@@ -308,6 +370,171 @@ Parameters:
     "value"
   ],
   "title": "SetParams",
+  "type": "object"
+}
+```
+
+## `symbol.complete`
+
+Lists the names that may be written at a place.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of a command asked at a place: a file and a byte offset in it.",
+  "properties": {
+    "offset": {
+      "description": "The byte offset of the place, in the file's current text.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "offset"
+  ],
+  "title": "AtParams",
+  "type": "object"
+}
+```
+
+## `symbol.definition`
+
+Finds where the name at a place is defined.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of a command asked at a place: a file and a byte offset in it.",
+  "properties": {
+    "offset": {
+      "description": "The byte offset of the place, in the file's current text.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "offset"
+  ],
+  "title": "AtParams",
+  "type": "object"
+}
+```
+
+## `symbol.hover`
+
+Says what the name at a place is: its declaration and its comment.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of a command asked at a place: a file and a byte offset in it.",
+  "properties": {
+    "offset": {
+      "description": "The byte offset of the place, in the file's current text.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "offset"
+  ],
+  "title": "AtParams",
+  "type": "object"
+}
+```
+
+## `symbol.references`
+
+Finds every declaration and use of the name at a place, in every file.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of a command asked at a place: a file and a byte offset in it.",
+  "properties": {
+    "offset": {
+      "description": "The byte offset of the place, in the file's current text.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "offset"
+  ],
+  "title": "AtParams",
+  "type": "object"
+}
+```
+
+## `symbol.rename`
+
+Renames the name at a place everywhere it is written, in the editor's text of each file; nothing is saved.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `symbol.rename`.",
+  "properties": {
+    "name": {
+      "description": "The new name.",
+      "type": "string"
+    },
+    "offset": {
+      "description": "The byte offset of the name.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "offset",
+    "name"
+  ],
+  "title": "RenameParams",
   "type": "object"
 }
 ```
