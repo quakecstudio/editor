@@ -18,6 +18,7 @@ mod editor;
 mod fallback;
 pub mod icons;
 pub mod keymap;
+pub mod map_view;
 #[cfg(target_os = "macos")]
 pub mod menu;
 pub mod palette;

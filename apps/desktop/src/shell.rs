@@ -17,11 +17,13 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui::containers::panel::PanelState;
 use eframe::egui::{self, Align, Button, Id, Layout as EguiLayout, RichText, Sense, Ui};
+use eframe::egui_wgpu::RenderState;
 use qs_commands::{CommandError, RegisterError, Registry, Session};
 use qs_editor_view::{Position, ViewStyle};
 use qs_layout::{
     HasLayout, Layout, Panel, RESIZE_PANEL, ResizePanelParams, TOGGLE_PANEL, TogglePanelParams,
 };
+use qs_render::{Camera, MapMesh};
 use qs_workbench::{
     AtParams, COMPLETE, Candidate, Config, DEFINITION, FsLoader, HOVER, HasWorkbench, HoverInfo,
     OPEN_FILE, OPEN_PROJECT, OpenFile, OpenFileParams, OpenProjectParams, Place, REFERENCES,
@@ -32,6 +34,7 @@ use crate::editor::{Editor, Popup, Request};
 use crate::fallback::{SystemFonts, families};
 use crate::icons::Icon;
 use crate::keymap;
+use crate::map_view::{self, MapView};
 use crate::palette::Palette;
 use crate::project::{self, Jump, SymbolScope};
 use crate::strings::Text;
@@ -92,6 +95,8 @@ pub enum CentreTab {
     Editor,
     /// The game.
     Game,
+    /// The map view.
+    Map,
 }
 
 /// The editor's area, whose egui id is the editor view's.
@@ -114,6 +119,9 @@ pub struct Shell {
     symbol_scope: SymbolScope,
     editor: Option<Editor>,
     system_fonts: SystemFonts,
+    /// The window's wgpu device and formats, which the map view draws with.
+    render_state: Option<RenderState>,
+    map: Option<MapView>,
     /// The editor's file and text revision whose characters have fonts.
     covered: Option<(PathBuf, u64)>,
 }
@@ -150,6 +158,8 @@ impl Shell {
             symbol_scope: SymbolScope::default(),
             editor: None,
             system_fonts: SystemFonts::new(&Theme::bundled_fonts()),
+            render_state: None,
+            map: None,
             covered: None,
         })
     }
@@ -228,6 +238,35 @@ impl Shell {
     /// Gives the editor the keyboard, as a click in it does.
     pub fn focus_editor(&self, ctx: &egui::Context) {
         ctx.memory_mut(|m| m.request_focus(Id::new(EDITOR_AREA)));
+    }
+
+    /// Gives the shell the window's wgpu device and formats, which the map view draws with.
+    pub fn set_render_state(&mut self, state: Option<RenderState>) {
+        self.render_state = state;
+    }
+
+    /// Shows `mesh` in the map view from `camera`, and the view; false when the window has no
+    /// wgpu device to draw it with.
+    pub fn show_map(&mut self, mesh: &MapMesh, camera: Camera) -> bool {
+        let Some(state) = &self.render_state else {
+            return false;
+        };
+        map_view::install(state, mesh);
+        self.map = Some(MapView::new(camera));
+        self.centre_tab = CentreTab::Map;
+        true
+    }
+
+    /// The tab shown in the centre.
+    #[must_use]
+    pub const fn centre_tab(&self) -> CentreTab {
+        self.centre_tab
+    }
+
+    /// The map view, once a map is shown.
+    #[must_use]
+    pub const fn map_view(&self) -> Option<&MapView> {
+        self.map.as_ref()
     }
 
     /// Opens the project in `path`, through its command.
@@ -721,6 +760,7 @@ impl Shell {
                     for (tab, text) in [
                         (CentreTab::Editor, Text::Editor),
                         (CentreTab::Game, Text::Game),
+                        (CentreTab::Map, Text::Map),
                     ] {
                         ui.selectable_value(&mut self.centre_tab, tab, text.get());
                     }
@@ -738,9 +778,16 @@ impl Shell {
             self.handle(requests);
             return;
         }
+        if self.centre_tab == CentreTab::Map
+            && let Some(map) = &mut self.map
+        {
+            map.ui(ui);
+            return;
+        }
         let (fill, message) = match self.centre_tab {
             CentreTab::Editor => (Token::SurfaceEditor, Text::NoFileOpen),
             CentreTab::Game => (Token::SurfaceViewport, Text::GameStopped),
+            CentreTab::Map => (Token::SurfaceViewport, Text::NoMap),
         };
         egui::Frame::NONE.fill(theme.color(fill)).show(ui, |ui| {
             let size = ui.available_size();
