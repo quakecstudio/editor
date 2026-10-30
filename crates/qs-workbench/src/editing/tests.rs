@@ -146,7 +146,11 @@ fn definition_references_hover_and_completion_answer_with_places() {
     assert_eq!(references[0]["path"], json_path("code.qc"));
     let hover = session.execute(HOVER, at("code.qc", use_at)).unwrap();
     assert_eq!(hover["declaration"], json!(".float health"));
-    assert_eq!(hover["place"]["start"], json!(use_at), "the hovered name's span");
+    assert_eq!(
+        hover["place"]["start"],
+        json!(use_at),
+        "the hovered name's span"
+    );
     let inside = nth(CODE, "self.health - d", 0);
     let candidates = session.execute(COMPLETE, at("code.qc", inside)).unwrap();
     let candidates = candidates.as_array().unwrap();

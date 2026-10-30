@@ -212,6 +212,33 @@ impl Buffer {
         }
     }
 
+    /// The byte offset of `at` in [`Buffer::text`]: the lengths of the lines before it, each
+    /// with its `\n`, then its column.
+    #[must_use]
+    pub fn offset(&self, at: Position) -> usize {
+        let at = self.clamp(at);
+        self.lines
+            .iter()
+            .take(at.line)
+            .fold(at.col, |sum, (_, line)| {
+                sum.saturating_add(line.len()).saturating_add(1)
+            })
+    }
+
+    /// The position of byte `offset` of [`Buffer::text`], the end past it, down to a character
+    /// boundary.
+    #[must_use]
+    pub fn position(&self, offset: usize) -> Position {
+        let mut rest = offset;
+        for (index, (_, line)) in self.lines.iter().enumerate() {
+            if rest <= line.len() {
+                return Position::new(index, floor_char(line, rest));
+            }
+            rest = rest.saturating_sub(line.len().saturating_add(1));
+        }
+        self.end()
+    }
+
     /// The number of characters before byte `col` of line `line`.
     #[must_use]
     pub fn char_column(&self, line: usize, col: usize) -> usize {

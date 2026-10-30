@@ -3,6 +3,7 @@
 //! Selections and the edits made at every one of them.
 
 use crate::buffer::{Buffer, Position};
+use crate::history::{EditKind, History, Replace};
 
 /// One selection: the text between `anchor` and `head`, the caret at `head`. An empty selection
 /// is a caret.
@@ -88,6 +89,9 @@ pub struct EditState {
     primary: usize,
     /// The character column a vertical move keeps, set by the first of a run of vertical moves.
     goal: Option<usize>,
+    history: History,
+    /// Counts the changes to the text.
+    revision: u64,
 }
 
 impl EditState {
@@ -99,7 +103,49 @@ impl EditState {
             selections: vec![Selection::default()],
             primary: 0,
             goal: None,
+            history: History::default(),
+            revision: 0,
         }
+    }
+
+    /// Changes whenever the text does: an edit, an undo, a redo or a new text.
+    #[must_use]
+    pub const fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    fn changed(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    /// Replaces the whole text with `text`, as when it changed outside the editor, keeping the
+    /// selections where they still fit and forgetting the undo history.
+    pub fn replace_text(&mut self, text: &str) {
+        self.buffer = Buffer::new(text);
+        let selections = self.selections.clone();
+        self.history.clear();
+        self.set_selections(&selections);
+        self.changed();
+    }
+
+    /// Takes back the last edit, or run of typing; false with nothing to undo.
+    pub fn undo(&mut self) -> bool {
+        let Some(selections) = self.history.undo(&mut self.buffer) else {
+            return false;
+        };
+        self.set_selections(&selections);
+        self.changed();
+        true
+    }
+
+    /// Makes the last undone edit again; false with nothing to redo.
+    pub fn redo(&mut self) -> bool {
+        let Some(selections) = self.history.redo(&mut self.buffer) else {
+            return false;
+        };
+        self.set_selections(&selections);
+        self.changed();
+        true
     }
 
     /// The buffer.
@@ -299,7 +345,22 @@ impl EditState {
     }
 
     /// Replaces every selection with `text`, leaving a caret after it (typing and pasting).
+    /// Text with no line break typed at carets is grouped with the typing before it for undo.
     pub fn insert(&mut self, text: &str) {
+        let typing = !text.contains('\n') && self.selections.iter().all(Selection::is_caret);
+        let kind = if typing {
+            EditKind::Typing
+        } else {
+            EditKind::Other
+        };
+        self.edit_as(kind, |_, selection| {
+            (selection.start(), selection.end(), text.to_owned())
+        });
+    }
+
+    /// Replaces every selection with `text` as an undo step of its own, never grouped with
+    /// typing.
+    pub(crate) fn insert_step(&mut self, text: &str) {
         self.edit(|_, selection| (selection.start(), selection.end(), text.to_owned()));
     }
 
@@ -343,22 +404,49 @@ impl EditState {
     /// edit leaves the text before it unchanged; the carets already placed below are moved by
     /// what the edit added or removed. Each selection ends as a caret after its new text.
     fn edit(&mut self, change: impl Fn(&Buffer, &Selection) -> (Position, Position, String)) {
+        self.edit_as(EditKind::Other, change);
+    }
+
+    /// [`EditState::edit`], recorded for undo as `kind`. An edit that changes nothing, such as
+    /// a backspace at the start of the text, is not recorded.
+    fn edit_as(
+        &mut self,
+        kind: EditKind,
+        change: impl Fn(&Buffer, &Selection) -> (Position, Position, String),
+    ) {
+        let before = self.selections.clone();
         let primary = self.primary;
         let mut carets: Vec<Position> = Vec::with_capacity(self.selections.len());
+        let mut replaces = Vec::with_capacity(self.selections.len());
         for selection in self.selections.iter().rev() {
             let (start, end, text) = change(&self.buffer, selection);
-            let end = self.buffer.clamp(end);
+            let (start, end) = (self.buffer.clamp(start), self.buffer.clamp(end));
+            let removed = self.buffer.slice(start, end);
             let after = self.buffer.replace(start, end, &text);
             for caret in &mut carets {
                 *caret = shifted(*caret, end, after);
             }
             carets.push(after);
+            if !(removed.is_empty() && text.is_empty()) {
+                replaces.push(Replace {
+                    start,
+                    end,
+                    after,
+                    removed,
+                    inserted: text,
+                });
+            }
         }
         carets.reverse();
         self.selections = carets.into_iter().map(Selection::caret).collect();
         let primary_head = self.selections.get(primary).copied().unwrap_or_default();
         self.goal = None;
         self.normalize(primary_head);
+        if !replaces.is_empty() {
+            self.history
+                .record(replaces, before, self.selections.clone(), kind);
+            self.changed();
+        }
     }
 }
 

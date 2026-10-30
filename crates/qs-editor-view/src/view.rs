@@ -69,6 +69,8 @@ pub struct EditorView {
     visible: usize,
     /// IME composition text at the primary caret, not yet in the text.
     preedit: Option<String>,
+    /// The text position under the pointer in the last frame, if it was over the text.
+    hovered: Option<Position>,
     cache: LayoutCache,
 }
 
@@ -83,6 +85,7 @@ impl EditorView {
             scroll_rest: 0.0,
             visible: 1,
             preedit: None,
+            hovered: None,
             cache: LayoutCache::default(),
         }
     }
@@ -114,6 +117,13 @@ impl EditorView {
     /// Scrolls so `line` is the first visible line, clamped to the text.
     pub fn scroll_to(&mut self, line: usize) {
         self.first_line = line.min(self.state.buffer().line_count().saturating_sub(1));
+    }
+
+    /// The text position under the pointer in the last frame, `None` when the pointer is not
+    /// over the text.
+    #[must_use]
+    pub fn hovered(&self) -> Option<Position> {
+        self.hovered
     }
 
     /// The IME composition text shown at the primary caret, if any.
@@ -178,6 +188,12 @@ impl EditorView {
                 self.press(at, modifiers);
             }
         }
+        self.hovered = match response.hover_pos() {
+            Some(pos) if pos.x >= text_left => {
+                Some(self.position_at(ui, style, styler, pos, rect.top(), text_left, row_height))
+            }
+            Some(_) | None => None,
+        };
         if response.dragged()
             && let Some(pos) = response.interact_pointer_pos()
         {
@@ -362,6 +378,8 @@ impl EditorView {
                 self.state.select_all();
                 return true;
             }
+            Key::Z if modifiers.command && modifiers.shift => return self.state.redo(),
+            Key::Z if modifiers.command => return self.state.undo(),
             Key::Escape => {
                 self.state.single_caret();
                 self.preedit = None;
