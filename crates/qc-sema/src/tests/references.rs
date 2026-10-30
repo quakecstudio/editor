@@ -10731,6 +10731,7 @@ fn every_reference_is_read_as_fteqcc_reads_it_8() {
 // spec FTEF-31.2: an element keeps what its base is: a variable's component and an entity's
 // `.vector` component store, a constant's and a field's are constants, and a field's components
 // are the same symbol
+// spec FTEF-34.15: a vector constant built by `[1, 2, 3]` folds, so its element is the immediate
 #[test]
 fn elements_keep_their_bases() {
     let found = |statement: &str| -> Vec<String> {
@@ -10764,7 +10765,7 @@ fn elements_keep_their_bases() {
     }
     assert_eq!(
         found("cv[1] = 2;"),
-        ["Assignment to const", "Assignment to constant cv"]
+        ["Assignment to const", "Assignment to constant IMMEDIATE"]
     );
     assert_eq!(
         found("fv[1] = ff;"),

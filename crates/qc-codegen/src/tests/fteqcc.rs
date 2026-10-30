@@ -1027,3 +1027,17 @@ fn a_vector_field_defined_with_another_names_its_words() {
         "no slots were taken for fadecolor"
     );
 }
+
+// spec FTEF-34.15: a constant whose initialiser folded is that value where it is named, so a
+// later constant made from it folds too
+#[test]
+fn a_folded_constant_folds_where_it_is_named() {
+    let p = fte_progs(
+        "static const float A = 8;\nstatic const float P = 1<<A;\nstatic const float R = P - 1;\n\
+         float(float x) g = { return x & R; };\n",
+    );
+    let value =
+        |name: &str| f32::from_bits(p.globals[usize::try_from(global(&p, name)).unwrap()].bits());
+    assert_eq!(value("P"), 256.0);
+    assert_eq!(value("R"), 255.0);
+}

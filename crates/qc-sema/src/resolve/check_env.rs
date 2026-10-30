@@ -20,7 +20,7 @@ use crate::check::{
 use crate::lower::{ArrayDim, LiteralValue, RawLocal, top_level_kind};
 use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, DefKind, Definition, FileId};
-use crate::ty::Type;
+use crate::ty::{SimpleType, Type};
 
 /// One body being checked.
 pub(in crate::resolve) struct BodyEnv<'r, 'a> {
@@ -382,6 +382,11 @@ impl Env for BodyEnv<'_, '_> {
         if let Some(constant) = self.resolver.integer_items.get(&def) {
             return Constness::Known(*constant);
         }
+        // FTEF-34.15: a float or vector constant whose initialiser expression folded is that
+        // value.
+        if let Some(known) = self.folded_value(def) {
+            return Constness::Known(known);
+        }
         match self.resolver.literals.get(&def) {
             Some(LiteralValue::Float(bits)) => {
                 Constness::Known(Constant::float(f32::from_bits(*bits)))
@@ -604,5 +609,22 @@ impl Env for BodyEnv<'_, '_> {
         let location = self.resolver.at(self.file, span);
         let flags = CompilerFlags::at(self.flags, span.start);
         self.resolver.cast_value(source, to, location, flags)
+    }
+}
+
+impl BodyEnv<'_, '_> {
+    /// FTEF-34.15: the value the initialiser of the float or vector constant `def` folded to,
+    /// when it did (FTEF-34.9).
+    fn folded_value(&self, def: DefId) -> Option<Constant> {
+        let words = self.resolver.index.initial_values.get(&def)?.words();
+        match (&self.resolver.index.def(def)?.ty, words) {
+            (Type::Simple(SimpleType::Float), &[bits]) => {
+                Some(Constant::float(f32::from_bits(bits)))
+            }
+            (Type::Simple(SimpleType::Vector), &[x, y, z]) => {
+                Some(Constant::vector([x, y, z].map(f32::from_bits)))
+            }
+            _ => None,
+        }
     }
 }

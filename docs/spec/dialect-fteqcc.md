@@ -5238,3 +5238,13 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   x;` with `T` and `for` no type; `[x, 0, 0]_x`; and `spawn(float)`, whose type keyword the
   semantic model reads as a value. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`.
+- **FTEF-34.15** A `float` or `vector` constant whose initialiser expression folded to a
+  value is that value wherever it is named, as a literal constant is: after the initialiser is
+  read, `if (!def->nofold && def->constant && def->initialized && def->symbolheader == def &&
+  def->ofs == 0 && !def->arraysize)` the definition takes the immediate's place, `base =
+  QCC_MakeFloatConst(val->_float).sym;` (`QCC_MakeIntConst`, `QCC_MakeVectorConst` for the
+  others) and `def->ofs = base->ofs; def->symbolheader = base->symbolheader;`. So `const float P
+  = 1 << 8; const float R = P - 1;` folds `R` to 255, and `const vector cv = [1, 2, 3];` is a known vector, whose `cv[1]` is the immediate 2. An array, a
+  shared definition (`nofold`) and an initialiser that does not fold stay as they are. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefs`.
