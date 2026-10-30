@@ -136,7 +136,7 @@ const FOLDED: &str = "float x;\nvector v;\n\
     void(float a, entity e, string s) g = { if (a > 1 + 1) x = a; else x = 0 - a; \
         if (e) x = x + 1; if (s == \"player\") x = x * 2; };\n";
 
-// spec DIFF-12.1, DIFF-12.3: a program compiled with `--opt fold` off and on has other
+// spec DIFF-12.17, DIFF-12.3: a program compiled with `--opt fold` off and on has other
 // statements and globals, yet every call agrees by name and type.
 #[test]
 fn a_program_folded_and_not_agrees() {
@@ -331,10 +331,16 @@ fn the_same_statements_must_run_the_same_way() {
         .iter()
         .map(|d| (d.function.clone(), d.what.clone()))
         .collect();
-    assert_eq!(functions, [(Some(b"f".to_vec()), Difference::Statements)]);
+    // DIFF-12.16: a branch no round took gives `f` another batch, which diverges the same way.
+    assert!(!functions.is_empty());
+    assert!(
+        functions
+            .iter()
+            .all(|f| *f == (Some(b"f".to_vec()), Difference::Statements))
+    );
 }
 
-// spec DIFF-12.1: the two worlds are compared after the setup, before any call.
+// spec DIFF-12.17: the two worlds are compared after the setup, before any call.
 #[test]
 fn a_setup_that_differs_is_a_divergence_and_stops_the_run() {
     let report = run(
@@ -350,7 +356,40 @@ fn a_setup_that_differs_is_a_divergence_and_stops_the_run() {
     assert!(matches!(divergence.what, Difference::Global(..)));
 }
 
-// spec DIFF-12.1: a progs that is refused, or a setup that fails, leaves nothing to call.
+// spec DIFF-12.17: the setup runs the scenario's frames, so a frame's work is in the world the
+// two progs' setups are compared by, and a frame that fails is a failed setup.
+#[test]
+fn the_setup_runs_the_scenarios_frames() {
+    let framed = scenario::read(b"progs progs.dat\nclients 1\nframes 3\n", Path::new(".")).unwrap();
+    let frames = |source: &str| compile(source, false);
+    let counting = frames("float n;\nvoid() PlayerPreThink = { n = n + 1; };\n");
+    let report = run_calls(Oracle::Qcc, &counting, &counting, &framed, WORLD, 1).unwrap();
+    assert!(report.divergences.is_empty(), "{report:?}");
+    let other = frames("float n;\nvoid() PlayerPreThink = { n = n + 2; };\n");
+    let report = run_calls(Oracle::Qcc, &counting, &other, &framed, WORLD, 1).unwrap();
+    assert_eq!(report.calls, 0);
+    let [divergence] = report.divergences.as_slice() else {
+        panic!("{report:?}");
+    };
+    assert_eq!(divergence.function, None);
+    assert!(
+        matches!(divergence.what, Difference::Global(..)),
+        "{divergence:?}"
+    );
+    // With no frames the two never differ: a client's `PlayerPreThink` runs only in
+    // a scenario frame, after the clients enter; the settle frames come before.
+    let none = scenario::read(b"progs progs.dat\nclients 1\nframes 0\n", Path::new(".")).unwrap();
+    let report = run_calls(Oracle::Qcc, &counting, &other, &none, WORLD, 1).unwrap();
+    assert!(
+        report.divergences.iter().all(|d| d.function.is_some()),
+        "{report:?}"
+    );
+    let failing = frames("void() PlayerPreThink = { error(\"x\"); };\n");
+    let setup = run_calls(Oracle::Qcc, &counting, &failing, &framed, WORLD, 1);
+    assert!(matches!(setup, Err(CallsError::Setup(_))), "{setup:?}");
+}
+
+// spec DIFF-12.17: a progs that is refused, or a setup that fails, leaves nothing to call.
 #[test]
 fn a_refused_progs_or_a_failed_setup_is_an_error() {
     let good = compile("void() f = {};\n", false);
@@ -435,7 +474,7 @@ fn a_codebase_passes_at_the_bar() {
     assert_eq!(report(nine, true).divergences(), 1);
 }
 
-// spec DIFF-12.8: each pair is a row of the results table: the codebase, the oracle's progs and
+// spec DIFF-12.14: each pair is a row of the results table: the codebase, the oracle's progs and
 // ours, the divergences, the statements executed, and whether it passes.
 #[test]
 fn a_report_is_a_row_of_the_results_table() {
@@ -461,7 +500,7 @@ fn a_report_is_a_row_of_the_results_table() {
     );
 }
 
-// spec DIFF-12.1, DIFF-12.5: a codebase runs every world of the differential scenarios and
+// spec DIFF-12.17, DIFF-12.5: a codebase runs every world of the differential scenarios and
 // unions their statements.
 #[test]
 fn a_codebase_runs_every_scenario() {
@@ -632,7 +671,7 @@ fn a_function_that_is_a_builtin_in_the_second_is_missing() {
     );
 }
 
-// spec DIFF-12.1: the setups are compared as two calls are, the builtins they call in order
+// spec DIFF-12.17: the setups are compared as two calls are, the builtins they call in order
 // before the engine's state.
 #[test]
 fn a_setup_that_calls_other_builtins_is_a_divergence() {
@@ -708,7 +747,7 @@ fn against(oracle: Oracle, theirs: &str, ours: &str) -> Vec<Difference> {
         .collect()
 }
 
-// spec DIFF-12.9: against FTEQCC, which names fewer globals, ours may name more, but each of
+// spec DIFF-12.11: against FTEQCC, which names fewer globals, ours may name more, but each of
 // FTEQCC's must be among ours in the same order.
 #[test]
 fn against_fteqcc_ours_may_name_more_globals() {
@@ -727,7 +766,7 @@ fn against_fteqcc_ours_may_name_more_globals() {
     );
 }
 
-// spec DIFF-12.9: against FTEQCC a function's locals are not compared, so a global is paired
+// spec DIFF-12.11: against FTEQCC a function's locals are not compared, so a global is paired
 // with ours of its name outside every function's locals.
 #[test]
 fn against_fteqcc_a_local_is_not_paired_with_a_global() {
@@ -736,7 +775,7 @@ fn against_fteqcc_a_local_is_not_paired_with_a_global() {
     assert_eq!(against(Oracle::Fteqcc, theirs, ours), []);
 }
 
-// spec DIFF-12.9: against FTEQCC two calls that both run away agree, whatever each had done when
+// spec DIFF-12.11: against FTEQCC two calls that both run away agree, whatever each had done when
 // it was stopped; against qcc they must leave the same state.
 #[test]
 fn against_fteqcc_two_runaway_calls_agree() {
@@ -751,7 +790,7 @@ fn against_fteqcc_two_runaway_calls_agree() {
     ));
 }
 
-// spec DIFF-12.9: against FTEQCC a function definition inside a body's locals, as a state's
+// spec DIFF-12.11: against FTEQCC a function definition inside a body's locals, as a state's
 // `[frame, next]` declares `next` there, is a global and is paired with FTEQCC's.
 #[test]
 fn against_fteqcc_a_states_next_function_is_a_global() {
@@ -759,4 +798,183 @@ fn against_fteqcc_a_states_next_function_is_a_global() {
         "void() a;\nvoid() b;\nvoid() a = [1, b] { local float q; q = 1; };\nvoid() b = {};\n";
     let ours = "void() a = [1, b] { local float q; q = 1; };\nvoid() b = {};\n";
     assert_eq!(against(Oracle::Fteqcc, theirs, ours), []);
+}
+
+/// `bytes`, a version 6 progs, with global definition `name` given the type number `ty`.
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "test code: offsets inside a small progs the test compiled"
+)]
+fn retyped(mut bytes: Vec<u8>, name: &str, ty: u16) -> Vec<u8> {
+    let word = |b: &[u8], at: usize| {
+        usize::try_from(i32::from_le_bytes(b[at..at + 4].try_into().unwrap())).unwrap()
+    };
+    let (defs, count, strings) = (word(&bytes, 16), word(&bytes, 20), word(&bytes, 40));
+    for i in 0..count {
+        let at = defs + i * 8;
+        let s_name = strings + word(&bytes, at + 4);
+        let end = s_name + bytes[s_name..].iter().position(|&b| b == 0).unwrap();
+        if &bytes[s_name..end] == name.as_bytes() {
+            bytes[at..at + 2].copy_from_slice(&ty.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+// spec DIFF-12.10: a global of FTEQCC's struct type is not compared, so two programs whose
+// struct-typed global holds the same string at another place in each string table agree
+#[test]
+fn a_struct_typed_global_is_not_compared() {
+    let theirs = compile("string s;\nvoid() f = { s = \"a\"; };\n", false);
+    let ours = compile(
+        "string s;\nvoid() g = { s = \"zz\"; };\nvoid() f = { s = \"a\"; };\n",
+        false,
+    );
+    let run = |theirs: &[u8], ours: &[u8]| {
+        run_calls(Oracle::Fteqcc, theirs, ours, &scenario(), WORLD, 4)
+            .unwrap()
+            .divergences
+            .into_iter()
+            .map(|d| d.what)
+            .filter(|d| matches!(d, Difference::Global(..)))
+            .count()
+    };
+    let float_typed = (
+        retyped(theirs.clone(), "s", 2),
+        retyped(ours.clone(), "s", 2),
+    );
+    assert_ne!(run(&float_typed.0, &float_typed.1), 0);
+    let struct_typed = (retyped(theirs, "s", 14), retyped(ours, "s", 14));
+    assert_eq!(run(&struct_typed.0, &struct_typed.1), 0);
+}
+
+/// `bytes` with each one-letter global name `from` written as `to`.
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "test code: offsets inside a small progs the test compiled"
+)]
+fn renamed(mut bytes: Vec<u8>, from: u8, to: u8) -> Vec<u8> {
+    let word = |b: &[u8], at: usize| {
+        usize::try_from(i32::from_le_bytes(b[at..at + 4].try_into().unwrap())).unwrap()
+    };
+    let (defs, count, strings) = (word(&bytes, 16), word(&bytes, 20), word(&bytes, 40));
+    for i in 0..count {
+        let s_name = strings + word(&bytes, defs + i * 8 + 4);
+        if bytes[s_name] == from && bytes[s_name + 1] == 0 {
+            bytes[s_name] = to;
+        }
+    }
+    bytes
+}
+
+// spec DIFF-12.11: a context writes a global by name to a float or string definition of the
+// name, so a drawn float is not written to a field global of its name
+#[test]
+fn a_global_written_by_name_goes_to_a_scalar_definition() {
+    let bytes = compile(".float z;\nfloat y;\nvoid() f = { y = 1; };\n", false);
+    let bytes = renamed(bytes, b'y', b'z');
+    let progs = Progs::read(&bytes).unwrap();
+    let program = super::Program::new(&progs);
+    let slot = program.global_slots[b"z".as_slice()];
+    let float = program
+        .globals
+        .iter()
+        .find(|(name, ty, _)| name == b"z" && *ty == qc_types::DefType::Known(Etype::Float))
+        .unwrap();
+    assert_eq!(slot, float.2);
+}
+
+// spec DIFF-12.12: a context clears the parameter slots past the parameters it draws, so a call
+// reads none of what earlier calls left there
+#[test]
+fn a_context_clears_the_slots_past_its_parameters() {
+    let progs = compile("float x;\n", false);
+    let progs = Progs::read(&progs).unwrap();
+    let scenario = scenario();
+    let mut world = World::new(&progs, &scenario, WORLD).unwrap();
+    for slot in 4..28 {
+        world
+            .host
+            .set_global_slot(slot, qc_types::Slot::from_f32(7.0));
+    }
+    let context = super::draw::Context {
+        self_edict: 0,
+        other_edict: 0,
+        fields: Vec::new(),
+        globals: Vec::new(),
+        parms: vec![Draw::Float(1.0)],
+        server: ServerState::Active,
+    };
+    context.apply(&mut world.host, &world.program);
+    let slot = |n: i32| world.host.machine.global(n).unwrap();
+    assert_eq!(slot(4), qc_types::Slot::from_f32(1.0));
+    assert!((7..28).all(|n| slot(n) == qc_types::Slot::ZERO));
+}
+
+// spec DIFF-12.13: the report lists each function with unexecuted statements, the most first,
+// and leaves out a function the calls ran through
+#[test]
+fn uncovered_lists_each_functions_unexecuted_statements() {
+    let bytes = compile(
+        "float x;\nvoid() a = { x = 1; x = 2; x = 3; };\nvoid() b = { x = 4; };\n",
+        false,
+    );
+    let progs = Progs::read(&bytes).unwrap();
+    let start = |name: &str| {
+        progs
+            .functions()
+            .iter()
+            .find(|f| progs.string(f.s_name) == Some(name.as_bytes()))
+            .unwrap()
+            .first_statement
+    };
+    let (a, b) = (start("a"), start("b"));
+    let executed: BTreeSet<i32> = [b, b + 1].into_iter().collect();
+    let text = super::uncovered(&bytes, &executed).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert!(
+        lines.contains(&format!("{}\t{}\ta", b - a, b - a).as_str()),
+        "{text}"
+    );
+    assert!(!lines.iter().any(|l| l.ends_with("\tb")), "{text}");
+}
+
+// spec DIFF-12.15: each function is listed with the edicts whose function fields hold it, the
+// edicts `self` is drawn from one time in two
+#[test]
+fn a_function_is_owned_by_the_edicts_that_hold_it() {
+    let bytes = compile(
+        "void() f = {};\nvoid() g = {};\nvoid() worldspawn = { self.think = f; };\n",
+        false,
+    );
+    let progs = Progs::read(&bytes).unwrap();
+    let scenario = scenario();
+    let world = World::new(&progs, &scenario, WORLD).unwrap();
+    let first = |name: &str| {
+        progs
+            .functions()
+            .iter()
+            .find(|f| progs.string(f.s_name) == Some(name.as_bytes()))
+            .unwrap()
+            .first_statement
+    };
+    let owners = super::draw::owners(&world, &progs);
+    assert_eq!(owners.get(&first("f")), Some(&vec![0]));
+    assert_eq!(owners.get(&first("g")), None);
+}
+
+// spec DIFF-12.16: a function with statements no call reached is called in one more batch, a
+// quarter of its rounds, and no more once a batch reaches nothing new; a function its rounds
+// cover is called no more
+#[test]
+fn a_partly_covered_function_gets_one_more_batch() {
+    let calls = |source: &str| {
+        let bytes = compile(source, false);
+        run_calls(Oracle::Qcc, &bytes, &bytes, &scenario(), WORLD, 8)
+            .unwrap()
+            .calls
+    };
+    let covered = calls("float x;\nvoid() f = { x = 1; };\n");
+    let partly = calls("float x;\nvoid() f = { if (0) x = 2; x = 1; };\n");
+    assert_eq!(partly, covered + 2);
 }

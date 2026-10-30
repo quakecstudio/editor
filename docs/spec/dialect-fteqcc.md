@@ -2317,6 +2317,17 @@ declares parameters without names or with `optional` and `__out`.
   vector v; } u) f`, `void(enum { EA } e) f`) has that type, read with the type
   (`QCC_PR_ParseType`), so the function's type prints it (`void(union <union> u)`) and the
   parameter is a value of it in the body.
+- **FTEF-15.11** A `wrap` definition's body takes over the record of the function it wraps,
+  which moves to a new record at the end of the function table named `prior*NAME`
+  (`QCC_PR_GenerateQCFunction`: `prior = &functions[numfunctions++]; memcpy(prior, func,
+  sizeof(*prior));` and `strcpy(prior->name, "prior*");`), so the name keeps its function number
+  and the wrapped body is called through `prior`: a constant of the function's type whose value is
+  the moved record's number (`QCC_MakeUniqueConst(type_function, &funcref)` with `funcref =
+  numfunctions-1`, and a static constant `prior` over it in the wrapper). So after `void() f = {
+  a(); }; __wrap void() f = { prior(); b(); };` calling `f` runs `b` after `a`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateQCFunction`, `QCC_PR_ParseImmediateStatements`.
+
 ## FTEF-16 Statements and expressions
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseStatement`, `QCC_PR_RefTerm`, `QCC_PR_ParseRefValue`
@@ -3513,6 +3524,15 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   enum's item is its base type's constant, and its 0 casts to a string with no message. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_TryEvaluateCast`, `QCC_PR_ParseEnum`.
+- **FTEF-19.76** A field defined with a value, `.float b = a;` of a field `a`, names the field
+  `a` names, and takes no field space of its own: `QCC_PR_ParseDefs` gives a field
+  `pr.size_fields` only when it has no initialiser ("fields are const by default, even when not
+  initialised (as they are initialised behind the scenes)", in the branch with no `=`), and
+  `QCC_PR_GenerateInitializerType` copies the value's words into the field's global. The field
+  table lists `b` at `a`'s offset; a vector field's `_x`, `_y` and `_z`, which
+  `QCC_PR_DummyDef` makes at its global's three words, name `a`'s three. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefs`, `QCC_PR_GenerateInitializerType`.
 
 ## FTEF-20 Keywords
 
@@ -5055,6 +5075,27 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   fourth argument "expected ), found ,". Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseFunctionCall`.
+- **FTEF-32.13** A constant local's aggregate initialiser, `const string tab[] = { "a", "b" };`
+  in a body, is its value at compile time, as a global's is, with no statement: the generated
+  initialiser copies a constant's words when the definition is a global, a constant or static
+  (`if (basedef && (!basedef->scope || basedef->constant || basedef->isstatic))`), and stores
+  them only otherwise (`finalnotconst`). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateInitializerType`.
+- **FTEF-32.14** With `opt_constantarithmatic` on, its default, a call is folded by its
+  function's name, before its arguments are checked, when they are constants
+  (`QCC_PR_GenerateFunctionCallRef`): with one argument, `floor`, `ceil`, `sin`, `cos`, `log`
+  and `sqrt` of its first word read as a float, computed in `double` and made a float
+  (`return QCC_MakeFloatConst(floor(a->_float));`); with two arguments that are floats as
+  written (`arglist[0]->cast == type_float && arglist[1]->cast == type_float`), `pow` as
+  `pow(a, b)`, `mod` as `fmodf((int)a, (int)b)`, `min` and `max` as `progsint.h`'s
+  `((a) < (b) ? (a) : (b))` and `((a) > (b) ? (a) : (b))`, and `bitshift` as `(int)a >> (int)-b`
+  for a negative `b`, else `(int)a << (int)b`. So `static const float m = floor(7 / 2);` at
+  global scope is the constant 3, with no "Unable to generate statements". FTEQCC also folds
+  `strlen` and `stof` of a string constant; this profile does not, as the model keeps no
+  string constant's text where calls are checked, and makes the call. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`; `engine/qclib/progsint.h`, `min`, `max`.
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,
@@ -5229,3 +5270,26 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   x;` with `T` and `for` no type; `[x, 0, 0]_x`; and `spawn(float)`, whose type keyword the
   semantic model reads as a value. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`.
+- **FTEF-34.15** A `float` or `vector` constant whose initialiser expression folded to a
+  value is that value wherever it is named, as a literal constant is: after the initialiser is
+  read, `if (!def->nofold && def->constant && def->initialized && def->symbolheader == def &&
+  def->ofs == 0 && !def->arraysize)` the definition takes the immediate's place, `base =
+  QCC_MakeFloatConst(val->_float).sym;` (`QCC_MakeIntConst`, `QCC_MakeVectorConst` for the
+  others) and `def->ofs = base->ofs; def->symbolheader = base->symbolheader;`. So `const float P
+  = 1 << 8; const float R = P - 1;` folds `R` to 255, and `const vector cv = [1, 2, 3];` is a known vector, whose `cv[1]` is the immediate 2. An array, a
+  shared definition (`nofold`) and an initialiser that does not fold stay as they are. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefs`.
+- **FTEF-34.16** An `OP_IFNOT_I` of the temporary the statement before made with `OP_NOT_F`,
+  `OP_NOT_FNC` or `OP_NOT_ENT` replaces that statement with one `OP_IF_I` of the `NOT`'s
+  operand, the default `shortenifs` optimisation ("if (!a) was traditionally compiled in two
+  statements. This optimisation does it in one"): `if (opt_shortenifnots && var_a.cast &&
+  var_a.sym->temp && var_a.sym->refcount == 1 && (statements[numstatements-1].op == OP_NOT_F ||
+  ... OP_NOT_FNC || ... OP_NOT_ENT))`, then `op = &pr_opcodes[OP_IF_I]; numstatements--;` and
+  `var_a = statements[numstatements].a;` (`OP_IF_F` on a target that has it, none here). So the
+  tests of `if`, `while`, `for` and `c ? a : b` shorten, and `if (!x)` of a float `x` that is
+  `-0.0` branches past the body, since `OP_IF` tests the word's bits; `c ?: b`, `&&` and `||`
+  keep their operand (`STFL_PRESERVEA`, a second reference) and do not, nor does a `NOT_S` or
+  `NOT_V`, nor the `OP_IF` of `do ... while`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags`, `QCC_Generate_OP_IFNOT`; `engine/qclib/qccmain.c`, `optimisations[]`.

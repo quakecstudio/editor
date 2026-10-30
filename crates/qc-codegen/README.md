@@ -58,9 +58,11 @@ QCD-4.7). The precache lists `qcc -copy` reads are kept beside the progs (QC-26)
 
 ## What it is not, yet
 
-Under FTEQCC it lowers what the six rerelease codebases use, on the vanilla opcodes, which is
-all the rerelease needs (FTE-1.1); FTE's extended format and the rest of FTEQCC are not
-lowered, and neither is a store through an array subscript by a value (FTE-13.7).
+Under FTEQCC it lowers what the six rerelease codebases and most of the corpus mods' server
+modules use, on the vanilla opcodes (FTE-1.1); FTE's extended opcodes and the rest of FTEQCC
+are not lowered: among them a function defined inside another, a read through a pointer, a
+compound assignment to an element its setter stores, and casts that convert between basic
+types.
 `cargo xtask codegen-corpus <dir>...` compiles codebases under the FTEQCC profile.
 
 ## Tests
@@ -76,7 +78,7 @@ lowered, and neither is a store through an array subscript by a value (FTE-13.7)
   with id's `qcc` and with this crate, `--opt fold` off and on, and calls every function of
   each progs in `qc-vm` from the differential scenarios' worlds: no divergence, and at least
   90% of `qcc`'s statements executed. `--full` also compiles the rerelease with the pinned
-  FTEQCC and with this crate in the FTEQCC dialect, held to the same bar (DIFF-12.8, DIFF-12.9);
+  FTEQCC and with this crate in the FTEQCC dialect, held to the same bar (DIFF-12.14, DIFF-12.11);
   the mission packs and CTF are compared when named, until they pass (P2-150).
 - `cargo xtask oracles codegen` compiles the hand-written programs of
   `xtask/src/oracles/codegen/cases.rs` and 300 generated ones with both compilers: the two

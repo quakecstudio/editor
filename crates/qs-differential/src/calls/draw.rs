@@ -84,6 +84,15 @@ impl Context {
         for (n, draw) in self.parms.iter().enumerate() {
             write_globals(host, n.saturating_mul(3).saturating_add(OFS_PARM0), draw);
         }
+        // DIFF-12.12: the slots past the drawn parameters are cleared, so neither call reads
+        // what earlier calls of its progs left there.
+        let past = self.parms.len().saturating_mul(3).saturating_add(OFS_PARM0);
+        let end = MAX_PARMS.saturating_mul(3).saturating_add(OFS_PARM0);
+        for slot in past..end {
+            if let Ok(slot) = i32::try_from(slot) {
+                host.set_global_slot(slot, Slot::ZERO);
+            }
+        }
     }
 }
 
@@ -155,10 +164,52 @@ pub(super) struct Drawer<'a, 'p> {
     /// The named globals a value may be drawn for: float and string globals whose value in
     /// the progs is 0, so variables rather than constants, outside slot 0 and in a slot no
     /// other float or string definition names, as FTEQCC's merged constants share one
-    /// (DIFF-12.2, DIFF-12.9).
+    /// (DIFF-12.2, DIFF-12.11).
     variables: Vec<(Vec<u8>, DefType)>,
     /// The named fields of a type a value is drawn for.
     fields: Vec<(Vec<u8>, DefType)>,
+    /// For each QuakeC function by its first statement, the edicts in use whose function
+    /// fields (`think`, `touch`, `use` and the rest) hold it (DIFF-12.15).
+    owners: BTreeMap<i32, Vec<usize>>,
+}
+
+/// DIFF-12.15: each QuakeC function, by its first statement, with the edicts in use whose
+/// named fields of function type hold it, in edict order.
+pub(super) fn owners(world: &World<'_, '_, '_>, progs: &Progs<'_>) -> BTreeMap<i32, Vec<usize>> {
+    let functions: Vec<i32> = progs
+        .functions()
+        .iter()
+        .map(|f| f.first_statement)
+        .collect();
+    let slots: Vec<usize> = world
+        .program
+        .fields
+        .values()
+        .filter(|(def_type, _)| *def_type == DefType::Known(Etype::Function))
+        .map(|(_, slot)| *slot)
+        .collect();
+    let edicts = world.machine.edicts();
+    let mut owners: BTreeMap<i32, Vec<usize>> = BTreeMap::new();
+    for &edict in &world.in_use() {
+        for &slot in &slots {
+            let Some(value) = edicts.field(qc_edict::EdictNumber::new(edict), slot) else {
+                continue;
+            };
+            let Some(&first) = usize::try_from(value.bits())
+                .ok()
+                .and_then(|index| functions.get(index))
+            else {
+                continue;
+            };
+            if first > 0 {
+                let list = owners.entry(first).or_default();
+                if list.last() != Some(&edict) {
+                    list.push(edict);
+                }
+            }
+        }
+    }
+    owners
 }
 
 impl<'a, 'p> Drawer<'a, 'p> {
@@ -199,6 +250,7 @@ impl<'a, 'p> Drawer<'a, 'p> {
         for def in progs.global_defs().iter() {
             types.entry(def.ofs).or_insert(def.def_type());
         }
+        let owners = owners(world, progs);
         let slots = progs
             .global_defs()
             .iter()
@@ -211,10 +263,16 @@ impl<'a, 'p> Drawer<'a, 'p> {
             types,
             bodies: bodies(progs),
             edicts: world.in_use(),
+            owners,
             clients: u64::from(world.host.scenario.clients),
             variables,
             fields,
         }
+    }
+
+    /// The statement after the last of the body that starts at `first` (DIFF-11.3).
+    pub(super) fn body_end(&self, first: i32) -> i32 {
+        self.bodies.get(&first).copied().unwrap_or(first)
     }
 
     /// The constants the statements of `function` name as operands (DIFF-12.2).
@@ -290,7 +348,12 @@ impl<'a, 'p> Drawer<'a, 'p> {
         (function, own): (Function, &Pools),
         round: u32,
     ) -> Context {
-        let self_edict = self.edict_or_client(rng, 4);
+        // DIFF-12.15: one time in two `self` is an edict that holds the function in a field,
+        // as the engine calls a `think` or `touch` on its own edict.
+        let self_edict = match self.owners.get(&function.first_statement) {
+            Some(owners) if rng.below(2) == 0 => rng.pick(owners).copied().unwrap_or(0),
+            _ => self.edict_or_client(rng, 4),
+        };
         let other_edict = self.edict_or_client(rng, 2);
         let share = match round % 4 {
             0 => 0,

@@ -8,12 +8,14 @@
 //! progs.dat tables `WriteData` writes.
 
 use qc_progs::crc::crc_block;
+use qc_progs::opcode::Opcode;
 use qc_progs::{Def as DefRecord, PROGS_DEF_SAVEGLOBAL, ProgsFile};
+use qc_sema::{ModuleIndex, StructShape};
 use qc_types::{Etype, Slot};
 
 use crate::Internal;
 use crate::compile::latin1;
-use crate::program::{Def, Program, RESERVED_OFS};
+use crate::program::{Def, Program, RESERVED_OFS, ValueType, type_words};
 
 /// `PR_WriteProgdefs` (QC-25.5, QC-25.6): the text of `progdefs.h` and the CRC of it up to the
 /// `#define` line, which is appended with that CRC.
@@ -89,13 +91,110 @@ fn skip_components<'d>(def: &Def, defs: &mut std::iter::Peekable<impl Iterator<I
 /// table first, each name copied to the string table again (QC-25.3, QC-25.4). A global is
 /// marked to be saved when it is not initialised, not a function or field and not local
 /// (QC-21.6). The string table is padded to a multiple of 4 (QC-25.4).
-pub(crate) fn progs(mut program: Program, crc: u16) -> Result<ProgsFile, Internal> {
+/// FTE-24.1: whether FTEQCC writes `progs` in the 32-bit layout, for more than 65530 globals or
+/// a `GOTO` offset past `0x7fff`.
+pub(crate) fn needs_fte32(progs: &ProgsFile) -> bool {
+    const FTE32_GLOBALS: usize = 65530;
+    const BIG_JUMP: i32 = 0x7fff;
+    let goto = u32::from(Opcode::Goto.number());
+    progs.globals.len() > FTE32_GLOBALS
+        || progs
+            .statements
+            .iter()
+            .any(|statement| statement.op == goto && !(-BIG_JUMP..=BIG_JUMP).contains(&statement.a))
+}
+
+/// FTE-13.13: the records of the array element `name` of type `ty` at `ofs`: its own, a struct
+/// element's typed `ev_struct`, then each member's that starts at a word, `name.member`, an
+/// array member as one record.
+fn element_records(
+    out: &mut Vec<DefRecord>,
+    program: &mut Program,
+    index: &ModuleIndex,
+    (name, ty, ofs): (&str, &ValueType, u32),
+) -> Result<(), Internal> {
+    let shape = match ty {
+        ValueType::Of(t) => index.structs.get(t),
+        ValueType::FloatField => None,
+    };
+    let type_bits = if shape.is_some() {
+        EV_STRUCT
+    } else {
+        u32::from(ty.etype().number())
+    };
+    out.push(DefRecord {
+        type_bits,
+        ofs,
+        s_name: program.copy_string(&latin1(name))?,
+    });
+    if let Some(shape) = shape {
+        member_records(out, program, name, shape, ofs)?;
+    }
+    Ok(())
+}
+
+/// FTE-13.13: the records of the members of the struct value `name` at `ofs`, `name.member`,
+/// each member that starts at a word, an array member as one record.
+fn member_records(
+    out: &mut Vec<DefRecord>,
+    program: &mut Program,
+    name: &str,
+    shape: &StructShape,
+    ofs: u32,
+) -> Result<(), Internal> {
+    for member in &shape.members {
+        let at = ofs.checked_add(member.word).ok_or(Internal::TooLarge)?;
+        out.push(DefRecord {
+            type_bits: u32::from(ValueType::Of(member.ty.clone()).etype().number()),
+            ofs: at,
+            s_name: program.copy_string(&latin1(&format!("{name}.{}", member.name)))?,
+        });
+    }
+    Ok(())
+}
+
+/// FTE-24.2: each version 6 operand from 32768 to 65535 as the `short` its low 16 bits are.
+pub(crate) fn wrap_short_operands(progs: &mut ProgsFile) {
+    const SHORT_SPAN: i32 = 0x1_0000;
+    for statement in &mut progs.statements {
+        for operand in [&mut statement.a, &mut statement.b, &mut statement.c] {
+            if (0x8000..SHORT_SPAN).contains(operand) {
+                *operand = operand.wrapping_sub(SHORT_SPAN);
+            }
+        }
+    }
+}
+
+/// How the global definition list is written (FTE-13.13).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Records {
+    /// A record for each definition, as id's `qcc` writes them.
+    Qcc,
+    /// As FTEQCC writes them: an array's or a struct's head left out, for a record for each
+    /// element, a struct element's members after it, or for each of a struct's members.
+    Fteqcc,
+}
+
+/// FTEQCC's `ev_struct`, the type an element of an array of structs is written with
+/// (`progslib.h`'s `etype_t`).
+const EV_STRUCT: u32 = 14;
+
+pub(crate) fn progs(
+    mut program: Program,
+    crc: u16,
+    index: &ModuleIndex,
+    records: Records,
+) -> Result<ProgsFile, Internal> {
     let mut global_defs = vec![DefRecord::default()];
     let mut field_defs = vec![DefRecord::default()];
     let defs = std::mem::take(&mut program.defs);
     for def in &defs {
         let etype = def.ty.etype();
-        if let Some(inner) = def.ty.field_inner() {
+        // FTE-13.14: FTEQCC writes a field's definition only for a constant at file level or
+        // initialised, so a parameter of a field type makes none.
+        let field_record =
+            records == Records::Qcc || (def.constant && (def.scope.is_none() || def.initialized));
+        if let Some(inner) = def.ty.field_inner().filter(|_| field_record) {
             field_defs.push(DefRecord {
                 type_bits: u32::from(inner.etype().number()),
                 ofs: program.word(def.ofs),
@@ -106,6 +205,27 @@ pub(crate) fn progs(mut program: Program, crc: u16) -> Result<ProgsFile, Interna
             && etype != Etype::Function
             && etype != Etype::Field
             && def.scope.is_none();
+        if records == Records::Fteqcc
+            && let Some(count) = def.count
+        {
+            let words = type_words(index, &def.ty);
+            for i in 0..count {
+                let ofs = i
+                    .checked_mul(words)
+                    .and_then(|w| w.checked_add(def.ofs))
+                    .ok_or(Internal::TooLarge)?;
+                let name = format!("{}[{i}]", def.name);
+                element_records(&mut global_defs, &mut program, index, (&name, &def.ty, ofs))?;
+            }
+            continue;
+        }
+        if records == Records::Fteqcc
+            && let ValueType::Of(t) = &def.ty
+            && let Some(shape) = index.structs.get(t)
+        {
+            member_records(&mut global_defs, &mut program, &def.name, shape, def.ofs)?;
+            continue;
+        }
         let mut type_bits = u32::from(etype.number());
         if saved {
             type_bits |= PROGS_DEF_SAVEGLOBAL;

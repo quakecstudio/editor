@@ -14,6 +14,7 @@
 //! statements as `PR_Statement` does, a new temporary for every result (QC-21.5).
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use qc_progs::opcode::Opcode;
 use qc_progs::{Function, Statement};
@@ -92,6 +93,23 @@ impl ValueType {
         }
     }
 
+    /// A pointer to a value of this type, `QCC_PR_PointerType` (FTEF-31.4).
+    pub(crate) fn pointer_to(&self) -> Self {
+        let inner = match self {
+            Self::FloatField => Type::Field(Rc::new(Type::Simple(SimpleType::Float))),
+            Self::Of(ty) => ty.clone(),
+        };
+        Self::Of(Type::Pointer(Rc::new(inner)))
+    }
+
+    /// For a pointer type, the type of what it points to (FTEF-6.18).
+    pub(crate) fn pointee(&self) -> Option<Self> {
+        match self {
+            Self::Of(Type::Pointer(inner)) => Some(Self::Of(Type::clone(inner))),
+            Self::Of(_) | Self::FloatField => None,
+        }
+    }
+
     /// For a function type, the function's type (QC-18.8).
     pub(crate) fn function(&self) -> Option<&FunctionType> {
         match self {
@@ -116,7 +134,10 @@ pub(crate) struct Def {
     /// Whether it has been initialised so far (QC-11.5): set where the initialiser is met, so a
     /// literal only reuses a constant initialised before it (QC-20.2).
     pub(crate) initialized: bool,
-    /// An array's elements, `arraysize`; `None` for no array (FTE-13.5).
+    /// Whether the semantic model makes it a constant (`def->constant`): under FTEQCC only a
+    /// constant's word may hold a literal (FTE-20.5).
+    pub(crate) constant: bool,
+    /// An array's elements, `arraysize`; `None` for no array (FTE-13.10).
     pub(crate) count: Option<u32>,
     /// The semantic model's definition it is; `None` for a literal and one the compiler makes.
     pub(crate) id: Option<DefId>,
@@ -144,6 +165,17 @@ impl Literal {
     }
 }
 
+/// Which definitions a literal may share a word with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LiteralSharing {
+    /// Any initialised definition, as id's `qcc`, whose initialised definitions are all
+    /// constants (QC-20.2).
+    Initialised,
+    /// Only a constant: FTEQCC's immediates are shared among themselves (`floatconstdefstable`),
+    /// and a constant takes an immediate's place when its value folds (FTE-20.5, FTEF-34.15).
+    Constants,
+}
+
 /// The program as compiled so far.
 #[derive(Debug)]
 pub(crate) struct Program {
@@ -167,6 +199,8 @@ pub(crate) struct Program {
     pub(crate) functions: Vec<Function>,
     /// The entity fields allocated so far, `pr.size_fields` (QC-21.3).
     pub(crate) size_fields: u32,
+    /// Which definitions a literal may share a word with.
+    pub(crate) literal_sharing: LiteralSharing,
 }
 
 impl Program {
@@ -184,6 +218,7 @@ impl Program {
             origin: None,
             functions: vec![Function::default()],
             size_fields: 0,
+            literal_sharing: LiteralSharing::Initialised,
         }
     }
 
@@ -291,11 +326,12 @@ impl Program {
             ofs,
             scope: definition.owner,
             initialized: false,
+            constant: index.constants.contains(&id),
             count,
             id: Some(id),
         });
         self.places.insert(id, place);
-        // FTE-13.5: an array takes its elements' words in turn, a vector array's with no
+        // FTE-13.10: an array takes its elements' words in turn, a vector array's with no
         // component definitions; FTE-14.5: a struct takes its layout's words.
         if let Some(count) = count {
             if ty.field_inner().is_some() {
@@ -332,6 +368,40 @@ impl Program {
         Ok(place)
     }
 
+    /// FTEF-19.76: makes the field at `place` name the entity field the field at `other`
+    /// names: its word becomes `other`'s, a vector field's components each their
+    /// counterpart's, and the field space `get_def` allocated for it, when it was the last
+    /// allocated, is given back, since FTEQCC allocates none for a field defined with a value.
+    pub(crate) fn alias_field(
+        &mut self,
+        index: &ModuleIndex,
+        place: usize,
+        other: usize,
+    ) -> Result<(), Internal> {
+        let def = self.defs.get(place).ok_or(Internal::NoDefinition)?;
+        let inner = def.ty.field_inner().ok_or(Internal::Unsupported)?;
+        let (own, id) = (self.word(def.ofs), def.id);
+        let source = self.defs.get(other).ok_or(Internal::NoDefinition)?;
+        if source.ty != def.ty {
+            return Err(Internal::Unsupported);
+        }
+        let (target, source_id) = (self.word(source.ofs), source.id);
+        if inner.etype() == Etype::Vector {
+            let (id, source_id) = id.zip(source_id).ok_or(Internal::NoDefinition)?;
+            for suffix in COMPONENTS {
+                let mine = component(index, id, suffix).ok_or(Internal::NoDefinition)?;
+                let theirs = component(index, source_id, suffix).ok_or(Internal::NoDefinition)?;
+                let (mine, theirs) = (self.get_def(index, mine)?, self.get_def(index, theirs)?);
+                let word = self.word(self.def(theirs).ok_or(Internal::NoDefinition)?.ofs);
+                self.initialise_words(mine, &[word])?;
+            }
+        }
+        if own.checked_add(inner.words()) == Some(self.size_fields) {
+            self.size_fields = own;
+        }
+        self.initialise_words(place, &[target])
+    }
+
     /// Marks the definition at `place` initialised and stores `literal` in its words, as
     /// `PR_ParseDefs` copies `pr_immediate` (QC-11.6, QC-11.10). A string's text is copied to
     /// the string table first and the definition holds its offset, where id's `qcc` stores a
@@ -358,9 +428,27 @@ impl Program {
             ofs,
             scope: None,
             initialized: false,
+            constant: false,
             count: None,
             id: None,
         });
+        Ok(place)
+    }
+
+    /// [`Program::generated`] of an array of `count` elements of `ty`, FTEQCC's `__va_list`
+    /// (FTE-18.6).
+    pub(crate) fn generated_array(
+        &mut self,
+        name: &str,
+        ty: ValueType,
+        count: u32,
+    ) -> Result<usize, Internal> {
+        let words = ty.words().checked_mul(count).ok_or(Internal::TooLarge)?;
+        let place = self.generated(name, ty, words)?;
+        self.defs
+            .get_mut(place)
+            .ok_or(Internal::NoDefinition)?
+            .count = Some(count);
         Ok(place)
     }
 
@@ -391,7 +479,11 @@ impl Program {
     pub(crate) fn immediate(&mut self, literal: &Literal) -> Result<usize, Internal> {
         let ty = literal.ty();
         let found = self.defs.iter().position(|d| {
-            d.initialized && d.count.is_none() && d.ty == ty && self.holds(d.ofs, literal)
+            d.initialized
+                && (d.constant || self.literal_sharing == LiteralSharing::Initialised)
+                && d.count.is_none()
+                && d.ty == ty
+                && self.holds(d.ofs, literal)
         });
         if let Some(place) = found {
             return Ok(place);
@@ -404,6 +496,7 @@ impl Program {
             ofs,
             scope: None,
             initialized: true,
+            constant: true,
             count: None,
             id: None,
         });
@@ -452,6 +545,12 @@ impl Program {
     ) -> Result<u32, Internal> {
         let words = if result == Etype::Vector { 3 } else { 1 };
         let c = self.allocate(words)?;
+        self.emit_into(op, a, b, c)?;
+        Ok(c)
+    }
+
+    /// `QCC_PR_SimpleStatement`: `op` of `a` and `b` into the global `c` the caller chose.
+    pub(crate) fn emit_into(&mut self, op: Opcode, a: u32, b: u32, c: u32) -> Result<(), Internal> {
         self.origins.push(self.origin);
         self.statements.push(Statement {
             op: u32::from(op.number()),
@@ -459,7 +558,7 @@ impl Program {
             b: operand(b)?,
             c: operand(c)?,
         });
-        Ok(c)
+        Ok(())
     }
 }
 
@@ -476,18 +575,25 @@ pub(crate) fn operand(ofs: u32) -> Result<i32, Internal> {
     i32::try_from(ofs).map_err(|_| Internal::TooLarge)
 }
 
-/// The component `suffix` of vector definition `vector`: the definition `PR_GetDef` finds for
-/// the component's name in the vector's scope, the first with that name that is a global or
-/// belongs to the same function (QC-12.2), which the semantic model made with the vector or
-/// before it (QC-11.7).
+/// The component `suffix` of vector definition `vector`: the one the semantic model made with
+/// the vector, at its name and in its function (QC-11.7); else the first with that name that
+/// is a global or belongs to the same function (QC-12.2).
 pub(crate) fn component(index: &ModuleIndex, vector: DefId, suffix: &str) -> Option<DefId> {
     let base = index.def(vector)?;
     let name = format!("{}{suffix}", base.name);
-    index
+    let named = |d: &&qc_sema::Definition| d.name == name && d.member_of.is_none();
+    // QC-11.7: the components are made at the vector's name, so a local vector's are its own,
+    // not a global's of the same names, such as a field `velocity`'s `velocity_z`.
+    let made_with = index
         .defs
         .iter()
-        .position(|d| {
-            d.name == name && d.member_of.is_none() && (d.owner.is_none() || d.owner == base.owner)
+        .position(|d| named(&d) && d.location == base.location && d.owner == base.owner);
+    made_with
+        .or_else(|| {
+            index
+                .defs
+                .iter()
+                .position(|d| named(&d) && (d.owner.is_none() || d.owner == base.owner))
         })
         .map(DefId)
 }

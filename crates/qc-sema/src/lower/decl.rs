@@ -710,6 +710,13 @@ pub(super) fn array_dim(
     )
 }
 
+/// FTEF-15.5: whether the declaration `decl` is a `wrap` definition, which replaces the
+/// definition before it and may call it as `prior`.
+#[must_use]
+pub fn declares_wrap(decl: &ast::Declaration) -> bool {
+    qualifiers_of(decl.syntax()).contains(&Qualifier::Wrap)
+}
+
 /// The qualifiers of the `Qualifier` children of `node` (FTEF-15.1), and of its attribute lists
 /// (FTEF-21.9), in order.
 pub(super) fn qualifiers_of(node: &SyntaxNode) -> Vec<Qualifier> {

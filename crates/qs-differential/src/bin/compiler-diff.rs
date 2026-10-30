@@ -14,7 +14,7 @@
 //! ```
 //!
 //! `--theirs` is the oracle compiler's progs: id's `qcc`'s for id 1.01, the pinned FTEQCC's
-//! for the rerelease (DIFF-12.8), named by `--oracle`, `qcc` when it is not given (DIFF-12.9). With `--summary`, a row of the results table is added to the
+//! for the rerelease (DIFF-12.14), named by `--oracle`, `qcc` when it is not given (DIFF-12.11). With `--summary`, a row of the results table is added to the
 //! file for each pair.
 //!
 //! `--mode fast` makes 32 rounds of calls to each function, `--mode full` 128 (DIFF-12.6).
@@ -30,13 +30,16 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use qs_differential::calls::{CodebaseReport, FAST_ROUNDS, FULL_ROUNDS, Oracle, run_codebase};
+use qs_differential::calls::{
+    CodebaseReport, FAST_ROUNDS, FULL_ROUNDS, Oracle, run_codebase, uncovered,
+};
 
 /// The divergences printed for each pair; the rest are counted.
 const PRINTED: usize = 10;
 
 const USAGE: &str = "usage: compiler-diff --mode <fast|full> --codebase <id> \
-                     [--oracle <qcc|fteqcc>] [--summary <file>] --theirs <progs> \
+                     [--oracle <qcc|fteqcc>] [--summary <file>] [--uncovered <file>] \
+                     --theirs <progs> \
                      --ours <progs> [--ours <progs>...]";
 
 fn main() -> ExitCode {
@@ -57,6 +60,8 @@ struct Options {
     codebase: String,
     oracle: Oracle,
     summary: Option<PathBuf>,
+    /// Where to write each function's statements the calls did not execute (DIFF-12.13).
+    uncovered: Option<PathBuf>,
     theirs: PathBuf,
     ours: Vec<PathBuf>,
 }
@@ -66,6 +71,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut codebase = None;
     let mut oracle = Oracle::Qcc;
     let mut summary = None;
+    let mut uncovered = None;
     let mut theirs = None;
     let mut ours = Vec::new();
     let mut rest = args.iter();
@@ -88,6 +94,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
                 };
             }
             "--summary" => summary = Some(PathBuf::from(value()?)),
+            "--uncovered" => uncovered = Some(PathBuf::from(value()?)),
             "--theirs" => theirs = Some(PathBuf::from(value()?)),
             "--ours" => ours.push(PathBuf::from(value()?)),
             other => return Err(format!("unknown argument {other:?}\n{USAGE}")),
@@ -101,6 +108,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
         codebase: codebase.ok_or(USAGE)?,
         oracle,
         summary,
+        uncovered,
         theirs: theirs.ok_or(USAGE)?,
         ours,
     })
@@ -127,6 +135,10 @@ fn run(args: &[String]) -> Result<bool, String> {
         let passed = print(&options.codebase, path, ours == theirs, &report);
         if let Some(summary) = &options.summary {
             add_row(summary, &options, path, &report)?;
+        }
+        if let Some(path) = &options.uncovered {
+            let text = uncovered(&theirs, &report.executed).map_err(|e| e.to_string())?;
+            std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
         }
         all_ok &= passed;
     }
@@ -182,7 +194,7 @@ fn print(codebase: &str, ours: &std::path::Path, same: bool, report: &CodebaseRe
 }
 
 /// Adds the row of `report`, our progs at `ours` against the oracle's, to the results table
-/// at `summary` (DIFF-12.8).
+/// at `summary` (DIFF-12.14).
 fn add_row(
     summary: &std::path::Path,
     options: &Options,
@@ -217,7 +229,7 @@ mod tests {
 
     use super::{Options, add_row};
 
-    // spec DIFF-12.8: each pair compared adds its row to the results table, after the rows
+    // spec DIFF-12.14: each pair compared adds its row to the results table, after the rows
     // already there.
     #[test]
     fn each_pair_adds_a_row_to_the_table() {
@@ -230,6 +242,7 @@ mod tests {
             codebase: "rerelease".to_owned(),
             oracle: Oracle::Fteqcc,
             summary: Some(summary.clone()),
+            uncovered: None,
             theirs: PathBuf::from("x/oracle.dat"),
             ours: Vec::new(),
         };

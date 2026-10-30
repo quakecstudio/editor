@@ -112,6 +112,10 @@ Vanilla `qcc` has no `switch`; the words `switch`, `case` and `default` are ordi
 - **FTE-3.4** Progs encoding: a `switch` lowers to a chain of equality tests and `GOTO`s over
   vanilla opcodes (`EQ_F` or the comparison for the switched type, `IFNOT`, `GOTO`), with no
   new opcode; a `break` becomes a `GOTO` to after the `switch`.
+- **FTE-3.5** A call's value switched on is copied out of the return global to a temporary
+  before the `GOTO` to the tests (`QCC_ClobberDef(NULL);` before `patch1 =
+  QCC_Generate_OP_GOTO();`), so a call in the body does not change the value the cases test:
+  `switch (ceil(t)) { case 1: centerprint(self, "a"); break; }` tests the copy.
 
 ## FTE-4 `break` and `continue`
 
@@ -336,7 +340,8 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   subscript to its array-access helper over vanilla opcodes (it does not use a version 7
   feature for the rerelease, FTE-1.1). The exact lowering is fixed by P2-06 and recorded in
   this section's vectors then.
-- **FTE-13.5** An array of `N` elements of `T` takes `N` times `T`'s words in consecutive
+- **FTE-13.5** **Withdrawn** 2026-10-30: it held each value of an aggregate initialiser to a
+  literal, where FTEQCC copies any constant's words; replaced by FTE-13.10. An array of `N` elements of `T` takes `N` times `T`'s words in consecutive
   globals from the definition's offset; a vector array makes no `_x`, `_y` or `_z`
   definitions. An aggregate initialiser writes element `k` at word `k` times the element's
   words, each value a literal (a frame macro is its number). A literal never shares an
@@ -347,7 +352,8 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   returns false when `QCC_SRef_EvalConst(ref->index)` ("can short it"). A constant index
   outside the array, which FTEQCC warns of and reads anyway (WARN_BOUNDS), is not lowered.
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`, `QCC_RefNeedsCalls`.
-- **FTE-13.7** A subscript by a float value on the vanilla opcodes, which have no `LOADA`,
+- **FTE-13.7** **Withdrawn** 2026-10-30: it said a store through a subscript by a value is not
+  lowered, which FTE-13.11 now lowers; replaced by FTE-13.12. A subscript by a float value on the vanilla opcodes, which have no `LOADA`,
   `GLOAD` or `FETCH_GBL`, calls the array's getter, `ArrayGet*NAME` of type `T(float)`
   (`QCC_LoadFromArray`, `accel` 0). The index is in words: `MUL_F` by the element's words when
   they are not 1 (`else if (t->size != 1)`), then `ADD_F` of a struct member's word (an `ADD_F`
@@ -373,6 +379,60 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   it an `int` constant (`QCC_MakeIntConst(arraysize)`), which the vanilla opcodes take only
   converted to a float, so the value read is the same; a deliberate divergence in the
   immediate's type. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
+- **FTE-13.10** An array of `N` elements of `T` takes `N` times `T`'s words in consecutive
+  globals from the definition's offset; a vector array makes no `_x`, `_y` or `_z`
+  definitions. An aggregate initialiser writes element `k` at word `k` times the element's
+  words, each value a constant whose words are copied (`const int *srcdata = (const
+  void*)QCC_SRef_EvalConst(tmp);`): a literal (a frame macro is its number), a constant's name,
+  or an expression that folds to one, so `const float f[2] = { IT_AXE, IT_SHOTGUN };` holds the
+  two constants' values. A literal never shares an array's word as it shares an initialised
+  constant's (QC-20.2). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_ParseInitializerType`,
+  `QCC_PR_GenerateInitializerType`.
+- **FTE-13.11** On the vanilla opcodes a store to an element by an index that is a value calls
+  the array's setter, `ArraySet*NAME` of type `void(float, T)`, made at the first such store
+  and emitted with the getters after every file in the order the two kinds were made
+  (`QCC_StoreToArray`; `qccmain.c` emits each `ArraySet*` definition by
+  `QCC_PR_EmitArraySetFunction`): the index in words is read as a getter's is (FTE-13.12), then
+  the value; a vector array's index is divided by 3 (`OP_DIV_F`); then `STORE_F` of the index to
+  the first parameter, the value to the second by its type, and `CALL2`. A null value is a float
+  0, or `'0 0 0'` for a vector array. The setter has the parameters `indexs___` and `value___`;
+  with bound checks on, `LT_F index, 0` and `IF`, then `GE_F index, slots` and `IF`, both to the
+  bounds error; then `QCC_PR_ArraySetRecurseDivide` over the slots: one slot `min` is `LT_F
+  index, min+1`, `IFNOT` over three statements (`st->b.ofs = 3;`), `STORE_V` of the value for a
+  vector array or else `STORE_F` to the slot's word, and `RETURN`; more are halved at `mid = min +
+  (max-min)/2`, with `LT_F index, mid+1` and `IFNOT` past the lower half when more than four
+  remain. The bounds error calls `error("bounds check failed\n")`, and `DONE` ends the function.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreToArray`, `QCC_PR_EmitArraySetFunction`, `QCC_PR_ArraySetRecurseDivide`.
+- **FTE-13.12** A subscript by a float value on the vanilla opcodes, which have no `LOADA`,
+  `GLOAD` or `FETCH_GBL`, calls the array's getter, `ArrayGet*NAME` of type `T(float)`
+  (`QCC_LoadFromArray`, `accel` 0). The index is in words: `MUL_F` by the element's words when
+  they are not 1 (`else if (t->size != 1)`), then `ADD_F` of a struct member's word (an `ADD_F`
+  of 0 is left out here). The argument is stored with `STORE_F` to the first parameter and
+  `CALL1` made; a vector array's index is divided by 3 first (`OP_DIV_F ... 3`); a value of
+  more than one word is read a word at a time, the index plus `w` for word `w`, each result
+  stored with `STORE_F` to a temporary. A store through a subscript by a value calls the
+  array's setter (FTE-13.11). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_LoadFromArray`,
+  `QCC_PR_ParseRefArrayPointer`.
+- **FTE-13.13** FTEQCC writes no definition for an array's head, only for its elements
+  (`QCC_WriteData`: "the head of an array/struct is never written. only, its member fields
+  are."), each made by `QCC_PR_DummyDef` and named `NAME[i]` (`QC_snprintfz(array,
+  sizeof(array), "[%i]", a);`) at the element's first word, typed as the element: an element of
+  an array of structs as `ev_struct` (14 in `progslib.h`'s `etype_t`), followed by each member's
+  definition, `NAME[i].member`; a vector array's elements have no `_x`, `_y` or `_z`. A struct
+  value, global or local, is written as its members alone, `NAME.member`. So `string s[2];`
+  writes `s[0]` and `s[1]`, and a local `pose p;` of a struct of `mdl` and `frame` writes
+  `p.mdl` and `p.frame`. This profile writes an element of an array of
+  unions as a struct's, as the model keeps no union apart from a struct, and a member that is an
+  array as one definition. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qccmain.c`, `QCC_WriteData`; `engine/qclib/qcc_pr_comp.c`, `QCC_PR_DummyDef`.
+- **FTE-13.14** A field's definition is written only for a constant field at file level, a
+  static one or one initialised (`else if (def->type->type == ev_field && def->constant &&
+  (!def->scope || def->isstatic || def->initialized)) { QCC_GenerateFieldDefs(def, def->name, 0,
+  def->type->aux_type); continue; }`), so a parameter of a field type, `void(.string field)
+  f`, makes no field definition. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qccmain.c`, `QCC_WriteData`.
 
 ## FTE-14 `typedef struct` and member access
 
@@ -397,14 +457,14 @@ Vanilla `qcc` has `void`, `float`, `vector`, `string` and `entity` only (QC-10.1
   rerelease (FTE-1.1); the exact layout is fixed by P2-06 and recorded then.
 - **FTE-14.5** A struct value takes its layout's words (FTEF-6.13), and `v.f` is the global at
   `v`'s offset plus the member's word, read and stored with no statement of its own; an array
-  element's member `a[i].f` is the element's word plus the member's (FTE-13.6, FTE-13.7).
+  element's member `a[i].f` is the element's word plus the member's (FTE-13.6, FTE-13.12).
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
 - **FTE-14.6** A struct value stored to another of its type is copied a word group at a time,
   `STORE_V` for each three words and `STORE_F` for the rest. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_StoreToRef`.
 - **FTE-14.7** A struct's aggregate initialiser `{ a, b }` writes each member's value at its
-  word in order, an array of structs one brace group per element (FTE-13.5). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  word in order, an array of structs one brace group per element (FTE-13.10). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseInitializerType`.
 
 ## FTE-15 `enum`
@@ -576,6 +636,52 @@ name (QC-10.3), and nothing follows the name.
   follows. `qc-codegen` copies a call's left operand to a temporary whether or not a call
   follows, which reads the same values. The rerelease's `dog_bite`
   (`rerelease/monsters/rottweiler.qc`) sums `random() + random() + random()`.
+- **FTE-18.6** A QC function with `...` copies the parameter slots after its named ones into a
+  static array of 24 vectors, `__va_list`, as its first statements, for `va_arg` to read
+  (`QCC_PR_ParseImmediateStatements`: `int maxvacount = 24;`, `va_list =
+  QCC_PR_GetSRef(type_vector, "__va_list", pr_scope, true, maxvacount, ...)` and for each `i` a
+  store of slot `i + num_parms`): `STORE_V` of each slot to `__va_list`'s element `i`, a slot
+  below 8 being `OFS_PARM0 + 3 * u` and a later one a vector global `$parmN` made the first
+  time it is needed. `rerelease-mg3`'s `float(...) SUB_True` makes one, written as its 24
+  elements (FTE-13.13). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseImmediateStatements`.
+- **FTE-18.7** A call passes a parameter's default value where its argument is left empty,
+  `f(a, , c)` (`else if (arg < t->num_parms && (QCC_PR_PeekToken (",") || QCC_PR_PeekToken
+  (")"))) ... e = QCC_DefToRef(&parambuf[arg], func.cast->params[arg].defltvalue);`), and for
+  each parameter after the last argument that has a default and is not `optional` (`while (arg
+  < np && func.cast->params[arg].defltvalue.cast && !func.cast->params[arg].optional)`), stored
+  to its slot as an argument is: `rerelease-mg1`'s `GetFogInfoEntity(source)` passes its
+  `.string field = fog_info_entity`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseFunctionCall`.
+- **FTE-18.8** With `-Fautoproto` a default value that names a definition is no default: the
+  first pass reads the function's type, which the second keeps (FTEF-19.6's comparison accepts a
+  default where the other has none), and initialises nothing, so `QCC_PR_ParseDefaultInitialiser`
+  finds the value uninitialised and gives none (`if (!ref.sym->initialized) { if
+  (autoprototype) return nullsref; ...`). A call then passes nothing for it (FTE-18.7 stops at
+  a parameter without a default), and `rerelease-mg3`'s `SUB_CountTargets(self)` leaves its
+  `predicate = (float(entity e))SUB_True` slot as it was, which FTEQCC's program then calls. A
+  literal, an immediate the first pass makes initialised, stays the default, and so does a
+  field, which its declaration gives its offset in the first pass (`rerelease-mg3`'s
+  `GetFogInfoEntity(e)` passes `.string field = fog_info_entity`); an enum item, which the first
+  pass also initialises, is not modelled as one. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefaultInitialiser`.
+- **FTE-18.9** Each argument is stored to its parameter slot by its own size once every
+  argument is read (`if (args[i].ref.cast->size == 3) ... OP_STORE_V ... else if
+  (args[i].ref.cast->size == 1) ... OP_STORE_F`), so a one-word argument leaves the slot's other
+  two words as they were, where vanilla `qcc` stores every argument by `STORE_V` (QC-18.3).
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`.
+- **FTE-18.10** A bare `return;` in a function that returns a value returns a local named
+  `ret*` of the return type, made at the first such `return` and returned by every later one
+  (`if (!pr_scope->returndef.cast) { //but if it does, allocate a local that can be return=foo;
+  before the return. depend upon qc's null initialisation rules for the default value.
+  pr_scope->returndef = QCC_PR_GetSRef(pr_scope->type->aux_type, "ret*", pr_scope, true, 0,
+  GDF_NONE);` and `QCC_PR_Statement (&pr_opcodes[OP_RETURN], pr_scope->returndef, ...)`); in a
+  `void` function it returns 0. `rerelease-hipnotic`'s and `rerelease-rogue`'s `FindTarget`
+  return so. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseStatement`.
 
 ## FTE-19 Further operators
 
@@ -638,6 +744,25 @@ and sets flags with `self.flags &~= FL_ONGROUND` and `other.flags (+) FL_INSHELT
   read as it is, `ifstring` being off by default. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_StatementFlags`.
+- **FTE-19.11** `a << b` and `a >> b` of floats are `OP_LSHIFT_F` and `OP_RSHIFT_F`. Two
+  constants fold, each truncated to an `int` and shifted (`QCC_MakeFloatConst
+  (QCC_PR_RoundFloatConst(eval_a) << QCC_PR_RoundFloatConst(eval_b))`, `dialect-fteqcc.md`
+  FTEF-26.2). Otherwise, on the vanilla opcodes, which have no `OP_LSHIFT_I`, they are emulated
+  with the program's functions (`QCC_PR_EmulationFunc`): with `powf`, or else `pow`, and
+  `floor`, `a << b` is `floor(a * pow(2, b))` ("a<<b === floor(a*pow(2,b))") and `a >> b`
+  `floor(a / pow(2, b))`: `CALL2` of the power with the float 2 and `b`, `MUL_F` or `DIV_F` of
+  `a` and its value, and `CALL1` of `floor`; else with `bitshift`, `bitshift(a, b)` and
+  `bitshift(a, 0 - b)` (`SUB_F` of 0 and `b` first); else the warning "bitshift function not
+  defined: cannot emulate OP_LSHIFT_F*", which this profile does not lower. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags`.
+- **FTE-19.12** `v & w` and `v | w` of vectors are `OP_BITAND_V` and `OP_BITOR_V`, emulated on
+  the vanilla opcodes as `BITAND_F` or `BITOR_F` of each component pair into the matching word of
+  a vector temporary (`QCC_PR_SimpleStatement(op, var_a, var_b, var_c, true); var_a.ofs++;
+  var_b.ofs++; var_c.ofs++;` three times), and `v ^ w` of vectors is `OP_BITXOR_V`'s `(a & ~b) |
+  (b & ~a)` with each `~` as `OP_BITNOT_V`, `'-1 -1 -1' - x` by `SUB_V`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags`.
 ## FTE-20 Further literals
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_Lex`, `QCC_PR_LexNumber` and `QCC_PR_LexEscapedCodepoint`,
@@ -663,6 +788,15 @@ escapes `\n` and `\"` only (QC-6.2).
   (`else if (c == 't') c = '\t';	//tab` and the rest). The rerelease uses `\t`
   (`rerelease-mg1/misc_corpses.qc`). FTEQCC's other escapes are the full dialect's
   (`dialect-fteqcc.md` FTEF-13.11).
+- **FTE-20.5** A number's immediate is shared only with an immediate of its size and bits
+  (`QCC_Make32bitConst`: `if (((QCC_eval_t*)cn->symboldata)->_uint == value) return
+  QCC_MakeSRefForce(cn, 0, type);` over `floatconstdefstable`, else a new `"IMMEDIATE"` with
+  `cn->constant = true;`), and a constant takes the immediate's place when its value folds
+  (`dialect-fteqcc.md` FTEF-34.15). So a literal never shares a variable's word, unlike id's
+  `qcc`, which shares any initialised definition's (QC-20.2): after `var float two = 2;` the
+  literal `2` is its own immediate, and a store to `two` does not change it. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_Make32bitConst`.
 
 ## FTE-21 Declarations and statements in a body
 
@@ -765,6 +899,15 @@ list starts empty in each file (QC-8.3).
   already defined keeps its first (QC-8.7). With `-Fautoproto` the frame macros of the first
   pass are still defined in the second, so a file may use a frame name a later file defines
   (`rerelease-mg3/misc_corpses.qc` uses `$CORPSEFRAME_PLAYER_6` from `rerelease-mg3/player.qc`).
+- **FTE-22.7** The first pass makes each definition the program declares at the top level, in
+  the order of the files and of their text, before the second pass compiles any body, and the
+  second keeps them (`pbool autoprototype; //take two passes over the source code. First time
+  round doesn't enter and functions or initialise variables.`): a function used in one file
+  and defined in a later one is defined among the later file's definitions, in the place its definition is written (`rerelease-mg3`'s
+  `cleanup_markers`, used in `weapons.qc` and defined in `client.qc` after `check_exits`). The
+  definitions of a function's body are made in the second pass. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`, the
+  `autoprototype` passes of `QCC_main` and `QCC_ContinueCompile`.
 
 ### Test vectors
 
@@ -1007,3 +1150,21 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   line number. A string (`#define N "ex_a"`) FTEQCC casts with the warning `W0220` "Implicit
   cast from string to void()" and makes no builtin function, as this profile makes none; the
   differential reads that as accepted with no builtin number.
+
+## FTE-24 The output format
+
+**Source:** `qccmain.c`, `QCC_WriteData`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+### Behaviour
+
+- **FTE-24.1** On the standard target a program is written in FTE's 32-bit layout (PROGS-20)
+  when it has more than 65530 globals (`else if (numpr_globals > 65530) ... outputsttype =
+  PST_FTE32;`) or a statement whose first operand is no symbol, a `GOTO`'s offset, is past
+  `0x7fff` either way (`if (!statements[i].a.sym && ((int)statements[i].a.ofs > 0x7fff ||
+  (int)statements[i].a.ofs < -0x7fff)) break;`, the test written three times for `a`, so an
+  `IF`'s or `IFNOT`'s offset in `b` is never tested); otherwise in version 6. Statements,
+  globals and definitions are the same either way.
+- **FTE-24.2** In version 6 each operand is written as its low 16 bits, `statements16[i].a =
+  (unsigned short)PRLittleShort((unsigned short)a);`, so a global from 32768 to 65530 is
+  written where id's `short` reads it as that global less 65536 (FTEQCC prints "Globals exceeds
+  32k - an enhanced QCVM will be required" and writes the file).

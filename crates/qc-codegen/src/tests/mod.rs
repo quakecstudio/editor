@@ -94,14 +94,25 @@ pub(crate) fn errors(source: &str) -> Vec<String> {
     }
 }
 
-/// The global offset of the first global definition named `name`.
+/// The lowest global offset of a definition named `name`; for an array or a struct,
+/// whose head FTEQCC does not write (FTE-13.13), its first element's, `name[0]`, or its first
+/// member's.
 pub(crate) fn global(progs: &ProgsFile, name: &str) -> i32 {
-    let def = progs
-        .global_defs
-        .iter()
-        .find(|d| string(progs, d.s_name) == name)
+    let first = format!("{name}[0]");
+    let member = format!("{name}.");
+    let named = |want: &dyn Fn(&str) -> bool| {
+        progs
+            .global_defs
+            .iter()
+            .filter(|d| want(&string(progs, d.s_name)))
+            .map(|d| d.ofs)
+            .min()
+    };
+    let ofs = named(&|n| n == name)
+        .or_else(|| named(&|n| n == first))
+        .or_else(|| named(&|n| n.starts_with(&member)))
         .unwrap_or_else(|| panic!("no global {name}"));
-    i32::try_from(def.ofs).unwrap()
+    i32::try_from(ofs).unwrap()
 }
 
 /// The global offset of the `IMMEDIATE` float definition holding `value`.

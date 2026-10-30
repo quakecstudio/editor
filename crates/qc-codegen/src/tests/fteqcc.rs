@@ -6,13 +6,13 @@
 
 use qc_progs::opcode::Opcode::{
     self, AddF, And, BitAnd, BitOr, Call1, Call2, Call3, DivF, Done, EqF, Goto, If, IfNot, Lt,
-    MulF, MulV, MulVf, NotV, Return, StoreF, StoreS, StoreV, SubF, SubV,
+    MulF, MulV, MulVf, NotF, NotS, NotV, Return, StoreF, StoreS, StoreV, SubF, SubV,
 };
 use qc_progs::{ProgsFile, Statement};
 
 use super::{
-    body, compile_fteqcc, fte_progs, function, global, immediate, immediate_string, st, string,
-    words,
+    body, compile_fteqcc, fte_progs, function, global, immediate, immediate_string,
+    immediate_vector, st, string, words,
 };
 use crate::{CompileError, Internal};
 
@@ -44,7 +44,7 @@ fn string_word(p: &ProgsFile, text: &str) -> u32 {
 
 const STRUCT: &str = "typedef struct { string m; float f; } P;\n";
 
-// spec FTE-13.5: an array takes its elements' words in turn, written from its aggregate
+// spec FTE-13.10: an array takes its elements' words in turn, written from its aggregate
 // initialiser; a vector array makes no component definitions
 #[test]
 fn an_array_is_its_elements_in_consecutive_globals() {
@@ -94,7 +94,7 @@ fn a_constant_index_outside_the_array_is_not_lowered() {
     );
 }
 
-// spec FTE-13.7: a subscript by a value calls the array's getter with the index
+// spec FTE-13.12: a subscript by a value calls the array's getter with the index
 #[test]
 fn a_subscript_by_a_value_calls_the_getter() {
     let p = fte_progs(
@@ -114,7 +114,7 @@ fn a_subscript_by_a_value_calls_the_getter() {
     );
 }
 
-// spec FTE-13.7: a struct element's member is read at the index times the element's words
+// spec FTE-13.12: a struct element's member is read at the index times the element's words
 // plus the member's word; a whole element a word at a time
 #[test]
 fn a_struct_elements_words_are_read_one_at_a_time() {
@@ -146,7 +146,7 @@ fn a_struct_elements_words_are_read_one_at_a_time() {
     assert_eq!(u[9], st(StoreF, temp + 1, q + 1, 0));
 }
 
-// spec FTE-13.7: a vector array's index in words is divided by 3 for the getter
+// spec FTE-13.12: a vector array's index in words is divided by 3 for the getter
 #[test]
 fn a_vector_elements_index_is_divided_by_three() {
     let p = fte_progs(
@@ -157,24 +157,6 @@ fn a_vector_elements_index_is_divided_by_three() {
     let three = immediate(&p, 3.0);
     assert_eq!((t[0].b, t[1].a, t[1].b), (three, t[0].c, three));
     assert_eq!(t[4], st(StoreV, 1, global(&p, "r"), 0));
-}
-
-// spec FTE-13.7: a store through a subscript by a value is not lowered
-#[test]
-fn a_store_through_a_subscript_by_a_value_is_not_lowered() {
-    let result = compile_fteqcc(
-        "void(string e) error = #10;\nfloat f[3];\nvoid(float i) t = { f[i] = 1; };\n",
-    );
-    assert!(
-        matches!(
-            result,
-            Err(CompileError::Internal {
-                internal: Internal::Unsupported,
-                ..
-            })
-        ),
-        "{result:?}"
-    );
 }
 
 // spec FTE-13.8: a getter checks the index is not negative, returns the word the ladder finds,
@@ -481,6 +463,22 @@ fn a_switch_tests_its_cases_after_its_body() {
     );
 }
 
+// spec FTE-3.5: a call's value switched on is copied out of the return global before the jump to
+// the tests, so a call in the body does not change what the cases test
+#[test]
+fn a_switch_holds_a_calls_value() {
+    let p = fte_progs(
+        "float() f = #1;\nvoid() g = #2;\nvoid() t = { switch (f()) { case 1: g(); break; } };\n",
+    );
+    let one = immediate(&p, 1.0);
+    let t = body(&p, "t");
+    assert_eq!(t[0].op, u32::from(Opcode::Call0.number()));
+    assert_eq!(t[1], st(StoreF, 1, t[1].b, 0));
+    assert_eq!(t[2].op, u32::from(Goto.number()));
+    let test = t.iter().find(|s| s.op == u32::from(EqF.number())).unwrap();
+    assert_eq!((test.a, test.b), (t[1].b, one));
+}
+
 // spec FTE-5.3: `x++` copies the old value to a temporary, stores the temporary plus 1 back,
 // and is the old value; a `x--` whose value is not read is one ADD_F (FTEF-29.13), as the
 // pinned FTEQCC writes both
@@ -510,6 +508,38 @@ fn prefix_operators_are_subtractions_and_stores() {
     assert_eq!(t[2], st(SubF, immediate(&p, -1.0), a, b));
     assert_eq!(t[3], st(AddF, a, immediate(&p, 1.0), a));
     assert_eq!(t[4], st(StoreF, a, b, 0));
+}
+
+// spec FTEF-34.16: an IFNOT of the temporary a NOT_F, NOT_FNC or NOT_ENT just made is one IF of
+// its operand in `if`, `while` and `c ? a : b`; a NOT_S and the kept condition of `c ?: b` are not
+#[test]
+fn an_ifnot_of_a_not_is_shortened_to_an_if() {
+    let p = fte_progs(concat!(
+        "float f, n; entity e; string s;\n",
+        "void() t = { if (!f) n = 1; while (!e) n = 2; if (!s) n = 3; n = !f ? 4 : 5; ",
+        "n = !f ?: 6; };\n",
+    ));
+    let (f, e) = (global(&p, "f"), global(&p, "e"));
+    let t = body(&p, "t");
+    assert_eq!(
+        opcodes(&t),
+        ops(&[
+            If, StoreF, If, StoreF, Goto, NotS, IfNot, StoreF, If, StoreF, Goto, StoreF, StoreF,
+            NotF, IfNot, StoreF, Goto, StoreF, StoreF, Done
+        ])
+    );
+    assert_eq!(t[0], st(If, f, 2, 0));
+    assert_eq!(t[2], st(If, e, 3, 0));
+    assert_eq!(t[8], st(If, f, 3, 0));
+    assert_eq!(t[14], st(IfNot, t[13].c, 3, 0));
+}
+
+// spec FTEF-34.16: id's qcc has no `shortenifs`; `if (!f)` stays NOT_F and IFNOT
+#[test]
+fn qcc_keeps_the_not_of_a_condition() {
+    let p = super::progs("float f, n;\nvoid() t = { if (!f) n = 1; };\n");
+    let t = body(&p, "t");
+    assert_eq!(opcodes(&t), ops(&[NotF, IfNot, StoreF, Done]));
 }
 
 // spec FTE-8.3: `c ? a : b` is IFNOT over the first arm's store and a GOTO over the second's,
@@ -616,13 +646,14 @@ fn extra_arguments_are_read_and_dropped() {
     let t = body(&p, "t");
     assert_eq!(
         opcodes(&t),
-        ops(&[AddF, StoreV, Call1, Opcode::Call0, Done])
+        ops(&[AddF, StoreF, Call1, Opcode::Call0, Done])
     );
-    assert_eq!(t[1], st(StoreV, global(&p, "a"), 4, 0));
+    assert_eq!(t[1], st(StoreF, global(&p, "a"), 4, 0));
 }
 
 // spec FTE-18.4: a call's value is copied out of the return global before a later argument
 // calls again, so neither call overwrites the other's slot
+// spec FTE-18.9: a one-word argument is stored to its slot by STORE_F
 #[test]
 fn a_call_in_an_argument_is_copied_before_the_next() {
     let p = fte_progs(
@@ -634,17 +665,17 @@ fn a_call_in_an_argument_is_copied_before_the_next() {
     assert_eq!(
         opcodes(&t),
         ops(&[
-            StoreV, Call1, StoreF, StoreV, Call1, StoreV, StoreV, Call2, Done
+            StoreF, Call1, StoreF, StoreF, Call1, StoreF, StoreF, Call2, Done
         ])
     );
     assert_eq!(t[1], st(Call1, g, 0, 0));
     let copy = t[2].b;
     assert_eq!(t[2], st(StoreF, 1, copy, 0));
-    assert_eq!(t[5], st(StoreV, copy, 4, 0));
-    assert_eq!(t[6], st(StoreV, 1, 7, 0));
+    assert_eq!(t[5], st(StoreF, copy, 4, 0));
+    assert_eq!(t[6], st(StoreF, 1, 7, 0));
 }
 
-// spec FTE-22.3: a name used before its definition is read is made where it is first used
+// spec FTE-22.3: a name used before its definition is read resolves to that definition
 #[test]
 fn a_name_used_before_its_definition_is_made_there() {
     let p = fte_progs("#pragma autoproto\nvoid() t = { later = 1; };\nfloat later;\n");
@@ -868,7 +899,7 @@ fn continue_in_a_switch_in_a_do_loop_belongs_to_the_loop() {
     assert_eq!(t[1], st(Goto, i32::try_from(condition).unwrap() - 1, 0, 0));
 }
 
-// spec FTE-13.7: an initialised `var` is no constant, so its subscript calls the getter
+// spec FTE-13.12: an initialised `var` is no constant, so its subscript calls the getter
 #[test]
 fn a_variable_index_calls_the_getter() {
     let p = fte_progs(
@@ -878,7 +909,7 @@ fn a_variable_index_calls_the_getter() {
     assert!(opcodes(&body(&p, "t")).contains(&u32::from(Call1.number())));
 }
 
-// spec FTE-13.5: an array initialised with fewer values than elements leaves the rest 0
+// spec FTE-13.10: an array initialised with fewer values than elements leaves the rest 0
 #[test]
 fn a_short_array_initialiser_leaves_the_rest_zero() {
     let p = fte_progs("float f[3] = { 1 };\n");
@@ -980,4 +1011,617 @@ fn an_fteqcc_record_counts_its_parameters_among_its_locals() {
     assert_eq!(function(&p, "g").locals, 2);
     let vanilla = super::progs(source);
     assert_eq!(function(&vanilla, "f").locals, 0);
+}
+
+// spec FTEF-19.76: a field defined with another field as its value names the same entity
+// field, and takes no field space of its own
+#[test]
+fn a_field_defined_with_a_field_names_the_same_field() {
+    let p = fte_progs(".float length;\n.float t_length = length;\n.float after;\nvoid() t = {};\n");
+    let word = |name: &str| p.globals[usize::try_from(global(&p, name)).unwrap()].bits();
+    assert_eq!(word("t_length"), word("length"));
+    assert_eq!(
+        word("after"),
+        word("length") + 1,
+        "no slot was taken for t_length"
+    );
+    let fields: Vec<(String, u32)> = p
+        .field_defs
+        .iter()
+        .map(|f| (string(&p, f.s_name).to_owned(), f.ofs))
+        .collect();
+    assert!(
+        fields.contains(&("t_length".to_owned(), word("length"))),
+        "{fields:?}"
+    );
+}
+
+// spec FTEF-19.76: a vector field defined with another names its three words, each component
+// its counterpart's
+#[test]
+fn a_vector_field_defined_with_another_names_its_words() {
+    let p = fte_progs(
+        ".vector fog_color;\n.vector fadecolor = fog_color;\n.float after;\nvoid() t = {};\n",
+    );
+    let word = |name: &str| p.globals[usize::try_from(global(&p, name)).unwrap()].bits();
+    assert_eq!(word("fadecolor"), word("fog_color"));
+    for axis in ["_x", "_y", "_z"] {
+        assert_eq!(
+            word(&format!("fadecolor{axis}")),
+            word(&format!("fog_color{axis}"))
+        );
+    }
+    assert_eq!(word("fog_color_z") - word("fog_color_x"), 2);
+    assert_eq!(
+        word("after"),
+        word("fog_color") + 3,
+        "no slots were taken for fadecolor"
+    );
+}
+
+// spec FTEF-34.15: a constant whose initialiser folded is that value where it is named, so a
+// later constant made from it folds too
+#[test]
+fn a_folded_constant_folds_where_it_is_named() {
+    let p = fte_progs(
+        "static const float A = 8;\nstatic const float P = 1<<A;\nstatic const float R = P - 1;\n\
+         float(float x) g = { return x & R; };\n",
+    );
+    let value =
+        |name: &str| f32::from_bits(p.globals[usize::try_from(global(&p, name)).unwrap()].bits());
+    assert_eq!(value("P"), 256.0);
+    assert_eq!(value("R"), 255.0);
+}
+
+// spec FTEF-31.4: the address of an entity's field is its OP_ADDRESS, a pointer to the field's
+// type, so its store to a pointer folds into it (FTEF-29.13)
+#[test]
+fn the_address_of_an_entitys_field_is_its_address() {
+    let p = fte_progs(
+        "entity world;\n.float sounds;\nfloat *cd;\nvoid() t = { cd = &world.sounds; };\n",
+    );
+    let (w, f, cd) = (global(&p, "world"), global(&p, "sounds"), global(&p, "cd"));
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(Opcode::Address, w, f, cd));
+    assert_eq!(t[1].op, u32::from(Done.number()));
+}
+
+// spec FTEF-6.18: a float or vector stored through a pointer is its OP_STOREP_F or OP_STOREP_V
+// to the pointer
+#[test]
+fn a_store_through_a_pointer_is_its_storep() {
+    let p = fte_progs("float *p; vector *q; float f; vector v;\nvoid() t = { *p = f; *q = v; };\n");
+    let g = |name| global(&p, name);
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(Opcode::StorepF, g("f"), g("p"), 0));
+    assert_eq!(t[1], st(Opcode::StorepV, g("v"), g("q"), 0));
+}
+
+// spec FTE-13.10: an aggregate initialiser's value may be a constant's name, its words copied
+#[test]
+fn an_array_initialiser_copies_named_constants() {
+    let p = fte_progs(
+        "float A = 4; vector V = '1 2 3';\nconst float f[2] = { A, 7 };\n\
+         const vector v[1] = { V };\nvoid() t = {};\n",
+    );
+    let at = |name: &str, i: i32| {
+        let ofs = global(&p, name).checked_add(i).unwrap();
+        f32::from_bits(p.globals[usize::try_from(ofs).unwrap()].bits())
+    };
+    assert_eq!((at("f", 0), at("f", 1)), (4.0, 7.0));
+    assert_eq!((at("v", 0), at("v", 1), at("v", 2)), (1.0, 2.0, 3.0));
+}
+
+// spec FTEF-30.7: a vector constructor of constants is the vector immediate, two null components
+// the unit vector times the third by MUL_VF, and otherwise each component stored by STORE_F, a
+// missing component the float 0
+#[test]
+fn a_vector_constructor_builds_its_vector() {
+    let p = fte_progs(
+        "float a, b; vector v;\nvoid() t = { v = [1, 2]; v = [0, a]; v = [a, b, 3]; };\n",
+    );
+    let g = |name| global(&p, name);
+    let t = body(&p, "t");
+    assert_eq!(
+        t[0],
+        st(StoreV, immediate_vector(&p, [1.0, 2.0, 0.0]), g("v"), 0)
+    );
+    assert_eq!(
+        t[1],
+        st(
+            Opcode::MulVf,
+            immediate_vector(&p, [0.0, 1.0, 0.0]),
+            g("a"),
+            g("v")
+        )
+    );
+    let temp = t[2].b;
+    assert_eq!(t[2], st(StoreF, g("a"), temp, 0));
+    assert_eq!(t[3], st(StoreF, g("b"), temp + 1, 0));
+    assert_eq!(t[4], st(StoreF, immediate(&p, 3.0), temp + 2, 0));
+    assert_eq!(t[5], st(StoreV, temp, g("v"), 0));
+}
+
+// spec FTEF-30.13: a call's value in a vector constructor is copied out of the return global
+// when a later component makes a call
+#[test]
+fn a_vector_constructor_holds_a_call_before_another() {
+    let p = fte_progs("float() f = #1;\nvector v;\nvoid() t = { v = [f(), f()]; };\n");
+    let t = body(&p, "t");
+    assert_eq!(t[0].op, u32::from(Opcode::Call0.number()));
+    assert_eq!(t[1], st(StoreF, 1, t[1].b, 0));
+    assert_eq!(t[2].op, u32::from(Opcode::Call0.number()));
+    assert_eq!(t[3].a, t[1].b);
+    assert_eq!(t[4].a, 1);
+}
+
+// spec FTE-24.1: more than 65530 globals make FTEQCC's program the 32-bit layout
+#[test]
+fn a_program_of_many_globals_is_32_bit() {
+    let p = fte_progs("float big[65531];\nvoid() t = {};\n");
+    assert_eq!(p.format, qc_progs::Format::Fte32);
+    assert!(qc_progs::write(&p).is_ok());
+    assert_eq!(fte_progs("void() t = {};\n").format, qc_progs::Format::V6);
+}
+
+// spec FTE-24.2: a global past 32767 in a version 6 program is its operand's low 16 bits
+#[test]
+fn a_global_past_32767_is_its_low_bits_in_version_6() {
+    let p = fte_progs("float big[40000];\nfloat x;\nvoid() t = { x = 1; };\n");
+    assert_eq!(p.format, qc_progs::Format::V6);
+    let x = global(&p, "x");
+    assert!(x > 0x8000);
+    let store = body(&p, "t")[0];
+    assert_eq!(store.b, x.wrapping_sub(0x1_0000));
+    assert!(qc_progs::write(&p).is_ok());
+}
+
+// spec FTEF-19.31: a null in an aggregate initialiser, `__NULL__`, is the zero of the element's
+// type
+#[test]
+fn a_null_in_an_aggregate_is_zero() {
+    let p = fte_progs("const string s[2] = { \"a\", __NULL__ };\nvoid() t = {};\n");
+    let at = global(&p, "s");
+    let word = |i: i32| p.globals[usize::try_from(at + i).unwrap()].bits();
+    assert_ne!(word(0), 0);
+    assert_eq!(word(1), 0);
+}
+
+// spec FTEF-30.6: a cast between two types of one basic type takes no statement, the value read
+// as the cast's type
+#[test]
+fn a_cast_within_a_basic_type_is_the_value() {
+    let p = fte_progs(
+        "var void(float a) g;\nvoid(float a, float b) h = {};\nvoid() t = { g = (void(float a)) h; };\n",
+    );
+    let t = body(&p, "t");
+    assert_eq!(
+        t[0],
+        st(Opcode::StoreFnc, global(&p, "h"), global(&p, "g"), 0)
+    );
+    assert_eq!(t[1].op, u32::from(Done.number()));
+}
+
+// spec FTEF-23.4: with no row for a function and a float, a null operand converts to the
+// function's type, so `g != __NULL__` is NE_FNC
+#[test]
+fn a_null_compared_with_a_function_takes_its_type() {
+    let p = fte_progs("var void() g;\nfloat x;\nvoid() t = { x = g != __NULL__; x = 0 == g; };\n");
+    let t = body(&p, "t");
+    let null = immediate(&p, 0.0);
+    assert_eq!(
+        t[0],
+        st(Opcode::NeFnc, global(&p, "g"), null, global(&p, "x"))
+    );
+    assert_eq!(
+        t[1],
+        st(Opcode::EqFnc, null, global(&p, "g"), global(&p, "x"))
+    );
+}
+
+// spec FTEF-29.2: a null stored to a function, a global's or an entity's field, is stored by
+// the target's type, its word 0
+#[test]
+fn a_null_is_stored_by_the_targets_type() {
+    let p = fte_progs(
+        "entity self;\n.void() touch;\nvar void() g;\nvoid() t = { g = __NULL__; self.touch = __NULL__; };\n",
+    );
+    let t = body(&p, "t");
+    let null = immediate(&p, 0.0);
+    assert_eq!(t[0], st(Opcode::StoreFnc, null, global(&p, "g"), 0));
+    assert_eq!(t[1].op, u32::from(Opcode::Address.number()));
+    assert_eq!(t[2], st(Opcode::StorepFnc, null, t[1].c, 0));
+}
+
+// spec FTE-20.5: a literal never shares a variable's word, so an element of an array is still
+// named by a constant index whose value a variable holds
+#[test]
+fn a_literal_never_shares_a_variables_word() {
+    let p = fte_progs(
+        "var float two = 2;\nstring a[10];\nfloat x;\nvoid() t = { a[2] = \"\"; x = 2; };\n",
+    );
+    let two = global(&p, "two");
+    let t = body(&p, "t");
+    assert_ne!(t[1].a, two);
+    assert_eq!(words(&p, t[1].a, 1), [2.0_f32.to_bits()]);
+}
+
+// spec FTEF-32.13: a constant local's aggregate initialiser is its value at compile time, with
+// no statement
+#[test]
+fn a_constant_locals_aggregate_is_its_value() {
+    let p = fte_progs("float x;\nvoid() t = { const float tab[] = { 4, 5 }; x = tab[1]; };\n");
+    let tab = global(&p, "tab");
+    assert_eq!(words(&p, tab, 2), [4.0_f32, 5.0].map(f32::to_bits));
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, tab + 1, global(&p, "x"), 0));
+}
+
+// spec FTE-13.11: a store by an index that is a value calls the array's setter with the index
+// and the value, after the value is read
+#[test]
+fn a_store_by_a_value_index_calls_the_setter() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nfloat a[3];\nfloat i;\nvoid() t = { a[i] = 5; };\n",
+    );
+    let setter = global(&p, "ArraySet*a");
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, global(&p, "i"), 4, 0));
+    assert_eq!(t[1], st(StoreF, immediate(&p, 5.0), 7, 0));
+    assert_eq!(t[2], st(Call2, setter, 0, 0));
+    assert_eq!(t[3].op, u32::from(Done.number()));
+}
+
+// spec FTE-13.11: the setter tests both bounds, halves its slots and stores the value to the
+// slot the index names, then calls error
+#[test]
+fn a_setter_stores_the_slot_its_index_names() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nfloat a[3];\nfloat i;\nvoid() t = { a[i] = 5; };\n",
+    );
+    let f = function(&p, "ArraySet*a");
+    assert_eq!((f.numparms, f.parm_size[0], f.parm_size[1]), (2, 1, 1));
+    let (index, value) = (f.parm_start, f.parm_start + 1);
+    let a = global(&p, "a");
+    let s = body(&p, "ArraySet*a");
+    assert_eq!(s[0], st(Lt, index, immediate(&p, 0.0), s[0].c));
+    assert_eq!(s[1], st(If, s[0].c, 15, 0));
+    assert_eq!(s[2], st(Opcode::Ge, index, immediate(&p, 3.0), s[2].c));
+    assert_eq!(s[3], st(If, s[2].c, 13, 0));
+    for (slot, at) in [(0, 4), (1, 8), (2, 12)] {
+        let bound = immediate(&p, f32::from(u8::try_from(slot + 1).unwrap()));
+        assert_eq!(s[at], st(Lt, index, bound, s[at].c));
+        assert_eq!(s[at + 1], st(IfNot, s[at].c, 3, 0));
+        assert_eq!(s[at + 2], st(StoreF, value, a + slot, 0));
+        assert_eq!(s[at + 3], st(Return, 0, 0, 0));
+    }
+    assert_eq!(s[16].a, immediate_string(&p, "bounds check failed\n"));
+    assert_eq!(s[17], st(Opcode::Call1, global(&p, "error"), 0, 0));
+    assert_eq!(s[18].op, u32::from(Done.number()));
+}
+
+// spec FTE-13.11: a vector array's setter takes the element's index, the words divided by 3,
+// and stores by STORE_V
+#[test]
+fn a_vector_arrays_setter_takes_the_elements_index() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nvector a[2];\nfloat i;\nvoid() t = { a[i] = '1 2 3'; };\n",
+    );
+    let t = body(&p, "t");
+    assert_eq!(
+        t[0],
+        st(Opcode::MulF, global(&p, "i"), immediate(&p, 3.0), t[0].c)
+    );
+    assert_eq!(t[1], st(DivF, t[0].c, immediate(&p, 3.0), t[1].c));
+    assert_eq!(t[2], st(StoreF, t[1].c, 4, 0));
+    assert_eq!(
+        t[3],
+        st(StoreV, immediate_vector(&p, [1.0, 2.0, 3.0]), 7, 0)
+    );
+    let f = function(&p, "ArraySet*a");
+    let s = body(&p, "ArraySet*a");
+    assert!(s.contains(&st(StoreV, f.parm_start + 1, global(&p, "a") + 3, 0)));
+}
+
+// spec FTEF-17.17: `autocvar(name, default)` is the global `autocvar_name`, given the default's
+// value, with no statement of its own
+#[test]
+fn autocvar_is_its_global_given_the_default() {
+    let p = fte_progs("float x;\nvoid() t = { x = autocvar(sv_x, 4); };\n");
+    let cvar = global(&p, "autocvar_sv_x");
+    assert_eq!(words(&p, cvar, 1), [4.0_f32.to_bits()]);
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, cvar, global(&p, "x"), 0));
+}
+
+// spec FTE-19.11: a shift of two constants folds, each truncated to an int
+#[test]
+fn a_shift_of_constants_folds() {
+    let p = fte_progs("float x;\nvoid() t = { x = 1 << 23; x = 255.9 >> 4; };\n");
+    let t = body(&p, "t");
+    assert_eq!(
+        t[0],
+        st(StoreF, immediate(&p, 8_388_608.0), global(&p, "x"), 0)
+    );
+    assert_eq!(t[1], st(StoreF, immediate(&p, 15.0), global(&p, "x"), 0));
+}
+
+// spec FTE-19.11: a shift by a value is floor(a * pow(2, b)) with the program's pow and floor,
+// and `>>` divides
+#[test]
+fn a_shift_by_a_value_is_floor_of_a_power() {
+    let p = fte_progs(
+        "float(float a, float b) pow = #1;\nfloat(float a) floor = #2;\nfloat x, n;\n\
+         void() t = { x = 3 << n; x = 3 >> n; };\n",
+    );
+    let (pow, floor) = (global(&p, "pow"), global(&p, "floor"));
+    let (three, n) = (immediate(&p, 3.0), global(&p, "n"));
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, immediate(&p, 2.0), 4, 0));
+    assert_eq!(t[1], st(StoreF, n, 7, 0));
+    assert_eq!(t[2], st(Call2, pow, 0, 0));
+    assert_eq!(t[3], st(MulF, three, 1, t[3].c));
+    assert_eq!(t[4], st(StoreF, t[3].c, 4, 0));
+    assert_eq!(t[5], st(Opcode::Call1, floor, 0, 0));
+    assert_eq!(t[6], st(StoreF, 1, global(&p, "x"), 0));
+    assert_eq!(t[10], st(DivF, three, 1, t[10].c));
+}
+
+// spec FTE-19.11: with no pow, a shift by a value calls bitshift, `>>` with the count negated
+#[test]
+fn a_shift_without_pow_calls_bitshift() {
+    let p = fte_progs(
+        "float(float a, float b) bitshift = #1;\nfloat x, n;\nvoid() t = { x = 3 >> n; };\n",
+    );
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(SubF, immediate(&p, 0.0), global(&p, "n"), t[0].c));
+    assert_eq!(t[1], st(StoreF, immediate(&p, 3.0), 4, 0));
+    assert_eq!(t[2], st(StoreF, t[0].c, 7, 0));
+    assert_eq!(t[3], st(Call2, global(&p, "bitshift"), 0, 0));
+}
+
+// spec FTEF-32.14: in a body a call of a constant FTEQCC folds by its name makes no call
+#[test]
+fn a_folded_builtin_call_makes_no_call() {
+    let p = fte_progs(
+        "float(float f) floor = #1;\nfloat(float f) sqrt = #2;\nfloat x;\n\
+         void() t = { x = floor(2.5); x = sqrt(x); };\n",
+    );
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, immediate(&p, 2.0), global(&p, "x"), 0));
+    assert_eq!(t[1], st(StoreF, global(&p, "x"), 4, 0));
+}
+
+// spec FTEF-15.11: a wrap definition takes over its function's number, the wrapped body moves
+// to `prior*NAME` at the end of the table, and `prior` is a constant of that record's number
+#[test]
+fn a_wrap_calls_the_body_it_moved() {
+    let p = fte_progs(
+        "void() a = #1;\nvoid() b = #2;\nvoid() f = { a(); };\n\
+         __wrap void() f = { prior(); b(); };\n",
+    );
+    let number =
+        usize::try_from(p.globals[usize::try_from(global(&p, "f")).unwrap()].bits()).unwrap();
+    let wrapper = &p.functions[number];
+    assert_eq!(string(&p, wrapper.s_name), "f");
+    let moved = p.functions.last().unwrap();
+    assert_eq!(string(&p, moved.s_name), "prior*f");
+    let first = usize::try_from(moved.first_statement).unwrap();
+    assert_eq!(
+        p.statements[first],
+        st(Opcode::Call0, global(&p, "a"), 0, 0)
+    );
+    let start = usize::try_from(wrapper.first_statement).unwrap();
+    let call = p.statements[start];
+    assert_eq!(call.op, u32::from(Opcode::Call0.number()));
+    let prior = usize::try_from(p.globals[usize::try_from(call.a).unwrap()].bits()).unwrap();
+    assert_eq!(prior, p.functions.len() - 1);
+    assert_eq!(
+        p.statements[start + 1],
+        st(Opcode::Call0, global(&p, "b"), 0, 0)
+    );
+}
+
+// spec FTE-19.12: `v & w` of vectors is BITAND_F of each component into a vector temporary, and
+// `v ^ w` is `(v & ~w) | (w & ~v)` with each `~` as SUB_V from '-1 -1 -1'
+#[test]
+fn vector_bit_operators_work_by_component() {
+    let p = fte_progs("vector v, w, r;\nvoid() t = { r = v & w; r = v ^ w; };\n");
+    let (v, w) = (global(&p, "v"), global(&p, "w"));
+    let t = body(&p, "t");
+    let c = t[0].c;
+    for i in 0..3 {
+        let s = t[usize::try_from(i).unwrap()];
+        assert_eq!(s, st(BitAnd, v + i, w + i, c + i));
+    }
+    assert_eq!(t[3], st(StoreV, c, global(&p, "r"), 0));
+    let minus_one = immediate_vector(&p, [-1.0; 3]);
+    assert_eq!(t[4], st(SubV, minus_one, w, t[4].c));
+    assert_eq!(t[5], st(BitAnd, v, t[4].c, t[5].c));
+    assert_eq!(t[8], st(SubV, minus_one, v, t[8].c));
+    assert_eq!(t[12].op, u32::from(BitOr.number()));
+}
+
+// spec FTEF-18.5: `a = b, c;` stores `b` and then reads `c`, whose value is discarded
+#[test]
+fn a_sequence_runs_each_expression_in_turn() {
+    let p = fte_progs("float a, b, c;\nfloat() f = #1;\nvoid() t = { a = b, f(); };\n");
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, global(&p, "b"), global(&p, "a"), 0));
+    assert_eq!(t[1], st(Opcode::Call0, global(&p, "f"), 0, 0));
+}
+
+// spec FTE-22.7: with autoprototyping, a definition used before it is read is made in the first
+// pass, in its definition's place among the others
+#[test]
+fn autoprototyping_makes_definitions_in_their_written_order() {
+    let p =
+        fte_progs("#pragma autoproto\nvoid() t = { later = 1; };\nfloat first;\nfloat later;\n");
+    assert!(global(&p, "first") < global(&p, "later"));
+}
+
+// spec FTE-13.13: an array writes no definition of its own, one for each element, and an array
+// of structs each element's members after it
+#[test]
+fn an_array_is_written_as_its_elements() {
+    let p = fte_progs(
+        "typedef struct { string m; float f; } pose;\nstring s[2];\npose poses[2];\nvoid() t = {};\n",
+    );
+    let names: Vec<String> = p
+        .global_defs
+        .iter()
+        .map(|d| string(&p, d.s_name))
+        .filter(|n| n.starts_with('s') || n.starts_with("poses"))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "s[0]",
+            "s[1]",
+            "poses[0]",
+            "poses[0].m",
+            "poses[0].f",
+            "poses[1]",
+            "poses[1].m",
+            "poses[1].f"
+        ]
+    );
+    let first = p
+        .global_defs
+        .iter()
+        .find(|d| string(&p, d.s_name) == "poses[1]")
+        .unwrap();
+    assert_eq!(first.type_bits & 0x7fff, 14);
+    assert_eq!(
+        i32::try_from(first.ofs).unwrap(),
+        global(&p, "poses[0]") + 2
+    );
+}
+
+// spec FTE-18.6: a variadic function first copies the slots after its named parameters into a
+// static `__va_list` of 24 vectors, a slot past the eighth from its `$parmN` global
+#[test]
+fn a_variadic_function_copies_its_slots_to_va_list() {
+    let p = fte_progs("float(float a, ...) f = { return a; };\n");
+    let s = body(&p, "f");
+    let list = global(&p, "__va_list");
+    for (i, statement) in (0_i32..).zip(&s[..7]) {
+        assert_eq!(*statement, st(StoreV, 7 + 3 * i, list + 3 * i, 0));
+    }
+    assert_eq!(s[7], st(StoreV, global(&p, "$parm8"), list + 21, 0));
+    assert_eq!(s[23], st(StoreV, global(&p, "$parm24"), list + 69, 0));
+    assert_eq!(s[24].op, u32::from(Return.number()));
+    let elements = p
+        .global_defs
+        .iter()
+        .filter(|d| string(&p, d.s_name).starts_with("__va_list["))
+        .count();
+    assert_eq!(elements, 24);
+}
+
+// spec FTE-13.13: a struct value is written as its members, with no definition of its own
+#[test]
+fn a_struct_value_is_written_as_its_members() {
+    let p = fte_progs("typedef struct { string m; float f; } pose;\npose p;\nvoid() t = {};\n");
+    let names: Vec<String> = p
+        .global_defs
+        .iter()
+        .map(|d| string(&p, d.s_name))
+        .filter(|n| n.starts_with('p'))
+        .collect();
+    assert_eq!(names, ["p.m", "p.f"]);
+}
+
+// spec FTE-13.14: a parameter of a field type makes no field definition
+#[test]
+fn a_field_parameter_makes_no_field_definition() {
+    let p = fte_progs(".string target;\nvoid(.string field) f = {};\n");
+    let fields: Vec<String> = p
+        .field_defs
+        .iter()
+        .skip(1)
+        .map(|d| string(&p, d.s_name))
+        .collect();
+    assert_eq!(fields, ["target"]);
+}
+
+// spec QC-11.7: a local vector's components are at its own words, not a field's components of
+// the same names
+#[test]
+fn a_local_vectors_components_are_its_own() {
+    let p = fte_progs(
+        ".vector velocity;\nvoid() t = { vector velocity; velocity = '1 2 3'; velocity_z = 200; };\n",
+    );
+    let t = body(&p, "t");
+    let local = t[0].b;
+    assert_eq!(
+        t[0],
+        st(StoreV, immediate_vector(&p, [1.0, 2.0, 3.0]), local, 0)
+    );
+    assert_eq!(t[1], st(StoreF, immediate(&p, 200.0), local + 2, 0));
+}
+
+// spec FTE-18.7: a call passes a parameter's default for an empty slot and for each trailing
+// parameter with one that is not optional
+#[test]
+fn a_call_passes_its_parameters_defaults() {
+    let p = fte_progs(
+        "float x;\nfloat(float a, float b = 7, float c = 9) f = { return a; };\n\
+         void() t = { x = f(1); x = f(1, , 2); };\n",
+    );
+    let t = body(&p, "t");
+    let (one, two, seven, nine) = (
+        immediate(&p, 1.0),
+        immediate(&p, 2.0),
+        immediate(&p, 7.0),
+        immediate(&p, 9.0),
+    );
+    assert_eq!(t[0], st(StoreF, one, 4, 0));
+    assert_eq!(t[1], st(StoreF, seven, 7, 0));
+    assert_eq!(t[2], st(StoreF, nine, 10, 0));
+    assert_eq!(t[3].op, u32::from(Opcode::Call3.number()));
+    assert_eq!(t[6], st(StoreF, seven, 7, 0));
+    assert_eq!(t[7], st(StoreF, two, 10, 0));
+}
+
+// spec FTE-18.7: a default that is a cast within its basic type passes its operand's value
+#[test]
+fn a_cast_default_passes_its_operand() {
+    let p = fte_progs(
+        "float(...) yes = { return 1; };\n\
+         void(float(entity e) p = (float(entity e))yes) f = {};\nvoid() t = { f(); };\n",
+    );
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, global(&p, "yes"), 4, 0));
+}
+
+// spec FTE-18.8: with autoprototyping a default naming a function is no default, so the call
+// passes nothing for it, and a literal or a field default is still passed
+#[test]
+fn autoprototyping_drops_a_named_default() {
+    let p = fte_progs(
+        "#pragma autoproto\nfloat(entity e) yes = { return 1; };\n.string target;\n\
+         void(float a = 5, .string s = target, float(entity e) p = yes) f = {};\n\
+         void() t = { f(); };\n",
+    );
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, immediate(&p, 5.0), 4, 0));
+    assert_eq!(t[1], st(StoreF, global(&p, "target"), 7, 0));
+    assert_eq!(t[2].op, u32::from(Opcode::Call2.number()));
+}
+
+// spec FTE-18.10: a bare return in a function that returns a value returns its `ret*` local,
+// the same one each time, and in a void function returns 0
+#[test]
+fn a_bare_return_returns_the_ret_local() {
+    let p =
+        fte_progs("float x;\nfloat() f = { if (x) return; return; };\nvoid() g = { return; };\n");
+    let ret = global(&p, "ret*");
+    let returns: Vec<i32> = body(&p, "f")
+        .iter()
+        .filter(|s| s.op == u32::from(Return.number()))
+        .map(|s| s.a)
+        .collect();
+    assert_eq!(returns, [ret, ret]);
+    assert_eq!(body(&p, "g")[0], st(Return, 0, 0, 0));
 }

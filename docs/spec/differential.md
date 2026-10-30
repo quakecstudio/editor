@@ -560,7 +560,8 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
 
 ### Behaviour
 
-- **DIFF-12.1** Each progs is loaded (DIFF-3.1) and set up as a world for each scenario of the
+- **DIFF-12.1** **Withdrawn** 2026-10-30: it ran no scenario frame, so no player joined a team,
+  moved or picked anything up before the calls; replaced by DIFF-12.17. Each progs is loaded (DIFF-3.1) and set up as a world for each scenario of the
   VM differential's corpus set (`qs-differential`'s `runner::scenarios`): the map's entities
   are spawned and the settle frames run (DIFF-3), and the scenario's clients enter (DIFF-4); no
   scenario frame runs. A progs that is refused, or a setup that ends in an error in either
@@ -624,7 +625,9 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   the same edict, or the same function. A vector's other two words are compared only through
   the globals and fields they are stored to. A QuakeC function of the first progs that the
   second has no QuakeC function of the same name for is a divergence.
-- **DIFF-12.8** `cargo xtask compiler-diff --full` also compares the rerelease (COMP-8):
+- **DIFF-12.8** **Withdrawn** 2026-10-30: it compared the five rerelease codebases besides
+  `rerelease` only when a run named them, until each passed; four pass and the nightly run
+  compares them; replaced by DIFF-12.14. `cargo xtask compiler-diff --full` also compares the rerelease (COMP-8):
   `rerelease` is compiled with the pinned FTEQCC as `cargo xtask oracles rerelease` compiles it,
   the oracle progs, and with `qc-codegen` in the FTEQCC dialect, with `--opt fold` off and on,
   and each pair is held to DIFF-12.5's bar. The other five rerelease codebases are compared when
@@ -633,7 +636,9 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   the results table `target/compiler-diff/summary.md`: the codebase, the oracle's progs and
   ours, the divergences, the statements executed, and whether it passes; the nightly
   differential workflow publishes it as the run's summary.
-- **DIFF-12.9** When the first progs is the pinned FTEQCC's (DIFF-12.8), its definitions are
+- **DIFF-12.9** **Withdrawn** 2026-10-30: it wrote a global by name to its first definition of any
+  type, so a drawn float went to a field global FTEQCC's `size_x` shares (`rerelease-mg3`);
+  replaced by DIFF-12.11. When the first progs is the pinned FTEQCC's (DIFF-12.8), its definitions are
   compared with ours by these rules, which replace DIFF-12.3's same names in the same order.
   FTEQCC names fewer globals: `QCC_WriteData` writes no definition nothing uses (`if (def->strip
   || !def->symbolheader->used) continue;`), no vector component, and no local of a function
@@ -653,6 +658,73 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   two calls that both stop with `runaway loop error` (VM-2.3) agree, with nothing else compared:
   where a loop is stopped depends on how many statements each pass takes, which two compilers
   need not share.
+- **DIFF-12.10** A global whose definition has FTEQCC's struct or union type, `ev_struct` (14)
+  or `ev_union` (15) in `progslib.h`'s `etype_t`, is not compared, in either progs: it is an
+  element of an array of structs (`dialect-fteqcc-rerelease.md` FTE-13.13), whose first word is
+  its first member's, compared by that member's own definition and type, where reading the word
+  by its bits would compare a string's place in each string table.
+- **DIFF-12.11** When the first progs is the pinned FTEQCC's (DIFF-12.14), its definitions are
+  compared with ours by these rules, which replace DIFF-12.3's same names in the same order.
+  FTEQCC names fewer globals: `QCC_WriteData` writes no definition nothing uses (`if (def->strip
+  || !def->symbolheader->used) continue;`), no vector component, and no local of a function
+  whose locals it overlaps (`if (def->scope && !def->isstatic && !def->scope->privatelocals)
+  continue;`), and `QCC_FinaliseDef` gives a symbol nothing uses no slot (`if
+  (!def->symbolheader->used) { ... return; }`), so a definition it writes for one is at slot 0.
+  So: (1) the fields must have the same names, as DIFF-12.3 says; (2) a global of either progs
+  inside a QuakeC function's locals (from `parm_start`, `locals` slots) is a local and is not
+  compared, unless it is a function definition whose value is the QuakeC function of its name,
+  as a state's `[frame, next]` declares `next` inside the body; (3) every other named global of
+  the first progs at a slot other than 0 must be found among ours in the same order, the next
+  one of its name, and is compared with it; ours may name more. FTEQCC also gives named
+  constants of one value one slot, so DIFF-12.2's draw leaves out a float or string global whose
+  slot another float or string definition names, or slot 0, for either oracle; the progs of id
+  1.01, qcc's and ours, have no such global; and it writes a global by name, a float or a
+  string, to its first float or string definition outside every QuakeC function's locals,
+  else to its first, for either oracle, so a float drawn for a local `size` is not written to
+  the field global `size`, a slot FTEQCC's `size_x` shares. And
+  two calls that both stop with `runaway loop error` (VM-2.3) agree, with nothing else compared:
+  where a loop is stopped depends on how many statements each pass takes, which two compilers
+  need not share.
+- **DIFF-12.12** Before each call, in both progs, the parameter slots past the parameters drawn
+  for it, up to the eighth, are set to 0: a variadic function copies every slot
+  (`dialect-fteqcc-rerelease.md` FTE-18.6), and what earlier calls left in a slot no parameter
+  takes depends on which statements each compiler emitted, as `rerelease-mg3`'s `float(...)
+  SUB_True` showed.
+- **DIFF-12.13** With `--uncovered <file>`, `compiler-diff` writes, for each QuakeC function of
+  the first progs, the statements of its body no call executed, as `<unexecuted>\t<of>\t<name>`
+  lines, most unexecuted first, a function's body running from its first statement to the next
+  function's: the list a codebase's coverage (DIFF-12.5) is raised from.
+- **DIFF-12.14** `cargo xtask compiler-diff --full` also compares the rerelease codebases (COMP-8): each
+  is compiled with the pinned FTEQCC as `cargo xtask oracles rerelease` compiles it,
+  the oracle progs, and with `qc-codegen` in the FTEQCC dialect, with `--opt fold` off and on,
+  and each pair is held to DIFF-12.5's bar: `rerelease`, Scourge of Armagon, Dissolution of
+  Eternity, Dimension of the Past and Dawn of the Machine, the last with `-Fautoproto`'s
+  prototypes as FTEQCC is given it (FTE-1.2). Capture the Flag, which has no divergence but
+  whose calls reach under 90% of its statements, is compared when a run names it, and joins
+  the nightly set once it passes. Every pair compared adds a row to
+  the results table `target/compiler-diff/summary.md`: the codebase, the oracle's progs and
+  ours, the divergences, the statements executed, and whether it passes; the nightly
+  differential workflow publishes it as the run's summary.
+- **DIFF-12.15** One time in two, `self` for a call is drawn from the edicts in use whose
+  named fields of function type hold the function called, when any does, as the engine calls a
+  `think`, `touch` or `use` with its own edict as `self`; otherwise as DIFF-12.2 draws it. The
+  edicts are found in the first progs' world after the setup, by edict, each listed once. So a
+  flag's `touch` runs with the flag as `self` (`rerelease-ctf`'s `TeamCaptureFlagTouch`).
+- **DIFF-12.16** A function whose body still has statements no call executed after its
+  `rounds` rounds is called in a further batch of a quarter as many rounds, drawn as any round
+  is (DIFF-12.2, round numbers going on from `rounds`), as long as the batch before reached at
+  least one statement of its body no earlier call had, up to `EXTRA_ROUNDS` (4) times `rounds`
+  in all. The calls stay deterministic, and a function whose body every call already covers
+  costs no more.
+- **DIFF-12.17** Each progs is loaded (DIFF-3.1) and set up as a world for each scenario of the
+  VM differential's corpus set (`qs-differential`'s `runner::scenarios`): the map's entities
+  are spawned and the settle frames run (DIFF-3), the scenario's clients enter (DIFF-4), and
+  the scenario's frames run with its inputs (DIFF-5.1), so the calls start from a world the
+  game has played: players on teams, items taken, monsters awake. A progs that is refused, or
+  a setup that ends in an error in either progs, a frame's included, stops the run with an
+  error. The two worlds are then compared as DIFF-12.3 compares two calls, the statements and
+  builtins of every frame with them; a difference there is the run's one divergence, and no
+  function is called.
 
 ## Test vectors
 

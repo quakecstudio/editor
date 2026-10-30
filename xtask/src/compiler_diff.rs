@@ -10,7 +10,7 @@
 //! which calls every function of the oracle's progs and of each of ours in `qc-vm` and compares
 //! them (DIFF-12, DIFF-12.9). It runs that binary with `cargo run`, as `cargo xtask
 //! differential` does, because `qs-differential` is a `tests`-layer crate nothing may depend on
-//! (`layers.toml`). Each pair adds a row to `target/compiler-diff/summary.md` (DIFF-12.8).
+//! (`layers.toml`). Each pair adds a row to `target/compiler-diff/summary.md` (DIFF-12.14).
 //!
 //! - `cargo xtask compiler-diff` and `--fast`: the CI subset, id 1.01, fewer rounds of calls.
 //! - `cargo xtask compiler-diff --full`: the nightly run, id 1.01 and the rerelease, more rounds.
@@ -35,18 +35,18 @@ use crate::oracles::{self, Oracles, codegen, id101, rerelease};
 const VANILLA: [&str; 1] = ["id-1.01"];
 
 /// The rerelease codebases the nightly run compares with the pinned FTEQCC's progs
-/// (`oracles/rerelease.rs`, DIFF-12.8).
-const RERELEASE: [&str; 1] = ["rerelease"];
-
-/// The other rerelease codebases the pinned FTEQCC compiles, not yet at DIFF-12.5's bar: a run
-/// names them to compare them, and each joins [`RERELEASE`] once it passes (P2-150).
-const PENDING: [&str; 5] = [
+/// (`oracles/rerelease.rs`, DIFF-12.14).
+const RERELEASE: [&str; 5] = [
+    "rerelease",
     "rerelease-hipnotic",
     "rerelease-rogue",
     "rerelease-mg1",
-    "rerelease-ctf",
     "rerelease-mg3",
 ];
+
+/// The rerelease codebases with no divergence whose calls do not yet reach DIFF-12.5's 90% of
+/// statements: a run names them, and each joins [`RERELEASE`] once it passes (P2-150).
+const PENDING: [&str; 1] = ["rerelease-ctf"];
 
 const USAGE: &str = "usage: cargo xtask compiler-diff [--fast | --full] [<codebase>...]";
 
@@ -69,7 +69,7 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
 }
 
 /// The head of the results table, `target/compiler-diff/summary.md`; the binary adds a row
-/// for each pair it compares (DIFF-12.8).
+/// for each pair it compares (DIFF-12.14).
 const SUMMARY_HEADER: &str = "| Codebase | Oracle | Ours | Divergences | Statements | Result |\n\
                               | --- | --- | --- | ---: | ---: | --- |\n";
 
@@ -83,8 +83,8 @@ enum Mode {
 }
 
 impl Mode {
-    /// The codebases this mode compares: id 1.01 for the CI subset, and the rerelease too for
-    /// the nightly run (DIFF-12.6, DIFF-12.8).
+    /// The codebases this mode compares: id 1.01 for the CI subset, and the rerelease
+    /// codebases at the bar too for the nightly run (DIFF-12.6, DIFF-12.14).
     fn codebases(self) -> Vec<&'static str> {
         match self {
             Self::Fast => VANILLA.to_vec(),
@@ -299,7 +299,7 @@ mod tests {
         assert!(write_progs(&oracles, &codebases, "nowhere", &dir.join("out2")).is_err());
     }
 
-    // spec DIFF-12.8: a rerelease codebase is compiled with the pinned FTEQCC, the oracle, and
+    // spec DIFF-12.14: a rerelease codebase is compiled with the pinned FTEQCC, the oracle, and
     // with qc-codegen in the FTEQCC dialect, with Dawn of the Machine's prototypes collected
     // first as `-Fautoproto` collects them.
     #[test]
@@ -357,28 +357,35 @@ mod tests {
         assert!(parse(&args(&["--fast", "--full"])).is_err());
     }
 
-    // spec DIFF-12.8: the CI subset compares id 1.01; the nightly run adds the rerelease, and a
-    // run names the other rerelease codebases to compare them, each one the FTEQCC oracle
-    // compiles.
+    // spec DIFF-12.14: the CI subset compares id 1.01; the nightly run adds the rerelease
+    // codebases at the bar, and a run may name any of the six, each one the FTEQCC oracle
+    // compiles
     #[test]
     fn the_nightly_run_adds_the_rerelease() {
         assert_eq!(Mode::Fast.codebases(), ["id-1.01"]);
-        assert_eq!(Mode::Full.codebases(), ["id-1.01", "rerelease"]);
+        let full = Mode::Full.codebases();
+        assert_eq!(full.first(), Some(&"id-1.01"));
+        assert_eq!(full.len(), 1 + RERELEASE.len());
+        assert_eq!(
+            RERELEASE.len() + PENDING.len(),
+            6,
+            "the six rerelease codebases"
+        );
+        assert!(PENDING.iter().all(|id| !full.contains(id)));
         let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-        for id in PENDING {
+        for id in RERELEASE.iter().chain(&PENDING).copied() {
             assert_eq!(
                 parse(&args(&["--full", id])).unwrap(),
                 (Mode::Full, vec![id])
             );
             assert!(parse(&args(&["--fast", id])).is_err());
         }
-        assert_eq!(
-            PENDING.len() + RERELEASE.len(),
-            6,
-            "the six rerelease codebases"
+        assert!(
+            RERELEASE
+                .iter()
+                .chain(&PENDING)
+                .all(|id| rerelease::compiles(id))
         );
-        assert!(PENDING.iter().all(|id| rerelease::compiles(id)));
-        assert!(RERELEASE.iter().all(|id| rerelease::compiles(id)));
         assert!(VANILLA.iter().all(|id| !rerelease::compiles(id)));
     }
 }

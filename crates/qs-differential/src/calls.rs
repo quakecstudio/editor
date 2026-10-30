@@ -5,8 +5,8 @@
 //! P2-09, COMP-4).
 //!
 //! Two progs compiled from one codebase, id's `qcc`'s and `qc-codegen`'s, are each loaded in
-//! `qc-vm` with the mock engine and set up as one scenario's world: the map spawned and the
-//! clients entered (DIFF-12.1). Every QuakeC function of the first progs is then called, in
+//! `qc-vm` with the mock engine and set up as one scenario's world: the map spawned, the
+//! clients entered and the scenario's frames run (DIFF-12.17). Every QuakeC function of the first progs is then called, in
 //! several rounds, from that world with a drawn context (DIFF-12.2), applied to both progs by
 //! name so the two calls take the same input. What each call did is compared (DIFF-12.3): how
 //! it ended, the builtins it called, the named globals and every edict's named fields read
@@ -14,7 +14,7 @@
 //! statements, the statements each call executed must be the same too (DIFF-12.4). The
 //! statements the first progs executed are its coverage (DIFF-12.5).
 //!
-//! Implements `docs/spec/differential.md` DIFF-12.1 to DIFF-12.5.
+//! Implements `docs/spec/differential.md` DIFF-12.2 to DIFF-12.5 and DIFF-12.17.
 
 use qc_edict::EdictNumber;
 use std::collections::{BTreeMap, BTreeSet};
@@ -118,6 +118,46 @@ impl Report {
     }
 }
 
+/// DIFF-12.13: each QuakeC function of the progs `bytes` with statements `executed` left
+/// unexecuted, a line `<unexecuted>\t<of>\t<name>` each, most unexecuted first, for finding
+/// what a codebase's calls do not reach.
+///
+/// # Errors
+///
+/// [`CallsError::Refused`] when the progs is refused.
+pub fn uncovered(bytes: &[u8], executed: &BTreeSet<i32>) -> Result<String, CallsError> {
+    let progs =
+        Progs::read(bytes).map_err(|e| CallsError::Refused(RunRefused::Progs(e.to_string())))?;
+    let mut starts: Vec<(i32, Vec<u8>)> = progs
+        .functions()
+        .iter()
+        .filter(|f| f.first_statement > 0)
+        .map(|f| {
+            let name = progs
+                .string(f.s_name)
+                .map(<[u8]>::to_vec)
+                .unwrap_or_default();
+            (f.first_statement, name)
+        })
+        .collect();
+    starts.sort();
+    let end = i32::try_from(progs.statements().len()).unwrap_or(i32::MAX);
+    let mut rows: Vec<(usize, usize, String)> = Vec::new();
+    for (k, (start, name)) in starts.iter().enumerate() {
+        let next = starts.get(k.saturating_add(1)).map_or(end, |(s, _)| *s);
+        let of = usize::try_from(next.saturating_sub(*start)).unwrap_or(0);
+        let missed = (*start..next).filter(|s| !executed.contains(s)).count();
+        if missed > 0 {
+            rows.push((missed, of, String::from_utf8_lossy(name).into_owned()));
+        }
+    }
+    rows.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.2.cmp(&b.2)));
+    Ok(rows
+        .iter()
+        .map(|(missed, of, name)| format!("{missed}\t{of}\t{name}\n"))
+        .collect())
+}
+
 /// The fraction `executed` is of `total` statements (DIFF-12.5); 0 when `total` is 0.
 #[must_use]
 pub fn coverage(executed: &BTreeSet<i32>, total: u32) -> f64 {
@@ -132,6 +172,9 @@ pub fn coverage(executed: &BTreeSet<i32>, total: u32) -> f64 {
 pub const FAST_ROUNDS: u32 = 32;
 /// The rounds of calls to each function in the nightly run (DIFF-12.6).
 pub const FULL_ROUNDS: u32 = 128;
+/// The most rounds a function is called in, as a multiple of the rounds asked for, when its
+/// body still has statements no call executed (DIFF-12.16).
+pub const EXTRA_ROUNDS: u32 = 4;
 /// The least fraction of the first progs' statements a codebase's calls must execute
 /// (DIFF-12.5, TEST-6).
 pub const COVERAGE_BAR: f64 = 0.9;
@@ -171,7 +214,7 @@ impl CodebaseReport {
         self.divergences() == 0 && self.coverage() >= COVERAGE_BAR
     }
 
-    /// The report's row of the results table (DIFF-12.8): the codebase, the oracle's progs and
+    /// The report's row of the results table (DIFF-12.14): the codebase, the oracle's progs and
     /// ours, the divergences, the statements executed, and whether it passes.
     #[must_use]
     pub fn summary_row(&self, codebase: &str, oracle: &str, ours: &str) -> String {
@@ -187,20 +230,20 @@ impl CodebaseReport {
 }
 
 /// The compiler that wrote the first progs, which says how the two progs' global definitions
-/// must agree (DIFF-12.3, DIFF-12.9).
+/// must agree (DIFF-12.3, DIFF-12.11).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Oracle {
     /// id's `qcc`: the two progs name the same globals in the same order (DIFF-12.3).
     Qcc,
     /// The pinned FTEQCC, which leaves out definitions no statement uses: its named globals
-    /// are found in ours in the same order, and ours may name more (DIFF-12.9).
+    /// are found in ours in the same order, and ours may name more (DIFF-12.11).
     Fteqcc,
 }
 
 impl Oracle {
     /// Each named global of `theirs` paired with the global of `ours` it is compared with, as
     /// indices into the two programs' globals, or `None` when the definitions do not agree
-    /// (DIFF-12.3, DIFF-12.9).
+    /// (DIFF-12.3, DIFF-12.11).
     fn pair_globals(
         self,
         theirs: &Program<'_, '_>,
@@ -238,7 +281,7 @@ impl Oracle {
 }
 
 /// Runs [`run_calls`] on `theirs` and `ours` from each world of [`crate::runner::scenarios`],
-/// `rounds` rounds each (DIFF-12.1, DIFF-12.5); `oracle` compiled `theirs`.
+/// `rounds` rounds each (DIFF-12.17, DIFF-12.5); `oracle` compiled `theirs`.
 ///
 /// # Errors
 ///
@@ -267,7 +310,7 @@ pub fn run_codebase(
     Ok(result)
 }
 
-/// Why a run could not start (DIFF-12.1).
+/// Why a run could not start (DIFF-12.17).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CallsError {
     /// A scenario of [`crate::runner::scenarios`] could not be read.
@@ -275,7 +318,7 @@ pub enum CallsError {
     /// A progs was refused by the reader or the VM (DIFF-3.1).
     Refused(RunRefused),
     /// The world's setup ended in an error in a progs, so there is no world to call functions
-    /// in (DIFF-12.1).
+    /// in (DIFF-12.17).
     Setup(String),
 }
 
@@ -356,7 +399,19 @@ pub fn run_calls(
         };
         // The function's own constants depend on it alone, so they are read once.
         let pools = drawer.pools(function);
-        for round in 0..rounds {
+        // DIFF-12.16: while its body has statements no call executed and the last batch of
+        // rounds reached one more, the function is called in another batch, up to
+        // `EXTRA_ROUNDS` times `rounds` in all.
+        let body = function.first_statement..drawer.body_end(function.first_statement);
+        let reached =
+            |executed: &BTreeSet<i32>| body.clone().filter(|s| executed.contains(s)).count();
+        let whole = usize::try_from(body.end.saturating_sub(body.start)).unwrap_or(0);
+        let batch = rounds.checked_shr(2).unwrap_or(0).max(1);
+        let cap = rounds.saturating_mul(EXTRA_ROUNDS);
+        let mut limit = rounds;
+        let mut before = reached(&report.executed);
+        let mut round = 0;
+        while round < limit {
             let mut rng = Rng::new(name, round);
             let context = drawer.draw(&mut rng, (function, &pools), round);
             let theirs = their_world.call(their_index, &context);
@@ -371,6 +426,14 @@ pub fn run_calls(
                     round,
                     what,
                 });
+            }
+            round = round.saturating_add(1);
+            if round == limit && limit < cap {
+                let now = reached(&report.executed);
+                if now > before && now < whole {
+                    limit = limit.saturating_add(batch).min(cap);
+                }
+                before = now;
             }
         }
     }
@@ -424,7 +487,7 @@ impl Pair {
         if theirs.error != ours.error {
             return Some(Difference::Ending(theirs.error.clone(), ours.error.clone()));
         }
-        // DIFF-12.9: where a loop is stopped depends on how many statements each pass takes,
+        // DIFF-12.11: where a loop is stopped depends on how many statements each pass takes,
         // which another compiler's progs need not share.
         let runaway = |outcome: &Outcome| outcome.kind == Some(ErrorKind::Runaway);
         if self.oracle == Oracle::Fteqcc && runaway(theirs) && runaway(ours) {
@@ -492,7 +555,7 @@ fn same_slots(a: &Machine, b: &Machine) -> bool {
 }
 
 /// The first named global or field whose value differs between the two worlds, the globals
-/// compared in the pairs `globals` gives (DIFF-12.3, DIFF-12.9).
+/// compared in the pairs `globals` gives (DIFF-12.3, DIFF-12.11).
 fn state_difference(
     a: &World<'_, '_, '_>,
     b: &World<'_, '_, '_>,
@@ -571,6 +634,10 @@ impl Observer for Statements {
 }
 
 /// A named global definition: its name, type and slot.
+/// FTEQCC's `ev_struct` and `ev_union`, `progslib.h`'s `etype_t` (DIFF-12.10).
+const EV_STRUCT: u16 = 14;
+const EV_UNION: u16 = 15;
+
 type Global = (Vec<u8>, DefType, usize);
 
 /// A progs' named definitions and functions (DIFF-12.3).
@@ -578,8 +645,8 @@ struct Program<'a, 'p> {
     progs: &'a Progs<'p>,
     /// The named globals, in definition order.
     globals: Vec<Global>,
-    /// The slot of each name a context writes by name: its first global outside every
-    /// function's locals, else its first (DIFF-12.9).
+    /// The slot of each name a context writes by name: its first float or string global
+    /// outside every function's locals, else its first (DIFF-12.11).
     global_slots: BTreeMap<Vec<u8>, usize>,
     /// The named fields, by name: the type and slot of the first definition of each.
     fields: BTreeMap<Vec<u8>, (DefType, usize)>,
@@ -601,6 +668,10 @@ impl<'a, 'p> Program<'a, 'p> {
         };
         let mut globals = Vec::new();
         for def in progs.global_defs().iter() {
+            // DIFF-12.10: a struct or union element is compared by its members.
+            if matches!(def.def_type(), DefType::Unknown(EV_STRUCT | EV_UNION)) {
+                continue;
+            }
             if let Some((name, ofs)) = named(&def) {
                 globals.push((name, def.def_type(), ofs));
             }
@@ -637,13 +708,19 @@ impl<'a, 'p> Program<'a, 'p> {
             functions,
             locals,
         };
-        // DIFF-12.9: a context writes a global by name to its first definition outside every
-        // function's locals, else to its first.
+        // DIFF-12.11: a context writes a global by name, a float or a string, to its first
+        // float or string definition outside every function's locals, else to its first.
+        let scalar = |g: &&Global| matches!(g.1, DefType::Known(Etype::Float | Etype::String));
         let mut global_slots = BTreeMap::new();
-        for global in program.globals.iter().filter(|g| !program.is_local(g)) {
+        for global in program
+            .globals
+            .iter()
+            .filter(scalar)
+            .filter(|g| !program.is_local(g))
+        {
             global_slots.entry(global.0.clone()).or_insert(global.2);
         }
-        for (name, _, ofs) in &program.globals {
+        for (name, _, ofs) in program.globals.iter().filter(scalar) {
             global_slots.entry(name.clone()).or_insert(*ofs);
         }
         program.global_slots = global_slots;
@@ -680,7 +757,7 @@ struct Outcome {
     executed: Vec<Executed>,
 }
 
-/// One progs' world after the setup, kept to restore before each call (DIFF-12.1).
+/// One progs' world after the setup, kept to restore before each call (DIFF-12.17).
 struct World<'a, 'p, 's> {
     program: Program<'a, 'p>,
     host: Host<'s>,
@@ -689,13 +766,13 @@ struct World<'a, 'p, 's> {
     /// The statements the setup executed (DIFF-12.5).
     setup_executed: BTreeSet<i32>,
     /// How the setup went: the statements and builtins it executed, compared with the other
-    /// progs' setup as two calls are (DIFF-12.1).
+    /// progs' setup as two calls are (DIFF-12.17).
     setup: Outcome,
 }
 
 impl<'a, 'p, 's> World<'a, 'p, 's> {
-    /// Loads `progs` and sets up the world of `scenario` and `entities`: the map spawned and
-    /// the clients entered (DIFF-12.1).
+    /// Loads `progs` and sets up the world of `scenario` and `entities`: the map spawned, the
+    /// clients entered and the scenario's frames run with its inputs (DIFF-12.17).
     fn new(
         progs: &'a Progs<'p>,
         scenario: &'s Scenario,
@@ -706,6 +783,10 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
             .map_err(|e| CallsError::Setup(format!("{e:?}")))?;
         for slot in 0..scenario.clients {
             host.client_enters(progs, slot)
+                .map_err(|e| CallsError::Setup(e.message()))?;
+        }
+        for frame in 1..=scenario.frames {
+            host.server_frame(progs, scenario.frametime, frame)
                 .map_err(|e| CallsError::Setup(e.message()))?;
         }
         let executed: Vec<Executed> = host
