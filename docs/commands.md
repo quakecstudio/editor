@@ -9,6 +9,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`commands.list`](#commandslist) | Lists every command with its id, summary and parameter schema. |
 | [`edit.redo`](#editredo) | Makes the most recently undone change again. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
+| [`file.open`](#fileopen) | Opens a file in the editor, with the caret at a byte offset or at the start. |
+| [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
 | [`settings.get`](#settingsget) | Gives one setting's value and where it comes from. |
 | [`settings.list`](#settingslist) | Lists every setting with its default, its value and where the value comes from. |
 | [`settings.reset`](#settingsreset) | Removes a setting from the user's or the project's settings file and writes the file. |
@@ -60,6 +62,66 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `file.open`
+
+Opens a file in the editor, with the caret at a byte offset or at the start.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `file.open`.",
+  "properties": {
+    "offset": {
+      "default": null,
+      "description": "The byte offset to put the caret at; the start of the file when absent.",
+      "format": "uint",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "OpenFileParams",
+  "type": "object"
+}
+```
+
+## `project.open`
+
+Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `project.open`.",
+  "properties": {
+    "path": {
+      "description": "The project directory: the one holding `quakec.toml`, or `progs.src` and\n`csprogs.src`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "OpenProjectParams",
   "type": "object"
 }
 ```

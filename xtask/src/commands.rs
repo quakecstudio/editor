@@ -10,6 +10,7 @@ use std::path::Path;
 use qs_commands::Registry;
 use qs_layout::{HasLayout, Layout};
 use qs_settings::{HasSettings, SettingsStore};
+use qs_workbench::{HasWorkbench, Workbench};
 
 use crate::{Report, print_outcome};
 
@@ -53,6 +54,7 @@ pub(crate) fn check(root: &Path) -> Result<Report, String> {
 struct Everything {
     settings: SettingsStore,
     layout: Layout,
+    workbench: Workbench<qc_project::MemoryLoader>,
 }
 
 impl HasSettings for Everything {
@@ -67,12 +69,21 @@ impl HasLayout for Everything {
     }
 }
 
-/// The reference the registry renders: the built-in commands, the settings commands (P2-22)
-/// and the layout commands (P2-17).
+impl HasWorkbench for Everything {
+    type Loader = qc_project::MemoryLoader;
+
+    fn workbench(&mut self) -> &mut Workbench<qc_project::MemoryLoader> {
+        &mut self.workbench
+    }
+}
+
+/// The reference the registry renders: the built-in commands, the settings commands (P2-22),
+/// the layout commands (P2-17) and the workbench commands (P2-19).
 fn reference() -> Result<String, String> {
     let mut registry = Registry::<Everything>::new();
     qs_settings::register(&mut registry).map_err(|e| e.to_string())?;
     qs_layout::register(&mut registry).map_err(|e| e.to_string())?;
+    qs_workbench::register(&mut registry).map_err(|e| e.to_string())?;
     Ok(registry.markdown())
 }
 

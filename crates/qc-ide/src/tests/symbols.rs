@@ -10,9 +10,9 @@ fn named(symbols: &[Symbol]) -> Vec<(&str, SymbolKind)> {
     symbols.iter().map(|s| (s.name.as_str(), s.kind)).collect()
 }
 
-// spec QC-11.6: a file's outline is its global definitions in source order: a function, a
-// field, a global with an initialiser as a constant and one without as a variable; parameters
-// and locals are not in it
+/// A file's outline is its global definitions in source order: a function, a field, an
+/// initialised global as a constant (QC-11.6) and an uninitialised one as a global; parameters
+/// and locals are not in it.
 #[test]
 fn a_files_outline_is_its_global_definitions() {
     let defs = ".float health;\nfloat speed = 300;\nentity target;\n";
@@ -42,8 +42,8 @@ fn a_files_outline_is_its_global_definitions() {
     assert!(host.document_symbols(&path("nowhere.qc")).is_empty());
 }
 
-// spec QC-12.2: the project's symbols are every file's, by path and then source order, each
-// once though two modules compile the file
+/// The project's symbols are every file's, by path and then source order, each once though two
+/// modules compile the file.
 #[test]
 fn the_projects_symbols_are_every_files() {
     let shared = "float shared;\n";

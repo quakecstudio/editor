@@ -1,0 +1,23 @@
+[package]
+name = "qs-workbench"
+description = "The open project and file: the file tree, symbols and problems the panels list, and the commands that open a project or a file"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qc-ide = { workspace = true }
+qc-project = { workspace = true }
+qs-commands = { workspace = true }
+schemars = { workspace = true, features = ["derive", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
+tracing = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+serde_json = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true
