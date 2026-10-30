@@ -151,7 +151,9 @@ impl MockBuiltins {
             6 => Err(BuiltinError::from(FatalError::BreakStatement)),
             10 => self.b_error(context),
             11 => self.b_objerror(context),
-            28 | 31 => Ok(()), // coredump, eprint: console only (BUILTIN-16.5)
+            // coredump, eprint: console only; eprint's e goes through NUM_FOR_EDICT (BUILTIN-16.5).
+            28 => Ok(()),
+            31 => read_parm_edictnum(context, 0).map(|_| ()),
             29 => self.b_traceon(context),
             30 => self.b_traceoff(context),
             // 49 ChangeYaw is a pure movement builtin handled with movement.
