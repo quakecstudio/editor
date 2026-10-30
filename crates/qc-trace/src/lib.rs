@@ -102,8 +102,87 @@ pub enum TraceError {
         /// The line number, from 1.
         line: usize,
         /// What is wrong with it.
-        reason: String,
+        fault: JsonFault,
     },
+}
+
+/// What is wrong with a line of the JSON form (TRACE-6, TRACE-6.6).
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum JsonFault {
+    /// The text does not end with a line feed (TRACE-6.1).
+    NoFinalLineFeed,
+    /// The text has no header line (TRACE-6.1).
+    MissingHeader,
+    /// A line is empty (TRACE-6.1).
+    BlankLine,
+    /// A line is JSON but not an object (TRACE-6.1).
+    NotAnObject,
+    /// A line is not JSON (TRACE-6.1); the parser's message.
+    InvalidJson(String),
+    /// A key the line's type requires is absent (TRACE-6.6).
+    MissingKey(&'static str),
+    /// A key the line's type does not have (TRACE-6.6).
+    UnknownKey(String),
+    /// A key's value is not a string (TRACE-6.6).
+    NotAString(&'static str),
+    /// A key's value is not an integer from 0 to `u32::MAX` (TRACE-6.6).
+    NotAU32(&'static str),
+    /// A key's value is not a 32-bit signed integer (TRACE-6.6).
+    NotAnI32(&'static str),
+    /// A key's value is not 8 lowercase hex digits (TRACE-6.4).
+    NotBits(&'static str),
+    /// A key's value is not escaped text (TRACE-6.5).
+    NotEscapedText(&'static str),
+    /// The header's `trace` is not `qc-trace` (TRACE-6.2).
+    NotQcTrace,
+    /// A record's `t` names none of TRACE-6.3's records.
+    UnknownRecordType(String),
+    /// `globals` or `fields` is not an array (TRACE-6.3).
+    NotAnArray(&'static str),
+    /// A global change is not `[slot, bits]` (TRACE-6.3).
+    GlobalNotAPair,
+    /// A global change's slot is not a `u32` (TRACE-6.6).
+    GlobalSlotOutOfRange,
+    /// A global change's bits are not 8 lowercase hex digits (TRACE-6.4).
+    GlobalBitsMalformed,
+    /// A field change is not `[edict, field, bits]` (TRACE-6.3).
+    FieldNotATriple,
+    /// A field change's edict is not a `u32` (TRACE-6.6).
+    EdictOutOfRange,
+    /// A field change's field slot is not a `u32` (TRACE-6.6).
+    FieldSlotOutOfRange,
+    /// A field change's bits are not 8 lowercase hex digits (TRACE-6.4).
+    FieldBitsMalformed,
+}
+
+impl fmt::Display for JsonFault {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoFinalLineFeed => f.write_str("the last line has no line feed"),
+            Self::MissingHeader => f.write_str("missing header"),
+            Self::BlankLine => f.write_str("blank line"),
+            Self::NotAnObject => f.write_str("not a JSON object"),
+            Self::InvalidJson(message) => write!(f, "invalid JSON: {message}"),
+            Self::MissingKey(key) => write!(f, "missing key `{key}`"),
+            Self::UnknownKey(key) => write!(f, "unknown key `{key}`"),
+            Self::NotAString(key) => write!(f, "`{key}` is not a string"),
+            Self::NotAU32(key) => write!(f, "`{key}` is not an integer from 0 to 4294967295"),
+            Self::NotAnI32(key) => write!(f, "`{key}` is not a 32-bit signed integer"),
+            Self::NotBits(key) => write!(f, "`{key}` is not 8 lowercase hex digits"),
+            Self::NotEscapedText(key) => write!(f, "`{key}` is not escaped text"),
+            Self::NotQcTrace => f.write_str("`trace` is not \"qc-trace\""),
+            Self::UnknownRecordType(name) => write!(f, "unknown record type `{name}`"),
+            Self::NotAnArray(key) => write!(f, "`{key}` is not an array"),
+            Self::GlobalNotAPair => f.write_str("a global change is not [slot, bits]"),
+            Self::GlobalSlotOutOfRange => f.write_str("a global slot is out of range"),
+            Self::GlobalBitsMalformed => f.write_str("a global's bits are malformed"),
+            Self::FieldNotATriple => f.write_str("a field change is not [edict, field, bits]"),
+            Self::EdictOutOfRange => f.write_str("an edict number is out of range"),
+            Self::FieldSlotOutOfRange => f.write_str("a field slot is out of range"),
+            Self::FieldBitsMalformed => f.write_str("a field's bits are malformed"),
+        }
+    }
 }
 
 impl fmt::Display for TraceError {
@@ -123,7 +202,7 @@ impl fmt::Display for TraceError {
             Self::ChangesOutOfOrder => write!(f, "a change set is out of order"),
             Self::NulInText => write!(f, "text contains a NUL byte"),
             Self::TooLong => write!(f, "text or change list is longer than a uvar can count"),
-            Self::Json { line, reason } => write!(f, "JSON trace line {line}: {reason}"),
+            Self::Json { line, fault } => write!(f, "JSON trace line {line}: {fault}"),
         }
     }
 }

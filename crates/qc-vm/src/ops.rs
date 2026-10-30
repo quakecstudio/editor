@@ -11,11 +11,14 @@
 //! arithmetic that id's C does with `+`, `-`, string compares and float-to-int conversions is
 //! written out with the wrap, truncation or exact comparison the spec fixes.
 
+use qc_edict::EdictNumber;
+use qc_edict::system::{SysField, SysGlobal};
 use qc_progs::opcode::Opcode;
 use qc_progs::{Progs, Statement};
 use qc_types::{EntityRef, PROGS_OFS_RETURN, PointerRef, Slot};
 
-use crate::error::{ErrorKind, RunError};
+use crate::convert::{float_to_int, int_to_float};
+use crate::error::{Divergence, ErrorKind, FieldFault, RunError};
 use crate::exec::{self, Builtins, Context, Observer, ServerState};
 use crate::machine::{Machine, add_slot};
 
@@ -72,16 +75,14 @@ pub(crate) fn execute_statement(
         Opcode::Ge => float_cmp(machine, progs, st, Cmp::Ge),
         Opcode::Lt => float_cmp(machine, progs, st, Cmp::Lt),
         Opcode::Gt => float_cmp(machine, progs, st, Cmp::Gt),
-        Opcode::EqV => vector_cmp(machine, progs, st, true),
-        Opcode::NeV => vector_cmp(machine, progs, st, false),
+        Opcode::EqV => vector_cmp(machine, progs, st, Equality::Eq),
+        Opcode::NeV => vector_cmp(machine, progs, st, Equality::Ne),
 
         // VM-7: string, entity and function comparisons.
-        Opcode::EqS => string_cmp(machine, progs, &*builtins, st, true),
-        Opcode::NeS => string_cmp(machine, progs, &*builtins, st, false),
-        Opcode::EqE => bits_cmp(machine, progs, st, true),
-        Opcode::NeE => bits_cmp(machine, progs, st, false),
-        Opcode::EqFnc => bits_cmp(machine, progs, st, true),
-        Opcode::NeFnc => bits_cmp(machine, progs, st, false),
+        Opcode::EqS => string_cmp(machine, progs, &*builtins, st, Equality::Eq),
+        Opcode::NeS => string_cmp(machine, progs, &*builtins, st, Equality::Ne),
+        Opcode::EqE | Opcode::EqFnc => bits_cmp(machine, progs, st, Equality::Eq),
+        Opcode::NeE | Opcode::NeFnc => bits_cmp(machine, progs, st, Equality::Ne),
 
         // VM-8: logical operators.
         Opcode::NotF => not_float(machine, progs, st),
@@ -89,12 +90,12 @@ pub(crate) fn execute_statement(
         Opcode::NotS => not_string(machine, progs, &*builtins, st),
         Opcode::NotEnt => not_bits(machine, progs, st),
         Opcode::NotFnc => not_bits(machine, progs, st),
-        Opcode::And => logical(machine, progs, st, true),
-        Opcode::Or => logical(machine, progs, st, false),
+        Opcode::And => logical(machine, progs, st, Connective::And),
+        Opcode::Or => logical(machine, progs, st, Connective::Or),
 
         // VM-9: bitwise operators.
-        Opcode::BitAnd => bitwise(machine, progs, st, true),
-        Opcode::BitOr => bitwise(machine, progs, st, false),
+        Opcode::BitAnd => bitwise(machine, progs, st, Connective::And),
+        Opcode::BitOr => bitwise(machine, progs, st, Connective::Or),
 
         // VM-10: global stores.
         Opcode::StoreF
@@ -121,8 +122,8 @@ pub(crate) fn execute_statement(
 
         // VM-13: jumps.
         Opcode::Goto => goto(machine, st),
-        Opcode::If => branch(machine, progs, st, true),
-        Opcode::IfNot => branch(machine, progs, st, false),
+        Opcode::If => branch(machine, progs, st, JumpWhen::Nonzero),
+        Opcode::IfNot => branch(machine, progs, st, JumpWhen::Zero),
 
         // VM-14: calls.
         Opcode::Call0 => call(machine, progs, server, builtins, observer, st, 0),
@@ -147,12 +148,16 @@ pub(crate) fn execute_statement(
 // Operand access
 // ---------------------------------------------------------------------------
 
+/// Reads operand slot `slot`, bounds-checked (VM-1.3, VM-1.4).
+pub(crate) fn read_slot(machine: &Machine, progs: &Progs<'_>, slot: i32) -> Result<Slot, RunError> {
+    machine
+        .global(slot)
+        .map_err(|e| exec::global_error(machine, progs, e))
+}
+
 /// Reads the float in operand slot `slot`, bounds-checked (VM-1.3, VM-1.4).
 fn read_float(machine: &Machine, progs: &Progs<'_>, slot: i32) -> Result<f32, RunError> {
-    Ok(machine
-        .global(slot)
-        .map_err(|e| exec::global_error(machine, progs, e))?
-        .as_f32())
+    Ok(read_slot(machine, progs, slot)?.as_f32())
 }
 
 /// Reads the three floats of a vector operand, slots `slot`, `slot + 1`, `slot + 2`.
@@ -164,7 +169,7 @@ fn read_vec(machine: &Machine, progs: &Progs<'_>, slot: i32) -> Result<[f32; 3],
 }
 
 /// Writes a slot to operand slot `slot`, bounds-checked (VM-1.4).
-fn write_slot(
+pub(crate) fn write_slot(
     machine: &mut Machine,
     progs: &Progs<'_>,
     slot: i32,
@@ -331,13 +336,30 @@ fn float_cmp(
     Ok(NEXT)
 }
 
+/// Whether a comparison opcode is the `EQ_` or the `NE_` of its pair (VM-6.3, VM-7).
+#[derive(Clone, Copy, Debug)]
+enum Equality {
+    Eq,
+    Ne,
+}
+
+impl Equality {
+    /// The opcode's answer when the operands are, or are not, the same.
+    const fn holds(self, same: bool) -> bool {
+        match self {
+            Self::Eq => same,
+            Self::Ne => !same,
+        }
+    }
+}
+
 /// `EQ_V` and `NE_V` (VM-6.3): all three components compared as VM-6.2; `c` may overlap
 /// (VM-6.4).
 fn vector_cmp(
     machine: &mut Machine,
     progs: &Progs<'_>,
     st: &Statement,
-    equal: bool,
+    equality: Equality,
 ) -> Result<Control, RunError> {
     let a = read_vec(machine, progs, st.a)?;
     let b = read_vec(machine, progs, st.b)?;
@@ -348,7 +370,7 @@ fn vector_cmp(
         reason = "spec VM-6.3: per-component IEEE 754 equality, NaN unordered, as id's C"
     )]
     let all_equal = a[0] == b[0] && a[1] == b[1] && a[2] == b[2];
-    let result = if equal { all_equal } else { !all_equal };
+    let result = equality.holds(all_equal);
     write_slot(machine, progs, st.c, bool_slot(result))?;
     Ok(NEXT)
 }
@@ -391,28 +413,20 @@ fn string_cmp(
     progs: &Progs<'_>,
     builtins: &dyn Builtins,
     st: &Statement,
-    equal: bool,
+    equality: Equality,
 ) -> Result<Control, RunError> {
-    let a_value = machine
-        .global(st.a)
-        .map_err(|e| exec::global_error(machine, progs, e))?
-        .as_i32();
-    let b_value = machine
-        .global(st.b)
-        .map_err(|e| exec::global_error(machine, progs, e))?
-        .as_i32();
+    let a_value = read_slot(machine, progs, st.a)?.as_i32();
+    let b_value = read_slot(machine, progs, st.b)?.as_i32();
     let a = resolve_string(progs, builtins, a_value)
-        .map_err(|()| string_divergence(machine, progs, a_value))?;
+        .map_err(|()| machine.divergence(progs, Divergence::BadString { value: a_value }))?;
     let b = resolve_string(progs, builtins, b_value)
-        .map_err(|()| string_divergence(machine, progs, b_value))?;
-    if equal {
+        .map_err(|()| machine.divergence(progs, Divergence::BadString { value: b_value }))?;
+    match equality {
         // VM-7.1: EQ_S writes 1.0 when the strings are equal.
-        write_slot(machine, progs, st.c, bool_slot(a == b))?;
-    } else {
+        Equality::Eq => write_slot(machine, progs, st.c, bool_slot(a == b))?,
         // VM-7.2: NE_S writes strcmp's result as a float: 0.0 when equal, else the first
         // differing byte of a minus that of b as unsigned bytes, the NUL counting as 0.
-        let diff = strcmp(a, b);
-        write_float(machine, progs, st.c, from_i32_as_float(diff))?;
+        Equality::Ne => write_float(machine, progs, st.c, int_to_float(strcmp(a, b)))?,
     }
     Ok(NEXT)
 }
@@ -441,47 +455,20 @@ fn strcmp(a: &[u8], b: &[u8]) -> i32 {
     }
 }
 
-/// An `i32` as the float with those bits? No: VM-7.2 writes the difference as a float value
-/// `(float)strcmp(...)`, so the integer is converted to a float by value.
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "spec VM-7.2: id's OP_NE_S writes (float)strcmp(a,b); a byte difference is small and exact in f32"
-)]
-fn from_i32_as_float(value: i32) -> f32 {
-    value as f32
-}
-
 /// `EQ_E`, `NE_E`, `EQ_FNC`, `NE_FNC` (VM-7.4): compare the 32-bit patterns, not floats.
 fn bits_cmp(
     machine: &mut Machine,
     progs: &Progs<'_>,
     st: &Statement,
-    equal: bool,
+    equality: Equality,
 ) -> Result<Control, RunError> {
-    let a = machine
-        .global(st.a)
-        .map_err(|e| exec::global_error(machine, progs, e))?;
-    let b = machine
-        .global(st.b)
-        .map_err(|e| exec::global_error(machine, progs, e))?;
+    let a = read_slot(machine, progs, st.a)?;
+    let b = read_slot(machine, progs, st.b)?;
     // VM-7.4: EQ_E compares bits; a NaN pattern equals itself, -0 and +0 differ.
     let same = a.bits() == b.bits();
-    let result = if equal { same } else { !same };
+    let result = equality.holds(same);
     write_slot(machine, progs, st.c, bool_slot(result))?;
     Ok(NEXT)
-}
-
-/// The VM-7.3 divergence error for a string value naming neither the table nor an engine
-/// string.
-fn string_divergence(machine: &Machine, progs: &Progs<'_>, value: i32) -> RunError {
-    exec::run_error(
-        machine,
-        progs,
-        ErrorKind::Divergence {
-            statement: "VM-7.3",
-            detail: format!("string value {value} is neither a table offset nor an engine string"),
-        },
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -524,12 +511,9 @@ fn not_string(
     builtins: &dyn Builtins,
     st: &Statement,
 ) -> Result<Control, RunError> {
-    let value = machine
-        .global(st.a)
-        .map_err(|e| exec::global_error(machine, progs, e))?
-        .as_i32();
+    let value = read_slot(machine, progs, st.a)?.as_i32();
     let bytes = resolve_string(progs, builtins, value)
-        .map_err(|()| string_divergence(machine, progs, value))?;
+        .map_err(|()| machine.divergence(progs, Divergence::BadString { value }))?;
     // VM-8.3: NOT_S writes 1.0 when the value is 0 or the first byte is NUL.
     let empty = bytes.first().copied().unwrap_or(0) == 0;
     write_slot(machine, progs, st.c, bool_slot(empty))?;
@@ -538,12 +522,17 @@ fn not_string(
 
 /// `NOT_ENT` and `NOT_FNC` (VM-8.4, VM-8.5): 1.0 when the 32-bit value is 0.
 fn not_bits(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Control, RunError> {
-    let a = machine
-        .global(st.a)
-        .map_err(|e| exec::global_error(machine, progs, e))?;
+    let a = read_slot(machine, progs, st.a)?;
     // VM-8.4, VM-8.5: NOT_ENT and NOT_FNC write 1.0 when the value's bits are 0.
     write_slot(machine, progs, st.c, bool_slot(a.bits() == 0))?;
     Ok(NEXT)
+}
+
+/// Whether a logical or bitwise opcode is the `AND` or the `OR` of its pair (VM-8.6, VM-9).
+#[derive(Clone, Copy, Debug)]
+enum Connective {
+    And,
+    Or,
 }
 
 /// `AND` and `OR` (VM-8.6): both operands read as floats; -0 is zero, NaN is non-zero.
@@ -551,14 +540,17 @@ fn logical(
     machine: &mut Machine,
     progs: &Progs<'_>,
     st: &Statement,
-    and: bool,
+    connective: Connective,
 ) -> Result<Control, RunError> {
     let a = read_float(machine, progs, st.a)?;
     let b = read_float(machine, progs, st.b)?;
     // VM-8.6: AND is 1.0 when both floats are non-zero, OR when either is; a NaN is
     // non-zero and -0 is zero. Both operands are always read.
     let (ta, tb) = (a != 0.0, b != 0.0);
-    let result = if and { ta && tb } else { ta || tb };
+    let result = match connective {
+        Connective::And => ta && tb,
+        Connective::Or => ta || tb,
+    };
     write_slot(machine, progs, st.c, bool_slot(result))?;
     Ok(NEXT)
 }
@@ -573,56 +565,17 @@ fn bitwise(
     machine: &mut Machine,
     progs: &Progs<'_>,
     st: &Statement,
-    and: bool,
+    connective: Connective,
 ) -> Result<Control, RunError> {
     let a = float_to_int(read_float(machine, progs, st.a)?);
     let b = float_to_int(read_float(machine, progs, st.b)?);
-    let result = if and { a & b } else { a | b };
+    let result = match connective {
+        Connective::And => a & b,
+        Connective::Or => a | b,
+    };
     // VM-9.1: the integer result is converted back to float, rounded to nearest even.
     write_float(machine, progs, st.c, int_to_float(result))?;
     Ok(NEXT)
-}
-
-/// `(int)value` by truncation toward zero, id's C cast (VM-9.1), with the x86 "integer
-/// indefinite" result for a NaN, infinity or out-of-range value (VM-9.2).
-fn float_to_int(value: f32) -> i32 {
-    // VM-9.2: a NaN, infinity or value whose truncation is outside -2^31..2^31-1 converts
-    // to VM_FLOAT_TO_INT_INVALID (-2147483648), the x86 cvttss2si result.
-    if value.is_nan() {
-        return VM_FLOAT_TO_INT_INVALID;
-    }
-    let truncated = value.trunc();
-    // -2^31 and up to, but not including, 2^31 is in range; outside is the invalid value.
-    if truncated >= TWO_POW_31 || truncated < NEG_TWO_POW_31 {
-        return VM_FLOAT_TO_INT_INVALID;
-    }
-    // VM-9.1: truncation toward zero is exact here, so the cast does not lose a value in
-    // range; the bounds above make it safe.
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "spec VM-9.1, VM-9.2: id's C (int)a; the range check above fixes the x86 result for out-of-range, so this cast is in -2^31..2^31-1"
-    )]
-    let int = truncated as i32;
-    int
-}
-
-/// The invalid-conversion result VM-9.2 fixes, the x86 "integer indefinite" value.
-///
-/// `VM_FLOAT_TO_INT_INVALID` in VM-9 (`docs/spec/vm.md`).
-const VM_FLOAT_TO_INT_INVALID: i32 = -2_147_483_648;
-
-/// `2^31` and `-2^31` as f32, the bounds of VM-9.2. Both are exactly representable; they are
-/// built from their IEEE 754 bit patterns so no decimal literal is rounded.
-const TWO_POW_31: f32 = f32::from_bits(0x4F00_0000);
-const NEG_TWO_POW_31: f32 = f32::from_bits(0xCF00_0000);
-
-/// `(float)int`, rounded to nearest even (VM-9.1); a value above 2^24 may lose low bits.
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "spec VM-9.1: id's C (float)result; the result above 2^24 loses its low bits to round-to-nearest-even, which is the specified behaviour"
-)]
-fn int_to_float(value: i32) -> f32 {
-    value as f32
 }
 
 // ---------------------------------------------------------------------------
@@ -636,9 +589,7 @@ fn store_scalar(
     progs: &Progs<'_>,
     st: &Statement,
 ) -> Result<Control, RunError> {
-    let value = machine
-        .global(st.a)
-        .map_err(|e| exec::global_error(machine, progs, e))?;
+    let value = read_slot(machine, progs, st.a)?;
     // VM-10.1, VM-10.3: a bit-exact copy, every NaN pattern and -0.0 included.
     write_slot(machine, progs, st.b, value)?;
     Ok(NEXT)
@@ -654,17 +605,11 @@ fn store_vector(
     // VM-1.4: all six slots must be inside the globals; checked before any is written, so a
     // partly out-of-range store writes nothing (vector_partly_out_of_range).
     for i in 0..3_i32 {
-        let _ = machine
-            .global(add_operand(machine, progs, st.a, i)?)
-            .map_err(|e| exec::global_error(machine, progs, e))?;
-        let _ = machine
-            .global(add_operand(machine, progs, st.b, i)?)
-            .map_err(|e| exec::global_error(machine, progs, e))?;
+        let _ = read_slot(machine, progs, add_operand(machine, progs, st.a, i)?)?;
+        let _ = read_slot(machine, progs, add_operand(machine, progs, st.b, i)?)?;
     }
     for i in 0..3_i32 {
-        let value = machine
-            .global(add_operand(machine, progs, st.a, i)?)
-            .map_err(|e| exec::global_error(machine, progs, e))?;
+        let value = read_slot(machine, progs, add_operand(machine, progs, st.a, i)?)?;
         write_slot(machine, progs, add_operand(machine, progs, st.b, i)?, value)?;
     }
     Ok(NEXT)
@@ -680,25 +625,19 @@ fn load_target(
     machine: &Machine,
     progs: &Progs<'_>,
     st: &Statement,
-) -> Result<(usize, usize), RunError> {
-    let entity = machine
-        .global(st.a)
-        .map_err(|e| exec::global_error(machine, progs, e))?
-        .as_i32();
-    let field = machine
-        .global(st.b)
-        .map_err(|e| exec::global_error(machine, progs, e))?
-        .as_i32();
+) -> Result<(EdictNumber, usize), RunError> {
+    let entity = read_slot(machine, progs, st.a)?.as_i32();
+    let field = read_slot(machine, progs, st.b)?.as_i32();
     // VM-11.4: a value that does not name an edict, or a field slot outside 0..entityfields,
     // fails.
     let number = machine
         .edicts
         .num_for_edict(EntityRef::from_bits(entity))
-        .map_err(|_| load_divergence(machine, progs, "entity value does not name an edict"))?;
+        .map_err(|_| machine.divergence(progs, Divergence::Load(FieldFault::NotAnEdict)))?;
     let field_index = usize::try_from(field)
         .ok()
         .filter(|f| *f < machine.edicts.layout().entityfields())
-        .ok_or_else(|| load_divergence(machine, progs, "field index out of range"))?;
+        .ok_or_else(|| machine.divergence(progs, Divergence::Load(FieldFault::FieldOutOfRange)))?;
     Ok((number, field_index))
 }
 
@@ -712,7 +651,7 @@ fn load_scalar(
     let value = machine
         .edicts
         .field(number, field)
-        .ok_or_else(|| load_divergence(machine, progs, "field slot missing"))?;
+        .ok_or_else(|| machine.divergence(progs, Divergence::Load(FieldFault::FieldSlotMissing)))?;
     write_slot(machine, progs, st.c, value)?;
     Ok(NEXT)
 }
@@ -729,18 +668,13 @@ fn load_vector(
         .checked_add(2)
         .filter(|f| *f < machine.edicts.layout().entityfields());
     if last.is_none() {
-        return Err(load_divergence(
-            machine,
-            progs,
-            "vector field slot out of range",
-        ));
+        return Err(machine.divergence(progs, Divergence::Load(FieldFault::VectorFieldOutOfRange)));
     }
     for i in 0..3_usize {
         let f = field.wrapping_add(i);
-        let value = machine
-            .edicts
-            .field(number, f)
-            .ok_or_else(|| load_divergence(machine, progs, "field slot missing"))?;
+        let value = machine.edicts.field(number, f).ok_or_else(|| {
+            machine.divergence(progs, Divergence::Load(FieldFault::FieldSlotMissing))
+        })?;
         write_slot(
             machine,
             progs,
@@ -749,18 +683,6 @@ fn load_vector(
         )?;
     }
     Ok(NEXT)
-}
-
-/// The VM-11.4 divergence error for a load whose entity or field is out of range.
-fn load_divergence(machine: &Machine, progs: &Progs<'_>, detail: &str) -> RunError {
-    exec::run_error(
-        machine,
-        progs,
-        ErrorKind::Divergence {
-            statement: "VM-11.4",
-            detail: detail.to_owned(),
-        },
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -774,38 +696,31 @@ fn address(
     server: ServerState,
     st: &Statement,
 ) -> Result<Control, RunError> {
-    let entity = machine
-        .global(st.a)
-        .map_err(|e| exec::global_error(machine, progs, e))?
-        .as_i32();
-    let field = machine
-        .global(st.b)
-        .map_err(|e| exec::global_error(machine, progs, e))?
-        .as_i32();
+    let entity = read_slot(machine, progs, st.a)?.as_i32();
+    let field = read_slot(machine, progs, st.b)?.as_i32();
     // VM-12.2: ADDRESS on the world fails while the server is active, succeeds while loading.
     if entity == 0 && server == ServerState::Active {
-        return Err(exec::run_error(
-            machine,
-            progs,
-            ErrorKind::AssignmentToWorld,
-        ));
+        return Err(machine.run_error(progs, ErrorKind::AssignmentToWorld));
     }
     // VM-12.3: ADDRESS checks neither the field index nor whether the edict is free, but the
     // pointer must name a real field slot of a real edict to have meaning; resolve it.
     let number = machine
         .edicts
         .num_for_edict(EntityRef::from_bits(entity))
-        .map_err(|_| address_divergence(machine, progs, "entity value does not name an edict"))?;
-    let number_i32 = i32_from(number);
+        .map_err(|_| machine.divergence(progs, Divergence::Pointer(FieldFault::NotAnEdict)))?;
     let field_index = usize::try_from(field)
         .ok()
         .filter(|f| *f < machine.edicts.layout().entityfields())
-        .ok_or_else(|| address_divergence(machine, progs, "field index out of range"))?;
+        .ok_or_else(|| {
+            machine.divergence(progs, Divergence::Pointer(FieldFault::FieldOutOfRange))
+        })?;
     let pointer = machine
         .edicts
         .layout()
-        .pointer_value(number_i32, field_index)
-        .ok_or_else(|| address_divergence(machine, progs, "pointer out of range"))?;
+        .pointer_value(number, field_index)
+        .ok_or_else(|| {
+            machine.divergence(progs, Divergence::Pointer(FieldFault::PointerOutOfRange))
+        })?;
     write_slot(machine, progs, st.c, Slot::from(pointer))?;
     Ok(NEXT)
 }
@@ -815,39 +730,23 @@ fn storep_target(
     machine: &Machine,
     progs: &Progs<'_>,
     pointer_slot: i32,
-) -> Result<(usize, usize), RunError> {
-    let pointer = machine
-        .global(pointer_slot)
-        .map_err(|e| exec::global_error(machine, progs, e))?
-        .as_i32();
+) -> Result<(EdictNumber, usize), RunError> {
+    let pointer = read_slot(machine, progs, pointer_slot)?.as_i32();
     // VM-12.5: a pointer that does not name a field slot of an edict fails without writing.
-    let (number, field) = pointer_target(machine, PointerRef::from_bits(pointer))
-        .ok_or_else(|| storep_divergence(machine, progs, "pointer does not name a field slot"))?;
+    let (number, field) =
+        pointer_target(machine, PointerRef::from_bits(pointer)).ok_or_else(|| {
+            machine.divergence(progs, Divergence::Pointer(FieldFault::PointerNotAField))
+        })?;
     Ok((number, field))
 }
 
 /// The edict number and field slot a pointer value names, by inverting EDICT-1.6.
-fn pointer_target(machine: &Machine, pointer: PointerRef) -> Option<(usize, usize)> {
-    let edict_size = machine.edicts.layout().edict_size();
-    let header = qc_edict::EDICT_HEADER_SIZE;
-    let value = pointer.bits();
-    if value < 0 {
-        return None;
-    }
-    let number = value.checked_div(edict_size)?;
-    let within = value.checked_rem(edict_size)?;
-    let from_fields = within.checked_sub(header)?;
-    if from_fields < 0 || from_fields.checked_rem(4) != Some(0) {
-        return None;
-    }
-    let field = from_fields.checked_div(4)?;
-    let number = usize::try_from(number).ok()?;
-    let field = usize::try_from(field).ok()?;
-    if number < machine.edicts.num_edicts() && field < machine.edicts.layout().entityfields() {
-        Some((number, field))
-    } else {
-        None
-    }
+fn pointer_target(machine: &Machine, pointer: PointerRef) -> Option<(EdictNumber, usize)> {
+    machine
+        .edicts
+        .layout()
+        .pointer_slot(pointer)
+        .filter(|&(number, _)| number.index() < machine.edicts.num_edicts())
 }
 
 /// `STOREP_F`, `STOREP_S`, `STOREP_ENT`, `STOREP_FLD`, `STOREP_FNC` (VM-12.4): copy a to the
@@ -858,10 +757,9 @@ fn storep_scalar(
     st: &Statement,
 ) -> Result<Control, RunError> {
     let (number, field) = storep_target(machine, progs, st.b)?;
-    let value = machine
-        .global(st.a)
-        .map_err(|e| exec::global_error(machine, progs, e))?;
-    machine.edicts.set_field(number, field, value);
+    let value = read_slot(machine, progs, st.a)?;
+    // The pointer names an edict's field slot (VM-12.4), so the write cannot miss.
+    let _written = machine.edicts.set_field(number, field, value);
     Ok(NEXT)
 }
 
@@ -877,45 +775,23 @@ fn storep_vector(
         .checked_add(2)
         .filter(|f| *f < machine.edicts.layout().entityfields());
     if last.is_none() {
-        return Err(storep_divergence(
-            machine,
+        return Err(machine.divergence(
             progs,
-            "vector pointer out of range",
+            Divergence::Pointer(FieldFault::VectorPointerOutOfRange),
         ));
     }
     for i in 0..3_usize {
-        let value = machine
-            .global(add_operand(machine, progs, st.a, i32_from(i))?)
-            .map_err(|e| exec::global_error(machine, progs, e))?;
-        machine
+        let value = read_slot(
+            machine,
+            progs,
+            add_operand(machine, progs, st.a, i32_from(i))?,
+        )?;
+        // A vector whose y or z would fall past the edict's last field drops that component.
+        let _written = machine
             .edicts
             .set_field(number, field.wrapping_add(i), value);
     }
     Ok(NEXT)
-}
-
-/// The VM-12.2 / VM-12.5 divergence error for an ADDRESS whose entity or field is out of range.
-fn address_divergence(machine: &Machine, progs: &Progs<'_>, detail: &str) -> RunError {
-    exec::run_error(
-        machine,
-        progs,
-        ErrorKind::Divergence {
-            statement: "VM-12.5",
-            detail: detail.to_owned(),
-        },
-    )
-}
-
-/// The VM-12.5 divergence error for a STOREP whose pointer is invalid.
-fn storep_divergence(machine: &Machine, progs: &Progs<'_>, detail: &str) -> RunError {
-    exec::run_error(
-        machine,
-        progs,
-        ErrorKind::Divergence {
-            statement: "VM-12.5",
-            detail: detail.to_owned(),
-        },
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -927,20 +803,33 @@ fn goto(machine: &Machine, st: &Statement) -> Result<Control, RunError> {
     Ok(Control::Jump(machine.xstatement.wrapping_add(st.a)))
 }
 
+/// When a conditional jump jumps: `IF` on a non-zero pattern, `IFNOT` on zero (VM-13.2).
+#[derive(Clone, Copy, Debug)]
+enum JumpWhen {
+    Nonzero,
+    Zero,
+}
+
+impl JumpWhen {
+    const fn jumps(self, nonzero: bool) -> bool {
+        match self {
+            Self::Nonzero => nonzero,
+            Self::Zero => !nonzero,
+        }
+    }
+}
+
 /// `IF` and `IFNOT` (VM-13.2, VM-13.3): test the 32-bit pattern in `a`, jump by `b`.
 fn branch(
     machine: &Machine,
     progs: &Progs<'_>,
     st: &Statement,
-    on_nonzero: bool,
+    when: JumpWhen,
 ) -> Result<Control, RunError> {
-    let value = machine
-        .global(st.a)
-        .map_err(|e| exec::global_error(machine, progs, e))?;
+    let value = read_slot(machine, progs, st.a)?;
     // VM-13.3: the test is on the 32-bit pattern, so -0.0 and every NaN are true.
     let nonzero = value.bits() != 0;
-    let jump = if on_nonzero { nonzero } else { !nonzero };
-    if jump {
+    if when.jumps(nonzero) {
         Ok(Control::Jump(machine.xstatement.wrapping_add(st.b)))
     } else {
         Ok(NEXT)
@@ -961,27 +850,17 @@ fn call(
     st: &Statement,
     argc: usize,
 ) -> Result<Control, RunError> {
-    let index = machine
-        .global(st.a)
-        .map_err(|e| exec::global_error(machine, progs, e))?
-        .as_i32();
+    let index = read_slot(machine, progs, st.a)?.as_i32();
     // VM-14.1: set pr_argc to the number in the opcode name.
     machine.argc = argc;
 
     // VM-14.2: a function index of 0 fails with NULL function.
     if index == 0 {
-        return Err(exec::run_error(machine, progs, ErrorKind::NullCallFunction));
+        return Err(machine.run_error(progs, ErrorKind::NullCallFunction));
     }
     // VM-14.3: a negative index or one not less than numfunctions fails.
     let Some(function) = exec::function_at(progs, index) else {
-        return Err(exec::run_error(
-            machine,
-            progs,
-            ErrorKind::Divergence {
-                statement: "VM-14.3",
-                detail: format!("call function index {index} out of range"),
-            },
-        ));
+        return Err(machine.divergence(progs, Divergence::CallOutOfRange { index }));
     };
 
     match function.builtin_number() {
@@ -991,12 +870,12 @@ fn call(
                 .ok()
                 .filter(|n| *n < crate::LIMIT_NUM_BUILTINS);
             let Some(number) = number else {
-                return Err(exec::run_error(machine, progs, ErrorKind::BadBuiltin));
+                return Err(machine.run_error(progs, ErrorKind::BadBuiltin));
             };
             if number == 0 {
                 // LIMIT-5.2: builtin 0 cannot be called; but first_statement 0 is not
                 // negative, so builtin_number never returns 0. Reject defensively.
-                return Err(exec::run_error(machine, progs, ErrorKind::BadBuiltin));
+                return Err(machine.run_error(progs, ErrorKind::BadBuiltin));
             }
             // VM-14.4: call the builtin directly; no frame, no locals, no parameter copy.
             let mut context = Context {
@@ -1027,9 +906,7 @@ fn call(
 fn done(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Control, RunError> {
     let ret = i32::from(PROGS_OFS_RETURN);
     for i in 0..3_i32 {
-        let value = machine
-            .global(add_operand(machine, progs, st.a, i)?)
-            .map_err(|e| exec::global_error(machine, progs, e))?;
+        let value = read_slot(machine, progs, add_operand(machine, progs, st.a, i)?)?;
         write_slot(machine, progs, add_operand(machine, progs, ret, i)?, value)?;
     }
     Ok(Control::Return)
@@ -1042,29 +919,23 @@ fn done(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Cont
 /// `STATE` (VM-17): set the entity in `self`'s nextthink, frame and think fields.
 fn state(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Control, RunError> {
     // VM-17.1: STATE acts on the entity in the global self (slot 28).
-    let self_value = machine
-        .global(SELF_SLOT)
-        .map_err(|e| exec::global_error(machine, progs, e))?
-        .as_i32();
+    let self_value = read_slot(machine, progs, SELF_SLOT)?.as_i32();
     let number = machine
         .edicts
         .num_for_edict(EntityRef::from_bits(self_value))
-        .map_err(|_| state_divergence(machine, progs, "self does not name an edict"))?;
+        .map_err(|_| machine.divergence(progs, Divergence::StateSelf))?;
 
     // VM-17.1: nextthink = (float)((double)time + 0.1), 0.1 the double.
-    let time = machine
-        .global(TIME_SLOT)
-        .map_err(|e| exec::global_error(machine, progs, e))?
-        .as_f32();
+    let time = read_slot(machine, progs, TIME_SLOT)?.as_f32();
     let next_think = state_think_time(time);
-    machine
+    // A progs with fewer fields than nextthink, frame or think has nowhere to write them; the
+    // write is dropped.
+    let _written = machine
         .edicts
         .set_field(number, FIELD_NEXTTHINK, Slot::from_f32(next_think));
 
     // VM-17.2: frame = a's float only when a != frame as VM-6.2 compares.
-    let a = machine
-        .global(st.a)
-        .map_err(|e| exec::global_error(machine, progs, e))?;
+    let a = read_slot(machine, progs, st.a)?;
     let frame_now = machine
         .edicts
         .field(number, FIELD_FRAME)
@@ -1077,14 +948,12 @@ fn state(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Con
     )]
     let differs = a.as_f32() != frame_now.as_f32();
     if differs {
-        machine.edicts.set_field(number, FIELD_FRAME, a);
+        let _written = machine.edicts.set_field(number, FIELD_FRAME, a);
     }
 
     // VM-17.3: think = the 32-bit pattern in b, a function index, not checked.
-    let b = machine
-        .global(st.b)
-        .map_err(|e| exec::global_error(machine, progs, e))?;
-    machine.edicts.set_field(number, FIELD_THINK, b);
+    let b = read_slot(machine, progs, st.b)?;
+    let _written = machine.edicts.set_field(number, FIELD_THINK, b);
     Ok(NEXT)
 }
 
@@ -1103,24 +972,12 @@ fn state_think_time(time: f32) -> f32 {
 const VM_STATE_THINK_INTERVAL: f64 = 0.1;
 
 /// The `self` and `time` global slots and the `frame`, `think` and `nextthink` field slots
-/// from id's `progdefs.q1` (VM-17.4): self 28, time 31, frame 30, think 44, nextthink 46.
-const SELF_SLOT: i32 = 28;
-const TIME_SLOT: i32 = 31;
-const FIELD_FRAME: usize = 30;
-const FIELD_THINK: usize = 44;
-const FIELD_NEXTTHINK: usize = 46;
-
-/// The VM-17.4 divergence error for a `self` that does not name an edict.
-fn state_divergence(machine: &Machine, progs: &Progs<'_>, detail: &str) -> RunError {
-    exec::run_error(
-        machine,
-        progs,
-        ErrorKind::Divergence {
-            statement: "VM-17.4",
-            detail: detail.to_owned(),
-        },
-    )
-}
+/// from id's `progdefs.q1` (VM-17.4).
+const SELF_SLOT: i32 = SysGlobal::SelfEntity.ofs();
+const TIME_SLOT: i32 = SysGlobal::Time.ofs();
+const FIELD_FRAME: usize = SysField::Frame.slot();
+const FIELD_THINK: usize = SysField::Think.slot();
+const FIELD_NEXTTHINK: usize = SysField::Nextthink.slot();
 
 /// `usize` as `i32`, saturating; a slot index is always small here.
 fn i32_from(value: usize) -> i32 {

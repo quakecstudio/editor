@@ -8,12 +8,13 @@
 //! The server's builtins: `qc-builtins`' for the engine state it keeps, and the world builtins
 //! on this crate's collision (WORLD-8) and movement (MOVE).
 
-use qc_builtins::math::{f64_to_f32_public, float_to_int, int_to_f32_public};
 use qc_builtins::mock::ModelBounds;
-use qc_builtins::{Engine, MockBuiltins, MockEngine};
+use qc_builtins::{MockBuiltins, MockEngine};
+use qc_edict::EdictNumber;
 use qc_edict::system::{field_by_name, global_by_name};
 use qc_progs::Progs;
 use qc_types::{EntityRef, PROGS_OFS_RETURN, Slot, ofs_parm};
+use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
 use qc_vm::{Builtins, Context, ErrorKind, Machine, NoObserver, RunError, ServerState};
 use qs_bsp::{Bsp, BspLoader};
 use qs_mdl::Sprite;
@@ -62,7 +63,7 @@ pub type ModelFiles = Box<dyn Fn(&str) -> Option<Vec<u8>>>;
 /// The builtins a world runs its progs with.
 pub struct SimBuiltins {
     /// The engine state builtins read and write, and every builtin but the world's.
-    pub(crate) mock: MockBuiltins<MockEngine>,
+    pub(crate) mock: MockBuiltins,
     /// The world's collision.
     pub(crate) collision: Collision,
     /// The sounds the server started, oldest first (PHYS-4.4, PHYS-5.1).
@@ -314,7 +315,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
         let edicts = self.context.machine_view().edicts();
         [0, 1, 2].map(|i| {
             edicts
-                .field(n, first.saturating_add(i))
+                .field(EdictNumber::new(n), first.saturating_add(i))
                 .map_or(0.0, Slot::as_f32)
         })
     }
@@ -329,7 +330,10 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
     pub(crate) fn progs_field(&self, n: usize, name: &str) -> Option<Slot> {
         let def = self.context.progs().ed_find_field(name.as_bytes())?;
         let slot = usize::try_from(def.ofs).ok()?;
-        self.context.machine_view().edicts().field(n, slot)
+        self.context
+            .machine_view()
+            .edicts()
+            .field(EdictNumber::new(n), slot)
     }
 
     /// The edict an entity field names, id's `PROG_TO_EDICT`; the world for any value that
@@ -343,8 +347,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
         let layout = self.context.machine_view().edicts().layout();
         layout
             .edict_number(EntityRef::from_bits(value))
-            .and_then(|n| usize::try_from(n).ok())
-            .unwrap_or(0)
+            .map_or(0, EdictNumber::index)
     }
 
     pub(crate) fn value_of(&self, n: usize) -> i32 {
@@ -357,36 +360,47 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
 
     pub(crate) fn set_float(&mut self, n: usize, name: &str, value: f32) {
         let slot = field_slot(name);
-        self.context
-            .machine()
-            .edicts_mut()
-            .set_field(n, slot, Slot::from_f32(value));
+        // A slot past the edict's fields is not written.
+        let _written = self.context.machine().edicts_mut().set_field(
+            EdictNumber::new(n),
+            slot,
+            Slot::from_f32(value),
+        );
     }
 
     pub(crate) fn set_vector(&mut self, n: usize, name: &str, value: [f32; 3]) {
         let first = field_slot(name);
         let edicts = self.context.machine().edicts_mut();
         for (i, v) in value.into_iter().enumerate() {
-            edicts.set_field(n, first.saturating_add(i), Slot::from_f32(v));
+            // A slot past the edict's fields is not written.
+            let _written = edicts.set_field(
+                EdictNumber::new(n),
+                first.saturating_add(i),
+                Slot::from_f32(v),
+            );
         }
     }
 
     /// Sets a field to a raw value: a string, function or entity value.
     pub(crate) fn set_entity_raw(&mut self, n: usize, name: &str, value: i32) {
         let slot = field_slot(name);
-        self.context
-            .machine()
-            .edicts_mut()
-            .set_field(n, slot, Slot::from_i32(value));
+        // A slot past the edict's fields is not written.
+        let _written = self.context.machine().edicts_mut().set_field(
+            EdictNumber::new(n),
+            slot,
+            Slot::from_i32(value),
+        );
     }
 
     pub(crate) fn set_entity(&mut self, n: usize, name: &str, ent: usize) {
         let value = self.value_of(ent);
         let slot = field_slot(name);
-        self.context
-            .machine()
-            .edicts_mut()
-            .set_field(n, slot, Slot::from_i32(value));
+        // A slot past the edict's fields is not written.
+        let _written = self.context.machine().edicts_mut().set_field(
+            EdictNumber::new(n),
+            slot,
+            Slot::from_i32(value),
+        );
     }
 
     /// `(int)flags`.
@@ -395,7 +409,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
     }
 
     pub(crate) fn set_flags(&mut self, n: usize, flags: i32) {
-        self.set_float(n, "flags", int_to_f32_public(flags));
+        self.set_float(n, "flags", int_to_float(flags));
     }
 
     pub(crate) fn global(&self, name: &str) -> Slot {
@@ -432,7 +446,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
 
     /// One draw of the engine's random source, id's `rand()`.
     pub(crate) fn rand(&mut self) -> u32 {
-        Engine::next_rand(self.sim.mock.engine_mut())
+        self.sim.mock.engine_mut().rng.next_rand()
     }
 
     // ---- the world builtins (WORLD-8) ----
@@ -514,7 +528,7 @@ impl Host for SimCall<'_, '_, '_> {
 
     fn body(&self, n: usize) -> Option<Body> {
         let edicts = self.context.machine_view().edicts();
-        let free = edicts.is_free(n)?;
+        let free = edicts.is_free(EdictNumber::new(n))?;
         #[expect(
             clippy::float_cmp_const,
             reason = "spec WORLD-1.4: id tests movetype == MOVETYPE_PUSH"
@@ -550,7 +564,7 @@ impl Host for SimCall<'_, '_, '_> {
         let other_value = self.value_of(other);
         self.set_global("self", Slot::from_i32(trigger_value));
         self.set_global("other", Slot::from_i32(other_value));
-        let time = f64_to_f32_public(self.sim.mock.engine().clock);
+        let time = double_to_float(self.sim.mock.engine().clock);
         self.set_global("time", Slot::from_f32(time));
         let result = self.context.execute_program(self.sim, function);
         self.set_global("self", old_self);
@@ -565,7 +579,9 @@ pub(crate) fn field_slot(name: &str) -> usize {
 }
 
 fn field(vm: &Vm<'_, '_, '_>, n: usize, name: &str) -> Option<Slot> {
-    vm.machine_view().edicts().field(n, field_slot(name))
+    vm.machine_view()
+        .edicts()
+        .field(EdictNumber::new(n), field_slot(name))
 }
 
 fn parm(context: &Vm<'_, '_, '_>, n: u16) -> Slot {
@@ -596,7 +612,7 @@ fn parm_edict(context: &Vm<'_, '_, '_>, n: u16) -> Result<usize, RunError> {
         .edicts()
         .layout()
         .edict_number(EntityRef::from_bits(value))
-        .and_then(|n| usize::try_from(n).ok())
+        .map(EdictNumber::index)
         .ok_or_else(|| {
             context.run_error(ErrorKind::Builtin {
                 message: "invalid entity".to_owned(),

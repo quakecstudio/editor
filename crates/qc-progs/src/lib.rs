@@ -6,7 +6,7 @@
 //! returns a zero-copy view whose tables decode from the file's bytes on access. Errors are
 //! [`ReadError`] values, never panics, for any input. [`ProgsFile`] is an owned copy that
 //! [`write()`] turns back into bytes; a file read and written back is the same byte for byte
-//! (PROGS-22.1). With the `fte` feature the reader and writer also handle FTEQCC's version 7
+//! (PROGS-22.1). The header's version decides the format: 6 is id's, and 7 is FTEQCC's
 //! (PROGS-19 to PROGS-21).
 //!
 //! The format is specified in `docs/spec/progs.md` and its limits in `docs/spec/limits.md`;
@@ -28,13 +28,11 @@ pub use records::{
     PROGS_GLOBAL_SIZE, PROGS_HEADER_CRC, PROGS_HEADER_SIZE, PROGS_STATEMENT_SIZE,
     PROGS_STRING_ALIGN, PROGS_VERSION, Record, Statement,
 };
-#[cfg(feature = "fte")]
 pub use records::{
     FteHeader, PROGS_FTE_HEADER_SIZE, PROGS_FTE_LINE_SIZE, PROGS_FTE_SECONDARY16,
     PROGS_FTE_SECONDARY32, PROGS_FTE_TYPE_SIZE, PROGS_FTE32_DEF_SIZE, PROGS_FTE32_STATEMENT_SIZE,
     PROGS_VERSION_FTE,
 };
-#[cfg(feature = "fte")]
 pub use write::FteParts;
 pub use write::{ProgsFile, WriteError, write};
 
@@ -54,10 +52,8 @@ pub enum TableId {
     /// The globals (PROGS-12).
     Globals,
     /// FTE's line numbers (PROGS-21.1).
-    #[cfg(feature = "fte")]
     LineNumbers,
     /// FTE's names of functions without bodies (PROGS-21.2).
-    #[cfg(feature = "fte")]
     BodylessFunctions,
 }
 
@@ -70,9 +66,7 @@ impl core::fmt::Display for TableId {
             Self::Functions => "functions",
             Self::Strings => "strings",
             Self::Globals => "globals",
-            #[cfg(feature = "fte")]
             Self::LineNumbers => "line numbers",
-            #[cfg(feature = "fte")]
             Self::BodylessFunctions => "bodyless functions",
         })
     }

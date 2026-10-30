@@ -15,11 +15,13 @@
               the f64-to-f32 casts reproduce the engine's rounding"
 )]
 
+use crate::EdictNumber;
 use qc_progs::limits::LIMIT_MAX_EDICTS;
-use qc_types::{EntityRef, Etype, Slot};
+use qc_types::{EntityRef, Etype, PointerRef, Slot};
 
 use crate::system::{
-    SYSTEM_FIELDS, SYSTEM_GLOBALS, field_at_slot, field_by_name, global_at_slot, global_by_name,
+    SYSTEM_FIELDS, SYSTEM_GLOBALS, SysField, SysGlobal, field_at_slot, field_by_name,
+    global_at_slot, global_by_name,
 };
 use crate::{
     EDICT_HEADER_SIZE, EDICT_MAX_FIELDS, EDICT_SYS_FIELDS_END, EDICT_SYS_GLOBALS_END, EdictError,
@@ -62,9 +64,9 @@ fn array_size_and_num_edicts_start() {
     let eight = store(8);
     assert_eq!(eight.num_edicts(), 9);
     // Every edict 0..600 exists, free or not (the array holds all of them).
-    assert!(one.fields(0).is_some());
-    assert!(one.fields(599).is_some());
-    assert!(one.fields(600).is_none());
+    assert!(one.fields(EdictNumber::new(0)).is_some());
+    assert!(one.fields(EdictNumber::new(599)).is_some());
+    assert!(one.fields(EdictNumber::new(600)).is_none());
 }
 
 // spec EDICT-1.5: an entity value is the edict number times the edict size; edict 3 is 1548,
@@ -72,9 +74,18 @@ fn array_size_and_num_edicts_start() {
 #[test]
 fn entity_value_is_number_times_edict_size() {
     let layout = layout_105();
-    assert_eq!(layout.entity_value(0), Some(EntityRef::from_bits(0)));
-    assert_eq!(layout.entity_value(3), Some(EntityRef::from_bits(1548)));
-    assert_eq!(layout.entity_value(1), Some(EntityRef::from_bits(516)));
+    assert_eq!(
+        layout.entity_value(EdictNumber::new(0)),
+        Some(EntityRef::from_bits(0))
+    );
+    assert_eq!(
+        layout.entity_value(EdictNumber::new(3)),
+        Some(EntityRef::from_bits(1548))
+    );
+    assert_eq!(
+        layout.entity_value(EdictNumber::new(1)),
+        Some(EntityRef::from_bits(516))
+    );
 }
 
 // spec EDICT-1.6: a pointer to field slot f of edict n is n * edict_size + 96 + 4 * f; slot 46
@@ -82,11 +93,50 @@ fn entity_value_is_number_times_edict_size() {
 #[test]
 fn pointer_value_adds_header_and_field_offset() {
     let layout = layout_105();
-    let pointer = layout.pointer_value(2, 46).expect("slot 46 exists");
+    let pointer = layout
+        .pointer_value(EdictNumber::new(2), 46)
+        .expect("slot 46 exists");
     assert_eq!(pointer.bits(), 1032 + 96 + 184);
     assert_eq!(pointer.bits(), 1312);
     // A slot not below entityfields names no pointer.
-    assert!(layout.pointer_value(2, 105).is_none());
+    assert!(layout.pointer_value(EdictNumber::new(2), 105).is_none());
+}
+
+// spec EDICT-1.6: a pointer value inverts to its edict and field slot; a negative value, one
+// in the header, one off a slot boundary or one past the fields names none
+#[test]
+fn pointer_slot_inverts_pointer_value() {
+    let layout = layout_105();
+    let pointer = layout.pointer_value(EdictNumber::new(2), 46).unwrap();
+    assert_eq!(
+        layout.pointer_slot(pointer),
+        Some((EdictNumber::new(2), 46))
+    );
+    assert_eq!(
+        layout.pointer_slot(layout.pointer_value(EdictNumber::new(0), 0).unwrap()),
+        Some((EdictNumber::new(0), 0))
+    );
+    assert_eq!(
+        layout.pointer_slot(layout.pointer_value(EdictNumber::new(7), 104).unwrap()),
+        Some((EdictNumber::new(7), 104))
+    );
+    for bits in [-1, -516, 516 + 95, 516 + 96 + 2, 516 + 96 + 4 * 105] {
+        assert_eq!(
+            layout.pointer_slot(PointerRef::from_bits(bits)),
+            None,
+            "{bits}"
+        );
+    }
+}
+
+// spec EDICT-5.1: the clients are edicts 1 to maxclients
+#[test]
+fn clients_are_edicts_one_to_maxclients() {
+    let four = store(4);
+    assert!(!four.is_client(EdictNumber::new(0)));
+    assert!(four.is_client(EdictNumber::new(1)) && four.is_client(EdictNumber::new(4)));
+    assert!(!four.is_client(EdictNumber::new(5)));
+    assert!(!store(0).is_client(EdictNumber::new(1)));
 }
 
 // spec EDICT-1.7: EDICT_NUM fails "bad number <n>" for n negative or >= 600; 599 is edict 599.
@@ -108,13 +158,19 @@ fn edict_num_rejects_out_of_range() {
 #[test]
 fn num_for_edict_rejects_at_or_above_num_edicts() {
     let store = store(1); // num_edicts is 2
-    let at_num_edicts = store.layout().entity_value(2).expect("edict 2 value");
+    let at_num_edicts = store
+        .layout()
+        .entity_value(EdictNumber::new(2))
+        .expect("edict 2 value");
     assert_eq!(
         store.num_for_edict(at_num_edicts),
         Err(EdictError::BadPointer)
     );
-    let below = store.layout().entity_value(1).expect("edict 1 value");
-    assert_eq!(store.num_for_edict(below), Ok(1));
+    let below = store
+        .layout()
+        .entity_value(EdictNumber::new(1))
+        .expect("edict 1 value");
+    assert_eq!(store.num_for_edict(below), Ok(EdictNumber::new(1)));
 }
 
 // spec EDICT-1.7: the messages are id's "EDICT_NUM: bad number 600" and
@@ -142,13 +198,13 @@ fn fresh_store_is_zero_filled_and_in_use() {
     assert_eq!(store.num_edicts(), 2);
     for number in 0..LIMIT_MAX_EDICTS {
         assert_eq!(
-            store.is_free(number),
+            store.is_free(EdictNumber::new(number)),
             Some(false),
             "edict {number} free flag"
         );
         assert!(
             store
-                .fields(number)
+                .fields(EdictNumber::new(number))
                 .expect("edict exists")
                 .iter()
                 .all(|s| *s == Slot::ZERO),
@@ -165,12 +221,12 @@ fn entity_value_names_an_edict_only_on_a_whole_multiple() {
     // Edict 10 names an edict even though it is at or above num_edicts.
     assert_eq!(
         store.layout().edict_number(EntityRef::from_bits(10 * 516)),
-        Some(10)
+        Some(EdictNumber::new(10))
     );
     // Edict 599 names one; 600 does not (past the array).
     assert_eq!(
         store.layout().edict_number(EntityRef::from_bits(599 * 516)),
-        Some(599)
+        Some(EdictNumber::new(599))
     );
     assert_eq!(
         store.layout().edict_number(EntityRef::from_bits(600 * 516)),
@@ -183,6 +239,25 @@ fn entity_value_names_an_edict_only_on_a_whole_multiple() {
 }
 
 // ---- EDICT-2: system globals ----
+
+// spec EDICT-2.1: each named system global is the table's row, in slot order
+// spec EDICT-3.1: and each named system field
+#[test]
+fn the_named_system_variables_are_the_tables_rows() {
+    let globals: Vec<_> = SysGlobal::ALL.iter().map(|g| g.var()).collect();
+    assert_eq!(globals, SYSTEM_GLOBALS);
+    let fields: Vec<_> = SysField::ALL.iter().map(|f| f.var()).collect();
+    assert_eq!(fields, SYSTEM_FIELDS);
+    assert_eq!(
+        (SysGlobal::SelfEntity.slot(), SysGlobal::SelfEntity.name()),
+        (28, "self")
+    );
+    assert_eq!(
+        (SysField::Origin.slot(), SysField::Origin.name()),
+        (10, "origin")
+    );
+    assert_eq!(SysGlobal::Time.var().etype, Etype::Float);
+}
 
 // spec EDICT-2.1: the 64 system globals at slots 28 to 91, with these names and types.
 #[test]
@@ -319,8 +394,8 @@ fn non_system_fields_are_not_in_the_fixed_table() {
 #[test]
 fn alloc_after_the_clients_grows_num_edicts() {
     let mut store = store(1);
-    assert_eq!(store.alloc(1.0), Ok(2));
-    assert_eq!(store.alloc(1.0), Ok(3));
+    assert_eq!(store.alloc(1.0), Ok(EdictNumber::new(2)));
+    assert_eq!(store.alloc(1.0), Ok(EdictNumber::new(3)));
     assert_eq!(store.num_edicts(), 4);
 }
 
@@ -329,10 +404,10 @@ fn alloc_after_the_clients_grows_num_edicts() {
 #[test]
 fn alloc_reuses_in_the_first_seconds() {
     let mut store = store(1);
-    assert_eq!(store.alloc(1.0), Ok(2));
-    assert_eq!(store.alloc(1.0), Ok(3));
-    store.free(2, 1.0); // freetime 1, below 2
-    assert_eq!(store.alloc(1.0), Ok(2)); // reused at once
+    assert_eq!(store.alloc(1.0), Ok(EdictNumber::new(2)));
+    assert_eq!(store.alloc(1.0), Ok(EdictNumber::new(3)));
+    store.free(EdictNumber::new(2), 1.0); // freetime 1, below 2
+    assert_eq!(store.alloc(1.0), Ok(EdictNumber::new(2))); // reused at once
 }
 
 // spec EDICT-6.1: allocation scans from maxclients + 1 and takes the lowest qualifying edict.
@@ -340,12 +415,12 @@ fn alloc_reuses_in_the_first_seconds() {
 fn alloc_takes_the_lowest_qualifying_edict() {
     let mut store = store(4); // clients 1..4, num_edicts 5
     for expected in 5..=8 {
-        assert_eq!(store.alloc(10.0), Ok(expected));
+        assert_eq!(store.alloc(10.0), Ok(EdictNumber::new(expected)));
     }
-    store.free(8, 10.0);
-    store.free(6, 10.0);
+    store.free(EdictNumber::new(8), 10.0);
+    store.free(EdictNumber::new(6), 10.0);
     // At 11.0 both 6 and 8 are old enough; the lower, 6, is taken.
-    assert_eq!(store.alloc(11.0), Ok(6));
+    assert_eq!(store.alloc(11.0), Ok(EdictNumber::new(6)));
 }
 
 // spec EDICT-6.3: the reuse delay is strict in double precision; 0.5 later is not reused, 0.6
@@ -353,20 +428,20 @@ fn alloc_takes_the_lowest_qualifying_edict() {
 #[test]
 fn alloc_waits_more_than_half_a_second() {
     let mut store = store(1);
-    assert_eq!(store.alloc(5.0), Ok(2));
-    store.free(2, 5.0); // freetime 5
-    assert_eq!(store.alloc(5.0), Ok(3)); // edict 2 freed 0 seconds ago, not reused
-    assert_eq!(store.alloc(5.5), Ok(4)); // exactly 0.5 is not more than 0.5
-    assert_eq!(store.alloc(5.6), Ok(2)); // 0.6 > 0.5, edict 2 reused
+    assert_eq!(store.alloc(5.0), Ok(EdictNumber::new(2)));
+    store.free(EdictNumber::new(2), 5.0); // freetime 5
+    assert_eq!(store.alloc(5.0), Ok(EdictNumber::new(3))); // edict 2 freed 0 seconds ago, not reused
+    assert_eq!(store.alloc(5.5), Ok(EdictNumber::new(4))); // exactly 0.5 is not more than 0.5
+    assert_eq!(store.alloc(5.6), Ok(EdictNumber::new(2))); // 0.6 > 0.5, edict 2 reused
 }
 
 // spec EDICT-6.4: freetime of exactly 2 is not below 2, so the half-second delay applies.
 #[test]
 fn alloc_waits_from_time_2() {
     let mut store = store(1);
-    assert_eq!(store.alloc(2.0), Ok(2));
-    store.free(2, 2.0); // freetime 2, not below 2
-    assert_eq!(store.alloc(2.0), Ok(3)); // 0 seconds is not more than 0.5
+    assert_eq!(store.alloc(2.0), Ok(EdictNumber::new(2)));
+    store.free(EdictNumber::new(2), 2.0); // freetime 2, not below 2
+    assert_eq!(store.alloc(2.0), Ok(EdictNumber::new(3))); // 0 seconds is not more than 0.5
 }
 
 // spec EDICT-6.3: freetime is an f32, so 100000.3 rounds to 100000.296875 and the measured
@@ -374,12 +449,15 @@ fn alloc_waits_from_time_2() {
 #[test]
 fn alloc_freetime_is_rounded_to_f32() {
     let mut store = store(1);
-    assert_eq!(store.alloc(100_000.3), Ok(2));
-    store.free(2, 100_000.3);
+    assert_eq!(store.alloc(100_000.3), Ok(EdictNumber::new(2)));
+    store.free(EdictNumber::new(2), 100_000.3);
     // 100000.3 rounds to 100000.296875 in f32 (EDICT-6.3): compare the exact f32 of the clock.
-    assert_eq!(store.freetime(2), Some(100_000.3_f64 as f32));
+    assert_eq!(
+        store.freetime(EdictNumber::new(2)),
+        Some(100_000.3_f64 as f32)
+    );
     // At 100000.8 the edict was freed 0.503125 seconds ago, so it is reused.
-    assert_eq!(store.alloc(100_000.8), Ok(2));
+    assert_eq!(store.alloc(100_000.8), Ok(EdictNumber::new(2)));
 }
 
 // spec EDICT-6.2: once num_edicts is 600 and nothing qualifies, spawn fails with
@@ -403,11 +481,11 @@ fn alloc_at_600_waits_for_the_delay() {
     for _ in 0..598 {
         store.alloc(10.0).expect("spawn below 600");
     }
-    store.free(300, 10.0); // freetime 10
+    store.free(EdictNumber::new(300), 10.0); // freetime 10
     // At 10.2 edict 300 was freed 0.2 seconds ago: not old enough, and num_edicts is 600.
     assert_eq!(store.alloc(10.2), Err(EdictError::NoFreeEdicts));
     // At 10.6 it is 0.6 seconds, old enough: reused.
-    assert_eq!(store.alloc(10.6), Ok(300));
+    assert_eq!(store.alloc(10.6), Ok(EdictNumber::new(300)));
 }
 
 // spec EDICT-6.5: the edict handed out is zero-filled with its free flag cleared, its header
@@ -415,17 +493,25 @@ fn alloc_at_600_waits_for_the_delay() {
 #[test]
 fn alloc_clears_fields_but_keeps_freetime() {
     let mut store = store(1);
-    assert_eq!(store.alloc(3.0), Ok(2));
+    assert_eq!(store.alloc(3.0), Ok(EdictNumber::new(2)));
     // Dirty every field slot.
     for slot in 0..105 {
-        assert!(store.set_field(2, slot, Slot::from_f32(7.0)));
+        store
+            .set_field(EdictNumber::new(2), slot, Slot::from_f32(7.0))
+            .unwrap();
     }
-    store.free(2, 3.25); // freetime 3.25
+    store.free(EdictNumber::new(2), 3.25); // freetime 3.25
     // At 4.0 the edict is reused: fields all 0, freetime still 3.25.
-    assert_eq!(store.alloc(4.0), Ok(2));
-    assert!(store.fields(2).unwrap().iter().all(|s| *s == Slot::ZERO));
-    assert_eq!(store.freetime(2), Some(3.25));
-    assert_eq!(store.is_free(2), Some(false));
+    assert_eq!(store.alloc(4.0), Ok(EdictNumber::new(2)));
+    assert!(
+        store
+            .fields(EdictNumber::new(2))
+            .unwrap()
+            .iter()
+            .all(|s| *s == Slot::ZERO)
+    );
+    assert_eq!(store.freetime(EdictNumber::new(2)), Some(3.25));
+    assert_eq!(store.is_free(EdictNumber::new(2)), Some(false));
 }
 
 // spec EDICT-6.6: spawn returns the new edict's entity value (via its number and the layout).
@@ -433,9 +519,7 @@ fn alloc_clears_fields_but_keeps_freetime() {
 fn alloc_number_maps_to_its_entity_value() {
     let mut store = store(1);
     let number = store.alloc(1.0).expect("spawn");
-    let value = store
-        .edict_num(i32::try_from(number).unwrap())
-        .expect("value");
+    let value = store.edict_num(number.to_i32().unwrap()).expect("value");
     assert_eq!(value, EntityRef::from_bits(2 * 516));
 }
 
@@ -444,9 +528,9 @@ fn alloc_number_maps_to_its_entity_value() {
 #[test]
 fn client_edicts_are_never_reused() {
     let mut store = store(8); // clients 1..8, num_edicts 9
-    store.free(3, 1.0); // free a client's edict
+    store.free(EdictNumber::new(3), 1.0); // free a client's edict
     // The next spawn is edict 9, not the freed client edict 3.
-    assert_eq!(store.alloc(1.0), Ok(9));
+    assert_eq!(store.alloc(1.0), Ok(EdictNumber::new(9)));
 }
 
 // ---- EDICT-7: freeing (remove) ----
@@ -457,28 +541,33 @@ fn client_edicts_are_never_reused() {
 #[test]
 fn free_clears_some_fields_and_keeps_the_rest() {
     let mut store = store(1);
-    assert_eq!(store.alloc(3.0), Ok(2));
+    assert_eq!(store.alloc(3.0), Ok(EdictNumber::new(2)));
     for slot in 0..105 {
-        assert!(store.set_field(2, slot, Slot::from_f32(7.0)));
+        store
+            .set_field(EdictNumber::new(2), slot, Slot::from_f32(7.0))
+            .unwrap();
     }
-    store.free(2, 3.25);
-    assert_eq!(store.is_free(2), Some(true));
-    assert_eq!(store.freetime(2), Some(3.25));
+    store.free(EdictNumber::new(2), 3.25);
+    assert_eq!(store.is_free(EdictNumber::new(2)), Some(true));
+    assert_eq!(store.freetime(EdictNumber::new(2)), Some(3.25));
     // Zeroed: modelindex 0, solid 9, origin 10-12, angles 19-21, model 29, frame 30, skin 31,
     // takedamage 59, colormap 77.
     for slot in [0_usize, 9, 10, 11, 12, 19, 20, 21, 29, 30, 31, 59, 77] {
         assert_eq!(
-            store.field(2, slot),
+            store.field(EdictNumber::new(2), slot),
             Some(Slot::ZERO),
             "slot {slot} should be 0"
         );
     }
     // nextthink (46) is -1.
-    assert_eq!(store.field(2, 46), Some(Slot::from_f32(-1.0)));
+    assert_eq!(
+        store.field(EdictNumber::new(2), 46),
+        Some(Slot::from_f32(-1.0))
+    );
     // Everything else keeps 7, e.g. classname 28, health 48, owner 95, absmin 1, absmax 4.
     for slot in [1_usize, 4, 28, 48, 95, 104] {
         assert_eq!(
-            store.field(2, slot),
+            store.field(EdictNumber::new(2), slot),
             Some(Slot::from_f32(7.0)),
             "slot {slot} should keep its value"
         );
@@ -492,7 +581,7 @@ fn free_does_not_shrink_num_edicts() {
     store.alloc(1.0).expect("spawn");
     store.alloc(1.0).expect("spawn");
     assert_eq!(store.num_edicts(), 4);
-    store.free(2, 1.0);
+    store.free(EdictNumber::new(2), 1.0);
     assert_eq!(store.num_edicts(), 4);
 }
 
@@ -503,14 +592,14 @@ fn free_again_moves_freetime_and_restarts_the_delay() {
     let mut store = store(1);
     store.alloc(3.0).expect("spawn edict 2");
     store.alloc(3.0).expect("spawn edict 3");
-    store.free(2, 4.0); // freetime 4
-    store.free(2, 4.4); // freed again: freetime 4.4, delay restarts
-    assert_eq!(store.freetime(2), Some(4.4));
+    store.free(EdictNumber::new(2), 4.0); // freetime 4
+    store.free(EdictNumber::new(2), 4.4); // freed again: freetime 4.4, delay restarts
+    assert_eq!(store.freetime(EdictNumber::new(2)), Some(4.4));
     // At 4.6 only 0.2 seconds have passed since 4.4, so edict 2 is not reused, and edict 3 is
     // in use, so allocation takes num_edicts (4).
-    assert_eq!(store.alloc(4.6), Ok(4));
+    assert_eq!(store.alloc(4.6), Ok(EdictNumber::new(4)));
     // At 5.0, 0.6 seconds since 4.4: edict 2 is reused.
-    assert_eq!(store.alloc(5.0), Ok(2));
+    assert_eq!(store.alloc(5.0), Ok(EdictNumber::new(2)));
 }
 
 // spec EDICT-7.1: clear_edict (ED_ClearEdict) zeroes the fields and clears the free flag, the
@@ -520,12 +609,20 @@ fn clear_edict_zeroes_fields_and_clears_free() {
     let mut store = store(1);
     store.alloc(1.0).expect("spawn edict 2");
     for slot in 0..105 {
-        assert!(store.set_field(2, slot, Slot::from_f32(7.0)));
+        store
+            .set_field(EdictNumber::new(2), slot, Slot::from_f32(7.0))
+            .unwrap();
     }
-    store.free(2, 1.0);
-    store.clear_edict(2);
-    assert_eq!(store.is_free(2), Some(false));
-    assert!(store.fields(2).unwrap().iter().all(|s| *s == Slot::ZERO));
+    store.free(EdictNumber::new(2), 1.0);
+    store.clear_edict(EdictNumber::new(2));
+    assert_eq!(store.is_free(EdictNumber::new(2)), Some(false));
+    assert!(
+        store
+            .fields(EdictNumber::new(2))
+            .unwrap()
+            .iter()
+            .all(|s| *s == Slot::ZERO)
+    );
 }
 
 // ---- store housekeeping ----
@@ -542,13 +639,32 @@ fn bad_maxclients_is_refused() {
 #[test]
 fn field_access_by_offset_rejects_out_of_range() {
     let mut store = store(1);
-    assert!(store.set_field(2, 104, Slot::from_f32(1.0)));
-    assert_eq!(store.field(2, 104), Some(Slot::from_f32(1.0)));
+    store
+        .set_field(EdictNumber::new(2), 104, Slot::from_f32(1.0))
+        .unwrap();
+    assert_eq!(
+        store.field(EdictNumber::new(2), 104),
+        Some(Slot::from_f32(1.0))
+    );
     // Slot 105 does not exist on a 105-field progs.
-    assert!(!store.set_field(2, 105, Slot::from_f32(1.0)));
-    assert_eq!(store.field(2, 105), None);
+    assert_eq!(
+        store.set_field(EdictNumber::new(2), 105, Slot::from_f32(1.0)),
+        Err(EdictError::NoField {
+            number: EdictNumber::new(2),
+            field: 105
+        })
+    );
+    assert_eq!(
+        EdictError::NoField {
+            number: EdictNumber::new(2),
+            field: 105
+        }
+        .to_string(),
+        "edict 2 has no field slot 105"
+    );
+    assert_eq!(store.field(EdictNumber::new(2), 105), None);
     // Edict 600 does not exist.
-    assert_eq!(store.field(600, 0), None);
+    assert_eq!(store.field(EdictNumber::new(600), 0), None);
 }
 
 // spec EDICT-2.4, EDICT-3.3, EDICT-3.5: each LayoutError prints the count and the limit it
@@ -640,11 +756,21 @@ fn for_progs_matches_new() {
 fn pointer_value_bounds() {
     let layout = layout_105();
     // Field 105 is not below entityfields (105): None.
-    assert_eq!(layout.pointer_value(1, 105), None);
+    assert_eq!(layout.pointer_value(EdictNumber::new(1), 105), None);
     // Field 0 of edict 1: 1 * 516 + 96 + 0 = 612.
-    assert_eq!(layout.pointer_value(1, 0).map(|p| p.bits()), Some(612));
+    assert_eq!(
+        layout
+            .pointer_value(EdictNumber::new(1), 0)
+            .map(|p| p.bits()),
+        Some(612)
+    );
     // Field 2 of edict 0: 0 + 96 + 8 = 104.
-    assert_eq!(layout.pointer_value(0, 2).map(|p| p.bits()), Some(104));
+    assert_eq!(
+        layout
+            .pointer_value(EdictNumber::new(0), 2)
+            .map(|p| p.bits()),
+        Some(104)
+    );
 }
 
 // spec EDICT-1.9: edict_number names an edict only for a value that is a whole non-negative
@@ -655,8 +781,14 @@ fn edict_number_rejects_out_of_range() {
     let layout = layout_105();
     let size = layout.edict_size();
     // Edict 0 and edict 1 are in range.
-    assert_eq!(layout.edict_number(EntityRef::from_bits(0)), Some(0));
-    assert_eq!(layout.edict_number(EntityRef::from_bits(size)), Some(1));
+    assert_eq!(
+        layout.edict_number(EntityRef::from_bits(0)),
+        Some(EdictNumber::new(0))
+    );
+    assert_eq!(
+        layout.edict_number(EntityRef::from_bits(size)),
+        Some(EdictNumber::new(1))
+    );
     // Edict LIMIT_MAX_EDICTS is out of range.
     let max = i32::try_from(LIMIT_MAX_EDICTS).unwrap();
     assert_eq!(layout.edict_number(EntityRef::from_bits(size * max)), None);
@@ -670,10 +802,10 @@ fn edict_number_rejects_out_of_range() {
 fn freetime_reports_the_free_clock() {
     let mut store = store(1);
     store.alloc(1.0).unwrap(); // edict 2
-    assert_eq!(store.freetime(2), Some(0.0));
-    store.free(2, 3.5);
-    assert_eq!(store.freetime(2), Some(3.5));
-    assert_eq!(store.freetime(LIMIT_MAX_EDICTS), None);
+    assert_eq!(store.freetime(EdictNumber::new(2)), Some(0.0));
+    store.free(EdictNumber::new(2), 3.5);
+    assert_eq!(store.freetime(EdictNumber::new(2)), Some(3.5));
+    assert_eq!(store.freetime(EdictNumber::new(LIMIT_MAX_EDICTS)), None);
 }
 
 // spec EDICT-1.4: fields and fields_mut give the edict's whole slot array, and None for a
@@ -681,14 +813,20 @@ fn freetime_reports_the_free_clock() {
 #[test]
 fn fields_and_fields_mut() {
     let mut store = store(1);
-    assert_eq!(store.fields(0).map(<[Slot]>::len), Some(FIELDS_105));
+    assert_eq!(
+        store.fields(EdictNumber::new(0)).map(<[Slot]>::len),
+        Some(FIELDS_105)
+    );
     {
-        let slots = store.fields_mut(0).unwrap();
+        let slots = store.fields_mut(EdictNumber::new(0)).unwrap();
         slots[4] = Slot::from_f32(9.0);
     }
-    assert_eq!(store.fields(0).unwrap()[4], Slot::from_f32(9.0));
-    assert_eq!(store.fields(LIMIT_MAX_EDICTS), None);
-    assert_eq!(store.fields_mut(LIMIT_MAX_EDICTS), None);
+    assert_eq!(
+        store.fields(EdictNumber::new(0)).unwrap()[4],
+        Slot::from_f32(9.0)
+    );
+    assert_eq!(store.fields(EdictNumber::new(LIMIT_MAX_EDICTS)), None);
+    assert_eq!(store.fields_mut(EdictNumber::new(LIMIT_MAX_EDICTS)), None);
 }
 
 // spec EDICT-6.2: alloc fails with NoFreeEdicts when num_edicts is already LIMIT_MAX_EDICTS
@@ -728,4 +866,23 @@ fn edict_num_accepts_world_and_first() {
         s.edict_num(-1).unwrap_err(),
         EdictError::BadNumber { number: -1 }
     );
+}
+
+// spec EDICT-1.4: edicts are numbered from 0, the world; an `int` number converts both ways,
+// a negative one names no edict, and one past `i32::MAX` has no `int` form.
+#[test]
+fn edict_number_converts_to_and_from_int() {
+    assert_eq!(EdictNumber::WORLD, EdictNumber::new(0));
+    assert_eq!(EdictNumber::from_i32(0), Some(EdictNumber::WORLD));
+    assert_eq!(
+        EdictNumber::from_i32(599).map(EdictNumber::index),
+        Some(599)
+    );
+    assert_eq!(EdictNumber::from_i32(-1), None);
+    assert_eq!(EdictNumber::from_i32(i32::MIN), None);
+    assert_eq!(EdictNumber::new(599).to_i32(), Some(599));
+    let max = usize::try_from(i32::MAX).unwrap();
+    assert_eq!(EdictNumber::new(max).to_i32(), Some(i32::MAX));
+    assert_eq!(EdictNumber::new(max + 1).to_i32(), None);
+    assert_eq!(EdictNumber::new(42).to_string(), "42");
 }

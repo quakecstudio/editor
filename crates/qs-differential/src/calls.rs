@@ -16,10 +16,11 @@
 //!
 //! Implements `docs/spec/differential.md` DIFF-12.1 to DIFF-12.5.
 
+use qc_edict::EdictNumber;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use qc_builtins::{MockBuiltins, MockEngine};
+use qc_builtins::MockBuiltins;
 use qc_progs::{Def, Progs};
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::{Machine, Observer, RunError};
@@ -389,8 +390,10 @@ fn same_slots(a: &Machine, b: &Machine) -> bool {
     let (ea, eb) = (a.edicts(), b.edicts());
     a.globals() == b.globals()
         && ea.num_edicts() == eb.num_edicts()
-        && (0..ea.num_edicts())
-            .all(|n| ea.is_free(n) == eb.is_free(n) && ea.fields(n) == eb.fields(n))
+        && (0..ea.num_edicts()).all(|n| {
+            ea.is_free(EdictNumber::new(n)) == eb.is_free(EdictNumber::new(n))
+                && ea.fields(EdictNumber::new(n)) == eb.fields(EdictNumber::new(n))
+        })
 }
 
 /// The first named global or field whose value differs between the two worlds (DIFF-12.3).
@@ -415,8 +418,8 @@ fn state_difference(a: &World<'_, '_, '_>, b: &World<'_, '_, '_>) -> Option<Diff
     }
     let (ea, eb) = (a.host.machine.edicts(), b.host.machine.edicts());
     for n in 0..ea.num_edicts().max(eb.num_edicts()) {
-        let free = ea.is_free(n);
-        if free != eb.is_free(n) {
+        let free = ea.is_free(EdictNumber::new(n));
+        if free != eb.is_free(EdictNumber::new(n)) {
             return Some(Difference::Free(n));
         }
         if free != Some(false) {
@@ -542,7 +545,7 @@ struct World<'a, 'p, 's> {
     program: Program<'a, 'p>,
     host: Host<'s>,
     machine: Machine,
-    builtins: MockBuiltins<MockEngine>,
+    builtins: MockBuiltins,
     /// The statements the setup executed (DIFF-12.5).
     setup_executed: BTreeSet<i32>,
     /// How the setup went: the statements and builtins it executed, compared with the other
@@ -600,7 +603,7 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
     fn in_use(&self) -> Vec<usize> {
         let edicts = self.machine.edicts();
         (0..edicts.num_edicts())
-            .filter(|&n| edicts.is_free(n) == Some(false))
+            .filter(|&n| edicts.is_free(EdictNumber::new(n)) == Some(false))
             .collect()
     }
 
@@ -640,7 +643,9 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
     fn field(&self, edict: usize, def_type: DefType, ofs: usize) -> Value {
         let edicts = self.host.machine.edicts();
         self.value(def_type, ofs, |n| {
-            edicts.field(edict, n).unwrap_or(Slot::ZERO)
+            edicts
+                .field(EdictNumber::new(edict), n)
+                .unwrap_or(Slot::ZERO)
         })
     }
 

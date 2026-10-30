@@ -19,7 +19,8 @@ use qc_types::Slot;
 
 use super::harness::{self, Func, Stmt};
 use crate::exec::{Builtins, Context, NoBuiltins, NoObserver, ServerState};
-use crate::{ErrorKind, Machine, RunError};
+use crate::{Divergence, ErrorKind, FieldFault, Machine, RunError};
+use qc_edict::EdictNumber;
 
 /// Reads a harness-built progs with the header CRC check off, as the other test modules do.
 fn read(bytes: &[u8]) -> Progs<'_> {
@@ -442,7 +443,7 @@ fn reviewer_no_builtins_resolves_no_engine_string() {
             )
             .unwrap_err();
         match error.kind {
-            ErrorKind::Divergence { statement, .. } => assert_eq!(statement, "VM-7.3", "{op}"),
+            ErrorKind::Divergence(d) => assert_eq!(d.statement(), "VM-7.3", "{op}"),
             other => panic!("{op}: {other:?}"),
         }
     }
@@ -509,4 +510,79 @@ fn reviewer_an_engine_strings_text_is_read_at_each_comparison() {
     assert_eq!(machine.globals()[110].as_f32(), 1.0);
     assert_eq!(machine.globals()[111].as_f32(), 0.0);
     assert_eq!(machine.globals()[112].as_f32(), 5.0);
+}
+
+// spec VM-12.5: a STOREP pointer must name a field slot of an allocated edict: with one edict
+// (the world) a pointer to the world's field writes, and one to edict 1, inside the array but
+// at num_edicts, fails without writing
+#[test]
+fn storep_refuses_a_pointer_past_num_edicts() {
+    let bytes = harness::ProgsBuilder::default()
+        .statements(&[Stmt::op("STOREP_F", 100, 101, 0), Stmt::op("DONE", 0, 0, 0)])
+        .build();
+    let progs = read(&bytes);
+    let run = |edict: usize| {
+        let mut machine = Machine::new(&progs, 0).unwrap();
+        assert_eq!(machine.edicts().num_edicts(), 1);
+        let pointer = machine
+            .edicts()
+            .layout()
+            .pointer_value(EdictNumber::new(edict), 3)
+            .unwrap();
+        machine.set_global_test(100, Slot::from_f32(2.5));
+        machine.set_global_test(101, Slot::from(pointer));
+        let result = machine.execute_program(
+            &progs,
+            ServerState::Active,
+            &mut NoBuiltins,
+            &mut NoObserver,
+            1,
+        );
+        (result, machine)
+    };
+    let (written, machine) = run(0);
+    written.unwrap();
+    assert_eq!(
+        machine.edicts().field(EdictNumber::WORLD, 3),
+        Some(Slot::from_f32(2.5))
+    );
+    let (refused, _) = run(1);
+    let error = refused.unwrap_err();
+    assert_eq!(
+        error.kind,
+        ErrorKind::Divergence(Divergence::Pointer(FieldFault::PointerNotAField))
+    );
+    assert_eq!(
+        error.message(),
+        "pointer does not name a field slot (VM-12.5)"
+    );
+}
+
+// spec VM-11.4: a LOAD whose field index is entityfields, one past the last slot, is out of range
+// spec VM-12.5: so is an ADDRESS of that field
+#[test]
+fn a_field_index_of_entityfields_is_out_of_range() {
+    for (op, fault) in [
+        ("LOAD_F", Divergence::Load(FieldFault::FieldOutOfRange)),
+        ("ADDRESS", Divergence::Pointer(FieldFault::FieldOutOfRange)),
+    ] {
+        let bytes = harness::ProgsBuilder::default()
+            .statements(&[Stmt::op(op, 100, 101, 102), Stmt::op("DONE", 0, 0, 0)])
+            .build();
+        let progs = read(&bytes);
+        let mut machine = Machine::new(&progs, 0).unwrap();
+        let entityfields = machine.edicts().layout().entityfields();
+        machine.set_global_test(100, Slot::from_i32(0));
+        machine.set_global_test(101, Slot::from_i32(i32::try_from(entityfields).unwrap()));
+        let error = machine
+            .execute_program(
+                &progs,
+                ServerState::Loading,
+                &mut NoBuiltins,
+                &mut NoObserver,
+                1,
+            )
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Divergence(fault), "{op}");
+    }
 }

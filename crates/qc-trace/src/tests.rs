@@ -11,10 +11,10 @@
 use proptest::prelude::*;
 
 use super::{
-    Changes, FieldChange, GlobalChange, Header, Record, Step, StringValue, TRACE_HEADER_SIZE,
-    TRACE_MAGIC, TRACE_TAG_ERROR, TRACE_TAG_EXIT, TRACE_TAG_RUN, TRACE_TAG_STEP, TRACE_TAG_STRING,
-    TRACE_UVAR_MAX_BYTES, TRACE_VERSION, Text, Trace, TraceError, decode, encode, encode_header,
-    encode_record, from_json, header_to_json, record_to_json, to_json,
+    Changes, FieldChange, GlobalChange, Header, JsonFault, Record, Step, StringValue,
+    TRACE_HEADER_SIZE, TRACE_MAGIC, TRACE_TAG_ERROR, TRACE_TAG_EXIT, TRACE_TAG_RUN, TRACE_TAG_STEP,
+    TRACE_TAG_STRING, TRACE_UVAR_MAX_BYTES, TRACE_VERSION, Text, Trace, TraceError, decode, encode,
+    encode_header, encode_record, from_json, header_to_json, record_to_json, to_json,
 };
 
 const SAMPLE_JSONL: &str = include_str!("../../../docs/spec/vectors/trace/sample.jsonl");
@@ -760,6 +760,217 @@ fn json_lines_framing() {
     assert!(is_json_error(&json_line_error(&["{"]), 2));
 }
 
+/// The fault of a JSON error at `line`, or `None` for any other error.
+fn fault_at(error: TraceError, line: usize) -> Option<JsonFault> {
+    match error {
+        TraceError::Json { line: l, fault } if l == line => Some(fault),
+        _ => None,
+    }
+}
+
+// spec TRACE-6.1: each framing fault is named: no final line feed, no header, a blank line,
+// a line that is not an object, and a line that is not JSON
+#[test]
+fn json_framing_faults() {
+    let json = to_json(&sample());
+    assert_eq!(
+        fault_at(from_json(json.trim_end_matches('\n')).unwrap_err(), 12),
+        Some(JsonFault::NoFinalLineFeed)
+    );
+    assert_eq!(
+        fault_at(from_json("\n").unwrap_err(), 1),
+        Some(JsonFault::BlankLine)
+    );
+    let blank = json_with(&["", "{\"t\":\"exit\",\"globals\":[],\"fields\":[]}"]);
+    assert_eq!(
+        fault_at(from_json(&blank).unwrap_err(), 2),
+        Some(JsonFault::BlankLine)
+    );
+    assert_eq!(
+        fault_at(json_line_error(&["[1]"]), 2),
+        Some(JsonFault::NotAnObject)
+    );
+    assert!(matches!(
+        fault_at(json_line_error(&["{"]), 2),
+        Some(JsonFault::InvalidJson(_))
+    ));
+}
+
+// spec TRACE-6.6: a reader rejects a missing key, an unknown key, a wrong JSON type and a
+// number out of range, each named by its key
+// spec TRACE-6.3: an unknown record name, and changes that are not arrays of pairs or triples
+// spec TRACE-6.4: bits that are not 8 lowercase hex digits
+// spec TRACE-6.5: text that is not escaped as TRACE-6.5 says
+// spec TRACE-6.2: a header whose `trace` is not qc-trace
+#[test]
+fn json_record_faults() {
+    let changes = "\"globals\":[],\"fields\":[]";
+    let cases: [(String, JsonFault); 18] = [
+        (format!("{{{changes}}}"), JsonFault::MissingKey("t")),
+        (
+            format!("{{\"t\":\"exit\",\"x\":1,{changes}}}"),
+            JsonFault::UnknownKey("x".to_owned()),
+        ),
+        (format!("{{\"t\":5,{changes}}}"), JsonFault::NotAString("t")),
+        (
+            format!("{{\"t\":\"step\",\"function\":1,\"statement\":2,\"opcode\":-1,{changes}}}"),
+            JsonFault::NotAU32("opcode"),
+        ),
+        (
+            format!(
+                "{{\"t\":\"error\",\"function\":1,\"statement\":3000000000,\"message\":\"\",{changes}}}"
+            ),
+            JsonFault::NotAnI32("statement"),
+        ),
+        (
+            "{\"t\":\"string\",\"value\":\"ABC\",\"text\":\"\"}".to_owned(),
+            JsonFault::NotBits("value"),
+        ),
+        (
+            "{\"t\":\"string\",\"value\":\"00000001\",\"text\":\"\\\\x\"}".to_owned(),
+            JsonFault::NotEscapedText("text"),
+        ),
+        (
+            format!("{{\"t\":\"jump\",{changes}}}"),
+            JsonFault::UnknownRecordType("jump".to_owned()),
+        ),
+        (
+            "{\"t\":\"exit\",\"globals\":5,\"fields\":[]}".to_owned(),
+            JsonFault::NotAnArray("globals"),
+        ),
+        (
+            "{\"t\":\"exit\",\"globals\":[],\"fields\":5}".to_owned(),
+            JsonFault::NotAnArray("fields"),
+        ),
+        (
+            "{\"t\":\"exit\",\"globals\":[[1]],\"fields\":[]}".to_owned(),
+            JsonFault::GlobalNotAPair,
+        ),
+        (
+            "{\"t\":\"exit\",\"globals\":[[-1,\"00000000\"]],\"fields\":[]}".to_owned(),
+            JsonFault::GlobalSlotOutOfRange,
+        ),
+        (
+            "{\"t\":\"exit\",\"globals\":[[1,\"0\"]],\"fields\":[]}".to_owned(),
+            JsonFault::GlobalBitsMalformed,
+        ),
+        (
+            "{\"t\":\"exit\",\"globals\":[],\"fields\":[[1,2]]}".to_owned(),
+            JsonFault::FieldNotATriple,
+        ),
+        (
+            "{\"t\":\"exit\",\"globals\":[],\"fields\":[[-1,2,\"00000000\"]]}".to_owned(),
+            JsonFault::EdictOutOfRange,
+        ),
+        (
+            "{\"t\":\"exit\",\"globals\":[],\"fields\":[[1,-2,\"00000000\"]]}".to_owned(),
+            JsonFault::FieldSlotOutOfRange,
+        ),
+        (
+            "{\"t\":\"exit\",\"globals\":[],\"fields\":[[1,2,\"zz\"]]}".to_owned(),
+            JsonFault::FieldBitsMalformed,
+        ),
+        (
+            format!("{{\"t\":\"run\",{changes}}}"),
+            JsonFault::MissingKey("function"),
+        ),
+    ];
+    for (line, fault) in cases {
+        assert_eq!(
+            fault_at(json_line_error(&[&line]), 2),
+            Some(fault),
+            "{line}"
+        );
+    }
+    let other = header_to_json(&header(HeaderSpec::default())).replace("qc-trace", "qc-trick");
+    assert_eq!(
+        fault_at(from_json(&other).unwrap_err(), 1),
+        Some(JsonFault::NotQcTrace)
+    );
+}
+
+// spec TRACE-6.6: each fault's message, byte for byte
+#[test]
+fn json_fault_messages() {
+    let cases = [
+        (JsonFault::NoFinalLineFeed, "the last line has no line feed"),
+        (JsonFault::MissingHeader, "missing header"),
+        (JsonFault::BlankLine, "blank line"),
+        (JsonFault::NotAnObject, "not a JSON object"),
+        (
+            JsonFault::InvalidJson("eof".to_owned()),
+            "invalid JSON: eof",
+        ),
+        (JsonFault::MissingKey("t"), "missing key `t`"),
+        (JsonFault::UnknownKey("x".to_owned()), "unknown key `x`"),
+        (JsonFault::NotAString("t"), "`t` is not a string"),
+        (
+            JsonFault::NotAU32("function"),
+            "`function` is not an integer from 0 to 4294967295",
+        ),
+        (
+            JsonFault::NotAnI32("statement"),
+            "`statement` is not a 32-bit signed integer",
+        ),
+        (
+            JsonFault::NotBits("value"),
+            "`value` is not 8 lowercase hex digits",
+        ),
+        (
+            JsonFault::NotEscapedText("text"),
+            "`text` is not escaped text",
+        ),
+        (JsonFault::NotQcTrace, "`trace` is not \"qc-trace\""),
+        (
+            JsonFault::UnknownRecordType("jump".to_owned()),
+            "unknown record type `jump`",
+        ),
+        (
+            JsonFault::NotAnArray("globals"),
+            "`globals` is not an array",
+        ),
+        (
+            JsonFault::GlobalNotAPair,
+            "a global change is not [slot, bits]",
+        ),
+        (
+            JsonFault::GlobalSlotOutOfRange,
+            "a global slot is out of range",
+        ),
+        (
+            JsonFault::GlobalBitsMalformed,
+            "a global's bits are malformed",
+        ),
+        (
+            JsonFault::FieldNotATriple,
+            "a field change is not [edict, field, bits]",
+        ),
+        (
+            JsonFault::EdictOutOfRange,
+            "an edict number is out of range",
+        ),
+        (
+            JsonFault::FieldSlotOutOfRange,
+            "a field slot is out of range",
+        ),
+        (
+            JsonFault::FieldBitsMalformed,
+            "a field's bits are malformed",
+        ),
+    ];
+    for (fault, text) in cases {
+        assert_eq!(fault.to_string(), text);
+    }
+    assert_eq!(
+        TraceError::Json {
+            line: 3,
+            fault: JsonFault::BlankLine
+        }
+        .to_string(),
+        "JSON trace line 3: blank line"
+    );
+}
+
 // spec TRACE-6.2: the header line names the format and holds the version and five numbers
 #[test]
 fn json_header_line() {
@@ -1035,7 +1246,7 @@ fn errors_display() {
         TraceError::TooLong,
         TraceError::Json {
             line: 7,
-            reason: "why".to_owned(),
+            fault: JsonFault::BlankLine,
         },
     ];
     let messages: Vec<String> = errors.iter().map(ToString::to_string).collect();
@@ -1045,7 +1256,7 @@ fn errors_display() {
             assert_ne!(a, b);
         }
     }
-    assert!(messages[12].contains("line 7") && messages[12].contains("why"));
+    assert!(messages[12].contains("line 7") && messages[12].contains("blank line"));
     assert!(messages[5].contains("0x09") && messages[5].contains('5'));
 }
 

@@ -25,7 +25,8 @@
 
 use qc_builtins::mock::ModelBounds as MockModelBounds;
 use qc_builtins::{MockBuiltins, MockEngine};
-use qc_edict::system::{field_by_name, global_by_name};
+use qc_edict::EdictNumber;
+use qc_edict::system::{SysField, SysGlobal};
 use qc_progs::Progs;
 use qc_types::Slot;
 use qc_vm::{Machine, RunError, ServerState};
@@ -196,7 +197,7 @@ impl<'s> Host<'s> {
 /// The whole running server: the VM, the mock engine, the trace and the scenario (DIFF-1.2).
 pub(crate) struct Host<'s> {
     pub(crate) machine: Machine,
-    pub(crate) builtins: MockBuiltins<MockEngine>,
+    pub(crate) builtins: MockBuiltins,
     pub(crate) trace: TraceBuilder,
     pub(crate) scenario: &'s Scenario,
     /// Whether each client slot's player has entered (DIFF-4.2); index `n - 1` is slot `n`.
@@ -253,22 +254,25 @@ impl Host<'_> {
         // DIFF-3.4, EDICT-4.1: the world's fields, before the globals.
         let world_model = format!("maps/{}.bsp", self.scenario.map);
         let model_string = self.make_string(world_model.into_bytes());
-        self.set_field(0, slot_of_field("model"), Slot::from_i32(model_string));
-        self.set_field(0, slot_of_field("modelindex"), Slot::from_f32(1.0));
-        self.set_field(0, slot_of_field("solid"), Slot::from_f32(SOLID_BSP));
-        self.set_field(0, slot_of_field("movetype"), movetype_slot(MOVETYPE_PUSH));
+        self.set_field(0, SysField::Model.slot(), Slot::from_i32(model_string));
+        self.set_field(0, SysField::Modelindex.slot(), Slot::from_f32(1.0));
+        self.set_field(0, SysField::Solid.slot(), Slot::from_f32(SOLID_BSP));
+        self.set_field(0, SysField::Movetype.slot(), movetype_slot(MOVETYPE_PUSH));
 
         // DIFF-3.4, EDICT-11.4: the globals.
         if coop != 0.0 {
-            self.set_global("coop", Slot::from_f32(coop));
+            self.set_global(SysGlobal::Coop, Slot::from_f32(coop));
         } else {
-            self.set_global("deathmatch", Slot::from_f32(self.setting("deathmatch")));
+            self.set_global(
+                SysGlobal::Deathmatch,
+                Slot::from_f32(self.setting("deathmatch")),
+            );
         }
         let mapname = self.make_string(self.scenario.map.clone().into_bytes());
-        self.set_global("mapname", Slot::from_i32(mapname));
-        self.set_global("serverflags", Slot::from_f32(0.0));
+        self.set_global(SysGlobal::Mapname, Slot::from_i32(mapname));
+        self.set_global(SysGlobal::Serverflags, Slot::from_f32(0.0));
         // EDICT-8.1: the time global is set to 1 (f32), the clock at map start.
-        self.set_global("time", Slot::from_f32(f32_of(MAP_START_TIME)));
+        self.set_global(SysGlobal::Time, Slot::from_f32(f32_of(MAP_START_TIME)));
 
         // DIFF-3.5: spawn the map's entities (EDICT-8), with the deathmatch and skill values
         // for the inhibition test (EDICT-8.4).
@@ -292,22 +296,26 @@ impl Host<'_> {
         let edict = slot_index.saturating_add(1);
 
         // SV_ConnectClient: run SetNewParms with nothing set (EDICT-9.1), then save parm1..16.
-        self.run_named(progs, "SetNewParms")?;
+        self.run_named(progs, SysGlobal::Setnewparms)?;
         let mut spawn_parms = [Slot::ZERO; NUM_SPAWN_PARMS];
         for (i, cell) in spawn_parms.iter_mut().enumerate() {
             *cell = self.global_slot(parm_slot(i));
         }
 
         // Host_Spawn_f: zero the slot's edict without changing its free flag.
-        if let Some(fields) = self.machine.edicts_mut().fields_mut(edict) {
+        if let Some(fields) = self
+            .machine
+            .edicts_mut()
+            .fields_mut(EdictNumber::new(edict))
+        {
             fields.fill(Slot::ZERO);
         }
         // colormap = edict number, team = 1, netname = engine string "player" (DIFF-4.1).
         let colormap = u8::try_from(edict).map_or(0.0, f32::from);
-        self.set_field(edict, slot_of_field("colormap"), Slot::from_f32(colormap));
-        self.set_field(edict, slot_of_field("team"), Slot::from_f32(1.0));
+        self.set_field(edict, SysField::Colormap.slot(), Slot::from_f32(colormap));
+        self.set_field(edict, SysField::Team.slot(), Slot::from_f32(1.0));
         let netname = self.make_string(CLIENT_NAME.to_vec());
-        self.set_field(edict, slot_of_field("netname"), Slot::from_i32(netname));
+        self.set_field(edict, SysField::Netname.slot(), Slot::from_i32(netname));
 
         // Copy the spawn parms back to parm1..16 (DIFF-4.1).
         for (i, value) in spawn_parms.iter().enumerate() {
@@ -316,10 +324,10 @@ impl Host<'_> {
 
         // time = (f32)clock, self = the edict, then ClientConnect and PutClientInServer.
         let clock = self.builtins.engine().clock;
-        self.set_global("time", Slot::from_f32(f32_of(clock)));
+        self.set_global(SysGlobal::Time, Slot::from_f32(f32_of(clock)));
         self.set_self(edict);
-        self.run_named(progs, "ClientConnect")?;
-        self.run_named(progs, "PutClientInServer")?;
+        self.run_named(progs, SysGlobal::Clientconnect)?;
+        self.run_named(progs, SysGlobal::Putclientinserver)?;
 
         // DIFF-4.2: the slot is active and spawned from now on.
         if let Some(cell) = self.entered.get_mut(slot_index) {
@@ -357,13 +365,13 @@ impl Host<'_> {
             }
             let edict = slot.saturating_add(1);
             // ClientDisconnect saves and restores self (EDICT-9.2).
-            let saved = self.global_slot(slot_of_global("self"));
+            let saved = self.global_slot(SysGlobal::SelfEntity.ofs());
             self.set_self(edict);
-            if self.run_named(progs, "ClientDisconnect").is_err() {
+            if self.run_named(progs, SysGlobal::Clientdisconnect).is_err() {
                 // DIFF-8.5: an error during the shutdown ends the scenario at once.
                 return Ended::Error;
             }
-            self.set_global_slot(slot_of_global("self"), saved);
+            self.set_global_slot(SysGlobal::SelfEntity.ofs(), saved);
         }
         Ended::Error
     }
@@ -384,8 +392,12 @@ impl Host<'_> {
     ///
     /// The function index is read from the global; a 0 or out-of-range function fails with
     /// `PR_ExecuteProgram: NULL function` (EDICT-9.4, VM-2.1), which the VM reports.
-    pub(crate) fn run_named(&mut self, progs: &Progs<'_>, name: &str) -> Result<(), RunError> {
-        let function = self.global_slot(slot_of_global(name)).as_i32();
+    pub(crate) fn run_named(
+        &mut self,
+        progs: &Progs<'_>,
+        global: SysGlobal,
+    ) -> Result<(), RunError> {
+        let function = self.global_slot(global.ofs()).as_i32();
         self.run_function(progs, function)
     }
 
@@ -432,20 +444,24 @@ impl Host<'_> {
 
     /// Writes field slot `field` of edict `edict` (EDICT-1.6).
     pub(crate) fn set_field(&mut self, edict: usize, field: usize, value: Slot) {
-        self.machine.edicts_mut().set_field(edict, field, value);
+        // A slot past the edict's fields is not written.
+        let _written = self
+            .machine
+            .edicts_mut()
+            .set_field(EdictNumber::new(edict), field, value);
     }
 
     /// Reads field slot `field` of edict `edict`, or 0 when it does not exist.
     pub(crate) fn field(&self, edict: usize, field: usize) -> Slot {
         self.machine
             .edicts()
-            .field(edict, field)
+            .field(EdictNumber::new(edict), field)
             .unwrap_or(Slot::ZERO)
     }
 
-    /// Writes the system global named `name` (EDICT-2.1).
-    pub(crate) fn set_global(&mut self, name: &str, value: Slot) {
-        self.set_global_slot(slot_of_global(name), value);
+    /// Writes the system global `global` (EDICT-2.1).
+    pub(crate) fn set_global(&mut self, global: SysGlobal, value: Slot) {
+        self.set_global_slot(global.ofs(), value);
     }
 
     /// Writes global slot `slot`, ignoring an out-of-range slot (it cannot happen for a system
@@ -464,13 +480,13 @@ impl Host<'_> {
     /// Sets the `self` global to the entity value of edict `edict` (EDICT-9.1).
     pub(crate) fn set_self(&mut self, edict: usize) {
         let value = self.entity_value(edict);
-        self.set_global("self", Slot::from_i32(value));
+        self.set_global(SysGlobal::SelfEntity, Slot::from_i32(value));
     }
 
     /// Sets the `other` global to the entity value of edict `edict` (EDICT-9.1).
     pub(crate) fn set_other(&mut self, edict: usize) {
         let value = self.entity_value(edict);
-        self.set_global("other", Slot::from_i32(value));
+        self.set_global(SysGlobal::Other, Slot::from_i32(value));
     }
 
     /// The entity value of edict `edict`, id's `EDICT_TO_PROG` (EDICT-1.5).
@@ -523,21 +539,9 @@ pub(crate) fn f32_of(value: f64) -> f32 {
     rounded
 }
 
-/// The first slot of the system field named `name` (EDICT-3.1); 0 for an unknown name.
-pub(crate) fn slot_of_field(name: &str) -> usize {
-    field_by_name(name).map_or(0, |var| var.slot)
-}
-
-/// The first slot of the system global named `name` (EDICT-2.1); 0 for an unknown name.
-pub(crate) fn slot_of_global(name: &str) -> i32 {
-    global_by_name(name)
-        .and_then(|var| i32::try_from(var.slot).ok())
-        .unwrap_or(0)
-}
-
 /// The global slot of `parm<n+1>` (EDICT-2.1): `parm1` is slot 43, so `parm<n+1>` is 43 + n.
 fn parm_slot(n: usize) -> i32 {
-    let base = slot_of_global("parm1");
+    let base = SysGlobal::Parm1.ofs();
     base.checked_add(i32::try_from(n).unwrap_or(0))
         .unwrap_or(base)
 }

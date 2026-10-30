@@ -10,7 +10,7 @@
     reason = "test code: a failed unwrap or index is a failed test"
 )]
 
-use qc_builtins::{BuiltinError, Engine, MockBuiltins, NoEngine};
+use qc_builtins::MockBuiltins;
 use qc_edict::system::global_by_name;
 use qc_progs::opcode::Opcode;
 use qc_progs::{Function, Progs, ProgsFile, Statement, write};
@@ -129,16 +129,4 @@ fn fixme_number_fails() {
         .execute_program(&progs, ServerState::Active, &mut builtins, &mut observer, 1)
         .unwrap_err();
     assert_eq!(error.message(), "unimplemented bulitin");
-}
-
-// spec BUILTIN-4.4: a class world builtin is engine-only with no engine.
-#[test]
-fn world_builtin_is_engine_only_without_engine() {
-    let error = BuiltinError::EngineOnly {
-        number: 16,
-        name: "traceline",
-    };
-    assert_eq!(error.message(), "builtin 16 (traceline) needs an engine");
-    let builtins = MockBuiltins::with_engine(NoEngine);
-    assert!(!builtins.engine().has_world());
 }

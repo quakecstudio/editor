@@ -5,8 +5,8 @@
 use serde_json::{Map, Value};
 
 use crate::{
-    Changes, FieldChange, GlobalChange, Header, Record, Step, TRACE_VERSION, Text, Trace,
-    TraceError,
+    Changes, FieldChange, GlobalChange, Header, JsonFault, Record, Step, TRACE_VERSION, Text,
+    Trace, TraceError,
 };
 
 /// The `trace` key's value in the header line (TRACE-6.2).
@@ -136,14 +136,17 @@ fn json_text(text: &Text) -> String {
 /// [`TraceError`] for a header or change set that breaks TRACE-2.3 or TRACE-5.7.
 pub fn from_json(text: &str) -> Result<Trace, TraceError> {
     let Some(body) = text.strip_suffix('\n') else {
-        return Err(json_error(
-            text.split('\n').count(),
-            "the last line has no line feed",
-        ));
+        return Err(TraceError::Json {
+            line: text.split('\n').count(),
+            fault: JsonFault::NoFinalLineFeed,
+        });
     };
     let mut lines = body.split('\n').zip(1_usize..);
     let Some((first, _)) = lines.next() else {
-        return Err(json_error(1, "missing header"));
+        return Err(TraceError::Json {
+            line: 1,
+            fault: JsonFault::MissingHeader,
+        });
     };
     let header = parse_header(first).map_err(|e| e.at(1))?;
     let mut records = Vec::new();
@@ -153,23 +156,16 @@ pub fn from_json(text: &str) -> Result<Trace, TraceError> {
     Ok(Trace { header, records })
 }
 
-fn json_error(line: usize, reason: &str) -> TraceError {
-    TraceError::Json {
-        line,
-        reason: reason.to_owned(),
-    }
-}
-
 /// An error found in one line, before its line number is known.
 enum LineError {
-    Json(String),
+    Json(JsonFault),
     Trace(TraceError),
 }
 
 impl LineError {
     fn at(self, line: usize) -> TraceError {
         match self {
-            Self::Json(reason) => TraceError::Json { line, reason },
+            Self::Json(fault) => TraceError::Json { line, fault },
             Self::Trace(error) => error,
         }
     }
@@ -181,8 +177,8 @@ impl From<TraceError> for LineError {
     }
 }
 
-fn bad(reason: impl Into<String>) -> LineError {
-    LineError::Json(reason.into())
+fn bad(fault: JsonFault) -> LineError {
+    LineError::Json(fault)
 }
 
 /// One line's object, with each key taken out as it is read so leftovers are unknown keys.
@@ -191,83 +187,82 @@ struct Object(Map<String, Value>);
 impl Object {
     fn parse(line: &str) -> Result<Self, LineError> {
         if line.is_empty() {
-            return Err(bad("blank line"));
+            return Err(bad(JsonFault::BlankLine));
         }
         match serde_json::from_str::<Value>(line) {
             Ok(Value::Object(map)) => Ok(Self(map)),
-            Ok(_) => Err(bad("not a JSON object")),
-            Err(e) => Err(bad(format!("invalid JSON: {e}"))),
+            Ok(_) => Err(bad(JsonFault::NotAnObject)),
+            Err(e) => Err(bad(JsonFault::InvalidJson(e.to_string()))),
         }
     }
 
-    fn take(&mut self, key: &str) -> Result<Value, LineError> {
+    fn take(&mut self, key: &'static str) -> Result<Value, LineError> {
         self.0
             .remove(key)
-            .ok_or_else(|| bad(format!("missing key `{key}`")))
+            .ok_or_else(|| bad(JsonFault::MissingKey(key)))
     }
 
-    fn string(&mut self, key: &str) -> Result<String, LineError> {
+    fn string(&mut self, key: &'static str) -> Result<String, LineError> {
         match self.take(key)? {
             Value::String(s) => Ok(s),
-            _ => Err(bad(format!("`{key}` is not a string"))),
+            _ => Err(bad(JsonFault::NotAString(key))),
         }
     }
 
-    fn u32(&mut self, key: &str) -> Result<u32, LineError> {
+    fn u32(&mut self, key: &'static str) -> Result<u32, LineError> {
         let value = self.take(key)?;
-        to_u32(&value).ok_or_else(|| bad(format!("`{key}` is not an integer from 0 to 4294967295")))
+        to_u32(&value).ok_or_else(|| bad(JsonFault::NotAU32(key)))
     }
 
-    fn i32(&mut self, key: &str) -> Result<i32, LineError> {
+    fn i32(&mut self, key: &'static str) -> Result<i32, LineError> {
         let value = self.take(key)?;
         value
             .as_i64()
             .and_then(|n| i32::try_from(n).ok())
-            .ok_or_else(|| bad(format!("`{key}` is not a 32-bit signed integer")))
+            .ok_or_else(|| bad(JsonFault::NotAnI32(key)))
     }
 
-    fn bits(&mut self, key: &str) -> Result<u32, LineError> {
+    fn bits(&mut self, key: &'static str) -> Result<u32, LineError> {
         let value = self.take(key)?;
-        parse_bits(&value).ok_or_else(|| bad(format!("`{key}` is not 8 lowercase hex digits")))
+        parse_bits(&value).ok_or_else(|| bad(JsonFault::NotBits(key)))
     }
 
-    fn text(&mut self, key: &str) -> Result<Text, LineError> {
+    fn text(&mut self, key: &'static str) -> Result<Text, LineError> {
         let s = self.string(key)?;
-        let bytes = unescape_text(&s).ok_or_else(|| bad(format!("`{key}` is not escaped text")))?;
+        let bytes = unescape_text(&s).ok_or_else(|| bad(JsonFault::NotEscapedText(key)))?;
         Ok(Text::new(bytes)?)
     }
 
     fn changes(&mut self) -> Result<Changes, LineError> {
         let Value::Array(globals_json) = self.take("globals")? else {
-            return Err(bad("`globals` is not an array"));
+            return Err(bad(JsonFault::NotAnArray("globals")));
         };
         let mut globals = Vec::with_capacity(globals_json.len());
         for item in &globals_json {
             match item.as_array().map(Vec::as_slice) {
                 Some([slot, bits]) => {
-                    let slot = to_u32(slot).ok_or_else(|| bad("a global slot is out of range"))?;
+                    let slot = to_u32(slot).ok_or_else(|| bad(JsonFault::GlobalSlotOutOfRange))?;
                     let bits =
-                        parse_bits(bits).ok_or_else(|| bad("a global's bits are malformed"))?;
+                        parse_bits(bits).ok_or_else(|| bad(JsonFault::GlobalBitsMalformed))?;
                     globals.push(GlobalChange { slot, bits });
                 }
-                _ => return Err(bad("a global change is not [slot, bits]")),
+                _ => return Err(bad(JsonFault::GlobalNotAPair)),
             }
         }
         let Value::Array(fields_json) = self.take("fields")? else {
-            return Err(bad("`fields` is not an array"));
+            return Err(bad(JsonFault::NotAnArray("fields")));
         };
         let mut fields = Vec::with_capacity(fields_json.len());
         for item in &fields_json {
             match item.as_array().map(Vec::as_slice) {
                 Some([edict, field, bits]) => {
-                    let edict =
-                        to_u32(edict).ok_or_else(|| bad("an edict number is out of range"))?;
-                    let field = to_u32(field).ok_or_else(|| bad("a field slot is out of range"))?;
+                    let edict = to_u32(edict).ok_or_else(|| bad(JsonFault::EdictOutOfRange))?;
+                    let field = to_u32(field).ok_or_else(|| bad(JsonFault::FieldSlotOutOfRange))?;
                     let bits =
-                        parse_bits(bits).ok_or_else(|| bad("a field's bits are malformed"))?;
+                        parse_bits(bits).ok_or_else(|| bad(JsonFault::FieldBitsMalformed))?;
                     fields.push(FieldChange { edict, field, bits });
                 }
-                _ => return Err(bad("a field change is not [edict, field, bits]")),
+                _ => return Err(bad(JsonFault::FieldNotATriple)),
             }
         }
         Ok(Changes::from_sorted(globals, fields)?)
@@ -276,7 +271,7 @@ impl Object {
     fn finish(self) -> Result<(), LineError> {
         match self.0.keys().next() {
             None => Ok(()),
-            Some(key) => Err(bad(format!("unknown key `{key}`"))),
+            Some(key) => Err(bad(JsonFault::UnknownKey(key.clone()))),
         }
     }
 }
@@ -335,7 +330,7 @@ fn unescape_text(s: &str) -> Option<Vec<u8>> {
 fn parse_header(line: &str) -> Result<Header, LineError> {
     let mut object = Object::parse(line)?;
     if object.string("trace")? != FORMAT_NAME {
-        return Err(bad("`trace` is not \"qc-trace\""));
+        return Err(bad(JsonFault::NotQcTrace));
     }
     let version = object.u32("version")?;
     if version != TRACE_VERSION {
@@ -405,7 +400,7 @@ fn parse_record(line: &str) -> Result<Record, LineError> {
             let text = object.text("text")?;
             Record::String { value, text }
         }
-        other => return Err(bad(format!("unknown record type `{other}`"))),
+        other => return Err(bad(JsonFault::UnknownRecordType(other.to_owned()))),
     };
     object.finish()?;
     Ok(record)

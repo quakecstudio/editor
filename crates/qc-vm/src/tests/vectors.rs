@@ -17,6 +17,7 @@
     reason = "test code: a failed unwrap, index, overflow or cast is a failed test"
 )]
 
+use qc_edict::EdictNumber;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -243,7 +244,7 @@ fn resolve_value(text: &str, machine: &Machine) -> ExpectedValue {
             let bits = machine
                 .edicts()
                 .layout()
-                .entity_value(number)
+                .entity_value(EdictNumber::from_i32(number).unwrap())
                 .unwrap()
                 .bits();
             return ExpectedValue::Exact(bits.cast_unsigned());
@@ -256,7 +257,10 @@ fn resolve_value(text: &str, machine: &Machine) -> ExpectedValue {
         let bits = machine
             .edicts()
             .layout()
-            .pointer_value(edict.parse().unwrap(), field.parse().unwrap())
+            .pointer_value(
+                EdictNumber::new(edict.parse().unwrap()),
+                field.parse().unwrap(),
+            )
             .unwrap()
             .bits();
         return ExpectedValue::Exact(bits.cast_unsigned());
@@ -276,7 +280,7 @@ fn resolve_init(text: &str, machine: &Machine) -> u32 {
         let bits = machine
             .edicts()
             .layout()
-            .entity_value(number)
+            .entity_value(EdictNumber::from_i32(number).unwrap())
             .unwrap()
             .bits();
         return bits.cast_unsigned();
@@ -288,7 +292,7 @@ fn resolve_init(text: &str, machine: &Machine) -> u32 {
         let bits = machine
             .edicts()
             .layout()
-            .pointer_value(e, f)
+            .pointer_value(EdictNumber::from_i32(e).unwrap(), f)
             .unwrap()
             .bits();
         return bits.cast_unsigned();
@@ -432,7 +436,8 @@ fn run_vector(v: &Vector) -> (qc_trace::Trace, Option<crate::RunError>, Machine)
         let bits = resolve_init(value, &machine);
         machine
             .edicts_mut()
-            .set_field(*edict, *field, Slot::from_bits(bits));
+            .set_field(EdictNumber::new(*edict), *field, Slot::from_bits(bits))
+            .unwrap();
     }
 
     let server = if v.server_loading {

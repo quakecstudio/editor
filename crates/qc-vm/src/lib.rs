@@ -27,6 +27,7 @@
 //! (LIMIT-2 to LIMIT-5). The file format, opcode numbers and value encodings are in
 //! [`qc_progs`] and [`qc_types`]; the edict store is [`qc_edict`].
 
+pub mod convert;
 mod error;
 mod exec;
 mod machine;
@@ -36,7 +37,7 @@ pub mod trace;
 #[cfg(test)]
 mod tests;
 
-pub use error::{ErrorKind, RunError, StackEntry};
+pub use error::{Divergence, ErrorKind, FieldFault, RunError, StackEntry};
 pub use exec::{Builtins, Context, NoBuiltins, NoObserver, Observer, ServerState};
 pub use machine::{GlobalAccessError, Machine, MachineError};
 

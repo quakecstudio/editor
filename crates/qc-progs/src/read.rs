@@ -19,7 +19,6 @@ use crate::records::{
     Def, Format, Function, Header, PROGS_HEADER_CRC, PROGS_HEADER_SIZE, PROGS_VERSION, Record,
     Statement,
 };
-#[cfg(feature = "fte")]
 use crate::records::{FteHeader, PROGS_FTE_HEADER_SIZE, PROGS_FTE_LINE_SIZE, PROGS_VERSION_FTE};
 use crate::{Layout, LayoutTable, TableId};
 
@@ -77,7 +76,7 @@ pub enum ReadError {
         /// Bytes in the header.
         needed: usize,
     },
-    /// `version` is not 6, or with the `fte` feature 7 (PROGS-3.1).
+    /// `version` is neither 6 (PROGS-3.1) nor FTEQCC's 7 (PROGS-19).
     WrongVersion {
         /// The stored version.
         version: i32,
@@ -88,13 +87,11 @@ pub enum ReadError {
         crc: i32,
     },
     /// A version 7 `secondaryversion` other than FTE's 16-bit or 32-bit layout (PROGS-19.3).
-    #[cfg(feature = "fte")]
     UnsupportedFteLayout {
         /// The stored `secondaryversion`.
         secondaryversion: i32,
     },
     /// A version 7 file with compressed tables (PROGS-21.4).
-    #[cfg(feature = "fte")]
     Compressed {
         /// The stored `blockscompressed`.
         blockscompressed: u32,
@@ -149,13 +146,11 @@ impl fmt::Display for ReadError {
             Self::HeaderCrc { .. } => {
                 f.write_str("progs.dat system vars have been modified, progdefs.h is out of date")
             }
-            #[cfg(feature = "fte")]
             Self::UnsupportedFteLayout { secondaryversion } => write!(
                 f,
                 "progs.dat version 7 layout {secondaryversion:#010x} is not FTE's 16-bit or \
                  32-bit layout"
             ),
-            #[cfg(feature = "fte")]
             Self::Compressed { blockscompressed } => write!(
                 f,
                 "progs.dat has compressed tables (blockscompressed {blockscompressed:#x})"
@@ -289,22 +284,19 @@ struct Extents {
     functions: Range<usize>,
     strings: Range<usize>,
     globals: Range<usize>,
-    #[cfg(feature = "fte")]
     line_numbers: Option<Range<usize>>,
-    #[cfg(feature = "fte")]
     bodyless: Range<usize>,
 }
 
 /// A loaded progs.dat: the header and a zero-copy view of every table.
 ///
-/// Implements PROGS-1 to PROGS-15, and with the `fte` feature PROGS-19 to PROGS-21. Every
+/// Implements PROGS-1 to PROGS-15, and for version 7 PROGS-19 to PROGS-21. Every
 /// record reads back exactly as stored (PROGS-14).
 #[derive(Clone, Debug)]
 pub struct Progs<'a> {
     bytes: &'a [u8],
     format: Format,
     header: Header,
-    #[cfg(feature = "fte")]
     fte_header: Option<FteHeader>,
     extents: Extents,
 }
@@ -333,7 +325,6 @@ impl<'a> Progs<'a> {
         let header = Header::decode(bytes).ok_or_else(|| too_short(PROGS_HEADER_SIZE))?;
         let format = match header.version {
             PROGS_VERSION => Format::V6,
-            #[cfg(feature = "fte")]
             PROGS_VERSION_FTE => {
                 if bytes.len() < PROGS_FTE_HEADER_SIZE {
                     return Err(too_short(PROGS_FTE_HEADER_SIZE));
@@ -346,7 +337,6 @@ impl<'a> Progs<'a> {
         if options.check_header_crc && header.crc != PROGS_HEADER_CRC {
             return Err(ReadError::HeaderCrc { crc: header.crc });
         }
-        #[cfg(feature = "fte")]
         let (format, fte_header) = fte_layout(bytes, format)?;
 
         let extents = Extents {
@@ -392,16 +382,13 @@ impl<'a> Progs<'a> {
                 header.numglobals,
                 Slot::size(format),
             )?,
-            #[cfg(feature = "fte")]
             line_numbers: fte_line_numbers(bytes, fte_header.as_ref(), header.numstatements)?,
-            #[cfg(feature = "fte")]
             bodyless: fte_bodyless(bytes, fte_header.as_ref())?,
         };
         let progs = Self {
             bytes,
             format,
             header,
-            #[cfg(feature = "fte")]
             fte_header,
             extents,
         };
@@ -482,7 +469,6 @@ impl<'a> Progs<'a> {
     }
 
     /// The version 7 header fields as stored (PROGS-19.1), for a version 7 file.
-    #[cfg(feature = "fte")]
     #[must_use]
     pub const fn fte_header(&self) -> Option<&FteHeader> {
         self.fte_header.as_ref()
@@ -544,7 +530,6 @@ impl<'a> Progs<'a> {
     }
 
     /// FTE's line number of each statement, when the file has the table (PROGS-21.1).
-    #[cfg(feature = "fte")]
     #[must_use]
     pub fn line_numbers(&self) -> Option<Table<'a, i32>> {
         self.extents
@@ -554,7 +539,6 @@ impl<'a> Progs<'a> {
     }
 
     /// FTE's names of functions without bodies, in table order (PROGS-21.2).
-    #[cfg(feature = "fte")]
     pub fn bodyless_functions(&self) -> impl Iterator<Item = &'a [u8]> + use<'a> {
         let names = self.slice(&self.extents.bodyless);
         names
@@ -671,10 +655,6 @@ impl<'a> Progs<'a> {
     /// Every table this file has, with where it lies.
     fn table_extents(&self) -> Vec<(TableId, Range<usize>)> {
         let extents = &self.extents;
-        #[cfg_attr(
-            not(feature = "fte"),
-            expect(unused_mut, reason = "FTE tables are added")
-        )]
         let mut tables = vec![
             (TableId::Statements, extents.statements.clone()),
             (TableId::GlobalDefs, extents.global_defs.clone()),
@@ -683,7 +663,6 @@ impl<'a> Progs<'a> {
             (TableId::Strings, extents.strings.clone()),
             (TableId::Globals, extents.globals.clone()),
         ];
-        #[cfg(feature = "fte")]
         if self.fte_header.is_some() {
             if let Some(range) = &extents.line_numbers {
                 tables.push((TableId::LineNumbers, range.clone()));
@@ -721,7 +700,6 @@ fn extent(
 }
 
 /// PROGS-19.2 to PROGS-19.3 and PROGS-21.4: the version 7 header and its layout.
-#[cfg(feature = "fte")]
 fn fte_layout(bytes: &[u8], format: Format) -> Result<(Format, Option<FteHeader>), ReadError> {
     if format == Format::V6 {
         return Ok((format, None));
@@ -745,7 +723,6 @@ fn fte_layout(bytes: &[u8], format: Format) -> Result<(Format, Option<FteHeader>
 }
 
 /// PROGS-21.1: the line number table, present when `ofslinenums` is not 0.
-#[cfg(feature = "fte")]
 fn fte_line_numbers(
     bytes: &[u8],
     fte: Option<&FteHeader>,
@@ -766,7 +743,6 @@ fn fte_line_numbers(
 }
 
 /// PROGS-21.2: `numbodylessfuncs` NUL-terminated names from `ofsbodylessfuncs`.
-#[cfg(feature = "fte")]
 fn fte_bodyless(bytes: &[u8], fte: Option<&FteHeader>) -> Result<Range<usize>, ReadError> {
     let Some(fte) = fte else {
         return Ok(0..0);

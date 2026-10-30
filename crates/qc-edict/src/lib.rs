@@ -23,6 +23,7 @@
 //! on an out-of-range value is written out as the spec fixes it.
 
 mod layout;
+mod number;
 mod store;
 pub mod system;
 
@@ -30,6 +31,7 @@ pub mod system;
 mod tests;
 
 pub use layout::{EdictLayout, LayoutError};
+pub use number::EdictNumber;
 pub use store::{EdictError, EdictStore};
 
 /// Bytes of engine state at the start of every edict, before its field slots.

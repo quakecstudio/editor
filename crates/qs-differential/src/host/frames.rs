@@ -12,6 +12,8 @@
 //! `StartFrame`, then gives each edict its turn: a client by DIFF-5.4, a pusher by DIFF-5.5,
 //! and every other thinking movetype by DIFF-5.6. Nothing moves or collides (DIFF-5.8).
 
+use qc_edict::EdictNumber;
+use qc_edict::system::{SysField, SysGlobal};
 use qc_progs::Progs;
 use qc_types::Slot;
 use qc_vm::{ErrorKind, RunError};
@@ -21,7 +23,7 @@ use crate::scenario::Input;
 use super::{
     EF_MUZZLEFLASH, FL_ITEM, Host, MOVETYPE_BOUNCE, MOVETYPE_FLY, MOVETYPE_FLYMISSILE,
     MOVETYPE_NOCLIP, MOVETYPE_NONE, MOVETYPE_PUSH, MOVETYPE_STEP, MOVETYPE_TOSS, MOVETYPE_WALK,
-    ftoi, slot_of_field, slot_of_global,
+    ftoi,
 };
 
 /// The fatal error the physics frame raises on a bad movetype (DIFF-5.3, DIFF-5.4).
@@ -55,7 +57,7 @@ impl Host<'_> {
             reason = "spec DIFF-5.1: frametime is the f32 nearest the frame length"
         )]
         let frametime = t as f32;
-        self.set_global("frametime", Slot::from_f32(frametime));
+        self.set_global(SysGlobal::Frametime, Slot::from_f32(frametime));
 
         // DIFF-5.1: empty the unreliable datagram, apply the frame's input, run the physics
         // frame, empty the reliable datagram, clear the muzzle flashes.
@@ -77,16 +79,16 @@ impl Host<'_> {
             let edict = usize::try_from(input.edict()).unwrap_or(0);
             match *input {
                 Input::Button0 { value, .. } => {
-                    self.set_field(edict, slot_of_field("button0"), Slot::from_f32(value));
+                    self.set_field(edict, SysField::Button0.slot(), Slot::from_f32(value));
                 }
                 Input::Button2 { value, .. } => {
-                    self.set_field(edict, slot_of_field("button2"), Slot::from_f32(value));
+                    self.set_field(edict, SysField::Button2.slot(), Slot::from_f32(value));
                 }
                 Input::Impulse { value, .. } => {
-                    self.set_field(edict, slot_of_field("impulse"), Slot::from_f32(value));
+                    self.set_field(edict, SysField::Impulse.slot(), Slot::from_f32(value));
                 }
                 Input::VAngle { values, .. } => {
-                    let base = slot_of_field("v_angle");
+                    let base = SysField::VAngle.slot();
                     self.set_field(edict, base, Slot::from_f32(values[0]));
                     self.set_field(edict, base.saturating_add(1), Slot::from_f32(values[1]));
                     self.set_field(edict, base.saturating_add(2), Slot::from_f32(values[2]));
@@ -106,14 +108,14 @@ impl Host<'_> {
             reason = "spec DIFF-5.3: time is the f32 nearest the clock"
         )]
         let time = clock as f32;
-        self.set_global("time", Slot::from_f32(time));
-        self.run_named(progs, "StartFrame")?;
+        self.set_global(SysGlobal::Time, Slot::from_f32(time));
+        self.run_named(progs, SysGlobal::Startframe)?;
 
         // DIFF-5.3: for i from 0 while i < num_edicts, reading num_edicts again each time.
         let mut i = 0;
         while i < self.machine.edicts().num_edicts() {
             // skip a free edict
-            if self.machine.edicts().is_free(i) != Some(false) {
+            if self.machine.edicts().is_free(EdictNumber::new(i)) != Some(false) {
                 i = i.saturating_add(1);
                 continue;
             }
@@ -121,10 +123,10 @@ impl Host<'_> {
             // writes absmin and absmax (EDICT-12.2), which is not a no-op even without
             // movement, so the oracle's settle-frame links show in its trace.
             let maxclients = self.machine.edicts().maxclients();
-            if self.global_slot(slot_of_global("force_retouch")).as_f32() != 0.0 {
+            if self.global_slot(SysGlobal::ForceRetouch.ofs()).as_f32() != 0.0 {
                 self.link_edict(i);
             }
-            let movetype = ftoi(self.field(i, slot_of_field("movetype")).as_f32());
+            let movetype = ftoi(self.field(i, SysField::Movetype.slot()).as_f32());
             if i >= 1 && i <= maxclients {
                 self.physics_client(progs, i)?;
             } else if movetype == MOVETYPE_PUSH {
@@ -148,9 +150,9 @@ impl Host<'_> {
 
         // DIFF-5.3: after the last edict, when force_retouch is not 0 it is decreased by 1 in
         // f32; id's SV_Physics does this right before advancing the clock.
-        let retouch = self.global_slot(slot_of_global("force_retouch")).as_f32();
+        let retouch = self.global_slot(SysGlobal::ForceRetouch.ofs()).as_f32();
         if retouch != 0.0 {
-            self.set_global("force_retouch", Slot::from_f32(retouch - 1.0));
+            self.set_global(SysGlobal::ForceRetouch, Slot::from_f32(retouch - 1.0));
         }
 
         // DIFF-5.3: the clock advances by t, in double.
@@ -164,21 +166,21 @@ impl Host<'_> {
     /// 15 on x and y for an entity whose `flags` has `FL_ITEM` (256) and by 1 on every axis
     /// otherwise.
     fn link_edict(&mut self, edict: usize) {
-        if edict == 0 || self.machine.edicts().is_free(edict) != Some(false) {
+        if edict == 0 || self.machine.edicts().is_free(EdictNumber::new(edict)) != Some(false) {
             return;
         }
-        let origin = self.field_vector(edict, "origin");
-        let mins = self.field_vector(edict, "mins");
-        let maxs = self.field_vector(edict, "maxs");
-        let flags = ftoi(self.field(edict, slot_of_field("flags")).as_f32());
+        let origin = self.field_vector(edict, SysField::Origin);
+        let mins = self.field_vector(edict, SysField::Mins);
+        let maxs = self.field_vector(edict, SysField::Maxs);
+        let flags = ftoi(self.field(edict, SysField::Flags.slot()).as_f32());
         // EDICT-12.2: FL_ITEM (256) widens by 15 on x and y and 0 on z; else by 1 on each axis.
         let widen = if flags & FL_ITEM != 0 {
             [15.0_f32, 15.0, 0.0]
         } else {
             [1.0, 1.0, 1.0]
         };
-        let base_absmin = slot_of_field("absmin");
-        let base_absmax = slot_of_field("absmax");
+        let base_absmin = SysField::Absmin.slot();
+        let base_absmax = SysField::Absmax.slot();
         for axis in 0..3 {
             let o = origin.get(axis).copied().unwrap_or(0.0);
             let mn = mins.get(axis).copied().unwrap_or(0.0);
@@ -198,8 +200,8 @@ impl Host<'_> {
     }
 
     /// The three `f32` components of a vector field of `edict`, from its base slot.
-    fn field_vector(&self, edict: usize, name: &str) -> [f32; 3] {
-        let base = slot_of_field(name);
+    fn field_vector(&self, edict: usize, field: SysField) -> [f32; 3] {
+        let base = field.slot();
         [0, 1, 2].map(|axis| self.field(edict, base.saturating_add(axis)).as_f32())
     }
 
@@ -217,17 +219,17 @@ impl Host<'_> {
             reason = "spec DIFF-5.4: time is the f32 nearest the clock"
         )]
         let time = clock as f32;
-        self.set_global("time", Slot::from_f32(time));
+        self.set_global(SysGlobal::Time, Slot::from_f32(time));
         self.set_self(edict);
-        self.run_named(progs, "PlayerPreThink")?;
+        self.run_named(progs, SysGlobal::Playerprethink)?;
 
         // DIFF-5.4: think by the movetype; 0/3/5/8 end the turn if the edict is then free,
         // 6/10 go on; any other value is the fatal SV_Physics_client error.
-        let movetype = ftoi(self.field(edict, slot_of_field("movetype")).as_f32());
+        let movetype = ftoi(self.field(edict, SysField::Movetype.slot()).as_f32());
         match movetype {
             MOVETYPE_NONE | MOVETYPE_WALK | MOVETYPE_FLY | MOVETYPE_NOCLIP => {
                 self.run_think(progs, edict, self.scenario.frametime)?;
-                if self.machine.edicts().is_free(edict) == Some(true) {
+                if self.machine.edicts().is_free(EdictNumber::new(edict)) == Some(true) {
                     return Ok(());
                 }
             }
@@ -246,14 +248,14 @@ impl Host<'_> {
             reason = "spec DIFF-5.4: time is the f32 nearest the clock"
         )]
         let time = clock as f32;
-        self.set_global("time", Slot::from_f32(time));
+        self.set_global(SysGlobal::Time, Slot::from_f32(time));
         self.set_self(edict);
-        self.run_named(progs, "PlayerPostThink")
+        self.run_named(progs, SysGlobal::Playerpostthink)
     }
 
     /// DIFF-5.6: thinking, id's `SV_RunThink` (EDICT-10.3).
     fn run_think(&mut self, progs: &Progs<'_>, edict: usize, t: f64) -> Result<(), RunError> {
-        let nextthink = self.field(edict, slot_of_field("nextthink")).as_f32();
+        let nextthink = self.field(edict, SysField::Nextthink.slot()).as_f32();
         let clock = self.builtins.engine().clock;
         // DIFF-5.6: runs when nextthink > 0 and <= clock + t (in double).
         if !(nextthink > 0.0 && f64::from(nextthink) <= clock + t) {
@@ -270,20 +272,20 @@ impl Host<'_> {
         } else {
             nextthink
         };
-        self.set_global("time", Slot::from_f32(time));
+        self.set_global(SysGlobal::Time, Slot::from_f32(time));
         // nextthink = 0, self = the edict, other = the world, run think.
-        self.set_field(edict, slot_of_field("nextthink"), Slot::from_f32(0.0));
+        self.set_field(edict, SysField::Nextthink.slot(), Slot::from_f32(0.0));
         self.set_self(edict);
         self.set_other(0);
-        let think = self.field(edict, slot_of_field("think")).as_i32();
+        let think = self.field(edict, SysField::Think.slot()).as_i32();
         self.run_function(progs, think)
     }
 
     /// DIFF-5.5: a `MOVETYPE_PUSH` edict's turn, id's `SV_Physics_Pusher` with the zero-velocity
     /// branch of `SV_PushMove`; nothing moves.
     fn physics_pusher(&mut self, progs: &Progs<'_>, edict: usize, t: f64) -> Result<(), RunError> {
-        let ltime = self.field(edict, slot_of_field("ltime")).as_f32();
-        let thinktime = self.field(edict, slot_of_field("nextthink")).as_f32();
+        let ltime = self.field(edict, SysField::Ltime.slot()).as_f32();
+        let thinktime = self.field(edict, SysField::Nextthink.slot()).as_f32();
         let old_ltime = ltime;
         // movetime: if thinktime < ltime + t (in double), thinktime - ltime (0 if negative),
         // else (f32)t.
@@ -301,7 +303,7 @@ impl Host<'_> {
         let mut new_ltime = ltime;
         if movetime != 0.0 {
             new_ltime = ltime + movetime;
-            self.set_field(edict, slot_of_field("ltime"), Slot::from_f32(new_ltime));
+            self.set_field(edict, SysField::Ltime.slot(), Slot::from_f32(new_ltime));
         }
         // DIFF-5.5: if thinktime > old_ltime and <= ltime, think with time = (f32)clock,
         // self = the edict, other = the world.
@@ -312,11 +314,11 @@ impl Host<'_> {
                 reason = "spec DIFF-5.5: time is the f32 nearest the clock"
             )]
             let time = clock as f32;
-            self.set_global("time", Slot::from_f32(time));
-            self.set_field(edict, slot_of_field("nextthink"), Slot::from_f32(0.0));
+            self.set_global(SysGlobal::Time, Slot::from_f32(time));
+            self.set_field(edict, SysField::Nextthink.slot(), Slot::from_f32(0.0));
             self.set_self(edict);
             self.set_other(0);
-            let think = self.field(edict, slot_of_field("think")).as_i32();
+            let think = self.field(edict, SysField::Think.slot()).as_i32();
             self.run_function(progs, think)?;
         }
         Ok(())
@@ -325,7 +327,7 @@ impl Host<'_> {
     /// DIFF-5.1: clear `EF_MUZZLEFLASH` in `effects` on edicts 1 to num_edicts - 1.
     fn clear_muzzle_flashes(&mut self) {
         let num = self.machine.edicts().num_edicts();
-        let effects_slot = slot_of_field("effects");
+        let effects_slot = SysField::Effects.slot();
         for edict in 1..num {
             let effects = ftoi(self.field(edict, effects_slot).as_f32());
             let cleared = effects & !EF_MUZZLEFLASH;

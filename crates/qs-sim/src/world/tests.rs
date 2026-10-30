@@ -9,6 +9,7 @@
     reason = "test code: a failed unwrap, index or overflow is a failed test"
 )]
 
+use qc_edict::EdictNumber;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
@@ -204,7 +205,7 @@ impl World {
     fn float(&self, n: usize, name: &str) -> f32 {
         self.machine
             .edicts()
-            .field(n, field_slot(name))
+            .field(EdictNumber::new(n), field_slot(name))
             .map_or(f32::NAN, Slot::as_f32)
     }
 
@@ -213,7 +214,7 @@ impl World {
         [0, 1, 2].map(|i| {
             self.machine
                 .edicts()
-                .field(n, first + i)
+                .field(EdictNumber::new(n), first + i)
                 .map_or(f32::NAN, Slot::as_f32)
         })
     }
@@ -221,7 +222,7 @@ impl World {
     fn entity_field(&self, n: usize, name: &str) -> i32 {
         self.machine
             .edicts()
-            .field(n, field_slot(name))
+            .field(EdictNumber::new(n), field_slot(name))
             .map_or(-1, Slot::as_i32)
     }
 
@@ -467,7 +468,10 @@ fn placing_links_and_removing_unlinks() {
 fn spawning_frees_unknown_classes() {
     let world = world("", &entity("nothing_here", "0 0 0", ""));
     assert!(!world.linked(2));
-    assert_eq!(world.machine.edicts().is_free(2), Some(true));
+    assert_eq!(
+        world.machine.edicts().is_free(EdictNumber::new(2)),
+        Some(true)
+    );
 }
 
 /// A BSP29 file of `spec`'s planes, nodes, leaves and clipnodes and one model over them.
@@ -1476,7 +1480,12 @@ fn connecting_runs_the_entry_points() {
     run.world
         .machine
         .edicts_mut()
-        .set_field(P, field_slot("armorvalue"), Slot::from_f32(9.0));
+        .set_field(
+            EdictNumber::new(P),
+            field_slot("armorvalue"),
+            Slot::from_f32(9.0),
+        )
+        .unwrap();
     assert!(run.world.player_view().is_none());
     run.connect();
     let w = &run.world;
@@ -2279,11 +2288,15 @@ fn falls_and_their_sound() {
     let mut run = run_on(&ledge(), &source, &entities);
     for n in 2..6 {
         if n == 5 {
-            run.world.machine.edicts_mut().set_field(
-                n,
-                field_slot("velocity") + 2,
-                Slot::from_f32(-400.0),
-            );
+            run.world
+                .machine
+                .edicts_mut()
+                .set_field(
+                    EdictNumber::new(n),
+                    field_slot("velocity") + 2,
+                    Slot::from_f32(-400.0),
+                )
+                .unwrap();
         }
     }
     run.frames(1, 0.1).unwrap();
@@ -2376,4 +2389,35 @@ fn a_slide_into_a_corner_follows_the_crease() {
     );
     let [x, y, _] = run.world.vector(2, "origin");
     assert!(close(x, 116.031_25) && close(y, 116.031_25), "{x} {y}");
+}
+
+// spec PHYS-2.1: the think reports whether the entity is still in use
+// spec PHYS-2.3: a noclip entity whose think removed it does not move
+#[test]
+fn an_entity_its_think_removed_does_not_move() {
+    let source = "void() vanish = { remove(self); };\n\
+        void() ghost = { self.movetype = 8; self.velocity = '100 0 0'; \
+        self.think = vanish; self.nextthink = 1.0; };\n";
+    let mut run = run_on(&ledge(), source, &entity("ghost", "0 0 50", ""));
+    run.frames(1, 0.1).unwrap();
+    let w = &run.world;
+    assert_eq!(w.machine.edicts().is_free(EdictNumber::new(2)), Some(true));
+    assert_eq!(w.vector(2, "origin"), [0.0; 3]);
+}
+
+// spec EDICT-8.4: at the normal skill (1) an entity with SPAWNFLAG_NOT_MEDIUM is freed
+// instead of spawned, and one with only SPAWNFLAG_NOT_EASY spawns
+// spec EDICT-6.4: an edict freed in the first seconds of a map is reused at once: the second
+// entity takes the edict the first was freed from
+#[test]
+fn the_skill_inhibits_entities_by_their_spawnflags() {
+    let source = format!("void() placed = {{ self.solid = 2; {PLAYER_SIZE} }};\n");
+    let entities = [
+        entity("placed", "50 0 50", "\"spawnflags\" \"512\"\n"),
+        entity("placed", "50 0 50", "\"spawnflags\" \"256\"\n"),
+    ]
+    .concat();
+    let world = world(&source, &entities);
+    assert!(world.linked(2));
+    assert_eq!(world.machine.edicts().num_edicts(), 3);
 }

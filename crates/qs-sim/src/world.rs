@@ -13,13 +13,13 @@
 //! frames that drop monsters to the floor and run their thinks are the rest of P3-24.
 
 use qc_builtins::MockEngine;
+use qc_edict::EdictNumber;
 use qc_edict::system::{field_by_name, global_by_name};
 use qc_progs::Progs;
 use qc_types::{DefType, Etype, Slot};
+use qc_vm::convert::double_to_float;
 use qc_vm::{Machine, NoObserver, RunError, ServerState};
 use qs_bsp::Bsp;
-
-use qc_builtins::math::f64_to_f32_public;
 
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::{UserCmd, wire_angle};
@@ -154,7 +154,7 @@ impl World {
         let clients = self.builtins.mock.engine().clients_active.clone();
         let player = self.player;
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
-        let t = f64_to_f32_public(frametime);
+        let t = double_to_float(frametime);
         // Host_ServerFrame: frametime, then the clients' moves, then the physics.
         call.set_global("frametime", Slot::from_f32(t));
         if let Some(cmd) = player {
@@ -196,10 +196,12 @@ impl World {
         let parms: Vec<Slot> = (1..=16).map(|n| call.global(&format!("parm{n}"))).collect();
         let fields = call.context.machine_view().edicts().layout().entityfields();
         for slot in 0..fields {
-            call.context
-                .machine()
-                .edicts_mut()
-                .set_field(CLIENT, slot, Slot::from_i32(0));
+            // A slot past the edict's fields is not written.
+            let _written = call.context.machine().edicts_mut().set_field(
+                EdictNumber::new(CLIENT),
+                slot,
+                Slot::from_i32(0),
+            );
         }
         call.set_float(CLIENT, "colormap", 1.0);
         call.set_float(CLIENT, "team", 1.0);
@@ -235,7 +237,7 @@ impl World {
             let first = field_slot(name);
             [0, 1, 2].map(|i| {
                 edicts
-                    .field(CLIENT, first.saturating_add(i))
+                    .field(EdictNumber::new(CLIENT), first.saturating_add(i))
                     .map_or(0.0, Slot::as_f32)
             })
         };
@@ -259,19 +261,22 @@ impl World {
     #[must_use]
     pub fn entities(&self) -> Vec<Entity> {
         let edicts = self.machine.edicts();
-        let float =
-            |n: usize, field: &str| edicts.field(n, field_slot(field)).map_or(0.0, Slot::as_f32);
+        let float = |n: usize, field: &str| {
+            edicts
+                .field(EdictNumber::new(n), field_slot(field))
+                .map_or(0.0, Slot::as_f32)
+        };
         let vector = |n: usize, field: &str| {
             let first = field_slot(field);
             [0, 1, 2].map(|i| {
                 edicts
-                    .field(n, first.saturating_add(i))
+                    .field(EdictNumber::new(n), first.saturating_add(i))
                     .map_or(0.0, Slot::as_f32)
             })
         };
         let precache = &self.builtins.mock.engine().model_precache;
         (0..edicts.num_edicts())
-            .filter(|&n| edicts.is_free(n) == Some(false))
+            .filter(|&n| edicts.is_free(EdictNumber::new(n)) == Some(false))
             .filter_map(|n| {
                 let index = whole(float(n, "modelindex"))?;
                 let model = precache.get(index).filter(|m| !m.is_empty())?.clone();
@@ -292,7 +297,11 @@ impl World {
     }
 
     fn set_field(&mut self, edict: usize, field: usize, value: Slot) {
-        self.machine.edicts_mut().set_field(edict, field, value);
+        // A slot past the edict's fields is not written.
+        let _written = self
+            .machine
+            .edicts_mut()
+            .set_field(EdictNumber::new(edict), field, value);
     }
 
     fn set_global(&mut self, name: &str, value: Slot) {
@@ -341,6 +350,7 @@ impl SpawnHost for Spawner<'_, '_> {
             .machine
             .edicts_mut()
             .alloc(clock)
+            .map(EdictNumber::index)
             .map_err(|_| SpawnError::NoFreeEdicts)
     }
 
@@ -388,7 +398,7 @@ impl SpawnHost for Spawner<'_, '_> {
         self.world
             .machine
             .edicts()
-            .field(edict, SPAWNFLAGS_SLOT)
+            .field(EdictNumber::new(edict), SPAWNFLAGS_SLOT)
             .map_or(0.0, Slot::as_f32)
     }
 
@@ -409,7 +419,10 @@ impl SpawnHost for Spawner<'_, '_> {
         let clock = self.world.builtins.mock.engine().clock;
         // WORLD-8.3: ED_Free unlinks.
         self.world.builtins.collision.unlink(edict);
-        self.world.machine.edicts_mut().free(edict, clock);
+        self.world
+            .machine
+            .edicts_mut()
+            .free(EdictNumber::new(edict), clock);
     }
 }
 
