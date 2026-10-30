@@ -21,7 +21,7 @@ use qs_layout::{Layout, Panel};
 use crate::icons::Icon;
 use crate::keymap;
 use crate::palette::highlighted;
-use crate::shell::dragged_size;
+use crate::shell::{commanded_size, dragged_size};
 use crate::strings::{Text, command_count};
 use crate::theme::{Mode, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
@@ -709,4 +709,26 @@ fn the_footer_and_the_first_field() {
     assert_eq!(app.shell.palette.error(), None);
     assert!(!app.shell.palette.is_open());
     assert!((app.shell().layout().left.size - 300.0).abs() < f32::EPSILON);
+}
+
+// UI-2: a layout size that differs from the drawn one by half a point or more is drawn, unless
+// a pointer button is held, as one is while the user drags the panel's edge.
+#[test]
+fn a_size_set_by_command_is_told_from_a_drag() {
+    assert!(commanded_size(Some(240.0), 300.0, false));
+    assert!(commanded_size(Some(300.0), 240.0, false), "smaller too");
+    assert!(commanded_size(Some(240.0), 240.5, false));
+    assert!(
+        !commanded_size(Some(240.0), 240.4, false),
+        "under half a point"
+    );
+    assert!(!commanded_size(Some(240.0), 240.0, false));
+    assert!(
+        !commanded_size(Some(240.0), 300.0, true),
+        "a drag is under way"
+    );
+    assert!(
+        !commanded_size(None, 300.0, false),
+        "never drawn: default_size applies"
+    );
 }
