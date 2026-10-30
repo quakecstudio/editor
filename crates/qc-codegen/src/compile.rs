@@ -178,6 +178,9 @@ pub(crate) struct Compiler<'a> {
     /// The loops and switches the statement is in, innermost last, with the jumps their
     /// `break` and `continue` statements left to patch.
     jumps: Vec<Jumps>,
+    /// The default value of each parameter of each function declared so far, an expression of
+    /// the file it is written in (FTE-18.7).
+    defaults: HashMap<DefId, Vec<Option<(FileId, ast::Expr)>>>,
     /// The `$parmN` globals made for the parameter slots past the eighth (FTE-18.6).
     extra_parms: HashMap<usize, u32>,
     /// In a `wrap` function's body, the definition `prior` names (FTEF-15.11).
@@ -219,6 +222,7 @@ impl<'a> Compiler<'a> {
             array_functions: Vec::new(),
             prior: None,
             extra_parms: HashMap::new(),
+            defaults: HashMap::new(),
             s_files: HashMap::new(),
         }
     }
@@ -281,6 +285,7 @@ impl<'a> Compiler<'a> {
                 declaration.declarators().try_for_each(|declarator| {
                     let name = declarator.name().at(declaration.syntax().span())?;
                     let id = self.declared(&name)?;
+                    self.record_defaults(id, declaration.ty().as_ref(), &declarator);
                     self.program
                         .get_def(self.index, id)
                         .at(name.span())
@@ -297,6 +302,25 @@ impl<'a> Compiler<'a> {
             }
         }
         Ok(())
+    }
+
+    /// FTE-18.7: the default values the parameters of function `id` are declared with, from
+    /// the declarator's own list or its type's, kept with the file they are written in.
+    fn record_defaults(&mut self, id: DefId, ty: Option<&ast::Type>, declarator: &ast::Declarator) {
+        let list = declarator.params().or_else(|| match ty {
+            Some(ast::Type::Function(function)) => function.params(),
+            _ => None,
+        });
+        let Some(list) = list else {
+            return;
+        };
+        let defaults: Vec<Option<(FileId, ast::Expr)>> = list
+            .params()
+            .map(|param| param.default_value().map(|value| (self.file, value)))
+            .collect();
+        if defaults.iter().any(Option::is_some) {
+            self.defaults.insert(id, defaults);
+        }
     }
 
     /// The definition a top-level declarator's name `name` makes or redeclares.
@@ -355,6 +379,7 @@ impl<'a> Compiler<'a> {
         for declarator in declaration.declarators() {
             let name = declarator.name().at(declaration.syntax().span())?;
             let id = self.declared(&name)?;
+            self.record_defaults(id, declaration.ty().as_ref(), &declarator);
             let place = self.program.get_def(self.index, id).at(name.span())?;
             match declarator.initializer() {
                 None => {}
@@ -2386,7 +2411,8 @@ impl<'a> Compiler<'a> {
         // the last parameter is read and ignored ("too many parameters ... will be ignored").
         let fteqcc = self.dialect.has_fteqcc_extensions();
         if fteqcc {
-            return self.fteqcc_call(&callee, &function, name.as_deref(), &args, span);
+            let slots = call.args().map(|a| a.slots()).unwrap_or_default();
+            return self.fteqcc_call(&callee, &function, name.as_deref(), &slots, span);
         }
         for arg in &args {
             let arg_span = arg.syntax().span();
@@ -2481,17 +2507,55 @@ impl Compiler<'_> {
         callee: &Value,
         function: &FunctionType,
         name: Option<&str>,
-        args: &[ast::Expr],
+        slots: &[Option<ast::Expr>],
         span: Span,
     ) -> Lowered<Value> {
         let fixed = (!function.variadic).then_some(function.params.len());
-        let mut values = Vec::with_capacity(args.len());
-        for (i, arg) in args.iter().enumerate() {
-            let arg_span = arg.syntax().span();
-            let mut value = self.expr(arg)?;
-            if i.saturating_add(1) < args.len() {
-                value = self.hold(value, arg_span)?;
-            }
+        let defaults = match callee.kind {
+            ValueKind::Def(place) => self
+                .program
+                .def(place)
+                .and_then(|def| def.id)
+                .and_then(|id| self.defaults.get(&id))
+                .cloned()
+                .unwrap_or_default(),
+            ValueKind::Temp(_) | ValueKind::Return | ValueKind::Cast(_) => Vec::new(),
+        };
+        // FTE-18.7: an empty slot takes its parameter's default, and so does each parameter
+        // after the last argument that has one and is not `optional`.
+        let mut count = slots.len();
+        while count < function.params.len()
+            && defaults.get(count).is_some_and(Option::is_some)
+            && !function
+                .labels
+                .0
+                .get(count)
+                .is_some_and(|label| label.optional)
+        {
+            count = count.saturating_add(1);
+        }
+        let mut values = Vec::with_capacity(count);
+        for i in 0..count {
+            let last = i.saturating_add(1) >= count;
+            let (value, arg_span) = match slots.get(i).cloned().flatten() {
+                Some(arg) => (self.expr(&arg)?, arg.syntax().span()),
+                None => {
+                    let (file, default) = defaults
+                        .get(i)
+                        .cloned()
+                        .flatten()
+                        .ok_or(Abort::Internal(Internal::Unlowered, span))?;
+                    let here = std::mem::replace(&mut self.file, file);
+                    let value = self.expr(&default);
+                    self.file = here;
+                    (value?, span)
+                }
+            };
+            let value = if last {
+                value
+            } else {
+                self.hold(value, arg_span)?
+            };
             values.push((value, arg_span));
         }
         // FTEF-32.14: a call of constants that FTEQCC folds by its function's name.

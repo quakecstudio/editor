@@ -1527,3 +1527,26 @@ fn a_local_vectors_components_are_its_own() {
     );
     assert_eq!(t[1], st(StoreF, immediate(&p, 200.0), local + 2, 0));
 }
+
+// spec FTE-18.7: a call passes a parameter's default for an empty slot and for each trailing
+// parameter with one that is not optional
+#[test]
+fn a_call_passes_its_parameters_defaults() {
+    let p = fte_progs(
+        "float x;\nfloat(float a, float b = 7, float c = 9) f = { return a; };\n\
+         void() t = { x = f(1); x = f(1, , 2); };\n",
+    );
+    let t = body(&p, "t");
+    let (one, two, seven, nine) = (
+        immediate(&p, 1.0),
+        immediate(&p, 2.0),
+        immediate(&p, 7.0),
+        immediate(&p, 9.0),
+    );
+    assert_eq!(t[0], st(StoreV, one, 4, 0));
+    assert_eq!(t[1], st(StoreV, seven, 7, 0));
+    assert_eq!(t[2], st(StoreV, nine, 10, 0));
+    assert_eq!(t[3].op, u32::from(Opcode::Call3.number()));
+    assert_eq!(t[6], st(StoreV, seven, 7, 0));
+    assert_eq!(t[7], st(StoreV, two, 10, 0));
+}

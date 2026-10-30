@@ -645,6 +645,15 @@ name (QC-10.3), and nothing follows the name.
   time it is needed. `rerelease-mg3`'s `float(...) SUB_True` makes one, written as its 24
   elements (FTE-13.13). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseImmediateStatements`.
+- **FTE-18.7** A call passes a parameter's default value where its argument is left empty,
+  `f(a, , c)` (`else if (arg < t->num_parms && (QCC_PR_PeekToken (",") || QCC_PR_PeekToken
+  (")"))) ... e = QCC_DefToRef(&parambuf[arg], func.cast->params[arg].defltvalue);`), and for
+  each parameter after the last argument that has a default and is not `optional` (`while (arg
+  < np && func.cast->params[arg].defltvalue.cast && !func.cast->params[arg].optional)`), stored
+  to its slot as an argument is: `rerelease-mg1`'s `GetFogInfoEntity(source)` passes its
+  `.string field = fog_info_entity`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseFunctionCall`.
 
 ## FTE-19 Further operators
 
