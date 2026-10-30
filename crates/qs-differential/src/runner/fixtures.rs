@@ -202,8 +202,7 @@ const FULL: &[&str] = &[
 ];
 
 /// A deathmatch set with a start and an intermission spot, which the rerelease looks for, and
-/// both teams' spawn points, each with the other team's flag on it, so a player who spawns on
-/// either team takes the enemy flag and the carried flag's logic runs (`teamplay.qc`).
+/// both teams' flags and spawn points.
 const CTF: &[&str] = &[
     "{\n\"classname\" \"worldspawn\"\n\"message\" \"ctf\"\n}",
     "{\n\"classname\" \"info_player_start\"\n\"origin\" \"64 64 24\"\n}",
@@ -212,8 +211,8 @@ const CTF: &[&str] = &[
     "{\n\"classname\" \"info_player_deathmatch\"\n\"origin\" \"128 0 24\"\n}",
     "{\n\"classname\" \"info_player_team1\"\n\"origin\" \"0 128 24\"\n}",
     "{\n\"classname\" \"info_player_team2\"\n\"origin\" \"128 128 24\"\n}",
-    "{\n\"classname\" \"item_flag_team1\"\n\"origin\" \"128 128 24\"\n}",
-    "{\n\"classname\" \"item_flag_team2\"\n\"origin\" \"0 128 24\"\n}",
+    "{\n\"classname\" \"item_flag_team1\"\n\"origin\" \"-128 0 24\"\n}",
+    "{\n\"classname\" \"item_flag_team2\"\n\"origin\" \"256 0 24\"\n}",
     "{\n\"classname\" \"weapon_supershotgun\"\n\"origin\" \"0 -32 0\"\n}",
     "{\n\"classname\" \"weapon_rocketlauncher\"\n\"origin\" \"64 -32 0\"\n}",
     "{\n\"classname\" \"item_rockets\"\n\"origin\" \"0 32 0\"\n}",
