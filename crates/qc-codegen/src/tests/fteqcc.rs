@@ -1550,3 +1550,14 @@ fn a_call_passes_its_parameters_defaults() {
     assert_eq!(t[6], st(StoreV, seven, 7, 0));
     assert_eq!(t[7], st(StoreV, two, 10, 0));
 }
+
+// spec FTE-18.7: a default that is a cast within its basic type passes its operand's value
+#[test]
+fn a_cast_default_passes_its_operand() {
+    let p = fte_progs(
+        "float(...) yes = { return 1; };\n\
+         void(float(entity e) p = (float(entity e))yes) f = {};\nvoid() t = { f(); };\n",
+    );
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreV, global(&p, "yes"), 4, 0));
+}

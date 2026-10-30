@@ -2545,6 +2545,13 @@ impl Compiler<'_> {
                         .cloned()
                         .flatten()
                         .ok_or(Abort::Internal(Internal::Unlowered, span))?;
+                    // A default is stored by its words, so a cast within its basic type, which
+                    // makes no statement (FTEF-30.6), is its operand; the cast's type is the
+                    // declaration's, not this body's.
+                    let mut default = default;
+                    while let ast::Expr::Cast(cast) = &default {
+                        default = cast.operand().at(span)?;
+                    }
                     let here = std::mem::replace(&mut self.file, file);
                     let value = self.expr(&default);
                     self.file = here;
