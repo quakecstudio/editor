@@ -6,7 +6,7 @@
 
 use qc_progs::opcode::Opcode::{
     self, AddF, And, BitAnd, BitOr, Call1, Call2, Call3, DivF, Done, EqF, Goto, If, IfNot, Lt,
-    MulF, MulV, MulVf, NotV, Return, StoreF, StoreS, StoreV, SubF, SubV,
+    MulF, MulV, MulVf, NotF, NotS, NotV, Return, StoreF, StoreS, StoreV, SubF, SubV,
 };
 use qc_progs::{ProgsFile, Statement};
 
@@ -508,6 +508,38 @@ fn prefix_operators_are_subtractions_and_stores() {
     assert_eq!(t[2], st(SubF, immediate(&p, -1.0), a, b));
     assert_eq!(t[3], st(AddF, a, immediate(&p, 1.0), a));
     assert_eq!(t[4], st(StoreF, a, b, 0));
+}
+
+// spec FTEF-34.16: an IFNOT of the temporary a NOT_F, NOT_FNC or NOT_ENT just made is one IF of
+// its operand in `if`, `while` and `c ? a : b`; a NOT_S and the kept condition of `c ?: b` are not
+#[test]
+fn an_ifnot_of_a_not_is_shortened_to_an_if() {
+    let p = fte_progs(concat!(
+        "float f, n; entity e; string s;\n",
+        "void() t = { if (!f) n = 1; while (!e) n = 2; if (!s) n = 3; n = !f ? 4 : 5; ",
+        "n = !f ?: 6; };\n",
+    ));
+    let (f, e) = (global(&p, "f"), global(&p, "e"));
+    let t = body(&p, "t");
+    assert_eq!(
+        opcodes(&t),
+        ops(&[
+            If, StoreF, If, StoreF, Goto, NotS, IfNot, StoreF, If, StoreF, Goto, StoreF, StoreF,
+            NotF, IfNot, StoreF, Goto, StoreF, StoreF, Done
+        ])
+    );
+    assert_eq!(t[0], st(If, f, 2, 0));
+    assert_eq!(t[2], st(If, e, 3, 0));
+    assert_eq!(t[8], st(If, f, 3, 0));
+    assert_eq!(t[14], st(IfNot, t[13].c, 3, 0));
+}
+
+// spec FTEF-34.16: id's qcc has no `shortenifs`; `if (!f)` stays NOT_F and IFNOT
+#[test]
+fn qcc_keeps_the_not_of_a_condition() {
+    let p = super::progs("float f, n;\nvoid() t = { if (!f) n = 1; };\n");
+    let t = body(&p, "t");
+    assert_eq!(opcodes(&t), ops(&[NotF, IfNot, StoreF, Done]));
 }
 
 // spec FTE-8.3: `c ? a : b` is IFNOT over the first arm's store and a GOTO over the second's,

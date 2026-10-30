@@ -1284,7 +1284,40 @@ impl<'a> Compiler<'a> {
     /// A jump taken when `condition` is false, its target patched later; returns its index.
     fn unless(&mut self, condition: &Value, span: Span) -> Lowered<usize> {
         let (op, tested) = self.test(condition, false, span)?;
+        if let Some(not) = self.shortened_not(op, condition) {
+            return Ok(self.program.emit(Opcode::If, not, 0));
+        }
         Ok(self.program.emit(op, operand(tested).at(span)?, 0))
+    }
+
+    /// `unless` of a condition the caller reads again, which FTEQCC never shortens (FTEF-34.16).
+    fn unless_kept(&mut self, condition: &Value, span: Span) -> Lowered<usize> {
+        let (op, tested) = self.test(condition, false, span)?;
+        Ok(self.program.emit(op, operand(tested).at(span)?, 0))
+    }
+
+    /// FTEF-34.16: under FTEQCC an `IFNOT` of the temporary the statement before made by
+    /// `NOT_F`, `NOT_FNC` or `NOT_ENT` drops that statement and becomes an `IF` of its operand,
+    /// returned here.
+    fn shortened_not(&mut self, op: Opcode, condition: &Value) -> Option<i32> {
+        if self.dialect != Dialect::Fteqcc
+            || op != Opcode::IfNot
+            || !matches!(condition.kind, ValueKind::Temp(_))
+        {
+            return None;
+        }
+        let made = operand(condition.ofs).ok()?;
+        let last = self.program.statements.last()?;
+        let shortens = [Opcode::NotF, Opcode::NotFnc, Opcode::NotEnt]
+            .iter()
+            .any(|not| u32::from(not.number()) == last.op);
+        if last.c != made || !shortens {
+            return None;
+        }
+        let not = last.a;
+        self.program.statements.pop();
+        self.program.origins.pop();
+        Some(not)
     }
 
     /// The opcode and operand of a jump taken when `condition` is `when`: `IF` or `IFNOT` of
@@ -1312,7 +1345,11 @@ impl<'a> Compiler<'a> {
     fn ternary(&mut self, ternary: &ast::TernaryExpr, span: Span) -> Lowered<Value> {
         let condition = self.expr(&ternary.condition().at(span)?)?;
         let (middle, last) = ternary.arms();
-        let test = self.unless(&condition, span)?;
+        let test = if middle.is_some() {
+            self.unless(&condition, span)?
+        } else {
+            self.unless_kept(&condition, span)?
+        };
         let first = match middle {
             Some(middle) => self.expr(&middle)?,
             None => condition,

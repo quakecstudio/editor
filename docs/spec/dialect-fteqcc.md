@@ -5280,3 +5280,16 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   shared definition (`nofold`) and an initialiser that does not fold stay as they are. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseDefs`.
+- **FTEF-34.16** An `OP_IFNOT_I` of the temporary the statement before made with `OP_NOT_F`,
+  `OP_NOT_FNC` or `OP_NOT_ENT` replaces that statement with one `OP_IF_I` of the `NOT`'s
+  operand, the default `shortenifs` optimisation ("if (!a) was traditionally compiled in two
+  statements. This optimisation does it in one"): `if (opt_shortenifnots && var_a.cast &&
+  var_a.sym->temp && var_a.sym->refcount == 1 && (statements[numstatements-1].op == OP_NOT_F ||
+  ... OP_NOT_FNC || ... OP_NOT_ENT))`, then `op = &pr_opcodes[OP_IF_I]; numstatements--;` and
+  `var_a = statements[numstatements].a;` (`OP_IF_F` on a target that has it, none here). So the
+  tests of `if`, `while`, `for` and `c ? a : b` shorten, and `if (!x)` of a float `x` that is
+  `-0.0` branches past the body, since `OP_IF` tests the word's bits; `c ?: b`, `&&` and `||`
+  keep their operand (`STFL_PRESERVEA`, a second reference) and do not, nor does a `NOT_S` or
+  `NOT_V`, nor the `OP_IF` of `do ... while`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags`, `QCC_Generate_OP_IFNOT`; `engine/qclib/qccmain.c`, `optimisations[]`.
