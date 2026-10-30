@@ -760,3 +760,51 @@ fn against_fteqcc_a_states_next_function_is_a_global() {
     let ours = "void() a = [1, b] { local float q; q = 1; };\nvoid() b = {};\n";
     assert_eq!(against(Oracle::Fteqcc, theirs, ours), []);
 }
+
+/// `bytes`, a version 6 progs, with global definition `name` given the type number `ty`.
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "test code: offsets inside a small progs the test compiled"
+)]
+fn retyped(mut bytes: Vec<u8>, name: &str, ty: u16) -> Vec<u8> {
+    let word = |b: &[u8], at: usize| {
+        usize::try_from(i32::from_le_bytes(b[at..at + 4].try_into().unwrap())).unwrap()
+    };
+    let (defs, count, strings) = (word(&bytes, 16), word(&bytes, 20), word(&bytes, 40));
+    for i in 0..count {
+        let at = defs + i * 8;
+        let s_name = strings + word(&bytes, at + 4);
+        let end = s_name + bytes[s_name..].iter().position(|&b| b == 0).unwrap();
+        if &bytes[s_name..end] == name.as_bytes() {
+            bytes[at..at + 2].copy_from_slice(&ty.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+// spec DIFF-12.10: a global of FTEQCC's struct type is not compared, so two programs whose
+// struct-typed global holds the same string at another place in each string table agree
+#[test]
+fn a_struct_typed_global_is_not_compared() {
+    let theirs = compile("string s;\nvoid() f = { s = \"a\"; };\n", false);
+    let ours = compile(
+        "string s;\nvoid() g = { s = \"zz\"; };\nvoid() f = { s = \"a\"; };\n",
+        false,
+    );
+    let run = |theirs: &[u8], ours: &[u8]| {
+        run_calls(Oracle::Fteqcc, theirs, ours, &scenario(), WORLD, 4)
+            .unwrap()
+            .divergences
+            .into_iter()
+            .map(|d| d.what)
+            .filter(|d| matches!(d, Difference::Global(..)))
+            .count()
+    };
+    let float_typed = (
+        retyped(theirs.clone(), "s", 2),
+        retyped(ours.clone(), "s", 2),
+    );
+    assert_ne!(run(&float_typed.0, &float_typed.1), 0);
+    let struct_typed = (retyped(theirs, "s", 14), retyped(ours, "s", 14));
+    assert_eq!(run(&struct_typed.0, &struct_typed.1), 0);
+}

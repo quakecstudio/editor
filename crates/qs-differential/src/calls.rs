@@ -571,6 +571,10 @@ impl Observer for Statements {
 }
 
 /// A named global definition: its name, type and slot.
+/// FTEQCC's `ev_struct` and `ev_union`, `progslib.h`'s `etype_t` (DIFF-12.10).
+const EV_STRUCT: u16 = 14;
+const EV_UNION: u16 = 15;
+
 type Global = (Vec<u8>, DefType, usize);
 
 /// A progs' named definitions and functions (DIFF-12.3).
@@ -601,6 +605,10 @@ impl<'a, 'p> Program<'a, 'p> {
         };
         let mut globals = Vec::new();
         for def in progs.global_defs().iter() {
+            // DIFF-12.10: a struct or union element is compared by its members.
+            if matches!(def.def_type(), DefType::Unknown(EV_STRUCT | EV_UNION)) {
+                continue;
+            }
             if let Some((name, ofs)) = named(&def) {
                 globals.push((name, def.def_type(), ofs));
             }

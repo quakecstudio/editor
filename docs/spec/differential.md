@@ -653,6 +653,11 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   two calls that both stop with `runaway loop error` (VM-2.3) agree, with nothing else compared:
   where a loop is stopped depends on how many statements each pass takes, which two compilers
   need not share.
+- **DIFF-12.10** A global whose definition has FTEQCC's struct or union type, `ev_struct` (14)
+  or `ev_union` (15) in `progslib.h`'s `etype_t`, is not compared, in either progs: it is an
+  element of an array of structs (`dialect-fteqcc-rerelease.md` FTE-13.13), whose first word is
+  its first member's, compared by that member's own definition and type, where reading the word
+  by its bits would compare a string's place in each string table.
 
 ## Test vectors
 
