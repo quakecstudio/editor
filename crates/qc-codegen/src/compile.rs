@@ -113,6 +113,9 @@ enum Target {
         slot: FieldSlot,
         address: Option<u32>,
     },
+    /// `STOREP_*` through the pointer at `address` to a value of type `ty`, `*p = x`
+    /// (FTEF-6.18).
+    Pointer { address: u32, ty: ValueType },
 }
 
 /// A store's target as the value it computes reads it: a global, or a field read only when
@@ -1677,6 +1680,14 @@ impl<'a> Compiler<'a> {
                     }
                 }
             }
+            Some(ast::Expr::Unary(unary)) if unary.op() == Some(ast::UnaryOp::Deref) => {
+                let pointer = self.expr(&unary.operand().at(span)?)?;
+                let ty = self.type_of(&pointer).pointee().at(span)?;
+                Target::Pointer {
+                    address: pointer.ofs,
+                    ty,
+                }
+            }
             Some(ast::Expr::Index(index)) => {
                 let base = index.base().at(span)?;
                 let at = index.index().at(span)?;
@@ -1692,12 +1703,17 @@ impl<'a> Compiler<'a> {
             }
             _ => Target::Value(self.expr(lhs)?),
         };
-        let pending = reads.then(|| match &target {
-            Target::Value(to) => Pending::Value(to.clone()),
-            Target::Field { slot, .. } => Pending::Field(slot.clone()),
-        });
+        let pending = match (&target, reads) {
+            (_, false) => None,
+            (Target::Value(to), true) => Some(Pending::Value(to.clone())),
+            (Target::Field { slot, .. }, true) => Some(Pending::Field(slot.clone())),
+            // A read through a pointer, `LOADP_*`, is not lowered yet.
+            (Target::Pointer { .. }, true) => {
+                return Err(Abort::Internal(Internal::Unsupported, span));
+            }
+        };
         let value = value(self, pending)?;
-        let (slot, address) = match target {
+        let (to, inner) = match target {
             Target::Value(to) => {
                 if self.fold_store(&to, &value) {
                     return Ok(to);
@@ -1705,16 +1721,22 @@ impl<'a> Compiler<'a> {
                 self.store_to(&to, &value, op_span)?;
                 return Ok(value);
             }
-            Target::Field { slot, address } => (slot, address),
+            Target::Field {
+                slot,
+                address: Some(to),
+            } => (to, slot.ty.etype()),
+            Target::Field {
+                slot,
+                address: None,
+            } => {
+                let to = self
+                    .program
+                    .emit_result(Opcode::Address, slot.entity, slot.field, Etype::Pointer)
+                    .at(op_span)?;
+                (to, slot.ty.etype())
+            }
+            Target::Pointer { address, ty } => (address, ty.etype()),
         };
-        let to = match address {
-            Some(to) => to,
-            None => self
-                .program
-                .emit_result(Opcode::Address, slot.entity, slot.field, Etype::Pointer)
-                .at(op_span)?,
-        };
-        let inner = slot.ty.etype();
         let b = self.type_of(&value).etype();
         let Some(row) = ops::select(Operator::Assign, Etype::Pointer, b, None) else {
             return Self::mismatch(Operator::Assign, op_span);
@@ -2047,13 +2069,13 @@ enum FunctionInit<'t> {
     Builtin(&'t ast::Builtin),
 }
 
-/// `expr` with any parentheses around it taken off, when it is a field access or a subscript:
-/// the statement `qcc` makes an address is the last one emitted, which for `(e.f)` is still the
-/// field's load (QC-17.3).
+/// `expr` with any parentheses around it taken off, when it is a field access, a subscript or a
+/// prefix operator such as `*p`: the statement `qcc` makes an address is the last one emitted,
+/// which for `(e.f)` is still the field's load (QC-17.3).
 fn unparenthesized(expr: &ast::Expr) -> Option<ast::Expr> {
     match expr {
         ast::Expr::Paren(paren) => paren.expr().and_then(|inner| unparenthesized(&inner)),
-        ast::Expr::Field(_) | ast::Expr::Index(_) => Some(expr.clone()),
+        ast::Expr::Field(_) | ast::Expr::Index(_) | ast::Expr::Unary(_) => Some(expr.clone()),
         ast::Expr::Literal(_)
         | ast::Expr::Name(_)
         | ast::Expr::Not(_)
@@ -2061,7 +2083,6 @@ fn unparenthesized(expr: &ast::Expr) -> Option<ast::Expr> {
         | ast::Expr::Call(_)
         | ast::Expr::Postfix(_)
         | ast::Expr::Ternary(_)
-        | ast::Expr::Unary(_)
         | ast::Expr::Cast(_)
         | ast::Expr::Vector(_)
         | ast::Expr::Sizeof(_) => None,

@@ -1054,3 +1054,14 @@ fn the_address_of_an_entitys_field_is_its_address() {
     assert_eq!(t[0], st(Opcode::Address, w, f, cd));
     assert_eq!(t[1].op, u32::from(Done.number()));
 }
+
+// spec FTEF-6.18: a float or vector stored through a pointer is its OP_STOREP_F or OP_STOREP_V
+// to the pointer
+#[test]
+fn a_store_through_a_pointer_is_its_storep() {
+    let p = fte_progs("float *p; vector *q; float f; vector v;\nvoid() t = { *p = f; *q = v; };\n");
+    let g = |name| global(&p, name);
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(Opcode::StorepF, g("f"), g("p"), 0));
+    assert_eq!(t[1], st(Opcode::StorepV, g("v"), g("q"), 0));
+}

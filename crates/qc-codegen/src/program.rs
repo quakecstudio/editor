@@ -102,6 +102,14 @@ impl ValueType {
         Self::Of(Type::Pointer(Rc::new(inner)))
     }
 
+    /// For a pointer type, the type of what it points to (FTEF-6.18).
+    pub(crate) fn pointee(&self) -> Option<Self> {
+        match self {
+            Self::Of(Type::Pointer(inner)) => Some(Self::Of(Type::clone(inner))),
+            Self::Of(_) | Self::FloatField => None,
+        }
+    }
+
     /// For a function type, the function's type (QC-18.8).
     pub(crate) fn function(&self) -> Option<&FunctionType> {
         match self {
