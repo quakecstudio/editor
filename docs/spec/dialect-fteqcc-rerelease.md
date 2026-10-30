@@ -673,6 +673,15 @@ name (QC-10.3), and nothing follows the name.
   two words as they were, where vanilla `qcc` stores every argument by `STORE_V` (QC-18.3).
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateFunctionCallRef`.
+- **FTE-18.10** A bare `return;` in a function that returns a value returns a local named
+  `ret*` of the return type, made at the first such `return` and returned by every later one
+  (`if (!pr_scope->returndef.cast) { //but if it does, allocate a local that can be return=foo;
+  before the return. depend upon qc's null initialisation rules for the default value.
+  pr_scope->returndef = QCC_PR_GetSRef(pr_scope->type->aux_type, "ret*", pr_scope, true, 0,
+  GDF_NONE);` and `QCC_PR_Statement (&pr_opcodes[OP_RETURN], pr_scope->returndef, ...)`); in a
+  `void` function it returns 0. `rerelease-hipnotic`'s and `rerelease-rogue`'s `FindTarget`
+  return so. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseStatement`.
 
 ## FTE-19 Further operators
 

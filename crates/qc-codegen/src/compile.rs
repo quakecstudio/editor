@@ -183,6 +183,10 @@ pub(crate) struct Compiler<'a> {
     defaults: HashMap<DefId, Vec<Option<(FileId, ast::Expr)>>>,
     /// Whether the module is compiled with FTEQCC's `-Fautoproto` (FTE-22.3, FTE-18.8).
     pub(crate) autoproto: bool,
+    /// The return type of the function whose body is being compiled, `None` outside one.
+    body_return: Option<ValueType>,
+    /// The function's `ret*` local, once a bare `return` made it (FTE-18.10).
+    ret_local: Option<usize>,
     /// The `$parmN` globals made for the parameter slots past the eighth (FTE-18.6).
     extra_parms: HashMap<usize, u32>,
     /// In a `wrap` function's body, the definition `prior` names (FTEF-15.11).
@@ -224,6 +228,8 @@ impl<'a> Compiler<'a> {
             array_functions: Vec::new(),
             prior: None,
             extra_parms: HashMap::new(),
+            body_return: None,
+            ret_local: None,
             defaults: HashMap::new(),
             autoproto: false,
             s_files: HashMap::new(),
@@ -552,6 +558,8 @@ impl<'a> Compiler<'a> {
                     self.locals_end = self.program.next_global().at(span)?;
                 }
                 let code = operand_index(self.program.statements.len()).at(span)?;
+                self.body_return = Some(ValueType::Of(function_type.ret.clone()));
+                self.ret_local = None;
                 if self.dialect.has_fteqcc_extensions() && function_type.variadic {
                     self.variadic_prologue(function_type.params.len(), span)?;
                 }
@@ -570,6 +578,8 @@ impl<'a> Compiler<'a> {
         };
         self.scope = None;
         self.prior = None;
+        self.body_return = None;
+        self.ret_local = None;
         // `PR_ParseDefs` marks the function initialised here, which nothing reads for a
         // function: no literal is a function (QC-20.2), and no function is saved (QC-21.6).
         if wrapped.is_none() {
@@ -671,6 +681,31 @@ impl<'a> Compiler<'a> {
             );
         }
         Ok(())
+    }
+
+    /// FTE-18.10: what a bare `return;` returns: under FTEQCC, in a function that returns a
+    /// value, its local `ret*` of the return type, made at the first such `return`; else 0.
+    fn bare_return(&mut self, span: Span) -> Lowered<u32> {
+        let Some(ty) = self
+            .body_return
+            .clone()
+            .filter(|_| self.dialect.has_fteqcc_extensions())
+        else {
+            return Ok(0);
+        };
+        if ty.etype() == Etype::Void {
+            return Ok(0);
+        }
+        if let Some(place) = self.ret_local {
+            return Ok(self.program.def(place).at(span)?.ofs);
+        }
+        let place = self
+            .program
+            .generated("ret*", ty.clone(), ty.words())
+            .at(span)?;
+        self.ret_local = Some(place);
+        self.locals_end = self.program.next_global().at(span)?;
+        Ok(self.program.def(place).at(span)?.ofs)
     }
 
     /// FTEF-15.11: for a `wrap` definition's body, the function it wraps moves to a new
@@ -777,7 +812,7 @@ impl<'a> Compiler<'a> {
                 // QC-14.3, QC-19.5: the value is not checked against the return type.
                 let a = match ret.value() {
                     Some(value) => operand(self.expr(&value)?.ofs).at(span)?,
-                    None => 0,
+                    None => operand(self.bare_return(span)?).at(span)?,
                 };
                 self.program.emit(Opcode::Return, a, 0);
             }

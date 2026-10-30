@@ -1577,3 +1577,19 @@ fn autoprototyping_drops_a_named_default() {
     assert_eq!(t[1], st(StoreF, global(&p, "target"), 7, 0));
     assert_eq!(t[2].op, u32::from(Opcode::Call2.number()));
 }
+
+// spec FTE-18.10: a bare return in a function that returns a value returns its `ret*` local,
+// the same one each time, and in a void function returns 0
+#[test]
+fn a_bare_return_returns_the_ret_local() {
+    let p =
+        fte_progs("float x;\nfloat() f = { if (x) return; return; };\nvoid() g = { return; };\n");
+    let ret = global(&p, "ret*");
+    let returns: Vec<i32> = body(&p, "f")
+        .iter()
+        .filter(|s| s.op == u32::from(Return.number()))
+        .map(|s| s.a)
+        .collect();
+    assert_eq!(returns, [ret, ret]);
+    assert_eq!(body(&p, "g")[0], st(Return, 0, 0, 0));
+}
