@@ -658,6 +658,7 @@ mod mock_engine {
 
     // spec DIFF-8.2: every runtime error's message, byte for byte, as the trace records it
     // spec BUILTIN-1.2: a PF_Fixme number's message keeps id's spelling
+    // spec LIMIT-6.2: a full precache list is PF_precache_sound or PF_precache_model: overflow
     #[test]
     fn runtime_error_messages() {
         let cases = [
@@ -678,6 +679,14 @@ mod mock_engine {
                 "PF_Precache_*: Precache can only be done in spawn functions",
             ),
             (RuntimeError::BadString, "Bad string"),
+            (
+                RuntimeError::SoundPrecacheOverflow,
+                "PF_precache_sound: overflow",
+            ),
+            (
+                RuntimeError::ModelPrecacheOverflow,
+                "PF_precache_model: overflow",
+            ),
             (RuntimeError::EntityNotClient, "Entity is not a client"),
             (RuntimeError::ParmNotClient, "Parm 0 not a client"),
             (RuntimeError::WriteDestNotClient, "WriteDest: not a client"),
@@ -704,15 +713,14 @@ mod mock_engine {
     }
 
     // spec DIFF-8.2: every fatal error's message, byte for byte, as Sys_Error formats it
-    // spec BUILTIN-12.1: the sound errors name the volume, attenuation and channel
+    // spec BUILTIN-12.1: the sound errors print the volume and channel as %i and the
+    // attenuation as %f
     #[test]
     fn fatal_error_messages() {
         let cases = [
             (FatalError::BreakStatement, "break statement"),
             (FatalError::BadPointer, "NUM_FOR_EDICT: bad pointer"),
             (FatalError::NoFreeEdicts, "ED_Alloc: no free edicts"),
-            (FatalError::SoundIndexOverflow, "SV_SoundIndex: overflow"),
-            (FatalError::ModelIndexOverflow, "SV_ModelIndex: overflow"),
             (
                 FatalError::ModelNotPrecached {
                     name: "progs/x.mdl".to_string(),
@@ -725,7 +733,7 @@ mod mock_engine {
             ),
             (
                 FatalError::SoundAttenuation { atten: 4.5 },
-                "SV_StartSound: attenuation = 4.5",
+                "SV_StartSound: attenuation = 4.500000",
             ),
             (
                 FatalError::SoundAttenuation {
@@ -784,7 +792,7 @@ mod bodies {
     use qc_progs::opcode::Opcode;
     use qc_progs::{Function, Progs, ProgsFile, Statement, write};
     use qc_types::{Etype, PROGS_OFS_PARM0, PROGS_OFS_RETURN, PROGS_PARM_SLOTS, Slot};
-    use qc_vm::{Machine, NoObserver, RunError, ServerState};
+    use qc_vm::{ErrorKind, Machine, NoObserver, RunError, ServerState};
 
     /// A global slot holding the function value the entry's `CALL` calls: the first slot past
     /// the system globals (EDICT-2.1), so no builtin that writes one, such as `makevectors`
@@ -1286,6 +1294,30 @@ mod bodies {
         let mut f = Fixture::new(19, 1, vec![0], 0);
         f.set_parm_i(0, 0); // the empty string at offset 0
         f.run_err(ServerState::Loading, "Bad string");
+    }
+
+    // spec LIMIT-6.2: precaching a new name into a full list is the runtime error
+    // PF_precache_sound: overflow or PF_precache_model: overflow, id's PR_RunError
+    #[test]
+    fn a_full_precache_list_is_a_runtime_error() {
+        for (number, message) in [
+            (19, "PF_precache_sound: overflow"),
+            (20, "PF_precache_model: overflow"),
+        ] {
+            let (strings, offsets) = string_table(&["misc/new"]);
+            let mut f = Fixture::new(number, 1, strings, 0);
+            let engine = f.builtins.engine_mut();
+            let list = if number == 19 {
+                &mut engine.sound_precache
+            } else {
+                &mut engine.model_precache
+            };
+            list.resize_with(256, || "taken".to_string());
+            f.set_parm_i(0, offsets[0]);
+            let error = f.run(ServerState::Loading).unwrap_err();
+            assert_eq!(error.message(), message);
+            assert!(matches!(error.kind, ErrorKind::Builtin { .. }), "{error:?}");
+        }
     }
 
     // spec BUILTIN-10.5: precache_file returns s and does nothing, at any time.
@@ -2559,7 +2591,7 @@ mod bodies {
         atten.set_parm_i(2, offsets[0]);
         atten.set_parm_f(3, 1.0); // volume 255 ok
         atten.set_parm_f(4, 5.0); // attenuation > 4: the attenuation error
-        atten.run_err(ServerState::Active, "SV_StartSound: attenuation = 5");
+        atten.run_err(ServerState::Active, "SV_StartSound: attenuation = 5.000000");
 
         let mut chan = Fixture::new(8, 5, strings, 0);
         chan.builtins
@@ -3033,7 +3065,10 @@ mod bodies {
         low.set_parm_i(2, offsets[0]);
         low.set_parm_f(3, 0.5);
         low.set_parm_f(4, -0.5); // below 0
-        low.run_err(ServerState::Active, "SV_StartSound: attenuation = -0.5");
+        low.run_err(
+            ServerState::Active,
+            "SV_StartSound: attenuation = -0.500000",
+        );
     }
 
     // spec BUILTIN-12.1: a sound channel of exactly 0 or 7 is in range and succeeds; 8 is the

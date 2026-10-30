@@ -895,8 +895,8 @@ impl MockBuiltins {
         let name = String::from_utf8_lossy(&text).into_owned();
         self.engine.precache(kind, &name).map_err(|Overflow| {
             BuiltinError::from(match kind {
-                Precache::Sound => FatalError::SoundIndexOverflow,
-                Precache::Model => FatalError::ModelIndexOverflow,
+                Precache::Sound => RuntimeError::SoundPrecacheOverflow,
+                Precache::Model => RuntimeError::ModelPrecacheOverflow,
             })
         })
     }

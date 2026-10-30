@@ -83,6 +83,10 @@ pub enum RuntimeError {
     PrecacheOutsideSpawn,
     /// A precache whose name starts with a space or below (BUILTIN-10.2).
     BadString,
+    /// A `precache_sound` of a new name into a full list (LIMIT-6.2).
+    SoundPrecacheOverflow,
+    /// A `precache_model` of a new name into a full list (LIMIT-6.2).
+    ModelPrecacheOverflow,
     /// `setspawnparms` of an edict that is not a client (BUILTIN-8.7).
     EntityNotClient,
     /// `sprint`, `centerprint` or `stuffcmd` to an edict that is not a client (BUILTIN-11.4).
@@ -122,6 +126,8 @@ impl fmt::Display for RuntimeError {
                 f.write_str("PF_Precache_*: Precache can only be done in spawn functions")
             }
             Self::BadString => f.write_str("Bad string"),
+            Self::SoundPrecacheOverflow => f.write_str("PF_precache_sound: overflow"),
+            Self::ModelPrecacheOverflow => f.write_str("PF_precache_model: overflow"),
             Self::EntityNotClient => f.write_str("Entity is not a client"),
             Self::ParmNotClient => f.write_str("Parm 0 not a client"),
             Self::WriteDestNotClient => f.write_str("WriteDest: not a client"),
@@ -147,10 +153,6 @@ pub enum FatalError {
     BadPointer,
     /// `spawn` with every edict in use (EDICT-6.2).
     NoFreeEdicts,
-    /// A `precache_sound` of a new name into a full list.
-    SoundIndexOverflow,
-    /// A `precache_model` of a new name into a full list.
-    ModelIndexOverflow,
     /// `makestatic` of a model that is not precached (BUILTIN-12.8).
     ModelNotPrecached {
         /// The model name.
@@ -181,13 +183,15 @@ impl fmt::Display for FatalError {
             Self::BreakStatement => f.write_str("break statement"),
             Self::BadPointer => f.write_str("NUM_FOR_EDICT: bad pointer"),
             Self::NoFreeEdicts => f.write_str("ED_Alloc: no free edicts"),
-            Self::SoundIndexOverflow => f.write_str("SV_SoundIndex: overflow"),
-            Self::ModelIndexOverflow => f.write_str("SV_ModelIndex: overflow"),
             Self::ModelNotPrecached { name } => {
                 write!(f, "SV_ModelIndex: model {name} not precached")
             }
             Self::SoundVolume { volume } => write!(f, "SV_StartSound: volume = {volume}"),
-            Self::SoundAttenuation { atten } => write!(f, "SV_StartSound: attenuation = {atten}"),
+            // id's "SV_StartSound: attenuation = %f": the float promoted to double, six
+            // decimals.
+            Self::SoundAttenuation { atten } => {
+                write!(f, "SV_StartSound: attenuation = {:.6}", f64::from(*atten))
+            }
             Self::SoundChannel { channel } => write!(f, "SV_StartSound: channel = {channel}"),
             Self::MessageOverflow => f.write_str("SZ_GetSpace: overflow without allowoverflow set"),
         }
