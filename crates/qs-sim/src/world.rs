@@ -252,6 +252,18 @@ impl World {
         self.builtins.mock.engine().clock
     }
 
+    /// The string the progs last set for light style `style` with `lightstyle`, if any
+    /// (BUILTIN-12.6), which the renderer animates (REND-5).
+    #[must_use]
+    pub fn light_style(&self, style: usize) -> Option<&str> {
+        self.builtins
+            .mock
+            .engine()
+            .lightstyles
+            .get(style)
+            .and_then(Option::as_deref)
+    }
+
     /// The sounds the server has started since the last call, oldest first.
     pub fn take_sounds(&mut self) -> Vec<Sound> {
         core::mem::take(&mut self.builtins.sounds)

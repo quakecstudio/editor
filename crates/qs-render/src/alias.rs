@@ -82,7 +82,7 @@ pub struct AliasEntity {
     pub frame: usize,
     /// `skinnum`.
     pub skin: usize,
-    /// `R_LightPoint` at its origin (REND-4.6).
+    /// `R_LightPoint` at its origin (REND-4.10).
     pub light: i32,
 }
 

@@ -2470,6 +2470,7 @@ version = "2026.10.0"
 dependencies = [
  "eframe",
  "egui-wgpu",
+ "egui_kittest",
  "epaint",
  "qc-progs",
  "qs-bsp",

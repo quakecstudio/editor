@@ -40,6 +40,8 @@ pub struct MapRenderer {
     models: Buffer,
     model_group: BindGroup,
     model_count: usize,
+    /// The lightmap atlas, written again as the light styles change (REND-5.5).
+    lightmap: wgpu::Texture,
 }
 
 /// The bytes between two models' matrices: the dynamic offset alignment every device allows.
@@ -267,7 +269,17 @@ impl MapRenderer {
             wgpu::FilterMode::Linear,
             wgpu::AddressMode::ClampToEdge,
         );
-        let lightmap = upload(device, queue, &mesh.lightmap);
+        let lightmap_texture = upload_texture(
+            device,
+            queue,
+            core::slice::from_ref(&mesh.lightmap),
+            // COPY_DST to write it again as the styles change; COPY_SRC so it can be read
+            // back, as the tests do.
+            wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::COPY_SRC,
+        );
+        let lightmap = lightmap_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let shared = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("qs-render view and lightmap"),
             layout: &shared_layout,
@@ -353,6 +365,7 @@ impl MapRenderer {
             models,
             model_group,
             model_count,
+            lightmap: lightmap_texture,
         }
     }
 
@@ -384,6 +397,26 @@ impl MapRenderer {
             queue.write_buffer(buffer, 0, &bytes);
         }
         self.alias_draws.clone_from(&models.draws);
+    }
+
+    /// Writes `image`, the mesh's lightmap made again for new light styles
+    /// ([`crate::MapMesh::relight`]), over the one drawn (REND-5.5). An image of another size
+    /// than the mesh's lightmap is not written.
+    pub fn set_lightmap(&self, queue: &Queue, image: &Image) {
+        let size = self.lightmap.size();
+        if (image.width, image.height) != (size.width, size.height) {
+            return;
+        }
+        queue.write_texture(
+            self.lightmap.as_image_copy(),
+            &image.rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(image.width.saturating_mul(4)),
+                rows_per_image: Some(image.height),
+            },
+            size,
+        );
     }
 
     /// Sets the view for the next draw: the matrix from map coordinates to clip space, the
@@ -530,29 +563,38 @@ fn upload(device: &Device, queue: &Queue, image: &Image) -> wgpu::TextureView {
 
 /// The mip levels `levels`, largest first, as one texture's view.
 fn upload_levels(device: &Device, queue: &Queue, levels: &[Image]) -> wgpu::TextureView {
+    upload_texture(device, queue, levels, wgpu::TextureUsages::TEXTURE_BINDING)
+        .create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// The mip levels `levels`, largest first, as one texture used as `usage` says.
+fn upload_texture(
+    device: &Device,
+    queue: &Queue,
+    levels: &[Image],
+    usage: wgpu::TextureUsages,
+) -> wgpu::Texture {
     let first = levels.first();
     let data: Vec<u8> = levels.iter().flat_map(|l| l.rgba.iter().copied()).collect();
-    device
-        .create_texture_with_data(
-            queue,
-            &wgpu::TextureDescriptor {
-                label: Some("qs-render"),
-                size: wgpu::Extent3d {
-                    width: first.map_or(1, |l| l.width),
-                    height: first.map_or(1, |l| l.height),
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: u32::try_from(levels.len()).unwrap_or(1).max(1),
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
+    device.create_texture_with_data(
+        queue,
+        &wgpu::TextureDescriptor {
+            label: Some("qs-render"),
+            size: wgpu::Extent3d {
+                width: first.map_or(1, |l| l.width),
+                height: first.map_or(1, |l| l.height),
+                depth_or_array_layers: 1,
             },
-            TextureDataOrder::LayerMajor,
-            &data,
-        )
-        .create_view(&wgpu::TextureViewDescriptor::default())
+            mip_level_count: u32::try_from(levels.len()).unwrap_or(1).max(1),
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage,
+            view_formats: &[],
+        },
+        TextureDataOrder::LayerMajor,
+        &data,
+    )
 }
 
 /// What one frame of the map view is drawn with.
@@ -575,6 +617,8 @@ pub struct MapCallback {
     pub models: ModelFrame,
     /// Each of the mesh's models' matrices, the world's first.
     pub placements: Vec<[[f32; 4]; 4]>,
+    /// The lightmap made again for this frame's light styles, when they changed (REND-5.5).
+    pub lightmap: Option<Image>,
 }
 
 impl CallbackTrait for MapCallback {
@@ -591,6 +635,9 @@ impl CallbackTrait for MapCallback {
             renderer.set_models(device, queue, &self.models);
             if !self.placements.is_empty() {
                 renderer.set_placements(queue, &self.placements);
+            }
+            if let Some(lightmap) = &self.lightmap {
+                renderer.set_lightmap(queue, lightmap);
             }
         }
         Vec::new()
@@ -612,14 +659,130 @@ impl CallbackTrait for MapCallback {
 mod tests {
     #![expect(
         clippy::unwrap_used,
-        reason = "test code: a failed unwrap is a failed test"
+        clippy::indexing_slicing,
+        reason = "test code: a failed unwrap or index is a failed test"
     )]
 
     use egui_wgpu::wgpu;
     use egui_wgpu::wgpu::naga::front::wgsl;
     use egui_wgpu::wgpu::naga::valid::{Capabilities, ValidationFlags, Validator};
 
-    use super::{ALIAS_VERTEX_BYTES, DEPTH_COMPARE, alias_bytes, grown, primitive};
+    use super::{
+        ALIAS_VERTEX_BYTES, DEPTH_COMPARE, MapCallback, MapRenderer, ModelFrame, View, alias_bytes,
+        grown, primitive,
+    };
+    use crate::mesh::Image;
+    use crate::mesh::tests::{MapSpec, bsp, palette, samples};
+    use crate::{LightStyles, MapMesh};
+    use egui_wgpu::CallbackTrait as _;
+
+    /// A headless device, and a renderer of the test map on it.
+    fn renderer() -> (egui_wgpu::RenderState, MapRenderer, MapMesh) {
+        let state = egui_kittest::wgpu::create_render_state(
+            egui_kittest::wgpu::default_wgpu_setup(),
+            egui_wgpu::RendererOptions::default(),
+        );
+        let lighting = samples(&[50]);
+        let mesh = MapMesh::build(&bsp(&MapSpec::default(), &lighting), &palette()).unwrap();
+        let renderer = MapRenderer::new(
+            &state.device,
+            &state.queue,
+            (
+                wgpu::TextureFormat::Rgba8Unorm,
+                wgpu::TextureFormat::Depth32Float,
+            ),
+            &mesh,
+            &[],
+        );
+        (state, renderer, mesh)
+    }
+
+    /// The renderer's lightmap texels, read back from the GPU, first row.
+    fn lightmap_row(state: &egui_wgpu::RenderState, renderer: &MapRenderer) -> Vec<u8> {
+        let size = renderer.lightmap.size();
+        let row = u64::from(size.width) * 4;
+        let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: row,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = state.device.create_command_encoder(&Default::default());
+        encoder.copy_texture_to_buffer(
+            renderer.lightmap.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(u32::try_from(row).unwrap()),
+                    rows_per_image: Some(1),
+                },
+            },
+            wgpu::Extent3d { height: 1, ..size },
+        );
+        state.queue.submit([encoder.finish()]);
+        buffer.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        state
+            .device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .unwrap();
+        buffer.slice(..).get_mapped_range().unwrap().to_vec()
+    }
+
+    // spec REND-5.5: a lightmap made again for new styles is written over the one drawn; one
+    // of another size is not
+    #[test]
+    fn a_new_lightmap_is_written_over_the_old() {
+        let (state, renderer, mut mesh) = renderer();
+        assert_eq!(&lightmap_row(&state, &renderer)[4..8], [100, 100, 100, 255]);
+        let off = LightStyles::at(|s| (s == 0).then_some(b"a".as_slice()), 0.0);
+        assert!(mesh.relight(&off));
+        renderer.set_lightmap(&state.queue, &mesh.lightmap);
+        assert_eq!(&lightmap_row(&state, &renderer)[4..8], [0, 0, 0, 255]);
+        let small = Image {
+            width: 1,
+            height: 1,
+            rgba: vec![9; 4],
+        };
+        renderer.set_lightmap(&state.queue, &small);
+        assert_eq!(&lightmap_row(&state, &renderer)[..4], [255, 255, 255, 255]);
+    }
+
+    // spec REND-5.5: the paint callback writes the lightmap it carries before drawing
+    #[test]
+    fn the_callback_writes_its_lightmap() {
+        let (state, renderer, mut mesh) = renderer();
+        let off = LightStyles::at(|s| (s == 0).then_some(b"a".as_slice()), 0.0);
+        mesh.relight(&off);
+        let mut resources = egui_wgpu::CallbackResources::default();
+        resources.insert(renderer);
+        let callback = MapCallback {
+            view: View {
+                clip_from_world: [[0.0; 4]; 4],
+                eye: [0.0; 3],
+                time: 0.0,
+            },
+            models: ModelFrame::default(),
+            placements: Vec::new(),
+            lightmap: Some(mesh.lightmap.clone()),
+        };
+        let mut encoder = state.device.create_command_encoder(&Default::default());
+        let screen = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [1, 1],
+            pixels_per_point: 1.0,
+        };
+        let commands = callback.prepare(
+            &state.device,
+            &state.queue,
+            &screen,
+            &mut encoder,
+            &mut resources,
+        );
+        assert!(commands.is_empty());
+        state.queue.submit([encoder.finish()]);
+        let renderer = resources.get::<MapRenderer>().unwrap();
+        assert_eq!(&lightmap_row(&state, renderer)[4..8], [0, 0, 0, 255]);
+    }
 
     // spec REND-1.11: a fragment at the depth already there passes, GL_LEQUAL
     #[test]
@@ -669,6 +832,7 @@ mod tests {
 
     // spec REND-1.7: the surface is its texture's colour times the lightmap's light, in a
     // shader every backend accepts
+    // spec REND-6.2: each channel by the lightmap's own channel
     #[test]
     fn the_shader_validates_and_darkens_the_texture_by_the_light() {
         let module = wgsl::parse_str(SHADER).unwrap();
@@ -676,8 +840,9 @@ mod tests {
             .validate(&module)
             .unwrap();
         assert!(
-            SHADER
-                .contains("let light = textureSample(lightmap, lightmap_sampler, input.light).r;")
+            SHADER.contains(
+                "let light = textureSample(lightmap, lightmap_sampler, input.light).rgb;"
+            )
         );
         assert!(SHADER.contains("return vec4<f32>(colour.rgb * light, OPAQUE);"));
     }

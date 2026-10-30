@@ -62,6 +62,25 @@ impl Camera {
         self.pitch = (self.pitch + pitch).clamp(-89.0, 89.0);
     }
 
+    /// The ray from the eye through the point `(x, y)` of an image `aspect` wide per unit of
+    /// height, `x` and `y` from -1 at the left and bottom to 1 at the right and top, as clip
+    /// space has them: its origin and its unit direction.
+    #[must_use]
+    pub fn ray(&self, aspect: f32, [x, y]: [f32; 2]) -> ([f32; 3], [f32; 3]) {
+        let [f, r, u] = self.axes();
+        let half_x = (self.fov_x.to_radians() / 2.0).tan();
+        let half_y = half_x / aspect.max(f32::EPSILON);
+        let (a, b) = (x * half_x, y * half_y);
+        let along = |f: f32, r: f32, u: f32| f + r * a + u * b;
+        let direction = [
+            along(f[0], r[0], u[0]),
+            along(f[1], r[1], u[1]),
+            along(f[2], r[2], u[2]),
+        ];
+        let length = dot(direction, direction).sqrt().max(f32::EPSILON);
+        (self.origin, direction.map(|v| v / length))
+    }
+
     /// The matrix from map coordinates to wgpu's clip space (depth 0 to 1) for an image
     /// `aspect` wide per unit of height, column-major as WGSL reads it.
     #[must_use]

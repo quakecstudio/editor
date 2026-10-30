@@ -9,7 +9,7 @@
 //! atlas on the CPU; [`MapRenderer`] uploads it and draws it; [`MapCallback`] draws it from
 //! egui; [`Camera`] gives the matrix it is drawn with.
 //!
-//! Implements `docs/spec/render.md` REND-1 to REND-3.
+//! Implements `docs/spec/render.md` REND-1 to REND-6.
 
 mod alias;
 mod anorm_dots;
@@ -17,12 +17,16 @@ mod camera;
 mod gpu;
 mod light;
 mod mesh;
+mod pick;
+mod styles;
 
 pub use alias::{AliasEntity, AliasError, AliasModel, AliasVertex, bob_rotate, shade_light};
 pub use camera::Camera;
 pub use gpu::{AliasDraw, MapCallback, MapRenderer, ModelFrame, View};
 pub use light::light_point;
 pub use mesh::{
-    Animation, Batch, GAMMA, Image, MapMesh, MeshBuilder, MeshError, Palette, Placement, Surface,
-    Vertex, frame, mip_levels,
+    Animation, Batch, Extras, GAMMA, Image, Lightmaps, MapMesh, MeshBuilder, MeshError, Palette,
+    Placement, Surface, Vertex, frame, mip_levels,
 };
+pub use pick::Hit;
+pub use styles::{LightStyles, MAX_LIGHTSTYLES};

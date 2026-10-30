@@ -53,6 +53,7 @@ float(vector v) pointcontents = #41;
 void(float step) movetogoal = #67;
 void(entity e) makestatic = #69;
 float() random = #7;
+void(float style, string value) lightstyle = #35;
 entity() spawn = #14;
 .float gravity;
 .float count;
@@ -2420,4 +2421,18 @@ fn the_skill_inhibits_entities_by_their_spawnflags() {
     let world = world(&source, &entities);
     assert!(world.linked(2));
     assert_eq!(world.machine.edicts().num_edicts(), 3);
+}
+
+// spec BUILTIN-12.6: the strings worldspawn sets with lightstyle are the world's, for the
+// renderer; a style it never set has none
+#[test]
+fn the_light_styles_are_the_ones_worldspawn_sets() {
+    let world = world(
+        "void() worldspawn = { lightstyle(0, \"m\"); lightstyle(10, \"mmamammmmammamamaaamammma\"); };",
+        "",
+    );
+    assert_eq!(world.light_style(0), Some("m"));
+    assert_eq!(world.light_style(10), Some("mmamammmmammamamaaamammma"));
+    assert_eq!(world.light_style(1), None);
+    assert_eq!(world.light_style(64), None, "past the 64 styles");
 }
