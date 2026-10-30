@@ -599,3 +599,88 @@ fn a_shortcut_runs_its_command() {
     frame_with(&ctx, &mut app, vec![pressed]);
     assert!(app.shell.palette.is_open());
 }
+
+// UI-10: the palette's count, and a row's matched characters in the accent in the row's font.
+#[test]
+fn the_count_and_the_highlight() {
+    assert_eq!(command_count(1, 5), "1 of 5 commands");
+    let font = FontId::monospace(13.0);
+    let job = crate::palette::highlighted(
+        "play.start",
+        &[0..2, 5..6],
+        egui::Color32::GRAY,
+        egui::Color32::RED,
+        &font,
+    );
+    let sections: Vec<(String, egui::Color32)> = job
+        .sections
+        .iter()
+        .map(|s| {
+            let text = job
+                .text
+                .get(s.byte_range.start.0..s.byte_range.end.0)
+                .unwrap();
+            (text.to_owned(), s.format.color)
+        })
+        .filter(|(text, _)| !text.is_empty())
+        .collect();
+    let gray = egui::Color32::GRAY;
+    let red = egui::Color32::RED;
+    assert_eq!(
+        sections,
+        [
+            ("pl".to_owned(), red),
+            ("ay.".to_owned(), gray),
+            ("s".to_owned(), red),
+            ("tart".to_owned(), gray),
+        ]
+    );
+    assert!(job.sections.iter().all(|s| s.format.font_id == font));
+}
+
+// UI-10: the footer names the keys, and a prompt's first field takes what is typed.
+#[test]
+fn the_footer_and_the_first_field() {
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, None).unwrap();
+    open_palette(&ctx, &mut app);
+    let painted = frame_with(&ctx, &mut app, Vec::new());
+    for hint in [
+        Text::PaletteMove,
+        Text::PaletteRun,
+        Text::PaletteClose,
+        Text::KeyEscape,
+    ] {
+        assert!(painted.iter().any(|t| t == hint.get()), "{hint:?}");
+    }
+    frame_with(&ctx, &mut app, vec![egui::Event::Text("resize".to_owned())]);
+    frame_with(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Enter, egui::Modifiers::NONE)],
+    );
+    let prompt = app.shell.palette.prompt_mut().unwrap();
+    assert_eq!(prompt.id.as_str(), "view.resize_panel");
+    let size = prompt.fields.iter().position(|f| f.name == "size").unwrap();
+    let panel = prompt
+        .fields
+        .iter()
+        .position(|f| f.name == "panel")
+        .unwrap();
+    assert!(
+        panel < size,
+        "required fields by name: the choice comes before the text"
+    );
+    let choice = prompt.inputs.get_mut(panel).unwrap();
+    *choice = Input::Choice(Some(0));
+    frame_with(&ctx, &mut app, Vec::new());
+    frame_with(&ctx, &mut app, vec![egui::Event::Text("300".to_owned())]);
+    frame_with(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Enter, egui::Modifiers::NONE)],
+    );
+    assert_eq!(app.shell.palette.error(), None);
+    assert!(!app.shell.palette.is_open());
+    assert!((app.shell().layout().left.size - 300.0).abs() < f32::EPSILON);
+}

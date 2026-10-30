@@ -160,7 +160,7 @@ mod tests {
         reason = "test code: a failed unwrap is a failed test"
     )]
 
-    use super::search;
+    use super::{fuzzy, search};
     use crate::{Command, NoParams, Outcome, Registry};
 
     #[derive(Debug)]
@@ -294,5 +294,49 @@ mod tests {
         assert_eq!(found, ["play.pause"]);
         let by_id = ids(&registry, "engine");
         assert_eq!(by_id, ["engine.show_window"]);
+    }
+
+    fn needle(query: &str) -> Vec<char> {
+        query.chars().collect()
+    }
+
+    // UI-10: a matched character scores 1, 8 more right after the last, 6 more at a word's
+    // start, and the match loses a point for each character before it starts, up to 10.
+    #[test]
+    fn a_match_scores_its_runs_word_starts_and_start() {
+        assert_eq!(
+            fuzzy("ab", &needle("ab")).map(|m| m.0),
+            Some(16),
+            "1+6, then 1+8"
+        );
+        assert_eq!(fuzzy("a b", &needle("b")).map(|m| m.0), Some(5), "1+6-2");
+        assert_eq!(
+            fuzzy("a-b", &needle("b")).map(|m| m.0),
+            Some(5),
+            "after punctuation"
+        );
+        assert_eq!(
+            fuzzy("ab", &needle("b")).map(|m| m.0),
+            Some(0),
+            "1-1, inside a word"
+        );
+        assert_eq!(fuzzy("a", &needle("")).map(|m| m.0), Some(0));
+        assert_eq!(fuzzy("a", &needle("b")), None);
+        let late = "x".repeat(20) + "b";
+        assert_eq!(
+            fuzzy(&late, &needle("b")).map(|m| m.0),
+            Some(-9),
+            "at most 10 lost"
+        );
+    }
+
+    // UI-10: of the two ways to place the characters, the better scoring is kept, whichever
+    // it is.
+    #[test]
+    fn the_better_of_two_placements_is_kept() {
+        let words = fuzzy("superb preview", &needle("pr")).unwrap();
+        assert_eq!(words.1, vec![7_usize..9], "the run at a word's start");
+        let earliest = fuzzy("display the preview player", &needle("pla")).unwrap();
+        assert_eq!(earliest.1, vec![3_usize..6], "the run in Dis-pla-y");
     }
 }

@@ -222,6 +222,7 @@ impl Palette {
             inputs,
         });
         self.error = None;
+        self.focus = true;
         None
     }
 
@@ -246,8 +247,13 @@ impl Palette {
             });
         });
         ui.separator();
+        let first_text = prompt
+            .inputs
+            .iter()
+            .position(|input| matches!(input, Input::Text(_)));
+        let focus = std::mem::take(&mut self.focus);
         for (index, (field, input)) in prompt.fields.iter().zip(&mut prompt.inputs).enumerate() {
-            field_ui(ui, theme, index, field, input);
+            field_ui(ui, theme, focus && first_text == Some(index), field, input);
         }
         ui.separator();
         let mut run = enter;
@@ -325,7 +331,7 @@ fn row(ui: &mut Ui, theme: &Theme, item: &PaletteMatch<'_>, selected: bool) -> e
 }
 
 /// `text` with the bytes of `hits` in `accent` and the rest in `color`.
-fn highlighted(
+pub(crate) fn highlighted(
     text: &str,
     hits: &[Range<usize>],
     color: Color32,
@@ -375,8 +381,9 @@ fn hints(ui: &mut Ui, theme: &Theme) {
     });
 }
 
-/// One parameter's label and input.
-fn field_ui(ui: &mut Ui, theme: &Theme, index: usize, field: &Field, input: &mut Input) {
+/// One parameter's label and input; with `focus` it takes the focus, as the first text field
+/// does when the form opens, so the parameter can be typed at once.
+fn field_ui(ui: &mut Ui, theme: &Theme, focus: bool, field: &Field, input: &mut Input) {
     ui.horizontal(|ui| {
         ui.label(mono(&field.name, theme.color(Token::Text)));
         if field.required {
@@ -422,7 +429,7 @@ fn field_ui(ui: &mut Ui, theme: &Theme, index: usize, field: &Field, input: &mut
         }
         (_, Input::Text(text)) => {
             let response = ui.add(TextEdit::singleline(text).desired_width(WIDTH - 32.0));
-            if index == 0 && !response.has_focus() && !ui.memory(|m| m.focused().is_some()) {
+            if focus {
                 response.request_focus();
             }
         }
