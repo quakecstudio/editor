@@ -260,5 +260,7 @@ fn long_lists_leave_room_for_the_sections_below() {
     let entities = harness.get_by_label(Text::Entities.get()).rect();
     let _ignored = std::fs::remove_dir_all(&dir);
     assert!(symbols.bottom() < 900.0 * 0.6, "{symbols:?}");
-    assert!(entities.bottom() < 900.0, "{entities:?}");
+    // The Entities heading and its two lines of note, about 50 points, fit above the status
+    // bar at 866.
+    assert!(entities.bottom() + 50.0 < 866.0, "{entities:?}");
 }
