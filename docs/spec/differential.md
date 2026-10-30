@@ -625,7 +625,7 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   the globals and fields they are stored to. A QuakeC function of the first progs that the
   second has no QuakeC function of the same name for is a divergence.
 - **DIFF-12.8** **Withdrawn** 2026-10-30: it compared the five rerelease codebases besides
-  `rerelease` only when a run named them, until each passed; three pass and the nightly run
+  `rerelease` only when a run named them, until each passed; four pass and the nightly run
   compares them; replaced by DIFF-12.14. `cargo xtask compiler-diff --full` also compares the rerelease (COMP-8):
   `rerelease` is compiled with the pinned FTEQCC as `cargo xtask oracles rerelease` compiles it,
   the oracle progs, and with `qc-codegen` in the FTEQCC dialect, with `--opt fold` off and on,
@@ -696,11 +696,11 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
 - **DIFF-12.14** `cargo xtask compiler-diff --full` also compares the rerelease codebases (COMP-8): each
   is compiled with the pinned FTEQCC as `cargo xtask oracles rerelease` compiles it,
   the oracle progs, and with `qc-codegen` in the FTEQCC dialect, with `--opt fold` off and on,
-  and each pair is held to DIFF-12.5's bar: `rerelease`, Scourge of Armagon, Dimension of
-  the Past and Dawn of the Machine, the last with `-Fautoproto`'s prototypes as FTEQCC is
-  given it (FTE-1.2). Dissolution of Eternity and Capture the Flag, which have no divergence
-  but whose calls reach under 90% of their statements, are compared when a run names them,
-  and each joins the nightly set once it passes. Every pair compared adds a row to
+  and each pair is held to DIFF-12.5's bar: `rerelease`, Scourge of Armagon, Dissolution of
+  Eternity, Dimension of the Past and Dawn of the Machine, the last with `-Fautoproto`'s
+  prototypes as FTEQCC is given it (FTE-1.2). Capture the Flag, which has no divergence but
+  whose calls reach under 90% of its statements, is compared when a run names it, and joins
+  the nightly set once it passes. Every pair compared adds a row to
   the results table `target/compiler-diff/summary.md`: the codebase, the oracle's progs and
   ours, the divergences, the statements executed, and whether it passes; the nightly
   differential workflow publishes it as the run's summary.

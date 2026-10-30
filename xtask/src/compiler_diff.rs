@@ -36,16 +36,17 @@ const VANILLA: [&str; 1] = ["id-1.01"];
 
 /// The rerelease codebases the nightly run compares with the pinned FTEQCC's progs
 /// (`oracles/rerelease.rs`, DIFF-12.14).
-const RERELEASE: [&str; 4] = [
+const RERELEASE: [&str; 5] = [
     "rerelease",
     "rerelease-hipnotic",
+    "rerelease-rogue",
     "rerelease-mg1",
     "rerelease-mg3",
 ];
 
 /// The rerelease codebases with no divergence whose calls do not yet reach DIFF-12.5's 90% of
 /// statements: a run names them, and each joins [`RERELEASE`] once it passes (P2-150).
-const PENDING: [&str; 2] = ["rerelease-rogue", "rerelease-ctf"];
+const PENDING: [&str; 1] = ["rerelease-ctf"];
 
 const USAGE: &str = "usage: cargo xtask compiler-diff [--fast | --full] [<codebase>...]";
 
