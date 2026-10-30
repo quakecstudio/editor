@@ -488,7 +488,7 @@ issues:
   acceptance:
   - Meets the keystroke and open-project budgets on a 50,000-line project
   verify:
-  - 'Benchmarks: cargo run --release -p quakec-studio --example bench, results in docs/spikes/data/; UI snapshot tests'
+  - 'Benchmarks: cargo run --release -p quakec-studio --example editor_bench, results in docs/spikes/data/; UI snapshot tests'
 - key: P2-27
   title: Build the editor view widget
   labels:

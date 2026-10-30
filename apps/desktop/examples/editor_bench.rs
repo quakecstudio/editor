@@ -4,7 +4,7 @@
 //! window with the wgpu renderer:
 //!
 //! ```text
-//! cargo run --release -p quakec-studio --example bench -- <out-dir> [host]
+//! cargo run --release -p quakec-studio --example editor_bench -- <out-dir> [host]
 //! ```
 //!
 //! It writes a project of 25 files of 2,000 lines and a `defs.qc`, then measures:
@@ -235,7 +235,7 @@ impl eframe::App for Bench {
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let Some(out) = args.next().map(PathBuf::from) else {
-        eprintln!("usage: bench <out-dir> [host]");
+        eprintln!("usage: editor_bench <out-dir> [host]");
         return ExitCode::from(2);
     };
     let host = args.next().unwrap_or_else(|| "local".to_owned());

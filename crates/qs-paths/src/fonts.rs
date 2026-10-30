@@ -9,7 +9,7 @@
 //! folders; Windows' `Fonts` folder and its per-user one; and on Linux the `fonts` folder of
 //! each XDG data directory and the older `~/.fonts`.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
 use crate::{Platform, absolute_var, join_all};
@@ -58,8 +58,10 @@ where
                         ]
                     },
                     |dirs| {
-                        std::env::split_paths(&dirs)
-                            .filter(|d| d.is_absolute())
+                        dirs.to_string_lossy()
+                            .split(':')
+                            .filter(|dir| platform.is_absolute(OsStr::new(dir)))
+                            .map(PathBuf::from)
                             .collect()
                     },
                 );
@@ -77,11 +79,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    #![expect(
-        clippy::indexing_slicing,
-        reason = "test code: a failed index is a failed test"
-    )]
-
     use std::ffi::OsString;
     use std::path::PathBuf;
 
@@ -99,8 +96,9 @@ mod tests {
         }
     }
 
-    fn paths(list: &[&str]) -> Vec<PathBuf> {
-        list.iter().map(PathBuf::from).collect()
+    /// Each path from its parts, joined as the host joins them.
+    fn paths(list: &[&[&str]]) -> Vec<PathBuf> {
+        list.iter().map(|parts| parts.iter().collect()).collect()
     }
 
     #[test]
@@ -108,30 +106,38 @@ mod tests {
         assert_eq!(
             font_dirs(Platform::MacOs, env(&[("HOME", "/Users/q")])),
             paths(&[
-                "/System/Library/Fonts",
-                "/Library/Fonts",
-                "/Users/q/Library/Fonts"
+                &["/System/Library/Fonts"],
+                &["/Library/Fonts"],
+                &["/Users/q", "Library", "Fonts"],
             ])
         );
         assert_eq!(
             font_dirs(Platform::MacOs, env(&[("HOME", "relative")])),
-            paths(&["/System/Library/Fonts", "/Library/Fonts"]),
+            paths(&[&["/System/Library/Fonts"], &["/Library/Fonts"]]),
             "a relative home is left out"
         );
     }
 
     #[test]
     fn windows_searches_the_fonts_folder_and_the_users() {
-        let found = font_dirs(
-            Platform::Windows,
-            env(&[
-                ("SystemRoot", "C:\\Windows"),
-                ("LOCALAPPDATA", "C:\\Users\\q\\AppData\\Local"),
-            ]),
+        assert_eq!(
+            font_dirs(
+                Platform::Windows,
+                env(&[
+                    ("SystemRoot", "C:\\Windows"),
+                    ("LOCALAPPDATA", "C:\\Users\\q\\AppData\\Local"),
+                ]),
+            ),
+            paths(&[
+                &["C:\\Windows", "Fonts"],
+                &[
+                    "C:\\Users\\q\\AppData\\Local",
+                    "Microsoft",
+                    "Windows",
+                    "Fonts"
+                ],
+            ])
         );
-        assert_eq!(found.len(), 2);
-        assert!(found[0].ends_with("Fonts"));
-        assert!(found[1].ends_with("Fonts"));
         assert!(font_dirs(Platform::Windows, env(&[])).is_empty());
     }
 
@@ -140,10 +146,10 @@ mod tests {
         assert_eq!(
             font_dirs(Platform::Linux, env(&[("HOME", "/home/q")])),
             paths(&[
-                "/usr/local/share/fonts",
-                "/usr/share/fonts",
-                "/home/q/.local/share/fonts",
-                "/home/q/.fonts",
+                &["/usr/local/share", "fonts"],
+                &["/usr/share", "fonts"],
+                &["/home/q", ".local", "share", "fonts"],
+                &["/home/q", ".fonts"],
             ])
         );
         assert_eq!(
@@ -155,11 +161,15 @@ mod tests {
                     ("XDG_DATA_HOME", "/data"),
                 ])
             ),
-            paths(&["/opt/share/fonts", "/data/fonts", "/home/q/.fonts"])
+            paths(&[
+                &["/opt/share", "fonts"],
+                &["/data", "fonts"],
+                &["/home/q", ".fonts"],
+            ])
         );
         assert_eq!(
             font_dirs(Platform::Linux, env(&[("XDG_DATA_DIRS", "")])),
-            paths(&["/usr/local/share/fonts", "/usr/share/fonts"]),
+            paths(&[&["/usr/local/share", "fonts"], &["/usr/share", "fonts"]]),
             "an empty list is the default"
         );
     }
