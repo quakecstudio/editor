@@ -83,11 +83,33 @@ pub enum Token {
     Border,
     /// Buttons' outlines.
     BorderStrong,
+    /// The line the caret is on.
+    SurfaceCurrentLine,
+    /// A line new in an inline diff.
+    DiffAdded,
+    /// A removed line in an inline diff, and an inline diagnostic.
+    StatusErrorBg,
+    /// Plain code.
+    TextCode,
+    /// Text on `status.error_bg`.
+    TextOnError,
+    /// Keywords.
+    CodeKeyword,
+    /// Types and fields.
+    CodeType,
+    /// Functions and builtins.
+    CodeFunction,
+    /// Constants and numbers.
+    CodeConstant,
+    /// Strings.
+    CodeString,
+    /// Comments.
+    CodeComment,
 }
 
 impl Token {
     /// Every token the app draws with.
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 29] = [
         Self::SurfaceChrome,
         Self::SurfaceToolbar,
         Self::SurfaceTabs,
@@ -106,6 +128,17 @@ impl Token {
         Self::StatusWarn,
         Self::Border,
         Self::BorderStrong,
+        Self::SurfaceCurrentLine,
+        Self::DiffAdded,
+        Self::StatusErrorBg,
+        Self::TextCode,
+        Self::TextOnError,
+        Self::CodeKeyword,
+        Self::CodeType,
+        Self::CodeFunction,
+        Self::CodeConstant,
+        Self::CodeString,
+        Self::CodeComment,
     ];
 
     /// Its name in `tokens.toml`.
@@ -130,6 +163,17 @@ impl Token {
             Self::StatusWarn => "status.warn",
             Self::Border => "border",
             Self::BorderStrong => "border.strong",
+            Self::SurfaceCurrentLine => "surface.current_line",
+            Self::DiffAdded => "diff.added",
+            Self::StatusErrorBg => "status.error_bg",
+            Self::TextCode => "text.code",
+            Self::TextOnError => "text.on_error",
+            Self::CodeKeyword => "code.keyword",
+            Self::CodeType => "code.type",
+            Self::CodeFunction => "code.function",
+            Self::CodeConstant => "code.constant",
+            Self::CodeString => "code.string",
+            Self::CodeComment => "code.comment",
         }
     }
 }

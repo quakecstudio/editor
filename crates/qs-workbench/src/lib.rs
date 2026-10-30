@@ -26,7 +26,7 @@ use qc_ide::AnalysisHost;
 pub use qc_ide::Caution;
 pub use qc_ide::{
     Code, Completion, Config, DefKind, Diagnostic, FileEdit, FileRange, Highlight, HighlightKind,
-    Hover, Modifier, Modifiers, RenameError, Severity, Span, Symbol, SymbolKind,
+    Hover, Modifier, Modifiers, RenameError, Severity, Span, Symbol, SymbolKind, SyntaxClass,
 };
 pub use qc_project::{Dialect, FsLoader, Target};
 
@@ -167,8 +167,10 @@ pub struct OpenFile {
     offset: usize,
     generation: u64,
     version: u64,
+    revision: u64,
     outline: Vec<Symbol>,
     highlights: Vec<Highlight>,
+    classes: Vec<(Span, SyntaxClass)>,
 }
 
 impl OpenFile {
@@ -220,6 +222,18 @@ impl OpenFile {
     #[must_use]
     pub fn highlights(&self) -> &[Highlight] {
         &self.highlights
+    }
+
+    /// Its keywords, literals and comments, in source order.
+    #[must_use]
+    pub fn classes(&self) -> &[(Span, SyntaxClass)] {
+        &self.classes
+    }
+
+    /// Changes whenever its text or what was worked out from it does, from any source.
+    #[must_use]
+    pub const fn revision(&self) -> u64 {
+        self.revision
     }
 }
 
@@ -304,14 +318,17 @@ impl<L: Loader> Workbench<L> {
         self.generation = self.generation.wrapping_add(1);
         let outline = self.host.document_symbols(&path);
         let highlights = self.host.highlights(&path);
+        let classes = self.host.syntax_classes(&path);
         let open = OpenFile {
             path,
             text,
             offset,
             generation: self.generation,
             version: self.generation,
+            revision: self.generation,
             outline,
             highlights,
+            classes,
         };
         let location = open.location();
         self.open = Some(open);

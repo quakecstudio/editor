@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use super::apply;
 use crate::{
     COMPLETE, Config, DEFINITION, HOVER, HighlightKind, REFERENCES, RENAME, SAVE_FILE, Span,
-    UPDATE_FILE, Workbench, WorkbenchError, register,
+    SyntaxClass, UPDATE_FILE, Workbench, WorkbenchError, register,
 };
 
 const ROOT: &str = "/p";
@@ -88,6 +88,19 @@ fn an_update_checks_the_project_again_and_keeps_the_editors_version() {
         now.version(),
         open.version(),
         "the editor has this text already"
+    );
+    assert_ne!(
+        now.revision(),
+        open.revision(),
+        "what was worked out from it changed"
+    );
+    let float = nth(text, "float", 1);
+    assert!(
+        now.classes()
+            .iter()
+            .any(|(span, class)| *class == SyntaxClass::Type && span.start == float),
+        "{:?}",
+        now.classes()
     );
     assert_eq!(session.undo_depth(), 0);
 }

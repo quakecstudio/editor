@@ -663,11 +663,14 @@ fn view_style(theme: &Theme) -> ViewStyle {
     ViewStyle {
         font: egui::FontId::monospace(theme.type_scale.code.size),
         background: theme.color(Token::SurfaceEditor),
-        current_line: theme.color(Token::SurfaceRaised),
+        current_line: theme.color(Token::SurfaceCurrentLine),
         selection: theme.color(Token::SelectFocus),
-        text: theme.color(Token::Text),
+        text: theme.color(Token::TextCode),
         line_number: theme.color(Token::TextFaint),
         caret: theme.color(Token::Accent),
+        added: theme.color(Token::DiffAdded),
+        removed: theme.color(Token::StatusErrorBg),
+        removed_text: theme.color(Token::TextOnError),
     }
 }
 
