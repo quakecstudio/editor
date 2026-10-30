@@ -11,13 +11,14 @@
 //! # Layer
 //!
 //! apps. It depends on `qs-layout`, `qs-workbench` and `qs-commands` (L5), `qs-editor-view`
-//! (L7), `qs-log` and `qs-paths` (L0), and `eframe`.
+//! and `qs-render` (L7), `qs-log` and `qs-paths` (L0), and `eframe`.
 
 mod code_style;
 mod editor;
 mod fallback;
 pub mod icons;
 pub mod keymap;
+pub mod map_view;
 #[cfg(target_os = "macos")]
 pub mod menu;
 pub mod palette;

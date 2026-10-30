@@ -1611,10 +1611,9 @@ issues:
   - The map view and model previews draw inside the UI's render pass through egui_wgpu paint callbacks on the UI's wgpu device, with no copy or readback (ADR-0003)
   - 'Lightmaps are RGB throughout, as .lit already needs, and each texture may carry its own palette (Half-Life''s BSP version 30 and WAD3, P5-11 and P5-12, MAP-24), so the renderer assumes neither one global palette nor greyscale lightmaps'
   acceptance:
-  - Renders every id1 map at 120 Hz on the reference Mac
   - The map view renders through an egui_wgpu paint callback in the app window, checked by a snapshot test
   verify:
-  - Image comparison tests; benchmark
+  - Image comparison tests (the map view's snapshot, the renderer's GPU tests)
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1766,6 +1765,7 @@ issues:
   - P2-149
   - P2-150
   - P2-151
+  - P2-152
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -3069,6 +3069,26 @@ issues:
   - Japanese and Chinese text composed through the real input method of macOS, Windows and Linux appears in the editor as committed, with the candidate window at the caret (ADR-0003)
   verify:
   - The recordings or screenshots under docs/spikes/data/
+- key: P2-152
+  title: Measure the renderer at 120 Hz on every id1 map on the reference Mac
+  labels:
+  - L7-ui
+  - area:map
+  - type:test
+  - needs:human
+  size: S
+  reqs:
+  - MAP-17
+  summary: |
+    Split from P5-05 (#146). The renderer draws every map of the libre corpus, but id1's maps are in the game's pak files, which the project never fetches (corpus/manifest.toml, never: id1-paks). A person who owns Quake runs the viewer on each id1 map on the reference Mac and records its frame rate.
+  depends:
+  - P5-05
+  deliverable:
+  - 'docs/spikes/data/ref-mac/: each id1 map''s frame rate in qs-render''s viewer (cargo run --release -p qs-render --example view -- -basedir <Quake> <map>, its title bar), with the steps followed'
+  acceptance:
+  - Every id1 map renders at 120 Hz or more on the reference Mac
+  verify:
+  - The recorded frame rates under docs/spikes/data/ref-mac/
 - key: P2-150
   title: Hold the rerelease mission packs and the corpus mods to the FTEQCC differential
   labels:

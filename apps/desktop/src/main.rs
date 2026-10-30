@@ -34,6 +34,8 @@ fn main() -> ExitCode {
             .with_title(Text::AppName.get())
             .with_inner_size([1440.0, 900.0])
             .with_min_inner_size([960.0, 600.0]),
+        // The map view tests depth inside egui's render pass (`map_view::DEPTH_FORMAT`).
+        depth_buffer: 32,
         ..Default::default()
     };
     let result = eframe::run_native(
@@ -41,6 +43,8 @@ fn main() -> ExitCode {
         options,
         Box::new(move |cc| {
             let mut app = App::new(&cc.egui_ctx, layout_file)?;
+            app.shell_mut()
+                .set_render_state(cc.wgpu_render_state.clone());
             if let Some(project) = &project
                 && let Err(error) = app.shell_mut().open_project(project)
             {

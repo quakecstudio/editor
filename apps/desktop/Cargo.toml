@@ -26,6 +26,7 @@ qs-editor-view = { workspace = true }
 qs-layout = { workspace = true }
 qs-log = { workspace = true }
 qs-paths = { workspace = true }
+qs-render = { workspace = true }
 qs-workbench = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
@@ -39,6 +40,9 @@ tracing = { workspace = true, features = ["std"] }
 # The offscreen snapshot harness (P2-21): egui's own, rendering through wgpu with no window and
 # comparing PNGs.
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
+# The image a test renderer returns to egui_kittest, which the map view's needs to draw with a
+# depth buffer.
+image = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = { workspace = true }

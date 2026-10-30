@@ -19,6 +19,7 @@ absolute-paths-allowed-crates = [
     "egui_kittest",
     "egui_wgpu",
     "epaint",
+    "image",
     "junction",
     "miniz_oxide",
     "muda",

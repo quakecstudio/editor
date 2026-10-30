@@ -133,11 +133,15 @@ pub enum Text {
     FindPrevious,
     /// The find bar's case switch.
     MatchCase,
+    /// The map view's tab in the centre.
+    Map,
+    /// The map view with no map shown.
+    NoMap,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 63] = [
+    pub const ALL: [Self; 65] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -201,6 +205,8 @@ impl Text {
         Self::FindNext,
         Self::FindPrevious,
         Self::MatchCase,
+        Self::Map,
+        Self::NoMap,
     ];
 
     /// The string, in English.
@@ -270,6 +276,8 @@ impl Text {
             Self::FindNext => "Next",
             Self::FindPrevious => "Previous",
             Self::MatchCase => "Match case",
+            Self::Map => "Map",
+            Self::NoMap => "No map open.",
         }
     }
 }

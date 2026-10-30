@@ -5,7 +5,7 @@ The desktop app (P2-17, ADR-0006): the window, its toolbar and its docked panels
 Sans, JetBrains Mono and Lucide's icons (ADR-0010), and the macOS menu bar through `muda`.
 
 - **Layer:** apps. It depends on `qs-layout`, `qs-workbench` and `qs-commands` (L5),
-  `qs-editor-view` (L7), `qs-log` and `qs-paths` (L0), `eframe`, `skrifa` for the system font
+  `qs-editor-view` and `qs-render` (L7), `qs-log` and `qs-paths` (L0), `eframe`, `skrifa` for the system font
   fallback, and on macOS `muda`.
 - **Spec sections:** none; it implements plan requirements UI-2, UI-14, UI-15 and CONV-16.
 - **Shipped:** yes.
@@ -61,6 +61,16 @@ and an inline diff from a base text. Its keys are VS Code's:
 Resting the pointer on a name shows its declaration (`symbol.hover`). An edit reaches the
 project as `file.update` once typing pauses for 0.3 s, and at once before a save or a question,
 so the Problems list and every answer follow the text on screen.
+
+## The map view
+
+The Map tab draws a BSP with `qs-render` inside the window, through an `egui_wgpu` paint
+callback on the window's wgpu device (P5-05, ADR-0003): `Shell::show_map(mesh, camera)` puts a
+renderer of the mesh in egui-wgpu's callback resources and shows the tab. The window has a
+32-bit depth buffer (`depth_buffer: 32`) for the renderer's depth test. Dragging looks around
+and the wheel moves forward and back. Opening a map from the UI comes with the map editor;
+`src/map_view/tests.rs` draws a test floor and compares it with `snapshots/map-view.png`,
+through a test renderer that gives egui's render pass the same depth buffer.
 
 ## Fonts
 
