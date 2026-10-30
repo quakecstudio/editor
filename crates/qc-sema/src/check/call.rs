@@ -18,6 +18,7 @@ use crate::check::constant::Constant;
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
+use crate::check::fold;
 use crate::check::reference::expected_after;
 use crate::check::term::string_immediate;
 use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Value};
@@ -200,6 +201,16 @@ impl Checker<'_> {
                 None => format!("too few parameters on call to {name}"),
             };
             self.env.report(Code::W0253, span, message);
+        }
+        // FTEF-32.14: a call of a constant's value is folded before the arguments are checked.
+        let floats = passed.iter().all(|reference| {
+            reference
+                .as_ref()
+                .is_some_and(|r| r.ty == Type::Simple(SimpleType::Float))
+        });
+        let constants: Vec<_> = values.iter().map(Value::known).collect();
+        if let Some(folded) = fold::builtin_call(&name, &constants, floats) {
+            return Ok(Value::constant(folded));
         }
         self.verify_arguments(&name, &values, span);
         self.generate_call(&values, span);

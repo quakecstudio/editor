@@ -129,3 +129,24 @@ fn bitfields_and_narrow_members_are_left_out() {
     assert_eq!(names("B"), ["f"]);
     assert_eq!(names("N"), ["g"]);
 }
+
+// spec FTEF-32.14: a call of constants FTEQCC folds by its name is the folded constant, so a
+// global initialised with it is a constant with no statement at global scope
+#[test]
+fn a_folded_builtin_call_initialises_a_global() {
+    let i = index(
+        "float(float f) floor = #1;\nfloat(float a, float b) pow = #2;\n\
+         float(float a, float b) mod = #3;\nfloat(float a, float b) bitshift = #4;\n\
+         float(float a, float b) min = #5;\n\
+         static const float m = floor(7 / 2);\nstatic const float p = pow(2, 10);\n\
+         static const float r = mod(7.5, 2);\nstatic const float s = bitshift(256, -4);\n\
+         static const float n = min(3, -1);\n",
+    );
+    assert!(i.diagnostics.is_empty(), "{:?}", i.diagnostics);
+    let value = |name: &str| f32::from_bits(i.initial_values[&def(&i, name)].words()[0]);
+    assert_eq!(value("m"), 3.0);
+    assert_eq!(value("p"), 1024.0);
+    assert_eq!(value("r"), 1.0);
+    assert_eq!(value("s"), 16.0);
+    assert_eq!(value("n"), -1.0);
+}

@@ -53,6 +53,88 @@ pub(crate) fn fold(
     }
 }
 
+/// FTEF-32.14: the value `QCC_PR_GenerateFunctionCallRef` folds a call of `name` to, given its
+/// arguments' constants, `floats` when both of two arguments are floats as written: `floor`,
+/// `ceil`, `sin`, `cos`, `log` and `sqrt` of one constant, read as a float whatever its type,
+/// and `pow`, `mod`, `min`, `max` and `bitshift` of two floats. `None` when the call is made.
+pub(crate) fn builtin_call(
+    name: &str,
+    args: &[Option<Constant>],
+    floats: bool,
+) -> Option<Constant> {
+    match args {
+        [Some(a)] => {
+            let x = f64::from(a.f());
+            let value = match name {
+                "floor" => x.floor(),
+                "ceil" => x.ceil(),
+                "sin" => x.sin(),
+                "cos" => x.cos(),
+                "log" => x.ln(),
+                "sqrt" => x.sqrt(),
+                _ => return None,
+            };
+            Some(Constant::float(double_to_f32(value)))
+        }
+        [Some(a), Some(b)] if floats => {
+            let (x, y) = (a.f(), b.f());
+            let value = match name {
+                "pow" => double_to_f32(f64::from(x).powf(f64::from(y))),
+                "mod" => fmodf(int_to_f32(f_to_i(x)), int_to_f32(f_to_i(y))),
+                "min" => {
+                    if x < y {
+                        x
+                    } else {
+                        y
+                    }
+                }
+                "max" => {
+                    if x > y {
+                        x
+                    } else {
+                        y
+                    }
+                }
+                "bitshift" if y < 0.0 => int_to_f32(f_to_i(x).wrapping_shr(shift(f_to_i(-y)))),
+                "bitshift" => int_to_f32(f_to_i(x).wrapping_shl(shift(f_to_i(y)))),
+                _ => return None,
+            };
+            Some(Constant::float(value))
+        }
+        _ => None,
+    }
+}
+
+/// FTEF-32.14: [`builtin_call`] for a compiler, each argument the first word of its constant,
+/// if it is one; the float the call folds to, or `None` when the call is made.
+#[must_use]
+pub fn fold_builtin_call(name: &str, words: &[Option<u32>], floats: bool) -> Option<f32> {
+    let args: Vec<Option<Constant>> = words
+        .iter()
+        .map(|word| word.map(|w| Constant::float(f32::from_bits(w))))
+        .collect();
+    builtin_call(name, &args, floats).map(Constant::f)
+}
+
+/// C's `(float)` of a `double`, rounding to nearest, as `QCC_MakeFloatConst` takes the
+/// value of a `math.h` function.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "spec FTEF-32.14: C's double to float conversion rounds to nearest"
+)]
+const fn double_to_f32(value: f64) -> f32 {
+    value as f32
+}
+
+/// C's `fmodf`: the remainder of `x / y` with the sign of `x`.
+#[expect(
+    clippy::modulo_arithmetic,
+    reason = "spec FTEF-32.14: C's fmodf, which Rust's float % computes"
+)]
+fn fmodf(x: f32, y: f32) -> f32 {
+    x % y
+}
+
 /// FTEF-26.2: the float `op` of the float constants `a` and `b` folds to, as
 /// `QCC_PR_StatementFlags` folds it, for a compiler that emits FTEQCC's statements; `None` when
 /// it does not fold to a float.

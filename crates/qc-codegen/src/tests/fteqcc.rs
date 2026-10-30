@@ -1346,3 +1346,15 @@ fn a_shift_without_pow_calls_bitshift() {
     assert_eq!(t[2], st(StoreF, t[0].c, 7, 0));
     assert_eq!(t[3], st(Call2, global(&p, "bitshift"), 0, 0));
 }
+
+// spec FTEF-32.14: in a body a call of a constant FTEQCC folds by its name makes no call
+#[test]
+fn a_folded_builtin_call_makes_no_call() {
+    let p = fte_progs(
+        "float(float f) floor = #1;\nfloat(float f) sqrt = #2;\nfloat x;\n\
+         void() t = { x = floor(2.5); x = sqrt(x); };\n",
+    );
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, immediate(&p, 2.0), global(&p, "x"), 0));
+    assert_eq!(t[1], st(StoreV, global(&p, "x"), 4, 0));
+}

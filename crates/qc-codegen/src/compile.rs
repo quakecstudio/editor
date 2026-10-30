@@ -2293,6 +2293,17 @@ impl Compiler<'_> {
             }
             values.push((value, arg_span));
         }
+        // FTEF-32.14: a call of constants that FTEQCC folds by its function's name.
+        if let Some(name) = name {
+            let words: Vec<Option<u32>> =
+                values.iter().map(|(v, _)| self.constant_word(v)).collect();
+            let floats = values
+                .iter()
+                .all(|(v, _)| self.type_of(v).etype() == Etype::Float);
+            if let Some(folded) = qc_sema::fold_builtin_call(name, &words, floats) {
+                return self.float_literal(folded, span);
+            }
+        }
         let passed = fixed.map_or(values.len(), |n| n.min(values.len()));
         for (slot, (value, arg_span)) in values.iter().take(passed).enumerate() {
             if slot == 0

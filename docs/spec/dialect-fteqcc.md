@@ -5071,6 +5071,20 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   them only otherwise (`finalnotconst`). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateInitializerType`.
+- **FTEF-32.14** With `opt_constantarithmatic` on, its default, a call is folded by its
+  function's name, before its arguments are checked, when they are constants
+  (`QCC_PR_GenerateFunctionCallRef`): with one argument, `floor`, `ceil`, `sin`, `cos`, `log`
+  and `sqrt` of its first word read as a float, computed in `double` and made a float
+  (`return QCC_MakeFloatConst(floor(a->_float));`); with two arguments that are floats as
+  written (`arglist[0]->cast == type_float && arglist[1]->cast == type_float`), `pow` as
+  `pow(a, b)`, `mod` as `fmodf((int)a, (int)b)`, `min` and `max` as `progsint.h`'s
+  `((a) < (b) ? (a) : (b))` and `((a) > (b) ? (a) : (b))`, and `bitshift` as `(int)a >> (int)-b`
+  for a negative `b`, else `(int)a << (int)b`. So `static const float m = floor(7 / 2);` at
+  global scope is the constant 3, with no "Unable to generate statements". FTEQCC also folds
+  `strlen` and `stof` of a string constant; this profile does not, as the model keeps no
+  string constant's text where calls are checked, and makes the call. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`; `engine/qclib/progsint.h`, `min`, `max`.
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,

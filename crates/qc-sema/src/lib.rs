@@ -70,7 +70,7 @@ pub mod ty;
 mod tests;
 
 pub use check::TypedBody;
-pub use check::fold::fold_floats;
+pub use check::fold::{fold_builtin_call, fold_floats};
 pub use db::{Db, ModuleAnalysis, QueryCounts};
 pub use expand::{ModuleInput, OriginMap};
 pub use lower::{
