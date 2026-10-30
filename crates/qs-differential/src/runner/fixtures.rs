@@ -78,6 +78,19 @@ pub fn scenarios(_id: &str) -> Vec<ScenarioSpec> {
             .to_owned(),
             entities: Some(entities(FULL)),
         },
+        // Team play: the rogue mission pack's capture-the-flag (`teamplay` 4, `TEAM_CTF`) and the
+        // rerelease's CTF, whose flags spawn only under deathmatch.
+        ScenarioSpec {
+            name: "ctf",
+            directives: concat!(
+                "map dm3\nmaxclients 4\nclients 2\ncvar deathmatch 1\ncvar teamplay 4\n",
+                "frames 300\n",
+                "input 10 1 impulse 1\ninput 20 1 button0 1\ninput 25 1 button0 0\n",
+                "input 30 2 impulse 2\ninput 40 2 button0 1\ninput 45 2 button0 0\n"
+            )
+            .to_owned(),
+            entities: Some(entities(CTF)),
+        },
     ]
 }
 
@@ -189,6 +202,20 @@ const FULL: &[&str] = &[
 
 /// A deathmatch map: the world, several deathmatch starts and every weapon and ammo, so the
 /// deathmatch item and weapon logic runs (`items.qc`, `weapons.qc`).
+/// The deathmatch set and both teams' flags.
+const CTF: &[&str] = &[
+    "{\n\"classname\" \"worldspawn\"\n\"message\" \"ctf\"\n}",
+    "{\n\"classname\" \"info_player_deathmatch\"\n\"origin\" \"0 0 24\"\n}",
+    "{\n\"classname\" \"info_player_deathmatch\"\n\"origin\" \"128 0 24\"\n}",
+    "{\n\"classname\" \"info_player_team1\"\n\"origin\" \"0 128 24\"\n}",
+    "{\n\"classname\" \"info_player_team2\"\n\"origin\" \"128 128 24\"\n}",
+    "{\n\"classname\" \"item_flag_team1\"\n\"origin\" \"-128 0 24\"\n}",
+    "{\n\"classname\" \"item_flag_team2\"\n\"origin\" \"256 0 24\"\n}",
+    "{\n\"classname\" \"weapon_supershotgun\"\n\"origin\" \"0 -32 0\"\n}",
+    "{\n\"classname\" \"weapon_rocketlauncher\"\n\"origin\" \"64 -32 0\"\n}",
+    "{\n\"classname\" \"item_rockets\"\n\"origin\" \"0 32 0\"\n}",
+];
+
 const DEATHMATCH: &[&str] = &[
     "{\n\"classname\" \"worldspawn\"\n\"message\" \"dm\"\n}",
     "{\n\"classname\" \"info_player_deathmatch\"\n\"origin\" \"0 0 24\"\n}",

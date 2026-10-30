@@ -118,6 +118,46 @@ impl Report {
     }
 }
 
+/// DIFF-12.13: each QuakeC function of the progs `bytes` with statements `executed` left
+/// unexecuted, a line `<unexecuted>\t<of>\t<name>` each, most unexecuted first, for finding
+/// what a codebase's calls do not reach.
+///
+/// # Errors
+///
+/// [`CallsError::Refused`] when the progs is refused.
+pub fn uncovered(bytes: &[u8], executed: &BTreeSet<i32>) -> Result<String, CallsError> {
+    let progs =
+        Progs::read(bytes).map_err(|e| CallsError::Refused(RunRefused::Progs(e.to_string())))?;
+    let mut starts: Vec<(i32, Vec<u8>)> = progs
+        .functions()
+        .iter()
+        .filter(|f| f.first_statement > 0)
+        .map(|f| {
+            let name = progs
+                .string(f.s_name)
+                .map(<[u8]>::to_vec)
+                .unwrap_or_default();
+            (f.first_statement, name)
+        })
+        .collect();
+    starts.sort();
+    let end = i32::try_from(progs.statements().len()).unwrap_or(i32::MAX);
+    let mut rows: Vec<(usize, usize, String)> = Vec::new();
+    for (k, (start, name)) in starts.iter().enumerate() {
+        let next = starts.get(k.saturating_add(1)).map_or(end, |(s, _)| *s);
+        let of = usize::try_from(next.saturating_sub(*start)).unwrap_or(0);
+        let missed = (*start..next).filter(|s| !executed.contains(s)).count();
+        if missed > 0 {
+            rows.push((missed, of, String::from_utf8_lossy(name).into_owned()));
+        }
+    }
+    rows.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.2.cmp(&b.2)));
+    Ok(rows
+        .iter()
+        .map(|(missed, of, name)| format!("{missed}\t{of}\t{name}\n"))
+        .collect())
+}
+
 /// The fraction `executed` is of `total` statements (DIFF-12.5); 0 when `total` is 0.
 #[must_use]
 pub fn coverage(executed: &BTreeSet<i32>, total: u32) -> f64 {

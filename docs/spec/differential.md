@@ -687,6 +687,10 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   (`dialect-fteqcc-rerelease.md` FTE-18.6), and what earlier calls left in a slot no parameter
   takes depends on which statements each compiler emitted, as `rerelease-mg3`'s `float(...)
   SUB_True` showed.
+- **DIFF-12.13** With `--uncovered <file>`, `compiler-diff` writes, for each QuakeC function of
+  the first progs, the statements of its body no call executed, as `<unexecuted>\t<of>\t<name>`
+  lines, most unexecuted first, a function's body running from its first statement to the next
+  function's: the list a codebase's coverage (DIFF-12.5) is raised from.
 
 ## Test vectors
 

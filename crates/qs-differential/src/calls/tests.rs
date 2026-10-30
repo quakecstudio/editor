@@ -871,3 +871,31 @@ fn a_context_clears_the_slots_past_its_parameters() {
     assert_eq!(slot(4), qc_types::Slot::from_f32(1.0));
     assert!((7..28).all(|n| slot(n) == qc_types::Slot::ZERO));
 }
+
+// spec DIFF-12.13: the report lists each function with unexecuted statements, the most first,
+// and leaves out a function the calls ran through
+#[test]
+fn uncovered_lists_each_functions_unexecuted_statements() {
+    let bytes = compile(
+        "float x;\nvoid() a = { x = 1; x = 2; x = 3; };\nvoid() b = { x = 4; };\n",
+        false,
+    );
+    let progs = Progs::read(&bytes).unwrap();
+    let start = |name: &str| {
+        progs
+            .functions()
+            .iter()
+            .find(|f| progs.string(f.s_name) == Some(name.as_bytes()))
+            .unwrap()
+            .first_statement
+    };
+    let (a, b) = (start("a"), start("b"));
+    let executed: BTreeSet<i32> = [b, b + 1].into_iter().collect();
+    let text = super::uncovered(&bytes, &executed).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert!(
+        lines.contains(&format!("{}\t{}\ta", b - a, b - a).as_str()),
+        "{text}"
+    );
+    assert!(!lines.iter().any(|l| l.ends_with("\tb")), "{text}");
+}
