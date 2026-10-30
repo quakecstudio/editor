@@ -774,7 +774,8 @@ impl<'a> Compiler<'a> {
             ast::Expr::Unary(unary) => self.unary(unary, span),
             ast::Expr::Index(index) => self.index(index, span),
             ast::Expr::Ternary(ternary) => self.ternary(ternary, span),
-            ast::Expr::Cast(_) | ast::Expr::Vector(_) | ast::Expr::Sizeof(_) => {
+            ast::Expr::Vector(vector) => self.vector(vector, span),
+            ast::Expr::Cast(_) | ast::Expr::Sizeof(_) => {
                 Err(Abort::Internal(Internal::Unsupported, span))
             }
         }
@@ -1161,6 +1162,82 @@ impl<'a> Compiler<'a> {
                 Err(Abort::Internal(Internal::Unsupported, span))
             }
         }
+    }
+
+    /// FTEQCC's `[x, y, z]` (FTEF-30.7): each component read in turn, a missing one the float 0;
+    /// three constants are the vector immediate, two constant zeros the unit vector times the
+    /// third by `MUL_VF`, and otherwise each component stored to its word of a temporary by
+    /// `STORE_F`, as `QCC_PR_GenerateVector` builds it. A call's value is held when a later
+    /// component makes a call (FTEF-30.13). A component that is not a float is not lowered yet.
+    fn vector(&mut self, vector: &ast::VectorExpr, span: Span) -> Lowered<Value> {
+        let elements: Vec<ast::Expr> = vector.elements().collect();
+        if elements.is_empty() || elements.len() > 3 {
+            return Err(Abort::Internal(Internal::Unsupported, span));
+        }
+        let mut parts = Vec::with_capacity(3);
+        for (i, element) in elements.iter().enumerate() {
+            let value = self.expr(element)?;
+            if self.type_of(&value).etype() != Etype::Float {
+                return Err(Abort::Internal(Internal::Unsupported, span));
+            }
+            let calls_later = elements.iter().skip(i.saturating_add(1)).any(|later| {
+                later
+                    .syntax()
+                    .descendants()
+                    .any(|node| ast::CallExpr::can_cast(node.kind()))
+            });
+            parts.push(if calls_later {
+                self.hold(value, span)?
+            } else {
+                value
+            });
+        }
+        while parts.len() < 3 {
+            parts.push(self.float_literal(0.0, span)?);
+        }
+        let words: Vec<Option<u32>> = parts.iter().map(|p| self.constant_word(p)).collect();
+        if let [Some(x), Some(y), Some(z)] = words[..] {
+            let literal = Literal::Vector([x, y, z].map(f32::from_bits));
+            let place = self.program.immediate(&literal).at(span)?;
+            return self.def_value(place, span);
+        }
+        let null: Vec<bool> = words.iter().map(|w| *w == Some(0)).collect();
+        for (axis, part) in parts.iter().enumerate() {
+            if null.iter().enumerate().all(|(i, &n)| n || i == axis) {
+                let mut unit = [0.0; 3];
+                *unit.get_mut(axis).at(span)? = 1.0;
+                let place = self.program.immediate(&Literal::Vector(unit)).at(span)?;
+                let unit = self.def_value(place, span)?;
+                return self.operate(Operator::Mul, &unit, part, (span, span));
+            }
+        }
+        let temp = self.program.allocate(3).at(span)?;
+        for (word, part) in (0_u32..).zip(&parts) {
+            let to = temp.checked_add(word).at(span)?;
+            self.program.emit(
+                Opcode::StoreF,
+                operand(part.ofs).at(span)?,
+                operand(to).at(span)?,
+            );
+        }
+        Ok(Value {
+            ofs: temp,
+            kind: ValueKind::Temp(ValueType::simple(Etype::Vector)),
+        })
+    }
+
+    /// The word of a one-word constant, `QCC_SRef_EvalConst` (FTEF-30.7).
+    fn constant_word(&self, value: &Value) -> Option<u32> {
+        let ValueKind::Def(place) = value.kind else {
+            return None;
+        };
+        self.constant(place)
+            .then(|| {
+                self.program
+                    .def(place)
+                    .map(|def| self.program.word(def.ofs))
+            })
+            .flatten()
     }
 
     /// `&e.f` (FTEF-31.4): `ADDRESS` of the entity and the field, a pointer to what the field

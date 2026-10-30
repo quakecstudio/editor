@@ -11,8 +11,8 @@ use qc_progs::opcode::Opcode::{
 use qc_progs::{ProgsFile, Statement};
 
 use super::{
-    body, compile_fteqcc, fte_progs, function, global, immediate, immediate_string, st, string,
-    words,
+    body, compile_fteqcc, fte_progs, function, global, immediate, immediate_string,
+    immediate_vector, st, string, words,
 };
 use crate::{CompileError, Internal};
 
@@ -1095,4 +1095,47 @@ fn an_array_initialiser_copies_named_constants() {
     };
     assert_eq!((at("f", 0), at("f", 1)), (4.0, 7.0));
     assert_eq!((at("v", 0), at("v", 1), at("v", 2)), (1.0, 2.0, 3.0));
+}
+
+// spec FTEF-30.7: a vector constructor of constants is the vector immediate, two null components
+// the unit vector times the third by MUL_VF, and otherwise each component stored by STORE_F, a
+// missing component the float 0
+#[test]
+fn a_vector_constructor_builds_its_vector() {
+    let p = fte_progs(
+        "float a, b; vector v;\nvoid() t = { v = [1, 2]; v = [0, a]; v = [a, b, 3]; };\n",
+    );
+    let g = |name| global(&p, name);
+    let t = body(&p, "t");
+    assert_eq!(
+        t[0],
+        st(StoreV, immediate_vector(&p, [1.0, 2.0, 0.0]), g("v"), 0)
+    );
+    assert_eq!(
+        t[1],
+        st(
+            Opcode::MulVf,
+            immediate_vector(&p, [0.0, 1.0, 0.0]),
+            g("a"),
+            g("v")
+        )
+    );
+    let temp = t[2].b;
+    assert_eq!(t[2], st(StoreF, g("a"), temp, 0));
+    assert_eq!(t[3], st(StoreF, g("b"), temp + 1, 0));
+    assert_eq!(t[4], st(StoreF, immediate(&p, 3.0), temp + 2, 0));
+    assert_eq!(t[5], st(StoreV, temp, g("v"), 0));
+}
+
+// spec FTEF-30.13: a call's value in a vector constructor is copied out of the return global
+// when a later component makes a call
+#[test]
+fn a_vector_constructor_holds_a_call_before_another() {
+    let p = fte_progs("float() f = #1;\nvector v;\nvoid() t = { v = [f(), f()]; };\n");
+    let t = body(&p, "t");
+    assert_eq!(t[0].op, u32::from(Opcode::Call0.number()));
+    assert_eq!(t[1], st(StoreF, 1, t[1].b, 0));
+    assert_eq!(t[2].op, u32::from(Opcode::Call0.number()));
+    assert_eq!(t[3].a, t[1].b);
+    assert_eq!(t[4].a, 1);
 }
