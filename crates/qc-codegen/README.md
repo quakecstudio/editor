@@ -58,10 +58,11 @@ QCD-4.7). The precache lists `qcc -copy` reads are kept beside the progs (QC-26)
 
 ## What it is not, yet
 
-Under FTEQCC it lowers what the six rerelease codebases and the corpus mods' server modules
-use, on the vanilla opcodes (FTE-1.1); FTE's extended opcodes and the rest of FTEQCC are not
-lowered: among them a read through a pointer, a compound assignment to an element its setter
-stores, and casts that convert between basic types.
+Under FTEQCC it lowers what the six rerelease codebases and most of the corpus mods' server
+modules use, on the vanilla opcodes (FTE-1.1); FTE's extended opcodes and the rest of FTEQCC
+are not lowered: among them a function defined inside another, a read through a pointer, a
+compound assignment to an element its setter stores, and casts that convert between basic
+types.
 `cargo xtask codegen-corpus <dir>...` compiles codebases under the FTEQCC profile.
 
 ## Tests

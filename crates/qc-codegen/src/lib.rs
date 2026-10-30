@@ -189,6 +189,17 @@ fn compile_lowered(
     let mut compiler = Compiler::new(&index, &names);
     compiler.fold = options.fold;
     compiler.dialect = resolve.dialect;
+    if resolve.dialect.has_fteqcc_extensions() && resolve.autoproto {
+        for (i, unit) in units.iter().enumerate() {
+            compiler
+                .prototype_file(FileId(i), unit.parse)
+                .map_err(|(internal, file, span)| CompileError::Internal {
+                    file,
+                    span,
+                    internal,
+                })?;
+        }
+    }
     if resolve.dialect == Dialect::Fteqcc {
         compiler.program.literal_sharing = program::LiteralSharing::Constants;
     }

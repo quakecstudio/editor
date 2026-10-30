@@ -260,6 +260,53 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    /// FTE-22.3, FTE-22.7: FTEQCC's first pass with `-Fautoproto`, which reads only the
+    /// definitions: each top-level declarator's definition, and each enum item's, made in the
+    /// order of the files and of their text, before any body is compiled.
+    pub(crate) fn prototype_file(
+        &mut self,
+        file: FileId,
+        parse: &Parse,
+    ) -> Result<(), (Internal, FileId, Span)> {
+        self.file = file;
+        let Some(tree) = parse.tree() else {
+            return Ok(());
+        };
+        for item in tree.items() {
+            self.scope = None;
+            let result = if let Some(declaration) = ast::Declaration::cast(item.clone()) {
+                declaration.declarators().try_for_each(|declarator| {
+                    let name = declarator.name().at(declaration.syntax().span())?;
+                    let id = self.declared(&name)?;
+                    self.program
+                        .get_def(self.index, id)
+                        .at(name.span())
+                        .map(drop)
+                })
+            } else if let Some(enumeration) = ast::EnumDecl::cast(item) {
+                self.enumeration(&enumeration)
+            } else {
+                Ok(())
+            };
+            match result {
+                Ok(()) | Err(Abort::Error(_)) => {}
+                Err(Abort::Internal(internal, span)) => return Err((internal, file, span)),
+            }
+        }
+        Ok(())
+    }
+
+    /// The definition a top-level declarator's name `name` makes or redeclares.
+    fn declared(&self, name: &SyntaxToken) -> Lowered<DefId> {
+        match self.names.def(self.file, name.span(), None) {
+            Some(id) => Ok(id),
+            None => self
+                .names
+                .global(&name.text_lossless())
+                .ok_or(Abort::Internal(Internal::Unresolved, name.span())),
+        }
+    }
+
     /// An error at `span`.
     fn error<T>(code: Code, message: String, span: Span) -> Lowered<T> {
         Err(Abort::Error(Diagnostic {
@@ -304,13 +351,7 @@ impl<'a> Compiler<'a> {
     fn declaration(&mut self, declaration: &ast::Declaration) -> Lowered<()> {
         for declarator in declaration.declarators() {
             let name = declarator.name().at(declaration.syntax().span())?;
-            let id = match self.names.def(self.file, name.span(), None) {
-                Some(id) => id,
-                None => self
-                    .names
-                    .global(&name.text_lossless())
-                    .ok_or(Abort::Internal(Internal::Unresolved, name.span()))?,
-            };
+            let id = self.declared(&name)?;
             let place = self.program.get_def(self.index, id).at(name.span())?;
             match declarator.initializer() {
                 None => {}
@@ -821,7 +862,8 @@ impl<'a> Compiler<'a> {
                 }
                 let id = self.def_of(&token)?;
                 // Under FTEQCC a name may be used before the definition it names is read, in a
-                // second autoprototyping pass (FTE-22.3); it is made where it is first used.
+                // second autoprototyping pass (FTE-22.3), whose first pass made it (FTE-22.7);
+                // one the first pass did not make is made where it is first used.
                 let place = match self.program.place(id) {
                     Some(place) => place,
                     None if self.dialect.has_fteqcc_extensions() => {

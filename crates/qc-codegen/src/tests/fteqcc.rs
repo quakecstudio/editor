@@ -642,7 +642,7 @@ fn a_call_in_an_argument_is_copied_before_the_next() {
     assert_eq!(t[6], st(StoreV, 1, 7, 0));
 }
 
-// spec FTE-22.3: a name used before its definition is read is made where it is first used
+// spec FTE-22.3: a name used before its definition is read resolves to that definition
 #[test]
 fn a_name_used_before_its_definition_is_made_there() {
     let p = fte_progs("#pragma autoproto\nvoid() t = { later = 1; };\nfloat later;\n");
@@ -1416,4 +1416,13 @@ fn a_sequence_runs_each_expression_in_turn() {
     let t = body(&p, "t");
     assert_eq!(t[0], st(StoreF, global(&p, "b"), global(&p, "a"), 0));
     assert_eq!(t[1], st(Opcode::Call0, global(&p, "f"), 0, 0));
+}
+
+// spec FTE-22.7: with autoprototyping, a definition used before it is read is made in the first
+// pass, in its definition's place among the others
+#[test]
+fn autoprototyping_makes_definitions_in_their_written_order() {
+    let p =
+        fte_progs("#pragma autoproto\nvoid() t = { later = 1; };\nfloat first;\nfloat later;\n");
+    assert!(global(&p, "first") < global(&p, "later"));
 }

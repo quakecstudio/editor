@@ -835,6 +835,15 @@ list starts empty in each file (QC-8.3).
   already defined keeps its first (QC-8.7). With `-Fautoproto` the frame macros of the first
   pass are still defined in the second, so a file may use a frame name a later file defines
   (`rerelease-mg3/misc_corpses.qc` uses `$CORPSEFRAME_PLAYER_6` from `rerelease-mg3/player.qc`).
+- **FTE-22.7** The first pass makes each definition the program declares at the top level, in
+  the order of the files and of their text, before the second pass compiles any body, and the
+  second keeps them (`pbool autoprototype; //take two passes over the source code. First time
+  round doesn't enter and functions or initialise variables.`): a function used in one file
+  and defined in a later one is defined among the later file's definitions, in the place its definition is written (`rerelease-mg3`'s
+  `cleanup_markers`, used in `weapons.qc` and defined in `client.qc` after `check_exits`). The
+  definitions of a function's body are made in the second pass. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`, the
+  `autoprototype` passes of `QCC_main` and `QCC_ContinueCompile`.
 
 ### Test vectors
 
