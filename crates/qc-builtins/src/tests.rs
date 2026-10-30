@@ -785,8 +785,8 @@ mod bodies {
         reason = "test code: a failed unwrap, index, expect or overflow is a failed test"
     )]
 
-    use crate::{MockBuiltins, math};
     use crate::mock::{MessageDest, MockEngine, Precache};
+    use crate::{MockBuiltins, math};
     use qc_edict::system::{SYSTEM_GLOBALS, field_by_name, global_by_name};
     use qc_edict::{EDICT_SYS_GLOBALS_END, EdictNumber};
     use qc_progs::opcode::Opcode;
