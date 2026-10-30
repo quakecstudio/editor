@@ -710,6 +710,17 @@ impl<'a> Compiler<'a> {
                         );
                     }
                 }
+                // FTEF-32.13: a constant local's aggregate is its value at compile time, as a
+                // global's is.
+                Some(ast::Initializer::Aggregate(aggregate))
+                    if self.dialect.has_fteqcc_extensions() && self.declared_constant(place) =>
+                {
+                    let span = aggregate.syntax().span();
+                    let def = self.program.def(place).at(span)?;
+                    let (ty, count) = (def.ty.clone(), def.count);
+                    let words = self.aggregate_words(&ty, count, &aggregate)?;
+                    self.program.initialise_words(place, &words).at(span)?;
+                }
                 Some(
                     ast::Initializer::Body(_)
                     | ast::Initializer::Builtin(_)
@@ -831,6 +842,12 @@ impl<'a> Compiler<'a> {
     /// Whether the definition at `place` is a constant with its value, as
     /// `QCC_SRef_EvalConst` reads one: a literal, or an initialised definition the model holds
     /// constant (FTEF-19.3).
+    /// Whether the definition at `place` is one the semantic model makes a constant, initialised
+    /// or not yet.
+    fn declared_constant(&self, place: usize) -> bool {
+        self.program.def(place).is_some_and(|def| def.constant)
+    }
+
     fn constant(&self, place: usize) -> bool {
         self.program.def(place).is_some_and(|def| {
             def.initialized

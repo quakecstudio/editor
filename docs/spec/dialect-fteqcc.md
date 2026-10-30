@@ -5064,6 +5064,13 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   fourth argument "expected ), found ,". Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseFunctionCall`.
+- **FTEF-32.13** A constant local's aggregate initialiser, `const string tab[] = { "a", "b" };`
+  in a body, is its value at compile time, as a global's is, with no statement: the generated
+  initialiser copies a constant's words when the definition is a global, a constant or static
+  (`if (basedef && (!basedef->scope || basedef->constant || basedef->isstatic))`), and stores
+  them only otherwise (`finalnotconst`). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateInitializerType`.
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,

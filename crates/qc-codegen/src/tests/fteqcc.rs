@@ -1230,3 +1230,14 @@ fn a_literal_never_shares_a_variables_word() {
     assert_ne!(t[1].a, two);
     assert_eq!(words(&p, t[1].a, 1), [2.0_f32.to_bits()]);
 }
+
+// spec FTEF-32.13: a constant local's aggregate initialiser is its value at compile time, with
+// no statement
+#[test]
+fn a_constant_locals_aggregate_is_its_value() {
+    let p = fte_progs("float x;\nvoid() t = { const float tab[] = { 4, 5 }; x = tab[1]; };\n");
+    let tab = global(&p, "tab");
+    assert_eq!(words(&p, tab, 2), [4.0_f32, 5.0].map(f32::to_bits));
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, tab + 1, global(&p, "x"), 0));
+}
