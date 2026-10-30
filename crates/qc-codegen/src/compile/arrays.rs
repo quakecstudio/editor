@@ -490,7 +490,7 @@ impl Compiler<'_> {
         Ok(true)
     }
 
-    /// FTE-13.5, FTE-14.7: the words of an aggregate initialiser of a value of `ty`, `count`
+    /// FTE-13.10, FTE-14.7: the words of an aggregate initialiser of a value of `ty`, `count`
     /// elements of it for an array: each element at its index times the element's words, each
     /// member of a struct at its word, each value a literal.
     pub(super) fn aggregate_words(
@@ -546,15 +546,41 @@ impl Compiler<'_> {
             return Ok(());
         }
         let expr = ast::Expr::cast(item.clone()).at(span)?;
-        let literal = literal_of(&expr, self.dialect).at(span)?;
-        if literal.ty().etype() != ty.etype() {
-            return Err(Abort::Internal(Internal::Unsupported, span));
-        }
-        let value = self.program.literal_words(&literal).at(span)?;
+        let value = match literal_of(&expr, self.dialect) {
+            Some(literal) => {
+                if literal.ty().etype() != ty.etype() {
+                    return Err(Abort::Internal(Internal::Unsupported, span));
+                }
+                self.program.literal_words(&literal).at(span)?
+            }
+            None => self.constant_words(ty, &expr)?,
+        };
         let start = usize::try_from(at).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
         let end = start.checked_add(value.len()).at(span)?;
         words.get_mut(start..end).at(span)?.copy_from_slice(&value);
         Ok(())
+    }
+
+    /// FTE-13.10: the words of an initialiser's value that is no literal but a constant of type
+    /// `ty`, a constant's name or an expression that folds with no statement, as
+    /// `QCC_PR_GenerateInitializerType` copies `QCC_SRef_EvalConst`.
+    fn constant_words(&mut self, ty: &ValueType, expr: &ast::Expr) -> Lowered<Vec<u32>> {
+        let span = expr.syntax().span();
+        let before = self.program.statements.len();
+        let value = self.expr(expr)?;
+        let ValueKind::Def(place) = value.kind else {
+            return Err(Abort::Internal(Internal::Unsupported, span));
+        };
+        if self.program.statements.len() != before
+            || !self.constant(place)
+            || self.type_of(&value).etype() != ty.etype()
+        {
+            return Err(Abort::Internal(Internal::Unsupported, span));
+        }
+        let ofs = self.program.def(place).at(span)?.ofs;
+        Ok((0..ty.words())
+            .map(|i| self.program.word(ofs.saturating_add(i)))
+            .collect())
     }
 }
 

@@ -44,7 +44,7 @@ fn string_word(p: &ProgsFile, text: &str) -> u32 {
 
 const STRUCT: &str = "typedef struct { string m; float f; } P;\n";
 
-// spec FTE-13.5: an array takes its elements' words in turn, written from its aggregate
+// spec FTE-13.10: an array takes its elements' words in turn, written from its aggregate
 // initialiser; a vector array makes no component definitions
 #[test]
 fn an_array_is_its_elements_in_consecutive_globals() {
@@ -894,7 +894,7 @@ fn a_variable_index_calls_the_getter() {
     assert!(opcodes(&body(&p, "t")).contains(&u32::from(Call1.number())));
 }
 
-// spec FTE-13.5: an array initialised with fewer values than elements leaves the rest 0
+// spec FTE-13.10: an array initialised with fewer values than elements leaves the rest 0
 #[test]
 fn a_short_array_initialiser_leaves_the_rest_zero() {
     let p = fte_progs("float f[3] = { 1 };\n");
@@ -1080,4 +1080,19 @@ fn a_store_through_a_pointer_is_its_storep() {
     let t = body(&p, "t");
     assert_eq!(t[0], st(Opcode::StorepF, g("f"), g("p"), 0));
     assert_eq!(t[1], st(Opcode::StorepV, g("v"), g("q"), 0));
+}
+
+// spec FTE-13.10: an aggregate initialiser's value may be a constant's name, its words copied
+#[test]
+fn an_array_initialiser_copies_named_constants() {
+    let p = fte_progs(
+        "float A = 4; vector V = '1 2 3';\nconst float f[2] = { A, 7 };\n\
+         const vector v[1] = { V };\nvoid() t = {};\n",
+    );
+    let at = |name: &str, i: i32| {
+        let ofs = global(&p, name).checked_add(i).unwrap();
+        f32::from_bits(p.globals[usize::try_from(ofs).unwrap()].bits())
+    };
+    assert_eq!((at("f", 0), at("f", 1)), (4.0, 7.0));
+    assert_eq!((at("v", 0), at("v", 1), at("v", 2)), (1.0, 2.0, 3.0));
 }

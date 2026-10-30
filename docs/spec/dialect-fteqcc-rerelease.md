@@ -340,7 +340,8 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   subscript to its array-access helper over vanilla opcodes (it does not use a version 7
   feature for the rerelease, FTE-1.1). The exact lowering is fixed by P2-06 and recorded in
   this section's vectors then.
-- **FTE-13.5** An array of `N` elements of `T` takes `N` times `T`'s words in consecutive
+- **FTE-13.5** **Withdrawn** 2026-10-30: it held each value of an aggregate initialiser to a
+  literal, where FTEQCC copies any constant's words; replaced by FTE-13.10. An array of `N` elements of `T` takes `N` times `T`'s words in consecutive
   globals from the definition's offset; a vector array makes no `_x`, `_y` or `_z`
   definitions. An aggregate initialiser writes element `k` at word `k` times the element's
   words, each value a literal (a frame macro is its number). A literal never shares an
@@ -377,6 +378,16 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   it an `int` constant (`QCC_MakeIntConst(arraysize)`), which the vanilla opcodes take only
   converted to a float, so the value read is the same; a deliberate divergence in the
   immediate's type. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
+- **FTE-13.10** An array of `N` elements of `T` takes `N` times `T`'s words in consecutive
+  globals from the definition's offset; a vector array makes no `_x`, `_y` or `_z`
+  definitions. An aggregate initialiser writes element `k` at word `k` times the element's
+  words, each value a constant whose words are copied (`const int *srcdata = (const
+  void*)QCC_SRef_EvalConst(tmp);`): a literal (a frame macro is its number), a constant's name,
+  or an expression that folds to one, so `const float f[2] = { IT_AXE, IT_SHOTGUN };` holds the
+  two constants' values. A literal never shares an array's word as it shares an initialised
+  constant's (QC-20.2). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_ParseInitializerType`,
+  `QCC_PR_GenerateInitializerType`.
 
 ## FTE-14 `typedef struct` and member access
 
@@ -408,7 +419,7 @@ Vanilla `qcc` has `void`, `float`, `vector`, `string` and `entity` only (QC-10.1
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_StoreToRef`.
 - **FTE-14.7** A struct's aggregate initialiser `{ a, b }` writes each member's value at its
-  word in order, an array of structs one brace group per element (FTE-13.5). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  word in order, an array of structs one brace group per element (FTE-13.10). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseInitializerType`.
 
 ## FTE-15 `enum`

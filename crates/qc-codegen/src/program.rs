@@ -134,7 +134,7 @@ pub(crate) struct Def {
     /// Whether it has been initialised so far (QC-11.5): set where the initialiser is met, so a
     /// literal only reuses a constant initialised before it (QC-20.2).
     pub(crate) initialized: bool,
-    /// An array's elements, `arraysize`; `None` for no array (FTE-13.5).
+    /// An array's elements, `arraysize`; `None` for no array (FTE-13.10).
     pub(crate) count: Option<u32>,
     /// The semantic model's definition it is; `None` for a literal and one the compiler makes.
     pub(crate) id: Option<DefId>,
@@ -313,7 +313,7 @@ impl Program {
             id: Some(id),
         });
         self.places.insert(id, place);
-        // FTE-13.5: an array takes its elements' words in turn, a vector array's with no
+        // FTE-13.10: an array takes its elements' words in turn, a vector array's with no
         // component definitions; FTE-14.5: a struct takes its layout's words.
         if let Some(count) = count {
             if ty.field_inner().is_some() {
