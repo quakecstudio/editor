@@ -22,8 +22,9 @@ an edit, so both commands run outside the edit history
 ## Public shape
 
 - `Workbench`: opens a project (`open_project`) and a file (`open_file`), and lists the
-  project's files as a tree (`tree`), its problems with their lines and columns (`problems`),
-  a file's outline (`outline`) and every symbol (`project_symbols`).
+  project's files as a tree (`tree`), its problems with their lines and columns (`problems`)
+  and every symbol (`project_symbols`), worked out when the project opens so a frame only
+  reads them; `OpenFile` holds the open file's text, caret and outline.
 - `Location`, `Problem`, `TreeEntry` and `EntryKind`, `OpenFile` and `WorkbenchError`.
 - `HasWorkbench` and `register`: the commands for any context with a `Workbench`.
 - `OPEN_PROJECT`, `OPEN_FILE` and their parameter types, so the app runs them without

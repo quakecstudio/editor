@@ -20,7 +20,8 @@ use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use qc_ide::{AnalysisHost, Config, Diagnostic, Symbol};
+use qc_ide::AnalysisHost;
+pub use qc_ide::{Code, Config, Diagnostic, Severity, Symbol, SymbolKind};
 use qc_project::{Loader, ProjectError, normalize};
 use qs_commands::{Command, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
@@ -149,12 +150,15 @@ impl Node {
     }
 }
 
-/// The file open in the editor and where its caret goes.
+/// The file open in the editor: its text as it was opened, where its caret goes and its
+/// outline.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OpenFile {
     path: PathBuf,
+    text: Vec<u8>,
     offset: usize,
     generation: u64,
+    outline: Vec<Symbol>,
 }
 
 impl OpenFile {
@@ -164,10 +168,22 @@ impl OpenFile {
         &self.path
     }
 
+    /// Its text when it was opened.
+    #[must_use]
+    pub fn text(&self) -> &[u8] {
+        &self.text
+    }
+
     /// The byte offset the caret goes to.
     #[must_use]
     pub const fn offset(&self) -> usize {
         self.offset
+    }
+
+    /// Where the caret goes.
+    #[must_use]
+    pub fn location(&self) -> Location {
+        Location::of(&self.text, self.offset)
     }
 
     /// Changes on every `file.open`, including one of the file already open, so the editor
@@ -176,30 +192,50 @@ impl OpenFile {
     pub const fn generation(&self) -> u64 {
         self.generation
     }
+
+    /// The symbols the file defines, in source order.
+    #[must_use]
+    pub fn outline(&self) -> &[Symbol] {
+        &self.outline
+    }
 }
 
-/// The open project and file, over the analysis of the project's modules.
+/// The open project and file, over the analysis of the project's modules. What the panels
+/// list is worked out when the project or the file is opened, so a frame only reads it.
 #[derive(Debug)]
 pub struct Workbench<L> {
     host: AnalysisHost<L>,
     root: Option<PathBuf>,
+    tree: Vec<TreeEntry>,
+    problems: Vec<Problem>,
+    symbols: Vec<Symbol>,
     open: Option<OpenFile>,
     generation: u64,
 }
 
 impl<L: Loader> Workbench<L> {
-    /// A workbench with no project, reading files through `loader`.
-    pub fn new(loader: L) -> Self {
+    /// A workbench with no project, reading files through `loader` and analysing them as
+    /// `config` says over the project file.
+    pub fn new(loader: L, config: Config) -> Self {
         Self {
-            host: AnalysisHost::new(loader, Config::default()),
+            host: AnalysisHost::new(loader, config),
             root: None,
+            tree: Vec::new(),
+            problems: Vec::new(),
+            symbols: Vec::new(),
             open: None,
             generation: 0,
         }
     }
 
-    /// Opens the project in directory `root`, as [`AnalysisHost::open`] does, and closes the
-    /// open file.
+    /// Replaces what the editor says over the project file; it takes effect when a project is
+    /// next opened.
+    pub fn set_config(&mut self, config: Config) {
+        self.host.set_config(config);
+    }
+
+    /// Opens the project in directory `root`, as [`AnalysisHost::open`] does, works out its
+    /// tree, problems and symbols, and closes the open file.
     ///
     /// # Errors
     ///
@@ -214,7 +250,11 @@ impl<L: Loader> Workbench<L> {
             }
             return Err(WorkbenchError::Project(error));
         }
-        self.root = Some(normalize(root));
+        let root = normalize(root);
+        self.tree = tree(&self.host.files(), &root);
+        self.root = Some(root);
+        self.problems = problems(&mut self.host);
+        self.symbols = self.host.workspace_symbols();
         self.open = None;
         Ok(())
     }
@@ -239,12 +279,17 @@ impl<L: Loader> Workbench<L> {
             });
         }
         self.generation = self.generation.wrapping_add(1);
-        self.open = Some(OpenFile {
+        let outline = self.host.document_symbols(&path);
+        let open = OpenFile {
             path,
+            text,
             offset,
             generation: self.generation,
-        });
-        Ok(Location::of(&text, offset))
+            outline,
+        };
+        let location = open.location();
+        self.open = Some(open);
+        Ok(location)
     }
 
     /// The project directory, once a project is open.
@@ -259,59 +304,58 @@ impl<L: Loader> Workbench<L> {
         self.open.as_ref()
     }
 
-    /// The current text of `path`, as [`AnalysisHost::text`] gives it.
-    pub fn text(&mut self, path: &Path) -> Option<Vec<u8>> {
-        self.host.text(path)
-    }
-
     /// The QuakeC files the project compiles, as a tree under the project directory:
-    /// directories before files, each by name. A file outside the project directory is placed by its whole path.
+    /// directories before files, each by name. A file outside the project directory is placed
+    /// by its whole path.
     #[must_use]
-    pub fn tree(&self) -> Vec<TreeEntry> {
-        let mut top = Node::default();
-        for path in self.host.files() {
-            let below = self
-                .root
-                .as_deref()
-                .and_then(|root| path.strip_prefix(root).ok())
-                .unwrap_or(&path);
-            let names: Vec<String> = below
-                .components()
-                .map(|c| c.as_os_str().to_string_lossy().into_owned())
-                .collect();
-            top.insert(&names, path.clone());
-        }
-        let mut out = Vec::new();
-        top.flatten(0, &mut out);
-        out
+    pub fn tree(&self) -> &[TreeEntry] {
+        &self.tree
     }
 
     /// Every problem in the project: each file's diagnostics, the files by path and each
     /// file's in source order.
-    pub fn problems(&mut self) -> Vec<Problem> {
-        let mut out = Vec::new();
-        for (path, diagnostics) in self.host.all_diagnostics() {
-            let text = self.host.text(&path).unwrap_or_default();
-            for diagnostic in diagnostics {
-                out.push(Problem {
-                    path: path.clone(),
-                    location: Location::of(&text, diagnostic.span.start),
-                    diagnostic,
-                });
-            }
-        }
-        out
-    }
-
-    /// The symbols `path` defines, in source order.
-    pub fn outline(&mut self, path: &Path) -> Vec<Symbol> {
-        self.host.document_symbols(path)
+    #[must_use]
+    pub fn problems(&self) -> &[Problem] {
+        &self.problems
     }
 
     /// The symbols every file of the project defines.
-    pub fn project_symbols(&mut self) -> Vec<Symbol> {
-        self.host.workspace_symbols()
+    #[must_use]
+    pub fn project_symbols(&self) -> &[Symbol] {
+        &self.symbols
     }
+}
+
+/// `files` as a tree under `root`, as [`Workbench::tree`] lists it.
+fn tree(files: &[PathBuf], root: &Path) -> Vec<TreeEntry> {
+    let mut top = Node::default();
+    for path in files {
+        let below = path.strip_prefix(root).unwrap_or(path);
+        let names: Vec<String> = below
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect();
+        top.insert(&names, path.clone());
+    }
+    let mut out = Vec::new();
+    top.flatten(0, &mut out);
+    out
+}
+
+/// Every diagnostic `host` has, as [`Workbench::problems`] lists them.
+fn problems<L: Loader>(host: &mut AnalysisHost<L>) -> Vec<Problem> {
+    let mut out = Vec::new();
+    for (path, diagnostics) in host.all_diagnostics() {
+        let text = host.text(&path).unwrap_or_default();
+        for diagnostic in diagnostics {
+            out.push(Problem {
+                path: path.clone(),
+                location: Location::of(&text, diagnostic.span.start),
+                diagnostic,
+            });
+        }
+    }
+    out
 }
 
 /// Why the workbench could not open a project or a file.
@@ -427,7 +471,11 @@ impl<C: HasWorkbench + 'static> Command<C> for OpenProject {
     ) -> Result<Outcome<ProjectOpened, C>, WorkbenchError> {
         let workbench = context.workbench();
         workbench.open_project(&params.path)?;
-        let files = workbench.host.files().len();
+        let files = workbench
+            .tree
+            .iter()
+            .filter(|entry| matches!(entry.kind, EntryKind::File(_)))
+            .count();
         Ok(Outcome::outside_history(ProjectOpened { files }))
     }
 }

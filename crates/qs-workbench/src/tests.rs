@@ -8,12 +8,11 @@
 
 use std::path::{Path, PathBuf};
 
-use qc_ide::SymbolKind;
 use qc_project::MemoryLoader;
 use qs_commands::{CommandError, Registry, Session};
 use serde_json::json;
 
-use crate::{EntryKind, Location, OPEN_FILE, OPEN_PROJECT, Workbench, WorkbenchError, register};
+use crate::{Config, EntryKind, Location, SymbolKind, OPEN_FILE, OPEN_PROJECT, Workbench, WorkbenchError, register};
 
 const ROOT: &str = "/p";
 
@@ -27,7 +26,7 @@ fn workbench(files: &[(&str, &str)]) -> Workbench<MemoryLoader> {
     for (name, text) in files {
         loader.insert(path(name), text.as_bytes().to_vec());
     }
-    Workbench::new(loader)
+    Workbench::new(loader, Config::default())
 }
 
 /// The ordinary project: a `progs.src` listing `defs.qc` and `code/world.qc`.
@@ -84,8 +83,8 @@ fn the_tree_lists_directories_before_files_each_by_name() {
     let workbench = opened(&files);
     let rows: Vec<(usize, String, bool)> = workbench
         .tree()
-        .into_iter()
-        .map(|e| (e.depth, e.name, e.kind == EntryKind::Directory))
+        .iter()
+        .map(|e| (e.depth, e.name.clone(), e.kind == EntryKind::Directory))
         .collect();
     let expected = [
         (0, "code", true),
@@ -109,12 +108,12 @@ fn a_file_outside_the_project_directory_is_placed_by_its_whole_path() {
         b"progs.dat\n../shared/defs.qc\n".to_vec(),
     );
     loader.insert("/shared/defs.qc", b"float x;\n".to_vec());
-    let mut workbench = Workbench::new(loader);
+    let mut workbench = Workbench::new(loader, Config::default());
     workbench.open_project(Path::new(ROOT)).unwrap();
     let names: Vec<(usize, String)> = workbench
         .tree()
-        .into_iter()
-        .map(|e| (e.depth, e.name))
+        .iter()
+        .map(|e| (e.depth, e.name.clone()))
         .collect();
     assert!(names.contains(&(1, "shared".to_owned())), "{names:?}");
     assert!(names.contains(&(2, "defs.qc".to_owned())), "{names:?}");
@@ -122,7 +121,7 @@ fn a_file_outside_the_project_directory_is_placed_by_its_whole_path() {
 
 #[test]
 fn with_no_project_the_tree_and_problems_are_empty() {
-    let mut workbench = workbench(&[]);
+    let workbench = workbench(&[]);
     assert!(workbench.tree().is_empty());
     assert!(workbench.problems().is_empty());
     assert!(workbench.project_symbols().is_empty());
@@ -134,7 +133,7 @@ fn with_no_project_the_tree_and_problems_are_empty() {
 fn every_problem_has_its_file_and_where_its_span_starts() {
     let mut files = PROJECT.to_vec();
     files[2] = ("code/world.qc", "void() worldspawn = {};\nfloat = 3;\n");
-    let mut workbench = opened(&files);
+    let workbench = opened(&files);
     let problems = workbench.problems();
     assert!(!problems.is_empty());
     let first = &problems[0];
@@ -142,10 +141,7 @@ fn every_problem_has_its_file_and_where_its_span_starts() {
     assert!(first.diagnostic.is_error());
     assert_eq!(first.location.line(), 2);
     assert_eq!(
-        Location::of(
-            &workbench.text(&first.path).unwrap(),
-            first.diagnostic.span.start
-        ),
+        Location::of(files[2].1.as_bytes(), first.diagnostic.span.start),
         first.location
     );
     assert!(
@@ -159,11 +155,11 @@ fn problems_are_by_path_then_source_order() {
     let mut files = PROJECT.to_vec();
     files[1] = ("defs.qc", "float = 1;\nfloat = 2;\n");
     files[2] = ("code/world.qc", "float = 3;\n");
-    let mut workbench = opened(&files);
+    let workbench = opened(&files);
     let order: Vec<(PathBuf, u32)> = workbench
         .problems()
-        .into_iter()
-        .map(|p| (p.path, p.location.line()))
+        .iter()
+        .map(|p| (p.path.clone(), p.location.line()))
         .collect();
     let mut sorted = order.clone();
     sorted.sort();
@@ -247,10 +243,13 @@ fn a_project_that_fails_to_open_leaves_the_one_open_before() {
 #[test]
 fn the_outline_and_project_symbols_come_from_the_analysis() {
     let mut workbench = opened(PROJECT);
-    let outline: Vec<(String, SymbolKind)> = workbench
-        .outline(&path("defs.qc"))
-        .into_iter()
-        .map(|s| (s.name, s.kind))
+    workbench.open_file(&path("defs.qc"), 0).unwrap();
+    let open = workbench.open().unwrap();
+    assert_eq!(open.text(), PROJECT[1].1.as_bytes());
+    let outline: Vec<(String, SymbolKind)> = open
+        .outline()
+        .iter()
+        .map(|s| (s.name.clone(), s.kind))
         .collect();
     assert_eq!(
         outline,
@@ -261,8 +260,8 @@ fn the_outline_and_project_symbols_come_from_the_analysis() {
     );
     let names: Vec<String> = workbench
         .project_symbols()
-        .into_iter()
-        .map(|s| s.name)
+        .iter()
+        .map(|s| s.name.clone())
         .collect();
     assert_eq!(names, ["worldspawn", "health", "speed"]);
 }
@@ -316,4 +315,22 @@ fn a_command_that_cannot_open_its_target_fails() {
         matches!(error, CommandError::InvalidParams { .. }),
         "{error:?}"
     );
+}
+
+#[test]
+fn the_config_applies_from_the_next_open() {
+    let files = [
+        ("progs.src", "progs.dat\na.qc\n"),
+        ("a.qc", "void() f = { local float i; for (i = 0; i < 3; i++) {} };\n"),
+    ];
+    let mut workbench = opened(&files);
+    let vanilla = workbench.problems().len();
+    workbench.set_config(Config {
+        dialect: Some(qc_project::Dialect::Fteqcc),
+        ..Config::default()
+    });
+    assert_eq!(workbench.problems().len(), vanilla, "not before the next open");
+    workbench.open_project(Path::new(ROOT)).unwrap();
+    let fteqcc = workbench.problems().len();
+    assert!(vanilla > fteqcc, "{vanilla} > {fteqcc}");
 }
