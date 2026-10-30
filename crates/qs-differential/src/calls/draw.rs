@@ -10,6 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use qc_progs::opcode::Opcode;
 use qc_progs::{Function, Progs};
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::ServerState;
@@ -110,6 +111,9 @@ fn write_globals(host: &mut Host<'_>, ofs: usize, draw: &Draw) {
 pub(super) struct Pools {
     pub(super) numbers: Vec<u32>,
     pub(super) texts: Vec<Vec<u8>>,
+    /// For a function's pools, the drawable fields its statements read or write, as indices
+    /// into the drawer's fields (DIFF-12.17); empty for the whole progs'.
+    pub(super) fields: Vec<usize>,
 }
 
 impl Pools {
@@ -144,6 +148,7 @@ impl Pools {
         Self {
             numbers: numbers.into_iter().collect(),
             texts: texts.into_iter().collect(),
+            fields: Vec::new(),
         }
     }
 }
@@ -168,6 +173,8 @@ pub(super) struct Drawer<'a, 'p> {
     variables: Vec<(Vec<u8>, DefType)>,
     /// The named fields of a type a value is drawn for.
     fields: Vec<(Vec<u8>, DefType)>,
+    /// The slot of each of [`Drawer::fields`].
+    field_slots: Vec<usize>,
     /// For each QuakeC function by its first statement, the edicts in use whose function
     /// fields (`think`, `touch`, `use` and the rest) hold it (DIFF-12.15).
     owners: BTreeMap<i32, Vec<usize>>,
@@ -239,13 +246,17 @@ impl<'a, 'p> Drawer<'a, 'p> {
             })
             .map(|(name, def_type, _)| (name.clone(), *def_type))
             .collect();
-        let fields = world
+        let drawn: Vec<_> = world
             .program
             .fields
             .iter()
             .filter(|(_, (def_type, _))| drawable(*def_type).is_some())
-            .map(|(name, (def_type, _))| (name.clone(), *def_type))
             .collect();
+        let fields = drawn
+            .iter()
+            .map(|(name, (def_type, _))| ((*name).clone(), *def_type))
+            .collect();
+        let field_slots = drawn.iter().map(|(_, (_, slot))| *slot).collect();
         let mut types = BTreeMap::new();
         for def in progs.global_defs().iter() {
             types.entry(def.ofs).or_insert(def.def_type());
@@ -264,6 +275,7 @@ impl<'a, 'p> Drawer<'a, 'p> {
             bodies: bodies(progs),
             edicts: world.in_use(),
             owners,
+            field_slots,
             clients: u64::from(world.host.scenario.clients),
             variables,
             fields,
@@ -280,10 +292,41 @@ impl<'a, 'p> Drawer<'a, 'p> {
         let first = function.first_statement;
         let end = self.bodies.get(&first).copied().unwrap_or(first);
         let statements = self.progs.statements();
-        let slots = (first..end)
+        let body: Vec<_> = (first..end)
             .filter_map(|n| statements.get(usize::try_from(n).ok()?))
-            .flat_map(|s| [s.a, s.b, s.c]);
-        Pools::of(self.progs, &self.types, slots)
+            .collect();
+        let mut pools = Pools::of(
+            self.progs,
+            &self.types,
+            body.iter().flat_map(|s| [s.a, s.b, s.c]),
+        );
+        // DIFF-12.17: a field a `LOAD_*` or `ADDRESS` names by the global holding its slot.
+        let field_ops = u32::from(Opcode::LoadF.number())..=u32::from(Opcode::Address.number());
+        let mut own = BTreeSet::new();
+        for statement in body.iter().filter(|s| field_ops.contains(&s.op)) {
+            let Some(slot) = usize::try_from(statement.b)
+                .ok()
+                .and_then(|b| self.progs.globals().get(b))
+                .and_then(|value| usize::try_from(value.bits()).ok())
+            else {
+                continue;
+            };
+            own.extend(
+                self.field_slots
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| **s == slot)
+                    .map(|(index, _)| index),
+            );
+        }
+        pools.fields = own.into_iter().collect();
+        pools
+    }
+
+    /// The name of drawable field `index`.
+    #[cfg(test)]
+    pub(super) fn field_name(&self, index: usize) -> Option<&[u8]> {
+        self.fields.get(index).map(|(name, _)| name.as_slice())
     }
 
     /// An edict in use.
@@ -373,9 +416,15 @@ impl<'a, 'p> Drawer<'a, 'p> {
         }
         edicts.sort_unstable();
         edicts.dedup();
+        // DIFF-12.17: in odd rounds only the fields the function's statements name are drawn.
+        let chosen: Vec<usize> = if round % 2 == 1 && !own.fields.is_empty() {
+            own.fields.clone()
+        } else {
+            (0..self.fields.len()).collect()
+        };
         let mut fields = Vec::new();
         for edict in edicts {
-            for (field, def_type) in &self.fields {
+            for (field, def_type) in chosen.iter().filter_map(|&i| self.fields.get(i)) {
                 if rng.below(64) < share
                     && let Some(draw) = self.value(rng, own, *def_type)
                 {

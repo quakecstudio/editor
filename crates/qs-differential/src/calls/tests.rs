@@ -544,7 +544,7 @@ fn function(progs: &Progs<'_>, name: &[u8]) -> qc_progs::Function {
 #[test]
 fn a_functions_constants_are_its_operands() {
     with_drawer(|drawer, progs| {
-        let Pools { numbers, texts } = drawer.pools(function(progs, b"g"));
+        let Pools { numbers, texts, .. } = drawer.pools(function(progs, b"g"));
         let numbers: Vec<f32> = numbers.iter().map(|b| f32::from_bits(*b)).collect();
         assert!(numbers.contains(&1.0), "{numbers:?}");
         assert_eq!(texts, [b"player".to_vec()]);
@@ -944,4 +944,23 @@ fn a_partly_covered_function_gets_one_more_batch() {
     let covered = calls("float x;\nvoid() f = { x = 1; };\n");
     let partly = calls("float x;\nvoid() f = { if (0) x = 2; x = 1; };\n");
     assert_eq!(partly, covered + 2);
+}
+
+// spec DIFF-12.17: a function's own fields are those its LOAD_* and ADDRESS statements name
+#[test]
+fn a_functions_own_fields_are_those_it_names() {
+    let bytes = compile("void() f = { self.health = self.frags + 1; };\n", false);
+    let progs = Progs::read(&bytes).unwrap();
+    let scenario = scenario();
+    let world = World::new(&progs, &scenario, WORLD).unwrap();
+    let drawer = super::draw::Drawer::new(&world);
+    let function = function(&progs, b"f");
+    let pools = drawer.pools(function);
+    let mut names: Vec<&[u8]> = pools
+        .fields
+        .iter()
+        .filter_map(|&i| drawer.field_name(i))
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, [b"frags".as_slice(), b"health".as_slice()]);
 }
