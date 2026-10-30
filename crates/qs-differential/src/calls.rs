@@ -23,7 +23,7 @@ use std::path::Path;
 use qc_builtins::MockBuiltins;
 use qc_progs::{Def, Progs};
 use qc_types::{DefType, Etype, Slot};
-use qc_vm::{Machine, Observer, RunError};
+use qc_vm::{ErrorKind, Machine, Observer, RunError};
 
 use crate::host::{Host, RunRefused};
 use crate::runner::scenarios;
@@ -170,15 +170,85 @@ impl CodebaseReport {
     pub fn passes(&self) -> bool {
         self.divergences() == 0 && self.coverage() >= COVERAGE_BAR
     }
+
+    /// The report's row of the results table (DIFF-12.8): the codebase, the oracle's progs and
+    /// ours, the divergences, the statements executed, and whether it passes.
+    #[must_use]
+    pub fn summary_row(&self, codebase: &str, oracle: &str, ours: &str) -> String {
+        format!(
+            "| {codebase} | {oracle} | {ours} | {} | {} of {} ({:.1}%) | {} |\n",
+            self.divergences(),
+            self.executed.len(),
+            self.total_statements,
+            self.coverage() * 100.0,
+            if self.passes() { "pass" } else { "fail" }
+        )
+    }
+}
+
+/// The compiler that wrote the first progs, which says how the two progs' global definitions
+/// must agree (DIFF-12.3, DIFF-12.9).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Oracle {
+    /// id's `qcc`: the two progs name the same globals in the same order (DIFF-12.3).
+    Qcc,
+    /// The pinned FTEQCC, which leaves out definitions no statement uses: its named globals
+    /// are found in ours in the same order, and ours may name more (DIFF-12.9).
+    Fteqcc,
+}
+
+impl Oracle {
+    /// Each named global of `theirs` paired with the global of `ours` it is compared with, as
+    /// indices into the two programs' globals, or `None` when the definitions do not agree
+    /// (DIFF-12.3, DIFF-12.9).
+    fn pair_globals(
+        self,
+        theirs: &Program<'_, '_>,
+        ours: &Program<'_, '_>,
+    ) -> Option<Vec<(usize, usize)>> {
+        match self {
+            Self::Qcc => theirs
+                .globals
+                .iter()
+                .map(|g| &g.0)
+                .eq(ours.globals.iter().map(|g| &g.0))
+                .then(|| (0..theirs.globals.len()).map(|i| (i, i)).collect()),
+            Self::Fteqcc => {
+                let mut pairs = Vec::with_capacity(theirs.globals.len());
+                let mut rest = ours
+                    .globals
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, global)| !ours.is_local(global));
+                for (index, global) in theirs.globals.iter().enumerate() {
+                    let (name, _, ofs) = global;
+                    // FTEQCC's `QCC_FinaliseDef` gives a symbol nothing uses no slot, so its
+                    // definition is left at slot 0, the null global; and `QCC_WriteData`
+                    // names no local of a function whose locals it overlaps.
+                    if *ofs == 0 || theirs.is_local(global) {
+                        continue;
+                    }
+                    let (found, _) = rest.find(|(_, ours)| ours.0 == *name)?;
+                    pairs.push((index, found));
+                }
+                Some(pairs)
+            }
+        }
+    }
 }
 
 /// Runs [`run_calls`] on `theirs` and `ours` from each world of [`crate::runner::scenarios`],
-/// `rounds` rounds each (DIFF-12.1, DIFF-12.5).
+/// `rounds` rounds each (DIFF-12.1, DIFF-12.5); `oracle` compiled `theirs`.
 ///
 /// # Errors
 ///
 /// [`CallsError`] when a scenario cannot be read, a progs is refused or a world's setup fails.
-pub fn run_codebase(theirs: &[u8], ours: &[u8], rounds: u32) -> Result<CodebaseReport, CallsError> {
+pub fn run_codebase(
+    oracle: Oracle,
+    theirs: &[u8],
+    ours: &[u8],
+    rounds: u32,
+) -> Result<CodebaseReport, CallsError> {
     let mut result = CodebaseReport {
         scenarios: Vec::new(),
         executed: BTreeSet::new(),
@@ -189,7 +259,7 @@ pub fn run_codebase(theirs: &[u8], ours: &[u8], rounds: u32) -> Result<CodebaseR
         let scenario = scenario::read(text.as_bytes(), Path::new("."))
             .map_err(|e| CallsError::Scenario(format!("{}: {e}", spec.name)))?;
         let entities = spec.entities.unwrap_or_default();
-        let report = run_calls(theirs, ours, &scenario, &entities, rounds)?;
+        let report = run_calls(oracle, theirs, ours, &scenario, &entities, rounds)?;
         result.executed.extend(report.executed.iter().copied());
         result.total_statements = report.total_statements;
         result.scenarios.push((spec.name, report));
@@ -221,14 +291,15 @@ impl core::fmt::Display for CallsError {
 
 impl core::error::Error for CallsError {}
 
-/// Calls every QuakeC function of `theirs` and the function of the same name in `ours`, in
-/// `rounds` rounds each, from the world `scenario` and `entities` set up, and compares the two
-/// (DIFF-12).
+/// Calls every QuakeC function of `theirs`, which `oracle` compiled, and the function of the
+/// same name in `ours`, in `rounds` rounds each, from the world `scenario` and `entities` set
+/// up, and compares the two (DIFF-12).
 ///
 /// # Errors
 ///
 /// [`CallsError`] when a progs is refused or the world's setup fails in either.
 pub fn run_calls(
+    oracle: Oracle,
     theirs: &[u8],
     ours: &[u8],
     scenario: &Scenario,
@@ -240,7 +311,7 @@ pub fn run_calls(
     let our_progs = Progs::read(ours).map_err(refused)?;
     let mut their_world = World::new(&their_progs, scenario, entities)?;
     let mut our_world = World::new(&our_progs, scenario, entities)?;
-    let pair = Pair::new(&their_progs, &our_progs);
+    let pair = Pair::new(oracle, &their_world, &our_world);
     let total = u32::try_from(their_progs.statements().len())
         .unwrap_or(u32::MAX)
         .saturating_sub(1);
@@ -313,12 +384,27 @@ struct Pair {
     /// Whether the two have the same definitions, functions and strings, so two states agree
     /// when their slots hold the same bits.
     same_tables: bool,
+    /// Each named global of the first progs with the one of the second it is compared with,
+    /// as indices into [`Program::globals`], or `None` when the definitions do not agree.
+    globals: Option<Vec<(usize, usize)>>,
+    /// The compiler of the first progs.
+    oracle: Oracle,
 }
 
 impl Pair {
-    fn new(theirs: &Progs<'_>, ours: &Progs<'_>) -> Self {
+    fn new(oracle: Oracle, a: &World<'_, '_, '_>, b: &World<'_, '_, '_>) -> Self {
+        let (theirs, ours) = (a.program.progs, b.program.progs);
         let their_names = theirs.functions().iter().map(|f| f.s_name);
+        let globals = a
+            .program
+            .fields
+            .keys()
+            .eq(b.program.fields.keys())
+            .then(|| oracle.pair_globals(&a.program, &b.program))
+            .flatten();
         Self {
+            oracle,
+            globals,
             same_statements: theirs.statements().iter().eq(ours.statements().iter()),
             same_tables: theirs.global_defs().iter().eq(ours.global_defs().iter())
                 && theirs.field_defs().iter().eq(ours.field_defs().iter())
@@ -338,6 +424,12 @@ impl Pair {
         if theirs.error != ours.error {
             return Some(Difference::Ending(theirs.error.clone(), ours.error.clone()));
         }
+        // DIFF-12.9: where a loop is stopped depends on how many statements each pass takes,
+        // which another compiler's progs need not share.
+        let runaway = |outcome: &Outcome| outcome.kind == Some(ErrorKind::Runaway);
+        if self.oracle == Oracle::Fteqcc && runaway(theirs) && runaway(ours) {
+            return None;
+        }
         let builtins = |outcome: &Outcome| -> Vec<u32> {
             outcome.executed.iter().filter_map(|e| e.builtin).collect()
         };
@@ -354,8 +446,11 @@ impl Pair {
         if self.same_tables && same_slots(&their_world.host.machine, &our_world.host.machine) {
             return None;
         }
+        let Some(globals) = &self.globals else {
+            return Some(Difference::Definitions);
+        };
         return_difference(their_world, our_world)
-            .or_else(|| state_difference(their_world, our_world))
+            .or_else(|| state_difference(their_world, our_world, globals))
     }
 }
 
@@ -396,20 +491,20 @@ fn same_slots(a: &Machine, b: &Machine) -> bool {
         })
 }
 
-/// The first named global or field whose value differs between the two worlds (DIFF-12.3).
-fn state_difference(a: &World<'_, '_, '_>, b: &World<'_, '_, '_>) -> Option<Difference> {
+/// The first named global or field whose value differs between the two worlds, the globals
+/// compared in the pairs `globals` gives (DIFF-12.3, DIFF-12.9).
+fn state_difference(
+    a: &World<'_, '_, '_>,
+    b: &World<'_, '_, '_>,
+    globals: &[(usize, usize)],
+) -> Option<Difference> {
     let (pa, pb) = (&a.program, &b.program);
-    let same_globals = pa
-        .globals
-        .iter()
-        .map(|g| &g.0)
-        .eq(pb.globals.iter().map(|g| &g.0));
-    if !same_globals || !pa.fields.keys().eq(pb.fields.keys()) {
-        return Some(Difference::Definitions);
-    }
-    for ((name, their_type, their_ofs), (_, our_type, our_ofs)) in
-        pa.globals.iter().zip(&pb.globals)
-    {
+    for (theirs, ours) in globals {
+        let (Some((name, their_type, their_ofs)), Some((_, our_type, our_ofs))) =
+            (pa.globals.get(*theirs), pb.globals.get(*ours))
+        else {
+            return Some(Difference::Definitions);
+        };
         let theirs = a.global(*their_type, *their_ofs);
         let ours = b.global(*our_type, *our_ofs);
         if theirs != ours {
@@ -475,17 +570,24 @@ impl Observer for Statements {
     fn error(&mut self, _machine: &Machine, _error: &RunError) {}
 }
 
+/// A named global definition: its name, type and slot.
+type Global = (Vec<u8>, DefType, usize);
+
 /// A progs' named definitions and functions (DIFF-12.3).
 struct Program<'a, 'p> {
     progs: &'a Progs<'p>,
-    /// The named globals, in definition order: name, type and slot.
-    globals: Vec<(Vec<u8>, DefType, usize)>,
-    /// The slot of the first named global of each name, for a context to write by name.
+    /// The named globals, in definition order.
+    globals: Vec<Global>,
+    /// The slot of each name a context writes by name: its first global outside every
+    /// function's locals, else its first (DIFF-12.9).
     global_slots: BTreeMap<Vec<u8>, usize>,
     /// The named fields, by name: the type and slot of the first definition of each.
     fields: BTreeMap<Vec<u8>, (DefType, usize)>,
     /// The QuakeC functions, by name: the index of the first of each name.
     functions: BTreeMap<Vec<u8>, i32>,
+    /// The slots of the QuakeC functions' parameters and locals, from `parm_start` for
+    /// `locals` slots, as start and end.
+    locals: Vec<(usize, usize)>,
 }
 
 impl<'a, 'p> Program<'a, 'p> {
@@ -503,10 +605,6 @@ impl<'a, 'p> Program<'a, 'p> {
                 globals.push((name, def.def_type(), ofs));
             }
         }
-        let mut global_slots = BTreeMap::new();
-        for (name, _, ofs) in &globals {
-            global_slots.entry(name.clone()).or_insert(*ofs);
-        }
         let mut fields = BTreeMap::new();
         for def in progs.field_defs().iter() {
             if let Some((name, ofs)) = named(&def) {
@@ -514,6 +612,16 @@ impl<'a, 'p> Program<'a, 'p> {
             }
         }
         let mut functions = BTreeMap::new();
+        let mut locals = Vec::new();
+        for function in progs.functions().iter() {
+            if let (true, Ok(start), Ok(count)) = (
+                function.first_statement > 0,
+                usize::try_from(function.parm_start),
+                usize::try_from(function.locals),
+            ) {
+                locals.push((start, start.saturating_add(count)));
+            }
+        }
         for (index, function) in progs.functions().iter().enumerate() {
             if let (Some(name), Ok(index)) = (progs.string(function.s_name), i32::try_from(index))
                 && function.first_statement > 0
@@ -521,13 +629,43 @@ impl<'a, 'p> Program<'a, 'p> {
                 functions.entry(name.to_vec()).or_insert(index);
             }
         }
-        Self {
+        let mut program = Self {
             progs,
             globals,
-            global_slots,
+            global_slots: BTreeMap::new(),
             fields,
             functions,
+            locals,
+        };
+        // DIFF-12.9: a context writes a global by name to its first definition outside every
+        // function's locals, else to its first.
+        let mut global_slots = BTreeMap::new();
+        for global in program.globals.iter().filter(|g| !program.is_local(g)) {
+            global_slots.entry(global.0.clone()).or_insert(global.2);
         }
+        for (name, _, ofs) in &program.globals {
+            global_slots.entry(name.clone()).or_insert(*ofs);
+        }
+        program.global_slots = global_slots;
+        program
+    }
+
+    /// Whether `global` is a parameter or local of a QuakeC function: a global in its locals
+    /// that is not the definition of the QuakeC function of its name, as a state's
+    /// `[frame, next]` declares `next` while the body is compiled (QC-13.9).
+    fn is_local(&self, (name, def_type, ofs): &Global) -> bool {
+        let declares_function = *def_type == DefType::Known(Etype::Function)
+            && self.functions.get(name).is_some_and(|index| {
+                self.progs
+                    .globals()
+                    .get(*ofs)
+                    .is_some_and(|slot| u32::try_from(*index) == Ok(slot.bits()))
+            });
+        !declares_function
+            && self
+                .locals
+                .iter()
+                .any(|(start, end)| (*start..*end).contains(ofs))
     }
 }
 
@@ -536,6 +674,8 @@ impl<'a, 'p> Program<'a, 'p> {
 struct Outcome {
     /// The run error's message, or `None` when the call returned.
     error: Option<String>,
+    /// The run error's kind, or `None` when the call returned.
+    kind: Option<ErrorKind>,
     /// The statements it executed, in order.
     executed: Vec<Executed>,
 }
@@ -594,6 +734,7 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
             setup_executed,
             setup: Outcome {
                 error: None,
+                kind: None,
                 executed,
             },
         })
@@ -623,6 +764,7 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
             function,
         );
         Outcome {
+            kind: result.as_ref().err().map(|e| e.kind.clone()),
             error: result.err().map(|e| e.message()),
             executed: observer.executed,
         }

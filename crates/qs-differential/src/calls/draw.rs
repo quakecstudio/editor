@@ -153,7 +153,9 @@ pub(super) struct Drawer<'a, 'p> {
     /// The scenario's client slots; client `n` is edict `n`.
     clients: u64,
     /// The named globals a value may be drawn for: float and string globals whose value in
-    /// the progs is 0, so variables rather than constants.
+    /// the progs is 0, so variables rather than constants, outside slot 0 and in a slot no
+    /// other float or string definition names, as FTEQCC's merged constants share one
+    /// (DIFF-12.2, DIFF-12.9).
     variables: Vec<(Vec<u8>, DefType)>,
     /// The named fields of a type a value is drawn for.
     fields: Vec<(Vec<u8>, DefType)>,
@@ -162,12 +164,23 @@ pub(super) struct Drawer<'a, 'p> {
 impl<'a, 'p> Drawer<'a, 'p> {
     pub(super) fn new(world: &World<'a, 'p, '_>) -> Self {
         let progs = world.program.progs;
+        let scalar = |def_type| matches!(drawable(def_type), Some(Etype::Float | Etype::String));
+        let mut named_by: BTreeMap<u32, usize> = BTreeMap::new();
+        for def in progs.global_defs().iter() {
+            if scalar(def.def_type()) {
+                let count = named_by.entry(def.ofs).or_default();
+                *count = count.saturating_add(1);
+            }
+        }
         let variables = world
             .program
             .globals
             .iter()
             .filter(|(_, def_type, ofs)| {
-                matches!(drawable(*def_type), Some(Etype::Float | Etype::String))
+                let alone = u32::try_from(*ofs)
+                    .is_ok_and(|ofs| ofs != 0 && named_by.get(&ofs).copied() == Some(1));
+                scalar(*def_type)
+                    && alone
                     && progs
                         .globals()
                         .get(*ofs)

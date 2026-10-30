@@ -624,6 +624,35 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   the same edict, or the same function. A vector's other two words are compared only through
   the globals and fields they are stored to. A QuakeC function of the first progs that the
   second has no QuakeC function of the same name for is a divergence.
+- **DIFF-12.8** `cargo xtask compiler-diff --full` also compares the rerelease (COMP-8):
+  `rerelease` is compiled with the pinned FTEQCC as `cargo xtask oracles rerelease` compiles it,
+  the oracle progs, and with `qc-codegen` in the FTEQCC dialect, with `--opt fold` off and on,
+  and each pair is held to DIFF-12.5's bar. The other five rerelease codebases are compared when
+  a run names them, Dawn of the Machine with `-Fautoproto`'s prototypes as FTEQCC is given it
+  (FTE-1.2), and each joins the nightly set once it passes. Every pair compared adds a row to
+  the results table `target/compiler-diff/summary.md`: the codebase, the oracle's progs and
+  ours, the divergences, the statements executed, and whether it passes; the nightly
+  differential workflow publishes it as the run's summary.
+- **DIFF-12.9** When the first progs is the pinned FTEQCC's (DIFF-12.8), its definitions are
+  compared with ours by these rules, which replace DIFF-12.3's same names in the same order.
+  FTEQCC names fewer globals: `QCC_WriteData` writes no definition nothing uses (`if (def->strip
+  || !def->symbolheader->used) continue;`), no vector component, and no local of a function
+  whose locals it overlaps (`if (def->scope && !def->isstatic && !def->scope->privatelocals)
+  continue;`), and `QCC_FinaliseDef` gives a symbol nothing uses no slot (`if
+  (!def->symbolheader->used) { ... return; }`), so a definition it writes for one is at slot 0.
+  So: (1) the fields must have the same names, as DIFF-12.3 says; (2) a global of either progs
+  inside a QuakeC function's locals (from `parm_start`, `locals` slots) is a local and is not
+  compared, unless it is a function definition whose value is the QuakeC function of its name,
+  as a state's `[frame, next]` declares `next` inside the body; (3) every other named global of
+  the first progs at a slot other than 0 must be found among ours in the same order, the next
+  one of its name, and is compared with it; ours may name more. FTEQCC also gives named
+  constants of one value one slot, so DIFF-12.2's draw leaves out a float or string global whose
+  slot another float or string definition names, or slot 0, for either oracle; the progs of id
+  1.01, qcc's and ours, have no such global; and it writes a global by name to its first
+  definition outside every QuakeC function's locals, else to its first, for either oracle. And
+  two calls that both stop with `runaway loop error` (VM-2.3) agree, with nothing else compared:
+  where a loop is stopped depends on how many statements each pass takes, which two compilers
+  need not share.
 
 ## Test vectors
 

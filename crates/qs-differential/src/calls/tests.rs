@@ -24,7 +24,7 @@ use qc_vm::ServerState;
 
 use super::draw::{Draw, Drawer, Pools, Rng};
 use super::{
-    COVERAGE_BAR, CallsError, CodebaseReport, Difference, Report, Value, World, coverage,
+    COVERAGE_BAR, CallsError, CodebaseReport, Difference, Oracle, Report, Value, World, coverage,
     run_calls, run_codebase,
 };
 use crate::runner::scenarios;
@@ -113,7 +113,7 @@ fn scenario() -> Scenario {
 const WORLD: &[u8] = b"{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"info_notnull\"\n}\n";
 
 fn run(theirs: &[u8], ours: &[u8], rounds: u32) -> Report {
-    run_calls(theirs, ours, &scenario(), WORLD, rounds).unwrap()
+    run_calls(Oracle::Qcc, theirs, ours, &scenario(), WORLD, rounds).unwrap()
 }
 
 /// The first divergence of a run of the two sources, with the call's function.
@@ -354,21 +354,21 @@ fn a_setup_that_differs_is_a_divergence_and_stops_the_run() {
 #[test]
 fn a_refused_progs_or_a_failed_setup_is_an_error() {
     let good = compile("void() f = {};\n", false);
-    let refused = run_calls(b"not a progs", &good, &scenario(), WORLD, 1);
+    let refused = run_calls(Oracle::Qcc, b"not a progs", &good, &scenario(), WORLD, 1);
     assert!(
         matches!(refused, Err(CallsError::Refused(_))),
         "{refused:?}"
     );
-    let refused = run_calls(&good, b"", &scenario(), WORLD, 1);
+    let refused = run_calls(Oracle::Qcc, &good, b"", &scenario(), WORLD, 1);
     assert!(
         matches!(refused, Err(CallsError::Refused(_))),
         "{refused:?}"
     );
     let failing = compile("void() worldspawn = { error(\"x\"); };\n", false);
-    let setup = run_calls(&failing, &good, &scenario(), WORLD, 1);
+    let setup = run_calls(Oracle::Qcc, &failing, &good, &scenario(), WORLD, 1);
     assert!(matches!(setup, Err(CallsError::Setup(_))), "{setup:?}");
     let entering = compile("void() PutClientInServer = { error(\"x\"); };\n", false);
-    let setup = run_calls(&good, &entering, &scenario(), WORLD, 1);
+    let setup = run_calls(Oracle::Qcc, &good, &entering, &scenario(), WORLD, 1);
     assert!(matches!(setup, Err(CallsError::Setup(_))), "{setup:?}");
     for error in [
         CallsError::Scenario("s".to_owned()),
@@ -435,13 +435,39 @@ fn a_codebase_passes_at_the_bar() {
     assert_eq!(report(nine, true).divergences(), 1);
 }
 
+// spec DIFF-12.8: each pair is a row of the results table: the codebase, the oracle's progs and
+// ours, the divergences, the statements executed, and whether it passes.
+#[test]
+fn a_report_is_a_row_of_the_results_table() {
+    let scenario = Report {
+        calls: 3,
+        divergences: Vec::new(),
+        executed: (1..=9).collect(),
+        total_statements: 10,
+    };
+    let mut report = CodebaseReport {
+        scenarios: vec![("s", scenario)],
+        executed: (1..=9).collect(),
+        total_statements: 10,
+    };
+    assert_eq!(
+        report.summary_row("rerelease", "oracle.dat", "ours.dat"),
+        "| rerelease | oracle.dat | ours.dat | 0 | 9 of 10 (90.0%) | pass |\n"
+    );
+    report.executed = (1..=8).collect();
+    assert_eq!(
+        report.summary_row("id-1.01", "oracle.dat", "ours-fold.dat"),
+        "| id-1.01 | oracle.dat | ours-fold.dat | 0 | 8 of 10 (80.0%) | fail |\n"
+    );
+}
+
 // spec DIFF-12.1, DIFF-12.5: a codebase runs every world of the differential scenarios and
 // unions their statements.
 #[test]
 fn a_codebase_runs_every_scenario() {
     let progs = compile(FOLDED, false);
     let folded = compile(FOLDED, true);
-    let report = run_codebase(&progs, &folded, 2).unwrap();
+    let report = run_codebase(Oracle::Qcc, &progs, &folded, 2).unwrap();
     let names: Vec<_> = report.scenarios.iter().map(|(n, _)| *n).collect();
     let expected: Vec<_> = scenarios("").iter().map(|s| s.name).collect();
     assert_eq!(names, expected);
@@ -452,7 +478,7 @@ fn a_codebase_runs_every_scenario() {
         .flat_map(|(_, r)| r.executed.iter().copied())
         .collect();
     assert_eq!(report.executed, union);
-    assert!(run_codebase(b"", &folded, 1).is_err());
+    assert!(run_codebase(Oracle::Qcc, b"", &folded, 1).is_err());
 }
 
 // spec DIFF-12.2: the generator is seeded by the function's name and the round, so a context
@@ -669,4 +695,68 @@ fn entities_and_fields_read_by_edict_and_name() {
         world.global(qc_types::DefType::Known(Etype::Field), 28),
         Value::Bits(_)
     ));
+}
+
+/// The divergences of a run of the two sources against the oracle `oracle`.
+fn against(oracle: Oracle, theirs: &str, ours: &str) -> Vec<Difference> {
+    let (theirs, ours) = (compile(theirs, false), compile(ours, false));
+    run_calls(oracle, &theirs, &ours, &scenario(), WORLD, 4)
+        .unwrap()
+        .divergences
+        .into_iter()
+        .map(|d| d.what)
+        .collect()
+}
+
+// spec DIFF-12.9: against FTEQCC, which names fewer globals, ours may name more, but each of
+// FTEQCC's must be among ours in the same order.
+#[test]
+fn against_fteqcc_ours_may_name_more_globals() {
+    let fewer = "float x;\nvoid() f = { x = 1; };\n";
+    let more = "float x;\nfloat y;\nvoid() f = { x = 1; };\n";
+    assert_eq!(against(Oracle::Fteqcc, fewer, more), []);
+    assert_eq!(against(Oracle::Qcc, fewer, more), [Difference::Definitions]);
+    assert_eq!(
+        against(Oracle::Fteqcc, more, fewer),
+        [Difference::Definitions]
+    );
+    let swapped = "float y;\nfloat x;\nvoid() f = { x = 1; };\n";
+    assert_eq!(
+        against(Oracle::Fteqcc, more, swapped),
+        [Difference::Definitions]
+    );
+}
+
+// spec DIFF-12.9: against FTEQCC a function's locals are not compared, so a global is paired
+// with ours of its name outside every function's locals.
+#[test]
+fn against_fteqcc_a_local_is_not_paired_with_a_global() {
+    let theirs = "void() g = { local float y; y = 2; };\nfloat x;\nvoid() f = { x = 1; };\n";
+    let ours = "void() g = { local float x; x = 2; };\nfloat x;\nvoid() f = { x = 1; };\n";
+    assert_eq!(against(Oracle::Fteqcc, theirs, ours), []);
+}
+
+// spec DIFF-12.9: against FTEQCC two calls that both run away agree, whatever each had done when
+// it was stopped; against qcc they must leave the same state.
+#[test]
+fn against_fteqcc_two_runaway_calls_agree() {
+    let theirs = "float x;\nvoid() f = { while (1) x = x + 1; };\n";
+    let ours = "float x;\nvoid() f = { while (1) { x = x + 1; x = x + 0; } };\n";
+    assert_eq!(against(Oracle::Fteqcc, theirs, ours), []);
+    assert!(!against(Oracle::Qcc, theirs, ours).is_empty());
+    let returns = "float x;\nvoid() f = { x = 1; };\n";
+    assert!(matches!(
+        against(Oracle::Fteqcc, theirs, returns).first(),
+        Some(Difference::Ending(..))
+    ));
+}
+
+// spec DIFF-12.9: against FTEQCC a function definition inside a body's locals, as a state's
+// `[frame, next]` declares `next` there, is a global and is paired with FTEQCC's.
+#[test]
+fn against_fteqcc_a_states_next_function_is_a_global() {
+    let theirs =
+        "void() a;\nvoid() b;\nvoid() a = [1, b] { local float q; q = 1; };\nvoid() b = {};\n";
+    let ours = "void() a = [1, b] { local float q; q = 1; };\nvoid() b = {};\n";
+    assert_eq!(against(Oracle::Fteqcc, theirs, ours), []);
 }

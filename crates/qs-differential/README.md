@@ -51,7 +51,9 @@ depends on it (`layers.toml`); outside the workspace, the `qc_vm` fuzz target
   of calls is compared through the definitions' names and types: the ending, the builtins, the
   named globals and fields, the mock engine and, for the same statements, the statements run.
   The `compiler-diff` binary (`src/bin/compiler-diff.rs`) runs it on progs files;
-  `cargo xtask compiler-diff` compiles id 1.01 three ways and runs it.
+  `cargo xtask compiler-diff` compiles id 1.01 three ways and runs it, and with `--full` the
+  rerelease against the pinned FTEQCC (`calls::Oracle`, DIFF-12.8, DIFF-12.9), adding a row of
+  the results table `target/compiler-diff/summary.md` for each pair.
 
 ## Tests
 

@@ -9,8 +9,13 @@
 //! codebases and runs this binary.
 //!
 //! ```text
-//! compiler-diff --mode <fast|full> --codebase <id> --theirs <qcc progs> --ours <progs>...
+//! compiler-diff --mode <fast|full> --codebase <id> [--oracle <qcc|fteqcc>] [--summary <file>]
+//!     --theirs <progs> --ours <progs>...
 //! ```
+//!
+//! `--theirs` is the oracle compiler's progs: id's `qcc`'s for id 1.01, the pinned FTEQCC's
+//! for the rerelease (DIFF-12.8), named by `--oracle`, `qcc` when it is not given (DIFF-12.9). With `--summary`, a row of the results table is added to the
+//! file for each pair.
 //!
 //! `--mode fast` makes 32 rounds of calls to each function, `--mode full` 128 (DIFF-12.6).
 //! It exits 0 when every pair has no divergence and the calls executed at least 90% of the
@@ -25,12 +30,13 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use qs_differential::calls::{CodebaseReport, FAST_ROUNDS, FULL_ROUNDS, run_codebase};
+use qs_differential::calls::{CodebaseReport, FAST_ROUNDS, FULL_ROUNDS, Oracle, run_codebase};
 
 /// The divergences printed for each pair; the rest are counted.
 const PRINTED: usize = 10;
 
-const USAGE: &str = "usage: compiler-diff --mode <fast|full> --codebase <id> --theirs <progs> \
+const USAGE: &str = "usage: compiler-diff --mode <fast|full> --codebase <id> \
+                     [--oracle <qcc|fteqcc>] [--summary <file>] --theirs <progs> \
                      --ours <progs> [--ours <progs>...]";
 
 fn main() -> ExitCode {
@@ -49,6 +55,8 @@ fn main() -> ExitCode {
 struct Options {
     rounds: u32,
     codebase: String,
+    oracle: Oracle,
+    summary: Option<PathBuf>,
     theirs: PathBuf,
     ours: Vec<PathBuf>,
 }
@@ -56,6 +64,8 @@ struct Options {
 fn parse(args: &[String]) -> Result<Options, String> {
     let mut rounds = FAST_ROUNDS;
     let mut codebase = None;
+    let mut oracle = Oracle::Qcc;
+    let mut summary = None;
     let mut theirs = None;
     let mut ours = Vec::new();
     let mut rest = args.iter();
@@ -70,6 +80,14 @@ fn parse(args: &[String]) -> Result<Options, String> {
                 };
             }
             "--codebase" => codebase = Some(value()?.clone()),
+            "--oracle" => {
+                oracle = match value()?.as_str() {
+                    "qcc" => Oracle::Qcc,
+                    "fteqcc" => Oracle::Fteqcc,
+                    other => return Err(format!("--oracle takes qcc or fteqcc, not {other:?}")),
+                };
+            }
+            "--summary" => summary = Some(PathBuf::from(value()?)),
             "--theirs" => theirs = Some(PathBuf::from(value()?)),
             "--ours" => ours.push(PathBuf::from(value()?)),
             other => return Err(format!("unknown argument {other:?}\n{USAGE}")),
@@ -81,6 +99,8 @@ fn parse(args: &[String]) -> Result<Options, String> {
     Ok(Options {
         rounds,
         codebase: codebase.ok_or(USAGE)?,
+        oracle,
+        summary,
         theirs: theirs.ok_or(USAGE)?,
         ours,
     })
@@ -98,22 +118,29 @@ fn run(args: &[String]) -> Result<bool, String> {
         let report = match reports.iter().find(|(bytes, _)| *bytes == ours) {
             Some((_, report)) => report.clone(),
             None => {
-                let report =
-                    run_codebase(&theirs, &ours, options.rounds).map_err(|e| e.to_string())?;
+                let report = run_codebase(options.oracle, &theirs, &ours, options.rounds)
+                    .map_err(|e| e.to_string())?;
                 reports.push((ours.clone(), report.clone()));
                 report
             }
         };
-        all_ok &= print(&options.codebase, path, ours == theirs, &report);
+        let passed = print(&options.codebase, path, ours == theirs, &report);
+        if let Some(summary) = &options.summary {
+            add_row(summary, &options, path, &report)?;
+        }
+        all_ok &= passed;
     }
     Ok(all_ok)
 }
 
 /// Prints one pair's report and returns whether it passed (DIFF-12.5).
 fn print(codebase: &str, ours: &std::path::Path, same: bool, report: &CodebaseReport) -> bool {
-    println!("compiler-diff: {codebase}, qcc against {}", ours.display());
+    println!(
+        "compiler-diff: {codebase}, the oracle's against {}",
+        ours.display()
+    );
     if same {
-        println!("      the same bytes as qcc's");
+        println!("      the same bytes as the oracle's");
     }
     let mut printed = 0_usize;
     for (name, scenario) in &report.scenarios {
@@ -152,4 +179,78 @@ fn print(codebase: &str, ours: &std::path::Path, same: bool, report: &CodebaseRe
         println!("FAIL  {line}; the bar is no divergence and 90% of statements");
     }
     report.passes()
+}
+
+/// Adds the row of `report`, our progs at `ours` against the oracle's, to the results table
+/// at `summary` (DIFF-12.8).
+fn add_row(
+    summary: &std::path::Path,
+    options: &Options,
+    ours: &std::path::Path,
+    report: &CodebaseReport,
+) -> Result<(), String> {
+    use std::io::Write as _;
+    let name = |path: &std::path::Path| {
+        path.file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
+    };
+    let row = report.summary_row(&options.codebase, &name(&options.theirs), &name(ours));
+    std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(summary)
+        .and_then(|mut file| file.write_all(row.as_bytes()))
+        .map_err(|e| format!("{}: {e}", summary.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        reason = "test code: a failed unwrap is a failed test"
+    )]
+
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
+
+    use qs_differential::calls::{CodebaseReport, Oracle};
+
+    use super::{Options, add_row};
+
+    // spec DIFF-12.8: each pair compared adds its row to the results table, after the rows
+    // already there.
+    #[test]
+    fn each_pair_adds_a_row_to_the_table() {
+        let dir = std::env::temp_dir().join(format!("compiler-diff-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let summary = dir.join("summary.md");
+        std::fs::write(&summary, "head\n").unwrap();
+        let options = Options {
+            rounds: 1,
+            codebase: "rerelease".to_owned(),
+            oracle: Oracle::Fteqcc,
+            summary: Some(summary.clone()),
+            theirs: PathBuf::from("x/oracle.dat"),
+            ours: Vec::new(),
+        };
+        let report = CodebaseReport {
+            scenarios: Vec::new(),
+            executed: BTreeSet::new(),
+            total_statements: 4,
+        };
+        add_row(&summary, &options, &PathBuf::from("x/ours.dat"), &report).unwrap();
+        add_row(
+            &summary,
+            &options,
+            &PathBuf::from("x/ours-fold.dat"),
+            &report,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&summary).unwrap(),
+            "head\n| rerelease | oracle.dat | ours.dat | 0 | 0 of 4 (0.0%) | fail |\n\
+             | rerelease | oracle.dat | ours-fold.dat | 0 | 0 of 4 (0.0%) | fail |\n"
+        );
+        assert!(add_row(&dir.join("no/such/dir.md"), &options, &summary, &report).is_err());
+    }
 }
