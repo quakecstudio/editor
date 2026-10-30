@@ -953,7 +953,9 @@ impl<'a> Compiler<'a> {
     /// `GE_F`, `LE_F` and `AND`) with `IF` to the label, and `GOTO` to `default:` or past the
     /// switch; `break` goes past it.
     fn switch(&mut self, switch: &ast::SwitchStmt, span: Span) -> Lowered<()> {
+        // FTE-3.5: a call's value is held before the body's calls overwrite the return global.
         let value = self.expr(&switch.scrutinee().at(span)?)?;
+        let value = self.hold(value, span)?;
         let to_tests = self.program.emit(Opcode::Goto, 0, 0);
         self.jumps.push(Jumps::default());
         let mut cases: Vec<(ast::CaseLabel, usize)> = Vec::new();

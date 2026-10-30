@@ -481,6 +481,22 @@ fn a_switch_tests_its_cases_after_its_body() {
     );
 }
 
+// spec FTE-3.5: a call's value switched on is copied out of the return global before the jump to
+// the tests, so a call in the body does not change what the cases test
+#[test]
+fn a_switch_holds_a_calls_value() {
+    let p = fte_progs(
+        "float() f = #1;\nvoid() g = #2;\nvoid() t = { switch (f()) { case 1: g(); break; } };\n",
+    );
+    let one = immediate(&p, 1.0);
+    let t = body(&p, "t");
+    assert_eq!(t[0].op, u32::from(Opcode::Call0.number()));
+    assert_eq!(t[1], st(StoreF, 1, t[1].b, 0));
+    assert_eq!(t[2].op, u32::from(Goto.number()));
+    let test = t.iter().find(|s| s.op == u32::from(EqF.number())).unwrap();
+    assert_eq!((test.a, test.b), (t[1].b, one));
+}
+
 // spec FTE-5.3: `x++` copies the old value to a temporary, stores the temporary plus 1 back,
 // and is the old value; a `x--` whose value is not read is one ADD_F (FTEF-29.13), as the
 // pinned FTEQCC writes both

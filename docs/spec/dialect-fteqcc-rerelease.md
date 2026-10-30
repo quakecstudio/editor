@@ -112,6 +112,10 @@ Vanilla `qcc` has no `switch`; the words `switch`, `case` and `default` are ordi
 - **FTE-3.4** Progs encoding: a `switch` lowers to a chain of equality tests and `GOTO`s over
   vanilla opcodes (`EQ_F` or the comparison for the switched type, `IFNOT`, `GOTO`), with no
   new opcode; a `break` becomes a `GOTO` to after the `switch`.
+- **FTE-3.5** A call's value switched on is copied out of the return global to a temporary
+  before the `GOTO` to the tests (`QCC_ClobberDef(NULL);` before `patch1 =
+  QCC_Generate_OP_GOTO();`), so a call in the body does not change the value the cases test:
+  `switch (ceil(t)) { case 1: centerprint(self, "a"); break; }` tests the copy.
 
 ## FTE-4 `break` and `continue`
 
