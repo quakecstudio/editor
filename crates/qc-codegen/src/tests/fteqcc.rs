@@ -1300,3 +1300,49 @@ fn autocvar_is_its_global_given_the_default() {
     let t = body(&p, "t");
     assert_eq!(t[0], st(StoreF, cvar, global(&p, "x"), 0));
 }
+
+// spec FTE-19.11: a shift of two constants folds, each truncated to an int
+#[test]
+fn a_shift_of_constants_folds() {
+    let p = fte_progs("float x;\nvoid() t = { x = 1 << 23; x = 255.9 >> 4; };\n");
+    let t = body(&p, "t");
+    assert_eq!(
+        t[0],
+        st(StoreF, immediate(&p, 8_388_608.0), global(&p, "x"), 0)
+    );
+    assert_eq!(t[1], st(StoreF, immediate(&p, 15.0), global(&p, "x"), 0));
+}
+
+// spec FTE-19.11: a shift by a value is floor(a * pow(2, b)) with the program's pow and floor,
+// and `>>` divides
+#[test]
+fn a_shift_by_a_value_is_floor_of_a_power() {
+    let p = fte_progs(
+        "float(float a, float b) pow = #1;\nfloat(float a) floor = #2;\nfloat x, n;\n\
+         void() t = { x = 3 << n; x = 3 >> n; };\n",
+    );
+    let (pow, floor) = (global(&p, "pow"), global(&p, "floor"));
+    let (three, n) = (immediate(&p, 3.0), global(&p, "n"));
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, immediate(&p, 2.0), 4, 0));
+    assert_eq!(t[1], st(StoreF, n, 7, 0));
+    assert_eq!(t[2], st(Call2, pow, 0, 0));
+    assert_eq!(t[3], st(MulF, three, 1, t[3].c));
+    assert_eq!(t[4], st(StoreF, t[3].c, 4, 0));
+    assert_eq!(t[5], st(Opcode::Call1, floor, 0, 0));
+    assert_eq!(t[6], st(StoreF, 1, global(&p, "x"), 0));
+    assert_eq!(t[10], st(DivF, three, 1, t[10].c));
+}
+
+// spec FTE-19.11: with no pow, a shift by a value calls bitshift, `>>` with the count negated
+#[test]
+fn a_shift_without_pow_calls_bitshift() {
+    let p = fte_progs(
+        "float(float a, float b) bitshift = #1;\nfloat x, n;\nvoid() t = { x = 3 >> n; };\n",
+    );
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(SubF, immediate(&p, 0.0), global(&p, "n"), t[0].c));
+    assert_eq!(t[1], st(StoreF, immediate(&p, 3.0), 4, 0));
+    assert_eq!(t[2], st(StoreF, t[0].c, 7, 0));
+    assert_eq!(t[3], st(Call2, global(&p, "bitshift"), 0, 0));
+}

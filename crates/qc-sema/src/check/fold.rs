@@ -13,6 +13,7 @@
 use qc_diag::Code;
 use qc_preproc::Op;
 
+use crate::cast::ConstType;
 use crate::check::constant::Constant;
 
 /// What folding made of an opcode.
@@ -50,6 +51,15 @@ pub(crate) fn fold(
         (None, Some(b)) => right(op, b, notices),
         (None, None) => None,
     }
+}
+
+/// FTEF-26.2: the float `op` of the float constants `a` and `b` folds to, as
+/// `QCC_PR_StatementFlags` folds it, for a compiler that emits FTEQCC's statements; `None` when
+/// it does not fold to a float.
+#[must_use]
+pub fn fold_floats(op: Op, a: f32, b: f32) -> Option<f32> {
+    let folded = both(op, Constant::float(a), Constant::float(b), &mut Vec::new())?;
+    (folded.ty == ConstType::Float).then(|| folded.f())
 }
 
 /// `QCC_MakeFloatConst` of a C truth value, `0.0` or `1.0`.

@@ -680,6 +680,18 @@ and sets flags with `self.flags &~= FL_ONGROUND` and `other.flags (+) FL_INSHELT
   read as it is, `ifstring` being off by default. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_StatementFlags`.
+- **FTE-19.11** `a << b` and `a >> b` of floats are `OP_LSHIFT_F` and `OP_RSHIFT_F`. Two
+  constants fold, each truncated to an `int` and shifted (`QCC_MakeFloatConst
+  (QCC_PR_RoundFloatConst(eval_a) << QCC_PR_RoundFloatConst(eval_b))`, `dialect-fteqcc.md`
+  FTEF-26.2). Otherwise, on the vanilla opcodes, which have no `OP_LSHIFT_I`, they are emulated
+  with the program's functions (`QCC_PR_EmulationFunc`): with `powf`, or else `pow`, and
+  `floor`, `a << b` is `floor(a * pow(2, b))` ("a<<b === floor(a*pow(2,b))") and `a >> b`
+  `floor(a / pow(2, b))`: `CALL2` of the power with the float 2 and `b`, `MUL_F` or `DIV_F` of
+  `a` and its value, and `CALL1` of `floor`; else with `bitshift`, `bitshift(a, b)` and
+  `bitshift(a, 0 - b)` (`SUB_F` of 0 and `b` first); else the warning "bitshift function not
+  defined: cannot emulate OP_LSHIFT_F*", which this profile does not lower. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags`.
 ## FTE-20 Further literals
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_Lex`, `QCC_PR_LexNumber` and `QCC_PR_LexEscapedCodepoint`,

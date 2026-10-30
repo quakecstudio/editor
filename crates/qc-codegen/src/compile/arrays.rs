@@ -79,6 +79,15 @@ pub(super) struct ElementStore {
     pub(super) ty: ValueType,
 }
 
+/// Which way a shift goes (FTE-19.11).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Shift {
+    /// `<<`.
+    Left,
+    /// `>>`.
+    Right,
+}
+
 /// Where a subscript's element is.
 enum Slot {
     /// At this global, for a constant index.
@@ -655,6 +664,89 @@ impl Compiler<'_> {
         self.program
             .emit(Opcode::Call1, operand(error).at(span)?, 0);
         Ok(())
+    }
+
+    /// FTEQCC's `a << b` and `a >> b` of floats (FTE-19.11): two constants folded as FTEQCC
+    /// folds them, else on the vanilla opcodes `floor(a * pow(2, b))` or `floor(a / pow(2, b))`
+    /// with the program's `powf` or `pow` and `floor`, else `bitshift(a, b)` or `bitshift(a, 0 -
+    /// b)`.
+    pub(super) fn shift(
+        &mut self,
+        shift: Shift,
+        left: &Value,
+        right: &Value,
+        (op_span, span): (Span, Span),
+    ) -> Lowered<Value> {
+        if self.type_of(left).etype() != Etype::Float || self.type_of(right).etype() != Etype::Float
+        {
+            return Err(Abort::Internal(Internal::Unsupported, op_span));
+        }
+        let op = match shift {
+            Shift::Left => qc_preproc::Op::LshiftF,
+            Shift::Right => qc_preproc::Op::RshiftF,
+        };
+        if let (Some(a), Some(b)) = (self.constant_word(left), self.constant_word(right))
+            && let Some(folded) = qc_sema::fold_floats(op, f32::from_bits(a), f32::from_bits(b))
+        {
+            let place = self.program.immediate(&Literal::Float(folded)).at(span)?;
+            return self.def_value(place, span);
+        }
+        let float = ValueType::simple(Etype::Float);
+        let power = self.defined("powf").or_else(|| self.defined("pow"));
+        if let (Some(power), Some(floor)) = (power, self.defined("floor")) {
+            let two = self.float_immediate(2, span)?;
+            self.store_word(two, OFS_PARM0, Etype::Float, span)?;
+            self.store_word(
+                right.ofs,
+                OFS_PARM0.checked_add(3).at(span)?,
+                Etype::Float,
+                span,
+            )?;
+            self.program
+                .emit(Opcode::Call2, operand(power).at(span)?, 0);
+            let scale = match shift {
+                Shift::Left => Opcode::MulF,
+                Shift::Right => Opcode::DivF,
+            };
+            let scaled = self
+                .program
+                .emit_result(scale, left.ofs, OFS_RETURN, Etype::Float)
+                .at(span)?;
+            self.store_word(scaled, OFS_PARM0, Etype::Float, span)?;
+            self.program
+                .emit(Opcode::Call1, operand(floor).at(span)?, 0);
+            self.return_type = float;
+            return Ok(Value {
+                ofs: OFS_RETURN,
+                kind: ValueKind::Return,
+            });
+        }
+        let bitshift = self
+            .defined("bitshift")
+            .ok_or(Abort::Internal(Internal::Unsupported, op_span))?;
+        let count = match shift {
+            Shift::Left => right.ofs,
+            Shift::Right => {
+                let zero = self.float_immediate(0, span)?;
+                self.program
+                    .emit_result(Opcode::SubF, zero, right.ofs, Etype::Float)
+                    .at(span)?
+            }
+        };
+        self.store_word(left.ofs, OFS_PARM0, Etype::Float, span)?;
+        self.store_word(
+            count,
+            OFS_PARM0.checked_add(3).at(span)?,
+            Etype::Float,
+            span,
+        )?;
+        self.program
+            .emit(Opcode::Call2, operand(bitshift).at(span)?, 0);
+        self.return_type = float;
+        Ok(Value {
+            ofs: OFS_RETURN,
+            kind: ValueKind::Return,
+        })
     }
 
     /// FTEQCC's `a % b` of floats on the vanilla opcodes (FTE-19.8), `OP_MOD_F`'s emulation:

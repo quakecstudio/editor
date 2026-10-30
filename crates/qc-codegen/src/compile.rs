@@ -1438,9 +1438,17 @@ impl<'a> Compiler<'a> {
                 let right = self.expr(&binary.rhs().at(span)?)?;
                 return self.modulo(&left, &right, (op_span, span));
             }
-            ast::BinaryOp::Shl
-            | ast::BinaryOp::Shr
-            | ast::BinaryOp::ShlAssign
+            op @ (ast::BinaryOp::Shl | ast::BinaryOp::Shr) => {
+                let left = self.left_operand(&binary.lhs().at(span)?)?;
+                let right = self.expr(&binary.rhs().at(span)?)?;
+                let shift = if op == ast::BinaryOp::Shl {
+                    arrays::Shift::Left
+                } else {
+                    arrays::Shift::Right
+                };
+                return self.shift(shift, &left, &right, (op_span, span));
+            }
+            ast::BinaryOp::ShlAssign
             | ast::BinaryOp::ShrAssign
             | ast::BinaryOp::Comma
             | ast::BinaryOp::Pow
