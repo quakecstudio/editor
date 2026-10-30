@@ -10,11 +10,12 @@
 use qc_progs::crc::crc_block;
 use qc_progs::opcode::Opcode;
 use qc_progs::{Def as DefRecord, PROGS_DEF_SAVEGLOBAL, ProgsFile};
+use qc_sema::ModuleIndex;
 use qc_types::{Etype, Slot};
 
 use crate::Internal;
 use crate::compile::latin1;
-use crate::program::{Def, Program, RESERVED_OFS};
+use crate::program::{Def, Program, RESERVED_OFS, ValueType, type_words};
 
 /// `PR_WriteProgdefs` (QC-25.5, QC-25.6): the text of `progdefs.h` and the CRC of it up to the
 /// `#define` line, which is appended with that CRC.
@@ -103,6 +104,40 @@ pub(crate) fn needs_fte32(progs: &ProgsFile) -> bool {
             .any(|statement| statement.op == goto && !(-BIG_JUMP..=BIG_JUMP).contains(&statement.a))
 }
 
+/// FTE-13.13: the records of the array element `name` of type `ty` at `ofs`: its own, a struct
+/// element's typed `ev_struct`, then each member's that starts at a word, `name.member`, an
+/// array member as one record.
+fn element_records(
+    out: &mut Vec<DefRecord>,
+    program: &mut Program,
+    index: &ModuleIndex,
+    (name, ty, ofs): (&str, &ValueType, u32),
+) -> Result<(), Internal> {
+    let shape = match ty {
+        ValueType::Of(t) => index.structs.get(t),
+        ValueType::FloatField => None,
+    };
+    let type_bits = if shape.is_some() {
+        EV_STRUCT
+    } else {
+        u32::from(ty.etype().number())
+    };
+    out.push(DefRecord {
+        type_bits,
+        ofs,
+        s_name: program.copy_string(&latin1(name))?,
+    });
+    for member in shape.map(|s| s.members.as_slice()).unwrap_or_default() {
+        let at = ofs.checked_add(member.word).ok_or(Internal::TooLarge)?;
+        out.push(DefRecord {
+            type_bits: u32::from(ValueType::Of(member.ty.clone()).etype().number()),
+            ofs: at,
+            s_name: program.copy_string(&latin1(&format!("{name}.{}", member.name)))?,
+        });
+    }
+    Ok(())
+}
+
 /// FTE-24.2: each version 6 operand from 32768 to 65535 as the `short` its low 16 bits are.
 pub(crate) fn wrap_short_operands(progs: &mut ProgsFile) {
     const SHORT_SPAN: i32 = 0x1_0000;
@@ -115,7 +150,26 @@ pub(crate) fn wrap_short_operands(progs: &mut ProgsFile) {
     }
 }
 
-pub(crate) fn progs(mut program: Program, crc: u16) -> Result<ProgsFile, Internal> {
+/// How the global definition list is written (FTE-13.13).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Records {
+    /// A record for each definition, as id's `qcc` writes them.
+    Qcc,
+    /// As FTEQCC writes them: an array's head left out for a record for each element, and a
+    /// struct element's members after it.
+    Fteqcc,
+}
+
+/// FTEQCC's `ev_struct`, the type an element of an array of structs is written with
+/// (`progslib.h`'s `etype_t`).
+const EV_STRUCT: u32 = 14;
+
+pub(crate) fn progs(
+    mut program: Program,
+    crc: u16,
+    index: &ModuleIndex,
+    records: Records,
+) -> Result<ProgsFile, Internal> {
     let mut global_defs = vec![DefRecord::default()];
     let mut field_defs = vec![DefRecord::default()];
     let defs = std::mem::take(&mut program.defs);
@@ -132,6 +186,20 @@ pub(crate) fn progs(mut program: Program, crc: u16) -> Result<ProgsFile, Interna
             && etype != Etype::Function
             && etype != Etype::Field
             && def.scope.is_none();
+        if records == Records::Fteqcc
+            && let Some(count) = def.count
+        {
+            let words = type_words(index, &def.ty);
+            for i in 0..count {
+                let ofs = i
+                    .checked_mul(words)
+                    .and_then(|w| w.checked_add(def.ofs))
+                    .ok_or(Internal::TooLarge)?;
+                let name = format!("{}[{i}]", def.name);
+                element_records(&mut global_defs, &mut program, index, (&name, &def.ty, ofs))?;
+            }
+            continue;
+        }
         let mut type_bits = u32::from(etype.number());
         if saved {
             type_bits |= PROGS_DEF_SAVEGLOBAL;

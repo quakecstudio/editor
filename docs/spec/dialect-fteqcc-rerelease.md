@@ -415,6 +415,16 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   stored with `STORE_F` to a temporary. A store through a subscript by a value calls the
   array's setter (FTE-13.11). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_LoadFromArray`,
   `QCC_PR_ParseRefArrayPointer`.
+- **FTE-13.13** FTEQCC writes no definition for an array's head, only for its elements
+  (`QCC_WriteData`: "the head of an array/struct is never written. only, its member fields
+  are."), each made by `QCC_PR_DummyDef` and named `NAME[i]` (`QC_snprintfz(array,
+  sizeof(array), "[%i]", a);`) at the element's first word, typed as the element: an element of
+  an array of structs as `ev_struct` (14 in `progslib.h`'s `etype_t`), followed by each member's
+  definition, `NAME[i].member`; a vector array's elements have no `_x`, `_y` or `_z`. So
+  `string s[2];` writes `s[0]` and `s[1]`. This profile writes an element of an array of
+  unions as a struct's, as the model keeps no union apart from a struct, and a member that is an
+  array as one definition. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qccmain.c`, `QCC_WriteData`; `engine/qclib/qcc_pr_comp.c`, `QCC_PR_DummyDef`.
 
 ## FTE-14 `typedef struct` and member access
 

@@ -1426,3 +1426,41 @@ fn autoprototyping_makes_definitions_in_their_written_order() {
         fte_progs("#pragma autoproto\nvoid() t = { later = 1; };\nfloat first;\nfloat later;\n");
     assert!(global(&p, "first") < global(&p, "later"));
 }
+
+// spec FTE-13.13: an array writes no definition of its own, one for each element, and an array
+// of structs each element's members after it
+#[test]
+fn an_array_is_written_as_its_elements() {
+    let p = fte_progs(
+        "typedef struct { string m; float f; } pose;\nstring s[2];\npose poses[2];\nvoid() t = {};\n",
+    );
+    let names: Vec<String> = p
+        .global_defs
+        .iter()
+        .map(|d| string(&p, d.s_name))
+        .filter(|n| n.starts_with('s') || n.starts_with("poses"))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "s[0]",
+            "s[1]",
+            "poses[0]",
+            "poses[0].m",
+            "poses[0].f",
+            "poses[1]",
+            "poses[1].m",
+            "poses[1].f"
+        ]
+    );
+    let first = p
+        .global_defs
+        .iter()
+        .find(|d| string(&p, d.s_name) == "poses[1]")
+        .unwrap();
+    assert_eq!(first.type_bits & 0x7fff, 14);
+    assert_eq!(
+        i32::try_from(first.ofs).unwrap(),
+        global(&p, "poses[0]") + 2
+    );
+}

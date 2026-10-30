@@ -230,12 +230,18 @@ fn compile_lowered(
         .iter()
         .map(|origin| origin.map_or(0, |(file, at)| line_of(file, at)))
         .collect();
-    let mut progs =
-        write::progs(compiler.program, crc).map_err(|internal| CompileError::Internal {
+    let records = if compiler.dialect == Dialect::Fteqcc {
+        write::Records::Fteqcc
+    } else {
+        write::Records::Qcc
+    };
+    let mut progs = write::progs(compiler.program, crc, &index, records).map_err(|internal| {
+        CompileError::Internal {
             file: FileId(0),
             span: Span::new(0, 0),
             internal,
-        })?;
+        }
+    })?;
     if compiler.dialect == Dialect::Fteqcc {
         if write::needs_fte32(&progs) {
             progs.format = Format::Fte32;

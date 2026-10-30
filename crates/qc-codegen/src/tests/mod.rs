@@ -94,12 +94,20 @@ pub(crate) fn errors(source: &str) -> Vec<String> {
     }
 }
 
-/// The global offset of the first global definition named `name`.
+/// The global offset of the first global definition named `name`; for an array, whose head FTEQCC does not
+/// write (FTE-13.13), its first element's, `name[0]`.
 pub(crate) fn global(progs: &ProgsFile, name: &str) -> i32 {
+    let first = format!("{name}[0]");
     let def = progs
         .global_defs
         .iter()
         .find(|d| string(progs, d.s_name) == name)
+        .or_else(|| {
+            progs
+                .global_defs
+                .iter()
+                .find(|d| string(progs, d.s_name) == first)
+        })
         .unwrap_or_else(|| panic!("no global {name}"));
     i32::try_from(def.ofs).unwrap()
 }
