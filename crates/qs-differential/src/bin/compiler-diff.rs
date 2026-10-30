@@ -30,7 +30,9 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use qs_differential::calls::{CodebaseReport, FAST_ROUNDS, FULL_ROUNDS, Oracle, run_codebase};
+use qs_differential::calls::{
+    CodebaseReport, FAST_ROUNDS, FULL_ROUNDS, Oracle, run_codebase, uncovered,
+};
 
 /// The divergences printed for each pair; the rest are counted.
 const PRINTED: usize = 10;
@@ -135,8 +137,7 @@ fn run(args: &[String]) -> Result<bool, String> {
             add_row(summary, &options, path, &report)?;
         }
         if let Some(uncovered) = &options.uncovered {
-            let text = qs_differential::calls::uncovered(&theirs, &report.executed)
-                .map_err(|e| e.to_string())?;
+            let text = uncovered(&theirs, &report.executed).map_err(|e| e.to_string())?;
             std::fs::write(uncovered, text).map_err(|e| format!("{}: {e}", uncovered.display()))?;
         }
         all_ok &= passed;
