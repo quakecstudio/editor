@@ -7,8 +7,8 @@ use std::io::Write as _;
 use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader, Lit};
 use qs_render::{
-    AliasDraw, AliasEntity, AliasModel, Camera, GAMMA, Image, LightStyles, MapMesh, MeshBuilder,
-    ModelFrame, Palette, Placement, Surface, bob_rotate, light_point,
+    AliasDraw, AliasEntity, AliasModel, Camera, Extras, GAMMA, Image, LightStyles, MapMesh,
+    MeshBuilder, ModelFrame, Palette, Placement, Surface, bob_rotate, light_point,
 };
 use qs_sim::World;
 use qs_vfs::{LoadedFile, StdFs, Vfs};
@@ -338,8 +338,12 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
             .ok()
     });
     let mut builder = MeshBuilder::new(&palette);
+    let extras = Extras {
+        lit: lit.as_ref(),
+        ..Extras::default()
+    };
     builder
-        .add_lit(&bsp, lit.as_ref(), &placements)
+        .add_with(&bsp, &extras, &placements)
         .map_err(|e| e.to_string())?;
     brushes.extend(
         others

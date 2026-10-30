@@ -12,7 +12,7 @@ use qs_bsp::{
     Model, Node, Plane, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo, Texture,
 };
 
-use super::{MapMesh, MeshBuilder, MeshError, Palette, Placement};
+use super::{Extras, MapMesh, MeshBuilder, MeshError, Palette, Placement};
 use crate::styles::LightStyles;
 
 /// One face of a test map: a 64 by 32 rectangle in the z = 0 plane, lit by `lighting`.
@@ -666,8 +666,12 @@ fn a_lit_file_lights_each_channel() {
     let map = bsp(&MapSpec::default(), &lighting);
     let palette = palette();
     let mut builder = MeshBuilder::new(&palette);
+    let extras = Extras {
+        lit: Some(&lit),
+        ..Extras::default()
+    };
     builder
-        .add_lit(&map, Some(&lit), &[Placement::WORLD])
+        .add_with(&map, &extras, &[Placement::WORLD])
         .unwrap();
     let mesh = builder.finish();
     // 50, 100, 150 at 256 >> 7: 100, 200, 300 capped to 255.
@@ -676,4 +680,30 @@ fn a_lit_file_lights_each_channel() {
     // REND-6.2: an unsigned sum shifts as unsigned, so a letter before a is bright, not
     // its low byte.
     assert_eq!(texel_for(&mesh, &style(0, b"0"))[0], 255);
+}
+
+// MAP-24: a texture with a palette of its own is read through it, the others through the
+// mesh's
+#[test]
+fn a_texture_may_carry_its_own_palette() {
+    let lighting = samples(&[50]);
+    let map = bsp(&MapSpec::default(), &lighting);
+    let shared = palette();
+    let own_bytes: Vec<u8> = (0..=255_u8).flat_map(|i| [255 - i, 0, i]).collect();
+    let own = Palette::read(&own_bytes).unwrap();
+    let mut builder = MeshBuilder::new(&shared);
+    let palettes = [Some(own.clone())];
+    let extras = Extras {
+        palettes: &palettes,
+        ..Extras::default()
+    };
+    builder
+        .add_with(&map, &extras, &[Placement::WORLD])
+        .unwrap();
+    builder.add(&map, &[Placement::WORLD]).unwrap();
+    let mesh = builder.finish();
+    // The texture's pixels are all index 7.
+    assert_eq!(&mesh.textures[0].rgba[..4], own.rgba(7).as_slice());
+    assert_eq!(&mesh.textures[1].rgba[..4], shared.rgba(7).as_slice());
+    assert_ne!(own.rgba(7), shared.rgba(7));
 }

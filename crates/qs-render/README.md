@@ -22,8 +22,9 @@ the map view and the preview host share one renderer.
   when a style a face reads changes (REND-5.5), and `MapRenderer::set_lightmap` writes it.
 - `LightStyles::at(strings, time)`: `R_AnimateLight`, every style's value from the strings the
   progs set with `lightstyle` (REND-5).
-- `MeshBuilder::add_lit(bsp, lit, placements)`: a model lit in colour by its map's `.lit`
-  file (REND-6).
+- `MeshBuilder::add_with(bsp, extras, placements)`: a model lit in colour by its map's
+  `.lit` file (REND-6), and its textures each through a palette of its own where `Extras`
+  gives one, as Half-Life's textures carry (MAP-24).
 - `MeshBuilder`: the same for several models of several BSPs, each `Placement` at its
   entity's origin and angles, such as a map's doors and lifts and its item boxes (REND-1.9).
 - `AliasModel::read(name, bytes, palette)`: an `.mdl`'s skins, poses and triangles;

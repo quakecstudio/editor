@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#![expect(clippy::unwrap_used, reason = "test code: a failed unwrap is a failed test")]
+#![expect(
+    clippy::unwrap_used,
+    reason = "test code: a failed unwrap is a failed test"
+)]
 
 use super::intersect;
 use crate::camera::Camera;

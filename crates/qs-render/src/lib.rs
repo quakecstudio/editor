@@ -25,8 +25,8 @@ pub use camera::Camera;
 pub use gpu::{AliasDraw, MapCallback, MapRenderer, ModelFrame, View};
 pub use light::light_point;
 pub use mesh::{
-    Animation, Batch, GAMMA, Image, Lightmaps, MapMesh, MeshBuilder, MeshError, Palette, Placement,
-    Surface, Vertex, frame, mip_levels,
+    Animation, Batch, Extras, GAMMA, Image, Lightmaps, MapMesh, MeshBuilder, MeshError, Palette,
+    Placement, Surface, Vertex, frame, mip_levels,
 };
 pub use pick::Hit;
 pub use styles::{LightStyles, MAX_LIGHTSTYLES};

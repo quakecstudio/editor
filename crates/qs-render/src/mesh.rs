@@ -286,6 +286,25 @@ impl Placement {
     }
 }
 
+/// What a BSP's own lumps do not say about drawing it: its map's `.lit` file and the
+/// palettes of textures that carry their own.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Extras<'a> {
+    /// The map's `.lit` file, which lights its faces in colour (REND-6.1).
+    pub lit: Option<&'a Lit<'a>>,
+    /// For each texture of the BSP, by its slot, a palette of its own, as a Half-Life BSP's or
+    /// WAD3's textures have (MAP-24); a texture past the list, or with `None`, is read through
+    /// the mesh's palette.
+    pub palettes: &'a [Option<Palette>],
+}
+
+impl Extras<'_> {
+    /// Texture `slot`'s own palette, if it has one.
+    fn palette(&self, slot: usize) -> Option<&Palette> {
+        self.palettes.get(slot).and_then(Option::as_ref)
+    }
+}
+
 /// Builds one [`MapMesh`] from models of one or more BSPs, all their faces' light packed into
 /// one atlas.
 pub struct MeshBuilder<'p> {
@@ -325,21 +344,22 @@ impl<'p> MeshBuilder<'p> {
     /// [`MeshError::NoWorld`] when a placement names a model the BSP does not have, and
     /// [`MeshError::AtlasTooLarge`] when the lightmaps do not fit one texture.
     pub fn add(&mut self, bsp: &Bsp<'_>, placements: &[Placement]) -> Result<(), MeshError> {
-        self.add_lit(bsp, None, placements)
+        self.add_with(bsp, &Extras::default(), placements)
     }
 
-    /// [`MeshBuilder::add`], the faces lit in colour by `lit`, the map's `.lit` file, when
-    /// there is one (REND-6.1).
+    /// [`MeshBuilder::add`] with what the BSP's own lumps do not say: the map's `.lit` file
+    /// and each texture's own palette (`extras`).
     ///
     /// # Errors
     ///
     /// As [`MeshBuilder::add`].
-    pub fn add_lit(
+    pub fn add_with(
         &mut self,
         bsp: &Bsp<'_>,
-        lit: Option<&Lit<'_>>,
+        extras: &Extras<'_>,
         placements: &[Placement],
     ) -> Result<(), MeshError> {
+        let lit = extras.lit;
         let base = self.textures.len();
         let mut surfaces = vec![Surface::Lit; bsp.textures.len()];
         let mut by_texture: Vec<Vec<Polygon>> = vec![Vec::new(); bsp.textures.len()];
@@ -398,22 +418,23 @@ impl<'p> MeshBuilder<'p> {
                 }
             }
         }
-        let palette = self.palette;
-        self.textures.extend(
-            bsp.textures
-                .iter()
-                .map(|texture| texture.as_ref().map_or_else(black, |t| image(t, palette))),
-        );
-        self.skies.extend(
-            bsp.textures
-                .iter()
-                .zip(&surfaces)
-                .map(|(texture, &surface)| {
+        // A texture with a palette of its own is read through it; the others through the
+        // mesh's (MAP-24).
+        let palette_of = |slot: usize| extras.palette(slot).unwrap_or(self.palette);
+        self.textures
+            .extend(bsp.textures.iter().enumerate().map(|(slot, texture)| {
+                texture
+                    .as_ref()
+                    .map_or_else(black, |t| image(t, palette_of(slot)))
+            }));
+        self.skies
+            .extend(bsp.textures.iter().zip(&surfaces).enumerate().map(
+                |(slot, (texture, &surface))| {
                     (surface == Surface::Sky)
-                        .then(|| sky_layers(texture.as_ref()?, palette))
+                        .then(|| sky_layers(texture.as_ref()?, palette_of(slot)))
                         .flatten()
-                }),
-        );
+                },
+            ));
         self.animations.extend(bsp.textures.iter().map(|texture| {
             let animation = texture.as_ref()?.animation?;
             Some(Animation {
