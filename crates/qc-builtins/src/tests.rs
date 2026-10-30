@@ -1949,6 +1949,21 @@ mod bodies {
         f.run_err(ServerState::Active, "no vector field origin");
     }
 
+    // spec BUILTIN-16.5: coredump and eprint change nothing QuakeC observes, and eprint's e goes
+    // through NUM_FOR_EDICT, so an edict at or above num_edicts is the fatal bad pointer
+    #[test]
+    fn coredump_and_eprint_print_only() {
+        let mut dump = Fixture::new(28, 0, vec![0], 0);
+        dump.run_ok(ServerState::Active);
+        let mut print = Fixture::new(31, 1, vec![0], 0);
+        print.set_parm_i(0, 0);
+        print.run_ok(ServerState::Active);
+        let mut past = Fixture::new(31, 1, vec![0], 0);
+        let value = 10 * past.machine.edicts().layout().edict_size();
+        past.set_parm_i(0, value);
+        past.run_err(ServerState::Active, "NUM_FOR_EDICT: bad pointer");
+    }
+
     // spec BUILTIN-1.2: a PF_Fixme gap number is the runtime error with id's spelling.
     #[test]
     fn fixme_gap_errors() {
