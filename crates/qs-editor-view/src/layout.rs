@@ -134,6 +134,11 @@ pub(crate) fn line_job(
         }
     }
     place(&mut job);
+    // A job with no section is laid out zero points tall, so an empty line has one empty
+    // section in the font, to be as tall as every other line.
+    if job.sections.is_empty() {
+        job.append("", 0.0, format(plain, false, false));
+    }
     job
 }
 

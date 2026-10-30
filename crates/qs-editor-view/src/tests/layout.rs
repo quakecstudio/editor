@@ -42,6 +42,24 @@ fn font() -> FontId {
 }
 
 #[test]
+fn an_empty_line_is_one_empty_section_in_the_font_as_tall_as_any_line() {
+    let empty = line_job("", &[], &font(), PLAIN, None);
+    assert_eq!(sections(&empty), [("", PLAIN, false, false)]);
+    assert_eq!(empty.sections[0].format.font_id, font());
+    let ctx = Harness::new("").ctx;
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let empty_height = ui.fonts_mut(|f| f.layout_job(empty.clone())).size().y;
+        let text = line_job("x", &[], &font(), PLAIN, None);
+        let text_height = ui.fonts_mut(|f| f.layout_job(text)).size().y;
+        assert!(empty_height > 0.0);
+        assert_eq!(empty_height, text_height);
+    });
+    output.textures_delta.clear();
+    let typing = line_job("", &[], &font(), PLAIN, Some(Preedit { col: 0, text: "k" }));
+    assert_eq!(sections(&typing), [("k", PLAIN, false, true)]);
+}
+
+#[test]
 fn a_line_is_its_styled_runs_and_the_gaps_between_them_in_plain() {
     let spans = [
         span(2, 4, Color32::RED, true),

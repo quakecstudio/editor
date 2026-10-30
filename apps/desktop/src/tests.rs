@@ -236,6 +236,7 @@ fn the_ui_code_has_no_string_literals() {
     for (name, source) in [
         ("shell.rs", include_str!("shell.rs")),
         ("palette.rs", include_str!("palette.rs")),
+        ("project.rs", include_str!("project.rs")),
         ("menu.rs", include_str!("menu.rs")),
         ("lib.rs", include_str!("lib.rs")),
         ("main.rs", include_str!("main.rs")),
@@ -548,7 +549,7 @@ fn the_palette_keys_move_go_back_and_close() {
         .map(|p| p.id.as_str().to_owned());
     assert_eq!(
         prompt.as_deref(),
-        Some("view.resize_panel"),
+        Some("file.open"),
         "the fourth command in id order"
     );
     frame_with(&ctx, &mut app, vec![key(egui::Key::Escape, none)]);

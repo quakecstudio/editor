@@ -12,7 +12,10 @@ use qc_project::MemoryLoader;
 use qs_commands::{CommandError, Registry, Session};
 use serde_json::json;
 
-use crate::{Config, EntryKind, Location, SymbolKind, OPEN_FILE, OPEN_PROJECT, Workbench, WorkbenchError, register};
+use crate::{
+    Config, EntryKind, Location, OPEN_FILE, OPEN_PROJECT, SymbolKind, Workbench, WorkbenchError,
+    register,
+};
 
 const ROOT: &str = "/p";
 
@@ -321,7 +324,10 @@ fn a_command_that_cannot_open_its_target_fails() {
 fn the_config_applies_from_the_next_open() {
     let files = [
         ("progs.src", "progs.dat\na.qc\n"),
-        ("a.qc", "void() f = { local float i; for (i = 0; i < 3; i++) {} };\n"),
+        (
+            "a.qc",
+            "void() f = { local float i; for (i = 0; i < 3; i++) {} };\n",
+        ),
     ];
     let mut workbench = opened(&files);
     let vanilla = workbench.problems().len();
@@ -329,7 +335,11 @@ fn the_config_applies_from_the_next_open() {
         dialect: Some(qc_project::Dialect::Fteqcc),
         ..Config::default()
     });
-    assert_eq!(workbench.problems().len(), vanilla, "not before the next open");
+    assert_eq!(
+        workbench.problems().len(),
+        vanilla,
+        "not before the next open"
+    );
     workbench.open_project(Path::new(ROOT)).unwrap();
     let fteqcc = workbench.problems().len();
     assert!(vanilla > fteqcc, "{vanilla} > {fteqcc}");

@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 
 use qc_ide::AnalysisHost;
 pub use qc_ide::{Code, Config, Diagnostic, Severity, Symbol, SymbolKind};
+pub use qc_project::{Dialect, FsLoader, Target};
 use qc_project::{Loader, ProjectError, normalize};
 use qs_commands::{Command, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
