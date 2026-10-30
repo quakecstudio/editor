@@ -16,7 +16,7 @@
 use qc_edict::EdictNumber;
 use std::cell::Cell;
 
-use qc_builtins::{MockBuiltins, MockEngine};
+use qc_builtins::MockBuiltins;
 use qc_edict::EDICT_HEADER_SIZE;
 use qc_progs::Progs;
 use qc_trace::{Changes, FieldChange, GlobalChange, Header, Record, Step, Text, Trace, TraceError};
@@ -55,7 +55,7 @@ pub(crate) type StringQueue = Cell<Option<(i32, Vec<u8>)>>;
 /// The mock builtins, queueing the temp buffer's text when a builtin changes it (DIFF-3.9).
 pub(crate) struct StringBuiltins<'a> {
     /// The mock engine's builtins (DIFF-6, DIFF-7).
-    pub(crate) builtins: &'a mut MockBuiltins<MockEngine>,
+    pub(crate) builtins: &'a mut MockBuiltins,
     /// Where the change goes.
     pub(crate) queue: &'a StringQueue,
 }

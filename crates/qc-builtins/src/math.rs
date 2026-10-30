@@ -82,12 +82,7 @@ pub fn vectoyaw(v: [f32; 3]) -> f32 {
     if is_zero_f32(v[0]) && is_zero_f32(v[1]) {
         return 0.0;
     }
-    let yaw = f64::from(v[1]).atan2(f64::from(v[0])) * 180.0 / PI;
-    let mut yaw = double_to_int(yaw);
-    if yaw < 0 {
-        yaw = yaw.wrapping_add(360);
-    }
-    int_to_float(yaw)
+    int_to_float(whole_degrees(f64::from(v[1]), f64::from(v[0])))
 }
 
 /// `vectoangles(v)` (BUILTIN-6.5): `'pitch yaw 0'`.
@@ -99,17 +94,9 @@ pub fn vectoangles(v: [f32; 3]) -> [f32; 3] {
         yaw = 0i32;
         pitch = if v[2] > 0.0 { 90 } else { 270 };
     } else {
-        let mut y = double_to_int(f64::from(v[1]).atan2(f64::from(v[0])) * 180.0 / PI);
-        if y < 0 {
-            y = y.wrapping_add(360);
-        }
-        yaw = y;
+        yaw = whole_degrees(f64::from(v[1]), f64::from(v[0]));
         let fwd = f64::from((v[0] * v[0]) + (v[1] * v[1])).sqrt();
-        let mut p = double_to_int(f64::from(v[2]).atan2(fwd) * 180.0 / PI);
-        if p < 0 {
-            p = p.wrapping_add(360);
-        }
-        pitch = p;
+        pitch = whole_degrees(f64::from(v[2]), fwd);
     }
     [int_to_float(pitch), int_to_float(yaw), 0.0]
 }
@@ -165,18 +152,17 @@ pub fn anglemod(a: f32) -> f32 {
 /// `ftos(f)` (BUILTIN-7.1, BUILTIN-7.6): decimal text, with the fixed NaN/infinity forms.
 #[must_use]
 pub fn ftos(f: f32) -> String {
-    if f.is_nan() {
-        return "  nan".to_string();
+    if f.is_finite() {
+        let as_int = float_to_int(f);
+        #[expect(
+            clippy::float_cmp,
+            reason = "spec BUILTIN-7.1: the integer form when f == (int)f, an exact IEEE comparison"
+        )]
+        if f == int_to_float(as_int) {
+            return format!("{as_int}");
+        }
     }
-    if f.is_infinite() {
-        return if f < 0.0 { " -inf" } else { "  inf" }.to_string();
-    }
-    let as_int = float_to_int(f);
-    if eq_f32(f, int_to_float(as_int)) {
-        format!("{as_int}")
-    } else {
-        format_5_1(f)
-    }
+    component_5_1(f)
 }
 
 /// `vtos(v)` (BUILTIN-7.2, BUILTIN-7.7): `'%5.1f %5.1f %5.1f'` with the fixed NaN/infinity forms.
@@ -211,6 +197,17 @@ fn format_5_1(f: f32) -> String {
 
 // ----- small helpers that keep the no-panic, no-`as` conventions -----
 
+/// id's `(int)(atan2(y, x) * 180 / M_PI)`, plus 360 when negative: a whole angle from 0 to
+/// 359 (BUILTIN-6.4, BUILTIN-6.5).
+fn whole_degrees(y: f64, x: f64) -> i32 {
+    let degrees = double_to_int(y.atan2(x) * 180.0 / PI);
+    if degrees < 0 {
+        degrees.wrapping_add(360)
+    } else {
+        degrees
+    }
+}
+
 /// Sine and cosine of a double angle, each rounded to f32 (BUILTIN-6.1, BUILTIN-6.9).
 fn sin_cos_f32(angle: f64) -> (f32, f32) {
     (double_to_float(angle.sin()), double_to_float(angle.cos()))
@@ -219,11 +216,6 @@ fn sin_cos_f32(angle: f64) -> (f32, f32) {
 /// Whether an f32 is +0 or -0 (BUILTIN-6.3, BUILTIN-6.4).
 fn is_zero_f32(f: f32) -> bool {
     f == 0.0
-}
-
-/// An exact f32 == f32 comparison, as id compares `f == (int)f` (BUILTIN-7.1).
-fn eq_f32(a: f32, b: f32) -> bool {
-    a == b
 }
 
 /// A non-negative `u32` (0 to 0x7fff here) as `i32`, without a cast.

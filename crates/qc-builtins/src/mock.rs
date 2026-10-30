@@ -15,8 +15,6 @@
 //! `changelevel` flag, the command buffer and the sizes of the three message buffers
 //! (DIFF-6.5), and the DIFF-6.2 random source.
 
-use crate::engine::Engine;
-
 /// The settings the mock keeps, with the texts of DIFF-2.4.
 ///
 /// `skill`, `deathmatch`, `coop` and `teamplay` start at `1`, `0`, `0`, `0`; a scenario's
@@ -128,6 +126,31 @@ pub const LIMIT_MAX_SOUNDS: usize = 256;
 /// `LIMIT_MAX_MODELS`, the model precache list size (LIMIT-6.2), id's `MAX_MODELS`.
 pub const LIMIT_MAX_MODELS: usize = 256;
 
+/// One of the two precache lists (BUILTIN-10, LIMIT-6.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Precache {
+    /// The sound list, `precache_sound`.
+    Sound,
+    /// The model list, `precache_model`.
+    Model,
+}
+
+impl Precache {
+    /// The list's size: [`LIMIT_MAX_SOUNDS`] or [`LIMIT_MAX_MODELS`] (LIMIT-6.2).
+    #[must_use]
+    pub const fn limit(self) -> usize {
+        match self {
+            Self::Sound => LIMIT_MAX_SOUNDS,
+            Self::Model => LIMIT_MAX_MODELS,
+        }
+    }
+}
+
+/// An append that did not fit: a full precache list (LIMIT-6.2), message buffer
+/// (BUILTIN-13.3) or command buffer (BUILTIN-11.5). Nothing was appended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Overflow;
+
 /// A network message destination id's `WriteDest` resolves `to` to (BUILTIN-13.1).
 ///
 /// A client slot's reliable message ([`MessageDest::One`]) is not kept by the mock and never
@@ -144,11 +167,8 @@ pub enum MessageDest {
     Init,
 }
 
-/// The mock engine fixture (DIFF-6).
-///
-/// It implements [`Engine`] with [`Engine::has_world`] returning `true`, because the mock
-/// answers the class `world` builtins by the deterministic rules of DIFF-7. A real engine
-/// (`qs-sim`, P3-24) will implement [`Engine`] with the true simulation.
+/// The mock engine fixture (DIFF-6). It answers the class `world` builtins by the
+/// deterministic rules of DIFF-7.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MockEngine {
     /// The sound precache list, entry 0 the empty string (DIFF-3.3, BUILTIN-10.3).
@@ -354,47 +374,41 @@ impl MockEngine {
             .unwrap_or(false)
     }
 
-    /// The entry number of `name` in the sound precache list, or `None` (BUILTIN-12.2).
-    ///
-    /// Looked up from entry 0; entry 0 is the empty string.
+    /// The list `kind` names.
+    fn precache_list(&self, kind: Precache) -> &Vec<String> {
+        match kind {
+            Precache::Sound => &self.sound_precache,
+            Precache::Model => &self.model_precache,
+        }
+    }
+
+    /// The entry number of `name` in precache list `kind`, looked up from entry 0, or `None`
+    /// (BUILTIN-9.3, BUILTIN-12.2). Entry 0 is the empty string.
     #[must_use]
-    pub fn sound_index(&self, name: &str) -> Option<usize> {
-        self.sound_precache.iter().position(|entry| entry == name)
+    pub fn precache_index(&self, kind: Precache, name: &str) -> Option<usize> {
+        self.precache_list(kind)
+            .iter()
+            .position(|entry| entry == name)
     }
 
-    /// The entry number of `name` in the model precache list, or `None` (BUILTIN-9.3).
-    #[must_use]
-    pub fn model_index(&self, name: &str) -> Option<usize> {
-        self.model_precache.iter().position(|entry| entry == name)
-    }
-
-    /// Appends `name` to the sound precache list if it is not already there, id's
-    /// `SV_SoundIndex` through `precache_sound` (BUILTIN-10.3). Returns whether the list was
-    /// full (`true` means the name could not be added).
+    /// Appends `name` to precache list `kind` unless it is already there (BUILTIN-10.3).
     ///
-    /// A full list is id's `LIMIT_MAX_SOUNDS` (256) entries (LIMIT-6.2).
-    pub fn precache_sound_name(&mut self, name: &str) -> bool {
-        if self.sound_precache.iter().any(|entry| entry == name) {
-            return false;
+    /// # Errors
+    ///
+    /// [`Overflow`] when the list already has [`Precache::limit`] entries (LIMIT-6.2).
+    pub fn precache(&mut self, kind: Precache, name: &str) -> Result<(), Overflow> {
+        if self.precache_index(kind, name).is_some() {
+            return Ok(());
         }
-        if self.sound_precache.len() >= LIMIT_MAX_SOUNDS {
-            return true;
+        let list = match kind {
+            Precache::Sound => &mut self.sound_precache,
+            Precache::Model => &mut self.model_precache,
+        };
+        if list.len() >= kind.limit() {
+            return Err(Overflow);
         }
-        self.sound_precache.push(name.to_owned());
-        false
-    }
-
-    /// Appends `name` to the model precache list if it is not already there (BUILTIN-10.3).
-    /// Returns whether the list was full. A full list is `LIMIT_MAX_MODELS` (256) entries.
-    pub fn precache_model_name(&mut self, name: &str) -> bool {
-        if self.model_precache.iter().any(|entry| entry == name) {
-            return false;
-        }
-        if self.model_precache.len() >= LIMIT_MAX_MODELS {
-            return true;
-        }
-        self.model_precache.push(name.to_owned());
-        false
+        list.push(name.to_owned());
+        Ok(())
     }
 
     /// Sets lightstyle `style` to `value` (BUILTIN-12.6); `style` is already range-checked by
@@ -405,34 +419,39 @@ impl MockEngine {
         }
     }
 
-    /// Appends `len` bytes to message buffer `dest` (DIFF-6.5), returning whether it overflowed.
+    /// Appends `len` bytes to message buffer `dest` (DIFF-6.5).
     ///
     /// `dest` is 0 (`MSG_BROADCAST`, the unreliable datagram), 2 (`MSG_ALL`, the reliable
     /// datagram) or 3 (`MSG_INIT`, the signon buffer); a client's reliable message
-    /// (`MSG_ONE`) is not kept and never overflows (DIFF-6.5). An append that does not fit is
-    /// id's `SZ_GetSpace: overflow` (BUILTIN-13.3): the size is not changed and `true` is
-    /// returned.
-    pub fn append_message(&mut self, dest: MessageDest, len: usize) -> bool {
+    /// (`MSG_ONE`) is not kept and never overflows (DIFF-6.5).
+    ///
+    /// # Errors
+    ///
+    /// [`Overflow`] when the bytes do not fit, id's `SZ_GetSpace: overflow` (BUILTIN-13.3); the
+    /// size is not changed.
+    pub fn append_message(&mut self, dest: MessageDest, len: usize) -> Result<(), Overflow> {
         let (used, limit) = match dest {
             MessageDest::Broadcast => (&mut self.buffers.unreliable, LIMIT_MAX_DATAGRAM),
             MessageDest::All => (&mut self.buffers.reliable, LIMIT_MAX_DATAGRAM),
             MessageDest::Init => (&mut self.buffers.signon, BUILTIN_SIGNON_SIZE),
-            MessageDest::One => return false,
+            MessageDest::One => return Ok(()),
         };
         match used.checked_add(len) {
             Some(new) if new <= limit => {
                 *used = new;
-                false
+                Ok(())
             }
-            _ => true,
+            _ => Err(Overflow),
         }
     }
 
     /// Appends `text` to the command buffer `localcmd` and `changelevel` use (BUILTIN-11.5).
     ///
-    /// Returns whether the buffer would overflow [`BUILTIN_CMD_TEXT_SIZE`]: when the contents
-    /// plus `text` would reach it, `text` is dropped and `true` returned (BUILTIN-11.5).
-    pub fn append_command(&mut self, text: &[u8]) -> bool {
+    /// # Errors
+    ///
+    /// [`Overflow`] when the contents plus `text` would reach [`BUILTIN_CMD_TEXT_SIZE`]; `text`
+    /// is dropped (BUILTIN-11.5).
+    pub fn append_command(&mut self, text: &[u8]) -> Result<(), Overflow> {
         let fits = self
             .command_buffer
             .len()
@@ -440,9 +459,9 @@ impl MockEngine {
             .is_some_and(|total| total < BUILTIN_CMD_TEXT_SIZE);
         if fits {
             self.command_buffer.extend_from_slice(text);
-            false
+            Ok(())
         } else {
-            true
+            Err(Overflow)
         }
     }
 
@@ -472,15 +491,5 @@ impl MockEngine {
             mins: [0.0; 3],
             maxs: [0.0; 3],
         }
-    }
-}
-
-impl Engine for MockEngine {
-    fn has_world(&self) -> bool {
-        true
-    }
-
-    fn next_rand(&mut self) -> u32 {
-        self.rng.next_rand()
     }
 }
