@@ -172,6 +172,9 @@ pub fn coverage(executed: &BTreeSet<i32>, total: u32) -> f64 {
 pub const FAST_ROUNDS: u32 = 32;
 /// The rounds of calls to each function in the nightly run (DIFF-12.6).
 pub const FULL_ROUNDS: u32 = 128;
+/// The most rounds a function is called in, as a multiple of the rounds asked for, when its
+/// body still has statements no call executed (DIFF-12.16).
+pub const EXTRA_ROUNDS: u32 = 4;
 /// The least fraction of the first progs' statements a codebase's calls must execute
 /// (DIFF-12.5, TEST-6).
 pub const COVERAGE_BAR: f64 = 0.9;
@@ -396,7 +399,19 @@ pub fn run_calls(
         };
         // The function's own constants depend on it alone, so they are read once.
         let pools = drawer.pools(function);
-        for round in 0..rounds {
+        // DIFF-12.16: while its body has statements no call executed and the last batch of
+        // rounds reached one more, the function is called in another batch, up to
+        // `EXTRA_ROUNDS` times `rounds` in all.
+        let body = function.first_statement..drawer.body_end(function.first_statement);
+        let reached =
+            |executed: &BTreeSet<i32>| body.clone().filter(|s| executed.contains(s)).count();
+        let whole = usize::try_from(body.end.saturating_sub(body.start)).unwrap_or(0);
+        let batch = rounds.checked_shr(2).unwrap_or(0).max(1);
+        let cap = rounds.saturating_mul(EXTRA_ROUNDS);
+        let mut limit = rounds;
+        let mut before = reached(&report.executed);
+        let mut round = 0;
+        while round < limit {
             let mut rng = Rng::new(name, round);
             let context = drawer.draw(&mut rng, (function, &pools), round);
             let theirs = their_world.call(their_index, &context);
@@ -411,6 +426,14 @@ pub fn run_calls(
                     round,
                     what,
                 });
+            }
+            round = round.saturating_add(1);
+            if round == limit && limit < cap {
+                let now = reached(&report.executed);
+                if now > before && now < whole {
+                    limit = limit.saturating_add(batch).min(cap);
+                }
+                before = now;
             }
         }
     }

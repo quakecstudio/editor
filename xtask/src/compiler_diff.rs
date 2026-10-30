@@ -365,7 +365,11 @@ mod tests {
         let full = Mode::Full.codebases();
         assert_eq!(full.first(), Some(&"id-1.01"));
         assert_eq!(full.len(), 1 + RERELEASE.len());
-        assert_eq!(RERELEASE.len() + PENDING.len(), 6, "the six rerelease codebases");
+        assert_eq!(
+            RERELEASE.len() + PENDING.len(),
+            6,
+            "the six rerelease codebases"
+        );
         assert!(PENDING.iter().all(|id| !full.contains(id)));
         let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         for id in RERELEASE.iter().chain(&PENDING).copied() {
@@ -375,7 +379,12 @@ mod tests {
             );
             assert!(parse(&args(&["--fast", id])).is_err());
         }
-        assert!(RERELEASE.iter().chain(&PENDING).all(|id| rerelease::compiles(id)));
+        assert!(
+            RERELEASE
+                .iter()
+                .chain(&PENDING)
+                .all(|id| rerelease::compiles(id))
+        );
         assert!(VANILLA.iter().all(|id| !rerelease::compiles(id)));
     }
 }

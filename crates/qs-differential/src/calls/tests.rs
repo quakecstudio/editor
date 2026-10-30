@@ -331,7 +331,13 @@ fn the_same_statements_must_run_the_same_way() {
         .iter()
         .map(|d| (d.function.clone(), d.what.clone()))
         .collect();
-    assert_eq!(functions, [(Some(b"f".to_vec()), Difference::Statements)]);
+    // DIFF-12.16: a branch no round took gives `f` another batch, which diverges the same way.
+    assert!(!functions.is_empty());
+    assert!(
+        functions
+            .iter()
+            .all(|f| *f == (Some(b"f".to_vec()), Difference::Statements))
+    );
 }
 
 // spec DIFF-12.1: the two worlds are compared after the setup, before any call.
@@ -922,4 +928,20 @@ fn a_function_is_owned_by_the_edicts_that_hold_it() {
     let owners = super::draw::owners(&world, &progs);
     assert_eq!(owners.get(&first("f")), Some(&vec![0]));
     assert_eq!(owners.get(&first("g")), None);
+}
+
+// spec DIFF-12.16: a function with statements no call reached is called in one more batch, a
+// quarter of its rounds, and no more once a batch reaches nothing new; a function its rounds
+// cover is called no more
+#[test]
+fn a_partly_covered_function_gets_one_more_batch() {
+    let calls = |source: &str| {
+        let bytes = compile(source, false);
+        run_calls(Oracle::Qcc, &bytes, &bytes, &scenario(), WORLD, 8)
+            .unwrap()
+            .calls
+    };
+    let covered = calls("float x;\nvoid() f = { x = 1; };\n");
+    let partly = calls("float x;\nvoid() f = { if (0) x = 2; x = 1; };\n");
+    assert_eq!(partly, covered + 2);
 }

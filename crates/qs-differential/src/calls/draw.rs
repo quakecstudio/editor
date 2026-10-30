@@ -270,6 +270,11 @@ impl<'a, 'p> Drawer<'a, 'p> {
         }
     }
 
+    /// The statement after the last of the body that starts at `first` (DIFF-11.3).
+    pub(super) fn body_end(&self, first: i32) -> i32 {
+        self.bodies.get(&first).copied().unwrap_or(first)
+    }
+
     /// The constants the statements of `function` name as operands (DIFF-12.2).
     pub(super) fn pools(&self, function: Function) -> Pools {
         let first = function.first_statement;

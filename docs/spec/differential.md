@@ -709,6 +709,12 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   `think`, `touch` or `use` with its own edict as `self`; otherwise as DIFF-12.2 draws it. The
   edicts are found in the first progs' world after the setup, by edict, each listed once. So a
   flag's `touch` runs with the flag as `self` (`rerelease-ctf`'s `TeamCaptureFlagTouch`).
+- **DIFF-12.16** A function whose body still has statements no call executed after its
+  `rounds` rounds is called in a further batch of a quarter as many rounds, drawn as any round
+  is (DIFF-12.2, round numbers going on from `rounds`), as long as the batch before reached at
+  least one statement of its body no earlier call had, up to `EXTRA_ROUNDS` (4) times `rounds`
+  in all. The calls stay deterministic, and a function whose body every call already covers
+  costs no more.
 
 ## Test vectors
 
