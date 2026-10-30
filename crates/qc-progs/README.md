@@ -12,13 +12,14 @@ bytes; a file read and written back is the same byte for byte. Also here: the 16
 - **Layer:** L0 formats. It depends on `qc-types`; the VM, the edict store and the compiler
   build on it.
 - **Spec sections:** PROGS-1 to PROGS-15 and PROGS-22 in [`progs.md`](../../docs/spec/progs.md),
-  with the `fte` feature also PROGS-19 to PROGS-21 (FTEQCC's version 7), and LIMIT-1 in
+  PROGS-19 to PROGS-21 (FTEQCC's version 7), and LIMIT-1 in
   [`limits.md`](../../docs/spec/limits.md).
 - **Not this crate's:** PROGS-16 to PROGS-18, which are in `qc-types`, and PROGS-5 (generating
   the `progdefs.h` CRC), PROGS-6.2 and PROGS-10.3, which belong to the compiler, the server and
   the VM.
-- **Feature `fte`:** reading and writing version 7. Off, a version 7 file is rejected as id's
-  engine rejects it (PROGS-3.1).
+- **Versions:** the header's version picks the format: 6 is id's, 7 is FTEQCC's (16-bit or
+  32-bit by `secondaryversion`), and any other is `ReadError::WrongVersion`. id's engine rejects
+  version 7 (PROGS-3.1); a caller that models it checks `Progs::format`.
 - **Shipped:** yes.
 
 ## Invariants

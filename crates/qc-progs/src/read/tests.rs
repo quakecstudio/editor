@@ -8,7 +8,6 @@
     reason = "test code: a failed unwrap, index, overflow or panic is a failed test"
 )]
 
-#[cfg(feature = "fte")]
 mod fte;
 
 use proptest::prelude::*;
@@ -621,21 +620,6 @@ fn version_before_crc() {
     assert_eq!(
         read(&bytes).unwrap_err(),
         ReadError::WrongVersion { version: 5 }
-    );
-}
-
-// spec PROGS-3.3: version 7 with CRC 0 reports the version, as id's loader does, when FTE
-// reading is off.
-#[cfg(not(feature = "fte"))]
-#[test]
-fn version_7_is_wrong_without_fte() {
-    let mut bytes = minimal();
-    patch(&mut bytes, field::VERSION, 7);
-    patch(&mut bytes, field::CRC, 0);
-    let error = read(&bytes).unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        "progs.dat has wrong version number (7 should be 6)"
     );
 }
 
