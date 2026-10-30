@@ -165,6 +165,22 @@ is a declaration, not a statement; that stays vanilla.)
   on `float` or `vector`, `*=` with a `float` or vector-scale right side, `/=` by a `float`.
 - **FTE-6.3** Progs encoding: `x += y` lowers to the binary op into a temporary and a store
   back to `x`, over vanilla opcodes (`ADD_F`/`ADD_V` and so on); no new opcode is used.
+- **FTE-6.4** A store to an entity's field, `=` or a compound one, `++` or `--`, evaluates the
+  entity first, then the stored value, and makes the field's `ADDRESS` last, right before its
+  `STOREP_*`: `QCC_PR_RefExpression` reads the left side as a reference,
+  `QCC_PR_BuildRef(refbuf, REF_FIELD, QCC_RefToDef(lhs, true), ...)`, which loads the entity but
+  not the field, then reads the right side, `rhsr = QCC_PR_RefExpression (&rhsbuf, priority,
+  ...)`, and `QCC_StoreSRefToRef` makes the address when it stores. For a compound store the
+  field is read after the right side: on id's opcodes no `ops_ptr` row is valid, so `lhsd =
+  QCC_RefToDef(lhsr, false);` loads it before the operator. So in `self.health = g();` and
+  `self.health += g();` the call to `g` comes before the `ADDRESS`, and in the second before the
+  `LOAD_F` of `health` too, where id's `qcc` makes the `ADDRESS` first (QC-17.3). The pinned
+  FTEQCC (`-Tid`) writes `CALL0 ADDRESS STOREP_F` for the first, `CALL0 LOAD_F ADD_F ADDRESS
+  STOREP_F` for the second, `LOAD_F ADD_F ADDRESS STOREP_F` for `self.health++;`, and `CALL0
+  ADDRESS STOREP_F` for `self.origin_x = g();` (FTE-9.4). A call in the right side that changes
+  the field is thus seen by a compound store's read, and one that changes `self` by `self.health
+  = g();`, whose `ADDRESS` reads `self` after the call, but not by `self.enemy.health = g();`,
+  whose entity is loaded before it.
 
 ## FTE-7 Modulo operator
 
@@ -550,6 +566,16 @@ name (QC-10.3), and nothing follows the name.
   `QCC_PR_GenerateFunctionCallRef` copies to the slots); so a call in an argument overwrites
   no slot an earlier argument filled, and an argument past the last parameter is read and
   ignored. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`.
+- **FTE-18.5** A call's value as the left operand of a binary operator is copied out of the
+  return global before a call in the right operand overwrites it: the value is an alias of
+  `OFS_RETURN` (`QCC_GetAliasTemp`), and before each call `QCC_ClobberDef` copies the aliases
+  still in use to temporaries. So `f() + g()` adds `f()`'s value to `g()`'s, where id's `qcc`
+  adds `g()`'s to itself (QC-18.6). The pinned FTEQCC (`-Tid`) writes `CALL0 f`, `STORE_F` of
+  the return global to a temporary, `CALL0 g` and `ADD_F` of the temporary and the return global
+  for `x = f() + g();`, the same for `==` and `%`, and no copy for `f() + 2`, where no call
+  follows. `qc-codegen` copies a call's left operand to a temporary whether or not a call
+  follows, which reads the same values. The rerelease's `dog_bite`
+  (`rerelease/monsters/rottweiler.qc`) sums `random() + random() + random()`.
 
 ## FTE-19 Further operators
 
@@ -675,6 +701,17 @@ empty (QC-14.2).
   produced it. A macro written `if (CheckContentsDamage()) return;` and used with a `;` after it
   makes one (`rerelease-mg1/ai.qc`, `rerelease-mg1/monsters/tarbaby.qc`). This profile reports
   `W0204` (QCD-7.19) for every one, since the parser does not see expansions.
+- **FTE-21.6** A QuakeC function's record counts its parameters among its `locals`, so
+  `PR_EnterFunction` saves them when a call enters the function again and `PR_LeaveFunction`
+  restores them: `QCC_WriteData` sets `funcs[i].parm_start = local->ofs;` at the first
+  parameter, adds each parameter's size, `funcs[i].locals += size;`, and then each used local
+  that is not static and not an initialised constant. id's `qcc` counts only up to the end of
+  the last `local` declaration, so a function with parameters and no `local` has `locals` 0
+  (QC-21.4) and a nested call of it overwrites the caller's parameters. In the rerelease
+  `ai_run(12)` reaches `ai_run(16)` through `CheckAnyAttack`, `WizardCheckAttack` and
+  `wiz_run1`, and then calls `movetogoal(dist)` with 12; the pinned FTEQCC's record of `ai_run`
+  has `locals` 1. `qc-codegen` counts the parameters and every global from them to the end of
+  the last `local` declaration, its temporaries among them.
 
 ## FTE-22 Name resolution
 
@@ -843,6 +880,17 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   made for a redeclaration it reuses none for counts as made then. FTEQCC reports the
   redeclaration only once it has read the initialiser, so a bad literal in it is that error
   instead; id's `qcc` reports `"%s redeclared"` at the `=`, before it (`PR_ParseDefs`).
+- **FTE-23.18** A builtin function's record, as `QCC_WriteData` writes it for id's format
+  (`PST_DEFAULT`), has no parameter or local slots and its named parameters' count: `else if
+  (functions[i].code == -1) { funcs[i].parm_start = 0; funcs[i].locals = 0; funcs[i].numparms =
+  functions[i].type->num_parms; if (funcs[i].numparms > MAX_PARMS) funcs[i].numparms =
+  MAX_PARMS; p = 0; }`, and then `while(p < MAX_PARMS) funcs[i].parm_size[p++] = 0;`. So
+  `void(string s, ...) bprint = #0:ex_bprint;` is a record with `first_statement` 0,
+  `parm_start` 0, `locals` 0, `numparms` 1 and every `parm_size` 0, where id's `qcc` writes the
+  next free global, the parameters' sizes and `numparms` -1 for a variadic function (QC-13.3).
+  An engine that resolves a `#0` builtin by its name never enters the record; one that does not
+  runs it as a QuakeC function from statement 0, and `PR_EnterFunction` then copies no parameter
+  into the globals.
 - **FTE-23.8** **Withdrawn** (P2-71 to P2-73, #474 to #476): it described the cross product
   before it had the macro, prefixed-string and long-name cases. Replaced by FTE-23.12.
 - **FTE-23.9** **Withdrawn** (P2-71 to P2-73, #474 to #476): it said this profile reports every

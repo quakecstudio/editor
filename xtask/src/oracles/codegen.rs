@@ -2,7 +2,7 @@
 
 //! The compiler differential (P2-06): `qc-codegen` against id's `qcc`, progs.dat byte for byte.
 //!
-//! [`compile_codebase`] builds a vanilla codebase with our compiler as the editor does (its
+//! [`compile_codebase`] builds a corpus codebase with our compiler as the editor does (its
 //! `progs.src` opened as a project, each file named as `progs.src` lists it, QC-25.4);
 //! [`differences`] says where two progs differ, table by table, so a failure names the first
 //! statement, definition or global that differs. `cargo xtask oracles id101` compares id 1.01
@@ -35,13 +35,33 @@ mod tests;
 
 use cases::CASES;
 
-/// Compiles the vanilla codebase whose `progs.src` is in `dir` with `qc-codegen`.
-pub(crate) fn compile_codebase(dir: &Path, options: Options) -> Result<Compiled, String> {
+/// The dialect a corpus codebase is compiled in, as its oracle compiler reads it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Profile {
+    /// id's QuakeC, as id's `qcc` compiles id 1.01.
+    Vanilla,
+    /// FTEQCC's, as the pinned FTEQCC compiles the rerelease (`rerelease.rs`).
+    Fteqcc {
+        /// Prototypes are collected first, FTEQCC's `-Fautoproto` (FTE-1.2).
+        autoproto: bool,
+    },
+}
+
+/// Compiles the codebase whose `progs.src` is in `dir` with `qc-codegen` in `profile`.
+pub(crate) fn compile_codebase(
+    dir: &Path,
+    profile: Profile,
+    options: Options,
+) -> Result<Compiled, String> {
     let project = qc_project::open(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let [module] = project.modules.as_slice() else {
         return Err(format!("{}: one module expected", dir.display()));
     };
     let mut db = Db::new();
+    if let Profile::Fteqcc { autoproto } = profile {
+        db.set_dialect(qc_project::Dialect::Fteqcc.into());
+        db.set_autoproto(autoproto);
+    }
     for (index, file) in module.graph.files.iter().enumerate() {
         let text = fs::read(&file.path).map_err(|e| format!("{}: {e}", file.path.display()))?;
         db.set_file(FileId(index), file.path.clone(), text);

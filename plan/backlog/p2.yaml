@@ -312,8 +312,7 @@ issues:
   - P2-07
   - P1-26
   deliverable:
-  - 'tests/conformance: compiles rerelease and extended-dialect corpus codebases with our compiler; runs the differential call set in qc-vm on our output and on the pinned-FTEQCC output; compares traces;
-    results table generated'
+  - 'xtask/src/compiler_diff.rs and crates/qs-differential (`calls`, the `compiler-diff` binary), the compiler differential of DIFF-12 that P2-09 built: `cargo xtask compiler-diff --full` compiles the rerelease codebases with qc-codegen and with the pinned FTEQCC, runs the differential call set in qc-vm on both outputs, compares them (docs/spec/differential.md DIFF-12.8, DIFF-12.9) and writes the results table target/compiler-diff/summary.md, which the nightly Differential workflow publishes; the corpus mods are compiled by both compilers with `cargo xtask codegen-corpus` and the pinned FTEQCC'
   acceptance:
   - Our compiled rerelease leaves the same traces in qc-vm as the FTEQCC-built rerelease for the scripted call set, with at least 90% statement coverage
   - Mod failures each have a tracked issue
@@ -1766,6 +1765,7 @@ issues:
   - P2-147
   - P2-148
   - P2-149
+  - P2-150
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -3049,3 +3049,26 @@ issues:
   - spikes/bench.sh run on the Windows and Linux reference machines shows p99 frame time at most 8.33 ms for the egui prototype; results committed under docs/spikes/data/ (ADR-0003)
   verify:
   - QS_BENCH_HOST=ref-windows spikes/bench.sh and QS_BENCH_HOST=ref-linux spikes/bench.sh on the reference machines; the summary.md files
+- key: P2-150
+  title: Compile the corpus mods' server QuakeC that the pinned FTEQCC compiles
+  labels:
+  - L4-bridges
+  - area:compiler
+  - type:feature
+  size: M
+  reqs:
+  - COMP-8
+  - COMP-9
+  summary: |
+    Found by the P2-10 conformance suite (#66). Of the corpus mods, compiled with `cargo xtask codegen-corpus` and with the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, default target and `-Tid`), these server modules compile with FTEQCC and not with qc-codegen: (1) a field initialised with another field, `.float t_length = length;`, "Unlowered" in Copper (`defs.qc:356`), SWAB (`defs.qc:356`), progs_dump (`defs.qc:999`) and re:mobilize (`defs.qc:1007`); (2) `<<` and `>>`, "Unsupported", in Arcane Dimensions (`csqc_hudad.qc:490`, `(1<<num)`); (3) `__NULL__` in an array's aggregate initialiser, "Unsupported", in librequake (`client.qc:207`); (4) a store to an element of a string array, `array_user_map[0] = "";`, "Unsupported", in crmod7 (`userdefs.qc:23`); (5) qc-sema's E0345 "Unable to generate statements at global scope (STORE_F)" for `static const float MAP_GLOBAL_MAX = floor(MAP_GLOBAL_MASK / MAP_GLOBAL_SHIFT);`, which FTEQCC compiles, in QC Conduit (`map_global.qc:11`). FTEQCC crashes on progs_dump and re:mobilize after their definitions, so they are compared only by what each compiler accepts. Not in this issue: Alkaline, which FTEQCC refuses for both targets ("Opcode PUSH not valid for target"); Quake Reignited, which both refuse with "Unknown value \"Demon_Melee\""; and the CSQC and MenuQC modules (Copper, Alkaline and crmod7 `csprogs`, freehl `hud`), which are L-09 (#193).
+  depends:
+  - P2-10
+  deliverable:
+  - 'crates/qc-codegen and crates/qc-sema: each of the five forms above compiled as the pinned FTEQCC compiles it, each a spec statement in docs/spec/dialect-fteqcc.md or dialect-fteqcc-rerelease.md quoting the source, with a citing test'
+  - 'xtask/src/compiler_diff.rs: the mods FTEQCC compiles with `-Tid` (Copper, Arcane Dimensions, librequake, crmod7, QC Conduit, SWAB) added to `cargo xtask compiler-diff --full` against the pinned FTEQCC, with their rows in the results table'
+  acceptance:
+  - '`cargo xtask codegen-corpus` compiles the server module of Copper, SWAB, progs_dump, re:mobilize, Arcane Dimensions, librequake, crmod7 and QC Conduit'
+  - '`cargo xtask compiler-diff --full` holds each mod FTEQCC compiles with `-Tid` to DIFF-12.5''s bar, or names each remaining divergence in a spec statement with its reason'
+  verify:
+  - cargo test -p qc-codegen -p qc-sema
+  - cargo xtask compiler-diff --full

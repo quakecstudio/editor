@@ -373,13 +373,13 @@ fn xor_is_emulated() {
     assert_eq!(t[1], st(BitAnd, a, t[0].c, t[1].c));
     assert_eq!(t[2], st(SubF, minus_one, a, t[2].c));
     assert_eq!(t[3], st(BitAnd, b, t[2].c, t[3].c));
-    assert_eq!(t[4], st(BitOr, t[1].c, t[3].c, t[4].c));
-    assert_eq!(t[5], st(StoreF, t[4].c, c, 0));
+    // FTEF-29.13: the last operator writes `c`, as the pinned FTEQCC writes it.
+    assert_eq!(t[4], st(BitOr, t[1].c, t[3].c, c));
     assert_eq!(
-        opcodes(&t[6..]),
-        ops(&[SubF, BitAnd, SubF, BitAnd, BitOr, StoreF, Done])
+        opcodes(&t[5..]),
+        ops(&[SubF, BitAnd, SubF, BitAnd, BitOr, Done])
     );
-    assert_eq!(t[11].b, a);
+    assert_eq!(t[9].c, a);
 }
 
 // spec FTE-19.8: `a % b` is `a - b * (a/b | a/b)` without a `mod` function
@@ -391,8 +391,8 @@ fn modulo_is_emulated() {
     assert_eq!(t[0], st(DivF, a, b, t[0].c));
     assert_eq!(t[1], st(BitOr, t[0].c, t[0].c, t[1].c));
     assert_eq!(t[2], st(MulF, b, t[1].c, t[2].c));
-    assert_eq!(t[3], st(SubF, a, t[2].c, t[3].c));
-    assert_eq!(t[4], st(StoreF, t[3].c, global(&p, "c"), 0));
+    // FTEF-29.13: the subtraction writes `c`, as the pinned FTEQCC writes it.
+    assert_eq!(t[3], st(SubF, a, t[2].c, global(&p, "c")));
 }
 
 // spec FTE-19.8: `a % b` calls the program's `mod(a, b)` when it defines one
@@ -419,22 +419,24 @@ fn vector_division_is_emulated() {
     let p = fte_progs("vector v, r;\nfloat f;\nvoid() t = { r = v / f; };\n");
     let t = body(&p, "t");
     assert_eq!(t[0], st(DivF, immediate(&p, 1.0), global(&p, "f"), t[0].c));
-    assert_eq!(t[1], st(MulVf, global(&p, "v"), t[0].c, t[1].c));
-    assert_eq!(t[2], st(StoreV, t[1].c, global(&p, "r"), 0));
+    // FTEF-29.13: the product writes `r`, as the pinned FTEQCC writes it.
+    assert_eq!(t[1], st(MulVf, global(&p, "v"), t[0].c, global(&p, "r")));
 }
 
 // spec FTE-2.1: a `for` loop's declaration, its condition tested by IFNOT past the loop, its
-// step, and GOTO back to the condition
+// step, and GOTO back to the condition; the step `i++`, whose value is not read, is one ADD_F
+// (FTEF-29.13), as the pinned FTEQCC writes it
 #[test]
 fn a_for_loop_tests_its_condition() {
     let p = fte_progs("float n;\nvoid() t = { for (float i = 0; i < 3; i++) n = i; };\n");
     let t = body(&p, "t");
     assert_eq!(
         opcodes(&t),
-        ops(&[StoreF, Lt, IfNot, StoreF, StoreF, AddF, StoreF, Goto, Done])
+        ops(&[StoreF, Lt, IfNot, StoreF, AddF, Goto, Done])
     );
-    assert_eq!(t[2].b, 6);
-    assert_eq!(t[7].a, -6);
+    assert_eq!(t[2].b, 4);
+    assert_eq!(t[5].a, -4);
+    assert_eq!((t[4].a, t[4].c), (t[0].b, t[0].b), "i is stepped in place");
 }
 
 // spec FTE-2.4: `break` is a GOTO past the loop and `continue` a GOTO to its step
@@ -447,9 +449,10 @@ fn break_and_continue_leave_and_restart_a_loop() {
         body(&p, "t"),
         [st(Goto, 2, 0, 0), st(Goto, -1, 0, 0), st(Done, 0, 0, 0)]
     );
+    // FTEF-29.13: the step `n++` is one ADD_F, as the pinned FTEQCC writes it.
     let u = body(&p, "u");
-    assert_eq!(opcodes(&u), ops(&[Goto, StoreF, AddF, StoreF, Goto, Done]));
-    assert_eq!((u[0].a, u[4].a), (1, -4));
+    assert_eq!(opcodes(&u), ops(&[Goto, AddF, Goto, Done]));
+    assert_eq!((u[0].a, u[2].a), (1, -2));
 }
 
 // spec FTE-3.4: a switch jumps to its tests after the body, each case an EQ_F and IF back to
@@ -479,17 +482,18 @@ fn a_switch_tests_its_cases_after_its_body() {
 }
 
 // spec FTE-5.3: `x++` copies the old value to a temporary, stores the temporary plus 1 back,
-// and is the old value
+// and is the old value; a `x--` whose value is not read is one ADD_F (FTEF-29.13), as the
+// pinned FTEQCC writes both
 #[test]
 fn postfix_increment_is_the_old_value() {
     let p = fte_progs("float a, b;\nvoid() t = { b = a++; a--; };\n");
     let (a, b) = (global(&p, "a"), global(&p, "b"));
     let t = body(&p, "t");
     assert_eq!(t[0], st(StoreF, a, t[0].b, 0));
-    assert_eq!(t[1], st(AddF, t[0].b, immediate(&p, 1.0), t[1].c));
-    assert_eq!(t[2], st(StoreF, t[1].c, a, 0));
-    assert_eq!(t[3], st(StoreF, t[0].b, b, 0));
-    assert_eq!(t[5], st(AddF, t[4].b, immediate(&p, -1.0), t[5].c));
+    assert_eq!(t[1], st(AddF, t[0].b, immediate(&p, 1.0), a));
+    assert_eq!(t[2], st(StoreF, t[0].b, b, 0));
+    assert_eq!(t[3], st(AddF, a, immediate(&p, -1.0), a));
+    assert_eq!(t[4], st(Done, 0, 0, 0));
 }
 
 // spec FTE-19.4: `-x` is `0 - x`, of a vector `'0 0 0' - v`; `~x` is `-1 - x`; `++x` stores
@@ -500,12 +504,12 @@ fn prefix_operators_are_subtractions_and_stores() {
         fte_progs("float a, b;\nvector v, w;\nvoid() t = { b = -a; w = -v; b = ~a; b = ++a; };\n");
     let (a, b, v) = (global(&p, "a"), global(&p, "b"), global(&p, "v"));
     let t = body(&p, "t");
-    assert_eq!(t[0], st(SubF, immediate(&p, 0.0), a, t[0].c));
-    assert_eq!((t[2].op, t[2].b), (u32::from(SubV.number()), v));
-    assert_eq!(t[4], st(SubF, immediate(&p, -1.0), a, t[4].c));
-    assert_eq!(t[6], st(AddF, a, immediate(&p, 1.0), t[6].c));
-    assert_eq!(t[7], st(StoreF, t[6].c, a, 0));
-    assert_eq!(t[8], st(StoreF, t[6].c, b, 0));
+    // FTEF-29.13: each operator writes its target, as the pinned FTEQCC writes them.
+    assert_eq!(t[0], st(SubF, immediate(&p, 0.0), a, b));
+    assert_eq!((t[1].op, t[1].b), (u32::from(SubV.number()), v));
+    assert_eq!(t[2], st(SubF, immediate(&p, -1.0), a, b));
+    assert_eq!(t[3], st(AddF, a, immediate(&p, 1.0), a));
+    assert_eq!(t[4], st(StoreF, a, b, 0));
 }
 
 // spec FTE-8.3: `c ? a : b` is IFNOT over the first arm's store and a GOTO over the second's,
@@ -550,17 +554,17 @@ fn logic_of_a_vector_is_its_dot_product() {
     assert_eq!(t[1], st(And, t[0].c, a, t[1].c));
 }
 
-// spec FTE-19.1: `a op= b` stores `a op b` to `a`; `&~=` stores `a - (a & b)`
+// spec FTE-19.1: `a op= b` stores `a op b` to `a`; `&~=` stores `a - (a & b)`, each operator
+// writing `a` (FTEF-29.13)
 #[test]
 fn compound_assignments_store_back() {
     let p = fte_progs("float a, b;\nvoid() t = { a += b; a &~= b; };\n");
     let (a, b) = (global(&p, "a"), global(&p, "b"));
     let t = body(&p, "t");
-    assert_eq!(t[0], st(AddF, a, b, t[0].c));
-    assert_eq!(t[1], st(StoreF, t[0].c, a, 0));
-    assert_eq!(t[2], st(BitAnd, a, b, t[2].c));
-    assert_eq!(t[3], st(SubF, a, t[2].c, t[3].c));
-    assert_eq!(t[4], st(StoreF, t[3].c, a, 0));
+    // FTEF-29.13: each store folds into its operator, as the pinned FTEQCC writes them.
+    assert_eq!(t[0], st(AddF, a, b, a));
+    assert_eq!(t[1], st(BitAnd, a, b, t[1].c));
+    assert_eq!(t[2], st(SubF, a, t[1].c, a));
 }
 
 // spec FTE-9.3: `v.y` is the vector's second word
@@ -651,7 +655,8 @@ fn a_name_used_before_its_definition_is_made_there() {
 }
 
 // spec FTE-9.4: a store to an entity's vector field's component goes through ADDRESS of the
-// component's field; `+=` reads it first by LOAD_F
+// component's field; `+=` reads it by LOAD_F, before the ADDRESS (FTE-6.4), as the pinned
+// FTEQCC writes it
 #[test]
 fn an_entity_vectors_component_is_stored_through_its_field() {
     let p = fte_progs(
@@ -665,27 +670,59 @@ fn an_entity_vectors_component_is_stored_through_its_field() {
     let t = body(&p, "t");
     assert_eq!(t[0], st(Opcode::Address, e, y, t[0].c));
     assert_eq!(t[1], st(Opcode::StorepF, immediate(&p, 5.0), t[0].c, 0));
-    assert_eq!(t[2], st(Opcode::Address, e, z, t[2].c));
-    assert_eq!(t[3], st(Opcode::LoadF, e, z, t[3].c));
-    assert_eq!(t[4], st(AddF, t[3].c, immediate(&p, 1.0), t[4].c));
-    assert_eq!(t[5], st(Opcode::StorepF, t[4].c, t[2].c, 0));
+    assert_eq!(t[2], st(Opcode::LoadF, e, z, t[2].c));
+    assert_eq!(t[3], st(AddF, t[2].c, immediate(&p, 1.0), t[3].c));
+    assert_eq!(t[4], st(Opcode::Address, e, z, t[4].c));
+    assert_eq!(t[5], st(Opcode::StorepF, t[3].c, t[4].c, 0));
 }
 
-// spec QC-17.3: `e.f += x` reads the entity once, loading the field again after its ADDRESS
+// spec FTE-6.4: `e.f += x` reads the entity once, the field after the right side, and makes its
+// ADDRESS after the value, as the pinned FTEQCC writes `find().health += 1`
 #[test]
 fn a_compound_store_to_a_field_reads_the_entity_once() {
     let p = fte_progs(".float health;\nentity() find = #1;\nvoid() t = { find().health += 1; };\n");
-    let t = body(&p, "t");
     assert_eq!(
-        opcodes(&t),
+        opcodes(&body(&p, "t")),
         ops(&[
             Opcode::Call0,
-            Opcode::Address,
             Opcode::LoadF,
             AddF,
+            Opcode::Address,
             Opcode::StorepF,
             Done
         ])
+    );
+}
+
+// spec FTE-6.4: a store to a field makes its ADDRESS after the stored value, so the right side's
+// call comes first, and a compound store or `++` reads the field after the right side, as the
+// pinned FTEQCC writes each of these
+#[test]
+fn a_field_store_makes_its_address_after_the_value() {
+    let p = fte_progs(
+        "entity self;\n.float health;\n.vector origin;\nfloat() g = #2;\n\
+         void() u = { self.health = g(); };\nvoid() w = { self.health += g(); };\n\
+         void() x = { self.origin_x = g(); };\nvoid() y = { self.health++; };\n",
+    );
+    let store = ops(&[Opcode::Call0, Opcode::Address, Opcode::StorepF, Done]);
+    assert_eq!(opcodes(&body(&p, "u")), store);
+    assert_eq!(opcodes(&body(&p, "x")), store);
+    assert_eq!(
+        opcodes(&body(&p, "w")),
+        ops(&[
+            Opcode::Call0,
+            Opcode::LoadF,
+            AddF,
+            Opcode::Address,
+            Opcode::StorepF,
+            Done
+        ])
+    );
+    let y = opcodes(&body(&p, "y"));
+    assert_eq!(y.first(), Some(&u32::from(Opcode::LoadF.number())));
+    assert_eq!(
+        y.get(y.len() - 3..),
+        Some(ops(&[Opcode::Address, Opcode::StorepF, Done]).as_slice())
     );
 }
 
@@ -777,9 +814,11 @@ fn a_local_vector_initialiser_stores_its_components() {
 fn prefix_decrement_and_vector_not() {
     let p = fte_progs("float a;\nvector v, w;\nvoid() t = { --a; w = ~v; };\n");
     let t = body(&p, "t");
-    assert_eq!(t[0], st(AddF, global(&p, "a"), immediate(&p, -1.0), t[0].c));
+    // FTEF-29.13: each operator writes its target, as the pinned FTEQCC writes them.
+    let a = global(&p, "a");
+    assert_eq!(t[0], st(AddF, a, immediate(&p, -1.0), a));
     let minus = super::immediate_vector(&p, [-1.0; 3]);
-    assert_eq!(t[2], st(SubV, minus, global(&p, "v"), t[2].c));
+    assert_eq!(t[1], st(SubV, minus, global(&p, "v"), global(&p, "w")));
 }
 
 // spec FTE-19.1: each `op=` stores its operator's result back
@@ -788,9 +827,7 @@ fn each_compound_assignment_uses_its_operator() {
     let p = fte_progs("float a, b;\nvoid() t = { a -= b; a *= b; a /= b; a &= b; a |= b; };\n");
     assert_eq!(
         opcodes(&body(&p, "t")),
-        ops(&[
-            SubF, StoreF, MulF, StoreF, DivF, StoreF, BitAnd, StoreF, BitOr, StoreF, Done
-        ])
+        ops(&[SubF, MulF, DivF, BitAnd, BitOr, Done])
     );
 }
 
@@ -856,4 +893,91 @@ fn an_fteqcc_precache_is_recorded() {
     )
     .unwrap();
     assert_eq!(compiled.precaches.models.len(), 1);
+}
+
+// spec FTE-23.17: a builtin's function is named its engine name, or with none the definition's
+// name, as the rerelease's `bprint = #0:ex_bprint` is found by an engine as `ex_bprint`
+#[test]
+fn a_builtin_function_is_named_its_engine_name() {
+    let p = fte_progs(
+        "void(string s, ...) bprint = #0:ex_bprint;\nvoid(string s) dprint = #25;\n\
+         void(string s) sprint = :\"ex_\" \"sprint\";\nvoid(string s) cprint = #\"\":ex_cp;\n",
+    );
+    let builtin = |number: i32| {
+        let found: Vec<String> = p
+            .functions
+            .iter()
+            .skip(1)
+            .filter(|f| f.first_statement == -number)
+            .map(|f| string(&p, f.s_name).to_owned())
+            .collect();
+        found
+    };
+    assert_eq!(builtin(0), ["ex_bprint", "ex_sprint", "ex_cp"]);
+    assert_eq!(builtin(25), ["dprint"]);
+}
+
+// spec FTE-23.18: under FTEQCC a builtin's record has no parameter or local slots, its named
+// parameters' count, variadic or not, and no parameter sizes
+#[test]
+fn an_fteqcc_builtin_record_has_no_parameter_slots() {
+    let p = fte_progs(
+        "void(string s, ...) bprint = #0:ex_bprint;\nfloat(float d, vector v) walk = #5;\n\
+         void(float a, float b, float c, float d, float e, float f, float g, float h, float i) \
+         nine = #6;\n",
+    );
+    let record = |number: i32| {
+        p.functions
+            .iter()
+            .skip(1)
+            .find(|f| f.first_statement == -number)
+            .unwrap()
+    };
+    for (number, numparms) in [(0, 1), (5, 2), (6, 8)] {
+        let f = record(number);
+        assert_eq!(
+            (f.parm_start, f.locals, f.numparms, f.parm_size),
+            (0, 0, numparms, [0; 8]),
+            "#{number}"
+        );
+    }
+}
+
+// spec FTE-18.5: a call's value as a left operand is copied out of the return global before the
+// right operand's call, so `f() + g()` adds the two calls' values; under id's qcc the second
+// call's value is added to itself (QC-18.6)
+#[test]
+fn a_calls_value_as_a_left_operand_survives_the_next_call() {
+    let source = "float() f = #1;\nfloat() g = #2;\nfloat x;\nvoid() t = { x = f() + g(); };\n";
+    let p = fte_progs(source);
+    let t = body(&p, "t");
+    assert_eq!(
+        opcodes(&t),
+        ops(&[Opcode::Call0, Opcode::StoreF, Opcode::Call0, AddF, Done])
+    );
+    assert_eq!(t[1].a, 1, "the copy reads the return global");
+    assert_eq!(t[3].a, t[1].b, "the sum reads the copy");
+    assert_eq!(t[3].b, 1, "and the second call's value");
+    assert_eq!(t[3].c, global(&p, "x"), "and writes x (FTEF-29.13)");
+    let vanilla = super::progs(source);
+    let v = body(&vanilla, "t");
+    assert_eq!(opcodes(&v)[..3], ops(&[Opcode::Call0, Opcode::Call0, AddF]));
+    assert_eq!(
+        (v[2].a, v[2].b),
+        (1, 1),
+        "qcc adds the return global to itself"
+    );
+}
+
+// spec FTE-21.6: under FTEQCC a function's record counts its parameters among its locals, so a
+// nested call restores them; id's qcc counts none for a function with no `local` (QC-21.4)
+#[test]
+fn an_fteqcc_record_counts_its_parameters_among_its_locals() {
+    let source = "void(float d, vector v) f = { };\nvoid(float d) g = { local float x; x = d; };\n";
+    let p = fte_progs(source);
+    let f = function(&p, "f");
+    assert_eq!((f.parm_start, f.locals), (global(&p, "d"), 4));
+    assert_eq!(function(&p, "g").locals, 2);
+    let vanilla = super::progs(source);
+    assert_eq!(function(&vanilla, "f").locals, 0);
 }
