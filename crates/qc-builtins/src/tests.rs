@@ -785,7 +785,7 @@ mod bodies {
         reason = "test code: a failed unwrap, index, expect or overflow is a failed test"
     )]
 
-    use crate::MockBuiltins;
+    use crate::{MockBuiltins, math};
     use crate::mock::{MessageDest, MockEngine, Precache};
     use qc_edict::system::{SYSTEM_GLOBALS, field_by_name, global_by_name};
     use qc_edict::{EDICT_SYS_GLOBALS_END, EdictNumber};
@@ -2307,8 +2307,8 @@ mod bodies {
         assert_eq!(f.field_v(1, "angles")[1], 19.995_117);
     }
 
-    // spec BUILTIN-15.4: ChangeYaw of a yaw already at ideal does not move; pins the exact_eq
-    // early return.
+    // spec BUILTIN-15.4: ChangeYaw of a yaw already at ideal does not move; pins the early
+    // return.
     #[test]
     fn changeyaw_at_ideal_does_not_move() {
         let mut f = Fixture::new(49, 0, vec![0], 0);
@@ -2319,6 +2319,90 @@ mod bodies {
         f.set_global_entity("self", 1);
         f.run_ok(ServerState::Active);
         assert_eq!(f.field_v(1, "angles")[1], 45.0);
+    }
+
+    /// BUILTIN-15.4 as its text gives it: the yaw ChangeYaw leaves for `angles_y`, `ideal` and
+    /// `speed`.
+    #[expect(
+        clippy::float_cmp,
+        reason = "spec BUILTIN-15.4: the reference compares exactly, as id's ChangeYaw does"
+    )]
+    fn spec_change_yaw(angles_y: f32, ideal: f32, speed: f32) -> f32 {
+        let current = math::anglemod(angles_y);
+        if current == ideal {
+            return angles_y;
+        }
+        let mut mv = ideal - current;
+        if ideal > current {
+            if mv >= 180.0 {
+                mv -= 360.0;
+            }
+        } else if mv <= -180.0 {
+            mv += 360.0;
+        }
+        if mv > 0.0 {
+            if mv > speed {
+                mv = speed;
+            }
+        } else if mv < -speed {
+            mv = -speed;
+        }
+        math::anglemod(current + mv)
+    }
+
+    // spec BUILTIN-15.4: ChangeYaw wraps a turn of 180 or more the short way and clamps it to
+    // yaw_speed either way, exactly as the statement's text, at each boundary: a turn of
+    // exactly +180 and -180, a turn equal to the speed, a 360-degree target from 0 that wraps
+    // to no turn, a negative speed, and a NaN target, which id's comparisons leave as NaN
+    #[test]
+    fn changeyaw_matches_the_statement_at_its_boundaries() {
+        let cases = [
+            (0.0, 180.0, 10.0),
+            (180.0, 0.0, 10.0),
+            (0.0, 90.0, 90.0),
+            (90.0, 0.0, 90.0),
+            (0.0, 360.0, -5.0),
+            (0.0, 360.0, 5.0),
+            (10.0, 0.0, -5.0),
+            (0.0, 200.0, 30.0),
+            (200.0, 0.0, 30.0),
+            (0.0, 30.0, f32::NAN),
+            (30.0, f32::NAN, 10.0),
+        ];
+        for (angles_y, ideal, speed) in cases {
+            let mut f = Fixture::new(49, 0, vec![0], 0);
+            f.machine.edicts_mut().alloc(1.0).unwrap();
+            f.set_field_v(1, "angles", [0.0, angles_y, 0.0]);
+            f.set_field_f(1, "ideal_yaw", ideal);
+            f.set_field_f(1, "yaw_speed", speed);
+            f.set_global_entity("self", 1);
+            f.run_ok(ServerState::Active);
+            let want = spec_change_yaw(angles_y, ideal, speed);
+            assert_eq!(
+                f.field_v(1, "angles")[1].to_bits(),
+                want.to_bits(),
+                "angles_y {angles_y}, ideal {ideal}, speed {speed}: want {want}"
+            );
+        }
+    }
+
+    // spec DIFF-7.3: a client with health 0 does not qualify, so checkclient's search, which
+    // starts at check + 1 (slot 2 here), skips it and wraps round to the healthy slot 1
+    #[test]
+    fn checkclient_skips_a_client_without_health() {
+        let mut f = Fixture::new(17, 0, vec![0], 2);
+        f.machine.edicts_mut().alloc(1.0).unwrap();
+        f.machine.edicts_mut().alloc(1.0).unwrap();
+        in_use(&mut f, 1);
+        in_use(&mut f, 2);
+        f.set_field_f(1, "health", 100.0);
+        f.set_field_f(1, "flags", 0.0);
+        f.set_field_f(2, "health", 0.0);
+        f.set_field_f(2, "flags", 0.0);
+        f.run_ok(ServerState::Active);
+        let e1 = f.machine.edicts().edict_num(1).unwrap();
+        assert_eq!(f.return_i(), e1.bits());
+        assert_eq!(f.engine().checkclient.last_check, 1);
     }
 
     // spec DIFF-7.8: movetogoal on the ground turns toward ideal_yaw and steps when within 45

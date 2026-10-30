@@ -1408,19 +1408,19 @@ impl MockBuiltins {
             return Ok(());
         }
         let mut mv = ideal - current;
-        if ideal > current {
-            if mv >= 180.0 {
-                mv -= 360.0;
-            }
+        // id tests `ideal_yaw > current` before each wrap; with the two unequal, that is
+        // `mv > 0`, so only `mv >= 180` can take 360 off and only `mv <= -180` can add it.
+        if mv >= 180.0 {
+            mv -= 360.0;
         } else if mv <= -180.0 {
             mv += 360.0;
         }
+        // id's `if (move > speed) move = speed` and `if (move < -speed) move = -speed`. A NaN
+        // move fails both of id's tests and is left as it is.
         if mv > 0.0 {
-            if mv > yaw_speed {
-                mv = yaw_speed;
-            }
-        } else if mv < -yaw_speed {
-            mv = -yaw_speed;
+            mv = mv.min(yaw_speed);
+        } else if !mv.is_nan() {
+            mv = mv.max(-yaw_speed);
         }
         let new_y = math::anglemod(current + mv);
         let mut angles = read_field_vector(context, number, SysField::Angles)?;
