@@ -5,7 +5,7 @@
 //! literal in the UI modules.
 
 /// One string the app shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Text {
     /// The app's name, in the title bar and the macOS app menu (ADR-0006).
     AppName,
@@ -93,11 +93,27 @@ pub enum Text {
     KeyArrows,
     /// The Enter key, in the palette's hints.
     KeyEnter,
+    /// The Symbols section's heading.
+    Symbols,
+    /// The Symbols section's switch to the open file's symbols.
+    SymbolsFile,
+    /// The Symbols section's switch to every file's symbols.
+    SymbolsAll,
+    /// The Symbols section with nothing to list.
+    NoSymbols,
+    /// A function, in the Symbols section.
+    SymbolFunction,
+    /// A field, in the Symbols section.
+    SymbolField,
+    /// A constant, in the Symbols section.
+    SymbolConstant,
+    /// A global variable, in the Symbols section.
+    SymbolGlobal,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 43] = [
+    pub const ALL: [Self; 51] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -141,6 +157,14 @@ impl Text {
         Self::KeyEscape,
         Self::KeyArrows,
         Self::KeyEnter,
+        Self::Symbols,
+        Self::SymbolsFile,
+        Self::SymbolsAll,
+        Self::NoSymbols,
+        Self::SymbolFunction,
+        Self::SymbolField,
+        Self::SymbolConstant,
+        Self::SymbolGlobal,
     ];
 
     /// The string, in English.
@@ -190,6 +214,14 @@ impl Text {
             Self::KeyEscape => "esc",
             Self::KeyArrows => "\u{2191}\u{2193}",
             Self::KeyEnter => "enter",
+            Self::Symbols => "Symbols",
+            Self::SymbolsFile => "File",
+            Self::SymbolsAll => "All",
+            Self::NoSymbols => "No symbols.",
+            Self::SymbolFunction => "function",
+            Self::SymbolField => "field",
+            Self::SymbolConstant => "constant",
+            Self::SymbolGlobal => "global",
         }
     }
 }

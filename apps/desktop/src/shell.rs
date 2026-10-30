@@ -4,32 +4,51 @@
 //! (Properties, agent) and bottom (Problems, Console, Debugger) panels, and the status bar,
 //! laid out as the approved play-loop mockup (`docs/design/mockups/01-play-loop.png`).
 //!
-//! The panels are placeholders until the editor, the preview host and the agent land. Showing,
-//! hiding and resizing a panel runs a command (`qs-layout`), so a menu, a keybinding, the CLI
-//! and the agent do it the same way, and the layout is written back when it changes.
+//! The left panel lists the open project's files and symbols and the bottom panel its problems
+//! (`qs-workbench`, [`crate::project`]); choosing one opens its file in the editor at that place.
+//! The game, Entities, Properties and the agent are placeholders until the preview host and the
+//! agent land. Showing, hiding and resizing a panel and opening a project or a file run a
+//! command (`qs-layout`, `qs-workbench`), so a menu, a keybinding, the CLI and the agent do it
+//! the same way, and the layout is written back when it changes.
 //!
 //! Every string comes from [`crate::strings`]; a test fails on a string literal here.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use eframe::egui::containers::panel::PanelState;
 use eframe::egui::{self, Align, Button, Id, Layout as EguiLayout, RichText, Sense, Ui};
 use qs_commands::{CommandError, RegisterError, Registry, Session};
+use qs_editor_view::{EditorView, Plain, Position, Selection, ViewStyle};
 use qs_layout::{
     HasLayout, Layout, Panel, RESIZE_PANEL, ResizePanelParams, TOGGLE_PANEL, TogglePanelParams,
+};
+use qs_workbench::{
+    Config, FsLoader, HasWorkbench, OPEN_FILE, OPEN_PROJECT, OpenFile, OpenFileParams,
+    OpenProjectParams, Workbench,
 };
 
 use crate::icons::Icon;
 use crate::keymap;
 use crate::palette::Palette;
+use crate::project::{self, Jump, SymbolScope};
 use crate::strings::Text;
 use crate::theme::{Theme, Token, semibold};
 
 /// What the window's commands work on.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Workspace {
     /// The panels' layout.
     pub layout: Layout,
+    /// The open project and file.
+    pub workbench: Workbench<FsLoader>,
+}
+
+impl HasWorkbench for Workspace {
+    type Loader = FsLoader;
+
+    fn workbench(&mut self) -> &mut Workbench<FsLoader> {
+        &mut self.workbench
+    }
 }
 
 impl HasLayout for Workspace {
@@ -41,11 +60,13 @@ impl HasLayout for Workspace {
 /// The areas of the window, each egui's id for it. One enum, so no two share an id: a
 /// field-less enum hashes only its variant's place, so two enums' first variants would.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-enum Area {
+pub(crate) enum Area {
     Toolbar,
     StatusBar,
     Panel(Panel),
     Palette,
+    Editor,
+    Section(Text),
 }
 
 /// The tab shown in the bottom panel.
@@ -70,6 +91,45 @@ pub enum CentreTab {
     Game,
 }
 
+/// The editor's area, whose egui id is the editor view's.
+pub(crate) const EDITOR_AREA: Area = Area::Editor;
+
+/// The file in the editor: the view of its text and the `file.open` it shows.
+struct Editor {
+    path: PathBuf,
+    generation: u64,
+    view: EditorView,
+}
+
+impl Editor {
+    /// The view of `open`, its caret where `open` puts it.
+    fn new(open: &OpenFile) -> Self {
+        let text = String::from_utf8_lossy(open.text());
+        let mut editor = Self {
+            path: open.path().to_path_buf(),
+            generation: open.generation(),
+            view: EditorView::new(Id::new(EDITOR_AREA), &text),
+        };
+        editor.place(open);
+        editor
+    }
+
+    /// Moves the caret to where `open` puts it and scrolls it into view, a few lines down.
+    fn place(&mut self, open: &OpenFile) {
+        let location = open.location();
+        let line = usize::try_from(location.line().saturating_sub(1)).unwrap_or(usize::MAX);
+        let chars = usize::try_from(location.column().saturating_sub(1)).unwrap_or(usize::MAX);
+        let state = self.view.state_mut();
+        let col = state.buffer().byte_column(line, chars);
+        state.set_selections(&[Selection::caret(Position::new(line, col))]);
+        self.view.scroll_to(line.saturating_sub(CONTEXT_LINES));
+        self.generation = open.generation();
+    }
+}
+
+/// How many lines show above the caret when a file is opened at a place.
+const CONTEXT_LINES: usize = 5;
+
 /// The window's state.
 pub struct Shell {
     session: Session<Workspace>,
@@ -84,10 +144,13 @@ pub struct Shell {
     pub(crate) drawn: [Option<f32>; 3],
     /// The command palette.
     pub(crate) palette: Palette,
+    symbol_scope: SymbolScope,
+    editor: Option<Editor>,
 }
 
 impl Shell {
-    /// The window with `layout`, kept in `layout_file`, drawn in `theme`.
+    /// The window with `layout`, kept in `layout_file`, drawn in `theme`, analysing projects as
+    /// `config` says over their project files.
     ///
     /// # Errors
     ///
@@ -96,11 +159,17 @@ impl Shell {
         layout: Layout,
         layout_file: Option<PathBuf>,
         theme: Theme,
+        config: Config,
     ) -> Result<Self, RegisterError> {
         let mut registry = Registry::new();
         qs_layout::register(&mut registry)?;
+        qs_workbench::register(&mut registry)?;
+        let workspace = Workspace {
+            layout,
+            workbench: Workbench::new(FsLoader, config),
+        };
         Ok(Self {
-            session: Session::new(Workspace { layout }, registry),
+            session: Session::new(workspace, registry),
             theme,
             layout_file,
             saved: layout,
@@ -108,6 +177,8 @@ impl Shell {
             centre_tab: CentreTab::default(),
             drawn: [None; 3],
             palette: Palette::default(),
+            symbol_scope: SymbolScope::default(),
+            editor: None,
         })
     }
 
@@ -134,6 +205,56 @@ impl Shell {
         params: serde_json::Value,
     ) -> Result<serde_json::Value, CommandError> {
         self.session.execute(id, params)
+    }
+
+    /// The open project and file.
+    #[must_use]
+    pub const fn workbench(&self) -> &Workbench<FsLoader> {
+        &self.session.context().workbench
+    }
+
+    /// The file in the editor and its primary caret, once the editor has drawn it.
+    #[must_use]
+    pub fn caret(&self) -> Option<(&Path, Position)> {
+        self.editor
+            .as_ref()
+            .map(|editor| (editor.path.as_path(), editor.view.state().primary().head))
+    }
+
+    /// The editor's text, edits included, once the editor has drawn a file.
+    #[must_use]
+    pub fn editor_text(&self) -> Option<String> {
+        self.editor
+            .as_ref()
+            .map(|editor| editor.view.state().buffer().text())
+    }
+
+    /// Opens the project in `path`, through its command.
+    ///
+    /// # Errors
+    ///
+    /// [`ShellError`] when the command fails.
+    pub fn open_project(&mut self, path: &Path) -> Result<(), ShellError> {
+        let params = serde_json::to_value(OpenProjectParams {
+            path: path.to_path_buf(),
+        })?;
+        self.session.execute(OPEN_PROJECT, params)?;
+        Ok(())
+    }
+
+    /// Opens the file a panel's row asks for, through its command, and shows the editor.
+    fn jump(&mut self, jump: Jump) {
+        let params = OpenFileParams {
+            path: jump.path,
+            offset: Some(jump.offset),
+        };
+        let result = serde_json::to_value(params)
+            .map_err(ShellError::from)
+            .and_then(|params| Ok(self.session.execute(OPEN_FILE, params)?));
+        match result {
+            Ok(_) => self.centre_tab = CentreTab::Editor,
+            Err(error) => tracing::warn!(%error, "file not opened"),
+        }
     }
 
     /// Shows or hides `panel`, through its command.
@@ -302,8 +423,10 @@ impl Shell {
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     let muted = theme.color(Token::TextMuted);
-                    for icon in [Icon::Error, Icon::Warning] {
-                        ui.label(RichText::new(count(icon, 0)).small().color(muted));
+                    let (errors, warnings) =
+                        project::counts(self.session.context().workbench.problems());
+                    for (icon, value) in [(Icon::Error, errors), (Icon::Warning, warnings)] {
+                        ui.label(RichText::new(count(icon, value)).small().color(muted));
                     }
                     ui.label(
                         RichText::new(Text::PreviewStopped.get())
@@ -327,6 +450,9 @@ impl Shell {
             .inner_margin(theme.space(1))
             .stroke(egui::Stroke::new(1.0, theme.color(Token::Border)));
         let bottom_tab = &mut self.bottom_tab;
+        let scope = &mut self.symbol_scope;
+        let workbench = &self.session.context().workbench;
+        let mut jump = None;
         let mut expanded = state.visible;
         // A size the layout was given by a command, not by a drag of the panel's edge, is
         // drawn: egui keeps the size it last drew and reads `default_size` only the first time.
@@ -364,7 +490,7 @@ impl Shell {
                 }
                 match panel {
                     Panel::Left => {
-                        section(ui, theme, Text::Project, Text::NoProject);
+                        jump = left(ui, theme, workbench, scope);
                         ui.add_space(theme.space(3));
                         section(ui, theme, Text::Entities, Text::NotPlaying);
                     }
@@ -373,9 +499,12 @@ impl Shell {
                         ui.add_space(theme.space(3));
                         section(ui, theme, Text::Agent, Text::NoAgent);
                     }
-                    Panel::Bottom => bottom(ui, theme, bottom_tab),
+                    Panel::Bottom => jump = bottom(ui, theme, bottom_tab, workbench),
                 }
             });
+        if let Some(jump) = jump {
+            self.jump(jump);
+        }
         // A panel dragged shut is hidden through its command too.
         if expanded != state.visible
             && let Err(error) = self.toggle(panel)
@@ -410,7 +539,23 @@ impl Shell {
         }
     }
 
+    /// Brings the editor up to date with the open file: a new view for another file, the caret
+    /// moved for another `file.open` of the same one, none for no file.
+    fn sync_editor(&mut self) {
+        let open = self.session.context().workbench.open();
+        match (open, &mut self.editor) {
+            (None, _) => self.editor = None,
+            (Some(open), Some(editor)) if editor.path == open.path() => {
+                if editor.generation != open.generation() {
+                    editor.place(open);
+                }
+            }
+            (Some(open), _) => self.editor = Some(Editor::new(open)),
+        }
+    }
+
     fn centre(&mut self, ui: &mut Ui) {
+        self.sync_editor();
         let theme = &self.theme;
         egui::Frame::NONE
             .fill(theme.color(Token::SurfaceTabs))
@@ -426,6 +571,12 @@ impl Shell {
                     }
                 });
             });
+        if self.centre_tab == CentreTab::Editor
+            && let Some(editor) = &mut self.editor
+        {
+            editor.view.show(ui, &view_style(theme), &Plain);
+            return;
+        }
         let (fill, message) = match self.centre_tab {
             CentreTab::Editor => (Token::SurfaceEditor, Text::NoFileOpen),
             CentreTab::Game => (Token::SurfaceViewport, Text::GameStopped),
@@ -453,13 +604,71 @@ pub(crate) fn dragged_size(previous: Option<f32>, now: Option<f32>, dragging: bo
 }
 
 /// A panel section: its heading and, until it has content, one line of explanation.
-fn section(ui: &mut Ui, theme: &Theme, heading: Text, empty: Text) {
+fn section(ui: &mut Ui, theme: &Theme, text: Text, empty: Text) {
+    heading(ui, theme, text);
+    note(ui, theme, empty);
+}
+
+/// A panel section's heading.
+fn heading(ui: &mut Ui, theme: &Theme, text: Text) {
     ui.label(
-        RichText::new(heading.get())
+        RichText::new(text.get())
             .family(semibold())
             .size(theme.type_scale.panel_heading.size),
     );
-    note(ui, theme, empty);
+}
+
+/// The share of the left panel's height the Project tree may take.
+const TREE_SHARE: f32 = 0.35;
+/// The share of the left panel's height the Symbols list may take.
+const SYMBOLS_SHARE: f32 = 0.4;
+
+/// The left panel's Project and Symbols sections; the row chosen, if any.
+fn left(
+    ui: &mut Ui,
+    theme: &Theme,
+    workbench: &Workbench<FsLoader>,
+    scope: &mut SymbolScope,
+) -> Option<Jump> {
+    let height = ui.available_height();
+    let mut jump = None;
+    heading(ui, theme, Text::Project);
+    match workbench.root() {
+        None => note(ui, theme, Text::NoProject),
+        Some(root) => {
+            ui.label(RichText::new(project::root_name(root)).strong());
+            let open = workbench.open().map(OpenFile::path);
+            egui::ScrollArea::vertical()
+                .id_salt(Area::Section(Text::Project))
+                .max_height(height * TREE_SHARE)
+                .auto_shrink([false, true])
+                .show(ui, |ui| jump = project::tree_ui(ui, workbench.tree(), open));
+        }
+    }
+    ui.add_space(theme.space(3));
+    heading(ui, theme, Text::Symbols);
+    let symbols = project::symbols_ui(
+        ui,
+        theme,
+        scope,
+        workbench.open(),
+        workbench.project_symbols(),
+        height * SYMBOLS_SHARE,
+    );
+    jump.or(symbols)
+}
+
+/// The editor's colours and font, from the theme's tokens.
+fn view_style(theme: &Theme) -> ViewStyle {
+    ViewStyle {
+        font: egui::FontId::monospace(theme.type_scale.code.size),
+        background: theme.color(Token::SurfaceEditor),
+        current_line: theme.color(Token::SurfaceRaised),
+        selection: theme.color(Token::SelectFocus),
+        text: theme.color(Token::Text),
+        line_number: theme.color(Token::TextFaint),
+        caret: theme.color(Token::Accent),
+    }
 }
 
 /// A line of muted text, wrapped to the panel's width.
@@ -467,24 +676,36 @@ fn note(ui: &mut Ui, theme: &Theme, text: Text) {
     ui.add(egui::Label::new(RichText::new(text.get()).color(theme.color(Token::TextMuted))).wrap());
 }
 
-/// The bottom panel: its tabs and the selected one's placeholder.
-fn bottom(ui: &mut Ui, theme: &Theme, tab: &mut BottomTab) {
+/// The bottom panel: its tabs, and the Problems list or the selected tab's placeholder; the
+/// problem chosen, if any.
+fn bottom(
+    ui: &mut Ui,
+    theme: &Theme,
+    tab: &mut BottomTab,
+    workbench: &Workbench<FsLoader>,
+) -> Option<Jump> {
+    let problems = workbench.problems();
     ui.horizontal(|ui| {
         for (value, text) in [
             (BottomTab::Problems, Text::Problems),
             (BottomTab::Console, Text::Console),
             (BottomTab::Debugger, Text::Debugger),
         ] {
-            ui.selectable_value(tab, value, text.get());
+            let label = match (value, problems.len()) {
+                (BottomTab::Problems, shown @ 1..) => format!("{} {shown}", text.get()),
+                _ => text.get().to_owned(),
+            };
+            ui.selectable_value(tab, value, label);
         }
     });
     ui.separator();
     let message = match tab {
-        BottomTab::Problems => Text::NoProblems,
+        BottomTab::Problems => return project::problems_ui(ui, theme, problems, workbench.root()),
         BottomTab::Console => Text::ConsoleIdle,
         BottomTab::Debugger => Text::DebuggerIdle,
     };
     note(ui, theme, message);
+    None
 }
 
 /// An icon and its label, as one string for a button.

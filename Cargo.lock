@@ -2551,6 +2551,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-workbench"
+version = "2026.10.0"
+dependencies = [
+ "qc-ide",
+ "qc-project",
+ "qs-commands",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "quakec-lsp"
 version = "2026.10.0"
 dependencies = [
@@ -2570,9 +2583,11 @@ dependencies = [
  "egui_kittest",
  "muda",
  "qs-commands",
+ "qs-editor-view",
  "qs-layout",
  "qs-log",
  "qs-paths",
+ "qs-workbench",
  "serde",
  "serde_json",
  "toml",
@@ -4207,6 +4222,7 @@ dependencies = [
  "qs-map",
  "qs-pak",
  "qs-settings",
+ "qs-workbench",
  "quakec-lsp",
  "serde",
  "serde_json",

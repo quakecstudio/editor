@@ -32,6 +32,7 @@ Format: one row per file, the path in backticks relative to the repository root.
 | `apps/desktop/assets/fonts/lucide.ttf` | Lucide Icons and Contributors; Cole Bemis for the icons derived from Feather | lucide-icons/lucide release `1.57.0`, `lucide-font-1.57.0.zip` (sha256 `297023825c613e950345aa2c1b941788538497b7be0fc88d5b0dca23f85bacee`); license in `apps/desktop/assets/fonts/Lucide-LICENSE.txt` | ISC AND MIT |
 | `apps/desktop/snapshots/palette.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/palette-prompt.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
+| `apps/desktop/snapshots/project.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/shell.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/shell-editor-only.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/shell-left-hidden.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |

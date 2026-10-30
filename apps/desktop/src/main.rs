@@ -2,6 +2,7 @@
 
 //! `quakec-studio`: the desktop app.
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use eframe::egui;
@@ -26,6 +27,8 @@ fn main() -> ExitCode {
         );
     }
     let layout_file = dirs.ok().map(|dirs| qs_layout::layout_path(dirs.data()));
+    // The one argument, if any, is a project directory to open.
+    let project = std::env::args_os().nth(1).map(PathBuf::from);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(Text::AppName.get())
@@ -37,13 +40,14 @@ fn main() -> ExitCode {
         Text::AppName.get(),
         options,
         Box::new(move |cc| {
-            let app = App::new(&cc.egui_ctx, layout_file)?;
+            let mut app = App::new(&cc.egui_ctx, layout_file)?;
+            if let Some(project) = &project
+                && let Err(error) = app.shell_mut().open_project(project)
+            {
+                tracing::warn!(%error, "project not opened");
+            }
             #[cfg(target_os = "macos")]
-            let app = {
-                let mut app = app;
-                app.install_menu();
-                app
-            };
+            app.install_menu();
             Ok(Box::new(app))
         }),
     );

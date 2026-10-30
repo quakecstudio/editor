@@ -151,6 +151,7 @@ qs-render = { path = "crates/qs-render" }
 qs-settings = { path = "crates/qs-settings" }
 qs-sim = { path = "crates/qs-sim" }
 qs-vfs = { path = "crates/qs-vfs" }
+qs-workbench = { path = "crates/qs-workbench" }
 qs-wad = { path = "crates/qs-wad" }
 qs-wav = { path = "crates/qs-wav" }
 quakec-lsp = { path = "apps/lsp" }

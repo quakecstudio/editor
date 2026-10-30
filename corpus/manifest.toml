@@ -21,6 +21,7 @@ never = ["quakec-1.06", "quoth", "id1-paks"]
 # Directories whose tracked Quake content files are this project's own test
 # fixtures, written for its tests and carrying its SPDX line, not corpus files.
 fixture_dirs = [
+  "apps/desktop/fixtures/",
   "crates/qc-syntax/src/tests/",
 ]
 

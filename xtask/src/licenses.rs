@@ -33,8 +33,9 @@ const SPECS_MANIFEST: &str = "specs/manifest.tsv";
 
 const SOURCE_EXTENSIONS: [&str; 7] = ["rs", "py", "sh", "c", "h", "qc", "wgsl"];
 const SOURCE_NAMES: [&str; 1] = ["Makefile"];
-const TEXT_EXTENSIONS: [&str; 12] = [
-    "md", "toml", "yaml", "yml", "json", "jsonl", "lock", "html", "txt", "tsv", "csv", "hex",
+// `src` is a QuakeC project's file list, `progs.src`, which carries no license line.
+const TEXT_EXTENSIONS: [&str; 13] = [
+    "md", "toml", "yaml", "yml", "json", "jsonl", "lock", "html", "txt", "tsv", "csv", "hex", "src",
 ];
 const TEXT_NAMES: [&str; 3] = [LICENSE_FILE, ".gitignore", ".gitattributes"];
 const COMMENT_OPENERS: [&str; 6] = ["//", "#", "<!--", "/*", "*", "--"];

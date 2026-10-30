@@ -81,6 +81,16 @@ fn scripts() -> Vec<Script> {
             ],
         },
         Script {
+            name: "project",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": fixture() })),
+                Step::Run(
+                    "file.open",
+                    json!({ "path": fixture().join("src/weapons.qc"), "offset": 269 }),
+                ),
+            ],
+        },
+        Script {
             name: "shell-resized",
             steps: vec![
                 Step::Run(
@@ -94,6 +104,11 @@ fn scripts() -> Vec<Script> {
             ],
         },
     ]
+}
+
+/// The test project, with problems in two files.
+fn fixture() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ember")
 }
 
 /// The most pixels each OS may differ from the macOS golden by.

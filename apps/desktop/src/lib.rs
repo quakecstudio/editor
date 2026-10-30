@@ -4,19 +4,21 @@
 //! (eframe with the wgpu renderer, ADR-0003), themed from `docs/design/tokens.toml`
 //! (ADR-0010), with the macOS menu bar through `muda`.
 //!
-//! The layout's state and the commands that change it are `qs-layout`'s; this crate draws them
-//! and runs the commands when a control is used.
+//! The layout's state and the commands that change it are `qs-layout`'s, and the open project
+//! and file `qs-workbench`'s; this crate draws them and runs the commands when a control is
+//! used.
 //!
 //! # Layer
 //!
-//! apps. It depends on `qs-layout` and `qs-commands` (L5), `qs-log` and `qs-paths` (L0), and
-//! `eframe`.
+//! apps. It depends on `qs-layout`, `qs-workbench` and `qs-commands` (L5), `qs-editor-view`
+//! (L7), `qs-log` and `qs-paths` (L0), and `eframe`.
 
 pub mod icons;
 pub mod keymap;
 #[cfg(target_os = "macos")]
 pub mod menu;
 pub mod palette;
+pub mod project;
 pub mod shell;
 pub mod strings;
 pub mod theme;
@@ -30,6 +32,7 @@ use std::path::PathBuf;
 
 use eframe::egui;
 use qs_layout::Layout;
+use qs_workbench::Config;
 
 use crate::shell::Shell;
 use crate::theme::{Mode, Theme};
@@ -49,6 +52,19 @@ impl App {
     ///
     /// [`AppError`] when the built-in theme or the window's commands are broken.
     pub fn new(ctx: &egui::Context, layout_file: Option<PathBuf>) -> Result<Self, AppError> {
+        Self::with_analysis(ctx, layout_file, Config::default())
+    }
+
+    /// As [`App::new`], analysing projects as `config` says over their project files.
+    ///
+    /// # Errors
+    ///
+    /// As [`App::new`].
+    pub fn with_analysis(
+        ctx: &egui::Context,
+        layout_file: Option<PathBuf>,
+        config: Config,
+    ) -> Result<Self, AppError> {
         let layout = match &layout_file {
             Some(path) => Layout::read(path).unwrap_or_else(|error| {
                 tracing::warn!(%error, "layout not read; using the default");
@@ -58,7 +74,7 @@ impl App {
         };
         let theme = Theme::load(Mode::Dark).map_err(AppError::Theme)?;
         theme.apply(ctx);
-        let shell = Shell::new(layout, layout_file, theme).map_err(AppError::Commands)?;
+        let shell = Shell::new(layout, layout_file, theme, config).map_err(AppError::Commands)?;
         Ok(Self {
             #[cfg(target_os = "macos")]
             menu: None,
@@ -79,6 +95,11 @@ impl App {
     #[must_use]
     pub const fn shell(&self) -> &Shell {
         &self.shell
+    }
+
+    /// The window's state, to run its commands.
+    pub const fn shell_mut(&mut self) -> &mut Shell {
+        &mut self.shell
     }
 
     /// Draws one frame, after running the menu items chosen since the last.

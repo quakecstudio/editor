@@ -600,6 +600,13 @@ jobs:
       - name: Drive the language server against the rerelease
         if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo xtask lsp-corpus "$QS_TEST_ASSETS/codebase/rerelease"
+      # P2-19: every diagnostic of the rerelease, targeting the rerelease and id's engine, is
+      # listed in the desktop app's Problems tab, and clicking it opens its file at its place.
+      - name: Click every problem of the rerelease in the desktop app
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: |
+          cargo run --locked -p quakec-studio --example problems_corpus -- \
+            "$QS_TEST_ASSETS/codebase/rerelease"
       # P1-13 (FND-8, QA-1): the fast differential subset. Runs id 1.01 end to end
       # in the VM oracle (restored above) and QuakeC Studio's runner and fails on any
       # divergence that DIFF-10.1 does not list (DIFF-10.3). This is the differential VM
