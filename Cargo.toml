@@ -113,6 +113,7 @@ similar_names = "allow"
 cc = { version = "=1.8.0", default-features = false }
 criterion = { version = "=0.8.2", default-features = false }
 eframe = { version = "=0.36.2", default-features = false }
+egui = { version = "=0.36.2", default-features = false }
 egui-wgpu = { version = "=0.36.2", default-features = false }
 epaint = { version = "=0.36.2", default-features = false }
 junction = { version = "=2.1.0", default-features = false }
@@ -137,6 +138,7 @@ qc-types = { path = "crates/qc-types" }
 qc-vm = { path = "crates/qc-vm" }
 qs-bsp = { path = "crates/qs-bsp" }
 qs-commands = { path = "crates/qs-commands" }
+qs-editor-view = { path = "crates/qs-editor-view" }
 qs-layout = { path = "crates/qs-layout" }
 qs-log = { path = "crates/qs-log" }
 qs-map = { path = "crates/qs-map" }

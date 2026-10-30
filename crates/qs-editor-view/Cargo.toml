@@ -1,0 +1,19 @@
+[package]
+name = "qs-editor-view"
+description = "The code editor widget: virtualised lines with a per-line layout cache, selections and multiple carets, IME composition and AccessKit text runs, on egui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+egui = { workspace = true }
+
+[dev-dependencies]
+# The frame-time benchmark (examples/bench.rs) runs the view in a window, as the app does.
+eframe = { workspace = true, features = ["wayland", "wgpu", "x11"] }
+
+[lints]
+workspace = true
