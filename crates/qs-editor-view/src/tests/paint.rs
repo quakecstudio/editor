@@ -256,7 +256,10 @@ fn a_line_outside_the_selection_has_no_band_and_text_sits_mid_row() {
     let line = text_shape(&output, "abc");
     let offset = line.pos.y - m.view.top();
     let centred = (m.row - line.galley.size().y) / 2.0;
-    assert!((offset - centred).abs() < 0.01, "{offset} is {centred} into the row");
+    assert!(
+        (offset - centred).abs() < 0.01,
+        "{offset} is {centred} into the row"
+    );
 }
 
 #[test]
@@ -287,7 +290,10 @@ fn a_click_focuses_the_view_and_places_the_caret_at_its_column() {
     };
     let y = m.row.mul_add(1.5, m.view.top());
     harness.frame(click(at(&m, 2.3), y), &Plain);
-    assert!(harness.ctx.memory(|mem| mem.has_focus(id)), "a click takes focus");
+    assert!(
+        harness.ctx.memory(|mem| mem.has_focus(id)),
+        "a click takes focus"
+    );
     assert_eq!(harness.view.state().primary().head, pos(1, 2));
     harness.frame(click(at(&m, 4.7), m.view.top() + 1.0), &Plain);
     assert_eq!(harness.view.state().primary().head, pos(0, 5));
