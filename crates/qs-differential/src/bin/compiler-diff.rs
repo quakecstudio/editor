@@ -14,7 +14,7 @@
 //! ```
 //!
 //! `--theirs` is the oracle compiler's progs: id's `qcc`'s for id 1.01, the pinned FTEQCC's
-//! for the rerelease (DIFF-12.8), named by `--oracle`, `qcc` when it is not given (DIFF-12.11). With `--summary`, a row of the results table is added to the
+//! for the rerelease (DIFF-12.14), named by `--oracle`, `qcc` when it is not given (DIFF-12.11). With `--summary`, a row of the results table is added to the
 //! file for each pair.
 //!
 //! `--mode fast` makes 32 rounds of calls to each function, `--mode full` 128 (DIFF-12.6).
@@ -194,7 +194,7 @@ fn print(codebase: &str, ours: &std::path::Path, same: bool, report: &CodebaseRe
 }
 
 /// Adds the row of `report`, our progs at `ours` against the oracle's, to the results table
-/// at `summary` (DIFF-12.8).
+/// at `summary` (DIFF-12.14).
 fn add_row(
     summary: &std::path::Path,
     options: &Options,
@@ -229,7 +229,7 @@ mod tests {
 
     use super::{Options, add_row};
 
-    // spec DIFF-12.8: each pair compared adds its row to the results table, after the rows
+    // spec DIFF-12.14: each pair compared adds its row to the results table, after the rows
     // already there.
     #[test]
     fn each_pair_adds_a_row_to_the_table() {

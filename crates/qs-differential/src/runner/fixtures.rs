@@ -202,9 +202,12 @@ const FULL: &[&str] = &[
 
 /// A deathmatch map: the world, several deathmatch starts and every weapon and ammo, so the
 /// deathmatch item and weapon logic runs (`items.qc`, `weapons.qc`).
-/// The deathmatch set and both teams' flags.
+/// A deathmatch set with a start and an intermission spot, which the rerelease looks for, and
+/// both teams' flags and spawn points.
 const CTF: &[&str] = &[
     "{\n\"classname\" \"worldspawn\"\n\"message\" \"ctf\"\n}",
+    "{\n\"classname\" \"info_player_start\"\n\"origin\" \"64 64 24\"\n}",
+    "{\n\"classname\" \"info_intermission\"\n\"origin\" \"64 64 256\"\n\"mangle\" \"20 240 0\"\n}",
     "{\n\"classname\" \"info_player_deathmatch\"\n\"origin\" \"0 0 24\"\n}",
     "{\n\"classname\" \"info_player_deathmatch\"\n\"origin\" \"128 0 24\"\n}",
     "{\n\"classname\" \"info_player_team1\"\n\"origin\" \"0 128 24\"\n}",

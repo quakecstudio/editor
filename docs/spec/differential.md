@@ -624,7 +624,9 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   the same edict, or the same function. A vector's other two words are compared only through
   the globals and fields they are stored to. A QuakeC function of the first progs that the
   second has no QuakeC function of the same name for is a divergence.
-- **DIFF-12.8** `cargo xtask compiler-diff --full` also compares the rerelease (COMP-8):
+- **DIFF-12.8** **Withdrawn** 2026-10-30: it compared the five rerelease codebases besides
+  `rerelease` only when a run named them, until each passed; three pass and the nightly run
+  compares them; replaced by DIFF-12.14. `cargo xtask compiler-diff --full` also compares the rerelease (COMP-8):
   `rerelease` is compiled with the pinned FTEQCC as `cargo xtask oracles rerelease` compiles it,
   the oracle progs, and with `qc-codegen` in the FTEQCC dialect, with `--opt fold` off and on,
   and each pair is held to DIFF-12.5's bar. The other five rerelease codebases are compared when
@@ -660,7 +662,7 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   element of an array of structs (`dialect-fteqcc-rerelease.md` FTE-13.13), whose first word is
   its first member's, compared by that member's own definition and type, where reading the word
   by its bits would compare a string's place in each string table.
-- **DIFF-12.11** When the first progs is the pinned FTEQCC's (DIFF-12.8), its definitions are
+- **DIFF-12.11** When the first progs is the pinned FTEQCC's (DIFF-12.14), its definitions are
   compared with ours by these rules, which replace DIFF-12.3's same names in the same order.
   FTEQCC names fewer globals: `QCC_WriteData` writes no definition nothing uses (`if (def->strip
   || !def->symbolheader->used) continue;`), no vector component, and no local of a function
@@ -691,6 +693,22 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   the first progs, the statements of its body no call executed, as `<unexecuted>\t<of>\t<name>`
   lines, most unexecuted first, a function's body running from its first statement to the next
   function's: the list a codebase's coverage (DIFF-12.5) is raised from.
+- **DIFF-12.14** `cargo xtask compiler-diff --full` also compares the rerelease codebases (COMP-8): each
+  is compiled with the pinned FTEQCC as `cargo xtask oracles rerelease` compiles it,
+  the oracle progs, and with `qc-codegen` in the FTEQCC dialect, with `--opt fold` off and on,
+  and each pair is held to DIFF-12.5's bar: `rerelease`, Scourge of Armagon, Dimension of
+  the Past and Dawn of the Machine, the last with `-Fautoproto`'s prototypes as FTEQCC is
+  given it (FTE-1.2). Dissolution of Eternity and Capture the Flag, which have no divergence
+  but whose calls reach under 90% of their statements, are compared when a run names them,
+  and each joins the nightly set once it passes. Every pair compared adds a row to
+  the results table `target/compiler-diff/summary.md`: the codebase, the oracle's progs and
+  ours, the divergences, the statements executed, and whether it passes; the nightly
+  differential workflow publishes it as the run's summary.
+- **DIFF-12.15** One time in two, `self` for a call is drawn from the edicts in use whose
+  named fields of function type hold the function called, when any does, as the engine calls a
+  `think`, `touch` or `use` with its own edict as `self`; otherwise as DIFF-12.2 draws it. The
+  edicts are found in the first progs' world after the setup, by edict, each listed once. So a
+  flag's `touch` runs with the flag as `self` (`rerelease-ctf`'s `TeamCaptureFlagTouch`).
 
 ## Test vectors
 

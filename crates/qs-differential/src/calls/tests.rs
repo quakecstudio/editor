@@ -435,7 +435,7 @@ fn a_codebase_passes_at_the_bar() {
     assert_eq!(report(nine, true).divergences(), 1);
 }
 
-// spec DIFF-12.8: each pair is a row of the results table: the codebase, the oracle's progs and
+// spec DIFF-12.14: each pair is a row of the results table: the codebase, the oracle's progs and
 // ours, the divergences, the statements executed, and whether it passes.
 #[test]
 fn a_report_is_a_row_of_the_results_table() {
@@ -898,4 +898,28 @@ fn uncovered_lists_each_functions_unexecuted_statements() {
         "{text}"
     );
     assert!(!lines.iter().any(|l| l.ends_with("\tb")), "{text}");
+}
+
+// spec DIFF-12.15: each function is listed with the edicts whose function fields hold it, the
+// edicts `self` is drawn from one time in two
+#[test]
+fn a_function_is_owned_by_the_edicts_that_hold_it() {
+    let bytes = compile(
+        "void() f = {};\nvoid() g = {};\nvoid() worldspawn = { self.think = f; };\n",
+        false,
+    );
+    let progs = Progs::read(&bytes).unwrap();
+    let scenario = scenario();
+    let world = World::new(&progs, &scenario, WORLD).unwrap();
+    let first = |name: &str| {
+        progs
+            .functions()
+            .iter()
+            .find(|f| progs.string(f.s_name) == Some(name.as_bytes()))
+            .unwrap()
+            .first_statement
+    };
+    let owners = super::draw::owners(&world, &progs);
+    assert_eq!(owners.get(&first("f")), Some(&vec![0]));
+    assert_eq!(owners.get(&first("g")), None);
 }

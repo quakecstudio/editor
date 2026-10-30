@@ -78,7 +78,7 @@ types.
   with id's `qcc` and with this crate, `--opt fold` off and on, and calls every function of
   each progs in `qc-vm` from the differential scenarios' worlds: no divergence, and at least
   90% of `qcc`'s statements executed. `--full` also compiles the rerelease with the pinned
-  FTEQCC and with this crate in the FTEQCC dialect, held to the same bar (DIFF-12.8, DIFF-12.11);
+  FTEQCC and with this crate in the FTEQCC dialect, held to the same bar (DIFF-12.14, DIFF-12.11);
   the mission packs and CTF are compared when named, until they pass (P2-150).
 - `cargo xtask oracles codegen` compiles the hand-written programs of
   `xtask/src/oracles/codegen/cases.rs` and 300 generated ones with both compilers: the two

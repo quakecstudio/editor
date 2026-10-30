@@ -168,6 +168,48 @@ pub(super) struct Drawer<'a, 'p> {
     variables: Vec<(Vec<u8>, DefType)>,
     /// The named fields of a type a value is drawn for.
     fields: Vec<(Vec<u8>, DefType)>,
+    /// For each QuakeC function by its first statement, the edicts in use whose function
+    /// fields (`think`, `touch`, `use` and the rest) hold it (DIFF-12.15).
+    owners: BTreeMap<i32, Vec<usize>>,
+}
+
+/// DIFF-12.15: each QuakeC function, by its first statement, with the edicts in use whose
+/// named fields of function type hold it, in edict order.
+pub(super) fn owners(world: &World<'_, '_, '_>, progs: &Progs<'_>) -> BTreeMap<i32, Vec<usize>> {
+    let functions: Vec<i32> = progs
+        .functions()
+        .iter()
+        .map(|f| f.first_statement)
+        .collect();
+    let slots: Vec<usize> = world
+        .program
+        .fields
+        .values()
+        .filter(|(def_type, _)| *def_type == DefType::Known(Etype::Function))
+        .map(|(_, slot)| *slot)
+        .collect();
+    let edicts = world.machine.edicts();
+    let mut owners: BTreeMap<i32, Vec<usize>> = BTreeMap::new();
+    for &edict in &world.in_use() {
+        for &slot in &slots {
+            let Some(value) = edicts.field(qc_edict::EdictNumber::new(edict), slot) else {
+                continue;
+            };
+            let Some(&first) = usize::try_from(value.bits())
+                .ok()
+                .and_then(|index| functions.get(index))
+            else {
+                continue;
+            };
+            if first > 0 {
+                let list = owners.entry(first).or_default();
+                if list.last() != Some(&edict) {
+                    list.push(edict);
+                }
+            }
+        }
+    }
+    owners
 }
 
 impl<'a, 'p> Drawer<'a, 'p> {
@@ -208,6 +250,7 @@ impl<'a, 'p> Drawer<'a, 'p> {
         for def in progs.global_defs().iter() {
             types.entry(def.ofs).or_insert(def.def_type());
         }
+        let owners = owners(world, progs);
         let slots = progs
             .global_defs()
             .iter()
@@ -220,6 +263,7 @@ impl<'a, 'p> Drawer<'a, 'p> {
             types,
             bodies: bodies(progs),
             edicts: world.in_use(),
+            owners,
             clients: u64::from(world.host.scenario.clients),
             variables,
             fields,
@@ -299,7 +343,12 @@ impl<'a, 'p> Drawer<'a, 'p> {
         (function, own): (Function, &Pools),
         round: u32,
     ) -> Context {
-        let self_edict = self.edict_or_client(rng, 4);
+        // DIFF-12.15: one time in two `self` is an edict that holds the function in a field,
+        // as the engine calls a `think` or `touch` on its own edict.
+        let self_edict = match self.owners.get(&function.first_statement) {
+            Some(owners) if rng.below(2) == 0 => rng.pick(owners).copied().unwrap_or(0),
+            _ => self.edict_or_client(rng, 4),
+        };
         let other_edict = self.edict_or_client(rng, 2);
         let share = match round % 4 {
             0 => 0,

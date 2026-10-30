@@ -211,7 +211,7 @@ impl CodebaseReport {
         self.divergences() == 0 && self.coverage() >= COVERAGE_BAR
     }
 
-    /// The report's row of the results table (DIFF-12.8): the codebase, the oracle's progs and
+    /// The report's row of the results table (DIFF-12.14): the codebase, the oracle's progs and
     /// ours, the divergences, the statements executed, and whether it passes.
     #[must_use]
     pub fn summary_row(&self, codebase: &str, oracle: &str, ours: &str) -> String {
