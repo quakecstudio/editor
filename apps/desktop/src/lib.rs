@@ -13,8 +13,10 @@
 //! `eframe`.
 
 pub mod icons;
+pub mod keymap;
 #[cfg(target_os = "macos")]
 pub mod menu;
+pub mod palette;
 pub mod shell;
 pub mod strings;
 pub mod theme;

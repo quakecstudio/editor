@@ -20,6 +20,8 @@ use qs_layout::{
 };
 
 use crate::icons::Icon;
+use crate::keymap;
+use crate::palette::Palette;
 use crate::strings::Text;
 use crate::theme::{Theme, Token, semibold};
 
@@ -43,6 +45,7 @@ enum Area {
     Toolbar,
     StatusBar,
     Panel(Panel),
+    Palette,
 }
 
 /// The tab shown in the bottom panel.
@@ -79,6 +82,8 @@ pub struct Shell {
     centre_tab: CentreTab,
     /// Each panel's size as drawn in the last frame, left, right and bottom.
     pub(crate) drawn: [Option<f32>; 3],
+    /// The command palette.
+    pub(crate) palette: Palette,
 }
 
 impl Shell {
@@ -102,6 +107,7 @@ impl Shell {
             bottom_tab: BottomTab::default(),
             centre_tab: CentreTab::default(),
             drawn: [None; 3],
+            palette: Palette::default(),
         })
     }
 
@@ -172,6 +178,7 @@ impl Shell {
 
     /// Draws the window for one frame.
     pub fn ui(&mut self, ui: &mut Ui) {
+        self.keys(ui);
         self.toolbar(ui);
         self.status_bar(ui);
         for panel in [Panel::Left, Panel::Right, Panel::Bottom] {
@@ -180,14 +187,48 @@ impl Shell {
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(self.theme.color(Token::SurfaceEditor)))
             .show(ui, |ui| self.centre(ui));
+        if let Some((id, params)) = self.palette.show(
+            ui,
+            Id::new(Area::Palette),
+            &self.theme,
+            self.session.registry(),
+        ) {
+            match self.session.execute(id.as_str(), params) {
+                Ok(_) => self.palette.close(),
+                Err(error) => self.palette.failed(error.to_string()),
+            }
+        }
         let dragging = ui.input(|input| input.pointer.any_down());
         self.save_if_changed(dragging);
+    }
+
+    /// The shortcuts pressed this frame: the palette's, and while it is closed each binding's
+    /// command (`keymap`).
+    fn keys(&mut self, ui: &Ui) {
+        if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_PALETTE)) {
+            self.palette.open();
+            return;
+        }
+        if self.palette.is_open() {
+            return;
+        }
+        for binding in keymap::BINDINGS {
+            if ui.input_mut(|i| i.consume_shortcut(&binding.shortcut))
+                && let Err(error) = self.session.execute(
+                    binding.command,
+                    serde_json::Value::Object(serde_json::Map::new()),
+                )
+            {
+                tracing::warn!(%error, command = binding.command, "shortcut failed");
+            }
+        }
     }
 
     fn toolbar(&mut self, ui: &mut Ui) {
         let theme = &self.theme;
         let fill = theme.color(Token::SurfaceToolbar);
         let mut toggled = None;
+        let mut open_palette = false;
         egui::Panel::top(Id::new(Area::Toolbar))
             .exact_size(theme.size.toolbar)
             .frame(egui::Frame::NONE.fill(fill).inner_margin(theme.space(1)))
@@ -228,14 +269,14 @@ impl Shell {
                                 toggled = Some(panel);
                             }
                         }
-                        ui.add_enabled(
-                            false,
-                            Button::new(
-                                RichText::new(labelled(Icon::Search, Text::SearchCommands))
-                                    .color(theme.color(Token::TextMuted)),
-                            ),
-                        )
-                        .on_disabled_hover_text(not_yet);
+                        let search = Button::new(
+                            RichText::new(labelled(Icon::Search, Text::SearchCommands))
+                                .color(theme.color(Token::TextMuted)),
+                        );
+                        let shortcut = ui.ctx().format_shortcut(&keymap::OPEN_PALETTE);
+                        if ui.add(search).on_hover_text(shortcut).clicked() {
+                            open_palette = true;
+                        }
                     });
                 });
             });
@@ -243,6 +284,9 @@ impl Shell {
             && let Err(error) = self.toggle(panel)
         {
             tracing::warn!(%error, "panel toggle failed");
+        }
+        if open_palette {
+            self.palette.open();
         }
     }
 

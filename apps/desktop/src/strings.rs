@@ -71,11 +71,33 @@ pub enum Text {
     ToggleBottomPanel,
     /// On standard error, when the log cannot be opened.
     LoggingOff,
+    /// The palette's hint for the arrow keys.
+    PaletteMove,
+    /// The palette's hint for Enter.
+    PaletteRun,
+    /// The parameter prompt's Run button.
+    PaletteRunButton,
+    /// The palette's hint for Escape.
+    PaletteClose,
+    /// The parameter prompt's Cancel button.
+    PaletteCancel,
+    /// The palette when no command matches.
+    PaletteNoMatch,
+    /// A required parameter's mark.
+    PaletteRequired,
+    /// A choice parameter with nothing picked.
+    PaletteChoose,
+    /// The Escape key, in the palette's hints.
+    KeyEscape,
+    /// The up and down arrow keys, in the palette's hints.
+    KeyArrows,
+    /// The Enter key, in the palette's hints.
+    KeyEnter,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 32] = [
+    pub const ALL: [Self; 43] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -108,6 +130,17 @@ impl Text {
         Self::ToggleRightPanel,
         Self::ToggleBottomPanel,
         Self::LoggingOff,
+        Self::PaletteMove,
+        Self::PaletteRun,
+        Self::PaletteRunButton,
+        Self::PaletteClose,
+        Self::PaletteCancel,
+        Self::PaletteNoMatch,
+        Self::PaletteRequired,
+        Self::PaletteChoose,
+        Self::KeyEscape,
+        Self::KeyArrows,
+        Self::KeyEnter,
     ];
 
     /// The string, in English.
@@ -146,6 +179,23 @@ impl Text {
             Self::ToggleRightPanel => "Properties and Agent",
             Self::ToggleBottomPanel => "Problems, Console and Debugger",
             Self::LoggingOff => "logging is off",
+            Self::PaletteMove => "move",
+            Self::PaletteRun => "run",
+            Self::PaletteRunButton => "Run",
+            Self::PaletteClose => "close",
+            Self::PaletteCancel => "Cancel",
+            Self::PaletteNoMatch => "No command matches.",
+            Self::PaletteRequired => "required",
+            Self::PaletteChoose => "Choose…",
+            Self::KeyEscape => "esc",
+            Self::KeyArrows => "\u{2191}\u{2193}",
+            Self::KeyEnter => "enter",
         }
     }
+}
+
+/// The palette's count of the commands it lists, out of all of them.
+#[must_use]
+pub fn command_count(shown: usize, total: usize) -> String {
+    format!("{shown} of {total} commands")
 }

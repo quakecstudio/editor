@@ -31,6 +31,19 @@ artifact. `make snapshots` writes the goldens again and `make screenshots` write
 images to `docs/screenshots/` for the docs. The goldens are rendered on macOS; Linux and Windows
 may differ in a few pixels of anti-aliasing, within `max_failed_pixels`.
 
+## The command palette
+
+Cmd+Shift+P (Ctrl+Shift+P off macOS) or the toolbar's search opens the palette of the approved
+mockup (`docs/design/mockups/04-command-palette.png`, UI-10): every command in the registry,
+searched by summary and id with `qs_commands::palette::search`, each row its summary with the
+matched characters in the accent, its id and its shortcut. Up and Down pick a row and Enter
+runs it; a command with parameters first shows a form made from its schema
+(`qs_commands::params`): a choice, a text, number or JSON field, or a checkbox per parameter.
+Escape goes back from the form and closes the palette. A command's error stays on the palette.
+
+`keymap.rs` binds shortcuts to commands that take no parameters: Cmd+Z runs `edit.undo` and
+Shift+Cmd+Z `edit.redo`. The palette shows each command's shortcut from it.
+
 ## Strings
 
 Every string the window shows is a `strings::Text` (CONV-16). The test

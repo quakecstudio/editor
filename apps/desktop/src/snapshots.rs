@@ -66,6 +66,21 @@ fn scripts() -> Vec<Script> {
             steps: vec![toggle("left"), toggle("right"), toggle("bottom")],
         },
         Script {
+            name: "palette",
+            steps: vec![
+                Step::Key(Modifiers::COMMAND | Modifiers::SHIFT, Key::P),
+                Step::Type("panel"),
+            ],
+        },
+        Script {
+            name: "palette-prompt",
+            steps: vec![
+                Step::Key(Modifiers::COMMAND | Modifiers::SHIFT, Key::P),
+                Step::Type("toggle"),
+                Step::Key(Modifiers::NONE, Key::Enter),
+            ],
+        },
+        Script {
             name: "shell-resized",
             steps: vec![
                 Step::Run(
