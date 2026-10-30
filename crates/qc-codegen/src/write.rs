@@ -10,7 +10,7 @@
 use qc_progs::crc::crc_block;
 use qc_progs::opcode::Opcode;
 use qc_progs::{Def as DefRecord, PROGS_DEF_SAVEGLOBAL, ProgsFile};
-use qc_sema::ModuleIndex;
+use qc_sema::{ModuleIndex, StructShape};
 use qc_types::{Etype, Slot};
 
 use crate::Internal;
@@ -127,7 +127,22 @@ fn element_records(
         ofs,
         s_name: program.copy_string(&latin1(name))?,
     });
-    for member in shape.map(|s| s.members.as_slice()).unwrap_or_default() {
+    if let Some(shape) = shape {
+        member_records(out, program, name, shape, ofs)?;
+    }
+    Ok(())
+}
+
+/// FTE-13.13: the records of the members of the struct value `name` at `ofs`, `name.member`,
+/// each member that starts at a word, an array member as one record.
+fn member_records(
+    out: &mut Vec<DefRecord>,
+    program: &mut Program,
+    name: &str,
+    shape: &StructShape,
+    ofs: u32,
+) -> Result<(), Internal> {
+    for member in &shape.members {
         let at = ofs.checked_add(member.word).ok_or(Internal::TooLarge)?;
         out.push(DefRecord {
             type_bits: u32::from(ValueType::Of(member.ty.clone()).etype().number()),
@@ -155,8 +170,8 @@ pub(crate) fn wrap_short_operands(progs: &mut ProgsFile) {
 pub(crate) enum Records {
     /// A record for each definition, as id's `qcc` writes them.
     Qcc,
-    /// As FTEQCC writes them: an array's head left out for a record for each element, and a
-    /// struct element's members after it.
+    /// As FTEQCC writes them: an array's or a struct's head left out, for a record for each
+    /// element, a struct element's members after it, or for each of a struct's members.
     Fteqcc,
 }
 
@@ -198,6 +213,13 @@ pub(crate) fn progs(
                 let name = format!("{}[{i}]", def.name);
                 element_records(&mut global_defs, &mut program, index, (&name, &def.ty, ofs))?;
             }
+            continue;
+        }
+        if records == Records::Fteqcc
+            && let ValueType::Of(t) = &def.ty
+            && let Some(shape) = index.structs.get(t)
+        {
+            member_records(&mut global_defs, &mut program, &def.name, shape, def.ofs)?;
             continue;
         }
         let mut type_bits = u32::from(etype.number());

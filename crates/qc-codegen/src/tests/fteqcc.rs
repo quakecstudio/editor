@@ -1485,3 +1485,16 @@ fn a_variadic_function_copies_its_slots_to_va_list() {
         .count();
     assert_eq!(elements, 24);
 }
+
+// spec FTE-13.13: a struct value is written as its members, with no definition of its own
+#[test]
+fn a_struct_value_is_written_as_its_members() {
+    let p = fte_progs("typedef struct { string m; float f; } pose;\npose p;\nvoid() t = {};\n");
+    let names: Vec<String> = p
+        .global_defs
+        .iter()
+        .map(|d| string(&p, d.s_name))
+        .filter(|n| n.starts_with('p'))
+        .collect();
+    assert_eq!(names, ["p.m", "p.f"]);
+}
