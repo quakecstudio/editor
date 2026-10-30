@@ -1766,6 +1766,7 @@ issues:
   - P2-150
   - P2-151
   - P2-152
+  - P2-153
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -3069,6 +3070,29 @@ issues:
   - Japanese and Chinese text composed through the real input method of macOS, Windows and Linux appears in the editor as committed, with the candidate window at the caret (ADR-0003)
   verify:
   - The recordings or screenshots under docs/spikes/data/
+- key: P2-153
+  title: Hold the compiler to FTEQCC on generated QuakeC programs
+  labels:
+  - L4-bridges
+  - area:compiler
+  - type:test
+  size: M
+  reqs:
+  - COMP-8
+  summary: |
+    Found while working P2-150 (#639). The FTEQCC differential (DIFF-12) compares behaviour on real codebases only, whose calls reach about 90% of their statements from one set-up world, so a lowering no corpus uses, or uses only in code the calls do not reach, is never compared. A generator of well-formed QuakeC source, typed and in the dialect the semantic model accepts, makes many small programs that combine the language's forms (expressions of every operator and type, assignments and compound assignments, calls with defaults and varargs, arrays, structs, fields, vectors and their components, control flow, nested functions, wrap and accumulate); each is compiled by the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `-Tid`) and by qc-codegen, and run through the DIFF-12 call comparison. The existing generator, `crates/qs-differential/src/generate.rs`, builds progs for the VM fuzz target (FND-10), not source, so this is a new source generator.
+  depends:
+  - P2-150
+  deliverable:
+  - 'crates/qs-differential/src/source.rs: a seeded generator of QuakeC source programs, each the semantic model accepts under the FTEQCC profile, with a spec section in docs/spec/differential.md (DIFF-13) naming the forms it covers'
+  - 'xtask: cargo xtask compiler-diff --generated <count> [--seed <n>] compiles each program with the pinned FTEQCC and qc-codegen and holds it to DIFF-12.5''s comparison, printing the seed and source of each divergence; a short run in PR CI and a long one in the nightly'
+  acceptance:
+  - 'A run of 10,000 generated programs from a fixed seed finds no divergence, every form DIFF-13 names appearing in at least 100 of them'
+  - 'Each divergence a run finds is fixed in qc-codegen or qc-sema with a citing test, and its program kept as a regression case'
+  - 'A deliberately broken lowering (a mutant) is caught by the short PR run'
+  verify:
+  - cargo xtask compiler-diff --generated 10000 --seed 1
+  - cargo test -p qs-differential
 - key: P2-152
   title: Measure the renderer at 120 Hz on every id1 map on the reference Mac
   labels:
@@ -3105,11 +3129,11 @@ issues:
   - P2-10
   deliverable:
   - 'crates/qc-codegen and crates/qc-sema: each of the five forms above compiled as the pinned FTEQCC compiles it, each a spec statement in docs/spec/dialect-fteqcc.md or dialect-fteqcc-rerelease.md quoting the source, with a citing test'
-  - 'xtask/src/compiler_diff.rs: the five rerelease codebases above moved from `PENDING` to `RERELEASE`, each passing, with what makes them pass a spec statement (qc-codegen''s lowering, or a DIFF-12 statement for what no other layout reproduces, such as the value of FTEQCC''s `ret*`), and the mods FTEQCC compiles with `-Tid` (Copper, Arcane Dimensions, librequake, crmod7, QC Conduit, SWAB) added to `cargo xtask compiler-diff --full` against the pinned FTEQCC, with their rows in the results table'
+  - 'xtask/src/compiler_diff.rs: the five rerelease codebases above moved from `PENDING` to `RERELEASE`, each passing, with what makes them pass a spec statement for qc-codegen''s lowering, which reproduces FTEQCC''s behaviour (the value of FTEQCC''s `ret*` included, by porting its temporaries) rather than excusing a divergence, and the mods FTEQCC compiles with `-Tid` (Copper, Arcane Dimensions, librequake, crmod7, QC Conduit, SWAB) added to `cargo xtask compiler-diff --full` against the pinned FTEQCC, with their rows in the results table'
   acceptance:
   - '`cargo xtask compiler-diff --full` passes on all six rerelease codebases, each with no divergence and at least 90% of statements executed'
   - '`cargo xtask codegen-corpus` compiles the server module of Copper, SWAB, progs_dump, re:mobilize, Arcane Dimensions, librequake, crmod7 and QC Conduit'
-  - '`cargo xtask compiler-diff --full` holds each mod FTEQCC compiles with `-Tid` to DIFF-12.5''s bar, or names each remaining divergence in a spec statement with its reason'
+  - '`cargo xtask compiler-diff --full` holds each mod FTEQCC compiles with `-Tid` to DIFF-12.5''s bar: no divergence and at least 90% of statements executed'
   verify:
   - cargo test -p qc-codegen -p qc-sema
   - cargo xtask compiler-diff --full
