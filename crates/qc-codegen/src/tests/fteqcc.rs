@@ -1203,3 +1203,17 @@ fn a_null_compared_with_a_function_takes_its_type() {
         st(Opcode::EqFnc, null, global(&p, "g"), global(&p, "x"))
     );
 }
+
+// spec FTEF-29.2: a null stored to a function, a global's or an entity's field, is stored by
+// the target's type, its word 0
+#[test]
+fn a_null_is_stored_by_the_targets_type() {
+    let p = fte_progs(
+        "entity self;\n.void() touch;\nvar void() g;\nvoid() t = { g = __NULL__; self.touch = __NULL__; };\n",
+    );
+    let t = body(&p, "t");
+    let null = immediate(&p, 0.0);
+    assert_eq!(t[0], st(Opcode::StoreFnc, null, global(&p, "g"), 0));
+    assert_eq!(t[1].op, u32::from(Opcode::Address.number()));
+    assert_eq!(t[2], st(Opcode::StorepFnc, null, t[1].c, 0));
+}

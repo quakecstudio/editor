@@ -1468,6 +1468,24 @@ impl<'a> Compiler<'a> {
         })
     }
 
+    /// FTEQCC's store of a null (FTEF-29.2): a float constant whose word is 0, such as
+    /// `__NULL__`, stored to a target of another type is the target's zero, `rhsd =
+    /// QCC_MakeIntConst(0);`, its word read as `ty`.
+    fn null_as(&self, value: Value, ty: &ValueType) -> Value {
+        let null = self.dialect.has_fteqcc_extensions()
+            && self.type_of(&value).etype() == Etype::Float
+            && ty.etype() != Etype::Float
+            && self.constant_word(&value) == Some(0);
+        if null {
+            Value {
+                ofs: value.ofs,
+                kind: ValueKind::Cast(ty.clone()),
+            }
+        } else {
+            value
+        }
+    }
+
     /// FTEF-23.3, FTEF-23.4: under FTEQCC, with no row for the two types, the row whose operand
     /// types are the other operand's twice when one operand is a null, a float constant whose
     /// word is 0 such as `__NULL__`, which converts to any type at cost 2: `f != __NULL__` of a
@@ -1845,6 +1863,7 @@ impl<'a> Compiler<'a> {
         let value = value(self, pending)?;
         let (to, inner) = match target {
             Target::Value(to) => {
+                let value = self.null_as(value, &self.type_of(&to));
                 if self.fold_store(&to, &value) {
                     return Ok(to);
                 }
@@ -1854,7 +1873,7 @@ impl<'a> Compiler<'a> {
             Target::Field {
                 slot,
                 address: Some(to),
-            } => (to, slot.ty.etype()),
+            } => (to, slot.ty),
             Target::Field {
                 slot,
                 address: None,
@@ -1863,10 +1882,12 @@ impl<'a> Compiler<'a> {
                     .program
                     .emit_result(Opcode::Address, slot.entity, slot.field, Etype::Pointer)
                     .at(op_span)?;
-                (to, slot.ty.etype())
+                (to, slot.ty)
             }
-            Target::Pointer { address, ty } => (address, ty.etype()),
+            Target::Pointer { address, ty } => (address, ty),
         };
+        let value = self.null_as(value, &inner);
+        let inner = inner.etype();
         let b = self.type_of(&value).etype();
         let Some(row) = ops::select(Operator::Assign, Etype::Pointer, b, None) else {
             return Self::mismatch(Operator::Assign, op_span);
