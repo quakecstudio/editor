@@ -9,15 +9,16 @@
 
 use std::path::{Path, PathBuf};
 
-use eframe::egui::Key;
+use eframe::egui::{self, Key};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use qs_editor_view::Position;
 use qs_workbench::Location;
 
 use super::{counts, problem_text};
 use crate::App;
 use crate::icons::Icon;
+use crate::shell::EDITOR_AREA;
 use crate::strings::Text;
 
 /// The test project: two problems in `src/weapons.qc`, an error each, and a warning in
@@ -183,4 +184,81 @@ fn a_problems_row_says_what_and_where() {
             .ends_with(&format!("{}:5:14", root.join("src/world.qc").display())),
         "a file outside the root keeps its whole path"
     );
+}
+
+// P2-19: the open file's row in the tree is drawn selected, and no other.
+#[test]
+fn the_open_file_is_selected_in_the_tree() {
+    let mut harness = harness();
+    harness.get_by_label("world.qc").click();
+    harness.run();
+    let selected = |harness: &Harness<'static, Option<App>>, name: &str| {
+        harness.get_by_label(name).accesskit_node().toggled()
+            == Some(egui::accesskit::Toggled::True)
+    };
+    assert!(selected(&harness, "world.qc"));
+    assert!(!selected(&harness, "weapons.qc"));
+    assert!(!selected(&harness, "defs.qc"));
+}
+
+// P2-19: opening the file the editor already shows moves its caret and keeps its text, edits
+// included.
+#[test]
+fn opening_the_shown_file_again_keeps_its_edits() {
+    let mut harness = harness();
+    harness.get_by_label("weapons.qc").click();
+    harness.run();
+    harness.get_by_label(Text::Editor.get()).click();
+    harness.run();
+    let id = egui::Id::new(EDITOR_AREA);
+    harness.ctx.memory_mut(|m| m.request_focus(id));
+    harness.run();
+    harness.event(egui::Event::Text("zz".to_owned()));
+    harness.run();
+    let problem = app(&harness).shell().workbench().problems()[0].clone();
+    harness
+        .get_by_label(&problem_text(&problem, Some(&fixture())))
+        .click();
+    harness.run();
+    let shell = app(&harness).shell();
+    assert_eq!(shell.caret().unwrap().1, position(problem.location));
+    assert!(shell.editor_text().unwrap().starts_with("zz"));
+}
+
+// P2-19: a long tree and a long symbol list each scroll in their share of the left panel, so
+// the sections below them stay in the window.
+#[test]
+fn long_lists_leave_room_for_the_sections_below() {
+    let dir = std::env::temp_dir().join(format!("quakec-studio-long-{}", std::process::id()));
+    let _ignored = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut src = String::from("progs.dat\n");
+    for n in 0..80 {
+        let name = format!("f{n:02}.qc");
+        std::fs::write(dir.join(&name), format!("float g{n}a;\nfloat g{n}b;\n")).unwrap();
+        src.push_str(&name);
+        src.push('\n');
+    }
+    std::fs::write(dir.join("progs.src"), src).unwrap();
+    let mut harness = Harness::builder()
+        .with_size([1440.0, 900.0])
+        .build_ui_state(
+            |ui, app: &mut Option<App>| {
+                if let Some(app) = app {
+                    app.frame(ui);
+                }
+            },
+            None,
+        );
+    let mut app = App::new(&harness.ctx, None).unwrap();
+    app.shell_mut().open_project(&dir).unwrap();
+    *harness.state_mut() = Some(app);
+    harness.run();
+    harness.get_by_label(Text::SymbolsAll.get()).click();
+    harness.run();
+    let symbols = harness.get_by_label(Text::Symbols.get()).rect();
+    let entities = harness.get_by_label(Text::Entities.get()).rect();
+    let _ignored = std::fs::remove_dir_all(&dir);
+    assert!(symbols.bottom() < 900.0 * 0.6, "{symbols:?}");
+    assert!(entities.bottom() < 900.0, "{entities:?}");
 }

@@ -60,7 +60,7 @@ impl HasLayout for Workspace {
 /// The areas of the window, each egui's id for it. One enum, so no two share an id: a
 /// field-less enum hashes only its variant's place, so two enums' first variants would.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-enum Area {
+pub(crate) enum Area {
     Toolbar,
     StatusBar,
     Panel(Panel),
@@ -91,6 +91,9 @@ pub enum CentreTab {
     Game,
 }
 
+/// The editor's area, whose egui id is the editor view's.
+pub(crate) const EDITOR_AREA: Area = Area::Editor;
+
 /// The file in the editor: the view of its text and the `file.open` it shows.
 struct Editor {
     path: PathBuf,
@@ -105,7 +108,7 @@ impl Editor {
         let mut editor = Self {
             path: open.path().to_path_buf(),
             generation: open.generation(),
-            view: EditorView::new(Id::new(Area::Editor), &text),
+            view: EditorView::new(Id::new(EDITOR_AREA), &text),
         };
         editor.place(open);
         editor
@@ -216,6 +219,14 @@ impl Shell {
         self.editor
             .as_ref()
             .map(|editor| (editor.path.as_path(), editor.view.state().primary().head))
+    }
+
+    /// The editor's text, edits included, once the editor has drawn a file.
+    #[must_use]
+    pub fn editor_text(&self) -> Option<String> {
+        self.editor
+            .as_ref()
+            .map(|editor| editor.view.state().buffer().text())
     }
 
     /// Opens the project in `path`, through its command.

@@ -51,7 +51,9 @@ impl<L: Loader> AnalysisHost<L> {
         out
     }
 
-    /// Every file's global definitions, by path and then source order, each once.
+    /// Every file's global definitions, by path and then source order, each once. A vector's
+    /// components (QC-11.7), whose names are first written where the vector's is, are left
+    /// out with it listed.
     pub fn workspace_symbols(&mut self) -> Vec<Symbol> {
         self.ensure_all();
         let mut seen = BTreeSet::new();
@@ -74,7 +76,7 @@ impl<L: Loader> AnalysisHost<L> {
                 let Some(range) = self.range(index, def.location) else {
                     continue;
                 };
-                if seen.insert((range.path.clone(), range.span.start, def.name.clone())) {
+                if seen.insert((range.path.clone(), range.span.start)) {
                     out.push(Symbol {
                         name: def.name.clone(),
                         kind,

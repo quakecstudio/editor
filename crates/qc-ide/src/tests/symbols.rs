@@ -48,7 +48,7 @@ fn a_files_outline_is_its_global_definitions() {
 fn the_projects_symbols_are_every_files() {
     let shared = "float shared;\n";
     let mut host = host(&ProjectSpec {
-        files: &[("defs.qc", shared), ("a.qc", "float a;\n")],
+        files: &[("defs.qc", shared), ("a.qc", "float a;\nvector v;\n")],
         extra: &[
             (
                 "quakec.toml",
@@ -61,7 +61,35 @@ fn the_projects_symbols_are_every_files() {
     let all = host.workspace_symbols();
     assert_eq!(
         named(&all),
-        [("a", SymbolKind::Global), ("shared", SymbolKind::Global)]
+        [
+            ("a", SymbolKind::Global),
+            ("v", SymbolKind::Global),
+            ("shared", SymbolKind::Global)
+        ],
+        "a vector's components are not listed"
     );
     assert_eq!(all.first().unwrap().range.path, path("a.qc"));
+}
+
+/// An FTEQCC class's members and the `spawnfunc_` the compiler makes for it are not symbols of
+/// the project; the class is.
+#[test]
+fn a_classs_members_and_what_the_compiler_makes_are_left_out() {
+    let text = "class Ember : entity { float bounces; };\nfloat a;\n";
+    let mut host = host(&ProjectSpec {
+        files: &[("a.qc", text)],
+        dialect: Some(qc_project::Dialect::Fteqcc),
+        ..ProjectSpec::default()
+    });
+    let names: Vec<String> = host
+        .workspace_symbols()
+        .into_iter()
+        .map(|s| s.name)
+        .collect();
+    assert!(names.contains(&"a".to_owned()), "{names:?}");
+    assert!(!names.contains(&"bounces".to_owned()), "{names:?}");
+    assert!(
+        !names.iter().any(|n| n.starts_with("spawnfunc_")),
+        "{names:?}"
+    );
 }
