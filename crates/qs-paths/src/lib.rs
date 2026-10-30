@@ -20,8 +20,10 @@ use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+mod fonts;
 mod stores;
 
+pub use fonts::{current_font_dirs, font_dirs};
 pub use stores::{StoreDirs, current_store_dirs, store_dirs};
 
 /// The directory name on macOS and Windows, where names are displayed to users.

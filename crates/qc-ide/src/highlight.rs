@@ -12,6 +12,7 @@ use std::path::Path;
 use qc_diag::Span;
 use qc_project::Loader;
 use qc_sema::{DefKind, Definition};
+use qc_syntax::SyntaxKind;
 
 use crate::host::{AnalysisHost, ModuleData};
 use crate::syntax::name_at;
@@ -169,4 +170,59 @@ fn modifiers(def: &Definition, data: &ModuleData, vanilla: bool) -> Modifiers {
         out = out.with(Modifier::DefaultLibrary);
     }
     out
+}
+
+/// What a token of the file as written is, for colouring what [`Highlight`] does not cover.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SyntaxClass {
+    /// A keyword: `if`, `local`, `return` and the rest the parser reads as keywords.
+    Keyword,
+    /// A type keyword: `float`, `vector`, `string`, `entity`, `void`.
+    Type,
+    /// A float or vector literal.
+    Number,
+    /// A string literal.
+    String,
+    /// A line or block comment.
+    Comment,
+}
+
+impl SyntaxClass {
+    /// The class of a token of kind `kind`, `None` for names, punctuation and whitespace.
+    #[must_use]
+    pub fn of(kind: SyntaxKind) -> Option<Self> {
+        Some(match kind {
+            SyntaxKind::LineComment | SyntaxKind::BlockComment => Self::Comment,
+            SyntaxKind::FloatLit | SyntaxKind::VectorLit => Self::Number,
+            SyntaxKind::StringLit => Self::String,
+            SyntaxKind::FloatKw
+            | SyntaxKind::VectorKw
+            | SyntaxKind::StringKw
+            | SyntaxKind::EntityKw
+            | SyntaxKind::VoidKw => Self::Type,
+            kind if kind.is_keyword() => Self::Keyword,
+            _ => return None,
+        })
+    }
+}
+
+impl<L: Loader> AnalysisHost<L> {
+    /// The keywords, literals and comments of `path` as written, in source order: what an
+    /// editor colours before and beside the names [`AnalysisHost::highlights`] gives.
+    pub fn syntax_classes(&mut self, path: &Path) -> Vec<(Span, SyntaxClass)> {
+        let Some(&(module, file)) = self.modules_of(path).first() else {
+            return Vec::new();
+        };
+        let Some((_, data)) = self.module(module) else {
+            return Vec::new();
+        };
+        let Some(parse) = data.parses.get(file.0) else {
+            return Vec::new();
+        };
+        parse
+            .syntax()
+            .tokens()
+            .filter_map(|token| SyntaxClass::of(token.kind()).map(|class| (token.span(), class)))
+            .collect()
+    }
 }

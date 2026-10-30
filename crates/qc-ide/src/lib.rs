@@ -44,7 +44,7 @@ mod tests;
 use std::path::PathBuf;
 
 pub use completion::Completion;
-pub use highlight::{Highlight, HighlightKind, Modifier, Modifiers};
+pub use highlight::{Highlight, HighlightKind, Modifier, Modifiers, SyntaxClass};
 pub use hints::ParameterHint;
 pub use host::{AnalysisHost, Config};
 pub use hover::{BuiltinInfo, Hover};

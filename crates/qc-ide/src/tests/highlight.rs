@@ -3,7 +3,7 @@
 //! Semantic highlighting.
 
 use super::{ProjectSpec, host, nth, one, path};
-use crate::{Highlight, HighlightKind, Modifier, Modifiers};
+use crate::{Highlight, HighlightKind, Modifier, Modifiers, SyntaxClass};
 
 /// The highlight at the `n`-th `needle` of `text` among `all`.
 fn find<'a>(all: &'a [Highlight], text: &str, needle: &str, n: usize) -> Option<&'a Highlight> {
@@ -103,4 +103,41 @@ fn modifiers_are_a_set() {
         [Modifier::Declaration, Modifier::DefaultLibrary]
     );
     assert_eq!(Modifiers::default().iter().count(), 0);
+}
+
+/// The syntax classes are the file's keywords, type keywords, literals and comments as
+/// written, in source order; names and punctuation are left to the semantic highlighting.
+#[test]
+fn syntax_classes_colour_keywords_literals_and_comments() {
+    let text = "// note\nfloat x = 1;\nvoid() f = { local string s; s = \"a\"; if (x) return; /* b */ };\n";
+    let mut host = host(&ProjectSpec {
+        files: &[("a.qc", text)],
+        ..ProjectSpec::default()
+    });
+    let classes: Vec<(&str, SyntaxClass)> = host
+        .syntax_classes(&path("a.qc"))
+        .into_iter()
+        .map(|(span, class)| (&text[span.start..span.end], class))
+        .collect();
+    assert_eq!(
+        classes,
+        [
+            ("// note", SyntaxClass::Comment),
+            ("float", SyntaxClass::Type),
+            ("1", SyntaxClass::Number),
+            ("void", SyntaxClass::Type),
+            ("local", SyntaxClass::Keyword),
+            ("string", SyntaxClass::Type),
+            ("\"a\"", SyntaxClass::String),
+            ("if", SyntaxClass::Keyword),
+            ("return", SyntaxClass::Keyword),
+            ("/* b */", SyntaxClass::Comment),
+        ]
+    );
+    assert!(host.syntax_classes(&path("nowhere.qc")).is_empty());
+    assert_eq!(
+        SyntaxClass::of(qc_syntax::SyntaxKind::VectorLit),
+        Some(SyntaxClass::Number)
+    );
+    assert_eq!(SyntaxClass::of(qc_syntax::SyntaxKind::Name), None);
 }

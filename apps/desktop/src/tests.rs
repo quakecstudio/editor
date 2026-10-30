@@ -22,7 +22,7 @@ use crate::icons::Icon;
 use crate::keymap;
 use crate::palette::highlighted;
 use crate::shell::{commanded_size, dragged_size};
-use crate::strings::{Text, command_count};
+use crate::strings::{Text, command_count, match_count};
 use crate::theme::{Mode, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
 
@@ -178,7 +178,7 @@ fn the_bundled_fonts_have_every_glyph() {
         }
     });
     let definitions = Theme::fonts();
-    assert_eq!(definitions.font_data.len(), 4);
+    assert_eq!(definitions.font_data.len(), 5);
     assert_eq!(definitions.families.len(), 3);
     let icons: BTreeSet<char> = Icon::ALL.iter().map(|icon| icon.char()).collect();
     assert_eq!(icons.len(), Icon::ALL.len());
@@ -237,6 +237,8 @@ fn the_ui_code_has_no_string_literals() {
         ("shell.rs", include_str!("shell.rs")),
         ("palette.rs", include_str!("palette.rs")),
         ("project.rs", include_str!("project.rs")),
+        ("editor.rs", include_str!("editor.rs")),
+        ("code_style.rs", include_str!("code_style.rs")),
         ("menu.rs", include_str!("menu.rs")),
         ("lib.rs", include_str!("lib.rs")),
         ("main.rs", include_str!("main.rs")),
@@ -732,4 +734,12 @@ fn a_size_set_by_command_is_told_from_a_drag() {
         !commanded_size(None, 300.0, false),
         "never drawn: default_size applies"
     );
+}
+
+// UI-4: the find bar counts its matches in words.
+#[test]
+fn the_match_count_reads_as_words() {
+    assert_eq!(match_count(0), "0 matches");
+    assert_eq!(match_count(1), "1 match");
+    assert_eq!(match_count(12), "12 matches");
 }

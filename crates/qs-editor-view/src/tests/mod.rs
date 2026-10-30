@@ -12,6 +12,8 @@ use egui::{
     Modifiers, Pos2, RawInput, Rect, Vec2, accesskit,
 };
 
+mod diff;
+mod editing;
 mod layout;
 mod paint;
 

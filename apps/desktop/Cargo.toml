@@ -29,6 +29,9 @@ qs-paths = { workspace = true }
 qs-workbench = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
+# Reads which characters a system font file covers, for the fallback (ADR-0003); egui reads
+# fonts with it too.
+skrifa = { workspace = true, features = ["std"] }
 toml = { workspace = true, features = ["parse", "serde", "std"] }
 tracing = { workspace = true, features = ["std"] }
 

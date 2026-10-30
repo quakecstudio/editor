@@ -12,6 +12,7 @@ use egui::{
 };
 
 use crate::buffer::Position;
+use crate::diff::Diff;
 use crate::layout::{LayoutCache, Preedit, Styler, line_job};
 use crate::selection::{EditState, Extend, Motion, Selection};
 
@@ -32,6 +33,13 @@ pub struct ViewStyle {
     pub line_number: Color32,
     /// The carets, `accent`.
     pub caret: Color32,
+    /// The background of a line new since the diff's base, `diff.added`.
+    pub added: Color32,
+    /// The background of a line the diff's base had and the text no longer does,
+    /// `status.error_bg`.
+    pub removed: Color32,
+    /// The text of such a line, `text.on_error`.
+    pub removed_text: Color32,
 }
 
 impl Default for ViewStyle {
@@ -45,6 +53,9 @@ impl Default for ViewStyle {
             text: Color32::from_rgb(0xd9, 0xd2, 0xc7),
             line_number: Color32::from_rgb(0x8e, 0x87, 0x7d),
             caret: Color32::from_rgb(0xee, 0x8b, 0x45),
+            added: Color32::from_rgb(0x24, 0x33, 0x1f),
+            removed: Color32::from_rgb(0x3a, 0x22, 0x20),
+            removed_text: Color32::from_rgb(0xf2, 0xd2, 0xcc),
         }
     }
 }
@@ -53,6 +64,8 @@ impl Default for ViewStyle {
 const GUTTER_PAD: f32 = 12.0;
 /// The caret's width in points.
 const CARET_WIDTH: f32 = 2.0;
+/// The gutter's mark on a removed line's row.
+const REMOVED_MARK: &str = "-";
 /// The accessible name of the editor.
 const LABEL: &str = "Code editor";
 
@@ -69,6 +82,12 @@ pub struct EditorView {
     visible: usize,
     /// IME composition text at the primary caret, not yet in the text.
     preedit: Option<String>,
+    /// The text position under the pointer in the last frame, if it was over the text.
+    hovered: Option<Position>,
+    /// The base text the inline diff is from, and the diff with the text at a revision.
+    diff: Option<DiffState>,
+    /// Where the primary caret was drawn in the last frame, if it was on screen.
+    caret_rect: Option<Rect>,
     cache: LayoutCache,
 }
 
@@ -83,6 +102,9 @@ impl EditorView {
             scroll_rest: 0.0,
             visible: 1,
             preedit: None,
+            hovered: None,
+            diff: None,
+            caret_rect: None,
             cache: LayoutCache::default(),
         }
     }
@@ -114,6 +136,73 @@ impl EditorView {
     /// Scrolls so `line` is the first visible line, clamped to the text.
     pub fn scroll_to(&mut self, line: usize) {
         self.first_line = line.min(self.state.buffer().line_count().saturating_sub(1));
+    }
+
+    /// Shows the text's changes since `base` inline: new lines tinted, and the base's removed
+    /// lines as rows of their own above where they were; `None` shows no diff.
+    pub fn set_diff_base(&mut self, base: Option<String>) {
+        self.diff = base.map(|base| DiffState {
+            diff: Diff::new(&base, &self.state.buffer().text()),
+            revision: self.state.revision(),
+            base,
+        });
+    }
+
+    /// The inline diff as of the text's current revision, if one is shown.
+    #[must_use]
+    pub fn diff(&mut self) -> Option<&Diff> {
+        self.refresh_diff();
+        self.diff.as_ref().map(|state| &state.diff)
+    }
+
+    /// Works the diff out again when the text changed since it was.
+    fn refresh_diff(&mut self) {
+        let revision = self.state.revision();
+        if let Some(state) = self.diff.as_mut()
+            && state.revision != revision
+        {
+            state.diff = Diff::new(&state.base, &self.state.buffer().text());
+            state.revision = revision;
+        }
+    }
+
+    /// The rows from line `first`, at most `count`: each line, after the diff's removed lines
+    /// before it.
+    fn rows(&mut self, first: usize, count: usize) -> Vec<Row> {
+        self.refresh_diff();
+        let line_count = self.state.buffer().line_count();
+        let diff = self.diff.as_ref().map(|state| &state.diff);
+        // The line count itself stands for the end, after the last line, where lines removed
+        // at the end are drawn.
+        (first..=line_count)
+            .flat_map(|line| {
+                let removed = diff
+                    .map(|d| d.removed_before(line))
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|text| Row::Removed(text.clone()));
+                let this = (line < line_count).then(|| Row::Line {
+                    line,
+                    added: diff.is_some_and(|d| d.is_added(line)),
+                });
+                removed.chain(this)
+            })
+            .take(count)
+            .collect()
+    }
+
+    /// Where the primary caret was in the last frame, `None` when it was off screen: where a
+    /// popup about the text at the caret goes.
+    #[must_use]
+    pub fn caret_rect(&self) -> Option<Rect> {
+        self.caret_rect
+    }
+
+    /// The text position under the pointer in the last frame, `None` when the pointer is not
+    /// over the text.
+    #[must_use]
+    pub fn hovered(&self) -> Option<Position> {
+        self.hovered
     }
 
     /// The IME composition text shown at the primary caret, if any.
@@ -178,6 +267,12 @@ impl EditorView {
                 self.press(at, modifiers);
             }
         }
+        self.hovered = match response.hover_pos() {
+            Some(pos) if pos.x >= text_left => {
+                Some(self.position_at(ui, style, styler, pos, rect.top(), text_left, row_height))
+            }
+            Some(_) | None => None,
+        };
         if response.dragged()
             && let Some(pos) = response.interact_pointer_pos()
         {
@@ -226,10 +321,22 @@ impl EditorView {
         row_height: f32,
     ) -> Position {
         let row = whole(((pos.y - top) / row_height).max(0.0));
-        let line = self
-            .first_line
-            .saturating_add(row)
-            .min(self.state.buffer().line_count().saturating_sub(1));
+        let last = self.state.buffer().line_count().saturating_sub(1);
+        // A removed line's row places the caret at the start of the line after it: the line
+        // after every line drawn above it.
+        let rows = self.rows(self.first_line, row.saturating_add(1));
+        let above = rows.get(..row).unwrap_or_default();
+        let lines_above = above
+            .iter()
+            .filter(|r| matches!(r, Row::Line { .. }))
+            .count();
+        let line = self.first_line.saturating_add(lines_above);
+        match rows.get(row) {
+            Some(Row::Removed(_)) if line > last => return self.state.buffer().end(),
+            Some(Row::Removed(_)) => return Position::new(line, 0),
+            Some(Row::Line { .. }) | None => {}
+        }
+        let line = line.min(last);
         let galley = self.galley(ui, style, styler, line, None);
         let cursor = galley.cursor_from_pos(Vec2::new(pos.x - text_left, 0.0));
         Position::new(line, self.state.buffer().byte_column(line, cursor.index.0))
@@ -362,6 +469,8 @@ impl EditorView {
                 self.state.select_all();
                 return true;
             }
+            Key::Z if modifiers.command && modifiers.shift => return self.state.redo(),
+            Key::Z if modifiers.command => return self.state.undo(),
             Key::Escape => {
                 self.state.single_caret();
                 self.preedit = None;
@@ -454,20 +563,41 @@ impl EditorView {
         painter.rect_filled(rect, CornerRadius::ZERO, style.background);
         let line_count = self.state.buffer().line_count();
         let first = self.first_line.min(line_count.saturating_sub(1));
-        let end = first.saturating_add(self.visible).min(line_count);
+        let rows = self.rows(first, self.visible);
         let primary = self.state.primary();
         let selections = self.state.selections().to_vec();
         let composing = self.preedit.clone();
         let text_left = rect.left() + gutter;
         let mut ime_caret = None;
         let mut runs: Vec<(Rect, String, Vec<u8>)> = Vec::new();
-        for (row, line) in (first..end).enumerate() {
+        for (row, kind) in rows.into_iter().enumerate() {
             let top = rect.top() + points(row) * row_height;
             let row_rect = Rect::from_min_size(
                 Pos2::new(rect.left(), top),
                 Vec2::new(rect.width(), row_height),
             );
-            if line == primary.head.line {
+            let (line, added) = match kind {
+                Row::Line { line, added } => (line, added),
+                Row::Removed(text) => {
+                    painter.rect_filled(row_rect, CornerRadius::ZERO, style.removed);
+                    let galley = ui.fonts_mut(|f| {
+                        f.layout_job(line_job(&text, &[], &style.font, style.removed_text, None))
+                    });
+                    let gutter = (REMOVED_MARK.to_owned(), style.removed_text);
+                    text_row(
+                        &painter,
+                        style,
+                        galley,
+                        (top, row_height),
+                        text_left,
+                        gutter,
+                    );
+                    continue;
+                }
+            };
+            if added {
+                painter.rect_filled(row_rect, CornerRadius::ZERO, style.added);
+            } else if line == primary.head.line {
                 painter.rect_filled(row_rect, CornerRadius::ZERO, style.current_line);
             }
             let preedit = match &composing {
@@ -510,18 +640,14 @@ impl EditorView {
                 );
                 painter.rect_filled(band, CornerRadius::ZERO, style.selection);
             }
-            let text_top = top + (row_height - galley.size().y).max(0.0) / 2.0;
-            painter.galley(
-                Pos2::new(text_left, text_top),
+            let number = (line.saturating_add(1).to_string(), style.line_number);
+            text_row(
+                &painter,
+                style,
                 Arc::clone(&galley),
-                style.text,
-            );
-            painter.text(
-                Pos2::new(text_left - GUTTER_PAD, text_top),
-                egui::Align2::RIGHT_TOP,
-                line.saturating_add(1).to_string(),
-                style.font.clone(),
-                style.line_number,
+                (top, row_height),
+                text_left,
+                number,
             );
             for selection in selections.iter().filter(|s| s.head.line == line) {
                 let mut col = selection.head.col;
@@ -558,6 +684,7 @@ impl EditorView {
                 .collect();
             runs.push((row_rect, value, lengths));
         }
+        self.caret_rect = ime_caret;
         if focused && let Some(cursor_rect) = ime_caret {
             ui.output_mut(|o| {
                 o.ime = Some(IMEOutput {
@@ -649,4 +776,44 @@ fn points(n: usize) -> f32 {
 )]
 fn whole(x: f32) -> usize {
     usize::from(x.clamp(0.0, f32::from(u16::MAX)) as u16)
+}
+
+/// The inline diff's base text, and its diff with the text as of a revision.
+#[derive(Debug)]
+struct DiffState {
+    base: String,
+    diff: Diff,
+    revision: u64,
+}
+
+/// One row the view draws: a line of the text, or a line the diff's base had.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Row {
+    /// A line of the text, and whether it is new since the diff's base.
+    Line { line: usize, added: bool },
+    /// A line of the base that the text no longer has.
+    Removed(String),
+}
+
+/// Draws one row's text `galley` at `text_left`, centred in the row at `top` of `row_height`,
+/// and `gutter`'s text right-aligned before it in its colour: a line's number, or a removed
+/// line's mark.
+fn text_row(
+    painter: &egui::Painter,
+    style: &ViewStyle,
+    galley: Arc<Galley>,
+    (top, row_height): (f32, f32),
+    text_left: f32,
+    gutter: (String, Color32),
+) {
+    let text_top = top + (row_height - galley.size().y).max(0.0) / 2.0;
+    let (label, color) = gutter;
+    painter.galley(Pos2::new(text_left, text_top), galley, style.text);
+    painter.text(
+        Pos2::new(text_left - GUTTER_PAD, text_top),
+        egui::Align2::RIGHT_TOP,
+        label,
+        style.font.clone(),
+        color,
+    );
 }

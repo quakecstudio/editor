@@ -26,6 +26,7 @@ absolute-paths-allowed-crates = [
     "schemars",
     "serde",
     "serde_json",
+    "skrifa",
     "toml",
     "toml_edit",
     "tracing",

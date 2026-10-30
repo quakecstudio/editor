@@ -21,12 +21,14 @@ const PLEX_SANS: &[u8] = include_bytes!("../assets/fonts/IBMPlexSans-Regular.ttf
 const PLEX_SANS_SEMIBOLD: &[u8] = include_bytes!("../assets/fonts/IBMPlexSans-SemiBold.ttf");
 const JETBRAINS_MONO: &[u8] = include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf");
 const LUCIDE: &[u8] = include_bytes!("../assets/fonts/lucide.ttf");
+const NOTO_SANS_SC: &[u8] = include_bytes!("../assets/fonts/NotoSansSC-Regular.otf");
 
 /// The font family names egui knows the fonts by.
 const UI: &str = "ui";
 const UI_SEMIBOLD: &str = "ui-semibold";
 const CODE: &str = "code";
 const ICONS: &str = "icons";
+const CJK: &str = "cjk";
 
 /// The semibold interface family, for titles and panel headings.
 #[must_use]
@@ -83,11 +85,33 @@ pub enum Token {
     Border,
     /// Buttons' outlines.
     BorderStrong,
+    /// The line the caret is on.
+    SurfaceCurrentLine,
+    /// A line new in an inline diff.
+    DiffAdded,
+    /// A removed line in an inline diff, and an inline diagnostic.
+    StatusErrorBg,
+    /// Plain code.
+    TextCode,
+    /// Text on `status.error_bg`.
+    TextOnError,
+    /// Keywords.
+    CodeKeyword,
+    /// Types and fields.
+    CodeType,
+    /// Functions and builtins.
+    CodeFunction,
+    /// Constants and numbers.
+    CodeConstant,
+    /// Strings.
+    CodeString,
+    /// Comments.
+    CodeComment,
 }
 
 impl Token {
     /// Every token the app draws with.
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 29] = [
         Self::SurfaceChrome,
         Self::SurfaceToolbar,
         Self::SurfaceTabs,
@@ -106,6 +130,17 @@ impl Token {
         Self::StatusWarn,
         Self::Border,
         Self::BorderStrong,
+        Self::SurfaceCurrentLine,
+        Self::DiffAdded,
+        Self::StatusErrorBg,
+        Self::TextCode,
+        Self::TextOnError,
+        Self::CodeKeyword,
+        Self::CodeType,
+        Self::CodeFunction,
+        Self::CodeConstant,
+        Self::CodeString,
+        Self::CodeComment,
     ];
 
     /// Its name in `tokens.toml`.
@@ -130,6 +165,17 @@ impl Token {
             Self::StatusWarn => "status.warn",
             Self::Border => "border",
             Self::BorderStrong => "border.strong",
+            Self::SurfaceCurrentLine => "surface.current_line",
+            Self::DiffAdded => "diff.added",
+            Self::StatusErrorBg => "status.error_bg",
+            Self::TextCode => "text.code",
+            Self::TextOnError => "text.on_error",
+            Self::CodeKeyword => "code.keyword",
+            Self::CodeType => "code.type",
+            Self::CodeFunction => "code.function",
+            Self::CodeConstant => "code.constant",
+            Self::CodeString => "code.string",
+            Self::CodeComment => "code.comment",
         }
     }
 }
@@ -302,7 +348,9 @@ impl Theme {
     }
 
     /// The bundled fonts as egui's families: the interface in IBM Plex Sans with Lucide's
-    /// icons after it, code in JetBrains Mono, and the semibold for headings.
+    /// icons after it, code in JetBrains Mono, and the semibold for headings; each falls back
+    /// to Noto Sans SC for Chinese and Japanese text (ADR-0003), and then to the system's fonts
+    /// (`crate::fallback`).
     #[must_use]
     pub fn fonts() -> FontDefinitions {
         let mut fonts = FontDefinitions::empty();
@@ -311,16 +359,29 @@ impl Theme {
             (UI_SEMIBOLD, PLEX_SANS_SEMIBOLD),
             (CODE, JETBRAINS_MONO),
             (ICONS, LUCIDE),
+            (CJK, NOTO_SANS_SC),
         ] {
             fonts
                 .font_data
                 .insert(name.to_owned(), Arc::new(FontData::from_static(bytes)));
         }
-        let chain = |first: &str| vec![first.to_owned(), ICONS.to_owned()];
+        let chain = |first: &str| vec![first.to_owned(), ICONS.to_owned(), CJK.to_owned()];
         fonts.families.insert(FontFamily::Proportional, chain(UI));
         fonts.families.insert(FontFamily::Monospace, chain(CODE));
         fonts.families.insert(semibold(), chain(UI_SEMIBOLD));
         fonts
+    }
+
+    /// The bundled font files, each as its bytes.
+    #[must_use]
+    pub const fn bundled_fonts() -> [&'static [u8]; 5] {
+        [
+            PLEX_SANS,
+            PLEX_SANS_SEMIBOLD,
+            JETBRAINS_MONO,
+            LUCIDE,
+            NOTO_SANS_SC,
+        ]
     }
 
     /// Sets egui's fonts and style to the theme.

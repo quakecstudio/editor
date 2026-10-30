@@ -483,13 +483,12 @@ issues:
   - P2-14
   - P2-27
   deliverable:
-  - Editor built on crates/qs-editor-view (P2-27) with rope buffer, text shaped by a shaping library (cosmic-text or parley) with system font fallback and a bundled CJK fallback font (ADR-0003), semantic highlighting, multi-cursor, IME, find and replace, inline diff rendering, go-to-definition, references, rename, hover, completion
+  - 'Editor built on crates/qs-editor-view (P2-27), whose line buffer meets the frame budget on 50,000 lines (docs/spikes/data/ref-mac/ref-mac-editor-view.md), with text shaped by egui''s own shaper (harfrust, a HarfBuzz port) with the bundled fonts, a bundled CJK fallback font and system font fallback (ADR-0003), semantic highlighting, multi-cursor, IME, find and replace, inline diff rendering, go-to-definition, references, rename, hover, completion'
   - 'The bundled CJK fallback font (OFL-1.1, such as Noto Sans CJK) is listed in ATTRIBUTION.md (ADR-0003)'
   acceptance:
   - Meets the keystroke and open-project budgets on a 50,000-line project
-  - IME composition works for Japanese and Chinese input through each OS's real input method
   verify:
-  - Benchmarks; UI snapshot tests; recorded IME test
+  - 'Benchmarks: cargo run --release -p quakec-studio --example editor_bench, results in docs/spikes/data/; UI snapshot tests'
 - key: P2-27
   title: Build the editor view widget
   labels:
@@ -1766,6 +1765,7 @@ issues:
   - P2-148
   - P2-149
   - P2-150
+  - P2-151
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -3049,6 +3049,26 @@ issues:
   - spikes/bench.sh run on the Windows and Linux reference machines shows p99 frame time at most 8.33 ms for the egui prototype; results committed under docs/spikes/data/ (ADR-0003)
   verify:
   - QS_BENCH_HOST=ref-windows spikes/bench.sh and QS_BENCH_HOST=ref-linux spikes/bench.sh on the reference machines; the summary.md files
+- key: P2-151
+  title: Record IME composition in the code editor through each OS's input method
+  labels:
+  - L7-ui
+  - area:editor
+  - type:test
+  - needs:human
+  size: S
+  reqs:
+  - UI-4
+  summary: |
+    Split from P2-18 (#74). The editor takes IME preedit and commit events through winit and places the candidate window at the caret (qs-editor-view, tested with synthetic events), but only a person typing through each OS's real input method can show Japanese and Chinese composition working, as ADR-0003 asks.
+  depends:
+  - P2-18
+  deliverable:
+  - 'docs/spikes/data/: a recording or screenshots per OS (macOS, Windows, Linux) of Japanese and Chinese text composed in the code editor through the OS''s input method, with the steps followed'
+  acceptance:
+  - Japanese and Chinese text composed through the real input method of macOS, Windows and Linux appears in the editor as committed, with the candidate window at the caret (ADR-0003)
+  verify:
+  - The recordings or screenshots under docs/spikes/data/
 - key: P2-150
   title: Hold the rerelease mission packs and the corpus mods to the FTEQCC differential
   labels:

@@ -18,15 +18,18 @@ use std::path::{Path, PathBuf};
 use eframe::egui::containers::panel::PanelState;
 use eframe::egui::{self, Align, Button, Id, Layout as EguiLayout, RichText, Sense, Ui};
 use qs_commands::{CommandError, RegisterError, Registry, Session};
-use qs_editor_view::{EditorView, Plain, Position, Selection, ViewStyle};
+use qs_editor_view::{Position, ViewStyle};
 use qs_layout::{
     HasLayout, Layout, Panel, RESIZE_PANEL, ResizePanelParams, TOGGLE_PANEL, TogglePanelParams,
 };
 use qs_workbench::{
-    Config, FsLoader, HasWorkbench, OPEN_FILE, OPEN_PROJECT, OpenFile, OpenFileParams,
-    OpenProjectParams, Workbench,
+    AtParams, COMPLETE, Candidate, Config, DEFINITION, FsLoader, HOVER, HasWorkbench, HoverInfo,
+    OPEN_FILE, OPEN_PROJECT, OpenFile, OpenFileParams, OpenProjectParams, Place, REFERENCES,
+    RENAME, RenameParams, SAVE_FILE, SaveFileParams, UPDATE_FILE, UpdateFileParams, Workbench,
 };
 
+use crate::editor::{Editor, Popup, Request};
+use crate::fallback::{SystemFonts, families};
 use crate::icons::Icon;
 use crate::keymap;
 use crate::palette::Palette;
@@ -94,42 +97,6 @@ pub enum CentreTab {
 /// The editor's area, whose egui id is the editor view's.
 pub(crate) const EDITOR_AREA: Area = Area::Editor;
 
-/// The file in the editor: the view of its text and the `file.open` it shows.
-struct Editor {
-    path: PathBuf,
-    generation: u64,
-    view: EditorView,
-}
-
-impl Editor {
-    /// The view of `open`, its caret where `open` puts it.
-    fn new(open: &OpenFile) -> Self {
-        let text = String::from_utf8_lossy(open.text());
-        let mut editor = Self {
-            path: open.path().to_path_buf(),
-            generation: open.generation(),
-            view: EditorView::new(Id::new(EDITOR_AREA), &text),
-        };
-        editor.place(open);
-        editor
-    }
-
-    /// Moves the caret to where `open` puts it and scrolls it into view, a few lines down.
-    fn place(&mut self, open: &OpenFile) {
-        let location = open.location();
-        let line = usize::try_from(location.line().saturating_sub(1)).unwrap_or(usize::MAX);
-        let chars = usize::try_from(location.column().saturating_sub(1)).unwrap_or(usize::MAX);
-        let state = self.view.state_mut();
-        let col = state.buffer().byte_column(line, chars);
-        state.set_selections(&[Selection::caret(Position::new(line, col))]);
-        self.view.scroll_to(line.saturating_sub(CONTEXT_LINES));
-        self.generation = open.generation();
-    }
-}
-
-/// How many lines show above the caret when a file is opened at a place.
-const CONTEXT_LINES: usize = 5;
-
 /// The window's state.
 pub struct Shell {
     session: Session<Workspace>,
@@ -146,6 +113,9 @@ pub struct Shell {
     pub(crate) palette: Palette,
     symbol_scope: SymbolScope,
     editor: Option<Editor>,
+    system_fonts: SystemFonts,
+    /// The editor's file and text revision whose characters have fonts.
+    covered: Option<(PathBuf, u64)>,
 }
 
 impl Shell {
@@ -179,6 +149,8 @@ impl Shell {
             palette: Palette::default(),
             symbol_scope: SymbolScope::default(),
             editor: None,
+            system_fonts: SystemFonts::new(&Theme::bundled_fonts()),
+            covered: None,
         })
     }
 
@@ -221,12 +193,41 @@ impl Shell {
             .map(|editor| (editor.path.as_path(), editor.view.state().primary().head))
     }
 
+    /// The editor, once it has drawn a file.
+    #[cfg(test)]
+    pub(crate) const fn editor(&self) -> Option<&Editor> {
+        self.editor.as_ref()
+    }
+
+    /// The editor, once it has drawn a file, to change.
+    #[cfg(test)]
+    pub(crate) const fn editor_mut(&mut self) -> Option<&mut Editor> {
+        self.editor.as_mut()
+    }
+
+    /// Replaces the system font fallback, as a test does to choose what the "system" has.
+    #[cfg(test)]
+    pub(crate) fn set_system_fonts(&mut self, fonts: SystemFonts) {
+        self.system_fonts = fonts;
+    }
+
+    /// The system fonts given to egui so far.
+    #[cfg(test)]
+    pub(crate) fn system_fonts_added(&self) -> usize {
+        self.system_fonts.added()
+    }
+
     /// The editor's text, edits included, once the editor has drawn a file.
     #[must_use]
     pub fn editor_text(&self) -> Option<String> {
         self.editor
             .as_ref()
             .map(|editor| editor.view.state().buffer().text())
+    }
+
+    /// Gives the editor the keyboard, as a click in it does.
+    pub fn focus_editor(&self, ctx: &egui::Context) {
+        ctx.memory_mut(|m| m.request_focus(Id::new(EDITOR_AREA)));
     }
 
     /// Opens the project in `path`, through its command.
@@ -323,14 +324,16 @@ impl Shell {
         self.save_if_changed(dragging);
     }
 
-    /// The shortcuts pressed this frame: the palette's, and while it is closed each binding's
-    /// command (`keymap`).
+    /// The shortcuts pressed this frame: the palette's, and while it is closed and the editor
+    /// does not have the keyboard each binding's command (`keymap`).
     fn keys(&mut self, ui: &Ui) {
         if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_PALETTE)) {
             self.palette.open();
             return;
         }
-        if self.palette.is_open() {
+        // The palette, and the editor with its own undo history, take their keys themselves.
+        let editing = ui.memory(|m| m.has_focus(Id::new(EDITOR_AREA)));
+        if self.palette.is_open() || editing {
             return;
         }
         for binding in keymap::BINDINGS {
@@ -539,23 +542,175 @@ impl Shell {
         }
     }
 
+    /// Runs the command `id` with `params`, logging a failure; its output, `None` when it
+    /// failed.
+    fn run<P: serde::Serialize, O: serde::de::DeserializeOwned>(
+        &mut self,
+        id: &str,
+        params: &P,
+    ) -> Option<O> {
+        let result = serde_json::to_value(params)
+            .map_err(ShellError::from)
+            .and_then(|params| Ok(self.session.execute(id, params)?))
+            .and_then(|output| Ok(serde_json::from_value(output)?));
+        match result {
+            Ok(output) => Some(output),
+            Err(error) => {
+                tracing::warn!(%error, command = id, "command failed");
+                None
+            }
+        }
+    }
+
+    /// Runs what the editor asked for, each through its command, after sending the editor's
+    /// unsent text so every answer is about the text on screen.
+    fn handle(&mut self, requests: Vec<Request>) {
+        for request in requests {
+            let Some(editor) = self.editor.as_mut() else {
+                return;
+            };
+            let path = editor.path.clone();
+            // An update's text is marked sent already, so this sends only edits made since.
+            if let Some(text) = editor.unsent() {
+                let _: Option<()> = self.run(
+                    UPDATE_FILE,
+                    &UpdateFileParams {
+                        path: path.clone(),
+                        text,
+                    },
+                );
+            }
+            let at = |offset| AtParams {
+                path: path.clone(),
+                offset,
+            };
+            let popup = match request {
+                Request::Update(text) => {
+                    let _: Option<()> = self.run(UPDATE_FILE, &UpdateFileParams { path, text });
+                    None
+                }
+                Request::Save => {
+                    let _: Option<()> = self.run(SAVE_FILE, &SaveFileParams { path });
+                    None
+                }
+                Request::Definition(offset) => {
+                    match self
+                        .run::<_, Option<Place>>(DEFINITION, &at(offset))
+                        .flatten()
+                    {
+                        Some(place) => {
+                            self.jump(Jump {
+                                path: place.path,
+                                offset: place.start,
+                            });
+                            None
+                        }
+                        None => Some(Popup::Note(Text::NoDefinition)),
+                    }
+                }
+                Request::References(offset) => {
+                    let places: Vec<Place> = self.run(REFERENCES, &at(offset)).unwrap_or_default();
+                    Some(if places.is_empty() {
+                        Popup::Note(Text::NoReferences)
+                    } else {
+                        Popup::References(places)
+                    })
+                }
+                Request::Hover(offset, point) => self
+                    .run::<_, Option<HoverInfo>>(HOVER, &at(offset))
+                    .flatten()
+                    .map(|info| Popup::Hover {
+                        at: point,
+                        text: match info.docs {
+                            Some(docs) => {
+                                let mut text = info.declaration;
+                                text.push('\n');
+                                text.push('\n');
+                                text.push_str(&docs);
+                                text
+                            }
+                            None => info.declaration,
+                        },
+                    }),
+                Request::Complete(offset) => {
+                    let candidates: Vec<Candidate> =
+                        self.run(COMPLETE, &at(offset)).unwrap_or_default();
+                    Some(if candidates.is_empty() {
+                        Popup::Note(Text::NoCompletions)
+                    } else {
+                        Popup::Complete {
+                            candidates,
+                            selected: 0,
+                        }
+                    })
+                }
+                Request::Rename(offset, name) => {
+                    let params = RenameParams { path, offset, name };
+                    let done: Option<serde_json::Value> = self.run(RENAME, &params);
+                    done.is_none().then_some(Popup::Note(Text::RenameFailed))
+                }
+                Request::Open(jump) => {
+                    self.jump(jump);
+                    None
+                }
+            };
+            if let Some(popup) = popup
+                && let Some(editor) = self.editor.as_mut()
+            {
+                editor.popup = Some(popup);
+            }
+        }
+    }
+
     /// Brings the editor up to date with the open file: a new view for another file, the caret
     /// moved for another `file.open` of the same one, none for no file.
     fn sync_editor(&mut self) {
+        // Another file's editor sends its edits before it goes: the workbench keeps them, so
+        // the file shows them when it is opened again.
+        let open_path = self.session.context().workbench.open().map(OpenFile::path);
+        if let Some(editor) = self.editor.as_mut()
+            && open_path != Some(editor.path.as_path())
+            && let Some(text) = editor.unsent()
+        {
+            let path = editor.path.clone();
+            let _: Option<()> = self.run(UPDATE_FILE, &UpdateFileParams { path, text });
+        }
         let open = self.session.context().workbench.open();
         match (open, &mut self.editor) {
             (None, _) => self.editor = None,
             (Some(open), Some(editor)) if editor.path == open.path() => {
-                if editor.generation != open.generation() {
-                    editor.place(open);
-                }
+                editor.sync(open, &self.theme);
             }
-            (Some(open), _) => self.editor = Some(Editor::new(open)),
+            (Some(open), _) => {
+                self.editor = Some(Editor::new(Id::new(EDITOR_AREA), open, &self.theme));
+            }
         }
+    }
+
+    /// Gives egui a system font for each character of the editor's text that the bundled fonts
+    /// lack: the whole text of a file just opened, then the caret's line as it is edited.
+    fn cover_characters(&mut self, ctx: &egui::Context) {
+        let Some(editor) = &self.editor else {
+            return;
+        };
+        let state = editor.view.state();
+        let now = (editor.path.clone(), state.revision());
+        if self.covered.as_ref() == Some(&now) {
+            return;
+        }
+        let text = match &self.covered {
+            Some((path, _)) if *path == now.0 => {
+                state.buffer().line(state.primary().head.line).to_owned()
+            }
+            Some(_) | None => state.buffer().text(),
+        };
+        self.system_fonts.cover(ctx, &families(), &text);
+        self.covered = Some(now);
     }
 
     fn centre(&mut self, ui: &mut Ui) {
         self.sync_editor();
+        self.cover_characters(ui.ctx());
         let theme = &self.theme;
         egui::Frame::NONE
             .fill(theme.color(Token::SurfaceTabs))
@@ -574,7 +729,13 @@ impl Shell {
         if self.centre_tab == CentreTab::Editor
             && let Some(editor) = &mut self.editor
         {
-            editor.view.show(ui, &view_style(theme), &Plain);
+            let requests = editor.show(ui, theme, &view_style(theme));
+            // The panels drawn before the editor this frame show what the requests change on
+            // the next.
+            if !requests.is_empty() {
+                ui.ctx().request_repaint();
+            }
+            self.handle(requests);
             return;
         }
         let (fill, message) = match self.centre_tab {
@@ -659,15 +820,18 @@ fn left(
 }
 
 /// The editor's colours and font, from the theme's tokens.
-fn view_style(theme: &Theme) -> ViewStyle {
+pub(crate) fn view_style(theme: &Theme) -> ViewStyle {
     ViewStyle {
         font: egui::FontId::monospace(theme.type_scale.code.size),
         background: theme.color(Token::SurfaceEditor),
-        current_line: theme.color(Token::SurfaceRaised),
+        current_line: theme.color(Token::SurfaceCurrentLine),
         selection: theme.color(Token::SelectFocus),
-        text: theme.color(Token::Text),
+        text: theme.color(Token::TextCode),
         line_number: theme.color(Token::TextFaint),
         caret: theme.color(Token::Accent),
+        added: theme.color(Token::DiffAdded),
+        removed: theme.color(Token::StatusErrorBg),
+        removed_text: theme.color(Token::TextOnError),
     }
 }
 

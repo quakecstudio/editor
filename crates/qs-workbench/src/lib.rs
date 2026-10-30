@@ -12,6 +12,8 @@
 //!
 //! L5 commands. It depends on `qs-commands` (L5), `qc-ide` (L3) and `qc-project` (L2).
 
+mod commands;
+mod editing;
 #[cfg(test)]
 mod tests;
 
@@ -21,16 +23,21 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use qc_ide::AnalysisHost;
-pub use qc_ide::{Code, Config, Diagnostic, Severity, Symbol, SymbolKind};
+pub use qc_ide::Caution;
+pub use qc_ide::{
+    Code, Completion, Config, DefKind, Diagnostic, FileEdit, FileRange, Highlight, HighlightKind,
+    Hover, Modifier, Modifiers, RenameError, Severity, Span, Symbol, SymbolKind, SyntaxClass,
+};
 pub use qc_project::{Dialect, FsLoader, Target};
+
+pub use crate::commands::*;
+pub use crate::editing::{Change, Renamed};
 use qc_project::{Loader, ProjectError, normalize};
-use qs_commands::{Command, Outcome, RegisterError, Registry};
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A place in a file as a person reads it: a line and a column, both from 1, the column
 /// counting characters.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Location {
     line: u32,
     column: u32,
@@ -151,15 +158,19 @@ impl Node {
     }
 }
 
-/// The file open in the editor: its text as it was opened, where its caret goes and its
-/// outline.
+/// The file open in the editor: its current text, where its caret goes, its outline and its
+/// semantic highlighting.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OpenFile {
     path: PathBuf,
     text: Vec<u8>,
     offset: usize,
     generation: u64,
+    version: u64,
+    revision: u64,
     outline: Vec<Symbol>,
+    highlights: Vec<Highlight>,
+    classes: Vec<(Span, SyntaxClass)>,
 }
 
 impl OpenFile {
@@ -169,7 +180,7 @@ impl OpenFile {
         &self.path
     }
 
-    /// Its text when it was opened.
+    /// Its current text: as it was opened, then as each edit left it.
     #[must_use]
     pub fn text(&self) -> &[u8] {
         &self.text
@@ -194,10 +205,35 @@ impl OpenFile {
         self.generation
     }
 
+    /// Changes when the text changes other than through the editor's own `file.update`: a
+    /// rename, or its undo, so the editor takes the new text.
+    #[must_use]
+    pub const fn version(&self) -> u64 {
+        self.version
+    }
+
     /// The symbols the file defines, in source order.
     #[must_use]
     pub fn outline(&self) -> &[Symbol] {
         &self.outline
+    }
+
+    /// The semantic highlighting of its names, in source order.
+    #[must_use]
+    pub fn highlights(&self) -> &[Highlight] {
+        &self.highlights
+    }
+
+    /// Its keywords, literals and comments, in source order.
+    #[must_use]
+    pub fn classes(&self) -> &[(Span, SyntaxClass)] {
+        &self.classes
+    }
+
+    /// Changes whenever its text or what was worked out from it does, from any source.
+    #[must_use]
+    pub const fn revision(&self) -> u64 {
+        self.revision
     }
 }
 
@@ -281,12 +317,18 @@ impl<L: Loader> Workbench<L> {
         }
         self.generation = self.generation.wrapping_add(1);
         let outline = self.host.document_symbols(&path);
+        let highlights = self.host.highlights(&path);
+        let classes = self.host.syntax_classes(&path);
         let open = OpenFile {
             path,
             text,
             offset,
             generation: self.generation,
+            version: self.generation,
+            revision: self.generation,
             outline,
+            highlights,
+            classes,
         };
         let location = open.location();
         self.open = Some(open);
@@ -328,7 +370,7 @@ impl<L: Loader> Workbench<L> {
 }
 
 /// `files` as a tree under `root`, as [`Workbench::tree`] lists it.
-fn tree(files: &[PathBuf], root: &Path) -> Vec<TreeEntry> {
+pub(crate) fn tree(files: &[PathBuf], root: &Path) -> Vec<TreeEntry> {
     let mut top = Node::default();
     for path in files {
         let below = path.strip_prefix(root).unwrap_or(path);
@@ -344,7 +386,7 @@ fn tree(files: &[PathBuf], root: &Path) -> Vec<TreeEntry> {
 }
 
 /// Every diagnostic `host` has, as [`Workbench::problems`] lists them.
-fn problems<L: Loader>(host: &mut AnalysisHost<L>) -> Vec<Problem> {
+pub(crate) fn problems<L: Loader>(host: &mut AnalysisHost<L>) -> Vec<Problem> {
     let mut out = Vec::new();
     for (path, diagnostics) in host.all_diagnostics() {
         let text = host.text(&path).unwrap_or_default();
@@ -359,9 +401,18 @@ fn problems<L: Loader>(host: &mut AnalysisHost<L>) -> Vec<Problem> {
     out
 }
 
-/// Why the workbench could not open a project or a file.
+/// Why the workbench could not open, change or save a project or a file.
 #[derive(Debug)]
 pub enum WorkbenchError {
+    /// A rename was refused.
+    Rename(RenameError),
+    /// The file could not be written.
+    Save {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: std::io::Error,
+    },
     /// The project file could not be read or is invalid.
     Project(ProjectError),
     /// The file could not be read.
@@ -384,6 +435,10 @@ impl fmt::Display for WorkbenchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Project(error) => error.fmt(f),
+            Self::Rename(error) => error.fmt(f),
+            Self::Save { path, error } => {
+                write!(f, "{}: cannot be written: {error}", path.display())
+            }
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
             Self::Offset { path, offset, len } => write!(
                 f,
@@ -398,128 +453,9 @@ impl Error for WorkbenchError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Project(error) => Some(error),
+            Self::Rename(error) => Some(error),
+            Self::Save { error, .. } => Some(error),
             Self::NoFile { .. } | Self::Offset { .. } => None,
         }
-    }
-}
-
-/// A context the workbench commands work on: one that has a [`Workbench`].
-pub trait HasWorkbench {
-    /// How its workbench reads files.
-    type Loader: Loader;
-
-    /// The workbench.
-    fn workbench(&mut self) -> &mut Workbench<Self::Loader>;
-}
-
-impl<L: Loader> HasWorkbench for Workbench<L> {
-    type Loader = L;
-
-    fn workbench(&mut self) -> &mut Self {
-        self
-    }
-}
-
-/// The id of the command that opens a project.
-pub const OPEN_PROJECT: &str = "project.open";
-
-/// The id of the command that opens a file.
-pub const OPEN_FILE: &str = "file.open";
-
-/// Registers the workbench commands.
-///
-/// # Errors
-///
-/// [`RegisterError`] when one of their ids is taken.
-pub fn register<C: HasWorkbench + 'static>(
-    registry: &mut Registry<C>,
-) -> Result<(), RegisterError> {
-    registry.register(OpenProject)?;
-    registry.register(OpenFileCommand)
-}
-
-/// The parameters of `project.open`.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct OpenProjectParams {
-    /// The project directory: the one holding `quakec.toml`, or `progs.src` and
-    /// `csprogs.src`.
-    pub path: PathBuf,
-}
-
-/// What `project.open` returns.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-pub struct ProjectOpened {
-    /// How many files the project reads.
-    pub files: usize,
-}
-
-/// `project.open`: opens a project.
-struct OpenProject;
-
-impl<C: HasWorkbench + 'static> Command<C> for OpenProject {
-    const ID: &'static str = OPEN_PROJECT;
-    const SUMMARY: &'static str = "Opens the QuakeC project in a directory: its quakec.toml, \
-        or its progs.src and csprogs.src.";
-    type Params = OpenProjectParams;
-    type Output = ProjectOpened;
-    type Error = WorkbenchError;
-
-    fn run(
-        &self,
-        context: &mut C,
-        params: OpenProjectParams,
-    ) -> Result<Outcome<ProjectOpened, C>, WorkbenchError> {
-        let workbench = context.workbench();
-        workbench.open_project(&params.path)?;
-        let files = workbench
-            .tree
-            .iter()
-            .filter(|entry| matches!(entry.kind, EntryKind::File(_)))
-            .count();
-        Ok(Outcome::outside_history(ProjectOpened { files }))
-    }
-}
-
-/// The parameters of `file.open`.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct OpenFileParams {
-    /// The file.
-    pub path: PathBuf,
-    /// The byte offset to put the caret at; the start of the file when absent.
-    #[serde(default)]
-    pub offset: Option<usize>,
-}
-
-/// What `file.open` returns.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct FileOpened {
-    /// The file, as the project graph names it.
-    pub path: PathBuf,
-    /// Where the caret is.
-    pub location: Location,
-}
-
-/// `file.open`: opens a file in the editor.
-struct OpenFileCommand;
-
-impl<C: HasWorkbench + 'static> Command<C> for OpenFileCommand {
-    const ID: &'static str = OPEN_FILE;
-    const SUMMARY: &'static str = "Opens a file in the editor, with the caret at a byte \
-        offset or at the start.";
-    type Params = OpenFileParams;
-    type Output = FileOpened;
-    type Error = WorkbenchError;
-
-    fn run(
-        &self,
-        context: &mut C,
-        params: OpenFileParams,
-    ) -> Result<Outcome<FileOpened, C>, WorkbenchError> {
-        let workbench = context.workbench();
-        let location = workbench.open_file(&params.path, params.offset.unwrap_or(0))?;
-        let path = normalize(&params.path);
-        Ok(Outcome::outside_history(FileOpened { path, location }))
     }
 }
