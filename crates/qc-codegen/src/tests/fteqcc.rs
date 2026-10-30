@@ -1464,3 +1464,24 @@ fn an_array_is_written_as_its_elements() {
         global(&p, "poses[0]") + 2
     );
 }
+
+// spec FTE-18.6: a variadic function first copies the slots after its named parameters into a
+// static `__va_list` of 24 vectors, a slot past the eighth from its `$parmN` global
+#[test]
+fn a_variadic_function_copies_its_slots_to_va_list() {
+    let p = fte_progs("float(float a, ...) f = { return a; };\n");
+    let s = body(&p, "f");
+    let list = global(&p, "__va_list");
+    for (i, statement) in (0_i32..).zip(&s[..7]) {
+        assert_eq!(*statement, st(StoreV, 7 + 3 * i, list + 3 * i, 0));
+    }
+    assert_eq!(s[7], st(StoreV, global(&p, "$parm8"), list + 21, 0));
+    assert_eq!(s[23], st(StoreV, global(&p, "$parm24"), list + 69, 0));
+    assert_eq!(s[24].op, u32::from(Return.number()));
+    let elements = p
+        .global_defs
+        .iter()
+        .filter(|d| string(&p, d.s_name).starts_with("__va_list["))
+        .count();
+    assert_eq!(elements, 24);
+}

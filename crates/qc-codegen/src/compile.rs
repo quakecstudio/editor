@@ -178,6 +178,8 @@ pub(crate) struct Compiler<'a> {
     /// The loops and switches the statement is in, innermost last, with the jumps their
     /// `break` and `continue` statements left to patch.
     jumps: Vec<Jumps>,
+    /// The `$parmN` globals made for the parameter slots past the eighth (FTE-18.6).
+    extra_parms: HashMap<usize, u32>,
     /// In a `wrap` function's body, the definition `prior` names (FTEF-15.11).
     prior: Option<usize>,
     /// The array getters and setters made so far, emitted after every file (FTE-13.8,
@@ -216,6 +218,7 @@ impl<'a> Compiler<'a> {
             jumps: Vec::new(),
             array_functions: Vec::new(),
             prior: None,
+            extra_parms: HashMap::new(),
             s_files: HashMap::new(),
         }
     }
@@ -494,6 +497,9 @@ impl<'a> Compiler<'a> {
                     self.locals_end = self.program.next_global().at(span)?;
                 }
                 let code = operand_index(self.program.statements.len()).at(span)?;
+                if self.dialect.has_fteqcc_extensions() && function_type.variadic {
+                    self.variadic_prologue(function_type.params.len(), span)?;
+                }
                 if let Some(state) = body.state() {
                     self.state(&state)?;
                 }
@@ -564,6 +570,50 @@ impl<'a> Compiler<'a> {
                 *self.program.functions.get_mut(number).at(span)? = record;
             }
             None => self.program.functions.push(record),
+        }
+        Ok(())
+    }
+
+    /// FTE-18.6: a variadic function's first statements, `STORE_V` of each parameter slot after
+    /// the `named` ones to the element of a new static `__va_list` of 24 vectors, a slot past
+    /// the eighth from its `$parmN` global.
+    fn variadic_prologue(&mut self, named: usize, span: Span) -> Lowered<()> {
+        const VA_COUNT: u32 = 24;
+        const MAX_PARMS: usize = 8;
+        let vector = ValueType::simple(Etype::Vector);
+        let list = self
+            .program
+            .generated_array("__va_list", vector.clone(), VA_COUNT)
+            .at(span)?;
+        let base = self.program.def(list).at(span)?.ofs;
+        for i in 0..VA_COUNT {
+            let u = named
+                .checked_add(
+                    usize::try_from(i).map_err(|_| Abort::Internal(Internal::TooLarge, span))?,
+                )
+                .at(span)?;
+            let slot = if u < MAX_PARMS {
+                parm_slot(u).at(span)?
+            } else if let Some(&slot) = self.extra_parms.get(&u) {
+                slot
+            } else {
+                let made = self
+                    .program
+                    .generated(&format!("$parm{u}"), vector.clone(), 3)
+                    .at(span)?;
+                let slot = self.program.def(made).at(span)?.ofs;
+                self.extra_parms.insert(u, slot);
+                slot
+            };
+            let to = i
+                .checked_mul(3)
+                .and_then(|w| w.checked_add(base))
+                .at(span)?;
+            self.program.emit(
+                Opcode::StoreV,
+                operand(slot).at(span)?,
+                operand(to).at(span)?,
+            );
         }
         Ok(())
     }

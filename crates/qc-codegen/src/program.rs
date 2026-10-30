@@ -435,6 +435,23 @@ impl Program {
         Ok(place)
     }
 
+    /// [`Program::generated`] of an array of `count` elements of `ty`, FTEQCC's `__va_list`
+    /// (FTE-18.6).
+    pub(crate) fn generated_array(
+        &mut self,
+        name: &str,
+        ty: ValueType,
+        count: u32,
+    ) -> Result<usize, Internal> {
+        let words = ty.words().checked_mul(count).ok_or(Internal::TooLarge)?;
+        let place = self.generated(name, ty, words)?;
+        self.defs
+            .get_mut(place)
+            .ok_or(Internal::NoDefinition)?
+            .count = Some(count);
+        Ok(place)
+    }
+
     /// Initialises definition `place` with `words`, the value its initialiser folded to.
     pub(crate) fn initialise_words(&mut self, place: usize, words: &[u32]) -> Result<(), Internal> {
         let def = self.defs.get_mut(place).ok_or(Internal::NoDefinition)?;

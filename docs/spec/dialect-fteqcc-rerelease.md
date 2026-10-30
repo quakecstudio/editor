@@ -628,6 +628,15 @@ name (QC-10.3), and nothing follows the name.
   follows. `qc-codegen` copies a call's left operand to a temporary whether or not a call
   follows, which reads the same values. The rerelease's `dog_bite`
   (`rerelease/monsters/rottweiler.qc`) sums `random() + random() + random()`.
+- **FTE-18.6** A QC function with `...` copies the parameter slots after its named ones into a
+  static array of 24 vectors, `__va_list`, as its first statements, for `va_arg` to read
+  (`QCC_PR_ParseImmediateStatements`: `int maxvacount = 24;`, `va_list =
+  QCC_PR_GetSRef(type_vector, "__va_list", pr_scope, true, maxvacount, ...)` and for each `i` a
+  store of slot `i + num_parms`): `STORE_V` of each slot to `__va_list`'s element `i`, a slot
+  below 8 being `OFS_PARM0 + 3 * u` and a later one a vector global `$parmN` made the first
+  time it is needed. `rerelease-mg3`'s `float(...) SUB_True` makes one, written as its 24
+  elements (FTE-13.13). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseImmediateStatements`.
 
 ## FTE-19 Further operators
 
