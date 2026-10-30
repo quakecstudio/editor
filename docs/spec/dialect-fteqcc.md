@@ -2317,6 +2317,17 @@ declares parameters without names or with `optional` and `__out`.
   vector v; } u) f`, `void(enum { EA } e) f`) has that type, read with the type
   (`QCC_PR_ParseType`), so the function's type prints it (`void(union <union> u)`) and the
   parameter is a value of it in the body.
+- **FTEF-15.11** A `wrap` definition's body takes over the record of the function it wraps,
+  which moves to a new record at the end of the function table named `prior*NAME`
+  (`QCC_PR_GenerateQCFunction`: `prior = &functions[numfunctions++]; memcpy(prior, func,
+  sizeof(*prior));` and `strcpy(prior->name, "prior*");`), so the name keeps its function number
+  and the wrapped body is called through `prior`: a constant of the function's type whose value is
+  the moved record's number (`QCC_MakeUniqueConst(type_function, &funcref)` with `funcref =
+  numfunctions-1`, and a static constant `prior` over it in the wrapper). So after `void() f = {
+  a(); }; __wrap void() f = { prior(); b(); };` calling `f` runs `b` after `a`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateQCFunction`, `QCC_PR_ParseImmediateStatements`.
+
 ## FTEF-16 Statements and expressions
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseStatement`, `QCC_PR_RefTerm`, `QCC_PR_ParseRefValue`

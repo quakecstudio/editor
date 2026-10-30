@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use qc_diag::{Code, Diagnostic, Span};
 use qc_progs::Function;
 use qc_progs::opcode::Opcode;
+use qc_sema::lower::declares_wrap;
 use qc_sema::{DefId, FileDiagnostic, FileId, FunctionType, ModuleIndex};
 use qc_syntax::ast::{self, AstNode};
 use qc_syntax::c_scalar::CScalar;
@@ -177,6 +178,8 @@ pub(crate) struct Compiler<'a> {
     /// The loops and switches the statement is in, innermost last, with the jumps their
     /// `break` and `continue` statements left to patch.
     jumps: Vec<Jumps>,
+    /// In a `wrap` function's body, the definition `prior` names (FTEF-15.11).
+    prior: Option<usize>,
     /// The array getters and setters made so far, emitted after every file (FTE-13.8,
     /// FTE-13.11).
     array_functions: Vec<arrays::ArrayFunction>,
@@ -212,6 +215,7 @@ impl<'a> Compiler<'a> {
             lex_flags: Vec::new(),
             jumps: Vec::new(),
             array_functions: Vec::new(),
+            prior: None,
             s_files: HashMap::new(),
         }
     }
@@ -413,6 +417,7 @@ impl<'a> Compiler<'a> {
         let def = self.program.def(place).at(span)?.clone();
         let function_type = def.ty.function().at(span)?.clone();
         self.set_line(span);
+        let wrapped = self.wrap(declaration, &def, init, span)?;
         let locals_start = self.program.next_global().at(span)?;
         self.locals_end = locals_start;
         self.scope = Some(id);
@@ -462,12 +467,15 @@ impl<'a> Compiler<'a> {
             }
         };
         self.scope = None;
+        self.prior = None;
         // `PR_ParseDefs` marks the function initialised here, which nothing reads for a
         // function: no literal is a function (QC-20.2), and no function is saved (QC-21.6).
-        let number = operand_index(self.program.functions.len()).at(span)?;
-        self.program
-            .set_words(def.ofs, &[u32::from_ne_bytes(number.to_ne_bytes())])
-            .at(span)?;
+        if wrapped.is_none() {
+            let number = operand_index(self.program.functions.len()).at(span)?;
+            self.program
+                .set_words(def.ofs, &[u32::from_ne_bytes(number.to_ne_bytes())])
+                .at(span)?;
+        }
         let s_name = self.program.copy_string(&latin1(&record_name)).at(span)?;
         let numparms = if function_type.variadic {
             -1
@@ -500,7 +508,7 @@ impl<'a> Compiler<'a> {
                 .map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
             parm_size = [0; 8];
         }
-        self.program.functions.push(Function {
+        let record = Function {
             first_statement,
             parm_start,
             locals,
@@ -509,8 +517,51 @@ impl<'a> Compiler<'a> {
             s_file: self.s_file,
             numparms,
             parm_size,
-        });
+        };
+        match wrapped {
+            Some(number) => {
+                *self.program.functions.get_mut(number).at(span)? = record;
+            }
+            None => self.program.functions.push(record),
+        }
         Ok(())
+    }
+
+    /// FTEF-15.11: for a `wrap` definition's body, the function it wraps moves to a new
+    /// record at the end, `prior*NAME`, as `QCC_PR_GenerateQCFunction` moves it, and `prior` in
+    /// the body is a constant of its number; the wrapper takes the old record's number, which
+    /// is returned. `None` for any other definition.
+    fn wrap(
+        &mut self,
+        declaration: &ast::Declaration,
+        def: &program::Def,
+        init: FunctionInit<'_>,
+        span: Span,
+    ) -> Lowered<Option<usize>> {
+        let wraps = self.dialect.has_fteqcc_extensions()
+            && matches!(init, FunctionInit::Body(_))
+            && declares_wrap(declaration);
+        let number = usize::try_from(self.program.word(def.ofs))
+            .map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
+        if !wraps || number == 0 {
+            return Ok(None);
+        }
+        let mut moved = *self.program.functions.get(number).at(span)?;
+        moved.s_name = self
+            .program
+            .copy_string(&latin1(&format!("prior*{}", def.name)))
+            .at(span)?;
+        let prior_number = operand_index(self.program.functions.len()).at(span)?;
+        self.program.functions.push(moved);
+        let prior = self
+            .program
+            .generated("prior", def.ty.clone(), 1)
+            .at(span)?;
+        self.program
+            .initialise_words(prior, &[u32::from_ne_bytes(prior_number.to_ne_bytes())])
+            .at(span)?;
+        self.prior = Some(prior);
+        Ok(Some(number))
     }
 
     /// The parameters of a body, made at the next globals in order (QC-13.11, QC-13.5): the
@@ -758,6 +809,16 @@ impl<'a> Compiler<'a> {
             }
             ast::Expr::Name(name) => {
                 let token = name.name().at(span)?;
+                // FTEF-15.11: in a `wrap` function `prior` is the function it wraps.
+                if let Some(prior) = self.prior
+                    && token.text_lossless() == "prior"
+                    && self
+                        .names
+                        .def(self.file, token.span(), self.scope)
+                        .is_none()
+                {
+                    return self.def_value(prior, span);
+                }
                 let id = self.def_of(&token)?;
                 // Under FTEQCC a name may be used before the definition it names is read, in a
                 // second autoprototyping pass (FTE-22.3); it is made where it is first used.

@@ -1358,3 +1358,33 @@ fn a_folded_builtin_call_makes_no_call() {
     assert_eq!(t[0], st(StoreF, immediate(&p, 2.0), global(&p, "x"), 0));
     assert_eq!(t[1], st(StoreV, global(&p, "x"), 4, 0));
 }
+
+// spec FTEF-15.11: a wrap definition takes over its function's number, the wrapped body moves
+// to `prior*NAME` at the end of the table, and `prior` is a constant of that record's number
+#[test]
+fn a_wrap_calls_the_body_it_moved() {
+    let p = fte_progs(
+        "void() a = #1;\nvoid() b = #2;\nvoid() f = { a(); };\n\
+         __wrap void() f = { prior(); b(); };\n",
+    );
+    let number =
+        usize::try_from(p.globals[usize::try_from(global(&p, "f")).unwrap()].bits()).unwrap();
+    let wrapper = &p.functions[number];
+    assert_eq!(string(&p, wrapper.s_name), "f");
+    let moved = p.functions.last().unwrap();
+    assert_eq!(string(&p, moved.s_name), "prior*f");
+    let first = usize::try_from(moved.first_statement).unwrap();
+    assert_eq!(
+        p.statements[first],
+        st(Opcode::Call0, global(&p, "a"), 0, 0)
+    );
+    let start = usize::try_from(wrapper.first_statement).unwrap();
+    let call = p.statements[start];
+    assert_eq!(call.op, u32::from(Opcode::Call0.number()));
+    let prior = usize::try_from(p.globals[usize::try_from(call.a).unwrap()].bits()).unwrap();
+    assert_eq!(prior, p.functions.len() - 1);
+    assert_eq!(
+        p.statements[start + 1],
+        st(Opcode::Call0, global(&p, "b"), 0, 0)
+    );
+}
