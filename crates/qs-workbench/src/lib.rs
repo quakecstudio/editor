@@ -33,11 +33,11 @@ pub use qc_project::{Dialect, FsLoader, Target};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
 use qc_project::{Loader, ProjectError, normalize};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A place in a file as a person reads it: a line and a column, both from 1, the column
 /// counting characters.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Location {
     line: u32,
     column: u32,

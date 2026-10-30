@@ -360,3 +360,19 @@ fn a_click_on_a_removed_row_places_the_caret_at_the_line_after_it() {
     assert_eq!(harness.view.state().primary().head, pos(1, 0));
     assert_eq!(harness.view.hovered(), Some(pos(1, 0)));
 }
+
+#[test]
+fn the_caret_rect_is_where_the_primary_caret_was_drawn() {
+    let mut harness = Harness::new(&numbered(200));
+    harness
+        .view
+        .state_mut()
+        .set_selections(&[Selection::caret(pos(1, 2))]);
+    let output = harness.frame(Vec::new(), &Plain);
+    let caret = harness.view.caret_rect().unwrap();
+    let carets = filled(&output, harness.style.caret);
+    assert_eq!(carets, [caret], "the focused caret's rectangle");
+    harness.view.scroll_to(100);
+    harness.frame(Vec::new(), &Plain);
+    assert_eq!(harness.view.caret_rect(), None, "scrolled off screen");
+}

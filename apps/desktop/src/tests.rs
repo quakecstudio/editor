@@ -237,6 +237,8 @@ fn the_ui_code_has_no_string_literals() {
         ("shell.rs", include_str!("shell.rs")),
         ("palette.rs", include_str!("palette.rs")),
         ("project.rs", include_str!("project.rs")),
+        ("editor.rs", include_str!("editor.rs")),
+        ("code_style.rs", include_str!("code_style.rs")),
         ("menu.rs", include_str!("menu.rs")),
         ("lib.rs", include_str!("lib.rs")),
         ("main.rs", include_str!("main.rs")),

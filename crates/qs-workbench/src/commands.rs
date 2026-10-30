@@ -163,7 +163,7 @@ impl<C: HasWorkbench + 'static> Command<C> for OpenFileCommand {
 }
 
 /// A file and a place in it: a span, with where it starts as a person reads it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Place {
     /// The file, as the project graph names it.
     pub path: PathBuf,
@@ -309,7 +309,7 @@ impl<C: HasWorkbench + 'static> Command<C> for References {
 }
 
 /// What `symbol.hover` returns.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HoverInfo {
     /// The name's span.
     pub place: Place,
@@ -348,7 +348,7 @@ impl<C: HasWorkbench + 'static> Command<C> for HoverCommand {
 }
 
 /// One name `symbol.complete` offers.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Candidate {
     /// The name.
     pub label: String,
@@ -359,7 +359,7 @@ pub struct Candidate {
 }
 
 /// What a completion candidate is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CandidateKind {
     /// A variable or constant.
@@ -428,7 +428,7 @@ pub struct RenameParams {
 }
 
 /// What `symbol.rename` returns.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RenameDone {
     /// The files changed, unsaved.
     pub files: Vec<PathBuf>,

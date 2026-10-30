@@ -86,6 +86,8 @@ pub struct EditorView {
     hovered: Option<Position>,
     /// The base text the inline diff is from, and the diff with the text at a revision.
     diff: Option<DiffState>,
+    /// Where the primary caret was drawn in the last frame, if it was on screen.
+    caret_rect: Option<Rect>,
     cache: LayoutCache,
 }
 
@@ -102,6 +104,7 @@ impl EditorView {
             preedit: None,
             hovered: None,
             diff: None,
+            caret_rect: None,
             cache: LayoutCache::default(),
         }
     }
@@ -185,6 +188,13 @@ impl EditorView {
         }
         rows.truncate(count);
         rows
+    }
+
+    /// Where the primary caret was in the last frame, `None` when it was off screen: where a
+    /// popup about the text at the caret goes.
+    #[must_use]
+    pub fn caret_rect(&self) -> Option<Rect> {
+        self.caret_rect
     }
 
     /// The text position under the pointer in the last frame, `None` when the pointer is not
@@ -674,6 +684,7 @@ impl EditorView {
                 .collect();
             runs.push((row_rect, value, lengths));
         }
+        self.caret_rect = ime_caret;
         if focused && let Some(cursor_rect) = ime_caret {
             ui.output_mut(|o| {
                 o.ime = Some(IMEOutput {

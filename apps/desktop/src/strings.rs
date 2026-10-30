@@ -109,11 +109,35 @@ pub enum Text {
     SymbolConstant,
     /// A global variable, in the Symbols section.
     SymbolGlobal,
+    /// The references popup's heading.
+    References,
+    /// The rename popup's label.
+    RenameTo,
+    /// A rename the project refused.
+    RenameFailed,
+    /// Go to definition with no name, or one with no definition.
+    NoDefinition,
+    /// Find references with no name.
+    NoReferences,
+    /// Completion with nothing to offer.
+    NoCompletions,
+    /// The find bar's query field.
+    Find,
+    /// The find bar's replacement field and its button.
+    Replace,
+    /// The find bar's replace-all button.
+    ReplaceAll,
+    /// The find bar's next-match button.
+    FindNext,
+    /// The find bar's previous-match button.
+    FindPrevious,
+    /// The find bar's case switch.
+    MatchCase,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 51] = [
+    pub const ALL: [Self; 63] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -165,6 +189,18 @@ impl Text {
         Self::SymbolField,
         Self::SymbolConstant,
         Self::SymbolGlobal,
+        Self::References,
+        Self::RenameTo,
+        Self::RenameFailed,
+        Self::NoDefinition,
+        Self::NoReferences,
+        Self::NoCompletions,
+        Self::Find,
+        Self::Replace,
+        Self::ReplaceAll,
+        Self::FindNext,
+        Self::FindPrevious,
+        Self::MatchCase,
     ];
 
     /// The string, in English.
@@ -222,6 +258,18 @@ impl Text {
             Self::SymbolField => "field",
             Self::SymbolConstant => "constant",
             Self::SymbolGlobal => "global",
+            Self::References => "References",
+            Self::RenameTo => "Rename to",
+            Self::RenameFailed => "This name cannot be renamed to that.",
+            Self::NoDefinition => "No definition found.",
+            Self::NoReferences => "No references found.",
+            Self::NoCompletions => "No completions.",
+            Self::Find => "Find",
+            Self::Replace => "Replace",
+            Self::ReplaceAll => "Replace all",
+            Self::FindNext => "Next",
+            Self::FindPrevious => "Previous",
+            Self::MatchCase => "Match case",
         }
     }
 }
@@ -230,4 +278,13 @@ impl Text {
 #[must_use]
 pub fn command_count(shown: usize, total: usize) -> String {
     format!("{shown} of {total} commands")
+}
+
+/// The find bar's count of the matches.
+#[must_use]
+pub fn match_count(count: usize) -> String {
+    match count {
+        1 => "1 match".to_owned(),
+        n => format!("{n} matches"),
+    }
 }
