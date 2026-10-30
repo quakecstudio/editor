@@ -136,7 +136,7 @@ const FOLDED: &str = "float x;\nvector v;\n\
     void(float a, entity e, string s) g = { if (a > 1 + 1) x = a; else x = 0 - a; \
         if (e) x = x + 1; if (s == \"player\") x = x * 2; };\n";
 
-// spec DIFF-12.1, DIFF-12.3: a program compiled with `--opt fold` off and on has other
+// spec DIFF-12.17, DIFF-12.3: a program compiled with `--opt fold` off and on has other
 // statements and globals, yet every call agrees by name and type.
 #[test]
 fn a_program_folded_and_not_agrees() {
@@ -340,7 +340,7 @@ fn the_same_statements_must_run_the_same_way() {
     );
 }
 
-// spec DIFF-12.1: the two worlds are compared after the setup, before any call.
+// spec DIFF-12.17: the two worlds are compared after the setup, before any call.
 #[test]
 fn a_setup_that_differs_is_a_divergence_and_stops_the_run() {
     let report = run(
@@ -356,7 +356,40 @@ fn a_setup_that_differs_is_a_divergence_and_stops_the_run() {
     assert!(matches!(divergence.what, Difference::Global(..)));
 }
 
-// spec DIFF-12.1: a progs that is refused, or a setup that fails, leaves nothing to call.
+// spec DIFF-12.17: the setup runs the scenario's frames, so a frame's work is in the world the
+// two progs' setups are compared by, and a frame that fails is a failed setup.
+#[test]
+fn the_setup_runs_the_scenarios_frames() {
+    let framed = scenario::read(b"progs progs.dat\nclients 1\nframes 3\n", Path::new(".")).unwrap();
+    let frames = |source: &str| compile(source, false);
+    let counting = frames("float n;\nvoid() PlayerPreThink = { n = n + 1; };\n");
+    let report = run_calls(Oracle::Qcc, &counting, &counting, &framed, WORLD, 1).unwrap();
+    assert!(report.divergences.is_empty(), "{report:?}");
+    let other = frames("float n;\nvoid() PlayerPreThink = { n = n + 2; };\n");
+    let report = run_calls(Oracle::Qcc, &counting, &other, &framed, WORLD, 1).unwrap();
+    assert_eq!(report.calls, 0);
+    let [divergence] = report.divergences.as_slice() else {
+        panic!("{report:?}");
+    };
+    assert_eq!(divergence.function, None);
+    assert!(
+        matches!(divergence.what, Difference::Global(..)),
+        "{divergence:?}"
+    );
+    // With no frames the two never differ: a client's `PlayerPreThink` runs only in
+    // a scenario frame, after the clients enter; the settle frames come before.
+    let none = scenario::read(b"progs progs.dat\nclients 1\nframes 0\n", Path::new(".")).unwrap();
+    let report = run_calls(Oracle::Qcc, &counting, &other, &none, WORLD, 1).unwrap();
+    assert!(
+        report.divergences.iter().all(|d| d.function.is_some()),
+        "{report:?}"
+    );
+    let failing = frames("void() PlayerPreThink = { error(\"x\"); };\n");
+    let setup = run_calls(Oracle::Qcc, &counting, &failing, &framed, WORLD, 1);
+    assert!(matches!(setup, Err(CallsError::Setup(_))), "{setup:?}");
+}
+
+// spec DIFF-12.17: a progs that is refused, or a setup that fails, leaves nothing to call.
 #[test]
 fn a_refused_progs_or_a_failed_setup_is_an_error() {
     let good = compile("void() f = {};\n", false);
@@ -467,7 +500,7 @@ fn a_report_is_a_row_of_the_results_table() {
     );
 }
 
-// spec DIFF-12.1, DIFF-12.5: a codebase runs every world of the differential scenarios and
+// spec DIFF-12.17, DIFF-12.5: a codebase runs every world of the differential scenarios and
 // unions their statements.
 #[test]
 fn a_codebase_runs_every_scenario() {
@@ -638,7 +671,7 @@ fn a_function_that_is_a_builtin_in_the_second_is_missing() {
     );
 }
 
-// spec DIFF-12.1: the setups are compared as two calls are, the builtins they call in order
+// spec DIFF-12.17: the setups are compared as two calls are, the builtins they call in order
 // before the engine's state.
 #[test]
 fn a_setup_that_calls_other_builtins_is_a_divergence() {

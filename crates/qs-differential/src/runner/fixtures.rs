@@ -85,6 +85,7 @@ pub fn scenarios(_id: &str) -> Vec<ScenarioSpec> {
             directives: concat!(
                 "map dm3\nmaxclients 4\nclients 2\ncvar deathmatch 1\ncvar teamplay 4\n",
                 "frames 300\n",
+                "input 5 1 impulse 101\ninput 6 2 impulse 102\n",
                 "input 10 1 impulse 1\ninput 20 1 button0 1\ninput 25 1 button0 0\n",
                 "input 30 2 impulse 2\ninput 40 2 button0 1\ninput 45 2 button0 0\n"
             )
@@ -200,10 +201,9 @@ const FULL: &[&str] = &[
     "{\n\"classname\" \"ambient_thunder\"\n\"origin\" \"128 0 32\"\n}",
 ];
 
-/// A deathmatch map: the world, several deathmatch starts and every weapon and ammo, so the
-/// deathmatch item and weapon logic runs (`items.qc`, `weapons.qc`).
 /// A deathmatch set with a start and an intermission spot, which the rerelease looks for, and
-/// both teams' flags and spawn points.
+/// both teams' spawn points, each with the other team's flag on it, so a player who spawns on
+/// either team takes the enemy flag and the carried flag's logic runs (`teamplay.qc`).
 const CTF: &[&str] = &[
     "{\n\"classname\" \"worldspawn\"\n\"message\" \"ctf\"\n}",
     "{\n\"classname\" \"info_player_start\"\n\"origin\" \"64 64 24\"\n}",
@@ -212,13 +212,15 @@ const CTF: &[&str] = &[
     "{\n\"classname\" \"info_player_deathmatch\"\n\"origin\" \"128 0 24\"\n}",
     "{\n\"classname\" \"info_player_team1\"\n\"origin\" \"0 128 24\"\n}",
     "{\n\"classname\" \"info_player_team2\"\n\"origin\" \"128 128 24\"\n}",
-    "{\n\"classname\" \"item_flag_team1\"\n\"origin\" \"-128 0 24\"\n}",
-    "{\n\"classname\" \"item_flag_team2\"\n\"origin\" \"256 0 24\"\n}",
+    "{\n\"classname\" \"item_flag_team1\"\n\"origin\" \"128 128 24\"\n}",
+    "{\n\"classname\" \"item_flag_team2\"\n\"origin\" \"0 128 24\"\n}",
     "{\n\"classname\" \"weapon_supershotgun\"\n\"origin\" \"0 -32 0\"\n}",
     "{\n\"classname\" \"weapon_rocketlauncher\"\n\"origin\" \"64 -32 0\"\n}",
     "{\n\"classname\" \"item_rockets\"\n\"origin\" \"0 32 0\"\n}",
 ];
 
+/// A deathmatch map: the world, several deathmatch starts and every weapon and ammo, so the
+/// deathmatch item and weapon logic runs (`items.qc`, `weapons.qc`).
 const DEATHMATCH: &[&str] = &[
     "{\n\"classname\" \"worldspawn\"\n\"message\" \"dm\"\n}",
     "{\n\"classname\" \"info_player_deathmatch\"\n\"origin\" \"0 0 24\"\n}",

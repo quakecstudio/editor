@@ -5,8 +5,8 @@
 //! P2-09, COMP-4).
 //!
 //! Two progs compiled from one codebase, id's `qcc`'s and `qc-codegen`'s, are each loaded in
-//! `qc-vm` with the mock engine and set up as one scenario's world: the map spawned and the
-//! clients entered (DIFF-12.1). Every QuakeC function of the first progs is then called, in
+//! `qc-vm` with the mock engine and set up as one scenario's world: the map spawned, the
+//! clients entered and the scenario's frames run (DIFF-12.17). Every QuakeC function of the first progs is then called, in
 //! several rounds, from that world with a drawn context (DIFF-12.2), applied to both progs by
 //! name so the two calls take the same input. What each call did is compared (DIFF-12.3): how
 //! it ended, the builtins it called, the named globals and every edict's named fields read
@@ -14,7 +14,7 @@
 //! statements, the statements each call executed must be the same too (DIFF-12.4). The
 //! statements the first progs executed are its coverage (DIFF-12.5).
 //!
-//! Implements `docs/spec/differential.md` DIFF-12.1 to DIFF-12.5.
+//! Implements `docs/spec/differential.md` DIFF-12.2 to DIFF-12.5 and DIFF-12.17.
 
 use qc_edict::EdictNumber;
 use std::collections::{BTreeMap, BTreeSet};
@@ -281,7 +281,7 @@ impl Oracle {
 }
 
 /// Runs [`run_calls`] on `theirs` and `ours` from each world of [`crate::runner::scenarios`],
-/// `rounds` rounds each (DIFF-12.1, DIFF-12.5); `oracle` compiled `theirs`.
+/// `rounds` rounds each (DIFF-12.17, DIFF-12.5); `oracle` compiled `theirs`.
 ///
 /// # Errors
 ///
@@ -310,7 +310,7 @@ pub fn run_codebase(
     Ok(result)
 }
 
-/// Why a run could not start (DIFF-12.1).
+/// Why a run could not start (DIFF-12.17).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CallsError {
     /// A scenario of [`crate::runner::scenarios`] could not be read.
@@ -318,7 +318,7 @@ pub enum CallsError {
     /// A progs was refused by the reader or the VM (DIFF-3.1).
     Refused(RunRefused),
     /// The world's setup ended in an error in a progs, so there is no world to call functions
-    /// in (DIFF-12.1).
+    /// in (DIFF-12.17).
     Setup(String),
 }
 
@@ -757,7 +757,7 @@ struct Outcome {
     executed: Vec<Executed>,
 }
 
-/// One progs' world after the setup, kept to restore before each call (DIFF-12.1).
+/// One progs' world after the setup, kept to restore before each call (DIFF-12.17).
 struct World<'a, 'p, 's> {
     program: Program<'a, 'p>,
     host: Host<'s>,
@@ -766,13 +766,13 @@ struct World<'a, 'p, 's> {
     /// The statements the setup executed (DIFF-12.5).
     setup_executed: BTreeSet<i32>,
     /// How the setup went: the statements and builtins it executed, compared with the other
-    /// progs' setup as two calls are (DIFF-12.1).
+    /// progs' setup as two calls are (DIFF-12.17).
     setup: Outcome,
 }
 
 impl<'a, 'p, 's> World<'a, 'p, 's> {
-    /// Loads `progs` and sets up the world of `scenario` and `entities`: the map spawned and
-    /// the clients entered (DIFF-12.1).
+    /// Loads `progs` and sets up the world of `scenario` and `entities`: the map spawned, the
+    /// clients entered and the scenario's frames run with its inputs (DIFF-12.17).
     fn new(
         progs: &'a Progs<'p>,
         scenario: &'s Scenario,
@@ -783,6 +783,10 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
             .map_err(|e| CallsError::Setup(format!("{e:?}")))?;
         for slot in 0..scenario.clients {
             host.client_enters(progs, slot)
+                .map_err(|e| CallsError::Setup(e.message()))?;
+        }
+        for frame in 1..=scenario.frames {
+            host.server_frame(progs, scenario.frametime, frame)
                 .map_err(|e| CallsError::Setup(e.message()))?;
         }
         let executed: Vec<Executed> = host

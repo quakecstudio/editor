@@ -560,7 +560,8 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
 
 ### Behaviour
 
-- **DIFF-12.1** Each progs is loaded (DIFF-3.1) and set up as a world for each scenario of the
+- **DIFF-12.1** **Withdrawn** 2026-10-30: it ran no scenario frame, so no player joined a team,
+  moved or picked anything up before the calls; replaced by DIFF-12.17. Each progs is loaded (DIFF-3.1) and set up as a world for each scenario of the
   VM differential's corpus set (`qs-differential`'s `runner::scenarios`): the map's entities
   are spawned and the settle frames run (DIFF-3), and the scenario's clients enter (DIFF-4); no
   scenario frame runs. A progs that is refused, or a setup that ends in an error in either
@@ -715,6 +716,15 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   least one statement of its body no earlier call had, up to `EXTRA_ROUNDS` (4) times `rounds`
   in all. The calls stay deterministic, and a function whose body every call already covers
   costs no more.
+- **DIFF-12.17** Each progs is loaded (DIFF-3.1) and set up as a world for each scenario of the
+  VM differential's corpus set (`qs-differential`'s `runner::scenarios`): the map's entities
+  are spawned and the settle frames run (DIFF-3), the scenario's clients enter (DIFF-4), and
+  the scenario's frames run with its inputs (DIFF-5.1), so the calls start from a world the
+  game has played: players on teams, items taken, monsters awake. A progs that is refused, or
+  a setup that ends in an error in either progs, a frame's included, stops the run with an
+  error. The two worlds are then compared as DIFF-12.3 compares two calls, the statements and
+  builtins of every frame with them; a difference there is the run's one divergence, and no
+  function is called.
 
 ## Test vectors
 
