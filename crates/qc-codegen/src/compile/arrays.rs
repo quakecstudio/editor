@@ -118,7 +118,7 @@ impl Compiler<'_> {
             {
                 Some(f32::from_bits(self.program.word(at.ofs)))
             }
-            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Return => None,
+            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Return | ValueKind::Cast(_) => None,
         };
         if let Some(i) = constant {
             let element = element_number(i, array.count).at(span)?;

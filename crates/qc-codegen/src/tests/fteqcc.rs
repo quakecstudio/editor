@@ -1171,3 +1171,18 @@ fn a_null_in_an_aggregate_is_zero() {
     assert_ne!(word(0), 0);
     assert_eq!(word(1), 0);
 }
+
+// spec FTEF-30.6: a cast between two types of one basic type takes no statement, the value read
+// as the cast's type
+#[test]
+fn a_cast_within_a_basic_type_is_the_value() {
+    let p = fte_progs(
+        "var void(float a) g;\nvoid(float a, float b) h = {};\nvoid() t = { g = (void(float a)) h; };\n",
+    );
+    let t = body(&p, "t");
+    assert_eq!(
+        t[0],
+        st(Opcode::StoreFnc, global(&p, "h"), global(&p, "g"), 0)
+    );
+    assert_eq!(t[1].op, u32::from(Done.number()));
+}

@@ -80,6 +80,9 @@ enum ValueKind {
     /// an operator checks it, since `qcc` keeps one `def_ret` and retypes it at each call
     /// (QC-18.4, QC-18.6).
     Return,
+    /// A definition read as another type of its basic type by a cast, with no statement
+    /// (FTEF-30.6).
+    Cast(ValueType),
 }
 
 /// An entity's field as an access names it: the entity's and the field's globals, and the
@@ -273,7 +276,7 @@ impl<'a> Compiler<'a> {
                 .program
                 .def(*place)
                 .map_or(ValueType::simple(Etype::Void), |d| d.ty.clone()),
-            ValueKind::Temp(ty) => ty.clone(),
+            ValueKind::Temp(ty) | ValueKind::Cast(ty) => ty.clone(),
             ValueKind::Return => self.return_type.clone(),
         }
     }
@@ -775,9 +778,8 @@ impl<'a> Compiler<'a> {
             ast::Expr::Index(index) => self.index(index, span),
             ast::Expr::Ternary(ternary) => self.ternary(ternary, span),
             ast::Expr::Vector(vector) => self.vector(vector, span),
-            ast::Expr::Cast(_) | ast::Expr::Sizeof(_) => {
-                Err(Abort::Internal(Internal::Unsupported, span))
-            }
+            ast::Expr::Cast(cast) => self.cast(cast, span),
+            ast::Expr::Sizeof(_) => Err(Abort::Internal(Internal::Unsupported, span)),
         }
     }
 
@@ -1238,6 +1240,32 @@ impl<'a> Compiler<'a> {
                     .map(|def| self.program.word(def.ofs))
             })
             .flatten()
+    }
+
+    /// `(TYPE)e` (FTEF-30.6) between two types of one basic type: the value read as `TYPE`, the
+    /// type the semantic model gave the cast, with no statement; a temporary stays one, which a
+    /// store may fold. Other casts, and a call's value cast, are not lowered yet.
+    fn cast(&mut self, cast: &ast::CastExpr, span: Span) -> Lowered<Value> {
+        let value = self.expr(&cast.operand().at(span)?)?;
+        let target = self
+            .scope
+            .and_then(|function| self.index.bodies.get(&function))
+            .and_then(|body| body.type_at(span))
+            .cloned()
+            .map(ValueType::Of)
+            .at(span)?;
+        if target.etype() != self.type_of(&value).etype() {
+            return Err(Abort::Internal(Internal::Unsupported, span));
+        }
+        let kind = match value.kind {
+            ValueKind::Def(_) | ValueKind::Cast(_) => ValueKind::Cast(target),
+            ValueKind::Temp(_) => ValueKind::Temp(target),
+            ValueKind::Return => return Err(Abort::Internal(Internal::Unsupported, span)),
+        };
+        Ok(Value {
+            ofs: value.ofs,
+            kind,
+        })
     }
 
     /// `&e.f` (FTEF-31.4): `ADDRESS` of the entity and the field, a pointer to what the field
@@ -1995,7 +2023,7 @@ impl<'a> Compiler<'a> {
         };
         let name = match &callee.kind {
             ValueKind::Def(place) => self.program.def(*place).map(|d| d.name.clone()),
-            ValueKind::Temp(_) | ValueKind::Return => None,
+            ValueKind::Temp(_) | ValueKind::Return | ValueKind::Cast(_) => None,
         };
         let fixed = (!function.variadic).then_some(function.params.len());
         let mut count = 0_usize;
