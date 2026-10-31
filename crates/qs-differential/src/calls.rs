@@ -108,6 +108,8 @@ pub struct Report {
     pub executed: BTreeSet<i32>,
     /// The first progs' statement count less the dummy statement 0 (DIFF-11.1).
     pub total_statements: u32,
+    /// The error both progs ended their setup in, when they did (DIFF-12.20).
+    pub setup_error: Option<String>,
 }
 
 impl Report {
@@ -398,6 +400,7 @@ pub fn run_calls(
                 divergences: Vec::new(),
                 executed: BTreeSet::new(),
                 total_statements: total,
+                setup_error: Some(a),
             });
         }
         (Err(error), _) | (_, Err(error)) => return Err(error),
@@ -408,6 +411,7 @@ pub fn run_calls(
         divergences: Vec::new(),
         executed: their_world.setup_executed.clone(),
         total_statements: total,
+        setup_error: None,
     };
     if let Some(what) = pair.differ(
         &their_world,

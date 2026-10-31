@@ -181,6 +181,9 @@ fn print(codebase: &str, ours: &std::path::Path, same: bool, report: &CodebaseRe
             scenario.divergences.len(),
             scenario.coverage() * 100.0
         );
+        if let Some(error) = &scenario.setup_error {
+            println!("      {name}: both setups ended in {error:?}");
+        }
         for divergence in scenario
             .divergences
             .iter()

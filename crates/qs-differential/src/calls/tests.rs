@@ -552,6 +552,7 @@ fn a_codebase_passes_at_the_bar() {
             divergences: Vec::new(),
             executed: executed.clone(),
             total_statements: 10,
+            setup_error: None,
         };
         if divergences {
             scenario.divergences.push(super::Divergence {
@@ -584,6 +585,7 @@ fn a_report_is_a_row_of_the_results_table() {
         divergences: Vec::new(),
         executed: (1..=9).collect(),
         total_statements: 10,
+        setup_error: None,
     };
     let mut report = CodebaseReport {
         scenarios: vec![("s", scenario)],
