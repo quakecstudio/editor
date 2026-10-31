@@ -1293,6 +1293,11 @@ impl Parser<'_> {
                 }
             }
         }
+        // QCD-1.5: a member its error stopped short is skipped to its end, so the accessor's
+        // loop does not read what is left as another member and report it again.
+        if self.muted && !self.at(K::RBrace) {
+            self.recover(Scope::Block);
+        }
         if self.at(K::Semicolon) {
             self.bump();
         }

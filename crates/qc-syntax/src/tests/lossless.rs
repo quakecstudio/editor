@@ -439,3 +439,35 @@ proptest! {
         }
     }
 }
+
+// spec QCD-1.5: an accessor member its error stops short is not read again as another member, so
+// the place is reported once (the parser fuzz target's find)
+#[test]
+fn an_accessor_member_error_is_reported_once() {
+    let at = |source: &str| -> Vec<(usize, String)> {
+        crate::parse_with(source.as_bytes(), Dialect::Fteqcc)
+            .diagnostics()
+            .iter()
+            .map(|d| (d.span.start, d.message.clone()))
+            .collect()
+    };
+    let found = |list: &[(usize, &str)]| -> Vec<(usize, String)> {
+        list.iter().map(|&(at, m)| (at, m.to_owned())).collect()
+    };
+    assert_eq!(
+        at("accessor h : float { set v v g; };"),
+        found(&[(29, "expected =, found g")])
+    );
+    assert_eq!(
+        at("accessor h : float { set v v g };"),
+        found(&[(29, "expected =, found g")])
+    );
+    assert_eq!(
+        at("\naccessor h : float { get float = = f; set v v g;float v = g; };"),
+        found(&[
+            (34, "\"=\" - not a name"),
+            (47, "expected =, found g"),
+            (49, "expected }, found float"),
+        ])
+    );
+}
