@@ -37,6 +37,10 @@ impl EngineStringBuiltins {
 }
 
 impl Builtins for EngineStringBuiltins {
+    fn limit(&self) -> Option<u32> {
+        Some(crate::LIMIT_NUM_BUILTINS)
+    }
+
     fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
         Err(
             context.run_error(ErrorKind::Divergence(Divergence::UnregisteredBuiltin {

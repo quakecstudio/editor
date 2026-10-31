@@ -15,6 +15,7 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use qc_builtins::EngineProfile;
 use qc_codegen::{Options, compile_module};
 use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
 use qc_progs::Progs;
@@ -122,7 +123,16 @@ fn scenario() -> Scenario {
 const WORLD: &[u8] = b"{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"info_notnull\"\n}\n";
 
 fn run(theirs: &[u8], ours: &[u8], rounds: u32) -> Report {
-    run_calls(Oracle::Qcc, theirs, ours, &scenario(), WORLD, rounds).unwrap()
+    run_calls(
+        Oracle::Qcc,
+        theirs,
+        ours,
+        &scenario(),
+        WORLD,
+        rounds,
+        EngineProfile::Id,
+    )
+    .unwrap()
 }
 
 /// The first divergence of a run of the two sources, with the call's function.
@@ -145,7 +155,7 @@ const FOLDED: &str = "float x;\nvector v;\n\
     void(float a, entity e, string s) g = { if (a > 1 + 1) x = a; else x = 0 - a; \
         if (e) x = x + 1; if (s == \"player\") x = x * 2; };\n";
 
-// spec DIFF-12.17, DIFF-12.3: a program compiled with `--opt fold` off and on has other
+// spec DIFF-12.20, DIFF-12.3: a program compiled with `--opt fold` off and on has other
 // statements and globals, yet every call agrees by name and type.
 #[test]
 fn a_program_folded_and_not_agrees() {
@@ -349,7 +359,7 @@ fn the_same_statements_must_run_the_same_way() {
     );
 }
 
-// spec DIFF-12.17: the two worlds are compared after the setup, before any call.
+// spec DIFF-12.20: the two worlds are compared after the setup, before any call.
 #[test]
 fn a_setup_that_differs_is_a_divergence_and_stops_the_run() {
     let report = run(
@@ -365,17 +375,35 @@ fn a_setup_that_differs_is_a_divergence_and_stops_the_run() {
     assert!(matches!(divergence.what, Difference::Global(..)));
 }
 
-// spec DIFF-12.17: the setup runs the scenario's frames, so a frame's work is in the world the
+// spec DIFF-12.20: the setup runs the scenario's frames, so a frame's work is in the world the
 // two progs' setups are compared by, and a frame that fails is a failed setup.
 #[test]
 fn the_setup_runs_the_scenarios_frames() {
     let framed = scenario::read(b"progs progs.dat\nclients 1\nframes 3\n", Path::new(".")).unwrap();
     let frames = |source: &str| compile(source, false);
     let counting = frames("float n;\nvoid() PlayerPreThink = { n = n + 1; };\n");
-    let report = run_calls(Oracle::Qcc, &counting, &counting, &framed, WORLD, 1).unwrap();
+    let report = run_calls(
+        Oracle::Qcc,
+        &counting,
+        &counting,
+        &framed,
+        WORLD,
+        1,
+        EngineProfile::Id,
+    )
+    .unwrap();
     assert!(report.divergences.is_empty(), "{report:?}");
     let other = frames("float n;\nvoid() PlayerPreThink = { n = n + 2; };\n");
-    let report = run_calls(Oracle::Qcc, &counting, &other, &framed, WORLD, 1).unwrap();
+    let report = run_calls(
+        Oracle::Qcc,
+        &counting,
+        &other,
+        &framed,
+        WORLD,
+        1,
+        EngineProfile::Id,
+    )
+    .unwrap();
     assert_eq!(report.calls, 0);
     let [divergence] = report.divergences.as_slice() else {
         panic!("{report:?}");
@@ -388,35 +416,108 @@ fn the_setup_runs_the_scenarios_frames() {
     // With no frames the two never differ: a client's `PlayerPreThink` runs only in
     // a scenario frame, after the clients enter; the settle frames come before.
     let none = scenario::read(b"progs progs.dat\nclients 1\nframes 0\n", Path::new(".")).unwrap();
-    let report = run_calls(Oracle::Qcc, &counting, &other, &none, WORLD, 1).unwrap();
+    let report = run_calls(
+        Oracle::Qcc,
+        &counting,
+        &other,
+        &none,
+        WORLD,
+        1,
+        EngineProfile::Id,
+    )
+    .unwrap();
     assert!(
         report.divergences.iter().all(|d| d.function.is_some()),
         "{report:?}"
     );
     let failing = frames("void() PlayerPreThink = { error(\"x\"); };\n");
-    let setup = run_calls(Oracle::Qcc, &counting, &failing, &framed, WORLD, 1);
+    let setup = run_calls(
+        Oracle::Qcc,
+        &counting,
+        &failing,
+        &framed,
+        WORLD,
+        1,
+        EngineProfile::Id,
+    );
+    assert!(matches!(setup, Err(CallsError::Setup(_))), "{setup:?}");
+    // Both ending in the same error agree, with nothing to call; two different errors do not.
+    let report = run_calls(
+        Oracle::Qcc,
+        &failing,
+        &failing,
+        &framed,
+        WORLD,
+        1,
+        EngineProfile::Id,
+    )
+    .unwrap();
+    assert_eq!((report.calls, report.divergences.len()), (0, 0));
+    assert!(report.executed.is_empty());
+    let other_failing = frames("void() PlayerPreThink = { error(\"y\"); };\n");
+    let setup = run_calls(
+        Oracle::Qcc,
+        &failing,
+        &other_failing,
+        &framed,
+        WORLD,
+        1,
+        EngineProfile::Id,
+    );
     assert!(matches!(setup, Err(CallsError::Setup(_))), "{setup:?}");
 }
 
-// spec DIFF-12.17: a progs that is refused, or a setup that fails, leaves nothing to call.
+// spec DIFF-12.20: a progs that is refused, or a setup that fails, leaves nothing to call.
 #[test]
 fn a_refused_progs_or_a_failed_setup_is_an_error() {
     let good = compile("void() f = {};\n", false);
-    let refused = run_calls(Oracle::Qcc, b"not a progs", &good, &scenario(), WORLD, 1);
+    let refused = run_calls(
+        Oracle::Qcc,
+        b"not a progs",
+        &good,
+        &scenario(),
+        WORLD,
+        1,
+        EngineProfile::Id,
+    );
     assert!(
         matches!(refused, Err(CallsError::Refused(_))),
         "{refused:?}"
     );
-    let refused = run_calls(Oracle::Qcc, &good, b"", &scenario(), WORLD, 1);
+    let refused = run_calls(
+        Oracle::Qcc,
+        &good,
+        b"",
+        &scenario(),
+        WORLD,
+        1,
+        EngineProfile::Id,
+    );
     assert!(
         matches!(refused, Err(CallsError::Refused(_))),
         "{refused:?}"
     );
     let failing = compile("void() worldspawn = { error(\"x\"); };\n", false);
-    let setup = run_calls(Oracle::Qcc, &failing, &good, &scenario(), WORLD, 1);
+    let setup = run_calls(
+        Oracle::Qcc,
+        &failing,
+        &good,
+        &scenario(),
+        WORLD,
+        1,
+        EngineProfile::Id,
+    );
     assert!(matches!(setup, Err(CallsError::Setup(_))), "{setup:?}");
     let entering = compile("void() PutClientInServer = { error(\"x\"); };\n", false);
-    let setup = run_calls(Oracle::Qcc, &good, &entering, &scenario(), WORLD, 1);
+    let setup = run_calls(
+        Oracle::Qcc,
+        &good,
+        &entering,
+        &scenario(),
+        WORLD,
+        1,
+        EngineProfile::Id,
+    );
     assert!(matches!(setup, Err(CallsError::Setup(_))), "{setup:?}");
     for error in [
         CallsError::Scenario("s".to_owned()),
@@ -460,6 +561,7 @@ fn a_codebase_passes_at_the_bar() {
             divergences: Vec::new(),
             executed: executed.clone(),
             total_statements: 10,
+            setup_error: None,
         };
         if divergences {
             scenario.divergences.push(super::Divergence {
@@ -492,6 +594,7 @@ fn a_report_is_a_row_of_the_results_table() {
         divergences: Vec::new(),
         executed: (1..=9).collect(),
         total_statements: 10,
+        setup_error: None,
     };
     let mut report = CodebaseReport {
         scenarios: vec![("s", scenario)],
@@ -509,13 +612,13 @@ fn a_report_is_a_row_of_the_results_table() {
     );
 }
 
-// spec DIFF-12.17, DIFF-12.5: a codebase runs every world of the differential scenarios and
+// spec DIFF-12.20, DIFF-12.5: a codebase runs every world of the differential scenarios and
 // unions their statements.
 #[test]
 fn a_codebase_runs_every_scenario() {
     let progs = compile(FOLDED, false);
     let folded = compile(FOLDED, true);
-    let report = run_codebase(Oracle::Qcc, &progs, &folded, 2).unwrap();
+    let report = run_codebase(Oracle::Qcc, &progs, &folded, 2, EngineProfile::Id).unwrap();
     let names: Vec<_> = report.scenarios.iter().map(|(n, _)| *n).collect();
     let expected: Vec<_> = scenarios("").iter().map(|s| s.name).collect();
     assert_eq!(names, expected);
@@ -526,7 +629,7 @@ fn a_codebase_runs_every_scenario() {
         .flat_map(|(_, r)| r.executed.iter().copied())
         .collect();
     assert_eq!(report.executed, union);
-    assert!(run_codebase(Oracle::Qcc, b"", &folded, 1).is_err());
+    assert!(run_codebase(Oracle::Qcc, b"", &folded, 1, EngineProfile::Id).is_err());
 }
 
 // spec DIFF-12.2: the generator is seeded by the function's name and the round, so a context
@@ -573,7 +676,7 @@ fn with_drawer(test: impl FnOnce(&Drawer<'_, '_>, &Progs<'_>)) {
     let bytes = compile(FOLDED, false);
     let progs = Progs::read(&bytes).unwrap();
     let scenario = scenario();
-    let world = World::new(&progs, &scenario, WORLD).unwrap();
+    let world = World::new(&progs, &scenario, WORLD, EngineProfile::Id).unwrap();
     let drawer = Drawer::new(&world);
     test(&drawer, &progs);
 }
@@ -680,7 +783,7 @@ fn a_function_that_is_a_builtin_in_the_second_is_missing() {
     );
 }
 
-// spec DIFF-12.17: the setups are compared as two calls are, the builtins they call in order
+// spec DIFF-12.20: the setups are compared as two calls are, the builtins they call in order
 // before the engine's state.
 #[test]
 fn a_setup_that_calls_other_builtins_is_a_divergence() {
@@ -709,7 +812,7 @@ fn entities_and_fields_read_by_edict_and_name() {
     let progs = compile("entity e;\n.float f;\n", false);
     let progs = Progs::read(&progs).unwrap();
     let scenario = scenario();
-    let mut world = World::new(&progs, &scenario, WORLD).unwrap();
+    let mut world = World::new(&progs, &scenario, WORLD, EngineProfile::Id).unwrap();
     let size = world.host.machine.edicts().layout().edict_size();
     let entity =
         |world: &World<'_, '_, '_>| world.global(qc_types::DefType::Known(Etype::Entity), 28);
@@ -748,12 +851,20 @@ fn entities_and_fields_read_by_edict_and_name() {
 /// The divergences of a run of the two sources against the oracle `oracle`.
 fn against(oracle: Oracle, theirs: &str, ours: &str) -> Vec<Difference> {
     let (theirs, ours) = (compile(theirs, false), compile(ours, false));
-    run_calls(oracle, &theirs, &ours, &scenario(), WORLD, 4)
-        .unwrap()
-        .divergences
-        .into_iter()
-        .map(|d| d.what)
-        .collect()
+    run_calls(
+        oracle,
+        &theirs,
+        &ours,
+        &scenario(),
+        WORLD,
+        4,
+        EngineProfile::Id,
+    )
+    .unwrap()
+    .divergences
+    .into_iter()
+    .map(|d| d.what)
+    .collect()
 }
 
 // spec DIFF-12.11: against FTEQCC, which names fewer globals, ours may name more, but each of
@@ -840,13 +951,21 @@ fn a_struct_typed_global_is_not_compared() {
         false,
     );
     let run = |theirs: &[u8], ours: &[u8]| {
-        run_calls(Oracle::Fteqcc, theirs, ours, &scenario(), WORLD, 4)
-            .unwrap()
-            .divergences
-            .into_iter()
-            .map(|d| d.what)
-            .filter(|d| matches!(d, Difference::Global(..)))
-            .count()
+        run_calls(
+            Oracle::Fteqcc,
+            theirs,
+            ours,
+            &scenario(),
+            WORLD,
+            4,
+            EngineProfile::Id,
+        )
+        .unwrap()
+        .divergences
+        .into_iter()
+        .map(|d| d.what)
+        .filter(|d| matches!(d, Difference::Global(..)))
+        .count()
     };
     let float_typed = (
         retyped(theirs.clone(), "s", 2),
@@ -900,7 +1019,7 @@ fn a_context_clears_the_slots_past_its_parameters() {
     let progs = compile("float x;\n", false);
     let progs = Progs::read(&progs).unwrap();
     let scenario = scenario();
-    let mut world = World::new(&progs, &scenario, WORLD).unwrap();
+    let mut world = World::new(&progs, &scenario, WORLD, EngineProfile::Id).unwrap();
     for slot in 4..28 {
         world
             .host
@@ -958,7 +1077,7 @@ fn a_function_is_owned_by_the_edicts_that_hold_it() {
     );
     let progs = Progs::read(&bytes).unwrap();
     let scenario = scenario();
-    let world = World::new(&progs, &scenario, WORLD).unwrap();
+    let world = World::new(&progs, &scenario, WORLD, EngineProfile::Id).unwrap();
     let first = |name: &str| {
         progs
             .functions()
@@ -979,9 +1098,17 @@ fn a_function_is_owned_by_the_edicts_that_hold_it() {
 fn a_partly_covered_function_gets_one_more_batch() {
     let calls = |source: &str| {
         let bytes = compile(source, false);
-        run_calls(Oracle::Qcc, &bytes, &bytes, &scenario(), WORLD, 8)
-            .unwrap()
-            .calls
+        run_calls(
+            Oracle::Qcc,
+            &bytes,
+            &bytes,
+            &scenario(),
+            WORLD,
+            8,
+            EngineProfile::Id,
+        )
+        .unwrap()
+        .calls
     };
     let covered = calls("float x;\nvoid() f = { x = 1; };\n");
     let partly = calls("float x;\nvoid() f = { if (0) x = 2; x = 1; };\n");
