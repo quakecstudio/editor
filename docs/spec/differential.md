@@ -726,6 +726,35 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   builtins of every frame with them; a difference there is the run's one divergence, and no
   function is called.
 
+## DIFF-13 The FTEQCC grammar differential
+
+**Source:** this project (P2-141, [#616](https://github.com/quakecstudio/editor/issues/616)),
+approved by Justin on 2026-10-20. The oracle is the pinned FTEQCC (`docs/porting.md`).
+
+- **DIFF-13.1** `cargo xtask oracles grammar` generates 1000 FTEQCC programs from a fixed seed
+  (`xtask/src/oracles/grammar/generate.rs`): globals with every qualifier of FTEF-15.1 in both
+  its spellings, constants, functions in the `=` and C forms and as prototypes, fields,
+  typedefs, enums and enumflags, structs and unions, classes with fields, methods defined after
+  them and virtual and nonvirtual methods written in them, accessors with a getter and a setter,
+  and bodies of locals, assignments, calls, `if`, `while`, `do`, `for`, `switch` with cases,
+  ranges and a default, `break`, `continue`, `?:` and `++`. Each program is mutated by one token
+  in 35 percent of cases, deleted, doubled or followed by a stray punctuation mark, so that
+  rejections are compared too.
+- **DIFF-13.2** Each program is compiled by the pinned FTEQCC (`-Tid`, from a `progs.src` that
+  lists it) and read by the FTEQCC profile. They agree when both accept it, or both reject it
+  and the profile reports FTEQCC's first error message, which names the diagnostic code, among
+  its own errors. Where each puts the error is not compared: FTEQCC stops at its first error,
+  and the profile's recovery reads on. Any other outcome is a difference, which fails the run.
+- **DIFF-13.3** A difference is expected, and counted under the statement that explains it,
+  when the program has more `{` than `}` and the profile ends a body with "expected }, found
+  TOKEN": FTEQCC reads a body that lost its `}` to the end of the file, and the profile's
+  recovery ends it at the next declaration line, so that a lost brace damages no declaration
+  after it (FTEF-18.34). No other difference is expected.
+- **DIFF-13.4** The programs and FTEQCC's outcomes are recorded in
+  `xtask/fixtures/oracles/grammar-outcomes.json` (`--record`); `cargo test -p xtask` and
+  `cargo xtask oracles --recorded` compare the profile with the recording without the oracle,
+  and a program the generator no longer makes as recorded fails until it is recorded again.
+
 ## Test vectors
 
 ### Scenario numbers

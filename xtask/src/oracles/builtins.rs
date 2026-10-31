@@ -1910,7 +1910,7 @@ pub(crate) fn read_fixture(root: &Path) -> Result<BTreeMap<String, Outcome>, Str
 }
 
 /// How many threads the cases run on: one per core of the host.
-fn threads() -> NonZero<usize> {
+pub(super) fn threads() -> NonZero<usize> {
     thread::available_parallelism().unwrap_or(NonZero::<usize>::MIN)
 }
 
@@ -1918,7 +1918,7 @@ fn threads() -> NonZero<usize> {
 /// taking the next item no thread has taken, and gives the results in the items' order. `work`
 /// gets the number of its thread, from 0, so that each thread can have files of its own. The
 /// first error stops every thread and is the result; a thread that panics is an error too.
-fn across_cores<T: Sync, R: Send>(
+pub(super) fn across_cores<T: Sync, R: Send>(
     items: &[T],
     threads: NonZero<usize>,
     work: impl Fn(usize, &T) -> Result<R, String> + Sync,

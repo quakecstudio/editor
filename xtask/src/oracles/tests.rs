@@ -251,6 +251,11 @@ fn every_command_of_cargo_xtask_oracles_runs() {
     assert!(!run(&dir, &words("codegen"), &fake, &files, &suite).unwrap());
     assert!(!run(&dir, &words("codegen --record"), &fake, &files, &suite).unwrap());
     assert!(run(&dir, &words("codegen again"), &fake, &files, &suite).is_err());
+    // spec DIFF-13.4: the grammar differential reads its fixture, which this root has none of.
+    let recorded = run(&dir, &words("grammar --recorded"), &fake, &files, &suite).unwrap_err();
+    assert!(recorded.contains("grammar-outcomes.json"), "{recorded}");
+    assert!(!run(&dir, &words("grammar"), &fake, &files, &suite).unwrap());
+    assert!(run(&dir, &words("grammar again"), &fake, &files, &suite).is_err());
     assert!(run(&dir, &words("id101 nowhere"), &fake, &files, &suite).is_err());
     let codebases = fresh_dir("oracles-commands-codebases");
     assert!(run(&dir, &words("rerelease"), &fake, &files, &suite).is_err());
