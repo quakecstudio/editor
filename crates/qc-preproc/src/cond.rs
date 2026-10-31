@@ -7,10 +7,109 @@
 //! FTEQCC dialect (FTEF-14.1), so the two always take the same side. Under the vanilla profile
 //! the expression has C's precedence (PRJ-5.5); under an FTEQCC profile it is read as FTEQCC's
 //! `ParsePrecompilerIf` reads it (FTEF-14.33).
+//!
+//! [`CondStack`] is the one stack of open conditional blocks both readers keep (QC-9.6,
+//! PRJ-5.5).
 
-use qc_lexer::Dialect;
+use qc_lexer::{Dialect, is_fteqcc_whitespace, is_name_char};
 
 use crate::fte_directive::{WORD_TOO_LONG, simple_get_token, too_long};
+
+/// Where one open conditional block stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Block {
+    /// The block around it is skipped, so every side of this one is too.
+    Outside,
+    /// The side being read is kept.
+    Taking,
+    /// No side has been kept yet: an `#else`, or a true `#elif`, keeps the next.
+    Waiting,
+    /// A side was kept before this one: every later side is skipped.
+    Done,
+}
+
+/// The open conditional blocks of one file, innermost last, each with `T`, what its reader
+/// keeps of it (QC-9.6, PRJ-5.5).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CondStack<T> {
+    blocks: Vec<(Block, T)>,
+}
+
+impl<T> Default for CondStack<T> {
+    fn default() -> Self {
+        Self { blocks: Vec::new() }
+    }
+}
+
+impl<T> CondStack<T> {
+    /// Whether lines are kept where reading stands: no block is open, or the innermost is
+    /// [`Block::Taking`].
+    #[must_use]
+    pub fn taking(&self) -> bool {
+        self.blocks
+            .last()
+            .is_none_or(|(block, _)| *block == Block::Taking)
+    }
+
+    /// `#ifdef`, `#ifndef` or `#if` opening a block whose first side holds when `value`.
+    pub fn open(&mut self, value: bool, data: T) {
+        let block = match (self.taking(), value) {
+            (false, _) => Block::Outside,
+            (true, true) => Block::Taking,
+            (true, false) => Block::Waiting,
+        };
+        self.blocks.push((block, data));
+    }
+
+    /// The vanilla `#else` (QC-9.6): the innermost block's kept and skipped sides swap, at
+    /// each `#else`. False when no block is open, which `qcc` reports (E0109).
+    pub fn flip(&mut self) -> bool {
+        let Some((block, _)) = self.blocks.last_mut() else {
+            return false;
+        };
+        *block = match *block {
+            Block::Taking => Block::Waiting,
+            Block::Waiting => Block::Taking,
+            Block::Outside | Block::Done => *block,
+        };
+        true
+    }
+
+    /// FTEQCC's `#elif`, `#elifdef` or `#elifndef` (PRJ-5.5): a block still
+    /// [`Block::Waiting`] keeps this side when `value` holds, read only then; a block that
+    /// kept a side is [`Block::Done`].
+    pub fn elif(&mut self, value: impl FnOnce() -> bool) {
+        if let Some((block, _)) = self.blocks.last_mut() {
+            *block = match *block {
+                Block::Waiting if value() => Block::Taking,
+                Block::Taking => Block::Done,
+                Block::Waiting | Block::Outside | Block::Done => *block,
+            };
+        }
+    }
+
+    /// FTEQCC's `#else` (PRJ-5.5): a block still [`Block::Waiting`] keeps the side after it,
+    /// and one that kept a side is [`Block::Done`]; with no block open it does nothing.
+    pub fn otherwise(&mut self) {
+        if let Some((block, _)) = self.blocks.last_mut() {
+            *block = match *block {
+                Block::Waiting => Block::Taking,
+                Block::Taking => Block::Done,
+                Block::Outside | Block::Done => *block,
+            };
+        }
+    }
+
+    /// `#endif`: the innermost block closes, and what was kept of it; `None` when none is open.
+    pub fn close(&mut self) -> Option<T> {
+        self.blocks.pop().map(|(_, data)| data)
+    }
+
+    /// What is kept of each block still open, outermost first.
+    pub fn into_open(self) -> impl Iterator<Item = T> {
+        self.blocks.into_iter().map(|(_, data)| data)
+    }
+}
 
 /// Deepest nesting of `!` and parentheses an expression may have; a deeper one is false, so
 /// no input exhausts the stack.
@@ -116,11 +215,11 @@ fn tokens(expr: &str) -> Option<Vec<Tok>> {
             (b'<', _) => (Tok::Lt, 1),
             (b'>', Some(b'=')) => (Tok::Ge, 2),
             (b'>', _) => (Tok::Gt, 1),
-            _ if byte.is_ascii_alphanumeric() || byte == b'_' => {
+            _ if is_name_char(byte) => {
                 let len = bytes
                     .get(i..)?
                     .iter()
-                    .take_while(|b| b.is_ascii_alphanumeric() || **b == b'_')
+                    .take_while(|b| is_name_char(**b))
                     .count();
                 let word = expr.get(i..i.checked_add(len)?)?;
                 let tok = if byte.is_ascii_digit() {
@@ -295,21 +394,76 @@ pub(crate) fn fte_if(
         depth: 0,
         macros,
     };
-    let value = reader.level(FTE_TOPLEVEL);
+    let value = reader.level(Level::Top);
     (value, reader.pos)
 }
 
-/// `PPI_NOT` in FTEQCC's `ParsePrecompilerIf`: the operand of `!`.
-const FTE_NOT: u8 = 1;
-/// `PPI_COMPARISON`: `<=`, `>=`, `<`, `>`, `!=` and `==`, one level, to the right.
-const FTE_COMPARISON: u8 = 3;
-/// `PPI_LOGICAL`: `||` and `&&`, one level, to the right.
-const FTE_LOGICAL: u8 = 4;
-/// `PPI_TOPLEVEL`: a whole expression.
-const FTE_TOPLEVEL: u8 = 5;
+/// A level of FTEQCC's `ParsePrecompilerIf`, its `PPI_*` constants from 0 up: each reads the
+/// one below it and then its own operators.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Level {
+    /// `PPI_VALUE`: a parenthesis, `!`, `defined` or a word.
+    Value,
+    /// `PPI_NOT`: the operand of `!`.
+    Not,
+    /// `PPI_DEFINED`, which has no operators of its own.
+    Defined,
+    /// `PPI_COMPARISON`: `<=`, `>=`, `<`, `>`, `!=` and `==`, one level, to the right.
+    Comparison,
+    /// `PPI_LOGICAL`: `||` and `&&`, one level, to the right.
+    Logical,
+    /// `PPI_TOPLEVEL`: a whole expression.
+    Top,
+}
+
+impl Level {
+    /// The level `ParsePrecompilerIf(level-1)` reads first; none below `PPI_VALUE`.
+    const fn below(self) -> Option<Self> {
+        match self {
+            Self::Value => None,
+            Self::Not => Some(Self::Value),
+            Self::Defined => Some(Self::Not),
+            Self::Comparison => Some(Self::Defined),
+            Self::Logical => Some(Self::Comparison),
+            Self::Top => Some(Self::Logical),
+        }
+    }
+}
+
+/// A comparison operator of `PPI_COMPARISON`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CmpOp {
+    Le,
+    Ge,
+    Lt,
+    Gt,
+    Ne,
+    Eq,
+}
+
+impl CmpOp {
+    /// `lhs` compared with `rhs` by this operator.
+    const fn holds(self, lhs: i32, rhs: i32) -> bool {
+        match self {
+            Self::Le => lhs <= rhs,
+            Self::Ge => lhs >= rhs,
+            Self::Lt => lhs < rhs,
+            Self::Gt => lhs > rhs,
+            Self::Ne => lhs != rhs,
+            Self::Eq => lhs == rhs,
+        }
+    }
+}
 
 /// The comparison operators of `PPI_COMPARISON`, in the order FTEQCC tries them.
-const FTE_COMPARISONS: [&[u8]; 6] = [b"<=", b">=", b"<", b">", b"!=", b"=="];
+const FTE_COMPARISONS: [(&[u8], CmpOp); 6] = [
+    (b"<=", CmpOp::Le),
+    (b">=", CmpOp::Ge),
+    (b"<", CmpOp::Lt),
+    (b">", CmpOp::Gt),
+    (b"!=", CmpOp::Ne),
+    (b"==", CmpOp::Eq),
+];
 
 /// FTEQCC's `#if` reader (FTEF-14.33): `ParsePrecompilerIf` over the expression's bytes.
 struct FteIf<'a> {
@@ -317,11 +471,6 @@ struct FteIf<'a> {
     pos: usize,
     depth: u32,
     macros: &'a dyn Fn(&str) -> Option<String>,
-}
-
-/// `qcc_iswhite` in FTEQCC's `cmdlib.h`.
-pub(crate) const fn fte_white(byte: u8) -> bool {
-    matches!(byte, b' ' | b'\r' | b'\n' | b'\t' | 0x0b)
 }
 
 impl FteIf<'_> {
@@ -341,7 +490,10 @@ impl FteIf<'_> {
 
     /// `while (*pr_file_p && qcc_iswhite(*pr_file_p) && *pr_file_p != '\n') pr_file_p++;`
     fn skip_white(&mut self) {
-        while self.peek(0).is_some_and(|b| fte_white(b) && b != b'\n') {
+        while self
+            .peek(0)
+            .is_some_and(|b| is_fteqcc_whitespace(b) && b != b'\n')
+        {
             self.advance(1);
         }
     }
@@ -368,7 +520,7 @@ impl FteIf<'_> {
 
     /// `ParsePrecompilerIf(level)` one nesting deeper, for a parenthesis, a `!` or an
     /// operator's right side: [`FteIfError::TooDeep`] past the nesting limit.
-    fn nested(&mut self, level: u8) -> Result<i32, FteIfError> {
+    fn nested(&mut self, level: Level) -> Result<i32, FteIfError> {
         self.depth = self
             .depth
             .checked_add(1)
@@ -380,8 +532,8 @@ impl FteIf<'_> {
     }
 
     /// `ParsePrecompilerIf(level)`: an error where FTEQCC reports one.
-    fn level(&mut self, level: u8) -> Result<i32, FteIfError> {
-        let Some(below) = level.checked_sub(1) else {
+    fn level(&mut self, level: Level) -> Result<i32, FteIfError> {
+        let Some(below) = level.below() else {
             return self.value();
         };
         let value = self.level(below)?;
@@ -389,33 +541,28 @@ impl FteIf<'_> {
         match level {
             // `eval = ParsePrecompilerIf(level)||eval;`: the right side is read first, at the
             // same level, so `||` and `&&` share one level and group to the right.
-            FTE_LOGICAL if self.starts_with(b"||") => {
+            Level::Logical if self.starts_with(b"||") => {
                 self.advance(2);
                 let rhs = self.nested(level)?;
                 Ok(i32::from(rhs != 0 || value != 0))
             }
-            FTE_LOGICAL if self.starts_with(b"&&") => {
+            Level::Logical if self.starts_with(b"&&") => {
                 self.advance(2);
                 let rhs = self.nested(level)?;
                 Ok(i32::from(rhs != 0 && value != 0))
             }
-            FTE_COMPARISON => {
-                let Some(op) = FTE_COMPARISONS.into_iter().find(|op| self.starts_with(op)) else {
+            Level::Comparison => {
+                let Some((text, op)) = FTE_COMPARISONS
+                    .into_iter()
+                    .find(|(text, _)| self.starts_with(text))
+                else {
                     return Ok(value);
                 };
-                self.advance(op.len());
+                self.advance(text.len());
                 let rhs = self.nested(level)?;
-                let result = match op {
-                    b"<=" => value <= rhs,
-                    b">=" => value >= rhs,
-                    b"<" => value < rhs,
-                    b">" => value > rhs,
-                    b"!=" => value != rhs,
-                    _ => value == rhs,
-                };
-                Ok(i32::from(result))
+                Ok(i32::from(op.holds(value, rhs)))
             }
-            _ => Ok(value),
+            Level::Value | Level::Not | Level::Defined | Level::Logical | Level::Top => Ok(value),
         }
     }
 
@@ -426,7 +573,7 @@ impl FteIf<'_> {
         self.skip_white();
         if self.peek(0) == Some(b'(') {
             self.advance(1);
-            let value = self.nested(FTE_TOPLEVEL)?;
+            let value = self.nested(Level::Top)?;
             self.skip_blanks();
             if self.peek(0) != Some(b')') {
                 return Err(FteIfError::Reported("unclosed bracket condition"));
@@ -436,7 +583,7 @@ impl FteIf<'_> {
         }
         if self.peek(0) == Some(b'!') {
             self.advance(1);
-            return Ok(i32::from(self.nested(FTE_NOT)? == 0));
+            return Ok(i32::from(self.nested(Level::Not)? == 0));
         }
         if self.starts_with(b"defined") {
             self.advance(7);
@@ -470,7 +617,76 @@ mod tests {
 
     use qc_lexer::Dialect;
 
-    use super::{atoi, fte_atoi};
+    use super::{CondStack, atoi, fte_atoi};
+
+    // spec QC-9.6: a block is kept when its test holds, `#else` swaps its sides each time,
+    // `#endif` closes it, and a block inside a skipped one is skipped whatever its test
+    #[test]
+    fn the_vanilla_else_swaps_the_sides() {
+        let mut stack = CondStack::default();
+        assert!(stack.taking());
+        assert!(!stack.flip());
+        stack.open(true, 1);
+        assert!(stack.taking());
+        assert!(stack.flip());
+        assert!(!stack.taking());
+        stack.open(true, 2);
+        assert!(!stack.taking());
+        assert!(stack.flip());
+        assert!(!stack.taking());
+        assert_eq!(stack.close(), Some(2));
+        assert!(stack.flip());
+        assert!(stack.taking());
+        stack.open(false, 3);
+        assert!(!stack.taking());
+        assert_eq!(stack.clone().into_open().collect::<Vec<_>>(), [1, 3]);
+        assert_eq!(stack.close(), Some(3));
+        assert_eq!(stack.close(), Some(1));
+        assert_eq!(stack.close(), None);
+    }
+
+    // spec PRJ-5.5: only the first side that holds is kept, `#else` keeps its side only when
+    // none was, and an `#elif` is read only while no side was kept
+    #[test]
+    fn fteqcc_keeps_only_the_first_side_that_holds() {
+        let mut stack: CondStack<()> = CondStack::default();
+        stack.open(false, ());
+        assert!(!stack.taking());
+        stack.elif(|| false);
+        assert!(!stack.taking());
+        stack.elif(|| true);
+        assert!(stack.taking());
+        let mut read = 0;
+        stack.elif(|| {
+            read += 1;
+            true
+        });
+        assert_eq!(read, 0, "not read once a side was kept");
+        assert!(!stack.taking());
+        stack.otherwise();
+        assert!(!stack.taking());
+        stack.close();
+        stack.open(false, ());
+        stack.otherwise();
+        assert!(stack.taking());
+        stack.otherwise();
+        assert!(!stack.taking());
+        stack.close();
+        stack.open(true, ());
+        stack.otherwise();
+        assert!(!stack.taking());
+        stack.close();
+        stack.open(false, ());
+        stack.open(true, ());
+        assert!(!stack.taking());
+        stack.elif(|| {
+            read += 1;
+            true
+        });
+        assert_eq!(read, 0, "not read in a skipped block");
+        stack.otherwise();
+        assert!(!stack.taking());
+    }
 
     fn eval(expr: &str, macros: &HashMap<String, String>) -> bool {
         super::eval(

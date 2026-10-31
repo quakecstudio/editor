@@ -19,6 +19,7 @@ use crate::check::convert::{Choice, Operand, choose_opcode};
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::opcodes::{OpType, candidates, row};
+use crate::check::statement::Case;
 
 use crate::check::flow::Layout;
 use crate::check::{Constness, Env, FunctionFacts, Reference, Sym, TypedBody, Value};
@@ -61,6 +62,9 @@ pub(super) struct Checker<'e> {
     /// The temporary the last statement emitted made, which a store of it folds into
     /// (`opt_assignments`, FTEF-30.3).
     pub(super) last_temp: Option<u32>,
+    /// The cases of each `switch` being read, the innermost last, which a `case` statement
+    /// anywhere in its body joins (FTEF-16.16).
+    pub(super) switches: Vec<Vec<Case>>,
 }
 
 /// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which nothing more of the
@@ -88,6 +92,7 @@ impl<'e> Checker<'e> {
             pending: None,
             stray: None,
             last_temp: None,
+            switches: Vec::new(),
         }
     }
 

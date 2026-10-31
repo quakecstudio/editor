@@ -668,6 +668,7 @@ const PRELUDES: &[&str] = &[
     "__uint u; int k; void() h = { k = u >> 3; };",
     "__uint u, w; __uint k; void() h = { k = u >> w; };",
     "__int64 l; __int64 m; void() h = { m = l >> 3; };",
+    "float(float x) size = { return x; };",
 ];
 
 /// Returns, conditions, loops, switches, `thinktime` and expression statements, on the standard
@@ -54570,3 +54571,27 @@ const EMULATIONS: &[(usize, &str, &[&str])] = &[
         ],
     ),
 ];
+
+// spec FTEF-20.16: an accessor's `get`, `set` and `inline` are exact names, so a `__` spelling
+// ends its body, and `enum`'s `class` is the strict enum's
+#[test]
+fn accessor_and_enum_class_words_are_reported_as_fteqcc_reports_them() {
+    check(&[
+        (
+            272,
+            "accessor buf : float { __get float len = size; };",
+            &["expected }, found __get"],
+        ),
+        (
+            272,
+            "accessor buf : float { __set float len = size; };",
+            &["expected }, found __set"],
+        ),
+        (
+            272,
+            "accessor buf : float { __inline get float len = size; };",
+            &["expected }, found __inline"],
+        ),
+        (272, "enum class X : float { A };", &[]),
+    ]);
+}

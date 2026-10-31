@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use super::loader;
 use crate::{
-    Define, Dialect, ModuleKind, PRJ_CSQC_OUTPUT, PRJ_MENUQC_OUTPUT, PRJ_SSQC_OUTPUT, Project,
-    ProjectError, Target, open_dir,
+    Define, Dialect, ManifestError, ModuleKind, PRJ_CSQC_OUTPUT, PRJ_MENUQC_OUTPUT,
+    PRJ_SSQC_OUTPUT, Project, ProjectError, Target, open_dir,
 };
 
 /// Opens directory `proj` holding `quakec.toml` with `manifest`, and `files` under it.
@@ -17,11 +17,11 @@ fn open_manifest(manifest: &str, files: &[(&str, &str)]) -> Result<Project, Proj
     open_dir(&mut loader(&all), Path::new("proj"))
 }
 
-fn manifest_error(manifest: &str) -> String {
+fn manifest_error(manifest: &str) -> ManifestError {
     match open_manifest(manifest, &[]) {
-        Err(ProjectError::Manifest { path, message }) => {
+        Err(ProjectError::Manifest { path, error }) => {
             assert_eq!(path, Path::new("proj/quakec.toml"));
-            message
+            error
         }
         other => panic!("expected a manifest error for {manifest:?}, got {other:?}"),
     }
@@ -217,7 +217,9 @@ fn invalid_manifests() {
         ("[[module]\n".to_owned(), "line 1:"),
     ];
     for (manifest, needle) in cases {
-        let message = manifest_error(&manifest);
+        let error = manifest_error(&manifest);
+        assert!(matches!(error, ManifestError::Toml { .. }), "{error:?}");
+        let message = error.to_string();
         assert!(message.contains(needle), "{manifest:?}: {message}");
     }
 }
@@ -225,9 +227,13 @@ fn invalid_manifests() {
 // spec PRJ-2.1: a manifest with no [[module]] is an error
 #[test]
 fn no_module_is_an_error() {
-    assert_eq!(manifest_error(""), "no [[module]] is declared");
+    assert_eq!(manifest_error(""), ManifestError::NoModule);
     assert_eq!(
         manifest_error("[project]\nname = \"x\"\n"),
+        ManifestError::NoModule
+    );
+    assert_eq!(
+        ManifestError::NoModule.to_string(),
         "no [[module]] is declared"
     );
 }
@@ -237,8 +243,12 @@ fn no_module_is_an_error() {
 fn mod_names() {
     for bad in ["", ".", "..", "a/b", "a\\b", "c:d"] {
         let manifest = format!("[project]\nmod = {bad:?}\n{ONE_MODULE}");
-        let message = manifest_error(&manifest);
-        assert!(message.contains("not a single directory name"), "{bad}");
+        let error = manifest_error(&manifest);
+        assert_eq!(error, ManifestError::BadModName(bad.to_owned()));
+        assert!(
+            error.to_string().contains("not a single directory name"),
+            "{bad}"
+        );
     }
     for good in ["mymod", "my mod", ".hidden", "a..b"] {
         let manifest = format!("[project]\nmod = {good:?}\n{ONE_MODULE}");
@@ -250,10 +260,15 @@ fn mod_names() {
 #[test]
 fn module_names_are_unique() {
     let twice = format!("{ONE_MODULE}{ONE_MODULE}");
-    assert_eq!(manifest_error(&twice), "module name \"ssqc\" is used twice");
+    let error = manifest_error(&twice);
+    assert_eq!(error, ManifestError::DuplicateModule("ssqc".to_owned()));
+    assert_eq!(error.to_string(), "module name \"ssqc\" is used twice");
     let named = "[[module]]\nkind = \"ssqc\"\nsrc = \"a.src\"\nname = \"x\"\n\
                  [[module]]\nkind = \"csqc\"\nsrc = \"b.src\"\nname = \"x\"\n";
-    assert_eq!(manifest_error(named), "module name \"x\" is used twice");
+    assert_eq!(
+        manifest_error(named),
+        ManifestError::DuplicateModule("x".to_owned())
+    );
     let kinds = format!("{ONE_MODULE}[[module]]\nkind = \"csqc\"\nsrc = \"cs.src\"\n");
     let project = open_manifest(&kinds, &[]).unwrap();
     let names: Vec<&str> = project.modules.iter().map(|m| m.name.as_str()).collect();
@@ -270,9 +285,20 @@ fn paths_stay_relative() {
         format!("{base}src = \"p.src\"\noutput = \"build/../../x.dat\"\n"),
         format!("{base}src = \"p.src\"\ninclude_dirs = [\"/usr/include\"]\n"),
     ];
-    for manifest in cases {
-        let message = manifest_error(&manifest);
-        assert!(message.starts_with("module ssqc: "), "{message}");
+    let ssqc = || "ssqc".to_owned();
+    let expected = [
+        ManifestError::RootedSrc(ssqc()),
+        ManifestError::OutputOutside(ssqc()),
+        ManifestError::OutputOutside(ssqc()),
+        ManifestError::RootedIncludeDir {
+            module: ssqc(),
+            dir: "/usr/include".to_owned(),
+        },
+    ];
+    for (manifest, want) in cases.iter().zip(expected) {
+        let error = manifest_error(manifest);
+        assert!(error.to_string().starts_with("module ssqc: "), "{error}");
+        assert_eq!(error, want);
     }
     let parent_src = format!("{base}src = \"../shared/progs.src\"\n");
     let project = open_manifest(&parent_src, &[]).unwrap();
@@ -284,7 +310,15 @@ fn paths_stay_relative() {
 fn bad_defines() {
     for bad in ["", "=1", "1X", "A-B", "A B=1"] {
         let manifest = format!("{ONE_MODULE}defines = [{bad:?}]\n");
-        let message = manifest_error(&manifest);
+        let error = manifest_error(&manifest);
+        assert_eq!(
+            error,
+            ManifestError::BadDefine {
+                module: "ssqc".to_owned(),
+                entry: bad.to_owned()
+            }
+        );
+        let message = error.to_string();
         assert!(
             message.contains("is not NAME or NAME=VALUE"),
             "{bad}: {message}"
@@ -397,7 +431,12 @@ fn unreadable_manifest_is_an_error() {
 #[test]
 fn a_module_takes_no_other_compiler_option() {
     for key in ["options", "flags", "warnings", "args"] {
-        let message = manifest_error(&format!("{ONE_MODULE}{key} = [\"-Fqccx\"]\n"));
+        let error = manifest_error(&format!("{ONE_MODULE}{key} = [\"-Fqccx\"]\n"));
+        assert!(
+            matches!(error, ManifestError::Toml { .. }),
+            "{key}: {error:?}"
+        );
+        let message = error.to_string();
         assert!(message.contains(key), "{key}: {message}");
     }
     let project = open_manifest(

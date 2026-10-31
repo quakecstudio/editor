@@ -8,7 +8,7 @@
 use std::borrow::Cow;
 
 use qc_lexer::{
-    Diagnostic, Dialect, LexFlag, LexFlags, Punct, Span, TokenKind, is_whitespace, lex_with,
+    Diagnostic, Dialect, LexFlag, LexFlags, Punct, Span, TokenKind, is_whitespace, latin1, lex_with,
 };
 use qc_preproc::{fte_directive_end, qcc_load_in_place, relex_from, skip_script_line};
 
@@ -27,6 +27,29 @@ pub(crate) enum Piece {
     Token(usize),
 }
 
+/// Where a token stands on its line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LinePosition {
+    /// The line's first byte: no indentation and nothing else before it.
+    Column0,
+    /// After the line's white space only.
+    Indented,
+    /// After another token of its line.
+    Within,
+}
+
+impl LinePosition {
+    /// Whether it is the line's first byte, where recovery resumes a declaration.
+    pub(crate) fn column0(self) -> bool {
+        self == Self::Column0
+    }
+
+    /// Whether only white space comes before it on its line.
+    pub(crate) fn line_start(self) -> bool {
+        self != Self::Within
+    }
+}
+
 /// A token the parser reads.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Tok {
@@ -36,10 +59,8 @@ pub(crate) struct Tok {
     pub(crate) span: Span,
     /// Its index in [`Input::pieces`].
     pub(crate) piece: usize,
-    /// Whether it is the first byte of its line: no indentation and nothing else before it.
-    pub(crate) column0: bool,
-    /// Whether only whitespace precedes it on its line.
-    pub(crate) line_start: bool,
+    /// Where it stands on its line.
+    pub(crate) position: LinePosition,
     /// The text `qcc` would print for it in "found X": a name or punctuation as written, a
     /// string literal's contents (QC-3.4).
     pub(crate) text: String,
@@ -84,10 +105,6 @@ pub(crate) struct Input<'a> {
     /// The compiler flags the tokens were lexed with, each from the byte it holds from
     /// (FTEF-12.12).
     pub(crate) flags: Vec<(usize, LexFlags)>,
-}
-
-fn latin1(bytes: &[u8]) -> String {
-    bytes.iter().copied().map(char::from).collect()
 }
 
 /// The directive line being read.
@@ -295,7 +312,7 @@ impl<'a> Input<'a> {
                 break;
             };
             index = index.saturating_add(1);
-            let kind = token_kind(&token.kind);
+            let kind = SyntaxKind::from_token_kind(&token.kind);
             if line.is_some() || kind.is_trivia() {
                 input.pieces.push(Piece::Leaf(kind, token.span));
                 continue;
@@ -304,6 +321,13 @@ impl<'a> Input<'a> {
                 || source
                     .get(token.span.start.wrapping_sub(1))
                     .is_some_and(|&b| b == b'\n');
+            let position = if column0 {
+                LinePosition::Column0
+            } else if token.line_start {
+                LinePosition::Indented
+            } else {
+                LinePosition::Within
+            };
             let (text, value) = match &token.kind {
                 TokenKind::Name(name) => (name.clone(), None),
                 TokenKind::String(bytes) => (latin1(bytes), None),
@@ -325,8 +349,7 @@ impl<'a> Input<'a> {
                 kind,
                 span: token.span,
                 piece: input.pieces.len().saturating_sub(1),
-                column0,
-                line_start: token.line_start,
+                position,
                 text,
                 value,
             });
@@ -431,17 +454,4 @@ fn starts_directive(source: &[u8], tokens: &[qc_lexer::Token], index: usize) -> 
         && source
             .get(hash.span.end..name.span.start)
             .is_some_and(|gap| !gap.contains(&b'\n'))
-}
-
-/// The tree kind of a lexer token.
-fn token_kind(kind: &TokenKind) -> SyntaxKind {
-    match kind {
-        TokenKind::Name(_) => SyntaxKind::Name,
-        TokenKind::Float(_) => SyntaxKind::FloatLit,
-        TokenKind::Vector(_) => SyntaxKind::VectorLit,
-        TokenKind::String(_) => SyntaxKind::StringLit,
-        TokenKind::Punct(punct) => SyntaxKind::from_punct(*punct),
-        TokenKind::FrameRef(_) => SyntaxKind::FrameRef,
-        TokenKind::Frames(_) | TokenKind::FrameCommand(_) => SyntaxKind::Frames,
-    }
 }

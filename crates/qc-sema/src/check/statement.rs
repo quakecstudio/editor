@@ -16,8 +16,9 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
 use crate::check::flow::{Finding, Step};
+use crate::check::member;
 use crate::check::reference::eval_int;
-use crate::check::truth::{Jump, Test};
+use crate::check::truth::{Jump, Test, is_truth};
 use crate::check::{Constness, Reference, Value};
 use crate::ty::{SimpleType, Type};
 
@@ -26,7 +27,7 @@ const VECTOR_WORDS: u32 = 3;
 
 /// A `case` of a `switch`: its value, the end of its range, where it is and the statement it
 /// jumps to (`pr_casesref`, `pr_casesref2`, `pr_cases`).
-struct Case {
+pub(super) struct Case {
     value: Option<Value>,
     range_end: Option<Value>,
     span: Span,
@@ -57,6 +58,14 @@ impl Checker<'_> {
         self.line_starts.entry(line).or_insert(stmt.syntax().span());
         match stmt {
             ast::Stmt::Block(block) => self.block(block),
+            ast::Stmt::Case(label) => {
+                // A `case` no switch holds is "illegal cases", the lowering's (FTEF-21.19).
+                if let Some(mut cases) = self.switches.pop() {
+                    let ended = self.case(label, &mut cases);
+                    self.switches.push(cases);
+                    ended?;
+                }
+            }
             ast::Stmt::Expr(s) => {
                 let expr = s.expr();
                 if expr.as_ref().is_some_and(generates) {
@@ -435,18 +444,16 @@ impl Checker<'_> {
         let step = if hcstyle { Step::Branch } else { Step::Goto };
         let patch1 = self.layout.push(step, None, line);
         let body = self.layout.here();
-        let mut cases = Vec::new();
+        // FTEF-16.16: each `case` read while the body is, at any depth, is this switch's.
+        self.switches.push(Vec::new());
         if let Some(block) = s.block() {
-            for node in block.syntax().children() {
-                if let Some(label) = ast::CaseLabel::cast(node.clone()) {
-                    let _ended: Result<(), Fatal> = self.case(&label, &mut cases);
-                } else if let Some(stmt) = ast::Stmt::cast(node) {
-                    self.statement(&stmt);
-                }
+            for stmt in block.statements() {
+                self.statement(&stmt);
             }
         } else {
             self.statement_of(s.statement());
         }
+        let cases = self.switches.pop().unwrap_or_default();
         let here = self.layout.here();
         let jumps_out = match self.layout.last() {
             Some(Step::Return | Step::Done | Step::Goto) => here != body,
@@ -457,6 +464,9 @@ impl Checker<'_> {
         let table = self.layout.here();
         self.layout.patch(patch1, table);
         self.uncovered_items(&value, &cases, span);
+        // FTEF-22.9: the cases are converted once the body is read, where FTEQCC's lexer is at
+        // the token after it.
+        let after = member::next_token(s.syntax()).map_or(span, |token| token.span());
         let mut default = None;
         for case in cases {
             let Some(min) = case.value else {
@@ -474,11 +484,11 @@ impl Checker<'_> {
                 continue;
             };
             let min = self.read(min, case.span)?;
-            let min = self.case_value(min, &value, case.span)?;
+            let min = self.case_value(min, &value, after)?;
             let max = match case.range_end {
                 Some(max) => {
                     let max = self.read(max, case.span)?;
-                    Some(self.case_value(max, &value, case.span)?)
+                    Some(self.case_value(max, &value, after)?)
                 }
                 None => None,
             };
@@ -567,7 +577,11 @@ impl Checker<'_> {
 
     /// A case value made the switch's type, `QCC_SupplyConversion(dmin, e.cast->type, true)`.
     fn case_value(&mut self, case: Value, switch: &Value, span: Span) -> Result<Value, Fatal> {
-        if case.ty == Type::Unknown || self.etype_of(&case.ty) == self.etype_of(&switch.ty) {
+        // FTEF-22.9: `dmin.cast->type != e.cast->type` tells a truth value, `ev_boolean`, from
+        // its parent type.
+        let same = self.etype_of(&case.ty) == self.etype_of(&switch.ty)
+            && is_truth(&case.ty) == is_truth(&switch.ty);
+        if case.ty == Type::Unknown || same {
             return Ok(case);
         }
         self.supplied(&case, &switch.ty, span)

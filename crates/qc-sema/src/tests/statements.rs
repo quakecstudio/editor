@@ -950,6 +950,186 @@ fn programs_both_refuse_keep_this_profile_s_text() {
     );
 }
 
+// spec FTEF-22.9: a truth value is its own type, to which a float case does not convert, the
+// mismatch reported at the token after the switch's body, where the cases are converted; a
+// switch of a sum takes it
+#[test]
+fn a_switch_of_a_truth_value_takes_no_float_case() {
+    let logical = "float a, b;\nvoid() f = {\nswitch (a || b)\n{\ncase 0:\nbreak;\n}\nf();\n};\n";
+    assert_eq!(
+        lined(logical),
+        [(
+            8,
+            "Implicit type mismatch. Needed bool, got float.".to_owned()
+        )]
+    );
+    let compared =
+        "float a, b;\nvoid() f = {\nswitch (a < b) { case 1: break; default: break; }\n};\n";
+    assert_eq!(
+        lined(compared),
+        [(
+            4,
+            "Implicit type mismatch. Needed bool, got float.".to_owned()
+        )]
+    );
+    let sum = "float a, b;\nvoid() f = {\nswitch (a + b)\n{\ncase 0:\nbreak;\n}\n};\n";
+    assert_eq!(lined(sum), []);
+}
+
+// spec FTEF-19.77: after a qualifier a type `QCC_TypeForName` finds, or a C type word, is the
+// declaration's type, so a definition of it with no name is "not a name", and one with `;`
+// declares nothing; a name that is no type has its type left out, an `int`
+#[test]
+fn a_type_after_a_qualifier_is_the_type() {
+    let not_a_name = || [(1, "\"=\" - not a name".to_owned())];
+    for source in [
+        "const float = 1;\n",
+        "const int = 0i;\n",
+        "const unsigned = 1;\n",
+        "__unused float = 1;\n",
+        "noref string = \"a\";\n",
+        "typedef float t; const t = 1;\n",
+    ] {
+        assert_eq!(lined(source), not_a_name(), "{source}");
+    }
+    for source in [
+        "static entity;\n",
+        "var vector;\n",
+        "typedef float t; static t;\n",
+        "static x;\n",
+        "const k = 5;\n",
+    ] {
+        assert_eq!(lined(source), [], "{source}");
+    }
+}
+
+// spec FTEF-8.7: a keyword that starts a type after `enum` is the enum's legacy base type, read
+// whole, then the `{` is expected
+#[test]
+fn a_keyword_type_after_enum_is_its_base() {
+    let legacy = "legacy enum base type. Use \"enum [class] [name_e]:type\" instead";
+    let expected = |list: &[&str]| -> Vec<(u32, String)> {
+        list.iter().map(|m| (1, (*m).to_owned())).collect()
+    };
+    assert_eq!(
+        lined("enum enum { A };\n"),
+        expected(&["expected {, found ;"])
+    );
+    assert_eq!(
+        lined("enumflags enumflags { A, B };\n"),
+        expected(&["expected {, found ;"])
+    );
+    assert_eq!(lined("enum enum { B } { A };\n"), expected(&[legacy]));
+    assert_eq!(
+        lined("enum struct S { float a; } { A };\n"),
+        expected(&[legacy, "values for enums of this type must be initialised"])
+    );
+    assert_eq!(
+        lined("enum accessor A : float { A };\n"),
+        expected(&["expected }, found A"])
+    );
+}
+
+// spec FTEF-10.13: an accessor's member takes one name `QCC_TypeForName` finds as its type,
+// "Invalid type: NAME" for another; after its `=` a name is a function's alone and any other
+// token starts a body, which expects its `{`
+#[test]
+fn an_accessor_member_reads_as_fteqcc_reads_it() {
+    let first = |member: &str| -> Option<String> {
+        let source = format!("accessor A1 : float\n{{\n{member}\n}};\n");
+        lined(&source)
+            .into_iter()
+            .next()
+            .map(|(_, message)| message)
+    };
+    let cases = [
+        (
+            "inline get get float twice = { return this * 2; };",
+            "Invalid type: get",
+        ),
+        (
+            "inline get twice = { return this * 2; };",
+            "Invalid type: twice",
+        ),
+        (
+            "set set float twice = { this = value / 2; };",
+            "Invalid type: set",
+        ),
+        (
+            "set float twice = ; { this = value / 2; };",
+            "expected {, found ;",
+        ),
+        (
+            "set float twice = = { this = value / 2; };",
+            "expected {, found =",
+        ),
+        (
+            "set float = twice = { this = value / 2; };",
+            "expected }, found =",
+        ),
+    ];
+    for (member, message) in cases {
+        assert_eq!(first(member).as_deref(), Some(message), "{member}");
+    }
+}
+
+// spec FTEF-16.16: a `case` is a statement of the innermost switch wherever a statement stands:
+// the whole body of a switch with no braces, in an `if` inside a switch, and outside any switch
+// it is "illegal cases"
+#[test]
+fn a_case_is_a_statement_of_the_innermost_switch() {
+    let messages = |source: &str| -> Vec<String> {
+        lined(source)
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    let bare = "float a; void() f = {\nswitch ((a < 2))\ncase 0:\nf();\n};\n";
+    assert!(
+        messages(bare).contains(&"Implicit type mismatch. Needed bool, got float.".to_owned()),
+        "{bare}"
+    );
+    let nested = "float a; void() f = {\nswitch (a) {\ncase 0: if (a) case 1: a = 2;\n}\n};\n";
+    assert_eq!(messages(nested), Vec::<String>::new());
+    let outside = "float a; void() f = {\nif (a) case 1: a = 2;\n};\n";
+    assert_eq!(messages(outside), ["f: function contains illegal cases"]);
+}
+
+// spec FTEF-6.7: a struct member followed by a token that starts no `;`, `,` or `}` is "missing
+// semi-colon", and a `}` while the member is open is too
+#[test]
+fn a_struct_member_needs_its_semicolon() {
+    for source in [
+        "typedef union { float string b; } S1;\n",
+        "struct S { float a vector b; };\n",
+        "struct S { float a };\n",
+    ] {
+        let first = lined(source).into_iter().next().map(|(_, m)| m);
+        assert_eq!(first.as_deref(), Some("missing semi-colon"), "{source}");
+    }
+}
+
+// spec FTEF-19.20: the type of a definition that declares no name is still a type that must
+// be: a class member `T;` and a definition whose name is missing, after the one before it lost
+// its `;`, are "not a type" for a name no type has, and a type that is one is not
+#[test]
+fn a_type_with_no_name_after_it_is_checked() {
+    let messages = |source: &str| -> Vec<String> {
+        lined(source)
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    let not_a_type = |name: &str| format!("\"{name}\" is not a type");
+    let member = "entity self;\nclass C1 : entity\n{\nm2;\nvoid() M3;\n};\n";
+    assert!(messages(member).contains(&not_a_type("m2")));
+    let typed = "entity self;\ntypedef float T;\nclass C1 : entity\n{\nT;\n};\n";
+    assert!(!messages(typed).iter().any(|m| m.ends_with("is not a type")));
+    let lost = "entity entity f6(void)\n{\n};\n";
+    assert!(messages(lost).contains(&not_a_type("f6")));
+    assert!(messages("m2(void) {};\n").contains(&not_a_type("m2")));
+}
+
 // spec FTEF-18.2: a nested function is a function of its own: its body sees the globals and its
 // own parameters, and is checked when it ends, under its empty name
 // spec FTEF-34.17: a nested function the outer definition's error does not end is checked

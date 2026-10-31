@@ -5,7 +5,7 @@
 use proptest::prelude::*;
 
 use super::{SAMPLE, SAMPLE_FTEQCC, errors};
-use crate::recovery::{check_deletions, check_deletions_with, items};
+use crate::recovery::{DeletionFailure, check_deletions, check_deletions_with, items};
 use crate::{Code, Dialect, SyntaxKind, SyntaxNode, parse, parse_with};
 
 /// The names declared at file level, in order.
@@ -25,7 +25,7 @@ fn declared(source: &str) -> Vec<String> {
 fn every_single_token_deletion_is_local() {
     let report = check_deletions(SAMPLE.as_bytes());
     assert!(report.deletions > 500, "{report:?}");
-    assert_eq!(report.failures, Vec::<String>::new());
+    assert_eq!(report.failures, Vec::<DeletionFailure>::new());
     assert!(report.silent < report.deletions / 5, "{report:?}");
 }
 
@@ -137,7 +137,7 @@ proptest! {
     fn generated_deletions_are_local(source in program()) {
         prop_assert_eq!(parse(source.as_bytes()).errors().count(), 0);
         let report = check_deletions(source.as_bytes());
-        prop_assert_eq!(report.failures, Vec::<String>::new());
+        prop_assert_eq!(report.failures, Vec::<DeletionFailure>::new());
     }
 
     // Under the FTEQCC profile deleting any token of a generated program leaves a local
@@ -147,7 +147,7 @@ proptest! {
         let parsed = parse_with(source.as_bytes(), Dialect::Fteqcc);
         prop_assert_eq!(parsed.errors().count(), 0);
         let report = check_deletions_with(source.as_bytes(), Dialect::Fteqcc);
-        prop_assert_eq!(report.failures, Vec::<String>::new());
+        prop_assert_eq!(report.failures, Vec::<DeletionFailure>::new());
     }
 }
 
@@ -240,7 +240,7 @@ fn fteqcc_bodies_end_at_declaration_lines() {
 fn a_stray_semicolon_is_not_deleted() {
     let report = check_deletions_with(b"float a;\n;\nfloat b;\n", Dialect::Fteqcc);
     assert_eq!(report.deletions, 6);
-    assert_eq!(report.failures, Vec::<String>::new());
+    assert_eq!(report.failures, Vec::<DeletionFailure>::new());
 }
 
 // spec FTEF-18.34: a class member's recovery stops at the `}` that closes the class
@@ -263,7 +263,7 @@ fn class_member_recovery_keeps_the_class_brace() {
 fn every_single_fteqcc_token_deletion_is_local() {
     let report = check_deletions_with(SAMPLE_FTEQCC.as_bytes(), Dialect::Fteqcc);
     assert!(report.deletions > 500, "{report:?}");
-    assert_eq!(report.failures, Vec::<String>::new());
+    assert_eq!(report.failures, Vec::<DeletionFailure>::new());
 }
 
 /// The statement kinds of the body of `f` in `source`.
@@ -315,7 +315,7 @@ fn recovery_tracks_braces() {
 }
 
 mod checker {
-    use crate::recovery::{check_one, greens, items};
+    use crate::recovery::{RecoveryFault, check_one, greens, items};
     use crate::{Dialect, GreenNode, parse};
 
     fn before(source: &str) -> Vec<GreenNode> {
@@ -341,10 +341,7 @@ mod checker {
     fn a_changed_declaration_before_the_damage_fails() {
         let edited = "float x;\nfloat b;\nfloat c;\nfloat d;\n";
         let result = check_one(edited.as_bytes(), Dialect::Vanilla, &before(FOUR), 2);
-        assert_eq!(
-            result,
-            Err("declaration 0 before the deletion changed".to_owned())
-        );
+        assert_eq!(result, Err(RecoveryFault::EarlierChanged(0)));
         assert_eq!(
             check_one(edited.as_bytes(), Dialect::Vanilla, &before(FOUR), 0),
             Ok(0)
@@ -359,10 +356,7 @@ mod checker {
             Ok(0)
         );
         let result = check_one(edited.as_bytes(), Dialect::Vanilla, &before(FOUR), 0);
-        assert_eq!(
-            result,
-            Err("declaration 2 changed, more than one after the deletion".to_owned())
-        );
+        assert_eq!(result, Err(RecoveryFault::LaterChanged(2)));
     }
 
     #[test]
@@ -370,9 +364,9 @@ mod checker {
         let original = "x1;\nfloat a;\nfloat b;\nfloat c;\n";
         let result = check_one(original.as_bytes(), Dialect::Vanilla, &before(original), 2);
         assert!(
-            result
-                .as_ref()
-                .is_err_and(|e| e.starts_with("error E0203 \"x1\" is not a type at 0")),
+            result.as_ref().is_err_and(|e| e
+                .to_string()
+                .starts_with("error E0203 \"x1\" is not a type at 0")),
             "{result:?}"
         );
         assert_eq!(

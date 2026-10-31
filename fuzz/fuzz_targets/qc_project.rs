@@ -26,7 +26,7 @@ fuzz_target!(|data: &[u8]| {
         let graph = build_graph(&mut loader, Path::new("main.src"), &[], &[], dialect);
         assert!(graph.files.len() <= PRJ_MAX_FILES);
         for (i, file) in graph.files.iter().enumerate() {
-            assert!(file.parent.is_none_or(|p| p < i));
+            assert!(file.parent.is_none_or(|p| p.index() < i));
         }
     }
 });

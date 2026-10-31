@@ -444,6 +444,56 @@ fn class_member_words() {
     ));
 }
 
+// spec FTEF-20.16: `enum`'s `class` and an accessor's `get`, `set` and `inline` are names
+// matched exactly: `__get` ends the accessor's body as "expected }", `__class` after `enum` is no
+// `class`, and a class member's `__get` stays a keyword (FTEF-20.11)
+#[test]
+fn enum_class_and_accessor_words_are_names() {
+    let defaults = Keywords::default();
+    let messages = |source: &str| -> Vec<String> {
+        fte_with(source, defaults)
+            .diagnostics
+            .iter()
+            .map(|d| d.message.clone())
+            .collect()
+    };
+    let size = "float(float x) size = { return x; };\n";
+    assert_eq!(
+        messages(&format!(
+            "{size}accessor buf : float {{ __get float len = size; }};\n"
+        )),
+        ["expected }, found __get"]
+    );
+    assert_eq!(
+        messages(&format!(
+            "{size}accessor buf : float {{ __inline get float len = size; }};\n"
+        )),
+        ["expected }, found __inline"]
+    );
+    assert_eq!(
+        messages(&format!(
+            "{size}accessor buf : float {{ GET float len = size; }};\n"
+        )),
+        ["expected }, found GET"]
+    );
+    assert!(
+        messages(&format!(
+            "{size}accessor buf : float {{ get float len = size; }};\n"
+        ))
+        .is_empty()
+    );
+    assert!(messages("enum class X : float { A };\n").is_empty());
+    assert_eq!(
+        messages("enum __class X : float { A };\n"),
+        ["expected {, found X"]
+    );
+    assert!(holds(
+        "class C { __get float x; };\n",
+        defaults,
+        K::AccessorMember
+    ));
+}
+
 // spec FTEF-20.12: a type followed by `;` is a definition of no name, at file level and in a
 // body
 #[test]

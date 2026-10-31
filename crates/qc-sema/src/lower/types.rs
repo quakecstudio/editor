@@ -97,6 +97,9 @@ pub struct RawClass {
     pub body: bool,
     /// The members, in declaration order.
     pub members: Vec<RawMember>,
+    /// The types of members that declare no name, `T;`, whose type names are checked as a
+    /// member's are (FTEF-19.20).
+    pub type_only: Vec<(Type, Span)>,
 }
 
 /// One member of an FTEQCC class (FTEF-9.2, FTEF-9.3).
@@ -478,14 +481,24 @@ pub(super) fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>)
     let flags = en
         .syntax()
         .child_tokens()
-        .any(|t| t.kind() == SyntaxKind::EnumKw && cx.spells(&t, Keyword::Enumflags, "enumflags"));
-    // The base is the type after `:`; a parameter list after the body is the declaration's.
-    let base_node = en
+        .any(|t| t.kind() == SyntaxKind::EnumKw && cx.spells(&t, Keyword::Enumflags));
+    // The base is the type after `:`, or a keyword type before the `{` with no `:`, the legacy
+    // form (FTEF-8.7); a parameter list after the body is the declaration's.
+    let colon = en
         .syntax()
         .child_tokens()
-        .any(|t| t.kind() == SyntaxKind::Colon)
-        .then(|| en.syntax().children().find_map(ast::Type::cast))
-        .flatten();
+        .any(|t| t.kind() == SyntaxKind::Colon);
+    let brace = en
+        .syntax()
+        .child_tokens()
+        .find(|t| t.kind() == SyntaxKind::LBrace)
+        .map_or(usize::MAX, |t| t.span().start);
+    let base_node = en
+        .syntax()
+        .children()
+        .find_map(ast::Type::cast)
+        .filter(|ty| ty.syntax().span().start < brace);
+    let legacy_node = !colon && base_node.is_some();
     let base = match (&base_node, &legacy_word) {
         (Some(node), _) => cx.ty(node),
         (None, Some(word)) => legacy_base(word, cx).unwrap_or(Type::Unknown),
@@ -510,7 +523,7 @@ pub(super) fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>)
     }
     // FTEF-19.10: a base type with no `:` before it is FTEQCC's legacy form, and `enum class`
     // names its values only as `Name::value`.
-    let legacy = legacy_word.is_some();
+    let legacy = legacy_word.is_some() || legacy_node;
     // `strictenum = QCC_PR_CheckName("class");`
     let strict = en
         .syntax()
@@ -629,7 +642,7 @@ pub(super) fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDec
     out.diagnostics
         .extend(typedef_diagnostics(td, cx, TypedefScope::File));
     let node = td.syntax().children().find_map(ast::Type::cast);
-    // FTEF-19.21: with its type left out, a typedef names an `int`.
+    // FTEF-19.77: with its type left out, a typedef names an `int`.
     let omitted = node.is_none()
         && td
             .syntax()
@@ -821,6 +834,7 @@ pub(super) fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecl
             .child_tokens()
             .any(|t| t.kind() == SyntaxKind::LBrace),
         members: Vec::new(),
+        type_only: Vec::new(),
     };
     // FTEF-9.2: `virtual:` and `nonvirtual:` set the kind of the member functions after them.
     let mut assume_virtual = None;
@@ -839,7 +853,7 @@ pub(super) fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecl
             }
             SyntaxKind::Declaration => {
                 if let Some(decl) = ast::Declaration::cast(node) {
-                    lower_member(&decl, &class_name, assume_virtual, cx, &mut raw.members);
+                    lower_member(&decl, &class_name, assume_virtual, cx, &mut raw);
                 }
             }
             SyntaxKind::AccessorMember => {
@@ -898,8 +912,9 @@ fn lower_member(
     class: &str,
     assume_virtual: Option<bool>,
     cx: Cx<'_>,
-    out: &mut Vec<RawMember>,
+    raw: &mut RawClass,
 ) {
+    let out = &mut raw.members;
     let words = qualifiers(decl);
     // FTEF-20.11: a member's words are `__` and any case as the parser took them.
     let has = |word: &str| {
@@ -1044,6 +1059,12 @@ fn lower_member(
             follow: String::new(),
             function_words: FunctionWords::default(),
         });
+        return;
+    }
+    // FTEF-19.20: `QCC_PR_ParseType` reads a member's type before its name, so `T;` is "not a
+    // type" when `T` names none.
+    if !declared && let Some(ty) = decl.ty() {
+        raw.type_only.push((base, ty.syntax().span()));
     }
 }
 

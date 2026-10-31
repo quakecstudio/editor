@@ -977,7 +977,7 @@ fn scoped_definitions() {
     assert_eq!(fte_only("float D::b;\n").1, "D is not a class");
 }
 
-// spec FTEF-19.21: after a qualifier the type may be left out, and is `int`
+// spec FTEF-19.77: after a qualifier the type may be left out, and is `int`
 #[test]
 fn an_omitted_type_is_int() {
     for source in [

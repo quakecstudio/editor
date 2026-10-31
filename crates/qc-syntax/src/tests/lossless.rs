@@ -421,3 +421,125 @@ fn skipped_bytes_stop_at_comments_and_commands() {
         ]
     );
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(512))]
+
+    // spec QCD-1.5: no two diagnostics the lexer and parser give for one input have the same
+    // code and span, in either profile, over token soup in the shape of QuakeC.
+    #[test]
+    fn a_syntax_diagnostic_is_reported_once(parts in proptest::collection::vec(fragment(), 0..60)) {
+        let source = parts.join(" ");
+        for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+            let parsed = crate::parse_with(source.as_bytes(), dialect);
+            let mut seen = std::collections::HashSet::new();
+            for d in parsed.diagnostics() {
+                // QCD-1.5: `W0227` is one per operator, which two operators can give at one
+                // token.
+                prop_assert!(
+                    d.code == Code::W0227 || seen.insert((d.code, d.span)),
+                    "{dialect:?} {:?}: {d:?} twice",
+                    source
+                );
+            }
+        }
+    }
+}
+
+// spec QCD-1.5: an accessor member its error stops short is not read again as another member, so
+// the place is reported once (the parser fuzz target's find)
+#[test]
+fn an_accessor_member_error_is_reported_once() {
+    let at = |source: &str| -> Vec<(usize, String)> {
+        crate::parse_with(source.as_bytes(), Dialect::Fteqcc)
+            .diagnostics()
+            .iter()
+            .map(|d| (d.span.start, d.message.clone()))
+            .collect()
+    };
+    let found = |list: &[(usize, &str)]| -> Vec<(usize, String)> {
+        list.iter().map(|&(at, m)| (at, m.to_owned())).collect()
+    };
+    assert_eq!(
+        at("accessor h : float { set float v g; };"),
+        found(&[(33, "expected =, found g")])
+    );
+    assert_eq!(
+        at("accessor h : float { set float v g };"),
+        found(&[(33, "expected =, found g")])
+    );
+    assert_eq!(
+        at("\naccessor h : float { get float = = f; set v v g;float v = g; };"),
+        found(&[
+            (34, "expected {, found ="),
+            (43, "Invalid type: v"),
+            (49, "expected }, found float"),
+        ])
+    );
+}
+
+// spec QCD-1.5: a state header its error stops short is skipped to its `]` or the body's `{`, so
+// the body does not start inside it and report the place again (the parser fuzz target's find)
+#[test]
+fn a_state_header_error_is_reported_once() {
+    for (source, at) in [
+        ("void() f = [$a, ) {};", 16),
+        ("void() f = [$a, );", 16),
+        ("void() f = [1, ) g;", 15),
+        ("void() f = [1, ) f = [1, gg] {};", 15),
+    ] {
+        let found: Vec<_> = crate::parse_with(source.as_bytes(), Dialect::Vanilla)
+            .diagnostics()
+            .iter()
+            .map(|d| (d.span.start, d.message.clone()))
+            .collect();
+        assert_eq!(found, [(at, "not a name".to_owned())], "{source}");
+    }
+}
+
+// spec QCD-1.5: a case label its error stops short is skipped to its `:`, so the statement after
+// it does not start inside it and report the place again (the parser fuzz target's find)
+#[test]
+fn a_case_label_error_is_reported_once() {
+    let at = |source: &str| -> Vec<(usize, String)> {
+        crate::parse_with(source.as_bytes(), Dialect::Fteqcc)
+            .diagnostics()
+            .iter()
+            .map(|d| (d.span.start, d.message.clone()))
+            .collect()
+    };
+    assert_eq!(
+        at("void() f = { switch (x) { case] } };"),
+        [(30, "\"]\" - not a name".to_owned())]
+    );
+    assert_eq!(
+        at("void() f = { switch (x) { case ]; } };"),
+        [(31, "\"]\" - not a name".to_owned())]
+    );
+    assert_eq!(
+        at("void() f = { switch (x) { case 1] } };"),
+        [(32, "expected :, found ]".to_owned())]
+    );
+    // The label after a broken one is read as a label.
+    assert_eq!(
+        at("void() f = { switch (x) { case 1 2 case 3: break; } };"),
+        [(33, "expected :, found 2".to_owned())]
+    );
+}
+
+// spec QCD-1.5: `W0227` is given for each operator in a `~` operand, so two nested ones that end
+// at one token warn there twice, as the pinned FTEQCC prints it twice
+// spec FTEF-21.6: each binary operator the operand of `~` takes warns at the token after it
+#[test]
+fn nested_unary_operands_warn_once_per_operator() {
+    let source = "float a, b, c;\nvoid() f = { local float x; x = ~a - ~b - c; };\n";
+    let warned: Vec<_> = crate::parse_with(source.as_bytes(), Dialect::Fteqcc)
+        .diagnostics()
+        .iter()
+        .filter(|d| d.code == Code::W0227)
+        .map(|d| d.span.start)
+        .collect();
+    let semicolon = source.rfind("c;").map(|at| at + 1);
+    assert_eq!(warned.len(), 2);
+    assert!(warned.iter().all(|&at| Some(at) == semicolon), "{warned:?}");
+}

@@ -15,7 +15,7 @@ use crate::ty::{SimpleType, Type};
 use super::Cx;
 use super::decl::{
     ArrayDim, LiteralValue, Qualifier, RawAggregate, RawValue, ValueKind, array_dim,
-    declarator_type, function_params, qualifiers_of, raw_aggregate, raw_value,
+    declarator_type, qualifiers_of, raw_aggregate, raw_value,
 };
 use super::expr::{RawUse, UseKind, lower_expr};
 use super::types::{TypedefScope, typedef_diagnostics};
@@ -299,7 +299,7 @@ fn param_list_of(fn_body: &ast::FunctionBody) -> Option<ast::ParamList> {
         .children()
         .find_map(ast::Type::cast)
         .or_else(|| declarator.children().find_map(ast::Type::cast))?;
-    function_params(&ty)
+    ty.params()
 }
 
 /// Which `switch`es a statement is in, which a `case` finds its `switch` in (FTEF-21.19).
@@ -321,20 +321,6 @@ pub(super) fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody, fl
     let first = body.locals.len();
     for stmt in block.statements() {
         lower_stmt(&stmt, cx, body, flow);
-    }
-    // FTEF-21.19: a `case` or `default` that no `switch` holds is "illegal cases".
-    if flow.switches == 0
-        && !body.diagnostics.iter().any(|d| d.code == Code::E0259)
-        && let Some(label) = block
-            .syntax()
-            .children()
-            .find(|n| n.kind() == SyntaxKind::CaseLabel)
-    {
-        body.diagnostics.push(Diagnostic {
-            code: Code::E0259,
-            message: "function contains illegal cases".to_owned(),
-            span: label.span(),
-        });
     }
     // FTEF-21.12: `if (pr_subscopedlocals) { //remove any new locals from the hashtable.`, read
     // once the `}` is, with the token after it lexed.
@@ -468,19 +454,27 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
                 lower_expr(&scrutinee, cx, &mut body.uses);
             }
             if let Some(block) = switch_stmt.block() {
-                for node in block.syntax().children() {
-                    if let Some(label) = ast::CaseLabel::cast(node.clone()) {
-                        // FTEF-18.10: a range's end is a value too.
-                        for value in label.value().into_iter().chain(label.range_end()) {
-                            lower_expr(&value, cx, &mut body.uses);
-                        }
-                    } else if let Some(stmt) = ast::Stmt::cast(node) {
-                        lower_stmt(&stmt, cx, body, flow.in_switch());
-                    }
+                for stmt in block.statements() {
+                    lower_stmt(&stmt, cx, body, flow.in_switch());
                 }
             } else if let Some(stmt) = switch_stmt.statement() {
                 // FTEF-18.33: the body of a `switch` is any statement.
                 lower_stmt(&stmt, cx, body, flow.in_switch());
+            }
+        }
+        // FTEF-16.16: a `case` is a label of the innermost `switch`, its values names' uses
+        // (FTEF-18.10: a range's end is a value too).
+        ast::Stmt::Case(label) => {
+            for value in label.value().into_iter().chain(label.range_end()) {
+                lower_expr(&value, cx, &mut body.uses);
+            }
+            // FTEF-21.19: a `case` or `default` that no `switch` holds is "illegal cases".
+            if flow.switches == 0 && !body.diagnostics.iter().any(|d| d.code == Code::E0259) {
+                body.diagnostics.push(Diagnostic {
+                    code: Code::E0259,
+                    message: "function contains illegal cases".to_owned(),
+                    span: label.syntax().span(),
+                });
             }
         }
         // `break;`, `continue;` (FTE-4) and `;` (FTE-21.5) bind no names and use none, and
@@ -563,7 +557,7 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
 }
 
 /// The type of a declaration that writes none, which the parser leaves out only under FTEQCC
-/// after a qualifier or an attribute list (FTEF-19.21): `int`, `type_integer`, as
+/// after a qualifier or an attribute list (FTEF-19.77): `int`, `type_integer`, as
 /// `QCC_PR_ParseDefs` assumes.
 pub(super) fn omitted_type() -> Type {
     Type::Named(std::rc::Rc::from(CScalar::Integer.name()))

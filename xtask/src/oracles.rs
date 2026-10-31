@@ -41,10 +41,12 @@ pub(crate) mod codegen;
 mod compile;
 mod extract;
 mod fuzz;
+mod grammar;
 pub(crate) mod id101;
 mod numbers;
 mod probes;
 pub(crate) mod rerelease;
+pub(crate) mod rng;
 mod scenarios;
 pub(crate) mod sha256;
 #[cfg(test)]
@@ -160,9 +162,12 @@ fn run(
             let scenarios = scenarios::check(&oracles, None)?;
             let builtins = builtins::check(root, &oracles, false, &suite())?;
             let codegen = codegen::check(root, &oracles, false)?;
-            Ok([vectors, numbers, probes, scenarios, builtins, codegen]
-                .iter()
-                .all(|passed| *passed))
+            let grammar = grammar::check(root, &oracles, false)?;
+            Ok([
+                vectors, numbers, probes, scenarios, builtins, codegen, grammar,
+            ]
+            .iter()
+            .all(|passed| *passed))
         }
         // The same, the builtin differential against the outcomes its fixture records rather
         // than the oracles, about a minute where the live run takes half an hour, and the
@@ -176,7 +181,8 @@ fn run(
             let probes = probes::check(&oracles)?;
             let scenarios = scenarios::check(&oracles, None)?;
             let builtins = builtins::check_recorded(root, &suite())?;
-            Ok([vectors, numbers, probes, scenarios, builtins]
+            let grammar = grammar::check_recorded(root)?;
+            Ok([vectors, numbers, probes, scenarios, builtins, grammar]
                 .iter()
                 .all(|passed| *passed))
         }
@@ -185,6 +191,9 @@ fn run(
         ["builtins", "--recorded"] => builtins::check_recorded(root, &suite()),
         ["codegen"] => codegen::check(root, &build()?, false),
         ["codegen", "--record"] => codegen::check(root, &build()?, true),
+        ["grammar"] => grammar::check(root, &build()?, false),
+        ["grammar", "--record"] => grammar::check(root, &build()?, true),
+        ["grammar", "--recorded"] => grammar::check_recorded(root),
         ["fuzz", rest @ ..] => fuzz::run(root, rest, exec, net),
         ["scenarios", names @ ..] => {
             let oracles = build()?;

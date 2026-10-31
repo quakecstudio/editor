@@ -526,7 +526,7 @@ fn declaration_qualifiers_parse() {
     assert_eq!(fte_errors("unsigned = 2;\n"), [Code::E0201]);
 }
 
-// spec FTEF-19.21: after a qualifier the type may be left out, at file level and in a body
+// spec FTEF-19.77: after a qualifier the type may be left out, at file level and in a body
 #[test]
 fn a_qualifier_may_leave_the_type_out() {
     for source in [
@@ -716,7 +716,7 @@ fn assignment_to_a_call_parses() {
     );
 }
 
-// spec FTEF-16.12: a `case` label may stand in a block nested in the `switch` body.
+// spec FTEF-16.16: a `case` label may stand in a block nested in the `switch` body.
 #[test]
 fn nested_case_labels_parse() {
     fte_ok(&in_body(

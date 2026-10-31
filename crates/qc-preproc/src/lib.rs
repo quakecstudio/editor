@@ -60,7 +60,8 @@ use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 
 use qc_lexer::{
-    Code, Dialect, FrameCommand, LexFlag, LexFlags, Punct, Span, Token, TokenKind, lex_flagged,
+    Code, Dialect, Directive, FrameCommand, LexFlag, LexFlags, Punct, Span, Token, TokenKind,
+    lex_flagged,
 };
 
 /// Most frames one source file may define.
@@ -90,7 +91,20 @@ pub struct Expansion {
 
 /// Index of an [`Expansion`] in [`Preprocessor::expansions`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ExpansionId(pub usize);
+pub struct ExpansionId(usize);
+
+impl ExpansionId {
+    /// The id of the expansion at `index` in [`Preprocessor::expansions`].
+    pub(crate) const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// Its index in [`Preprocessor::expansions`].
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
 
 /// A token after preprocessing.
 #[derive(Clone, Debug, PartialEq)]
@@ -391,13 +405,6 @@ enum Place {
     /// A built-in constant's text, a chunk of its own that holds nothing a macro's name in it
     /// could read on in (FTEF-14.17, FTEF-14.74).
     Builtin,
-}
-
-#[derive(Debug)]
-struct Cond {
-    value: bool,
-    parent: bool,
-    opened: Span,
 }
 
 /// The tokens lexed from one text, a file's or an FTEQCC expansion's, and where reading
@@ -801,7 +808,8 @@ struct Cursor {
     read_as: Vec<u8>,
     stream: TokenStream,
     /// Under the vanilla dialect, the conditionals open (QC-9.6); FTEQCC skips a side at once.
-    conds: Vec<Cond>,
+    /// The vanilla conditional blocks open in the file, each with its directive (QC-9.6).
+    conds: cond::CondStack<Span>,
     skipped: Vec<Span>,
     skip_start: Option<usize>,
     /// How the file starts, for a directive on its first line (FTEF-14.52).
@@ -817,7 +825,54 @@ struct Cursor {
 
 impl Cursor {
     fn taking(&self) -> bool {
-        self.conds.last().is_none_or(|c| c.value && c.parent)
+        self.conds.taking()
+    }
+}
+
+/// The frame macros of the file being preprocessed, as its dialect keeps them, chosen once.
+#[derive(Debug)]
+enum FrameMacros {
+    /// `qcc`'s: the file's `$frame` names, each numbered by its place (QC-8.2), and whether
+    /// "too many frames" was reported.
+    Vanilla { names: Vec<String>, full: bool },
+    /// FTEQCC's: the number the next frame name gets, `pr_macrovalue`, 0 at the start of each
+    /// file (FTEF-18.17); the macros themselves are the module's
+    /// ([`Preprocessor::carried_frames`], FTE-22.4).
+    Fteqcc { next: i32 },
+}
+
+impl Default for FrameMacros {
+    fn default() -> Self {
+        Self::Vanilla {
+            names: Vec::new(),
+            full: false,
+        }
+    }
+}
+
+impl FrameMacros {
+    /// The frame macros a file starts with in `dialect`.
+    fn for_dialect(dialect: Dialect) -> Self {
+        if dialect.has_fteqcc_extensions() {
+            Self::Fteqcc { next: 0 }
+        } else {
+            Self::default()
+        }
+    }
+
+    /// FTEQCC's `pr_macrovalue`; 0 under the vanilla dialect, which has none.
+    const fn next(&self) -> i32 {
+        match self {
+            Self::Fteqcc { next } => *next,
+            Self::Vanilla { .. } => 0,
+        }
+    }
+
+    /// Sets FTEQCC's `pr_macrovalue`; nothing under the vanilla dialect.
+    fn set_next(&mut self, value: i32) {
+        if let Self::Fteqcc { next } = self {
+            *next = value;
+        }
     }
 }
 
@@ -829,18 +884,10 @@ struct Run {
     unit: Vec<u8>,
     cursors: Vec<Cursor>,
     pending: Vec<Item>,
-    frames: Vec<String>,
-    frames_full: bool,
-    /// In an FTEQCC dialect, the number the next frame name gets, FTEQCC's `pr_macrovalue`,
-    /// 0 at the start of each file (FTEF-18.17).
-    frame_value: i32,
-    /// For each macro name, how many live hide-set nodes name it (QC-9.17).
-    live: HashMap<String, Live>,
-    /// In an FTEQCC dialect, the chunks open where reading stands, outermost first: the
-    /// expansion being read and those it was used in (FTEF-14.17).
-    chunks: Vec<ChunkReader>,
-    /// How many of [`Run::chunks`] each macro has, FTEQCC's `c->inside`.
-    open_names: HashMap<String, usize>,
+    /// The file's frame macros, as its dialect keeps them.
+    frames: FrameMacros,
+    /// How the dialect keeps a macro from expanding inside itself, chosen once.
+    guard: Guard,
     /// The macro expansions this file has made (FTEF-14.28, QC-9.18).
     expanded: Expanded,
     /// Under FTEQCC, how many directives are being run inside another reading (FTEF-14.47).
@@ -880,7 +927,99 @@ impl Expanded {
     }
 }
 
+/// How a dialect keeps a macro from expanding inside its own expansion, chosen once from the
+/// dialect.
+enum Guard {
+    /// `qcc`'s: each token's hide set, and for each macro name how many live hide-set nodes
+    /// name it (QC-9.17).
+    HideSets(HashMap<String, Live>),
+    /// FTEQCC's: the chunks open where reading stands, outermost first, the expansion being
+    /// read and those it was used in, and how many of them each macro has, `c->inside`
+    /// (FTEF-14.17).
+    Chunks {
+        open: Vec<ChunkReader>,
+        inside: HashMap<String, usize>,
+    },
+}
+
+impl Default for Guard {
+    fn default() -> Self {
+        Self::HideSets(HashMap::new())
+    }
+}
+
+impl Guard {
+    /// The guard of `dialect`.
+    fn for_dialect(dialect: Dialect) -> Self {
+        if dialect.has_fteqcc_extensions() {
+            Self::Chunks {
+                open: Vec::new(),
+                inside: HashMap::new(),
+            }
+        } else {
+            Self::default()
+        }
+    }
+}
+
 impl Run {
+    /// The chunks open where reading stands, outermost first; none under `qcc`'s guard.
+    pub(crate) fn chunks(&self) -> &[ChunkReader] {
+        match &self.guard {
+            Guard::Chunks { open, .. } => open,
+            Guard::HideSets(_) => &[],
+        }
+    }
+
+    /// The chunk being read, if one is open.
+    pub(crate) fn chunk_mut(&mut self) -> Option<&mut ChunkReader> {
+        match &mut self.guard {
+            Guard::Chunks { open, .. } => open.last_mut(),
+            Guard::HideSets(_) => None,
+        }
+    }
+
+    /// Takes the chunk being read off the open ones.
+    fn pop_chunk(&mut self) -> Option<ChunkReader> {
+        match &mut self.guard {
+            Guard::Chunks { open, .. } => open.pop(),
+            Guard::HideSets(_) => None,
+        }
+    }
+
+    /// Puts `chunk` back as the one being read.
+    fn push_chunk(&mut self, chunk: ChunkReader) {
+        if let Guard::Chunks { open, .. } = &mut self.guard {
+            open.push(chunk);
+        }
+    }
+
+    /// Opens `chunk`, one more of its macro's (`c->inside++`).
+    pub(crate) fn open_chunk(&mut self, chunk: ChunkReader) {
+        if let Guard::Chunks { open, inside } = &mut self.guard {
+            let count = inside.entry(chunk.name.clone()).or_default();
+            *count = count.saturating_add(1);
+            open.push(chunk);
+        }
+    }
+
+    /// Counts a chunk of the macro `name` closed (`c->inside--`).
+    pub(crate) fn closed_chunk(&mut self, name: &str) {
+        if let Guard::Chunks { inside, .. } = &mut self.guard
+            && let Some(count) = inside.get_mut(name)
+        {
+            *count = count.saturating_sub(1);
+        }
+    }
+
+    /// How many chunks of the macro `name` are open.
+    pub(crate) fn chunks_of(&self, name: &str) -> usize {
+        match &self.guard {
+            Guard::Chunks { inside, .. } => inside.get(name).copied().unwrap_or(0),
+            Guard::HideSets(_) => 0,
+        }
+    }
+
     /// Reports a diagnostic, under FTEQCC as its warning settings now say (FTEF-14.63).
     fn report(&mut self, code: Code, message: impl Into<String>, span: FileSpan) {
         let settings = self.warnings;
@@ -945,6 +1084,33 @@ impl FrameFile {
     }
 }
 
+/// A vanilla directive's line as [`Preprocessor::directive`] reads it once (QC-9.1): its file,
+/// its tokens from the `#`, and the span from the `#` to its last token.
+#[derive(Clone, Copy)]
+struct DirectiveLine<'t> {
+    file: FileId,
+    tokens: &'t [Token],
+    whole: Span,
+}
+
+/// What [`Preprocessor::collect_args`] read of a vanilla macro's arguments (QC-9.10): every token
+/// but the closing `)`, the arguments, and the `)`, `None` when the text ends first.
+struct CollectedArgs {
+    collected: Vec<Item>,
+    args: Vec<Vec<Item>>,
+    close: Option<Item>,
+}
+
+/// What defines an FTEQCC frame macro (FTEF-18.29): a name of a `$frame` list, or the
+/// `$modelname` that a later one ends, which `QCC_PR_MacroFrame` is called for with `force`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FrameSource {
+    /// A `$frame` or `$framesave` name.
+    FrameList,
+    /// The name of the `$modelname` before.
+    ModelName,
+}
+
 /// A frame macro FTEQCC keeps from file to file (FTE-22.4): its value and the reading of a
 /// file that last defined it.
 #[derive(Debug)]
@@ -997,7 +1163,8 @@ pub struct Preprocessor<L> {
 
 /// The path with `.` removed and `..` folded into the component before it, so one file has
 /// one name on the include stack.
-fn normalize(path: &Path) -> PathBuf {
+#[must_use]
+pub fn normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
         match component {
@@ -1053,7 +1220,7 @@ impl<L: Loader> Preprocessor<L> {
 
     /// Defines [`Self::with_defines`]'s names (PRJ-5.4).
     fn define_module_names(&mut self) {
-        let nowhere = FileId(u32::MAX);
+        let nowhere = FileId::new(u32::MAX);
         for (name, value) in self.defines.clone() {
             let body = if self.dialect.has_fteqcc_extensions() {
                 let at = FileSpan {
@@ -1221,7 +1388,7 @@ impl<L: Loader> Preprocessor<L> {
     pub fn origin(&self, token: &PpToken) -> FileSpan {
         let mut span = token.span;
         let mut next = token.expansion;
-        while let Some(ExpansionId(id)) = next {
+        while let Some(id) = next.map(ExpansionId::index) {
             let Some(expansion) = self.expansions.get(id) else {
                 break;
             };
@@ -1298,6 +1465,8 @@ impl<L: Loader> Preprocessor<L> {
         let mut run = Run {
             unit: name.clone(),
             warnings,
+            frames: FrameMacros::for_dialect(self.dialect),
+            guard: Guard::for_dialect(self.dialect),
             ..Run::default()
         };
         run.out.warnings.extend(warnings.map(|w| (0, w)));
@@ -1415,7 +1584,7 @@ impl<L: Loader> Preprocessor<L> {
             read_as: name.clone(),
             name,
             stream: TokenStream::lex(text, self.lexing()),
-            conds: Vec::new(),
+            conds: cond::CondStack::default(),
             skipped: Vec::new(),
             skip_start: None,
             start,
@@ -1437,21 +1606,21 @@ impl<L: Loader> Preprocessor<L> {
             return Some(item);
         }
         let fte = self.dialect.has_fteqcc_extensions();
-        while let Some(mut chunk) = run.chunks.pop() {
+        while let Some(mut chunk) = run.pop_chunk() {
             chunk.refresh(self.lexing());
             if fte && let Some(hash) = chunk.directive_at() {
                 let bytes = chunk.bytes();
-                run.chunks.push(chunk);
+                run.push_chunk(chunk);
                 let resume = self.fte_directive(run, &bytes, hash, Position::Line);
-                chunk = run.chunks.pop()?;
+                chunk = run.pop_chunk()?;
                 if let Some(resume) = resume {
                     chunk.resume(hash, resume, self.lexing());
-                    run.chunks.push(chunk);
+                    run.push_chunk(chunk);
                     continue;
                 }
             }
             if let Some(item) = chunk.next_item(self.macro_strings()) {
-                run.chunks.push(chunk);
+                run.push_chunk(chunk);
                 return Some(item);
             }
             Self::close_chunk(run, chunk);
@@ -1634,10 +1803,10 @@ impl<L: Loader> Preprocessor<L> {
                 );
             }
         }
-        for cond in cursor.conds {
+        for opened in cursor.conds.into_open() {
             let span = FileSpan {
                 file: cursor.file,
-                span: cond.opened,
+                span: opened,
             };
             run.report(Code::E0110, "#ifdef or #ifndef without #endif", span);
         }
@@ -1661,6 +1830,11 @@ impl<L: Loader> Preprocessor<L> {
         };
         let file = cursor.file;
         let whole = hash.span.to(line.last().map_or(*name_span, |t| t.span));
+        let directive_line = DirectiveLine {
+            file,
+            tokens: line,
+            whole,
+        };
         let at = |span: Span| FileSpan { file, span };
         let was_taking = cursor.taking();
         let operand = match line.get(2) {
@@ -1670,15 +1844,12 @@ impl<L: Loader> Preprocessor<L> {
             }) => Some(n.as_str()),
             _ => None,
         };
-        match name.as_str() {
-            "ifdef" | "ifndef" => {
-                let value =
-                    operand.is_some_and(|n| self.macros.contains_key(n) == (name == "ifdef"));
-                cursor.conds.push(Cond {
-                    value,
-                    parent: was_taking,
-                    opened: whole,
-                });
+        let directive = Directive::from_word(name);
+        match directive {
+            Some(Directive::Ifdef | Directive::Ifndef) => {
+                let defined = directive == Some(Directive::Ifdef);
+                let value = operand.is_some_and(|n| self.macros.contains_key(n) == defined);
+                cursor.conds.open(value, whole);
                 if was_taking && operand.is_none() {
                     run.report(
                         Code::E0114,
@@ -1687,15 +1858,11 @@ impl<L: Loader> Preprocessor<L> {
                     );
                 }
             }
-            "else" | "endif" => {
-                let closed = if name == "else" {
-                    cursor
-                        .conds
-                        .last_mut()
-                        .map(|c| c.value = !c.value)
-                        .is_some()
+            Some(Directive::Else | Directive::Endif) => {
+                let closed = if directive == Some(Directive::Else) {
+                    cursor.conds.flip()
                 } else {
-                    cursor.conds.pop().is_some()
+                    cursor.conds.close().is_some()
                 };
                 if !closed {
                     run.report(
@@ -1706,16 +1873,38 @@ impl<L: Loader> Preprocessor<L> {
                 }
             }
             _ if !was_taking => {}
-            "define" => self.define(run, file, line),
-            "undef" => {
+            Some(Directive::Define) => self.define(run, &directive_line),
+            Some(Directive::Undef) => {
                 if let Some(n) = operand {
                     self.macros.remove(n);
                 } else {
                     run.report(Code::E0114, "#undef expects a macro name", at(whole));
                 }
             }
-            "include" => self.include(run, line, whole),
-            _ => run.report(Code::E0108, format!("unknown directive #{name}"), at(whole)),
+            Some(Directive::Include) => self.include(run, &directive_line),
+            // QC-9.1: `qcc` knows only the directives above; FTEQCC's others are unknown here.
+            Some(
+                Directive::Append
+                | Directive::If
+                | Directive::Elif
+                | Directive::Elifdef
+                | Directive::Elifndef
+                | Directive::EndList
+                | Directive::Eof
+                | Directive::Error
+                | Directive::Warning
+                | Directive::Message
+                | Directive::Copyright
+                | Directive::Package
+                | Directive::Pack
+                | Directive::ForceCrc
+                | Directive::Merge
+                | Directive::IncludeList
+                | Directive::DataFile
+                | Directive::Output
+                | Directive::Pragma,
+            )
+            | None => run.report(Code::E0108, format!("unknown directive #{name}"), at(whole)),
         }
         let Some(cursor) = run.cursors.iter_mut().rev().find(|c| c.file == file) else {
             return;
@@ -1733,12 +1922,13 @@ impl<L: Loader> Preprocessor<L> {
 
     /// `#define` in the vanilla dialect (QC-9.3), with the operand errors of QC-9.9; under
     /// FTEQCC [`Self::fte_define`] reads it.
-    fn define(&mut self, run: &mut Run, file: FileId, line: &[Token]) {
+    fn define(&mut self, run: &mut Run, directive: &DirectiveLine<'_>) {
+        let DirectiveLine {
+            file,
+            tokens: line,
+            whole,
+        } = *directive;
         let at = |span: Span| FileSpan { file, span };
-        let whole = match (line.first(), line.last()) {
-            (Some(first), Some(last)) => first.span.to(last.span),
-            _ => return,
-        };
         let Some(Token {
             kind: TokenKind::Name(name),
             span: name_span,
@@ -1800,11 +1990,15 @@ impl<L: Loader> Preprocessor<L> {
 
     /// `#include` in the vanilla dialect (QC-9.2, QC-9.20), with the errors of QC-9.9 and
     /// QC-9.11; under FTEQCC `fte_directive` reads it (FTEF-14.40).
-    fn include(&mut self, run: &mut Run, line: &[Token], whole: Span) {
+    fn include(&mut self, run: &mut Run, directive: &DirectiveLine<'_>) {
+        let DirectiveLine {
+            file,
+            tokens: line,
+            whole,
+        } = *directive;
         let Some(current) = run.cursors.last() else {
             return;
         };
-        let file = current.file;
         let Some(Token {
             kind: TokenKind::String(bytes),
             ..
@@ -1872,7 +2066,10 @@ impl<L: Loader> Preprocessor<L> {
         let TokenKind::Name(name) = &item.tok.kind else {
             return Some(item);
         };
-        if hidden(&run.live, &item.hide, name) {
+        let Guard::HideSets(live) = &run.guard else {
+            return Some(item);
+        };
+        if hidden(live, &item.hide, name) {
             return Some(item);
         }
         let Some(mac) = self.macros.get(name).cloned() else {
@@ -1892,8 +2089,10 @@ impl<L: Loader> Preprocessor<L> {
                 }
                 None => return Some(item),
             };
-            let mut collected = vec![open];
-            let Some(close) = self.collect_args(run, &mut collected, &mut args) else {
+            let read = self.collect_args(run, open);
+            let mut collected = read.collected;
+            args = read.args;
+            let Some(close) = read.close else {
                 run.report(
                     Code::E0117,
                     format!("unterminated argument list for macro {name}"),
@@ -1923,15 +2122,12 @@ impl<L: Loader> Preprocessor<L> {
             }
             collected_back = collected;
         }
-        let live = if let Some(live) = run.live.get(&name) {
-            Rc::clone(live)
-        } else {
-            let live = Live::default();
-            run.live.insert(name.clone(), Rc::clone(&live));
-            live
+        let Guard::HideSets(lives) = &mut run.guard else {
+            return Some(item);
         };
+        let live = Rc::clone(lives.entry(name.clone()).or_default());
         let hide = hide_with(&item.hide, &live);
-        let id = ExpansionId(self.expansions.len());
+        let id = ExpansionId::new(self.expansions.len());
         let limit = FTE_MAX_EXPANDED_TOKENS.saturating_sub(run.expanded.tokens);
         let result = (!run.expanded.over_bound())
             .then(|| Self::substitute(&mac, &args, id, (&hide, &live), limit))
@@ -2048,26 +2244,28 @@ impl<L: Loader> Preprocessor<L> {
         Some(result)
     }
 
-    /// Reads a vanilla function-like macro's arguments after its `(`, which is `collected[0]`,
-    /// up to the matching `)`, which is returned. Every token read but the `)` goes to
-    /// `collected`, and each argument to `args` (QC-9.10).
-    fn collect_args(
-        &mut self,
-        run: &mut Run,
-        collected: &mut Vec<Item>,
-        args: &mut Vec<Vec<Item>>,
-    ) -> Option<Item> {
+    /// Reads a vanilla function-like macro's arguments after its `(`, `open`, up to the matching
+    /// `)` (QC-9.10).
+    fn collect_args(&mut self, run: &mut Run, open: Item) -> CollectedArgs {
+        let mut read = CollectedArgs {
+            collected: vec![open],
+            args: Vec::new(),
+            close: None,
+        };
         let mut depth = 0_usize;
         let mut current = Vec::new();
         loop {
-            let item = self.next_item(run)?;
+            let Some(item) = self.next_item(run) else {
+                return read;
+            };
             match item.tok.kind {
                 TokenKind::Punct(Punct::RParen) if depth == 0 => {
-                    args.push(current);
-                    return Some(item);
+                    read.args.push(current);
+                    read.close = Some(item);
+                    return read;
                 }
                 TokenKind::Punct(Punct::Comma) if depth == 0 => {
-                    args.push(std::mem::take(&mut current));
+                    read.args.push(std::mem::take(&mut current));
                 }
                 TokenKind::Punct(Punct::LParen) => {
                     depth = depth.saturating_add(1);
@@ -2079,20 +2277,26 @@ impl<L: Loader> Preprocessor<L> {
                 }
                 _ => current.push(item.clone()),
             }
-            collected.push(item);
+            read.collected.push(item);
         }
     }
 
     /// Records an FTEQCC frame macro (FTE-22.4), as `QCC_PR_MacroFrame` does: a name another
     /// reading of a file defined takes the new value, and a name this one already defined
     /// keeps its first value (QC-8.7) with the warning "Duplicate macro defined (NAME). Rename
-    /// it." unless `force`d (FTEF-18.29). A new name of more than 63 bytes is the error "Name
-    /// for frame macro NAME is too long" and is not defined (FTEF-18.29); a new name past
-    /// `FTE_MAX_FRAMES` is an error (FTEF-18.17).
-    fn carry_frame(&mut self, run: &mut Run, name: &str, value: i32, force: bool, at: Here) {
+    /// it." unless it is a `$modelname`'s, which FTEQCC passes with `force` (FTEF-18.29). A new
+    /// name of more than 63 bytes is the error "Name for frame macro NAME is too long" and is
+    /// not defined (FTEF-18.29); a new name past `FTE_MAX_FRAMES` is an error (FTEF-18.17).
+    fn carry_frame(
+        &mut self,
+        run: &mut Run,
+        (name, source): (&str, FrameSource),
+        value: i32,
+        at: Here,
+    ) {
         let (at, here) = at;
         match self.carried_frames.get_mut(name) {
-            Some(frame) if frame.file == here && !force => {
+            Some(frame) if frame.file == here && source == FrameSource::FrameList => {
                 // `if (pr_framemacro[i].file == s_filen && !force) QCC_PR_ParseWarning(
                 // WARN_DUPLICATEMACRO, "Duplicate macro defined (%s). Rename it.", pr_token);`
                 run.report(
@@ -2182,23 +2386,28 @@ impl<L: Loader> Preprocessor<L> {
     /// Applies an FTEQCC `$` command to the frame numbering (FTEF-18.16).
     fn frame_command(&mut self, run: &mut Run, command: &FrameCommand, at: Here) {
         match command {
-            FrameCommand::Flush => run.frame_value = 0,
+            FrameCommand::Flush => run.frames.set_next(0),
             FrameCommand::Reset => {
                 self.carried_frames.clear();
-                run.frame_value = 0;
+                run.frames.set_next(0);
             }
             FrameCommand::Value(word) => {
                 // FTEF-14.55: `pr_macrovalue = atoi(pr_token);`, FTEQCC's `int`.
-                run.frame_value = cond::fte_atoi(word.as_bytes());
+                run.frames.set_next(cond::fte_atoi(word.as_bytes()));
             }
             FrameCommand::Restore(name) => match self.expand_frame(run, name, at) {
-                Some(value) => run.frame_value = value,
+                Some(value) => run.frames.set_next(value),
                 None => run.report(Code::E0106, format!("Unknown frame macro ${name}"), at.0),
             },
             FrameCommand::ModelName(name) => {
                 if !self.model_name.is_empty() {
                     let previous = std::mem::take(&mut self.model_name);
-                    self.carry_frame(run, &previous, run.frame_value, true, at);
+                    self.carry_frame(
+                        run,
+                        (&previous, FrameSource::ModelName),
+                        run.frames.next(),
+                        at,
+                    );
                 }
                 // `if (!QC_strlcpy(pr_framemodelname, pr_token, sizeof(pr_framemodelname)))
                 // QCC_PR_ParseWarning (WARN_STRINGTOOLONG, "$modelname name too long");`: the
@@ -2213,7 +2422,7 @@ impl<L: Loader> Preprocessor<L> {
                 // a name with no macro is -1.
                 let found = self.find_frame(run, name, at).unwrap_or(-1);
                 if found != 0 {
-                    run.frame_value = found;
+                    run.frames.set_next(found);
                 }
             }
         }
@@ -2223,32 +2432,33 @@ impl<L: Loader> Preprocessor<L> {
     /// dialect those carried from earlier files (FTE-22.4) and its further `$` commands
     /// (FTEF-18.16, FTEF-18.17).
     fn emit(&mut self, run: &mut Run, mut tok: PpToken) {
-        let carry = self.dialect.has_fteqcc_extensions();
         match &tok.kind {
-            TokenKind::Frames(names) if carry => {
+            TokenKind::Frames(names) => {
                 let here = FrameFile::of(&tok);
                 for frame in names {
                     let at = FileSpan {
                         file: tok.span.file,
                         span: frame.span,
                     };
-                    let value = run.frame_value;
-                    run.frame_value = run.frame_value.wrapping_add(1);
-                    self.carry_frame(run, &frame.name, value, false, (at, here));
-                }
-                return;
-            }
-            TokenKind::Frames(names) => {
-                for frame in names {
-                    if run.frames.len() < LIMIT_QCC_MAX_FRAMES {
-                        run.frames.push(frame.name.clone());
-                    } else if !run.frames_full {
-                        run.frames_full = true;
-                        let span = FileSpan {
-                            file: tok.span.file,
-                            span: frame.span,
-                        };
-                        run.report(Code::E0504, "too many frames", span);
+                    match &mut run.frames {
+                        FrameMacros::Fteqcc { next } => {
+                            let value = *next;
+                            *next = next.wrapping_add(1);
+                            self.carry_frame(
+                                run,
+                                (&frame.name, FrameSource::FrameList),
+                                value,
+                                (at, here),
+                            );
+                        }
+                        FrameMacros::Vanilla { names, full } => {
+                            if names.len() < LIMIT_QCC_MAX_FRAMES {
+                                names.push(frame.name.clone());
+                            } else if !*full {
+                                *full = true;
+                                run.report(Code::E0504, "too many frames", at);
+                            }
+                        }
                     }
                 }
                 return;
@@ -2259,11 +2469,14 @@ impl<L: Loader> Preprocessor<L> {
                 return;
             }
             TokenKind::FrameRef(word) => {
-                let value = if carry {
-                    self.expand_frame(run, word, (tok.span, FrameFile::of(&tok)))
-                } else {
-                    let index = run.frames.iter().position(|f| f == word);
-                    index.map(|i| i32::try_from(i).unwrap_or(i32::MAX))
+                let value = match &run.frames {
+                    FrameMacros::Fteqcc { .. } => {
+                        self.expand_frame(run, word, (tok.span, FrameFile::of(&tok)))
+                    }
+                    FrameMacros::Vanilla { names, .. } => {
+                        let index = names.iter().position(|f| f == word);
+                        index.map(|i| i32::try_from(i).unwrap_or(i32::MAX))
+                    }
                 };
                 if let Some(value) = value {
                     tok.kind = TokenKind::Float(frame_float(value));
@@ -2281,7 +2494,9 @@ impl<L: Loader> Preprocessor<L> {
             | TokenKind::String(_)
             | TokenKind::Punct(_) => {}
         }
-        if carry && tok.expansion.is_none() {
+        // FTEF-14.32, FTEF-14.43: under FTEQCC a token from a file keeps the name and line its
+        // messages give.
+        if self.dialect.has_fteqcc_extensions() && tok.expansion.is_none() {
             let at = tok.span.span.start;
             let name = Self::fte_file_name(run).to_vec();
             let line = i64::from(self.fte_line(run, tok.span.file, at));
@@ -2302,7 +2517,7 @@ impl<L: Loader> Preprocessor<L> {
 /// A frame number as the float it expands to: `pr_immediate._float = (float)i;`, the integer
 /// rounded to the nearest float.
 fn frame_float(value: i32) -> f32 {
-    value.to_string().parse::<f32>().unwrap_or(0.0)
+    qc_lexer::int_to_f32(i64::from(value))
 }
 
 /// Parses `name, name, ...)` from `line[start..]`; returns the names and the index after `)`.

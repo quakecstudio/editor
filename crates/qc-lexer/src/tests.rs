@@ -1497,7 +1497,7 @@ fn escaped_character(escape: &str) -> Vec<u8> {
     format!("'\\{escape}'").into_bytes()
 }
 
-// spec FTEF-13.13: a character constant's escape is read as a string's (FTEF-13.11): each
+// spec FTEF-13.27: a character constant's escape is read as a string's (FTEF-13.11): each
 // escape's code, and "Unknown escape char" and "Unicode character terminated unexpectedly"
 // as errors (E0103)
 #[test]
@@ -1589,9 +1589,10 @@ fn high_byte_character_constants_follow_utf8_check() {
     }
 }
 
-// spec FTEF-13.13: a bad `\{` or `\x` is "Bad character code" (E0103), and with no `'` after
+// spec FTEF-13.27: a bad `\{` or `\x` is "Bad character code" (E0103), and with no `'` after
 // the escape the constant is also "Bad character constant" (E0104); the end of the file
-// inside the escape is "EOF inside quote" (E0101) alone
+// right after the `\` is "EOF inside quote" (E0101) alone, and after a `\` and CR "Bad
+// character constant" (FTEF-13.26)
 #[test]
 fn character_constant_escape_errors() {
     let both = vec![Code::E0103, Code::E0104];
@@ -1600,7 +1601,7 @@ fn character_constant_escape_errors() {
     assert_eq!(fte_character(br"'\xg"), (0.0, both.clone()));
     assert_eq!(fte_character(br"'\x"), (0.0, both));
     assert_eq!(fte_character(br"'\"), (0.0, vec![Code::E0101]));
-    assert_eq!(fte_character(b"'\\\r"), (0.0, vec![Code::E0101]));
+    assert_eq!(fte_character(b"'\\\r"), (0.0, vec![Code::E0104]));
     assert_eq!(fte_character(br"'\n"), (10.0, vec![Code::E0104]));
 }
 
@@ -1930,9 +1931,10 @@ fn string_escapes_as_fteqcc_reads_them() {
         fte_string(b"\"a\\\rb\""),
         (b"ab".to_vec(), vec![Code::W0123])
     );
+    // FTEF-13.26: the end of the input after `\` and CR is one "EOF inside quote".
     assert_eq!(
         fte_string(b"\"a\\\r"),
-        (b"a\x00".to_vec(), vec![Code::E0101, Code::E0101])
+        (b"a\x00".to_vec(), vec![Code::E0101])
     );
     assert_eq!(fte_string(b"\"a\\"), (b"a".to_vec(), vec![Code::E0101]));
     assert_eq!(fte_string(b"\"a\nb\"").1, [Code::E0102, Code::E0101]);
@@ -2396,4 +2398,35 @@ fn fteqcc_hanging_backslash_cr() {
     let lexed = lex_with(b"\"a\\\r\nb\"", Dialect::Fteqcc);
     assert_eq!(lexed.tokens[0].kind, TokenKind::String(b"a\nb".to_vec()));
     assert!(lexed.diagnostics.is_empty());
+}
+
+// spec FTEF-13.26: a string that ends after a `\` and a CR is one "EOF inside quote", and a
+// character constant one "Bad character constant"; neither warns "Hanging"
+// spec QCD-2.1: E0101 is reported once for an unterminated string
+#[test]
+fn fteqcc_backslash_cr_at_the_end_of_input() {
+    let lexed = lex_with(b"\"a\\\r", Dialect::Fteqcc);
+    let codes: Vec<_> = lexed.diagnostics.iter().map(|d| (d.code, d.span)).collect();
+    assert_eq!(codes, [(Code::E0101, Span::new(0, 4))]);
+    assert_eq!(
+        fte_diagnostics(b"'\\\r"),
+        vec![(Code::E0104, "Bad character constant".to_owned())]
+    );
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2048))]
+
+    // spec QCD-1.5: no two diagnostics of one input have the same code and span, in either
+    // profile, over text dense in the lexer's error cases: quotes, escapes, CRs and comments.
+    #[test]
+    fn a_diagnostic_is_reported_once(source in "[a\"'\\\\\r\n/*$ #0x.u8R(){}]{0,24}") {
+        for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+            let lexed = lex_with(source.as_bytes(), dialect);
+            let mut seen = std::collections::HashSet::new();
+            for d in &lexed.diagnostics {
+                prop_assert!(seen.insert((d.code, d.span)), "{dialect:?} {:?}: {d:?} twice", source);
+            }
+        }
+    }
 }

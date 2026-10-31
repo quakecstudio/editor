@@ -2,7 +2,7 @@
 
 //! The kinds of tokens and nodes in the tree.
 
-use qc_lexer::Punct;
+use qc_lexer::{Punct, TokenKind};
 
 /// What a token or node of the tree is.
 ///
@@ -417,6 +417,20 @@ impl SyntaxKind {
                 | Self::ExitKw
                 | Self::AsmKw
         )
+    }
+
+    /// The tree kind of a lexer token.
+    #[must_use]
+    pub const fn from_token_kind(kind: &TokenKind) -> Self {
+        match kind {
+            TokenKind::Name(_) => Self::Name,
+            TokenKind::Float(_) => Self::FloatLit,
+            TokenKind::Vector(_) => Self::VectorLit,
+            TokenKind::String(_) => Self::StringLit,
+            TokenKind::Punct(punct) => Self::from_punct(*punct),
+            TokenKind::FrameRef(_) => Self::FrameRef,
+            TokenKind::Frames(_) | TokenKind::FrameCommand(_) => Self::Frames,
+        }
     }
 
     /// The kind of a punctuation token.

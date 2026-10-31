@@ -19,7 +19,7 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use qc_lexer::{Code, Span, TokenKind};
+use qc_lexer::{Code, Span, TokenKind, is_fteqcc_whitespace, is_name_char, is_name_start};
 
 use crate::fte_directive::{
     self, Bytes, Definer, FTE_MAX_MACRO_NAME, Gap, Resume, TextStart, WORD_TOO_LONG, WhiteStop,
@@ -27,7 +27,7 @@ use crate::fte_directive::{
 };
 use crate::{
     Body, Expansion, ExpansionId, FTE_MAX_EXPANDED_TOKENS, FTE_MAX_OPEN_CHUNKS, FileId, FileSpan,
-    Item, Lexing, Loader, Macro, Place, PpToken, Preprocessor, Run, TokenStream, Variadic, cond,
+    Item, Lexing, Loader, Macro, Place, PpToken, Preprocessor, Run, TokenStream, Variadic,
     moved_frames, quote_bytes,
 };
 
@@ -496,7 +496,7 @@ struct Word {
 /// the text.
 fn parse2(text: &[u8], mut at: usize) -> Option<Word> {
     loop {
-        while byte_at(text, at).is_some_and(cond::fte_white) {
+        while byte_at(text, at).is_some_and(is_fteqcc_whitespace) {
             at = at.saturating_add(1);
         }
         let byte = byte_at(text, at)?;
@@ -546,8 +546,8 @@ fn parse2(text: &[u8], mut at: usize) -> Option<Word> {
         |b: u8| b.is_ascii_hexdigit() || b == b'.'
     } else if first.is_ascii_digit() {
         |b: u8| b.is_ascii_digit() || b == b'.'
-    } else if first.is_ascii_alphabetic() || first == b'_' {
-        |b: u8| b.is_ascii_alphanumeric() || b == b'_'
+    } else if is_name_start(first) {
+        is_name_char
     } else {
         token.push(first);
         return Some(Word {
@@ -1005,7 +1005,7 @@ impl Writer<'_> {
             at = word.next;
             if let Some(arg) = self.argument_of(&word.token) {
                 let mut after = at;
-                while byte_at(bytes, after).is_some_and(cond::fte_white) {
+                while byte_at(bytes, after).is_some_and(is_fteqcc_whitespace) {
                     after = after.saturating_add(1);
                 }
                 let before_paste = bytes.get(after..after.saturating_add(2)) == Some(b"##");
@@ -1064,7 +1064,7 @@ impl Writer<'_> {
         let mut start = 0_usize;
         loop {
             let mut end = start;
-            while byte_at(bytes, end).is_some_and(cond::fte_white) {
+            while byte_at(bytes, end).is_some_and(is_fteqcc_whitespace) {
                 end = end.saturating_add(1);
             }
             let value = if byte_at(bytes, end) == Some(b'"') {
@@ -1312,7 +1312,7 @@ impl<L: Loader> Preprocessor<L> {
         if let Some(call) = &use_.call {
             self.resume_after(run, &item, call.after);
         }
-        let id = ExpansionId(self.expansions.len());
+        let id = ExpansionId::new(self.expansions.len());
         self.expansions.push(Expansion {
             name: name.clone(),
             use_span: use_.span,
@@ -1331,9 +1331,7 @@ impl<L: Loader> Preprocessor<L> {
             .filter(|&at| text.bytes.get(at) == Some(&b'\n'))
             .collect();
         run.expanded.tokens = run.expanded.tokens.saturating_add(stream.tokens.len());
-        let open = run.open_names.entry(name.clone()).or_default();
-        *open = open.saturating_add(1);
-        run.chunks.push(ChunkReader {
+        run.open_chunk(ChunkReader {
             text,
             line: use_.chunk_line,
             file_name: None,
@@ -1361,7 +1359,7 @@ impl<L: Loader> Preprocessor<L> {
             return false;
         }
         let line = match item.place {
-            Place::Chunk(_) => run.chunks.last().map_or(0, |chunk| chunk.line),
+            Place::Chunk(_) => run.chunks().last().map_or(0, |chunk| chunk.line),
             Place::File | Place::Builtin => {
                 self.fte_line(run, item.tok.span.file, item.tok.span.span.start)
             }
@@ -1370,8 +1368,7 @@ impl<L: Loader> Preprocessor<L> {
             return false;
         };
         if let Some(chunk) = run
-            .chunks
-            .last_mut()
+            .chunk_mut()
             .filter(|_| matches!(item.place, Place::Chunk(_)))
         {
             chunk.detach();
@@ -1408,7 +1405,7 @@ impl<L: Loader> Preprocessor<L> {
     /// name is in.
     fn use_text(&self, run: &Run, item: &Item) -> Option<(Bytes, usize)> {
         match item.place {
-            Place::Chunk(end) => Some((run.chunks.last()?.bytes(), end)),
+            Place::Chunk(end) => Some((run.chunks().last()?.bytes(), end)),
             Place::File => {
                 let file = item.tok.span.file;
                 let text = Rc::clone(&self.sources.file(file)?.text);
@@ -1486,7 +1483,7 @@ impl<L: Loader> Preprocessor<L> {
                 (line, line)
             }
             Bytes::Chunk(..) => run
-                .chunks
+                .chunks()
                 .last()
                 .map_or((0, 1), |chunk| (chunk.line, chunk.line_at(end))),
         };
@@ -1577,7 +1574,7 @@ impl<L: Loader> Preprocessor<L> {
     fn resume_after(&self, run: &mut Run, item: &Item, after: usize) {
         match item.place {
             Place::Chunk(end) => {
-                if let Some(chunk) = run.chunks.last_mut() {
+                if let Some(chunk) = run.chunk_mut() {
                     chunk
                         .stream
                         .resume_at(&chunk.text.bytes, after, self.lexing());
@@ -1600,8 +1597,7 @@ impl<L: Loader> Preprocessor<L> {
     /// `c->inside--`), and reports its lexical errors outside the text a macro used in it took
     /// as arguments, each where its first byte came from.
     pub(crate) fn close_chunk(run: &mut Run, chunk: ChunkReader) {
-        let open = run.open_names.entry(chunk.name.clone()).or_default();
-        *open = open.saturating_sub(1);
+        run.closed_chunk(&chunk.name);
         for d in &chunk.stream.diagnostics {
             let consumed = chunk
                 .consumed
@@ -1620,7 +1616,7 @@ impl<L: Loader> Preprocessor<L> {
     pub(crate) fn word_ends_after(&self, run: &Run, item: &Item) -> bool {
         let next = match item.place {
             Place::Chunk(end) => run
-                .chunks
+                .chunks()
                 .last()
                 .and_then(|chunk| chunk.text.bytes.get(end).copied()),
             Place::Builtin => None,
@@ -1639,8 +1635,8 @@ impl<L: Loader> Preprocessor<L> {
     /// (`if (c->inside>8) return false;`).
     fn fte_recursion_stops(&self, run: &Run, item: &Item, (name, mac): (&str, &Macro)) -> bool {
         let own_chunk = matches!(item.place, Place::Chunk(_))
-            && run.chunks.last().is_some_and(|chunk| chunk.name == name);
-        let open = run.open_names.get(name).copied().unwrap_or(0);
+            && run.chunks().last().is_some_and(|chunk| chunk.name == name);
+        let open = run.chunks_of(name);
         own_chunk
             || if mac.params.is_some() {
                 open > FTE_MAX_OPEN_CHUNKS
@@ -1655,5 +1651,5 @@ impl<L: Loader> Preprocessor<L> {
 /// one of `)(+-*/|&=^~[]"{};:<>,.#`.
 pub(crate) fn ends_word(byte: u8) -> bool {
     const STOPS: &[u8] = b")(+-*/|&=^~[]\"{};:<>,.#";
-    byte == 0 || cond::fte_white(byte) || STOPS.contains(&byte)
+    byte == 0 || is_fteqcc_whitespace(byte) || STOPS.contains(&byte)
 }

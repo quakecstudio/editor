@@ -56,7 +56,7 @@ pub fn fte_directive_end(text: &[u8], from: usize, hash: usize) -> Option<usize>
         Directive::If { end, .. } => end.at,
         Directive::NotIf { word } => word.end,
         Directive::Define { word_end, .. } => {
-            let reading = Reading::File(FileId(0), text);
+            let reading = Reading::File(FileId::new(0), text);
             line(read_define(&reading, word_end).1)
         }
         Directive::Eof => text

@@ -14,6 +14,7 @@
 //! against id's `qcc` and the tests here check them.
 
 mod atof;
+mod directive;
 mod flags;
 mod fte_string;
 mod lines;
@@ -22,6 +23,7 @@ mod lines;
 mod tests;
 
 pub use atof::atof;
+pub use directive::{Directive, Pragma};
 pub use flags::{LexFlag, LexFlags};
 pub use fte_string::{FTEQCC_MAX_STRING, STRING_TOO_LONG, fteqcc_string_bytes};
 pub use lines::LineIndex;
@@ -549,8 +551,10 @@ fn hex_float(whole: &[u8], fraction: &[u8]) -> f32 {
     value
 }
 
-/// C's `(float)` of a `long long`: the nearest float (FTEF-13.19).
-fn i64_to_f32(value: i64) -> f32 {
+/// C's `(float)` of an integer: the nearest float, ties to even (FTEF-13.19), as a number,
+/// a character constant's code and a frame number are made floats.
+#[must_use]
+pub fn int_to_f32(value: i64) -> f32 {
     #[expect(
         clippy::cast_precision_loss,
         reason = "spec FTEF-13.19: `(float)(num*sign)` rounds to the nearest float"
@@ -626,16 +630,65 @@ fn c_atoi(text: &[u8]) -> i32 {
     i32::from_le_bytes([a, b, c, d])
 }
 
-const fn is_name_start(b: u8) -> bool {
+/// The text of `bytes` read as Latin-1, each byte the character of its code (QC-1.1), as a
+/// name or a directive's word is read.
+#[must_use]
+pub fn latin1(bytes: &[u8]) -> String {
+    bytes.iter().copied().map(char::from).collect()
+}
+
+/// Whether `b` may start a name: an ASCII letter or `_` (QC-3.1).
+#[must_use]
+pub const fn is_name_start(b: u8) -> bool {
     b.is_ascii_alphabetic() || b == b'_'
 }
 
-const fn is_name_char(b: u8) -> bool {
+/// Whether `b` may follow the first byte of a name: an ASCII letter, a digit or `_` (QC-3.1).
+#[must_use]
+pub const fn is_name_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
 /// The `$` commands `qcc` skips with the rest of their line (QC-8.4).
 const IGNORED_COMMANDS: [&str; 6] = ["cd", "origin", "base", "flags", "scale", "skin"];
+
+/// A `$` command word (QC-8.2, QC-8.4), with FTEQCC's further ones (FTEF-18.16); any other word
+/// is a frame macro reference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DollarCommand {
+    /// `$frame`, and FTEQCC's `$framesave`: frame names follow.
+    Frame,
+    /// A model command skipped with its operands (QC-8.4).
+    Ignored,
+    /// FTEQCC's `$flush`.
+    Flush,
+    /// FTEQCC's `$frame_reset`.
+    FrameReset,
+    /// FTEQCC's `$framevalue N`.
+    FrameValue,
+    /// FTEQCC's `$framerestore NAME`.
+    FrameRestore,
+    /// FTEQCC's `$modelname NAME`.
+    ModelName,
+}
+
+impl DollarCommand {
+    /// The command `word` names, FTEQCC's only under `fteqcc`.
+    fn from_word(word: &str, fteqcc: bool) -> Option<Self> {
+        let command = match word {
+            "frame" => return Some(Self::Frame),
+            _ if IGNORED_COMMANDS.contains(&word) => return Some(Self::Ignored),
+            "framesave" => Self::Frame,
+            "flush" => Self::Flush,
+            "frame_reset" => Self::FrameReset,
+            "framevalue" => Self::FrameValue,
+            "framerestore" => Self::FrameRestore,
+            "modelname" => Self::ModelName,
+            _ => return None,
+        };
+        fteqcc.then_some(command)
+    }
+}
 
 struct Lexer<'a> {
     text: &'a [u8],
@@ -1130,7 +1183,7 @@ impl Lexer<'_> {
             match c {
                 b'f' | b'F' => {
                     self.bump(1);
-                    let value = i64_to_f32(signed);
+                    let value = int_to_f32(signed);
                     // `if ((longlong)pr_immediate._float != (longlong)num)`.
                     if f32_to_i64(value) != signed {
                         self.overflow(start, "numerical overflow".to_owned());
@@ -1169,7 +1222,7 @@ impl Lexer<'_> {
         // profile keeps as a float (FTEF-13.5), with no float's warning; with `qccx` a hex one
         // is `goto qccxhex;`, an `int` whose bits are the float.
         if !suffixed && self.flags.has(LexFlag::AssumeInt) {
-            return i64_to_f32(signed);
+            return int_to_f32(signed);
         }
         if !suffixed && base == 16 && self.flags.has(LexFlag::Qccx) {
             let [a, b, c, d, ..] = signed.to_le_bytes();
@@ -1180,7 +1233,7 @@ impl Lexer<'_> {
             return f32::from_bits(int.cast_unsigned());
         }
         // `(float)(num*sign)`: the whole number rounded to the nearest float.
-        let value = i64_to_f32(signed);
+        let value = int_to_f32(signed);
         // `if ((longlong)pr_immediate._float != (longlong)num && base == 16)` for a number with
         // no suffix: "numerical overflow %lld will be rounded to %f".
         if base == 16 && !suffixed && f32_to_i64(value) != signed {
@@ -1256,7 +1309,10 @@ impl Lexer<'_> {
     /// third 0 (FTEF-13.3).
     fn vector(&mut self) {
         let start = self.pos;
-        if self.dialect.has_fteqcc_extensions() && self.character() {
+        if self.dialect.has_fteqcc_extensions()
+            && let Some(value) = self.character()
+        {
+            self.push(TokenKind::Float(value), start);
             return;
         }
         self.bump(1);
@@ -1295,36 +1351,27 @@ impl Lexer<'_> {
     }
 
     /// An FTEQCC character constant at a `'` (FTEF-13.3), as `QCC_PR_LexVector` reads one:
-    /// `'\c'`, an escape read as a string's is, errors included (FTEF-13.13); one byte and a
-    /// closing `'`; or a UTF-8 sequence. Pushes
-    /// it as a float token holding the character's code and returns true; false, consuming
-    /// nothing, when the quote holds a vector.
-    fn character(&mut self) -> bool {
+    /// `'\c'`, an escape read as a string's is, errors included (FTEF-13.27); one byte and a
+    /// closing `'`; or a UTF-8 sequence. The value of the float token it is, the character's
+    /// code; `None`, consuming nothing, when the quote holds a vector.
+    fn character(&mut self) -> Option<f32> {
         let start = self.pos;
-        let (Some(first), second) = (self.peek(1), self.peek(2)) else {
-            return false;
-        };
+        let (first, second) = (self.peek(1)?, self.peek(2));
         let code = if first == b'\\' {
             let escape = start.saturating_add(1);
             self.bump(2);
             // FTEQCC stops at "EOF inside quote", before it looks for the closing `'`.
-            let reported = self.out.diagnostics.len();
             let code = self.fte_escape(start, escape);
-            let ended = self
-                .out
-                .diagnostics
-                .get(reported..)
-                .is_some_and(|new| new.iter().any(|d| d.code == Code::E0101));
             if self.peek(0) == Some(b'\'') {
                 self.bump(1);
-            } else if !ended {
+            } else if code.is_some() {
                 self.error(
                     Code::E0104,
                     "Bad character constant",
                     Span::new(start, self.pos),
                 );
             }
-            code
+            code.unwrap_or(0)
         } else if first >= 0x80 {
             // FTEF-13.14: `pr_file_p+=b+1;` skips the sequence and one byte more, unread; a
             // byte that starts no sequence is `0xFFFD` and is skipped alone.
@@ -1337,8 +1384,7 @@ impl Lexer<'_> {
             if self.qccx_char() {
                 // FTEF-12.12: `pr_immediate._int` keeps the code, the float its bits.
                 self.denormal(start, "char constant: denormal");
-                self.push(TokenKind::Float(f32::from_bits(code)), start);
-                return true;
+                return Some(f32::from_bits(code));
             }
             code
         } else if second == Some(b'\'') {
@@ -1347,19 +1393,13 @@ impl Lexer<'_> {
                 // FTEF-12.12: `pr_immediate._int = pr_file_p[0];`, a signed `char`.
                 self.denormal(start, "char constant: denormal");
                 let bits = i32::from(i8::from_le_bytes([first]));
-                self.push(
-                    TokenKind::Float(f32::from_bits(bits.cast_unsigned())),
-                    start,
-                );
-                return true;
+                return Some(f32::from_bits(bits.cast_unsigned()));
             }
             u32::from(first)
         } else {
-            return false;
+            return None;
         };
-        let value = code.to_string().parse::<f32>().unwrap_or(f32::MAX);
-        self.push(TokenKind::Float(value), start);
-        true
+        Some(int_to_f32(i64::from(code)))
     }
 
     /// Takes the flags of each mark at or before where reading stands (FTEF-12.12).
@@ -1432,9 +1472,12 @@ impl Lexer<'_> {
     fn push_name(&mut self, start: usize) {
         let span = Span::new(start, self.pos);
         self.check_length(span.end.saturating_sub(start), span);
-        let name: String = self.bytes(span).iter().copied().map(char::from).collect();
+        let name: String = latin1(self.bytes(span));
         let message = self.dialect.has_fteqcc_extensions()
-            && matches!(name.as_str(), "warning" | "error" | "message")
+            && matches!(
+                Directive::from_word(&name),
+                Some(Directive::Warning | Directive::Error | Directive::Message)
+            )
             && self.out.tokens.last().is_some_and(|t| {
                 t.kind == TokenKind::Punct(Punct::Hash)
                     && t.line_start
@@ -1546,7 +1589,7 @@ impl Lexer<'_> {
     }
 
     fn word_text(&self, span: Span) -> String {
-        self.bytes(span).iter().copied().map(char::from).collect()
+        latin1(self.bytes(span))
     }
 
     /// The next frame macro word on the line, as FTEQCC's `QCC_PR_LexMacroName` reads it
@@ -1598,7 +1641,7 @@ impl Lexer<'_> {
         let fteqcc = self.dialect.has_fteqcc_extensions();
         let word = if fteqcc {
             // `if (qcc_iswhite(*pr_file_p)) QCC_PR_ParseError (ERR_BADFRAMEMACRO, "hanging $");`
-            let white = matches!(self.peek(0), Some(b' ' | b'\r' | b'\n' | b'\t' | 0x0b));
+            let white = self.peek(0).is_some_and(is_fteqcc_whitespace);
             if white { None } else { self.macro_name() }
         } else {
             self.word()
@@ -1609,10 +1652,13 @@ impl Lexer<'_> {
         };
         self.check_length(word.len(), word);
         let command = self.word_text(word);
-        match command.as_str() {
-            "frame" => self.frames(start),
-            "framesave" if fteqcc => self.frames(start),
-            word if IGNORED_COMMANDS.contains(&word) => {
+        let Some(known) = DollarCommand::from_word(&command, fteqcc) else {
+            self.push(TokenKind::FrameRef(command), start);
+            return;
+        };
+        match known {
+            DollarCommand::Frame => self.frames(start),
+            DollarCommand::Ignored => {
                 if fteqcc {
                     // `while (QCC_PR_LexMacroName ()) ;`: the words, up to the first that
                     // ends at once.
@@ -1624,29 +1670,36 @@ impl Lexer<'_> {
                     }
                 }
             }
-            "flush" | "frame_reset" if fteqcc => {
+            DollarCommand::Flush | DollarCommand::FrameReset => {
                 while self.macro_name().is_some() {}
-                let command = if command == "flush" {
+                let command = if known == DollarCommand::Flush {
                     FrameCommand::Flush
                 } else {
                     FrameCommand::Reset
                 };
                 self.push(TokenKind::FrameCommand(command), start);
             }
-            "framevalue" | "framerestore" | "modelname" if fteqcc => {
-                let operand = self
-                    .macro_name()
-                    .map(|span| self.word_text(span))
-                    .unwrap_or_default();
-                let command = match command.as_str() {
-                    "framevalue" => FrameCommand::Value(operand),
-                    "framerestore" => FrameCommand::Restore(operand),
-                    _ => FrameCommand::ModelName(operand),
-                };
+            DollarCommand::FrameValue => {
+                let command = FrameCommand::Value(self.frame_operand());
                 self.push(TokenKind::FrameCommand(command), start);
             }
-            _ => self.push(TokenKind::FrameRef(command), start),
+            DollarCommand::FrameRestore => {
+                let command = FrameCommand::Restore(self.frame_operand());
+                self.push(TokenKind::FrameCommand(command), start);
+            }
+            DollarCommand::ModelName => {
+                let command = FrameCommand::ModelName(self.frame_operand());
+                self.push(TokenKind::FrameCommand(command), start);
+            }
         }
+    }
+
+    /// The word after `$framevalue`, `$framerestore` or `$modelname` (FTEF-18.16), read by
+    /// `QCC_PR_LexMacroName`; empty when there is none.
+    fn frame_operand(&mut self) -> String {
+        self.macro_name()
+            .map(|span| self.word_text(span))
+            .unwrap_or_default()
     }
 
     /// The next name of a `$frame` line: `PR_SimpleGetToken`'s word (QC-8.1), or in an FTEQCC

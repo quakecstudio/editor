@@ -651,6 +651,7 @@ fn undef_and_ifdef_read_their_operands() {
 // prefix, end their lines as `QCC_PR_SkipToEndOfLine` does, and take the first true `#elif` or
 // the `#else`; a taken side's `#else` skips to the block's end
 // spec QCD-8.16: E0109 and E0110 have FTEQCC's texts under FTEQCC
+// spec FTEF-14.76: a malformed `#elif` is that error alone, with no test read
 #[test]
 fn conditionals_count_and_skip_as_fteqcc_does() {
     assert_eq!(fte("#ifdef Q\n#iffy\n#endif\nzz\n#endif\ny\n").0, "y");
@@ -662,8 +663,9 @@ fn conditionals_count_and_skip_as_fteqcc_does() {
         fte("#ifdef Q\n#else zz\ny\n#endif\n"),
         ("y".to_owned(), vec![Code::E0121])
     );
+    // FTEF-14.76: "malformed #elif" alone, as the pinned FTEQCC reports it.
     let (toks, errs) = fte("#ifdef Q\n#elif\nzz\n#endif\ny\n");
-    assert_eq!((toks.as_str(), errs), ("y", vec![Code::E0121, Code::E0121]));
+    assert_eq!((toks.as_str(), errs), ("y", vec![Code::E0121]));
     assert_eq!(fte("#ifdef Q\n#elif 0\nzz\n#elif 1\ny\n#endif\n").0, "y");
     assert_eq!(
         fte("#ifdef Q\n#elif 1 zz\ny\n#endif\n"),

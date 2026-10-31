@@ -630,6 +630,17 @@ full dialect also uses `enumflags`.
   and `string s = A;` casts the null constant. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseEnum`.
+- **FTEF-8.7** An `enum` or `enumflags` with no `{` after its keyword reads a type first,
+  `type = autoprototyped?NULL:QCC_PR_ParseType(false, true, false); //legacy behaviour`, which
+  takes a keyword that starts a type: another enum, a struct, a union or an accessor, whole,
+  as the enum's base type, with the warning `W0224` "legacy enum base type" and then
+  `QCC_PR_Expect("{")`. So `enum enum { A };` and `enumflags enumflags { A };` are "expected {,
+  found ;", `enum enum { B } { A };` warns, `enum struct S { float a; } { A };` is "values for
+  enums of this type must be initialised", and `enum accessor A : float { A };` is "expected },
+  found A", as the pinned FTEQCC compiles them. `class` after the keyword is `enum class`'s
+  (`strictenum = QCC_PR_CheckName("class");`). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseEnum`.
 
 ## FTEF-9 Classes
 
@@ -906,6 +917,19 @@ others).
   from the member's only in such a parameter is not reported. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_ParseAccessorMember`.
+- **FTEF-10.13** An accessor's members are read by `QCC_PR_ParseAccessorMember` after
+  `QCC_PR_CheckName("inline")` and `get` or `set`: an optional `&` or `*`, then the type as one
+  name, `fieldtypename = QCC_PR_ParseName(); fieldtype = QCC_TypeForName(fieldtypename);`, which
+  is the error `E0203` "Invalid type: NAME" when it names no type, and "\"TOKEN\" - not a name"
+  for a token that is no name; its `*`s; the member's name unless the next token is punctuation
+  (`if (pr_token_type != tt_punct)`); an optional `[type [name]]`; and `QCC_PR_Expect("=")`.
+  After it a name is the function's, read by `QCC_PR_ParseName` alone, and any other token
+  starts the body, `QCC_PR_ParseImmediateStatements`, which expects its `{`. So `get get float x
+  = f;` is "Invalid type: get", `get 1;` "\"1\" - not a name", `set float x = ;` "expected {,
+  found ;", and `set float = x = { ... };` reads `x` as the function and then meets the `=`
+  where the loop's `QCC_PR_Expect("}")` stands, "expected }, found =". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseAccessorMember`, `QCC_PR_ParseType`.
 - **FTEF-10.12** A second `get` or `set` member of one name defines its function again:
   `QCC_PR_ParseAccessorMember` parses the body into the definition with no test that it has one
   (`f = QCC_PR_ParseImmediateStatements(...); def.sym->initialized = 1;`), so `get float x = {
@@ -1240,7 +1264,9 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
 - **FTEF-13.12** **Withdrawn** (P2-75, #480): it said this profile takes a character
   constant's escape with no code of its own as its byte, with no error, and reports no "Bad
   character code" there. Replaced by FTEF-13.13.
-- **FTEF-13.13** A character constant's escape, `'\c'`, is read as a string's is (FTEF-13.11),
+- **FTEF-13.13** **Withdrawn** 2026-10-30: it said this profile reports `E0101` after a `\`
+  and a CR at the end of the input, where the pinned FTEQCC reports "Bad character constant";
+  replaced by FTEF-13.27. A character constant's escape, `'\c'`, is read as a string's is (FTEF-13.11),
   errors included: `QCC_PR_LexVector` reads `if (*pr_file_p == '\\') {//extended character
   constant` and then `pr_immediate._float = QCC_PR_LexEscapedCodepoint();` (`_int` under
   `flag_assume_integer`), the function a string's escapes go through. The constant's value is the
@@ -1362,6 +1388,27 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   `QCC_PR_LexEscapedCodepoint`), and when that byte is no LF FTEQCC warns `"Hanging \\\\\r"`
   (`WARN_HANGINGSLASHR`, `W0123`), the text `Hanging \\` and a CR: the pinned FTEQCC gives it for
   `"a`, `\`, a CR and `b"`. A `\` before a CR and an LF is the LF, with no warning.
+- **FTEF-13.26** A string or character constant that ends after a `\` and a CR, at the end of
+  the input, is not ended by the escape: `QCC_PR_LexEscapedCodepoint` reads the byte after the
+  CR with no test (`c = *pr_file_p++;`), the end of the buffer, and the caller then meets the
+  end. So a string is one `E0101` "EOF inside quote", from its own loop, and a character
+  constant one `E0104` "Bad character constant", with no "Hanging" warning: the pinned FTEQCC
+  gives each for `"a`, `\` and a CR, and for `'`, `\` and a CR. This profile reports the same,
+  each once (QCD-2.1).
+- **FTEF-13.27** A character constant's escape, `'\c'`, is read as a string's is (FTEF-13.11),
+  errors included: `QCC_PR_LexVector` reads `if (*pr_file_p == '\\') {//extended character
+  constant` and then `pr_immediate._float = QCC_PR_LexEscapedCodepoint();` (`_int` under
+  `flag_assume_integer`), the function a string's escapes go through. The constant's value is the
+  code: `'\n'` is 10, `'\['` 0xE010, `'\.'` 0xE01C and `'\x4'` 4. "Unknown escape char" (`'\s'`,
+  `'\b'` and `'\q'`: only a string reads `\s` and `\b`, as bronze, FTEF-13.10), "Bad character
+  code" (`'\{6z}'`, `'\xg'`) and "Unicode character terminated unexpectedly" (`'\u0041'`;
+  `'\u041'` is 65) are errors, `E0103` as in a string. The end of the file right after the `\` is
+  "EOF inside quote" (`E0101`), and no other error; after a `\` and CR it is FTEF-13.26's
+  "Bad character constant". Any other byte than
+  `'` after the escape is "Bad character constant" (`if (*pr_file_p != '\'') QCC_PR_ParseError
+  (ERR_INVALIDVECTORIMMEDIATE, "Bad character constant");`, `E0104`). FTEQCC stops at its first
+  error; this profile goes on after the escape, and so may also report "Bad character constant"
+  after a bad one.
 
 ## FTEF-14 Preprocessor directives and macros
 
@@ -2239,6 +2286,13 @@ profile the preprocessor reads them as FTEQCC does.
   `xtask/src/oracles/builtins/directives.rs`) hold these cases, the profile reading every
   FTEQCC case with no `progs.src` of its own through its graph in a directory of its own
   (`graph_input`), and the run of 2026-10-22 (macOS arm64) bound each as the pinned FTEQCC does.
+- **FTEF-14.76** An `#elif` in a skipped block with no space or tab after its word is "malformed
+  #elif" (`E0121`) alone: `if (*pr_file_p != ' ' && *pr_file_p != '\t')
+  QCC_PR_ParseError(ERR_UNKNOWNPUCTUATION, "malformed #elif\n");` ends FTEQCC's reading before
+  the test that follows. This profile reports it and reads no test and takes no side there, so
+  `#if 0`, `#elif` and `#endif` is that error once, as the pinned FTEQCC gives it (QCD-1.5).
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_FalsePreProcessorIf`.
 
 ## FTEF-15 Declarations
 
@@ -2374,8 +2428,9 @@ The corpus writes locals of class and pointer types, casts to classes (`(ncPlaye
   writes; FTEQCC reports no error there, so neither does this profile.
 - **FTEF-16.11** An aggregate initialiser may name the member each value initialises,
   `{ .name = value, ... }`.
-- **FTEF-16.12** A `case` or `default` label may stand in a block nested in the `switch` body,
-  as C allows; the corpus does so (`client/viewmodel.qc`).
+- **FTEF-16.12** **Withdrawn** (P2-141, #616): it allowed a `case` or `default` label in a block
+  nested in the `switch` body, but FTEQCC reads one wherever a statement stands, an `if`'s
+  body and a `switch`'s with no braces too; replaced by FTEF-16.16.
 - **FTEF-16.13** Any expression may stand left of an assignment operator: `QCC_PR_RefExpression`
   reads the left side as a term whatever it is, and an assignment to a value that is no
   variable is checked, not refused by the parser (FTEF-29.1). `~a = 1`, `1 = a` and
@@ -2401,6 +2456,17 @@ The corpus writes locals of class and pointer types, casts to classes (`(ncPlaye
   found [", `y = (x) 1;` "Expected punctuation" and "expected ;, found 1", and no `(x)` is
   "\"x\" is not a type". Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefTerm`, `QCC_PR_RefExpression`.
+- **FTEF-16.16** `case` and `default` are statements: `QCC_PR_ParseStatement` reads `if
+  (QCC_PR_CheckKeyword(keyword_case, "case"))` and `keyword_default` among the others, adds the
+  label to `pr_cases` at the statement it stands before, and returns, so a label stands
+  wherever a statement does, in a block nested in the `switch` body as C allows (the corpus
+  does so, `client/viewmodel.qc`), as an `if`'s body, or as the whole body of a `switch` with no
+  braces (FTEF-18.33). It is a label of the innermost `switch` being read, whose cases are
+  those added since its body began, and one that no `switch` holds is "illegal cases"
+  (FTEF-21.19). So `switch (a) { case 1: if (b) { case 2: b = 3; } break; }` jumps to `b = 3`
+  for 2, and `switch (a < b) case 0: ...` is the switch of one case. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseStatement`.
 ## FTEF-17 Name resolution
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseRefValue` (`assumeclass`, `this`, `super`, the
@@ -3117,16 +3183,9 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   reports the same `E0203` there and makes no local, an error either way. A type of more than
   one word that is no run of C words (`struct tag`, an inline `enum` or `struct`) and the types
   of a class's or struct's members are not checked (FTEF-19.63).
-- **FTEF-19.21** After a qualifier the type may be left out: `QCC_PR_ParseDefs` sets
-  `hadmodifier` for each storage class or modifier it reads and calls `QCC_PR_ParseType (false,
-  hadmodifier, ...)`, whose `silentfail` returns no type instead of "not a type", and then
-  `if (hadmodifier) { //banned since c99... basetype = type_integer; }`. So `const x = 5;`,
-  `static y;`, `noref z;`, `var v;`, `__register r;` and, in a body, `static y;` define
-  `__int32`s, checked as any definition is (`const x = 5; float x;` is a type mismatch, `const
-  k = "a";` the warning "Implicit cast from string to __int32"). The parser reads the type as
-  left out when a qualifier is followed by a name and then `;`, `,`, `=` or `[`; a name that is
-  a type there (`static t;` after `typedef float t;`) is not told apart, and is read as the
-  name.
+- **FTEF-19.21** **Withdrawn** (P2-141, #616): it said a name that is a type after a qualifier
+  is read as the definition's name, but `QCC_PR_ParseType` finds the type, so `const float = 1;`
+  is "\"=\" - not a name"; replaced by FTEF-19.77.
 - **FTEF-19.22** The parser's and the semantic model's warnings are reported as FTEQCC's
   warning settings stand where it gives each (FTEF-14.63, FTEF-14.72): ignored, a warning, or
   an error, `E0125`. Each is the warning `QCC_PR_ParseWarning` is given its text with:
@@ -3383,7 +3442,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   Player".
 - **FTEF-19.51** An attribute list is a modifier too: `QCC_PR_ParseDefs` sets `hadmodifier = true;`
   at the end of each pass of its modifier loop, the `[[...]]` branch included, so after an
-  attribute list alone the type may be left out and is `__int32` (FTEF-19.21): with `attributes`
+  attribute list alone the type may be left out and is `__int32` (FTEF-19.77): with `attributes`
   on, `[[eraseable]] x = 5; string s = x;` warns "Implicit cast from __int32 to string".
 - **FTEF-19.52** An item of an enum of an integer base (`int`, `uint`, `__int64`, `__uint64`) is the
   constant `QCC_MakeIntConst(next_i)` and its kin make of its value, a constant of that type the
@@ -3531,7 +3590,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `QCC_PR_ParseInitializerType`, `QCC_SupplyConversionForAssignment`.
 - **FTEF-19.73** After a qualifier, `hadmodifier`, `QCC_PR_ParseType` with `silentfail` finds
   no type at any token that is no name and no field's `.` or `..`, and `QCC_PR_ParseDefs` takes
-  `type_integer` (FTEF-19.21); the token is then the definition's name, which
+  `type_integer` (FTEF-19.77); the token is then the definition's name, which
   `QCC_PR_ParseName` refuses: `var = 1;`, `const 5;` and `static = 2;` in a body are "\"=\" -
   not a name" and "\"5\" - not a name", never "is not a type". Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
@@ -3562,6 +3621,21 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `QCC_PR_DummyDef` makes at its global's three words, name `a`'s three. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseDefs`, `QCC_PR_GenerateInitializerType`.
+- **FTEF-19.77** After a qualifier the type may be left out: `QCC_PR_ParseDefs` sets
+  `hadmodifier` for each storage class or modifier it reads and calls `QCC_PR_ParseType (false,
+  hadmodifier, ...)`, whose `silentfail` returns no type instead of "not a type", and then
+  `if (hadmodifier) { //banned since c99... basetype = type_integer; }`. So `const x = 5;`,
+  `static y;`, `noref z;`, `var v;`, `__register r;` and, in a body, `static y;` define
+  `__int32`s, checked as any definition is (`const x = 5; float x;` is a type mismatch, `const
+  k = "a";` the warning "Implicit cast from string to __int32"). The parser reads the type as
+  left out when a qualifier is followed by a name that is no type and then `;`, `,`, `=` or
+  `[`. A name `QCC_TypeForName` finds (a type keyword, a registered scalar such as `int`, or a
+  type the program declared) or a C type word is the declaration's type, as `QCC_PR_ParseType`
+  reads it: so `const float = 1;`, `const int = 0i;`, `const unsigned = 1;` and `typedef float
+  t; const t = 1;` are "\"=\" - not a name", and `static entity;` and `typedef float t; static
+  t;` declare nothing, as the pinned FTEQCC compiles them. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefs`, `QCC_PR_ParseType`.
 
 ## FTEF-20 Keywords
 
@@ -3746,6 +3820,22 @@ and compares the outcome with the pinned FTEQCC's.
   declares a body's enum as one at file level, its values and name seen after the body too,
   since the file's enum checks (the legacy base form, a name another type has, FTEF-19.10) read
   it there.
+- **FTEF-20.16** `enum`'s `class` and an accessor's `inline`, `get` and `set` are names, matched
+  exactly, not keywords: `QCC_PR_ParseEnum` reads `strictenum = QCC_PR_CheckName("class");` and
+  the accessor body `isinline = QCC_PR_CheckName("inline");` and `if (QCC_PR_CheckName("set"))
+  ... else if (QCC_PR_CheckName("get")) ... else break;`, then `QCC_PR_Expect("}")`, where a
+  class member's words are `QCC_PR_CheckKeyword(1, ...)`'s (FTEF-20.11), which take `__` and any
+  case. So in an accessor `__get`, `__set` and `__inline`, as any other word that is no `get` or
+  `set`, are "expected }, found NAME" (`E0204`): the pinned FTEQCC gives it for `accessor buf :
+  float { __get float len = size; };`. After `enum`, `__class` is no `class`: FTEQCC reads it with
+  `QCC_PR_ParseType` as the legacy base type, a class `__class X` declares, and reports that
+  declaration's errors, `"A" is not a type` for `enum __class X { A };` and `Parent type float is
+  not a class/entity` for `enum __class X : float { A };`; this profile reads it as the enum's name
+  and reports `expected {, found X` (`E0204`) there, and for `enum string X { A };` that error
+  without the legacy form's `F328` FTEQCC gives first (FTEF-19.10). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseEnum`; `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseType`, `QCC_PR_CheckName`,
+  `QCC_PR_CheckKeyword`.
 
 ## FTEF-21 Flags that change in the middle of a file
 
@@ -3899,7 +3989,7 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   `auto`, `register` and `nonstatic` never are, and under `defaultstatic` a typedef has two storage
   classes, "Conflicting storage classes.". `QCC_PR_ParseDefs` reads `typedef` among its other
   qualifiers, before or after them, and after it, a modifier, a type may be left out
-  (FTEF-19.21): `typedef static x;` names an `__int32` and is the error.
+  (FTEF-19.77): `typedef static x;` names an `__int32` and is the error.
 - **FTEF-21.15** **Withdrawn** (P2-122, #558): it said the target's `flag_undefwordsize` and the
   casts `lax`, `typeexplicit` and `qccx` allow are not modelled, but the semantic model's casts
   and conversions read them (FTEF-22). Replaced by FTEF-21.18.
@@ -3943,7 +4033,7 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   `local` and then `extern`, as a definition, so the block's definitions are locals, and `x = 1;`
   in it is no definition; a `typedef` in the block is a definition of it as at file level. A
   qualifier alone, `static;`, `const;` or `const *x;`, is a definition of an `int` of no name:
-  the type is left out where the token after the qualifiers is no name (FTEF-19.21). The block is
+  the type is left out where the token after the qualifiers is no name (FTEF-19.77). The block is
   one level of nesting (FTEF-18.32). The parser lexes the text again with the blocks it read, and
   reports the lexical errors and warnings of the tokens they lex otherwise, in place of the
   preprocessor's.
@@ -4107,6 +4197,17 @@ the others (FTEF-21.1) and the target as it reads the files (FTEF-20.4).
   `void(int)` is "Implicit cast from void(__int32) to void(float)". Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_TryEvaluateCast`.
+- **FTEF-22.9** A truth value, the result of a comparison, `!`, `&&` or `||`, is `ev_boolean`,
+  which `QCC_ShouldConvert` reads as its parent type when it is the value converted (`if
+  (from->type == ev_boolean && wanted != ev_boolean) from = from->parentclass;`) and to which no
+  other type converts, so `QCC_SupplyConversion(var, ev_boolean, true)` of a float is the fatal
+  `E0227` "Implicit type mismatch. Needed bool, got float.". A `switch` converts each case to the
+  switch value's type, `if (dmin.cast->type != e.cast->type) dmin = QCC_SupplyConversion(dmin,
+  e.cast->type, true);`, once its body is read, where the lexer is at the token after it: so
+  `switch (a || b) { case 0: break; }` and `switch (a < b) { case 1: ... }` are refused there,
+  and `switch (a + b)` is not. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_ShouldConvert`, `QCC_SupplyConversion`,
+  `QCC_PR_ParseStatement`.
 
 ## FTEF-23 Operators as FTEQCC types them
 

@@ -2,6 +2,7 @@
 
 //! The two forms of `progs.src` and the shape of the graph (PRJ-4, PRJ-6, QC-23).
 
+use crate::GraphIndex;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -501,7 +502,11 @@ fn source_form_root_comes_first() {
             ("b.qc".to_owned(), Via::IncludeList),
         ]
     );
-    let parents: Vec<Option<usize>> = graph.files.iter().map(|f| f.parent).collect();
+    let parents: Vec<Option<usize>> = graph
+        .files
+        .iter()
+        .map(|f| f.parent.map(GraphIndex::index))
+        .collect();
     assert_eq!(parents, [None, Some(0), Some(1), Some(0)]);
     assert_eq!(graph.declared_output, None);
 }
@@ -521,7 +526,13 @@ fn list_entries_have_no_parent() {
     let shape: Vec<(String, Via, Option<usize>)> = graph
         .files
         .iter()
-        .map(|f| (super::slash(&f.path), f.via, f.parent))
+        .map(|f| {
+            (
+                super::slash(&f.path),
+                f.via,
+                f.parent.map(GraphIndex::index),
+            )
+        })
         .collect();
     assert_eq!(
         shape,
