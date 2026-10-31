@@ -30,6 +30,7 @@ mod dispatch;
 mod error;
 pub mod math;
 pub mod mock;
+mod strftime;
 pub mod table;
 
 #[cfg(test)]

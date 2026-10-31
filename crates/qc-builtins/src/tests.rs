@@ -2043,6 +2043,28 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.7: strftime writes the mock's fixed instant, keeps an unknown conversion,
+    // and gives an empty string for a text past STRINGTEMP_LENGTH
+    #[test]
+    fn strftime_writes_the_fixed_instant() {
+        let long = "x".repeat(1100);
+        let formats = ["%Y-%m-%dT%H:%M:%S%z", "%a %b %e %% %Q %", &long];
+        let (strings, offsets) = string_table(&formats);
+        for (format, expected) in [
+            (0, "1970-01-01T00:00:00+0000"),
+            (1, "Thu Jan  1 % %Q %"),
+            (2, ""),
+        ] {
+            let mut f = Fixture::new(478, 2, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_f(0, 1.0);
+            f.set_parm_i(1, offsets[format]);
+            f.run_ok(ServerState::Active);
+            let value = f.return_i();
+            assert_eq!(f.engine().strings.text(value), Some(expected.as_bytes()));
+        }
+    }
+
     // spec BUILTIN-18.6: registercvar makes a setting whose text is its name again (vkQuake
     // reads OFS_PARM0 twice), empty with one argument, and leaves an existing one
     #[test]

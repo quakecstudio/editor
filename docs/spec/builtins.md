@@ -811,6 +811,15 @@ profile (DIFF-12.19); everything else runs under id's.
   (qcvm->argc > 1) ? G_STRING (OFS_PARM0) : \"\";", so `registercvar("x", "5")` makes `x`
   with the text `x`, and a call with one argument makes it empty. An existing setting is
   unchanged.
+- **BUILTIN-18.7** `strftime(uselocaltime, format, ...)` (#478) is `PF_strftime`, which writes
+  `format` with C's `strftime` at `time (NULL)` into a new temporary string. The wall clock
+  would make two runs differ, so the mock's time is fixed, as its random source is (DIFF-6.2):
+  1970-01-01 00:00:00 UTC, a Thursday, for local and UTC time alike. Each conversion is its
+  text at that instant (`%Y` `1970`, `%m` `01`, `%d` `01`, `%H` `00`, `%z` `+0000`, `%Z` `GMT`,
+  `%a` `Thu` and so on, the C and POSIX conversions), `%%` is `%`, and any other `%` sequence is
+  kept as written. A text that does not fit vkQuake's `STRINGTEMP_LENGTH` (1024 bytes) with its
+  terminator is empty, as `strftime` then returns 0. The result is a new engine string
+  (EDICT-13.1).
 
 ## Test vectors
 

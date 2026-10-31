@@ -1060,6 +1060,7 @@ impl MockBuiltins {
         match number {
             93 => Some(self.b_registercvar(context)),
             213 => Some(self.b_forceinfokey(context)),
+            478 => Some(self.b_strftime(context)),
             232 => Some(read_parm(context, 2).map(|_| ())),
             233 => Some(read_parm_string(context, &self.engine, 2).map(|_| ())),
             _ => None,
@@ -1081,6 +1082,14 @@ impl MockBuiltins {
             &String::from_utf8_lossy(&value),
         );
         Ok(())
+    }
+
+    /// `strftime(uselocaltime, format, ...)`, vkQuake's `PF_strftime` at the mock's instant
+    /// (BUILTIN-18.7): a new engine string holding `format` written out.
+    fn b_strftime(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let format = read_parm_string(context, &self.engine, 1)?;
+        let value = self.engine.strings.make(crate::strftime::strftime(&format));
+        write_return_string(context, value)
     }
 
     /// `forceinfokey(player, key, value)`, vkQuake's `PF_sv_forceinfokey` and `SV_UpdateInfo`
