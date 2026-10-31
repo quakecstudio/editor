@@ -43,7 +43,7 @@ pub(crate) struct ModuleState {
     pub(crate) engine: Engine,
     /// The dialect it is read in.
     pub(crate) dialect: qc_syntax::Dialect,
-    /// Its files, `FileId(i)` being `files[i]`, as the file graph orders them.
+    /// Its files, `FileId::new(i)` being `files[i]`, as the file graph orders them.
     pub(crate) files: Vec<PathBuf>,
     /// The files it preprocesses and compiles.
     input: ModuleInput,
@@ -73,23 +73,23 @@ pub(crate) enum Origin {
 pub(crate) struct ModuleData {
     /// The module read as the compiler reads it.
     pub(crate) analysis: ModuleAnalysis,
-    /// Each file's tree as written, `parses[i]` being `FileId(i)`'s.
+    /// Each file's tree as written, `parses[i]` being `FileId::new(i)`'s.
     pub(crate) parses: Vec<Parse>,
     /// The builtin each global name is declared as (ENGT-4.12, ENGT-4.17).
     pub(crate) builtins: HashMap<String, BuiltinRef>,
     /// The `W0311` warnings for the module's target engine (ENGT-4).
-    pub(crate) missing: Vec<qc_engines::FileDiagnostic>,
+    pub(crate) missing: Vec<qc_sema::FileDiagnostic>,
 }
 
 impl ModuleState {
     /// The id of `path` in this module, if the module has it.
     pub(crate) fn file_id(&self, path: &Path) -> Option<FileId> {
-        self.files.iter().position(|p| p == path).map(FileId)
+        self.files.iter().position(|p| p == path).map(FileId::new)
     }
 
     /// The path of file `file`.
     pub(crate) fn path(&self, file: FileId) -> Option<&Path> {
-        self.files.get(file.0).map(PathBuf::as_path)
+        self.files.get(file.index()).map(PathBuf::as_path)
     }
 
     /// The derived data, computed if an edit invalidated it.
@@ -97,13 +97,18 @@ impl ModuleState {
         let data = self.data.take().unwrap_or_else(|| {
             let analysis = self.db.analyze_module(&self.input);
             let parses: Vec<Parse> = (0..self.files.len())
-                .map(|index| self.db.parse(FileId(index)))
+                .map(|index| self.db.parse(FileId::new(index)))
                 .collect();
             let builtins = qc_engines::declared_builtins(&parses, self.dialect);
+            let files: Vec<(FileId, &Parse)> = parses
+                .iter()
+                .enumerate()
+                .map(|(index, parse)| (FileId::new(index), parse))
+                .collect();
             let missing = qc_engines::missing_builtins(
                 self.engine,
                 self.kind,
-                &parses,
+                &files,
                 &analysis.index,
                 self.dialect,
             );
@@ -298,7 +303,7 @@ impl<L: Loader> AnalysisHost<L> {
         let dialect = self.config.dialect.unwrap_or(Dialect::Vanilla);
         let target = self.config.target.unwrap_or(Target::Quake);
         let input = ModuleInput {
-            compiled: vec![FileId(0)],
+            compiled: vec![FileId::new(0)],
             ..ModuleInput::default()
         };
         let state = self.module_state(
@@ -316,7 +321,7 @@ impl<L: Loader> AnalysisHost<L> {
     /// what changed.
     fn refresh(&mut self, state: &mut ModuleState) {
         for index in 0..state.files.len() {
-            let file = FileId(index);
+            let file = FileId::new(index);
             let Some(path) = state.path(file).map(Path::to_path_buf) else {
                 continue;
             };
@@ -349,7 +354,7 @@ impl<L: Loader> AnalysisHost<L> {
                 None => self.loader.load(path).ok(),
             };
             if let Some(text) = text {
-                db.set_file(FileId(index), path.clone(), text);
+                db.set_file(FileId::new(index), path.clone(), text);
             }
         }
         ModuleState {

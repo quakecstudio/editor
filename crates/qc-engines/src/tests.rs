@@ -13,14 +13,11 @@ use qc_builtins::table::BUILTINS;
 use qc_diag::{Code, Severity, Span};
 use qc_project::{MemoryLoader, ModuleKind, Target, open_dir};
 use qc_sema::lower::lower_file;
-use qc_sema::{FileId, ModuleIndex, ResolveOptions, resolve_module};
+use qc_sema::{FileDiagnostic, FileId, ModuleIndex, ResolveOptions, resolve_module};
 use qc_syntax::{Dialect, Parse};
 
 use crate::check::builtin_number;
-use crate::{
-    BuiltinKey, BuiltinRef, Engine, FileDiagnostic, SOURCES, declared_builtins, missing_builtins,
-    tables,
-};
+use crate::{BuiltinKey, BuiltinRef, Engine, SOURCES, declared_builtins, missing_builtins, tables};
 
 /// A module made of `files`, in compilation order and in `dialect`: its parses and its
 /// resolved index.
@@ -38,11 +35,20 @@ fn module(dialect: Dialect, files: &[&str]) -> (Vec<Parse>, ModuleIndex) {
     (parses, index)
 }
 
+/// Each of `parses` with its file, in order.
+fn files_of(parses: &[Parse]) -> Vec<(FileId, &Parse)> {
+    parses
+        .iter()
+        .enumerate()
+        .map(|(index, parse)| (FileId::new(index), parse))
+        .collect()
+}
+
 /// The `W0311` messages for a module of `kind` made of FTEQCC `files`, checked against
 /// `engine`.
 fn check_kind(engine: Engine, kind: ModuleKind, files: &[&str]) -> Vec<String> {
     let (parses, index) = module(Dialect::Fteqcc, files);
-    missing_builtins(engine, kind, &parses, &index, Dialect::Fteqcc)
+    missing_builtins(engine, kind, &files_of(&parses), &index, Dialect::Fteqcc)
         .into_iter()
         .map(|d| d.diagnostic.message)
         .collect()
@@ -52,7 +58,13 @@ fn check_kind(engine: Engine, kind: ModuleKind, files: &[&str]) -> Vec<String> {
 /// `engine`.
 fn check_in(dialect: Dialect, engine: Engine, files: &[&str]) -> Vec<FileDiagnostic> {
     let (parses, index) = module(dialect, files);
-    missing_builtins(engine, ModuleKind::Ssqc, &parses, &index, dialect)
+    missing_builtins(
+        engine,
+        ModuleKind::Ssqc,
+        &files_of(&parses),
+        &index,
+        dialect,
+    )
 }
 
 /// The `W0311` warnings for vanilla `files` checked against `engine`.
@@ -462,7 +474,7 @@ fn an_fte_builtin_targeting_ironwail_is_w0311() {
     let found = check(Engine::Ironwail, &[HASH_CALL]);
     assert_eq!(found.len(), 1);
     let warning = &found[0];
-    assert_eq!(warning.file, FileId(0));
+    assert_eq!(warning.file, FileId::new(0));
     assert_eq!(warning.diagnostic.code, Code::W0311);
     assert_eq!(
         warning.diagnostic.message,
@@ -504,7 +516,7 @@ fn warnings_are_per_call_and_per_file() {
     let calls = "void() a = { hash_createtab(1, 0); hash_createtab(2, 0); };\n";
     let found = check(Engine::Vanilla, &[decl, calls]);
     assert_eq!(found.len(), 2);
-    assert!(found.iter().all(|d| d.file == FileId(1)));
+    assert!(found.iter().all(|d| d.file == FileId::new(1)));
     assert!(found[0].diagnostic.span < found[1].diagnostic.span);
 }
 
