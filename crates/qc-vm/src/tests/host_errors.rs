@@ -284,7 +284,7 @@ fn divergence_messages_name_their_statement() {
         ),
         (
             Divergence::UnregisteredBuiltin { number: 3 },
-            "no builtin 3 is registered (VM-14.4)",
+            "no builtin 3 is registered (VM-14.7)",
         ),
         (
             Divergence::NegativeLocals { locals: -2 },

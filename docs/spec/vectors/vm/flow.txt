@@ -134,7 +134,7 @@ expect:
   done
 
 == call_builtin
-spec: VM-14.1, VM-14.4, VM-16.2
+spec: VM-14.1, VM-14.7, VM-16.2
 globals: 100=7.5 101=i2
 functions:
   2: builtin=1
@@ -187,7 +187,7 @@ expect:
   error "NULL function"
 
 == call_last_builtin
-spec: VM-14.4
+spec: VM-14.7
 globals: 101=i2
 functions:
   2: builtin=78
@@ -200,7 +200,7 @@ expect:
   done
 
 == call_bad_builtin
-spec: VM-14.4
+spec: VM-14.7
 globals: 101=i2
 functions:
   2: builtin=79

@@ -9,7 +9,7 @@
 //! [`MockBuiltins`]: the builtin dispatch that runs a progs over a [`qc_vm::Machine`].
 //!
 //! Implements the dispatch of BUILTIN-1: the VM has checked the number is 1 to
-//! [`qc_vm::LIMIT_NUM_BUILTINS`] - 1 and set the argument count (VM-14.1, VM-14.4); this reads
+//! [`qc_vm::LIMIT_NUM_BUILTINS`] - 1 and set the argument count (VM-14.1, VM-14.7); this reads
 //! each builtin's arguments from the parameter slots and writes its result to `OFS_RETURN` or
 //! the system globals (BUILTIN-1.3, BUILTIN-1.4, PROGS-18). A number with no builtin fails with
 //! the `PF_Fixme` error (BUILTIN-1.2).

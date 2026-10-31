@@ -24,7 +24,7 @@ use qc_progs::Progs;
 
 use crate::exec::{Builtins, Context, NoBuiltins, NoObserver, ServerState};
 use crate::machine::Frame;
-use crate::{Machine, RunError};
+use crate::{ErrorKind, Machine, RunError};
 
 // spec VM-1.1: the machine state persists between runs; a fresh machine has empty stacks.
 #[test]
@@ -185,6 +185,75 @@ use crate::trace::Trace;
 use harness::StubBuiltins;
 use qc_trace::Record;
 use qc_types::Slot;
+
+/// A dispatch that has every builtin number, as vkQuake's sends a number past its table to
+/// `PF_Fixme`, and records the number it was called with in global 60.
+struct Unlimited;
+
+impl Builtins for Unlimited {
+    fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
+        let number = i32::try_from(number).unwrap();
+        context
+            .machine()
+            .set_global_test(60, Slot::from_i32(number));
+        Ok(())
+    }
+
+    fn engine_string(&self, _value: i32) -> Option<&[u8]> {
+        None
+    }
+
+    fn limit(&self) -> Option<u32> {
+        None
+    }
+}
+
+/// A run of function 1, which calls builtin `number` (function 2) and returns.
+fn call_builtin(number: i32, builtins: &mut impl Builtins) -> Result<Machine, RunError> {
+    use harness::{Func, Stmt};
+    let bytes = harness::ProgsBuilder::default()
+        .functions(vec![
+            Func {
+                first_statement: 1,
+                ..Func::default()
+            },
+            Func {
+                first_statement: number.saturating_neg(),
+                ..Func::default()
+            },
+        ])
+        .statements(&[Stmt::op("CALL0", 100, 0, 0), Stmt::op("DONE", 0, 0, 0)])
+        .globals_init(&[(100, 2)])
+        .build();
+    let progs = Progs::read_with(
+        &bytes,
+        &qc_progs::ReadOptions {
+            check_header_crc: false,
+        },
+    )
+    .unwrap();
+    let mut machine = Machine::new(&progs, 0).unwrap();
+    machine
+        .execute_program(&progs, ServerState::Active, builtins, &mut NoObserver, 1)
+        .map(|()| machine)
+}
+
+// spec VM-14.7: id's table ends below LIMIT_NUM_BUILTINS, so a call of 79 is `Bad builtin
+// call number` and 78 reaches the dispatch; a dispatch with no limit is called with any number
+#[test]
+fn the_dispatch_decides_which_builtin_numbers_exist() {
+    let bad = call_builtin(79, &mut harness::StubBuiltins).unwrap_err();
+    assert_eq!(bad.kind, ErrorKind::BadBuiltin);
+    assert!(call_builtin(78, &mut harness::StubBuiltins).is_ok());
+    assert_eq!(
+        harness::StubBuiltins.limit(),
+        Some(crate::LIMIT_NUM_BUILTINS)
+    );
+    for number in [79, 233, 1_000_000] {
+        let machine = call_builtin(number, &mut Unlimited).unwrap();
+        assert_eq!(machine.global(60).unwrap().as_i32(), number);
+    }
+}
 
 /// Builds the `nested_run` scenario: function 1 stores function 3's index in OFS_PARM0, calls
 /// builtin 2 (which runs function 3 in a nested run), then continues; function 3 writes a
@@ -449,7 +518,7 @@ mod coverage {
         assert_eq!(format!("{machine_err2}"), edict_err.to_string());
     }
 
-    // spec VM-14.4: NoBuiltins::call fails every builtin call with the VM-14.4 divergence, so a
+    // spec VM-14.7: NoBuiltins::call fails every builtin call with the VM-14.7 divergence, so a
     // progs that calls a builtin under NoBuiltins is a runtime error (not a silent Ok).
     #[test]
     fn no_builtins_call_errors() {
@@ -474,8 +543,8 @@ mod coverage {
         let (_m, result) = run(&bytes);
         let error = result.unwrap_err();
         assert!(
-            matches!(error.kind, ErrorKind::Divergence(d) if d.statement() == "VM-14.4"),
-            "NoBuiltins fails a builtin call with VM-14.4, got {:?}",
+            matches!(error.kind, ErrorKind::Divergence(d) if d.statement() == "VM-14.7"),
+            "NoBuiltins fails a builtin call with VM-14.7, got {:?}",
             error.kind
         );
     }

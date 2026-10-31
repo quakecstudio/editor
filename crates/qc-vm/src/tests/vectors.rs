@@ -703,7 +703,7 @@ fn check_event(
 // spec VM-11.1, VM-11.2, VM-11.3, VM-11.4: entity field loads.
 // spec VM-12.1, VM-12.2, VM-12.3, VM-12.4, VM-12.5, VM-12.6: addresses and pointer stores.
 // spec VM-13.1, VM-13.2, VM-13.3, VM-13.4, VM-13.5: jumps.
-// spec VM-14.1, VM-14.2, VM-14.3, VM-14.4, VM-14.5, VM-14.6: calls.
+// spec VM-14.1, VM-14.2, VM-14.3, VM-14.7, VM-14.5, VM-14.6: calls.
 // spec VM-15.1, VM-15.2, VM-15.3, VM-15.4, VM-15.5, VM-15.6, VM-15.7: entering a function.
 // spec VM-16.1, VM-16.2, VM-16.3, VM-16.4, VM-16.5, VM-16.6: returning.
 // spec VM-17.1, VM-17.2, VM-17.3, VM-17.4: STATE.

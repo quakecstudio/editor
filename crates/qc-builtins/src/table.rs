@@ -352,7 +352,7 @@ const fn b(
 /// The table entry for `number`, or `None` for a number with no builtin (BUILTIN-1.2).
 ///
 /// A `None` for a number from 1 to 78 is a `PF_Fixme` gap; a `None` for 0 or a number above 78
-/// is outside the table (the VM rejects those before dispatch, VM-14.4, LIMIT-5).
+/// is outside the table (the VM rejects those before dispatch, VM-14.7, LIMIT-5).
 #[must_use]
 pub fn lookup(number: u32) -> Option<&'static Builtin> {
     BUILTINS.iter().find(|entry| entry.number == number)

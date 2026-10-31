@@ -28,11 +28,11 @@ pub enum ServerState {
     Active,
 }
 
-/// The builtin dispatch id's `pr_builtins` table provides (VM-14.4).
+/// The builtin dispatch id's `pr_builtins` table provides (VM-14.7).
 ///
 /// A `CALL` to a function whose `first_statement` is negative calls builtin `-first_statement`
 /// (PROGS-10.2). The VM has already checked the number is 1 to
-/// [`LIMIT_NUM_BUILTINS`](crate::LIMIT_NUM_BUILTINS) - 1 (VM-14.4) and set `pr_argc`
+/// [`LIMIT_NUM_BUILTINS`](crate::LIMIT_NUM_BUILTINS) - 1 (VM-14.7) and set `pr_argc`
 /// (VM-14.1); the implementation reads the parameter slots and `OFS_RETURN` through the
 /// [`Machine`] and may start nested runs through [`Context`].
 pub trait Builtins {
@@ -62,6 +62,14 @@ pub trait Builtins {
     /// text it holds for `value`. There is no default, so a dispatch that owns engine strings
     /// cannot silently fall back to `None` and fail every comparison of one at run time.
     fn engine_string(&self, value: i32) -> Option<&[u8]>;
+
+    /// The builtin numbers the engine's table has, id's `pr_numbuiltins`: a call of a number
+    /// not below it fails with `Bad builtin call number`; `None` when every number reaches
+    /// [`Builtins::call`], as vkQuake sends a number past its table to `PF_Fixme` (VM-14.7).
+    /// id's table has [`LIMIT_NUM_BUILTINS`](crate::LIMIT_NUM_BUILTINS) (LIMIT-5.1).
+    fn limit(&self) -> Option<u32> {
+        Some(crate::LIMIT_NUM_BUILTINS)
+    }
 }
 
 /// A [`Builtins`] that has no builtins: every call fails as `Bad builtin call number` would be
@@ -196,7 +204,7 @@ impl Machine {
     /// Starts a run (VM-2.3): sets a fresh runaway counter (LIMIT-4.1), clears the trace flag,
     /// records the exit depth, enters the function (VM-15) and runs the statement loop (VM-3)
     /// until a return brings the call depth back to the exit depth (VM-16.4). Builtins are
-    /// dispatched through `builtins` (VM-14.4); `observer` records the run as a trace
+    /// dispatched through `builtins` (VM-14.7); `observer` records the run as a trace
     /// (TRACE-4).
     ///
     /// On a runtime error, id's `PR_RunError` sets the call depth to 0 but does not reset the

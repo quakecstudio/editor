@@ -63,7 +63,7 @@ engine never looks at the function's name or parameter list.
   a vector). A builtin that returns nothing leaves the return slots unchanged unless a statement
   below says otherwise; unlike a QuakeC function (VM-16.2), it does not clear them.
 - **BUILTIN-1.5** A builtin runs to completion within the call statement: no frame is pushed
-  (VM-14.4). The builtins that call back into QuakeC (`walkmove` and `movetogoal`, through
+  (VM-14.7). The builtins that call back into QuakeC (`walkmove` and `movetogoal`, through
   touch functions) do so as nested runs (VM-18).
 - **BUILTIN-1.6** A builtin that fails may already have written globals, fields or engine
   state; where it has, the statement below says what is written before the check.

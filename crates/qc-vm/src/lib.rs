@@ -49,7 +49,7 @@ pub use qc_progs::limits::LIMIT_LOCALSTACK_SIZE;
 ///
 /// `LIMIT_MAX_STACK_DEPTH` in LIMIT-2.1, re-exported from [`qc_progs::limits`].
 pub use qc_progs::limits::LIMIT_MAX_STACK_DEPTH;
-/// Entries in id's builtin table, numbers 0 to 78; a higher number fails a call (VM-14.4).
+/// Entries in id's builtin table, numbers 0 to 78; a higher number fails a call (VM-14.7).
 ///
 /// `LIMIT_NUM_BUILTINS` in LIMIT-5.1, re-exported from [`qc_progs::limits`].
 pub use qc_progs::limits::LIMIT_NUM_BUILTINS;
