@@ -15,7 +15,7 @@ use qc_syntax::Keyword;
 use std::collections::{HashMap, HashSet};
 
 use crate::resolve::{Found, Resolver, Scope, component_type, is_intrinsic};
-use crate::symbol::{DefId, DefKind};
+use crate::symbol::{DefId, DefKind, Definition};
 use crate::ty::Type;
 
 impl Resolver<'_> {
@@ -234,16 +234,40 @@ impl Resolver<'_> {
     /// whose `for` statement ended before the lookup (FTEF-19.19), the newest first, as
     /// `localstable` gives them (FTEF-21.12).
     pub(in crate::resolve) fn lookup_local(&self, scope: Scope, name: &str) -> Option<DefId> {
-        self.index
-            .defs
-            .iter()
-            .enumerate()
-            .skip(scope.locals_start)
-            .rev()
-            .find(|(index, d)| {
-                d.owner == Some(scope.owner) && d.name == name && self.in_scope_at(*index, scope.at)
-            })
-            .map(|(index, _)| DefId(index))
+        self.find_local(scope, |d| d.name == name)
+    }
+
+    /// The newest local of the function in `scope` that `wanted` accepts and the lookup is in
+    /// the scope of (FTEF-19.19), then of each function around a nested one, its `static`
+    /// locals declared before the nested function: `QCC_PR_GetDef` passes over a def of
+    /// another scope unless `def->isstatic` and that scope is one of `scope->parentscope`'s
+    /// (FTEF-18.40).
+    fn find_local(&self, scope: Scope, wanted: impl Fn(&Definition) -> bool) -> Option<DefId> {
+        let newest = |scope: Scope, end: usize, statics_only: bool| {
+            self.index
+                .defs
+                .iter()
+                .enumerate()
+                .take(end)
+                .skip(scope.locals_start)
+                .rev()
+                .find(|(index, d)| {
+                    d.owner == Some(scope.owner)
+                        && wanted(d)
+                        && self.in_scope_at(*index, scope.at)
+                        && (!statics_only || self.facts.get(*index).is_some_and(|f| f.static_local))
+                })
+                .map(|(index, _)| DefId(index))
+        };
+        let mut found = newest(scope, self.index.defs.len(), false);
+        let mut outer = self.enclosing.get(&scope.owner);
+        while found.is_none()
+            && let Some(around) = outer
+        {
+            found = newest(around.scope, around.end, true);
+            outer = self.enclosing.get(&around.scope.owner);
+        }
+        found
     }
 
     /// Whether the definition at `index` is in scope at byte `at`: not a `for` statement's
@@ -287,20 +311,8 @@ impl Resolver<'_> {
         if !self.profile.case_insensitive() {
             return None;
         }
-        let local = scope.and_then(|scope| {
-            self.index
-                .defs
-                .iter()
-                .enumerate()
-                .skip(scope.locals_start)
-                .rev()
-                .find(|(index, d)| {
-                    d.owner == Some(scope.owner)
-                        && d.name.eq_ignore_ascii_case(name)
-                        && self.in_scope_at(*index, scope.at)
-                })
-                .map(|(index, _)| DefId(index))
-        });
+        let local =
+            scope.and_then(|scope| self.find_local(scope, |d| d.name.eq_ignore_ascii_case(name)));
         local.or_else(|| {
             self.globals
                 .keys()

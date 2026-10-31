@@ -705,6 +705,13 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   the results table `target/compiler-diff/summary.md`: the codebase, the oracle's progs and
   ours, the divergences, the statements executed, and whether it passes; the nightly
   differential workflow publishes it as the run's summary.
+- **DIFF-12.18** `cargo xtask compiler-diff --full` also compares the corpus mods the pinned
+  FTEQCC compiles with `-Tid` (COMP-8): Copper, Arcane Dimensions, librequake, crmod7, QC
+  Conduit and SWAB, each compiled with the flags of DIFF-12.14 in a copy of its directory, and
+  with `qc-codegen` in the FTEQCC dialect, of a codebase with several modules its server module
+  `progs.src`, as FTEQCC compiles that one with no `-srcfile`. Each pair is compared as a
+  rerelease codebase is, with the FTEQCC rules of DIFF-12.11, and held to DIFF-12.5's bar. A
+  mod at the bar is in the nightly set; one not yet at it is compared when a run names it.
 - **DIFF-12.15** One time in two, `self` for a call is drawn from the edicts in use whose
   named fields of function type hold the function called, when any does, as the engine calls a
   `think`, `touch` or `use` with its own edict as `self`; otherwise as DIFF-12.2 draws it. The

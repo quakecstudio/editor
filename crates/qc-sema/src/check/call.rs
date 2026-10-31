@@ -227,8 +227,11 @@ impl Checker<'_> {
             let returned = Value::of(reference.ty.clone());
             self.store_reference(reference, &returned, span)?;
         }
+        // FTEF-29.15: the value is an alias of `def_ret`, which may be assigned to, unless a
+        // return larger than a vector is read back into a temporary.
         Ok(Value {
             returned: true,
+            readonly: self.is_large(&function.ret),
             ..Value::of(function.ret.clone())
         })
     }

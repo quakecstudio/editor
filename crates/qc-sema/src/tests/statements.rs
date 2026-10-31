@@ -949,3 +949,74 @@ fn programs_both_refuse_keep_this_profile_s_text() {
         [(1, "\"T\" is not a type".to_owned())]
     );
 }
+
+// spec FTEF-18.2: a nested function is a function of its own: its body sees the globals and its
+// own parameters, and is checked when it ends, under its empty name
+// spec FTEF-34.17: a nested function the outer definition's error does not end is checked
+#[test]
+fn a_nested_function_is_resolved_and_checked_as_its_own() {
+    let source = concat!(
+        "float a;\nvoid() f = {\nvoid() h = { return; a = 1; };\nh();\n",
+        "float(float p) k = { return p + a; };\nk(1);\n};\n",
+    );
+    assert_eq!(
+        lined(source),
+        [(3, ": contains unreachable code (line 3)".to_owned())]
+    );
+}
+
+// spec FTEF-18.2: the outer function's locals are not names in a nested function's body
+#[test]
+fn a_nested_function_does_not_see_the_outer_locals() {
+    let source = "void() f = { float x; void() h = { x = 1; }; h(); };\n";
+    assert_eq!(lined(source), [(1, "Unknown value \"x\".".to_owned())]);
+}
+
+// spec FTEF-18.40: a nested function sees the static locals declared before it in the functions
+// around it, at any depth, but not one declared after it
+#[test]
+fn a_nested_function_sees_the_outer_statics_declared_before_it() {
+    let before = "void() f = { static float s; void() h = { s = 1; }; h(); };\n";
+    assert_eq!(lined(before), []);
+    let deeper =
+        "void() f = { static float s; void() h = { void() g = { s = 2; }; g(); }; h(); };\n";
+    assert_eq!(lined(deeper), []);
+    let after = "void() f = { void() h = { s = 1; }; static float s; h(); };\n";
+    assert_eq!(lined(after), [(1, "Unknown value \"s\".".to_owned())]);
+}
+
+// spec FTEF-18.40: a nested function's own local named as an outer static is that static, a
+// nonstatic redeclaration
+#[test]
+fn a_nested_local_named_as_an_outer_static_redeclares_it() {
+    let source = "void() f = { static float s; void() h = { float s; s = 1; }; h(); };\n";
+    assert_eq!(
+        lined(source),
+        [(1, "nonstatic redeclaration of s ignored".to_owned())]
+    );
+}
+
+// spec FTEF-18.40: a nested function in a member function is read in its class: its members,
+// `this` and `self` as the class, whose missing field is named in the class
+#[test]
+fn a_nested_function_in_a_member_function_sees_its_class() {
+    let header = concat!(
+        "entity self; .vector origin; void end_sys_fields;\nfloat time;\n",
+        "class D { float q; };\nclass C { float m; void() A; void(float x) B; };\n",
+        "void(float x) C::B = {};\n",
+    );
+    let members = format!(
+        "{header}void() C::A = {{ static void N(void) {{ m = 2; B(1); this.m = time; }}; N(); }};\n"
+    );
+    let found = |source: &str| -> Vec<String> {
+        lined(source)
+            .into_iter()
+            .map(|(_, message)| message)
+            .filter(|m| !m.contains("not qualified") && !m.contains("'self' used"))
+            .collect()
+    };
+    assert_eq!(found(&members), Vec::<String>::new());
+    let other =
+        format!("{header}void() C::A = {{ static void N(void) {{ self.q = time; }}; N(); }};\n");
+    assert_eq!(found(&other), ["Unknown field \"q\" in class \"C\""]);
+}

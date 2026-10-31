@@ -2847,6 +2847,35 @@ against FTEQCC.
   q = x[1];` the warnings, and `float q = e[1];` of an entity only "Cannot cast from entity to
   float". Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_GenerateInitializerType`.
+- **FTEF-18.39** A nested function (FTEF-18.2) takes the next function record when its
+  declaration is read, `func = &functions[numfunctions++];` in `QCC_PR_GenerateQCFunction`, after
+  its outer function's, which took its record when its own definition was read. Its statements
+  are kept with its record (`f->statements`), and `QCC_PR_FinaliseFunctions` writes every
+  function's in the order of the records (`for (f = functions; f < functions+numfunctions;
+  f++) if (f->statements) QCC_PR_FinaliseFunction(f);`), so they follow the outer function's
+  `DONE`. The `GOTO` generated around it then jumps one statement and is dropped: `if
+  (patch->a.jumpofs == 1) numstatements--;`. A local that is not static is
+  then initialised as any local is (FTEF-32.15), `STORE_FNC` of the record's number, an integer
+  immediate (`QCC_MakeIntConst`), to the local, and its own word is left 0; a static one's word
+  holds the number. The nested function's name is empty unless the local is static
+  (`QCC_PR_ParseImmediateStatements (def.sym->isstatic?def.sym:NULL, ...)`). So `void() t = {
+  void() g = { a(); }; g(); };` is `STORE_FNC n g`, `CALL0 g`, `DONE`, then the nested
+  function's `CALL0 a`, `DONE`, with `t`'s record before the nested one's. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseInitializerType_Internal`, `QCC_PR_GenerateQCFunction`, `QCC_PR_FinaliseFunctions`,
+  `QCC_PR_GenerateInitializerType`.
+- **FTEF-18.40** A nested function (FTEF-18.2) sees the `static` locals of the functions
+  around it that are declared before it, and no other of their locals. `QCC_PR_GetDef` passes
+  over a def of the local table whose scope is not the function's, `if ( def->scope &&
+  def->scope != scope)`, unless `if (def->isstatic)` and the def's scope is one of `for (pscope
+  = scope->parentscope; pscope; pscope = pscope->parentscope)`; the table holds only the defs
+  made so far, so an outer static declared after the nested function is not found. The table's
+  chain gives the newest first, so a local of the nested function's own comes before the
+  outer one. A plain local of the nested function named as an outer static is then that static,
+  with "nonstatic redeclaration of NAME ignored" (FTEF-19.1). So `void() f = { static float
+  s; void() h = { s = 1; }; h(); };` compiles, and with the `static float s;` after `h` it is
+  `Unknown value "s".` Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GetDef`.
 - **FTEF-18.34** This profile's error recovery (QCD-1.4) ends the body of a struct, class,
   accessor, `switch` or function at a declaration line, a token at column 0 that has a
   declaration's shape or is one of `typedef`, `class`, `accessor`, `enum`, `enumflags`, `struct`
@@ -4681,6 +4710,27 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   y + 1)` only `ADD_F`, `float q = x++;` `STORE_F` and `ADD_F`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_StoreSRefToRef`, `QCC_PR_RefExpression` (`ref->postinc`), `QCC_RefToDef`.
+- **FTEF-29.14** A compound assignment, `++` or `--` of an array element whose index is a value
+  (FTE-13.11) reads the element first by the array's getter, `QCC_RefToDef` of the `REF_ARRAY`
+  reference calling `QCC_LoadFromArray`, then applies the operator to the getter's value and
+  stores the result by the setter, `QCC_StoreToArray`, which asks for the setter only then: the
+  index read once is passed to both. So `arr[d]++;` is `STORE_F d` and `CALL1` of
+  `ArrayGet*arr`, `ADD_F` of the return value and 1, then `STORE_F d`, `STORE_F` of the sum and
+  `CALL2` of `ArraySet*arr`, and the getter's record comes before the setter's; `x = arr[d]++`
+  first copies the return value to a temporary (FTEF-29.13). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_RefToDef`, `QCC_LoadFromArray`, `QCC_StoreToArray`.
+- **FTEF-29.15** A call's value may be assigned to with no warning unless it is larger than a
+  vector. `QCC_PR_GenerateFunctionCallRef` returns `retval = QCC_GetAliasTemp(QCC_MakeSRefForce(
+  &def_ret, 0, t->aux_type))`, a def `qccHunkAlloc` makes that sets neither `temp` nor
+  `constant`, so `QCC_DefToRef`'s `!def.sym || !!def.sym->constant || def.sym->temp` is false
+  and the reference is not `readonly` (FTEF-29.1). A return type `if (t->aux_type->size >
+  type_vector->size)` is written through `bigret`, read back by `QCC_RefToDef` of a
+  `REF_POINTER` into a temporary, and is read-only: "Assignment to const" and "Assignment to
+  constant NAME" (FTEF-29.3). So `t.origin = t.G("o") = v;` and `gf() += 2;` compile silently
+  and a four-float struct's `gb() = v;` warns twice. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`, `QCC_GetAliasTemp`, `QCC_DefToRef`.
 - **FTEF-29.10** An array named bare, its head, is the pointer to its first element to a
   prefix or postfix `++` and `--` (`REF_ARRAYHEAD`): read by its address, which the id target
   refuses (FTEF-31.4), stepped by `OP_ADD_PIW` of its element's size, `--` warning of the
@@ -5096,6 +5146,17 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   string constant's text where calls are checked, and makes the call. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateFunctionCallRef`; `engine/qclib/progsint.h`, `min`, `max`.
+- **FTEF-32.15** A local array that is not constant or static, given a braced initialiser, stores
+  each element's value to its element in turn each time the function runs: the array goes
+  "recursive" (`QCC_PR_ParseInitializerType(0, basedef, def, ...)`, then `def.ofs +=
+  def.cast->size;`), and `QCC_PR_GenerateInitializerType` takes the `finalnotconst` path, since
+  `basedef->scope` is set and it is neither `constant` nor `isstatic`, where a one-word value is
+  `OP_STORE_F`, `_S`, `_ENT`, `_FLD` or `_FNC` by the element's type and a vector `OP_STORE_V`.
+  An element value need not be constant, and the store of one an operator just made is folded
+  into it (FTEF-29.13). Elements past the last written get no store. So `float a[3] = { Q, 2,
+  self.f };` is `STORE_F Q a[0]`, `STORE_F 2 a[1]`, `LOAD_F self f a[2]`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseInitializerType_Internal`, `QCC_PR_GenerateInitializerType`.
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,
@@ -5293,3 +5354,12 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   `NOT_V`, nor the `OP_IF` of `do ... while`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_StatementFlags`, `QCC_Generate_OP_IFNOT`; `engine/qclib/qccmain.c`, `optimisations[]`.
+- **FTEF-34.17** A nested function (FTEF-18.2) is checked as any function is when it ends
+  (FTEF-34.6), under its name (FTEF-18.39), unless an error of its outer definition at or
+  before its end ended FTEQCC's parse of the definition first (`QCC_PR_ParseError`), which then
+  never finishes it: so `void() f = { goto out; void() h = { goto in; a = 1; }; ... };` is only
+  "Goto statement with no matching label \"out\"", at `h`'s end (FTEF-34.12), with no
+  "contains unreachable code" for `h`. This profile checks an outer definition's statements
+  after a nested function's error too, where FTEQCC stops. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseInitializerType_Internal`, `QCC_PR_FinaliseFunction`.

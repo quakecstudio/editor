@@ -24,8 +24,8 @@ use crate::resolve::aggregate::{AggregateSite, Initialised};
 use crate::resolve::check_env::BodyEnv;
 use crate::resolve::init::string_of_chars;
 use crate::resolve::{
-    COMPONENTS, DeclFacts, Found, Holder, Pending, Redeclaration, Resolver, Scope, ScopedFacts,
-    component_type,
+    COMPONENTS, DeclFacts, Enclosing, Found, Holder, Pending, Redeclaration, Resolver, Scope,
+    ScopedFacts, component_type,
 };
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
@@ -131,7 +131,7 @@ impl<'a> Resolver<'a> {
         // A body is read in its own unit (FTEF-19.12).
         self.unit = file;
         self.body_typedefs.clone_from(&body.typedefs);
-        self.resolve_body(file, def, class, body, decl);
+        self.resolve_body(file, def, class, body, decl, false);
         self.body_typedefs.clear();
     }
 
@@ -139,6 +139,11 @@ impl<'a> Resolver<'a> {
     /// uses (QC-12.1, QC-12.5), in the class `class` when it is a member function's
     /// (FTEF-17.2). `decl` is the declaration the body defines, whose state header names the
     /// next think function.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one body in FTEQCC's order: parameters, state header, locals, uses, check, \
+                  nested functions"
+    )]
     pub(in crate::resolve) fn resolve_body(
         &mut self,
         file: FileId,
@@ -146,6 +151,7 @@ impl<'a> Resolver<'a> {
         class: Option<DefId>,
         body: &RawBody,
         decl: Option<&RawDecl>,
+        nameless: bool,
     ) {
         // Record where this function's locals start, so lookups in it see only its own.
         let scope = Scope {
@@ -154,7 +160,11 @@ impl<'a> Resolver<'a> {
             locals_start: self.index.defs.len(),
             class,
             at: 0,
-            inline_member: class.is_some() && decl.is_none(),
+            // FTEF-18.40: a nested function is read where it stands in the function around it.
+            inline_member: self
+                .enclosing
+                .get(&owner)
+                .map_or(class.is_some() && decl.is_none(), |e| e.scope.inline_member),
         };
         let reported = self.index.diagnostics.len();
         // `f->name`, a member function's `CLASS::NAME`.
@@ -234,6 +244,7 @@ impl<'a> Resolver<'a> {
             self.check_type_names(ty, &body.typedefs, span.start, location);
         }
         let mut bare_reported: Option<usize> = None;
+        let mut nested = Vec::new();
         for local in &body.locals {
             self.settle(local.span.start);
             let location = self.at(file, local.span);
@@ -281,6 +292,13 @@ impl<'a> Resolver<'a> {
                 ..scope
             };
             self.declare_local(file, at, local, location);
+            if let Some(inner) = &local.nested
+                && let Some(def) = self.lookup_in_scope_exactly(at, &local.name)
+            {
+                let end = self.index.defs.len();
+                self.enclosing.insert(def, Enclosing { scope: at, end });
+                nested.push((def, &**inner, !local.is_static()));
+            }
             // FTEF-19.19: what the declaration made new leaves scope with its `for`; a local
             // it found again stays.
             if let Some(end) = local.scope_end {
@@ -309,9 +327,42 @@ impl<'a> Resolver<'a> {
                 lex: &body.lex_flags,
                 written: &body.written_types,
                 locals: &body.locals,
+                nameless,
             };
             let typed = check_body(&mut env, syntax);
             self.index.bodies.insert(owner, typed);
+        }
+        self.resolve_nested(file, reported, nested);
+    }
+
+    /// FTEF-18.2: the functions a body defines, resolved once the body is, each as a function
+    /// of its own: its scope starts at its own parameters, so the outer locals are not seen
+    /// but for the `static` ones declared before it, and in a member function its class's
+    /// members are (FTEF-18.40).
+    /// FTEF-34.17: one an error of the outer definition at or before its end ended, reported
+    /// from `reported` on, is never finished and not checked.
+    fn resolve_nested(
+        &mut self,
+        file: FileId,
+        reported: usize,
+        nested: Vec<(DefId, &RawBody, bool)>,
+    ) {
+        for (def, inner, nameless) in nested {
+            let end = inner.syntax.as_ref().map(|b| b.syntax().span().end);
+            let unfinished = end.is_some_and(|end| {
+                self.index.diagnostics.get(reported..).is_some_and(|found| {
+                    found.iter().any(|d| {
+                        d.file == file
+                            && d.diagnostic.is_error()
+                            && d.diagnostic.code != Code::E0125
+                            && d.diagnostic.span.start <= end
+                    })
+                })
+            });
+            if !unfinished {
+                let class = self.enclosing.get(&def).and_then(|e| e.scope.class);
+                self.resolve_body(file, def, class, inner, None, nameless);
+            }
         }
     }
 
@@ -352,6 +403,7 @@ impl<'a> Resolver<'a> {
             lex: &[],
             written: &[],
             locals: &[],
+            nameless: false,
         };
         (array_length(&mut env, &expr), rest)
     }
@@ -397,6 +449,7 @@ impl<'a> Resolver<'a> {
             lex: &[],
             written: &written,
             locals: &[],
+            nameless: false,
         };
         if let Some(value) = check_initialiser(&mut env, &expr, &ty, &decl.name) {
             self.index.initial_values.insert(owner, value);
