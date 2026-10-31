@@ -1049,7 +1049,9 @@ const VKQUAKE_SERVERINFO_CVARS: [&str; 4] = ["fraglimit", "timelimit", "teamplay
 
 impl MockBuiltins {
     /// The extension builtin `number` under vkQuake's profile, when the mock ports it
-    /// (BUILTIN-18.1); `None` sends the number on to id's table.
+    /// (BUILTIN-18.1); `None` sends the number on to id's table. `clientstat` (232) and
+    /// `globalstat` (233) only choose what a client's stats send, so they read their last
+    /// parameter, `globalstat`'s a string, and keep nothing (BUILTIN-18.5).
     fn vkquake_extension(
         &mut self,
         number: u32,
@@ -1057,6 +1059,8 @@ impl MockBuiltins {
     ) -> Option<Result<(), BuiltinError>> {
         match number {
             213 => Some(self.b_forceinfokey(context)),
+            232 => Some(read_parm(context, 2).map(|_| ())),
+            233 => Some(read_parm_string(context, &self.engine, 2).map(|_| ())),
             _ => None,
         }
     }

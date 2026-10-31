@@ -2043,6 +2043,28 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.5: clientstat and globalstat change nothing; globalstat's name must be a
+    // string
+    #[test]
+    fn stats_change_nothing() {
+        let (strings, offsets) = string_table(&["frags"]);
+        for (number, name, ok) in [
+            (232, 7, true),
+            (233, offsets[0], true),
+            (233, 999_999, false),
+        ] {
+            let mut f = Fixture::new(number, 3, strings.clone(), 1);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            let before = f.engine().clone();
+            f.set_parm_f(0, 40.0);
+            f.set_parm_f(1, 2.0);
+            f.set_parm_i(2, name);
+            let result = f.run(ServerState::Active);
+            assert_eq!(result.is_ok(), ok, "{number}: {result:?}");
+            assert_eq!(f.engine(), &before, "{number}");
+        }
+    }
+
     // spec BUILTIN-18.3: vkQuake's precache lists hold 2048 sounds and 8192 models, id's 256
     // each
     #[test]

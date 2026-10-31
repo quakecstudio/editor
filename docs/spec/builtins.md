@@ -800,6 +800,11 @@ profile (DIFF-12.19); everything else runs under id's.
   set with `Cvar_Set`, which `cvar` reads back. Every other key goes to the server's or the
   player's info string and the network, which the mock does not keep: no builtin it ports reads
   an info string back.
+- **BUILTIN-18.5** `clientstat(num, type, fld)` (#232) and `globalstat(num, type, name)` (#233)
+  are `PF_clientstat` and `PF_globalstat`: they choose what the server sends a client as stat
+  `num` (`PR_CustomStat`), which no builtin reads back, so they change nothing QuakeC sees.
+  `globalstat` reads `name` with `G_STRING`, so a value that is no string is the mock's
+  string error (BUILTIN-2.8); `clientstat` reads `fld` with `G_INT`.
 
 ## Test vectors
 
