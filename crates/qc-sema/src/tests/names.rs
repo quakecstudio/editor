@@ -79,7 +79,7 @@ fn bound_name(spec: &ProjectSpec<'_>, given: Given) -> (Option<String>, Vec<qc_d
             .find(|(name, _)| at(name) == file.path)
             .map(|(_, text)| text.as_bytes().to_vec())
             .unwrap();
-        db.set_file(FileId(index), file.path.clone(), text);
+        db.set_file(FileId::new(index), file.path.clone(), text);
     }
     let mut input = ModuleInput {
         include_dirs,
@@ -95,9 +95,9 @@ fn bound_name(spec: &ProjectSpec<'_>, given: Given) -> (Option<String>, Vec<qc_d
         .map(|d| d.diagnostic.code)
         .collect();
     let name = db
-        .expanded_decls(FileId(0))
+        .expanded_decls(FileId::new(0))
         .and_then(|decls| decls.decls.iter().find(|decl| decl.name == "f"))
-        .and_then(|decl| decl.literal.as_ref())
+        .and_then(|decl| decl.literal())
         .and_then(|literal| literal.builtin_function("f"))
         .map(|function| function.name);
     (name, errors)

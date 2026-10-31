@@ -23,7 +23,7 @@ fn module(files: &[&str], args: &[&str]) -> Vec<(Code, String)> {
     db.set_dialect(Dialect::Fteqcc);
     let mut compiled = Vec::new();
     for (index, text) in files.iter().enumerate() {
-        let id = FileId(index);
+        let id = FileId::new(index);
         db.set_file(
             id,
             PathBuf::from(format!("f{index}.qc")),
@@ -455,9 +455,13 @@ fn the_index_holds_each_declaration_once() {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
     let source = "float x = 5;\n#pragma autoproto\nenum { A, B };\nfloat y = x;\nvoid() f = {};\n";
-    db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+    db.set_file(
+        FileId::new(0),
+        PathBuf::from("t.qc"),
+        source.as_bytes().to_vec(),
+    );
     let analysis = db.analyze_module(&ModuleInput {
-        compiled: vec![FileId(0)],
+        compiled: vec![FileId::new(0)],
         ..ModuleInput::default()
     });
     let named = |name: &str| {
@@ -478,7 +482,7 @@ fn the_index_holds_each_declaration_once() {
             analysis
                 .index
                 .defs
-                .get(r.def.0)
+                .get(r.def.index())
                 .is_some_and(|d| d.name == "x")
         })
         .count();
@@ -502,9 +506,13 @@ fn the_first_pass_leaves_only_its_declarations() {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
     let source = "void() g = { local float autocvar_x = 1; };\n#pragma autoproto\nfloat y;\n";
-    db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+    db.set_file(
+        FileId::new(0),
+        PathBuf::from("t.qc"),
+        source.as_bytes().to_vec(),
+    );
     let analysis = db.analyze_module(&ModuleInput {
-        compiled: vec![FileId(0)],
+        compiled: vec![FileId::new(0)],
         ..ModuleInput::default()
     });
     let named = analysis

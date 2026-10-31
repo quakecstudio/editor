@@ -74,7 +74,7 @@ fn db_of(files: &[String], dialect: Dialect) -> Db {
     db.set_dialect(dialect);
     for (index, text) in files.iter().enumerate() {
         db.set_file(
-            FileId(index),
+            FileId::new(index),
             PathBuf::from(format!("f{index}.qc")),
             text.as_bytes().to_vec(),
         );
@@ -83,7 +83,7 @@ fn db_of(files: &[String], dialect: Dialect) -> Db {
 }
 
 fn ids(files: &[String]) -> Vec<FileId> {
-    (0..files.len()).map(FileId).collect()
+    (0..files.len()).map(FileId::new).collect()
 }
 
 fn input(files: &[String]) -> ModuleInput {
@@ -96,7 +96,7 @@ fn input(files: &[String]) -> ModuleInput {
 /// Whether `at` is a span inside the bytes of its file.
 fn inside(files: &[String], at: Location) -> bool {
     files
-        .get(at.file.0)
+        .get(at.file.index())
         .is_some_and(|text| at.span.start <= at.span.end && at.span.end <= text.len())
 }
 
@@ -170,7 +170,7 @@ proptest! {
         let mut edited = files.clone();
         edited[which] = edit.join(" ");
         db.set_file(
-            FileId(which),
+            FileId::new(which),
             PathBuf::from(format!("f{which}.qc")),
             edited[which].as_bytes().to_vec(),
         );

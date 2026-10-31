@@ -33,13 +33,13 @@ fn member(index: &ModuleIndex, class: &str, name: &str) -> DefId {
         .defs
         .iter()
         .position(|d| d.name == class && d.member_of.is_none())
-        .map(DefId)
+        .map(DefId::new)
         .expect("the class");
     index
         .defs
         .iter()
         .position(|d| d.name == name && d.member_of == Some(class))
-        .map(DefId)
+        .map(DefId::new)
         .expect("the member")
 }
 
@@ -159,7 +159,7 @@ fn access_labels_set_the_default_member_kind() {
          };\n\
          class L { void Plain(void); };\n",
     );
-    let kind = |class: &str, name: &str| index.defs[member(&index, class, name).0].kind;
+    let kind = |class: &str, name: &str| index.defs[member(&index, class, name).index()].kind;
     assert_eq!(kind("K", "V"), DefKind::Field);
     assert_eq!(kind("K", "X"), DefKind::Function);
     assert_eq!(kind("K", "S"), DefKind::Function);
@@ -180,7 +180,7 @@ fn a_constructor_is_a_member_named_after_its_class() {
     let source = "class C { C(void); Other(void); };\nvoid C::C(void) { };\n";
     let index = fte_index_of(source);
     let ctor = member(&index, "C", "C");
-    let at = index.defs[ctor.0].location.span;
+    let at = index.defs[ctor.index()].location.span;
     assert_eq!(source.get(at.range()), Some("C"));
     assert_eq!(at.start, source.find("C(void)").unwrap());
     assert_eq!(target_of(&index, source, "C::C", 0), Some(ctor));
@@ -237,7 +237,7 @@ fn an_accessor_member_may_name_its_function() {
         .defs
         .iter()
         .position(|d| d.name == "GetSize")
-        .map(DefId)
+        .map(DefId::new)
         .unwrap();
     assert_eq!(index.refs.iter().filter(|r| r.def == get_size).count(), 1);
     let initialized = |name: &str| {
@@ -283,19 +283,19 @@ fn a_scoped_definition_adds_a_member_or_a_global() {
         ]
     );
     let extra = member(&index, "A", "extra");
-    assert_eq!(index.defs[extra.0].kind, DefKind::Field);
-    assert!(!index.defs[extra.0].initialized);
+    assert_eq!(index.defs[extra.index()].kind, DefKind::Field);
+    assert!(!index.defs[extra.index()].initialized);
     assert_eq!(index.refs.iter().filter(|r| r.def == extra).count(), 2);
     let function = member(&index, "A", "Extra");
-    assert_eq!(index.defs[function.0].kind, DefKind::Function);
-    assert!(index.defs[function.0].initialized);
+    assert_eq!(index.defs[function.index()].kind, DefKind::Function);
+    assert!(index.defs[function.index()].initialized);
     let global = index
         .defs
         .iter()
         .position(|d| d.name == "Other::g")
-        .map(DefId)
+        .map(DefId::new)
         .unwrap();
-    assert_eq!(index.defs[global.0].member_of, None);
+    assert_eq!(index.defs[global.index()].member_of, None);
     assert_eq!(
         target_of(&index, source, "Other::g", 0),
         None,
@@ -318,7 +318,7 @@ fn a_scope_that_is_no_class_names_a_global() {
         .defs
         .iter()
         .position(|d| d.name == "GREEN")
-        .map(DefId)
+        .map(DefId::new)
         .unwrap();
     assert_eq!(target_of(&index, source, "E::GREEN", 0), Some(green));
 }
@@ -342,7 +342,7 @@ fn accessor_reads_and_stores() {
     let fte_messages = |source: &str| -> Vec<String> {
         let mut db = Db::new();
         db.set_dialect(Dialect::Fteqcc);
-        let file = FileId(0);
+        let file = FileId::new(0);
         db.set_file(file, PathBuf::from("t.qc"), source.as_bytes().to_vec());
         db.analyze_module(&ModuleInput {
             compiled: vec![file],
@@ -422,7 +422,7 @@ fn accessor_values_in_expressions() {
         );
         let mut db = Db::new();
         db.set_dialect(Dialect::Fteqcc);
-        let file = FileId(0);
+        let file = FileId::new(0);
         db.set_file(file, PathBuf::from("t.qc"), source.into_bytes());
         db.analyze_module(&ModuleInput {
             compiled: vec![file],
@@ -498,7 +498,7 @@ fn self_in_member_functions_is_this() {
         );
         let mut db = Db::new();
         db.set_dialect(Dialect::Fteqcc);
-        let file = FileId(0);
+        let file = FileId::new(0);
         db.set_file(file, PathBuf::from("t.qc"), source.into_bytes());
         db.analyze_module(&ModuleInput {
             compiled: vec![file],
@@ -663,7 +663,7 @@ fn an_accessor_indexer_reads_and_stores() {
     let found = |statement: &str| -> Vec<String> {
         let mut db = Db::new();
         db.set_dialect(Dialect::Fteqcc);
-        let file = FileId(0);
+        let file = FileId::new(0);
         let source = format!("#pragma target fte\n{defs}void() f = {{ {statement} }};\n");
         db.set_file(file, PathBuf::from("t.qc"), source.into_bytes());
         db.analyze_module(&ModuleInput {

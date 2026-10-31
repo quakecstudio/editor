@@ -7,21 +7,20 @@
 //! Classes and accessors: their members, parents, member functions and the
 //! member lookup of an access (FTEF-9, FTEF-10, FTEF-17.1 to FTEF-17.3).
 
+use crate::resolve::Init;
 use qc_diag::{Code, Span};
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use crate::cast::Kind;
 use crate::lower::ArrayDim;
 use crate::lower::{
     MemberBase, MemberKind, MemberStorage, Qualification, RawClass, RawDecl, RawMember, RawUse,
-    top_level_kind,
 };
 use crate::resolve::{
     COMPONENTS, ClassInfo, Found, MAX_CLASS_DEPTH, Pending, Resolver, Scope, StructMatch,
 };
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
-use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
+use crate::ty::{SimpleType, Type};
 
 impl<'a> Resolver<'a> {
     /// `accessor Name : Base` (FTEF-10.6): the base is a type and no struct or union, and the
@@ -227,26 +226,19 @@ impl<'a> Resolver<'a> {
                 .and_then(|c| c.members.get(&member.name))
                 .copied();
             let id = if let Some(existing) = existing {
-                if member.initialized
-                    && let Some(d) = self.index.defs.get_mut(existing.0)
-                {
-                    d.initialized = true;
+                if member.initialized {
+                    self.mark_initialized(existing);
                 }
                 existing
             } else {
-                let id = self.push_def(Definition {
-                    name: member.name.clone(),
-                    ty: member.ty.clone(),
+                let id = self.add_member(
+                    def,
+                    &member.name,
+                    &member.ty,
                     kind,
                     location,
-                    owner: None,
-                    initialized: member.initialized,
-                    member_of: Some(def),
-                    generated: false,
-                });
-                if let Some(info) = self.classes.get_mut(&def) {
-                    info.members.insert(member.name.clone(), id);
-                }
+                    member.initialized,
+                );
                 // FTEF-9.18: a `const` data member and a nonvirtual function are constants
                 // (`GDF_CONST`).
                 let constant = match kind {
@@ -254,7 +246,7 @@ impl<'a> Resolver<'a> {
                     DefKind::Function => true,
                     DefKind::Field | DefKind::Param | DefKind::Local => false,
                 };
-                if constant && let Some(facts) = self.facts.get_mut(id.0) {
+                if constant && let Some(facts) = self.facts.get_mut(id.index()) {
                     facts.constant = true;
                 }
                 if kind == DefKind::Field && member.array.is_none() {
@@ -262,7 +254,7 @@ impl<'a> Resolver<'a> {
                 }
                 // FTEF-31.2: a member array is an array of fields, indexed by its length.
                 if let Some(size) = &member.array
-                    && let Some(facts) = self.facts.get_mut(id.0)
+                    && let Some(facts) = self.facts.get_mut(id.index())
                 {
                     facts.array = Some(
                         size.trim()
@@ -270,7 +262,6 @@ impl<'a> Resolver<'a> {
                             .map_or(ArrayDim::Unknown, ArrayDim::Sized),
                     );
                 }
-                self.any_member.entry(member.name.clone()).or_insert(id);
                 id
             };
             if let Some(body) = &member.body {
@@ -523,12 +514,7 @@ impl<'a> Resolver<'a> {
         let Some(location) = self.index.def(class).map(|d| d.location) else {
             return;
         };
-        let ty = Type::Function(Rc::new(FunctionType {
-            ret: Type::Simple(SimpleType::Void),
-            params: Vec::new(),
-            variadic: false,
-            labels: ParamLabels::default(),
-        }));
+        let ty = Type::void_function();
         let id = self.push_def(Definition {
             name: spawnfunc,
             ty,
@@ -570,12 +556,11 @@ impl<'a> Resolver<'a> {
                 self.report(Code::E0225, location, format!("{scope} is not a class"));
             }
             // A global named `Scope::name`, as FTEQCC names it.
-            let kind = top_level_kind(&decl.ty);
-            let init = decl.initialized.then_some(decl.literal.as_ref());
+            let kind = decl.ty.top_level_kind();
+            let init = Init::of(decl.initialized(), decl.literal());
             let def = self.declare_global(&name, &decl.ty, kind, location, init);
             return decl
-                .body
-                .as_ref()
+                .body()
                 .map(|body| vec![(file, def, None, body, Some(decl))])
                 .unwrap_or_default();
         };
@@ -593,7 +578,7 @@ impl<'a> Resolver<'a> {
                     return Vec::new();
                 }
                 // FTEF-19.57: a body for a member already initialised, as for any definition.
-                if decl.body.is_some()
+                if decl.body().is_some()
                     && !decl.redefinable()
                     && !self.redefinable.contains(&existing)
                     && self.index.def(existing).is_some_and(|d| d.initialized)
@@ -604,10 +589,8 @@ impl<'a> Resolver<'a> {
                         "redeclaration of function body".to_owned(),
                     );
                 }
-                if decl.initialized
-                    && let Some(d) = self.index.defs.get_mut(existing.0)
-                {
-                    d.initialized = true;
+                if decl.initialized() {
+                    self.mark_initialized(existing);
                 }
                 self.index.refs.push(Reference {
                     location,
@@ -626,25 +609,17 @@ impl<'a> Resolver<'a> {
                 } else {
                     DefKind::Field
                 };
-                let id = self.push_def(Definition {
-                    name: decl.name.clone(),
-                    ty: decl.ty.clone(),
+                self.add_member(
+                    class,
+                    &decl.name,
+                    &decl.ty,
                     kind,
                     location,
-                    owner: None,
-                    initialized: decl.initialized,
-                    member_of: Some(class),
-                    generated: false,
-                });
-                if let Some(info) = self.classes.get_mut(&class) {
-                    info.members.insert(decl.name.clone(), id);
-                }
-                self.any_member.entry(decl.name.clone()).or_insert(id);
-                id
+                    decl.initialized(),
+                )
             }
         };
-        decl.body
-            .as_ref()
+        decl.body()
             .map(|body| vec![(file, member, Some(class), body, Some(decl))])
             .unwrap_or_default()
     }
@@ -674,18 +649,44 @@ impl<'a> Resolver<'a> {
 
     /// The member `name` of class `class` or its parents (FTEF-17.2).
     pub(in crate::resolve) fn member_in(&self, class: DefId, name: &str) -> Option<DefId> {
-        let mut current = Some(class);
+        let mut current = class;
         for _ in 0..MAX_CLASS_DEPTH {
-            let info = self.classes.get(&current?)?;
+            let info = self.classes.get(&current)?;
             if let Some(id) = self.named(&info.members, name) {
                 return Some(*id);
             }
-            current = info
-                .parent
-                .as_ref()
-                .and_then(|p| self.named(&self.class_names, p).copied());
+            current = self.parent_of(current)?;
         }
         None
+    }
+
+    /// Defines the member `name` of class `class`, of type `ty` and kind `kind`, declared at
+    /// `location` (FTEF-9.2): one of the class's members, and the first member of the name for an
+    /// access whose class is not known (FTEF-17.3).
+    fn add_member(
+        &mut self,
+        class: DefId,
+        name: &str,
+        ty: &Type,
+        kind: DefKind,
+        location: Location,
+        initialized: bool,
+    ) -> DefId {
+        let id = self.push_def(Definition {
+            name: name.to_owned(),
+            ty: ty.clone(),
+            kind,
+            location,
+            owner: None,
+            initialized,
+            member_of: Some(class),
+            generated: false,
+        });
+        if let Some(info) = self.classes.get_mut(&class) {
+            info.members.insert(name.to_owned(), id);
+        }
+        self.any_member.entry(name.to_owned()).or_insert(id);
+        id
     }
 
     /// The parent of class `class`.
@@ -743,11 +744,11 @@ impl<'a> Resolver<'a> {
         if self.profile.name_use_checks()
             && name != "length"
             && let MemberBase::Name(base) = &use_.base
-            && let Some(def) = match scope {
-                Some(scope) => self.lookup_in_scope(scope, base),
-                None => self.lookup_used_global(base),
-            }
-            && self.facts.get(def.0).is_some_and(|f| f.array.is_some())
+            && let Some(def) = self.lookup(scope, base)
+            && self
+                .facts
+                .get(def.index())
+                .is_some_and(|f| f.array.is_some())
         {
             return Found::Error(Code::E0204, format!("expected length, found {name}"));
         }
@@ -778,10 +779,7 @@ impl<'a> Resolver<'a> {
                     .map_or(Found::Nothing, Found::Def),
             };
         }
-        let def = match scope {
-            Some(scope) => self.lookup_in_scope(scope, name),
-            None => self.lookup_used_global(name),
-        };
+        let def = self.lookup(scope, name);
         let field = def.filter(|d| self.index.def(*d).is_some_and(|d| d.ty.is_field()));
         if let Some(field) = field {
             return Found::Def(field);
@@ -813,18 +811,12 @@ impl<'a> Resolver<'a> {
                 scope.and_then(|s| s.class)
             }
             MemberBase::Name(name) => {
-                let def = match scope {
-                    Some(scope) => self.lookup_in_scope(scope, name),
-                    None => self.lookup_used_global(name),
-                }?;
+                let def = self.lookup(scope, name)?;
                 self.class_of(&self.index.def(def)?.ty)
             }
             MemberBase::Type(ty) => self.class_of(ty),
             MemberBase::Call(name) => {
-                let def = match scope {
-                    Some(scope) => self.lookup_in_scope(scope, name),
-                    None => self.lookup_used_global(name),
-                }?;
+                let def = self.lookup(scope, name)?;
                 match &self.index.def(def)?.ty {
                     Type::Function(func) => self.class_of(&func.ret),
                     _ => None,

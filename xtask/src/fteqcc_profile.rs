@@ -125,7 +125,7 @@ fn analyze(module: &Module, autoproto: bool, report: Report) -> Result<bool, Str
     db.set_autoproto(autoproto);
     for (index, file) in module.graph.files.iter().enumerate() {
         let text = fs::read(&file.path).map_err(|e| format!("{}: {e}", file.path.display()))?;
-        db.set_file(FileId(index), file.path.clone(), text);
+        db.set_file(FileId::new(index), file.path.clone(), text);
     }
     let analysis = db.analyze_module(&ModuleInput::from_module(module));
     let mut ok = true;
@@ -162,10 +162,10 @@ fn analyze(module: &Module, autoproto: bool, report: Report) -> Result<bool, Str
     }
     let index = &analysis.index;
     let locations = index
-        .defs
+        .defs()
         .iter()
         .map(|d| d.location)
-        .chain(index.refs.iter().map(|r| r.location));
+        .chain(index.refs().iter().map(|r| r.location));
     let outside = locations.filter(|&at| !in_source(&db, at)).count();
     if outside > 0 {
         ok = false;

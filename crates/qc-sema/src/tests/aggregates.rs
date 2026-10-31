@@ -18,12 +18,12 @@ fn messages(source: &str) -> Vec<(Code, String)> {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
     db.set_file(
-        FileId(0),
+        FileId::new(0),
         PathBuf::from("t.qc"),
         format!("{source}\n").into_bytes(),
     );
     let analysis = db.analyze_module(&ModuleInput {
-        compiled: vec![FileId(0)],
+        compiled: vec![FileId::new(0)],
         command_line: CommandLine::new::<&str>(&[]),
         ..ModuleInput::default()
     });
@@ -229,9 +229,13 @@ fn a_braced_elements_error_stands_at_its_brace() {
     let lines = |source: &str| -> Vec<usize> {
         let mut db = Db::new();
         db.set_dialect(Dialect::Fteqcc);
-        db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+        db.set_file(
+            FileId::new(0),
+            PathBuf::from("t.qc"),
+            source.as_bytes().to_vec(),
+        );
         db.analyze_module(&ModuleInput {
-            compiled: vec![FileId(0)],
+            compiled: vec![FileId::new(0)],
             command_line: CommandLine::new::<&str>(&[]),
             ..ModuleInput::default()
         })

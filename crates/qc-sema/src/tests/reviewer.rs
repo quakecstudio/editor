@@ -22,11 +22,11 @@ fn reviewer_goto_definition_covers_exactly_the_name() {
     let end = start + "health".len();
     let decl = nth_offset(source, "health", 0);
     for offset in [start, end - 1] {
-        let (_, location) = index.definition_at(FileId(0), offset).unwrap();
+        let (_, location) = index.definition_at(FileId::new(0), offset).unwrap();
         assert_eq!(location.span.start, decl, "{offset}");
     }
-    assert!(index.definition_at(FileId(0), start - 1).is_none());
-    assert!(index.definition_at(FileId(0), end).is_none());
+    assert!(index.definition_at(FileId::new(0), start - 1).is_none());
+    assert!(index.definition_at(FileId::new(0), end).is_none());
 }
 
 // spec QC-12.5: a position is looked up in its own file only: the same offset in another
@@ -37,9 +37,9 @@ fn reviewer_goto_definition_is_per_file() {
     let second = "void() g = { };";
     let index = module_index_of(&[first, second]);
     let offset = nth_offset(first, "health", 1);
-    assert!(index.definition_at(FileId(0), offset).is_some());
-    assert!(index.definition_at(FileId(1), offset).is_none());
-    assert!(index.references_at(FileId(1), offset, true).is_empty());
+    assert!(index.definition_at(FileId::new(0), offset).is_some());
+    assert!(index.definition_at(FileId::new(1), offset).is_none());
+    assert!(index.references_at(FileId::new(1), offset, true).is_empty());
 }
 
 // spec QC-10.10: function types compare structurally with parameter names excluded, also
@@ -86,17 +86,17 @@ fn reviewer_type_name_goes_through_a_pointer() {
 fn reviewer_file_paths_are_kept() {
     let mut db = Db::new();
     db.set_file(
-        FileId(0),
+        FileId::new(0),
         PathBuf::from("src/defs.qc"),
         b"float a;".to_vec(),
     );
-    db.set_file_text(FileId(1), b"float b;".to_vec());
+    db.set_file_text(FileId::new(1), b"float b;".to_vec());
     assert_eq!(
-        db.file_path(FileId(0)),
+        db.file_path(FileId::new(0)),
         Some(PathBuf::from("src/defs.qc").as_path())
     );
-    assert_eq!(db.file_path(FileId(1)), None);
-    assert_eq!(db.file_text(FileId(1)), b"float b;");
+    assert_eq!(db.file_path(FileId::new(1)), None);
+    assert_eq!(db.file_text(FileId::new(1)), b"float b;");
 }
 
 // spec FTEF-17.1: under the FTEQCC profile a member function's body finds the class's
@@ -107,7 +107,7 @@ fn reviewer_member_before_global() {
     let index = fte_index_of(source);
     assert!(index.diagnostics.is_empty(), "{:?}", index.diagnostics);
     let use_at = nth_offset(source, "hp", 2);
-    let (def, _) = index.definition_at(FileId(0), use_at).unwrap();
+    let (def, _) = index.definition_at(FileId::new(0), use_at).unwrap();
     assert!(index.def(def).unwrap().member_of.is_some());
 }
 
@@ -158,7 +158,7 @@ fn reviewer_deep_fteqcc_trees_resolve() {
     ] {
         let index = fte_index_of(&source);
         for d in &index.diagnostics {
-            assert_eq!(d.file, FileId(0));
+            assert_eq!(d.file, FileId::new(0));
             assert!(d.diagnostic.span.end <= source.len(), "{d:?}");
         }
     }
@@ -182,7 +182,7 @@ fn reviewer_many_locals_each_resolve_to_their_own() {
         for i in [0, 1000, n - 1] {
             let name = format!("l{i}");
             let use_at = nth_offset(&source, &format!("{name} ="), 0);
-            let (def, _) = index.definition_at(FileId(0), use_at).unwrap();
+            let (def, _) = index.definition_at(FileId::new(0), use_at).unwrap();
             assert_eq!(index.def(def).unwrap().name, name);
         }
     }
@@ -224,7 +224,7 @@ fn fte_module_errors(files: &[&str], autoproto: bool) -> Vec<(usize, qc_diag::Co
     db.set_autoproto(autoproto);
     let mut input = ModuleInput::default();
     for (index, text) in files.iter().enumerate() {
-        let id = FileId(index);
+        let id = FileId::new(index);
         db.set_file(
             id,
             PathBuf::from(format!("f{index}.qc")),
@@ -235,7 +235,7 @@ fn fte_module_errors(files: &[&str], autoproto: bool) -> Vec<(usize, qc_diag::Co
     db.analyze_module(&input)
         .diagnostics()
         .filter(|d| d.diagnostic.code.is_error())
-        .map(|d| (d.file.0, d.diagnostic.code))
+        .map(|d| (d.file.index(), d.diagnostic.code))
         .collect()
 }
 
@@ -353,14 +353,14 @@ fn fte_binding(defines: &str, use_: &str) -> (Vec<qc_diag::Code>, Option<(i32, S
     let mut db = Db::new();
     db.set_dialect(qc_syntax::Dialect::Fteqcc);
     db.set_file(
-        FileId(0),
+        FileId::new(0),
         PathBuf::from("t.qc"),
         format!("{defines}\nvoid() f = {use_};\n").into_bytes(),
     );
     let errors = db
         .analyze_module(&ModuleInput {
             prelude: Vec::new(),
-            compiled: vec![FileId(0)],
+            compiled: vec![FileId::new(0)],
             ..ModuleInput::default()
         })
         .diagnostics()
@@ -368,9 +368,9 @@ fn fte_binding(defines: &str, use_: &str) -> (Vec<qc_diag::Code>, Option<(i32, S
         .map(|d| d.diagnostic.code)
         .collect();
     let function = db
-        .expanded_decls(FileId(0))
+        .expanded_decls(FileId::new(0))
         .and_then(|decls| decls.decls.iter().find(|decl| decl.name == "f"))
-        .and_then(|decl| decl.literal.as_ref())
+        .and_then(|decl| decl.literal())
         .and_then(|literal| literal.builtin_function("f"))
         .map(|function| (function.number, function.name));
     (errors, function)

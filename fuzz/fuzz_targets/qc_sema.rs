@@ -24,18 +24,18 @@ use qc_syntax::Dialect;
 /// Whether `at` is a span inside the bytes of its file.
 fn inside(files: &[&[u8]], at: Location) -> bool {
     files
-        .get(at.file.0)
+        .get(at.file.index())
         .is_some_and(|text| at.span.start <= at.span.end && at.span.end <= text.len())
 }
 
 fn check_index(files: &[&[u8]], index: &ModuleIndex) {
-    for def in &index.defs {
+    for def in index.defs() {
         assert!(inside(files, def.location), "{def:?}");
     }
-    for reference in &index.refs {
+    for reference in index.refs() {
         assert!(inside(files, reference.location), "{reference:?}");
     }
-    for d in &index.diagnostics {
+    for d in index.diagnostics() {
         let at = Location { file: d.file, span: d.diagnostic.span };
         assert!(inside(files, at), "{d:?}");
     }
@@ -46,7 +46,7 @@ fn db_of(files: &[&[u8]], dialect: Dialect, autoproto: bool) -> Db {
     db.set_dialect(dialect);
     db.set_autoproto(autoproto);
     for (index, text) in files.iter().enumerate() {
-        db.set_file(FileId(index), PathBuf::from(format!("f{index}.qc")), text.to_vec());
+        db.set_file(FileId::new(index), PathBuf::from(format!("f{index}.qc")), text.to_vec());
     }
     db
 }
@@ -64,7 +64,7 @@ fuzz_target!(|data: &[u8]| {
         .filter_map(|(on, arg)| on.then_some(arg))
         .collect();
     let files: Vec<&[u8]> = rest.splitn(3, |b| *b == 0).collect();
-    let ids: Vec<FileId> = (0..files.len()).map(FileId).collect();
+    let ids: Vec<FileId> = (0..files.len()).map(FileId::new).collect();
     let input = ModuleInput {
         compiled: ids.clone(),
         command_line: CommandLine::new(&args),
@@ -93,9 +93,14 @@ fuzz_target!(|data: &[u8]| {
         ..ResolveOptions::default()
     };
     let resolved = resolve_module(&lowered, options);
+    let parsed: Vec<_> = parses
+        .iter()
+        .enumerate()
+        .map(|(index, parse)| (FileId::new(index), parse))
+        .collect();
     for engine in Engine::ALL {
         for kind in [ModuleKind::Ssqc, ModuleKind::Csqc, ModuleKind::Menuqc] {
-            for d in missing_builtins(engine, kind, &parses, &resolved, dialect) {
+            for d in missing_builtins(engine, kind, &parsed, &resolved, dialect) {
                 let at = Location { file: d.file, span: d.diagnostic.span };
                 assert!(inside(&files, at), "{d:?}");
             }
@@ -110,7 +115,7 @@ fuzz_target!(|data: &[u8]| {
         let mut text = files[(index + 1) % files.len()].to_vec();
         text.extend_from_slice(format!("\nfloat fuzz_edit_{index};\n").as_bytes());
         edited[index] = text.clone();
-        db.set_file(FileId(index), PathBuf::from(format!("f{index}.qc")), text);
+        db.set_file(FileId::new(index), PathBuf::from(format!("f{index}.qc")), text);
         let views: Vec<&[u8]> = edited.iter().map(Vec::as_slice).collect();
         let mut fresh = db_of(&views, dialect, autoproto);
         assert_eq!(db.module_index(&ids), fresh.module_index(&ids));

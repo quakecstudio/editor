@@ -95,14 +95,18 @@ fn compile(source: &str) -> Vec<u8> {
     let mut db = Db::new();
     let mut input = ModuleInput::default();
     for (i, (name, text)) in files.iter().enumerate() {
-        db.set_file(FileId(i), PathBuf::from(name), text.as_bytes().to_vec());
-        input.compiled.push(FileId(i));
+        db.set_file(
+            FileId::new(i),
+            PathBuf::from(name),
+            text.as_bytes().to_vec(),
+        );
+        input.compiled.push(FileId::new(i));
     }
     let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
     let compiled = compile_module(
         &mut db,
         &input,
-        |id| names[id.0].clone(),
+        |id| names[id.index()].clone(),
         Options::default(),
     )
     .unwrap_or_else(|e| panic!("{source:?} did not compile: {e:?}"));

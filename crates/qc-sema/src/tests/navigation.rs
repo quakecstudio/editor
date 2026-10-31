@@ -13,7 +13,7 @@ fn goto_definition_from_use() {
     // The use of `health` is its second occurrence.
     let use_offset = nth_offset(source, "health", 1);
     let (_, location) = index
-        .definition_at(FileId(0), use_offset)
+        .definition_at(FileId::new(0), use_offset)
         .expect("a definition");
     // It jumps to the declaration, the first occurrence.
     assert_eq!(location.span.start, nth_offset(source, "health", 0));
@@ -26,7 +26,7 @@ fn goto_definition_from_declaration() {
     let index = index_of(source);
     let decl_offset = nth_offset(source, "health", 0);
     let (def, location) = index
-        .definition_at(FileId(0), decl_offset)
+        .definition_at(FileId::new(0), decl_offset)
         .expect("a definition");
     assert_eq!(index.def(def).unwrap().name, "health");
     assert_eq!(location.span.start, decl_offset);
@@ -39,7 +39,7 @@ fn find_references_lists_all_uses() {
     let index = index_of(source);
     let decl_offset = nth_offset(source, "n", 0);
     let (def, _) = index
-        .definition_at(FileId(0), decl_offset)
+        .definition_at(FileId::new(0), decl_offset)
         .expect("a definition");
     // Uses of n in the body: `n = 1`, `n = n + 1` -> three uses.
     let without_decl = index.references(def, false);
@@ -58,7 +58,9 @@ fn find_references_respects_function_scope() {
     // The `t` of f: the name in its `local float t;`. Search from after "float " to avoid
     // the `t` inside the word "float".
     let f_local_decl = nth_offset(source, "local float t", 0) + "local float ".len();
-    let (f_def, _) = index.definition_at(FileId(0), f_local_decl).expect("f's t");
+    let (f_def, _) = index
+        .definition_at(FileId::new(0), f_local_decl)
+        .expect("f's t");
     let f_refs = index.references(f_def, false);
     // Only f's body uses t once (`t = 1`), which must be before g's local declaration.
     assert_eq!(f_refs.len(), 1);
@@ -72,12 +74,12 @@ fn use_of_reused_global_resolves_to_global() {
     let index = index_of(source);
     let decl_offset = nth_offset(source, "x", 0);
     let (global_def, _) = index
-        .definition_at(FileId(0), decl_offset)
+        .definition_at(FileId::new(0), decl_offset)
         .expect("the global x");
     // The use `x = 1` resolves to the same global.
     let use_offset = nth_offset(source, "x", 2);
     let (used_def, _) = index
-        .definition_at(FileId(0), use_offset)
+        .definition_at(FileId::new(0), use_offset)
         .expect("the use of x");
     assert_eq!(used_def, global_def);
 }
@@ -88,10 +90,14 @@ fn position_on_no_symbol() {
     let source = "float health;";
     let index = index_of(source);
     // Offset 0 is on `float`, not a name; and far past the end is nothing.
-    assert!(index.definition_at(FileId(0), source.len() + 100).is_none());
     assert!(
         index
-            .references_at(FileId(0), source.len() + 100, true)
+            .definition_at(FileId::new(0), source.len() + 100)
+            .is_none()
+    );
+    assert!(
+        index
+            .references_at(FileId::new(0), source.len() + 100, true)
             .is_empty()
     );
 }
@@ -105,19 +111,21 @@ fn a_name_covers_exactly_its_own_bytes() {
     let decl = nth_offset(source, "health", 0);
     let use_ = nth_offset(source, "health", 1);
     for offset in [decl, decl + 3, decl + 5, use_ + 3, use_ + 5] {
-        let (def, _) = index.definition_at(FileId(0), offset).expect("on health");
+        let (def, _) = index
+            .definition_at(FileId::new(0), offset)
+            .expect("on health");
         assert_eq!(index.def(def).unwrap().name, "health", "at {offset}");
     }
     for offset in [0, decl + 6, use_ + 6] {
         assert!(
-            index.definition_at(FileId(0), offset).is_none(),
+            index.definition_at(FileId::new(0), offset).is_none(),
             "at {offset}"
         );
     }
-    assert!(index.definition_at(FileId(1), use_).is_none());
-    let (other, _) = index.definition_at(FileId(1), 6).expect("on other");
+    assert!(index.definition_at(FileId::new(1), use_).is_none());
+    let (other, _) = index.definition_at(FileId::new(1), 6).expect("on other");
     assert_eq!(index.def(other).unwrap().name, "other");
-    assert!(index.references(DefId(99), true).is_empty());
+    assert!(index.references(DefId::new(99), true).is_empty());
 }
 
 // spec FTEF-10.2: an accessor body's `this` and `value` have empty spans at the member's
@@ -138,7 +146,7 @@ fn an_empty_span_covers_only_its_position() {
     );
     for offset in [0, nth_offset(source, "return", 0), source.len() - 1] {
         assert!(
-            index.definition_at(FileId(0), offset).is_none(),
+            index.definition_at(FileId::new(0), offset).is_none(),
             "at {offset}"
         );
     }
@@ -150,7 +158,7 @@ fn references_at_from_use() {
     let source = "float n;\nvoid() f = { n = 1; };";
     let index = index_of(source);
     let use_offset = nth_offset(source, "n", 1);
-    let refs = index.references_at(FileId(0), use_offset, true);
+    let refs = index.references_at(FileId::new(0), use_offset, true);
     assert_eq!(refs.len(), 2);
 }
 
@@ -163,7 +171,9 @@ fn a_redeclaration_names_its_definition() {
     let index = index_of(source);
     let prototype = nth_offset(source, "f", 0);
     let body = nth_offset(source, "f", 2);
-    let (def, location) = index.definition_at(FileId(0), body).expect("the prototype");
+    let (def, location) = index
+        .definition_at(FileId::new(0), body)
+        .expect("the prototype");
     assert_eq!(location.span.start, prototype);
     let starts: Vec<usize> = index
         .references(def, true)
@@ -182,7 +192,9 @@ fn a_mismatched_redeclaration_names_its_definition() {
     let source = "float x;\nstring x;";
     let index = index_of(source);
     let second = nth_offset(source, "x", 1);
-    let (def, location) = index.definition_at(FileId(0), second).expect("the first x");
+    let (def, location) = index
+        .definition_at(FileId::new(0), second)
+        .expect("the first x");
     assert_eq!(location.span.start, nth_offset(source, "x", 0));
     assert_eq!(index.redeclarations.len(), 1);
     assert_eq!(index.redeclarations[0].def, def);
@@ -196,7 +208,7 @@ fn a_replacing_declaration_is_no_redeclaration() {
     let index = fte_index_of(source);
     let third = nth_offset(source, "anglemod", 2);
     let (def, location) = index
-        .definition_at(FileId(0), third)
+        .definition_at(FileId::new(0), third)
         .expect("the new anglemod");
     assert_eq!(location.span.start, third);
     // The body redeclares the builtin; the third declaration redeclares nothing.

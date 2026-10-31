@@ -41,7 +41,7 @@ fn fte_module(files: &[&str], autoproto: bool) -> ModuleIndex {
         .iter()
         .enumerate()
         .map(|(index, text)| {
-            let id = FileId(index);
+            let id = FileId::new(index);
             db.set_file_text(id, text.as_bytes().to_vec());
             id
         })
@@ -225,9 +225,9 @@ fn locals_shadow_globals() {
     let use_of_light = index
         .refs
         .iter()
-        .find(|r| index.defs[r.def.0].name == "light")
+        .find(|r| index.defs[r.def.index()].name == "light")
         .unwrap();
-    assert_eq!(use_of_light.def.0, param);
+    assert_eq!(use_of_light.def.index(), param);
     // Vanilla reuses the global, so another type is a type mismatch (QC-12.3).
     assert_eq!(error_codes(&index_of(source)), [Code::E0205]);
     // A second declaration in one function is still that definition, or a mismatch.
@@ -291,9 +291,9 @@ fn autoprototyping_sees_later_declarations() {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
     for (index, text) in files.iter().enumerate() {
-        db.set_file_text(FileId(index), text.as_bytes().to_vec());
+        db.set_file_text(FileId::new(index), text.as_bytes().to_vec());
     }
-    let ids = [FileId(0), FileId(1)];
+    let ids = [FileId::new(0), FileId::new(1)];
     assert_eq!(error_codes(&db.module_index(&ids)).len(), 2);
     db.set_autoproto(true);
     assert!(error_codes(&db.module_index(&ids)).is_empty());
@@ -372,9 +372,9 @@ fn shadowing_vectors_have_components() {
     let used = index
         .refs
         .iter()
-        .find(|r| index.defs[r.def.0].name == "org_x")
+        .find(|r| index.defs[r.def.index()].name == "org_x")
         .unwrap();
-    assert_eq!(index.defs[used.def.0].kind, DefKind::Param);
+    assert_eq!(index.defs[used.def.index()].kind, DefKind::Param);
 }
 
 // spec FTEF-24.1: the selector is looked up as a value, so a local of its name hides the field:

@@ -158,7 +158,7 @@ pub fn compile(units: &[Unit<'_>], options: Options) -> Result<Compiled, Compile
         ..ResolveOptions::default()
     };
     compile_lowered(units, &decls, vanilla, options, |file, at| {
-        texts.get(file.0).map_or(0, |text| line_at(text, at))
+        texts.get(file.index()).map_or(0, |text| line_at(text, at))
     })
 }
 
@@ -174,11 +174,11 @@ fn compile_lowered(
     let mut errors: Vec<FileDiagnostic> = Vec::new();
     for (i, unit) in units.iter().enumerate() {
         errors.extend(unit.parse.diagnostics().iter().map(|d| FileDiagnostic {
-            file: FileId(i),
+            file: FileId::new(i),
             diagnostic: d.clone(),
         }));
     }
-    errors.extend(index.diagnostics.iter().cloned());
+    errors.extend(index.diagnostics().iter().cloned());
     let (errors, warnings): (Vec<_>, Vec<_>) = errors
         .into_iter()
         .partition(|d| d.diagnostic.code.severity() == Severity::Error);
@@ -193,7 +193,7 @@ fn compile_lowered(
     if resolve.dialect.has_fteqcc_extensions() && resolve.autoproto {
         for (i, unit) in units.iter().enumerate() {
             compiler
-                .prototype_file(FileId(i), unit.parse)
+                .prototype_file(FileId::new(i), unit.parse)
                 .map_err(|(internal, file, span)| CompileError::Internal {
                     file,
                     span,
@@ -206,7 +206,7 @@ fn compile_lowered(
     }
     for (i, unit) in units.iter().enumerate() {
         compiler
-            .compile_file(FileId(i), unit.name, unit.parse)
+            .compile_file(FileId::new(i), unit.name, unit.parse)
             .map_err(|(internal, file, span)| CompileError::Internal {
                 file,
                 span,
@@ -238,7 +238,7 @@ fn compile_lowered(
     };
     let mut progs = write::progs(compiler.program, crc, &index, records).map_err(|internal| {
         CompileError::Internal {
-            file: FileId(0),
+            file: FileId::new(0),
             span: Span::new(0, 0),
             internal,
         }
@@ -311,7 +311,7 @@ pub fn compile_module(
     }
     let mut compiled = compile_lowered(&units, &decls, analysis.options, options, |file, at| {
         // QC-27.19: the line in the source file the expansion's text came from (QC-9.7).
-        let id = input.compiled.get(file.0).copied().unwrap_or(file);
+        let id = input.compiled.get(file.index()).copied().unwrap_or(file);
         let (source, at) = db
             .expanded_origins(id)
             .and_then(|origins| origins.locate(Span::new(at, at)))
@@ -327,7 +327,7 @@ pub fn compile_module(
 /// `error` with each file and span of a unit's text located in its source file (QC-9.7).
 fn locate(db: &Db, input: &ModuleInput, error: CompileError) -> CompileError {
     let at = |file: FileId, span: Span| {
-        let id = input.compiled.get(file.0).copied().unwrap_or(file);
+        let id = input.compiled.get(file.index()).copied().unwrap_or(file);
         db.expanded_origins(id)
             .and_then(|origins| origins.locate(span))
             .map_or((id, span), |location| (location.file, location.span))

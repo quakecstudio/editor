@@ -34,7 +34,7 @@ fn analysed(source: &str, args: &[&str]) -> Vec<(Code, String)> {
 }
 
 /// The one file these tests read.
-const FILE: FileId = FileId(0);
+const FILE: FileId = FileId::new(0);
 
 /// The codes of the errors of the FTEQCC files `sources`, one module in that order.
 fn module_errors(sources: &[&str]) -> Vec<(FileId, Code)> {
@@ -42,7 +42,7 @@ fn module_errors(sources: &[&str]) -> Vec<(FileId, Code)> {
     db.set_dialect(Dialect::Fteqcc);
     let mut compiled = Vec::new();
     for (at, source) in sources.iter().enumerate() {
-        let id = FileId(at);
+        let id = FileId::new(at);
         db.set_file(
             id,
             PathBuf::from(format!("f{at}.qc")),
@@ -409,10 +409,13 @@ fn a_blocks_lexical_diagnostics() {
     );
     let block = format!("{off}extern \"QC\" {{ string s = \"\\9\"; }}\n");
     let after = format!("{block}string t = \"\\9\";\n");
-    assert_eq!(module_errors(&[&after]), [(FileId(0), Code::E0103)]);
+    assert_eq!(module_errors(&[&after]), [(FileId::new(0), Code::E0103)]);
     let at = block.find("\"\\9").unwrap();
     let other = format!("{}string u = \"\\9\";\n", " ".repeat(at - 11));
-    assert_eq!(module_errors(&[&block, &other]), [(FileId(1), Code::E0103)]);
+    assert_eq!(
+        module_errors(&[&block, &other]),
+        [(FileId::new(1), Code::E0103)]
+    );
 }
 
 // spec FTEF-21.17: `QCC_PR_LexString` joins the parts of a string written in one text, so a

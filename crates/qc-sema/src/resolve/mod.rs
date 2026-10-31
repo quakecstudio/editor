@@ -28,7 +28,6 @@
 //! redeclaration rules.
 
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
 
 use qc_diag::{Code, Diagnostic, Span};
 use qc_preproc::{OpcodeTarget, TargetFormat, WarningSettings};
@@ -44,7 +43,7 @@ use crate::lower::{
     RawUse, StructMember,
 };
 use crate::symbol::{DefId, Definition, FileId, Location, Reference};
-use crate::ty::{SimpleType, Type};
+use crate::ty::Type;
 
 use profile::Profile;
 
@@ -69,15 +68,18 @@ pub struct FileDiagnostic {
     pub diagnostic: Diagnostic,
 }
 
-/// Builds a [`FileDiagnostic`] at `location`.
-fn diag(code: Code, location: Location, message: String) -> FileDiagnostic {
-    FileDiagnostic {
-        file: location.file,
-        diagnostic: Diagnostic {
-            code,
-            message,
-            span: location.span,
-        },
+impl FileDiagnostic {
+    /// The diagnostic `code` with `message` at `location`.
+    #[must_use]
+    pub const fn new(code: Code, location: Location, message: String) -> Self {
+        Self {
+            file: location.file,
+            diagnostic: Diagnostic {
+                code,
+                message,
+                span: location.span,
+            },
+        }
     }
 }
 
@@ -88,33 +90,33 @@ fn diag(code: Code, location: Location, message: String) -> FileDiagnostic {
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct ModuleIndex {
     /// Every definition, in declaration order (QC-12.2). A [`DefId`] indexes this.
-    pub defs: Vec<Definition>,
+    pub(crate) defs: Vec<Definition>,
     /// Every resolved name use, in source order (QC-12.5).
-    pub refs: Vec<Reference>,
+    pub(crate) refs: Vec<Reference>,
     /// Every global declaration after the first of a name, each naming the definition it
     /// declares again (QC-11.5): a function's body after its prototype, or a second
     /// `float x;`. In declaration order. Find-references lists them with the declaration.
-    pub redeclarations: Vec<Reference>,
+    pub(crate) redeclarations: Vec<Reference>,
     /// The semantic diagnostics, in the order found, each with its file.
-    pub diagnostics: Vec<FileDiagnostic>,
+    pub(crate) diagnostics: Vec<FileDiagnostic>,
     /// Each function body's types, by the function's definition (`crate::check`).
-    pub bodies: HashMap<DefId, TypedBody>,
+    pub(crate) bodies: HashMap<DefId, TypedBody>,
     /// What each global whose initialiser is an expression, not a literal, folds to under an
     /// FTEQCC profile (FTEF-34.9), and each enum's item whose value the model computes
     /// (FTEF-19.10), which a compiler writes to the global's words.
-    pub initial_values: HashMap<DefId, InitialValue>,
+    pub(crate) initial_values: HashMap<DefId, InitialValue>,
     /// The elements of each array definition whose size the model knows, `arraysize`
     /// (FTEF-19.8): a written number, or the count of an unsized array's initialiser.
-    pub arrays: HashMap<DefId, u32>,
+    pub(crate) arrays: HashMap<DefId, u32>,
     /// The layout of each struct or union type a definition, or a member of another, is
     /// written with, by the type as written (FTEF-6.13), when the model lays it out.
-    pub structs: HashMap<Type, StructShape>,
+    pub(crate) structs: HashMap<Type, StructShape>,
     /// The type each named type a definition is written with stands for, when it is another:
     /// a typedef's, or an enum's base type (FTEF-7.2, FTEF-19.10).
-    pub aliases: HashMap<Type, Type>,
+    pub(crate) aliases: HashMap<Type, Type>,
     /// The definitions FTEQCC holds constant, `def->constant` (FTEF-19.3): an initialised
     /// global that is no `var`, an enum's item, a function.
-    pub constants: HashSet<DefId>,
+    pub(crate) constants: HashSet<DefId>,
 }
 
 /// A struct's or union's layout as FTEQCC places it (FTEF-6.13): the words it takes and where
@@ -163,7 +165,78 @@ impl ModuleIndex {
     /// The definition a [`DefId`] names.
     #[must_use]
     pub fn def(&self, id: DefId) -> Option<&Definition> {
-        self.defs.get(id.0)
+        self.defs.get(id.index())
+    }
+
+    /// Every definition, in declaration order (QC-12.2); a [`DefId`] is a position in it.
+    #[must_use]
+    pub fn defs(&self) -> &[Definition] {
+        &self.defs
+    }
+
+    /// Every definition with its [`DefId`], in declaration order (QC-12.2).
+    pub fn definitions(&self) -> impl Iterator<Item = (DefId, &Definition)> {
+        self.defs
+            .iter()
+            .enumerate()
+            .map(|(index, def)| (DefId::new(index), def))
+    }
+
+    /// Every resolved name use, in source order (QC-12.5).
+    #[must_use]
+    pub fn refs(&self) -> &[Reference] {
+        &self.refs
+    }
+
+    /// Every global declaration after the first of a name, in declaration order (QC-11.5).
+    #[must_use]
+    pub fn redeclarations(&self) -> &[Reference] {
+        &self.redeclarations
+    }
+
+    /// The semantic diagnostics, in the order found, each with its file.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[FileDiagnostic] {
+        &self.diagnostics
+    }
+
+    /// The types of the body of the function `def`, when it has one (`crate::check`).
+    #[must_use]
+    pub fn body(&self, def: DefId) -> Option<&TypedBody> {
+        self.bodies.get(&def)
+    }
+
+    /// What the initialiser of `def` folds to, when it is an expression the model folds or an
+    /// enum's item (FTEF-34.9, FTEF-19.10).
+    #[must_use]
+    pub fn initial_value(&self, def: DefId) -> Option<&InitialValue> {
+        self.initial_values.get(&def)
+    }
+
+    /// The elements of the array `def`, when the model knows its size (FTEF-19.8).
+    #[must_use]
+    pub fn array_len(&self, def: DefId) -> Option<u32> {
+        self.arrays.get(&def).copied()
+    }
+
+    /// The layout of the struct or union type `ty` as written, when the model lays it out
+    /// (FTEF-6.13).
+    #[must_use]
+    pub fn struct_shape(&self, ty: &Type) -> Option<&StructShape> {
+        self.structs.get(ty)
+    }
+
+    /// The type the named type `ty` stands for, when it is another: a typedef's, or an enum's
+    /// base type (FTEF-7.2, FTEF-19.10).
+    #[must_use]
+    pub fn alias(&self, ty: &Type) -> Option<&Type> {
+        self.aliases.get(ty)
+    }
+
+    /// Whether FTEQCC holds `def` constant, `def->constant` (FTEF-19.3).
+    #[must_use]
+    pub fn is_constant(&self, def: DefId) -> bool {
+        self.constants.contains(&def)
     }
 }
 
@@ -200,21 +273,9 @@ pub fn resolve_module(files: &[FileDecls], options: ResolveOptions) -> ModuleInd
 /// What [`resolve_mapped`] knows of where the files' declarations came from.
 #[derive(Default)]
 pub(crate) struct Sources<'a> {
-    /// For each entry of the files, where each span of its rendered text came from (QC-9.7).
-    /// With none a span is in the file of its entry.
-    pub(crate) maps: &'a [&'a OriginMap],
-    /// For each entry, under FTEQCC, the warning settings and the offsets they hold from
-    /// (FTEF-19.22).
-    pub(crate) warnings: &'a [&'a [(usize, WarningSettings)]],
-    /// For each entry, the keywords its parser read each token with, from each offset
-    /// (FTEF-20.1).
-    pub(crate) keywords: &'a [&'a [(usize, Keywords)]],
-    /// For each entry, under FTEQCC, the output target and the opcodes it has, and the offsets
-    /// they hold from (FTEF-25).
-    pub(crate) targets: &'a [&'a [(usize, OpcodeTarget)]],
-    /// For each entry, under FTEQCC, the file name and line offset FTEQCC's messages give, from
-    /// each offset (FTEF-14.43).
-    pub(crate) message_places: &'a [&'a [(usize, String, i64)]],
+    /// For each entry of the files, what was read with it. With none a span is in the file of
+    /// its entry.
+    pub(crate) files: &'a [FileSource<'a>],
     /// The source files whose name ends in `extensions.qc`, where FTEQCC keeps a function's
     /// first declaration (FTEF-19.7).
     pub(crate) extensions: HashSet<FileId>,
@@ -264,12 +325,25 @@ impl FilePlace {
 pub(crate) struct FirstPass<'a> {
     /// The lowered declarations of each compiled file.
     pub(crate) files: &'a [FileDecls],
-    /// Where each span of each file's rendered text came from.
-    pub(crate) maps: &'a [&'a OriginMap],
-    /// The warning settings of each file.
-    pub(crate) warnings: &'a [&'a [(usize, WarningSettings)]],
-    /// The keywords of each file.
-    pub(crate) keywords: &'a [&'a [(usize, Keywords)]],
+    /// What was read with each file, as the first pass read it.
+    pub(crate) sources: &'a [FileSource<'a>],
+}
+
+/// What resolution reads of one compiled file besides its declarations.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct FileSource<'a> {
+    /// Where each span of its rendered text came from (QC-9.7).
+    pub(crate) origins: Option<&'a OriginMap>,
+    /// Under FTEQCC, the warning settings and the offsets they hold from (FTEF-19.22).
+    pub(crate) warnings: &'a [(usize, WarningSettings)],
+    /// The keywords its parser read each token with, from each offset (FTEF-20.1).
+    pub(crate) keywords: &'a [(usize, Keywords)],
+    /// Under FTEQCC, the output target and the opcodes it has, and the offsets they hold from
+    /// (FTEF-25).
+    pub(crate) targets: &'a [(usize, OpcodeTarget)],
+    /// Under FTEQCC, the file name and line offset FTEQCC's messages give, from each offset
+    /// (FTEF-14.43).
+    pub(crate) message_places: &'a [(usize, String, i64)],
 }
 
 /// A function body waiting to be resolved: its file, its function, its class and the
@@ -338,21 +412,17 @@ pub(crate) fn resolve_mapped(
     let mut r = Resolver {
         index: ModuleIndex::default(),
         temps: Temps::default(),
-        maps: sources.maps,
+        sources: sources.files,
         places: &sources.places,
-        warnings: sources.warnings,
         settings: None,
-        keyword_marks: sources.keywords,
         keywords: Keywords::default(),
-        targets: sources.targets,
-        message_places: sources.message_places,
         extensions: &sources.extensions,
         profile,
         use_defs: HashMap::new(),
         autoproto: false,
         externs: HashSet::new(),
         enclosing: HashMap::new(),
-        unit: FileId(0),
+        unit: FileId::new(0),
         facts: Vec::new(),
         globals: HashMap::new(),
         literals: HashMap::new(),
@@ -391,13 +461,9 @@ pub(crate) fn resolve_mapped(
         // the bodies, finds every top-level name already declared.
         match &sources.first {
             Some(first) => {
-                r.maps = first.maps;
-                r.warnings = first.warnings;
-                r.keyword_marks = first.keywords;
+                r.sources = first.sources;
                 r.pass(first.files, &prototyped, false);
-                r.maps = sources.maps;
-                r.warnings = sources.warnings;
-                r.keyword_marks = sources.keywords;
+                r.sources = sources.files;
             }
             None => r.pass(files, &prototyped, false),
         }
@@ -533,24 +599,14 @@ struct Resolver<'a> {
     index: ModuleIndex,
     /// FTEQCC's temporaries, across the module's functions (FTEF-27.16).
     temps: Temps,
-    /// Where the spans of each file's rendered text came from; empty when the files were
-    /// parsed as written.
-    maps: &'a [&'a OriginMap],
+    /// What was read with each compiled file; empty when the files were parsed as written.
+    sources: &'a [FileSource<'a>],
     /// Each source file's name and lines.
     places: &'a HashMap<FileId, FilePlace>,
-    /// For each compiled file, the warning settings and the offsets they hold from
-    /// (FTEF-19.22).
-    warnings: &'a [&'a [(usize, WarningSettings)]],
     /// Under FTEQCC, the warning settings in force where the resolver reads (FTEF-19.22).
     settings: Option<WarningSettings>,
-    /// For each compiled file, the keywords its parser read each token with (FTEF-20.1).
-    keyword_marks: &'a [&'a [(usize, Keywords)]],
     /// The keywords in force where the resolver reads (FTEF-20.1).
     keywords: Keywords,
-    /// For each compiled file, the output target and the opcodes it has (FTEF-25).
-    targets: &'a [&'a [(usize, OpcodeTarget)]],
-    /// For each compiled file, the file name and line offset FTEQCC's messages give (FTEF-14.43).
-    message_places: &'a [&'a [(usize, String, i64)]],
     /// The source files named `*extensions.qc` (FTEF-19.7).
     extensions: &'a HashSet<FileId>,
     /// The dialect profile and its rules.
@@ -655,23 +711,6 @@ const MISDECLARED_BUILTINS: [&str; 3] = ["droptofloor", "callfunction", "trailpa
 /// The functions a body may replace a builtin of with a warning, not an error (FTEF-19.57).
 const REPLACEABLE_BUILTINS: [&str; 2] = ["anglemod", "crossproduct"];
 
-/// The type of each component of a definition of type `ty`: `float` for a `vector`, `.float`
-/// for a `.vector` field (QC-11.7); `None` for any other type.
-fn component_type(ty: &Type) -> Option<Type> {
-    match ty {
-        Type::Simple(SimpleType::Vector) => Some(Type::Simple(SimpleType::Float)),
-        Type::Field(inner) if **inner == Type::Simple(SimpleType::Vector) => {
-            Some(Type::Field(Rc::new(Type::Simple(SimpleType::Float))))
-        }
-        Type::Unknown
-        | Type::Simple(_)
-        | Type::Field(_)
-        | Type::Function(_)
-        | Type::Named(_)
-        | Type::Pointer(_) => None,
-    }
-}
-
 /// Words FTEQCC reads as part of an expression rather than as names a program defines, when
 /// no definition has the name: `this` and `super` in a member function, `prior` in a `__wrap`
 /// function, and the intrinsics `QCC_PR_ParseRefValue` declares on demand (FTEF-17.4,
@@ -696,9 +735,45 @@ fn is_intrinsic(name: &str) -> bool {
     )
 }
 
-/// The initialiser of a declaration, as redeclaration sees it (QC-11.5, FTE-22.6): `None`
-/// when there is none, and otherwise its value when it is a single literal.
-type Init<'a> = Option<Option<&'a LiteralValue>>;
+/// The initialiser of a declaration, as redeclaration sees it (QC-11.5, FTE-22.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::resolve) enum Init<'a> {
+    /// It has none.
+    Uninitialized,
+    /// It has one whose value FTEQCC does not compare: an expression, an aggregate, a body,
+    /// or any under the vanilla profile (QCD-3.6).
+    Opaque,
+    /// It has a single literal value.
+    Literal(&'a LiteralValue),
+}
+
+impl<'a> Init<'a> {
+    /// The initialiser of a declaration that is `initialized`, with `literal` its value when
+    /// it is a literal.
+    pub(in crate::resolve) const fn of(
+        initialized: bool,
+        literal: Option<&'a LiteralValue>,
+    ) -> Self {
+        match (initialized, literal) {
+            (false, _) => Self::Uninitialized,
+            (true, None) => Self::Opaque,
+            (true, Some(literal)) => Self::Literal(literal),
+        }
+    }
+
+    /// Whether the declaration has an initialiser.
+    pub(in crate::resolve) const fn is_initialized(self) -> bool {
+        !matches!(self, Self::Uninitialized)
+    }
+
+    /// The literal value, when it is one.
+    pub(in crate::resolve) const fn literal(self) -> Option<&'a LiteralValue> {
+        match self {
+            Self::Literal(literal) => Some(literal),
+            Self::Uninitialized | Self::Opaque => None,
+        }
+    }
+}
 
 /// Whether two function types' parameter lists are the same under FTEQCC's `typecmp`, beside
 /// the types the model compares: two default values, where both have one, must be equal
@@ -745,7 +820,7 @@ impl<'a> Resolver<'a> {
     fn pass(&mut self, files: &'a [FileDecls], prototyped: &'a [Vec<Option<RawDecl>>], last: bool) {
         self.enum_next = EnumCursor::Start;
         for (index, file) in files.iter().enumerate() {
-            let file_id = FileId(index);
+            let file_id = FileId::new(index);
             self.unit = file_id;
             if last {
                 for d in &file.diagnostics {
@@ -861,11 +936,21 @@ impl<'a> Resolver<'a> {
     }
 }
 
+/// Where a definition being declared comes from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::resolve) enum Origin {
+    /// A declaration in the source.
+    #[default]
+    Source,
+    /// A component `_x`, `_y` or `_z` of a vector being declared (QC-11.7).
+    Component,
+}
+
 /// What FTEQCC's rules read of a declaration when they make or redeclare its definition.
 #[derive(Default)]
 struct DeclFacts<'d> {
-    /// A vector's component (QC-11.7).
-    component: bool,
+    /// Where it comes from.
+    origin: Origin,
     /// Whether the caller made the type and array checks of a redeclaration already.
     checked: bool,
     /// `GDF_CONST` (FTEF-19.3).
@@ -883,8 +968,8 @@ struct DeclFacts<'d> {
 /// What FTEQCC's rules read of a parameter or local.
 #[derive(Clone, Copy, Default)]
 struct ScopedFacts {
-    /// A vector's component (QC-11.7).
-    component: bool,
+    /// Where it comes from.
+    origin: Origin,
     /// The first array dimension (FTEF-19.8).
     array: Option<ArrayDim>,
     /// `static` (FTEF-19.12).

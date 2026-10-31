@@ -254,7 +254,7 @@ impl<'a> Resolver<'a> {
                 if matches!(supply, Supply::Explicit | Supply::Mismatch) {
                     return None;
                 }
-                let constant = self.facts.get(def.0).is_some_and(|f| f.constant)
+                let constant = self.facts.get(def.index()).is_some_and(|f| f.constant)
                     && self.index.def(def).is_some_and(|d| d.initialized);
                 if !constant {
                     self.report(

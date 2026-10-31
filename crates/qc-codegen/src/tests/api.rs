@@ -23,7 +23,7 @@ fn errors_are_located_in_the_source() {
     assert_eq!(d.len(), 1);
     let span = d[0].diagnostic.span;
     assert_eq!(&source[span.start..span.end], "=");
-    assert_eq!(d[0].file, FileId(0));
+    assert_eq!(d[0].file, FileId::new(0));
 }
 
 #[test]
@@ -32,12 +32,12 @@ fn the_vanilla_and_fteqcc_dialects_are_compiled_and_gmqcc_is_not() {
         let mut db = Db::new();
         db.set_dialect(dialect);
         db.set_file(
-            FileId(0),
+            FileId::new(0),
             PathBuf::from("t.qc"),
             b"void() f = {};\n".to_vec(),
         );
         let input = ModuleInput {
-            compiled: vec![FileId(0)],
+            compiled: vec![FileId::new(0)],
             ..ModuleInput::default()
         };
         compile_module(&mut db, &input, |_| "t.qc".to_owned(), Options::default())

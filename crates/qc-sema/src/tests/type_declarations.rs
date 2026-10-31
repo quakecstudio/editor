@@ -22,12 +22,12 @@ fn errors(source: &str, args: &[&str]) -> Vec<Code> {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
     db.set_file(
-        FileId(0),
+        FileId::new(0),
         PathBuf::from("t.qc"),
         format!("void() f = #5;\n{source}\n").into_bytes(),
     );
     let analysis = db.analyze_module(&ModuleInput {
-        compiled: vec![FileId(0)],
+        compiled: vec![FileId::new(0)],
         command_line: CommandLine::new(args),
         ..ModuleInput::default()
     });
@@ -267,6 +267,15 @@ fn a_value_is_not_called() {
     }
 }
 
+// No spec statement: FTEF-19.41 is silent on a `var` member function, which the resolver keeps
+// as a field of function type that no body defines, so it has none to miss; `__var` is the same.
+#[test]
+fn a_var_member_function_needs_no_body() {
+    for source in ["class C { var void() m; };", "class C { __var void() m; };"] {
+        assert_eq!(errors(source, &[]), [], "{source}");
+    }
+}
+
 // spec FTEF-19.41: a function with no body is one whether a global or a member, and a typedef
 // of a function type names one
 #[test]
@@ -373,9 +382,13 @@ fn a_parameter_list_after_a_body_makes_a_function() {
     let warnings = |source: &str| -> Vec<Code> {
         let mut db = Db::new();
         db.set_dialect(Dialect::Fteqcc);
-        db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+        db.set_file(
+            FileId::new(0),
+            PathBuf::from("t.qc"),
+            source.as_bytes().to_vec(),
+        );
         db.analyze_module(&ModuleInput {
-            compiled: vec![FileId(0)],
+            compiled: vec![FileId::new(0)],
             command_line: CommandLine::new::<&str>(&[]),
             ..ModuleInput::default()
         })
@@ -1149,9 +1162,13 @@ fn illegal_jumps_name_their_function() {
     let messages = |source: &str| -> Vec<String> {
         let mut db = Db::new();
         db.set_dialect(Dialect::Fteqcc);
-        db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+        db.set_file(
+            FileId::new(0),
+            PathBuf::from("t.qc"),
+            source.as_bytes().to_vec(),
+        );
         db.analyze_module(&ModuleInput {
-            compiled: vec![FileId(0)],
+            compiled: vec![FileId::new(0)],
             command_line: CommandLine::new::<&str>(&[]),
             ..ModuleInput::default()
         })
@@ -1181,10 +1198,14 @@ fn a_structs_redeclaration_stands_at_its_tag() {
                   struct\nS : Q { float d; };\n";
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
-    db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+    db.set_file(
+        FileId::new(0),
+        PathBuf::from("t.qc"),
+        source.as_bytes().to_vec(),
+    );
     let found: Vec<(Code, usize)> = db
         .analyze_module(&ModuleInput {
-            compiled: vec![FileId(0)],
+            compiled: vec![FileId::new(0)],
             command_line: CommandLine::new::<&str>(&[]),
             ..ModuleInput::default()
         })
@@ -1205,9 +1226,13 @@ fn stripped_arms_leave_no_illegal_jumps() {
     let messages = |source: &str| -> Vec<String> {
         let mut db = Db::new();
         db.set_dialect(Dialect::Fteqcc);
-        db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+        db.set_file(
+            FileId::new(0),
+            PathBuf::from("t.qc"),
+            source.as_bytes().to_vec(),
+        );
         db.analyze_module(&ModuleInput {
-            compiled: vec![FileId(0)],
+            compiled: vec![FileId::new(0)],
             command_line: CommandLine::new::<&str>(&[]),
             ..ModuleInput::default()
         })
@@ -1241,9 +1266,13 @@ fn struct_members_that_declare_nothing() {
     let messages = |source: &str| -> Vec<(Code, String)> {
         let mut db = Db::new();
         db.set_dialect(Dialect::Fteqcc);
-        db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+        db.set_file(
+            FileId::new(0),
+            PathBuf::from("t.qc"),
+            source.as_bytes().to_vec(),
+        );
         db.analyze_module(&ModuleInput {
-            compiled: vec![FileId(0)],
+            compiled: vec![FileId::new(0)],
             command_line: CommandLine::new::<&str>(&[]),
             ..ModuleInput::default()
         })

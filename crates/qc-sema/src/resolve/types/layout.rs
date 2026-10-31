@@ -241,10 +241,10 @@ impl Resolver<'_> {
         let mut pending = Vec::new();
         for (i, def) in self.index.defs.iter().enumerate() {
             if let Some(ArrayDim::Sized(count)) = self.facts.get(i).and_then(|f| f.array) {
-                self.index.arrays.insert(DefId(i), count);
+                self.index.arrays.insert(DefId::new(i), count);
             }
             if self.facts.get(i).is_some_and(|f| f.constant) {
-                self.index.constants.insert(DefId(i));
+                self.index.constants.insert(DefId::new(i));
             }
             pending.push(def.ty.clone());
         }

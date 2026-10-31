@@ -30,9 +30,13 @@ fn analysed(source: &str, args: &[&str]) -> Vec<(Code, String)> {
 fn analyse(source: &str, args: &[&str]) -> (Db, Vec<(Code, String)>, crate::ModuleIndex) {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
-    db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+    db.set_file(
+        FileId::new(0),
+        PathBuf::from("t.qc"),
+        source.as_bytes().to_vec(),
+    );
     let analysis = db.analyze_module(&ModuleInput {
-        compiled: vec![FileId(0)],
+        compiled: vec![FileId::new(0)],
         command_line: CommandLine::new(args),
         ..ModuleInput::default()
     });
@@ -132,9 +136,9 @@ fn warning_codes_are_fteqcc_warnings() {
 fn engine_names_are_read_with_the_flags() {
     let name = |source: &str| {
         let (db, _, _) = analyse(source, &[]);
-        let decls = db.expanded_decls(FileId(0)).unwrap();
+        let decls = db.expanded_decls(FileId::new(0)).unwrap();
         let decl = decls.decls.iter().find(|d| d.name == "f").unwrap();
-        match &decl.literal {
+        match &decl.literal() {
             Some(LiteralValue::Builtin { name, .. }) => name.clone(),
             other => panic!("{other:?}"),
         }
@@ -187,7 +191,7 @@ fn case_insensitive_names() {
         .defs
         .iter()
         .position(|d| d.name == "Foo")
-        .map(DefId)
+        .map(DefId::new)
         .unwrap();
     assert_eq!(index.refs.iter().filter(|r| r.def == foo).count(), 1);
     assert_eq!(
@@ -203,7 +207,7 @@ fn case_insensitive_names() {
         .defs
         .iter()
         .position(|d| d.name == "FOO")
-        .map(DefId)
+        .map(DefId::new)
         .unwrap();
     assert!(index.refs.iter().any(|r| r.def == exact));
     // A local before a global.
@@ -215,7 +219,7 @@ fn case_insensitive_names() {
         .defs
         .iter()
         .position(|d| d.name == "Foo")
-        .map(DefId)
+        .map(DefId::new)
         .unwrap();
     assert!(index.refs.iter().any(|r| r.def == local));
     assert_eq!(codes("float Foo;\nstring foo;\n", &["-Fcaseinsens"]), []);
@@ -255,27 +259,31 @@ fn a_module_source_is_parsed_past_its_hash_bang() {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
     db.set_file(
-        FileId(0),
+        FileId::new(0),
         PathBuf::from("progs.src"),
         b"#!/usr/bin/fteqcc\nfloat x;\n".to_vec(),
     );
-    db.set_file(FileId(1), PathBuf::from("t.qc"), b"float y;\n".to_vec());
-    let before = db.parse(FileId(0));
+    db.set_file(
+        FileId::new(1),
+        PathBuf::from("t.qc"),
+        b"float y;\n".to_vec(),
+    );
+    let before = db.parse(FileId::new(0));
     db.analyze_module(&ModuleInput {
-        prelude: vec![FileId(0)],
-        compiled: vec![FileId(1)],
+        prelude: vec![FileId::new(0)],
+        compiled: vec![FileId::new(1)],
         ..ModuleInput::default()
     });
-    let after = db.parse(FileId(0));
+    let after = db.parse(FileId::new(0));
     assert!(after.diagnostics().is_empty(), "{:?}", after.diagnostics());
     assert_ne!(before.diagnostics().len(), 0);
-    assert_eq!(db.parse(FileId(1)).diagnostics().len(), 0);
+    assert_eq!(db.parse(FileId::new(1)).diagnostics().len(), 0);
     // A file the prelude no longer names is a plain file again.
     db.analyze_module(&ModuleInput {
-        compiled: vec![FileId(1)],
+        compiled: vec![FileId::new(1)],
         ..ModuleInput::default()
     });
-    assert_ne!(db.parse(FileId(0)).diagnostics().len(), 0);
+    assert_ne!(db.parse(FileId::new(0)).diagnostics().len(), 0);
 }
 
 // spec FTEF-19.28: with `qcfuncs` off on the command line, `string`, `vector` and `entity` are no

@@ -13,7 +13,7 @@ use crate::symbol::DefId;
 
 /// The definition named `name`, the first if there are several.
 fn def_named(index: &ModuleIndex, name: &str) -> DefId {
-    DefId(index.defs.iter().position(|d| d.name == name).unwrap())
+    DefId::new(index.defs.iter().position(|d| d.name == name).unwrap())
 }
 
 /// The number of references to the definition named `name`.
@@ -110,7 +110,12 @@ fn a_member_selector_reports_an_unknown_name() {
 fn vector_members_are_not_references() {
     let index = fte_index_of("vector v;\nvoid() f = { v.x = v.y + v.z; };\n");
     assert!(unknown(&index).is_empty(), "{:?}", unknown(&index));
-    assert!(index.refs.iter().all(|r| index.defs[r.def.0].name == "v"));
+    assert!(
+        index
+            .refs
+            .iter()
+            .all(|r| index.defs[r.def.index()].name == "v")
+    );
 }
 
 // spec FTE-13.3: `.length` of an array names no definition.

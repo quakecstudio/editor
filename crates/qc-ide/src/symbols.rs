@@ -62,7 +62,7 @@ impl<L: Loader> AnalysisHost<L> {
             let Some((_, data)) = self.module(index) else {
                 continue;
             };
-            for def in &data.analysis.index.defs {
+            for def in data.analysis.index.defs() {
                 if def.member_of.is_some() || def.generated {
                     continue;
                 }

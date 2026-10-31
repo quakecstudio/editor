@@ -101,7 +101,7 @@ fn member_base(base: &ast::Expr, cx: Cx<'_>) -> MemberBase {
 }
 
 pub(super) fn lower_expr(expr: &ast::Expr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
-    let fte = cx.fte;
+    let fte = cx.dialect.has_fteqcc_extensions();
     match expr {
         ast::Expr::Name(name_ref) => {
             if let Some(token) = name_ref.name() {
@@ -220,7 +220,7 @@ pub(super) fn lower_expr(expr: &ast::Expr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
 
 /// A call: the callee and each argument as a value.
 fn lower_call(call: &ast::CallExpr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
-    let fte = cx.fte;
+    let fte = cx.dialect.has_fteqcc_extensions();
     let callee = call.callee();
     if let Some(callee) = &callee {
         lower_expr(callee, cx, uses);
@@ -297,7 +297,7 @@ fn lower_cast(cast: &ast::CastExpr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
         {
             use_.kind = UseKind::CastName;
         }
-        if cx.fte
+        if cx.dialect.has_fteqcc_extensions()
             && let Some(ast::Expr::Literal(literal)) = cast.operand()
             && let Type::Named(name) = cx.ty(&ty)
         {
@@ -329,7 +329,7 @@ fn lower_cast(cast: &ast::CastExpr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
 /// The name a type written in a cast or `sizeof` ends in, as a use that must name a type
 /// (FTEF-19.43): under the `*`s and field marks, a name that is no C type word.
 fn type_uses(ty: &ast::Type, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
-    if !cx.fte {
+    if !cx.dialect.has_fteqcc_extensions() {
         return;
     }
     let mut current = cx.ty(ty);

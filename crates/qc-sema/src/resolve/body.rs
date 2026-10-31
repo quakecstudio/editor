@@ -9,26 +9,26 @@
 //! Function bodies: parameters, locals, aliases, state headers and the names a body uses
 //! (QC-12.5, QC-13, FTEF-19.1, FTEF-19.14, FTEF-20.5).
 
+use crate::resolve::Init;
 use qc_diag::{Code, Span};
 use qc_preproc::FteFlag;
 use qc_syntax::ast::AstNode as _;
-use std::rc::Rc;
 
 use crate::cast::{Kind, Source, Supply};
 use crate::check::{array_length, check_body, check_initialiser};
 use crate::lower::{
     ArrayDim, Qualifier, RawAlias, RawBody, RawDecl, RawLocal, RawUse, StatePart, UseKind,
-    ValueKind, top_level_kind,
+    ValueKind,
 };
 use crate::resolve::aggregate::{AggregateSite, Initialised};
 use crate::resolve::check_env::BodyEnv;
 use crate::resolve::init::string_of_chars;
 use crate::resolve::{
-    COMPONENTS, DeclFacts, Enclosing, Found, Holder, Pending, Redeclaration, Resolver, Scope,
-    ScopedFacts, component_type,
+    COMPONENTS, DeclFacts, Enclosing, Found, Holder, Origin, Pending, Redeclaration, Resolver,
+    Scope, ScopedFacts,
 };
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
-use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
+use crate::ty::Type;
 
 impl<'a> Resolver<'a> {
     /// Declares, or checks, the next-think name of a state header (QC-13.6).
@@ -42,12 +42,7 @@ impl<'a> Resolver<'a> {
         name: &str,
         span: Span,
     ) {
-        let void_fn = Type::Function(Rc::new(FunctionType {
-            ret: Type::Simple(SimpleType::Void),
-            params: Vec::new(),
-            variadic: false,
-            labels: ParamLabels::default(),
-        }));
+        let void_fn = Type::void_function();
         let location = self.at(file, span);
         // FTEF-19.42: in a member function the name is a member function of the class or its
         // parents first, which must be a `void()`.
@@ -104,8 +99,14 @@ impl<'a> Resolver<'a> {
             constant: true,
             ..DeclFacts::default()
         };
-        let def =
-            self.declare_global_with(name, &void_fn, DefKind::Function, location, None, &facts);
+        let def = self.declare_global_with(
+            name,
+            &void_fn,
+            DefKind::Function,
+            location,
+            Init::Uninitialized,
+            &facts,
+        );
         // The name in the header is a reference to the think function.
         self.index.refs.push(Reference { location, def });
     }
@@ -120,7 +121,7 @@ impl<'a> Resolver<'a> {
         self.index.refs.truncate(refs);
         // A body may define a global (an `autocvar_` local, FTEF-19.16), which is cut off too.
         for ids in self.globals.values_mut() {
-            ids.retain(|id| id.0 < defs);
+            ids.retain(|id| id.index() < defs);
         }
     }
 
@@ -412,7 +413,7 @@ impl<'a> Resolver<'a> {
     /// where every statement it generates is an error, then cast to the global's type, and no
     /// constant "is not constant".
     pub(in crate::resolve) fn check_global_initialiser(&mut self, file: FileId, decl: &RawDecl) {
-        if !self.profile.fteqcc_diagnostics() || decl.body.is_some() {
+        if !self.profile.fteqcc_diagnostics() || decl.body().is_some() {
             return;
         }
         let Some(value) = decl.value.as_ref() else {
@@ -659,10 +660,7 @@ impl<'a> Resolver<'a> {
                 }
                 (_, UseKind::Member) => self.resolve_member(scope, use_),
                 (_, UseKind::NamedField) => {
-                    let def = match scope {
-                        Some(scope) => self.lookup_in_scope(scope, &use_.name),
-                        None => self.lookup_used_global(&use_.name),
-                    };
+                    let def = self.lookup(scope, &use_.name);
                     def.map_or(Found::Nothing, Found::Def)
                 }
             };
@@ -686,8 +684,10 @@ impl<'a> Resolver<'a> {
                         f.referenced = true;
                     }
                     if self.profile.name_use_checks()
-                        && let Some(reason) =
-                            self.facts.get(def.0).and_then(|f| f.deprecated.clone())
+                        && let Some(reason) = self
+                            .facts
+                            .get(def.index())
+                            .and_then(|f| f.deprecated.clone())
                     {
                         let name = &use_.name;
                         let message = if reason.is_empty() {
@@ -847,15 +847,15 @@ impl<'a> Resolver<'a> {
                     local.name
                 ),
             );
-            let kind = top_level_kind(&local.ty);
-            let init = local.initialized.then_some(local.literal.as_ref());
+            let kind = local.ty.top_level_kind();
+            let init = Init::of(local.initialized, local.literal.as_ref());
             self.declare_global(&local.name, &local.ty, kind, location, init);
             return;
         }
         if self.profile.body_checks() && local.global_function {
             // FTEF-21.10: a C function declared in a body is a global constant, its body
             // elsewhere unless one follows it there.
-            let init = local.initialized.then_some(None);
+            let init = Init::of(local.initialized, None);
             self.declare_global(&local.name, &local.ty, DefKind::Function, location, init);
             return;
         }
@@ -896,7 +896,7 @@ impl<'a> Resolver<'a> {
             DefKind::Local,
             location,
             ScopedFacts {
-                component: false,
+                origin: Origin::Source,
                 array: local.array,
                 statics,
                 external: local.has(&Qualifier::Extern),
@@ -966,9 +966,7 @@ impl<'a> Resolver<'a> {
             }
             return;
         }
-        if let Some(d) = self.index.defs.get_mut(def.0) {
-            d.initialized = true;
-        }
+        self.mark_initialized(def);
         if let Some(literal) = literal {
             self.literals.insert(def, literal);
         }
@@ -1024,27 +1022,30 @@ impl<'a> Resolver<'a> {
             !replaced
         });
         if let Some(existing) = existing {
-            let def = self.index.defs.get(existing.0)?;
+            let def = self.index.defs.get(existing.index())?;
             let global = def.kind.is_global();
             if !self.same_type(&def.ty, ty) {
                 let old = def.ty.clone();
                 self.mismatch(name, location, &old, ty);
                 return None;
             }
-            if self.profile.redeclaration_by_typecmp() && !facts.component {
+            if self.profile.redeclaration_by_typecmp() && facts.origin == Origin::Source {
                 let redeclaration = Redeclaration {
                     existing,
                     name,
                     ty,
                     location,
-                    init: None,
+                    init: Init::Uninitialized,
                     params: &[],
                     array: facts.array,
                 };
                 if self.check_array(&redeclaration, true) {
                     return Some(existing);
                 }
-                let was_static = self.facts.get(existing.0).is_some_and(|f| f.static_local);
+                let was_static = self
+                    .facts
+                    .get(existing.index())
+                    .is_some_and(|f| f.static_local);
                 if kind == DefKind::Param {
                     self.report(
                         Code::E0215,
@@ -1069,7 +1070,7 @@ impl<'a> Resolver<'a> {
                 // A parameter's vector components are made with no lookup (FTEF-19.1).
                 return Some(existing);
             }
-            if global && !facts.component {
+            if global && facts.origin == Origin::Source {
                 // QCD-7.3: warn that the local name is the global.
                 self.report(
                     Code::W0201,
@@ -1085,7 +1086,7 @@ impl<'a> Resolver<'a> {
             return Some(existing);
         }
         if self.profile.locals_shadow_globals()
-            && !facts.component
+            && facts.origin == Origin::Source
             && let Some(global) = self.lookup_global(name)
             && self.index.def(global).is_some_and(|g| {
                 g.ty.fteqcc_kind() == ty.fteqcc_kind() && ty.fteqcc_kind() != Kind::Opaque
@@ -1117,12 +1118,12 @@ impl<'a> Resolver<'a> {
         }
         // QC-11.7: a new vector local or parameter has its components too.
         if facts.array.is_none()
-            && let Some(component) = component_type(ty)
+            && let Some(component) = ty.component()
         {
             for suffix in COMPONENTS {
                 let component_name = format!("{name}{suffix}");
                 let component_facts = ScopedFacts {
-                    component: true,
+                    origin: Origin::Component,
                     subscope: facts.subscope,
                     ..ScopedFacts::default()
                 };

@@ -3,6 +3,7 @@
 //! The resolver as the check stage reads it ([`Env`]): one body's references, the module's
 //! definitions and types, the flags in force and the reporting under the warning settings.
 
+use crate::resolve::Init;
 use std::collections::HashMap;
 
 use qc_diag::{Code, Span};
@@ -17,7 +18,7 @@ use crate::check::etype::Etype;
 use crate::check::{
     Constness, CvarValue, Env, FunctionFacts, ParamFacts, PathList, Shape, StructMemberFacts, Temps,
 };
-use crate::lower::{ArrayDim, LiteralValue, RawLocal, top_level_kind};
+use crate::lower::{ArrayDim, LiteralValue, RawLocal};
 use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, DefKind, Definition, FileId};
 use crate::ty::{SimpleType, Type};
@@ -61,10 +62,8 @@ impl BodyEnv<'_, '_> {
         let line = i64::try_from(place.line(location.span.start)).ok()?;
         let marks = self
             .resolver
-            .message_places
-            .get(self.resolver.unit.0)
-            .copied()
-            .unwrap_or_default();
+            .source(self.resolver.unit)
+            .map_or(&[][..], |source| source.message_places);
         let index = marks.partition_point(|(from, _, _)| *from <= span.start);
         let mark = index.checked_sub(1).and_then(|i| marks.get(i));
         let name = mark.map_or_else(|| place.name.clone(), |(_, name, _)| name.clone());
@@ -131,10 +130,14 @@ impl Env for BodyEnv<'_, '_> {
         let location = self.resolver.at(self.file, span);
         // `QCC_PR_GetSRef(e.cast, autocvarname, NULL, true, 0, GDF_USED)`.
         let global = format!("autocvar_{name}");
-        let def = self
-            .resolver
-            .declare_global(&global, ty, top_level_kind(ty), location, None);
-        let Some(facts) = self.resolver.index.defs.get_mut(def.0) else {
+        let def = self.resolver.declare_global(
+            &global,
+            ty,
+            ty.top_level_kind(),
+            location,
+            Init::Uninitialized,
+        );
+        let Some(facts) = self.resolver.index.defs.get_mut(def.index()) else {
             return false;
         };
         if !facts.initialized {
@@ -204,7 +207,7 @@ impl Env for BodyEnv<'_, '_> {
             .defs
             .iter()
             .position(|d| d.kind == DefKind::Field)
-            .is_some_and(|first| first == def.0)
+            .is_some_and(|first| first == def.index())
     }
 
     fn strict_enum(&self, ty: &Type) -> bool {
@@ -214,7 +217,7 @@ impl Env for BodyEnv<'_, '_> {
     fn is_array(&self, def: DefId) -> bool {
         self.resolver
             .facts
-            .get(def.0)
+            .get(def.index())
             .is_some_and(|f| f.array.is_some())
     }
 
@@ -238,7 +241,7 @@ impl Env for BodyEnv<'_, '_> {
             if items.iter().any(|(known, _): &(String, _)| *known == item) {
                 continue;
             }
-            let value = match self.constness(DefId(at)) {
+            let value = match self.constness(DefId::new(at)) {
                 Constness::Known(constant) => Some(constant),
                 Constness::Opaque | Constness::Variable => None,
             };
@@ -287,7 +290,7 @@ impl Env for BodyEnv<'_, '_> {
             ret,
             accumulate: self
                 .owner
-                .and_then(|owner| self.resolver.facts.get(owner.0))
+                .and_then(|owner| self.resolver.facts.get(owner.index()))
                 .is_some_and(|f| f.accumulate),
             variadic,
         }
@@ -357,7 +360,7 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn params(&self, def: DefId) -> Option<Vec<ParamFacts>> {
-        let facts = self.resolver.facts.get(def.0)?;
+        let facts = self.resolver.facts.get(def.index())?;
         if facts.params.is_empty() {
             return None;
         }
@@ -376,7 +379,7 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn array_length(&self, def: DefId) -> Option<u32> {
-        match self.resolver.facts.get(def.0)?.array.as_ref()? {
+        match self.resolver.facts.get(def.index())?.array.as_ref()? {
             ArrayDim::Sized(length) => Some(*length),
             ArrayDim::Unsized | ArrayDim::Unknown => None,
         }
@@ -390,7 +393,10 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn constant(&self, def: DefId) -> bool {
-        self.resolver.facts.get(def.0).is_some_and(|f| f.constant)
+        self.resolver
+            .facts
+            .get(def.index())
+            .is_some_and(|f| f.constant)
     }
 
     fn constness(&self, def: DefId) -> Constness {
