@@ -48,7 +48,7 @@ const FREE_NEXTTHINK_SLOT: usize = SysField::Nextthink.slot();
 /// EDICT-1.2: the free flag and `freetime` are the only header fields QuakeC reads, through
 /// allocation (EDICT-6) and `nextent` (EDICT-5.4); the rest of the header is engine state the
 /// store does not model. The `fields` are the `entityfields` 4-byte slots (EDICT-1.1).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 struct Edict {
     /// id's `edict_t.free`: whether the edict is free to be reused (EDICT-6.1).
     free: bool,
@@ -57,6 +57,25 @@ struct Edict {
     freetime: f32,
     /// The `entityfields` field slots, id's `edict_t.v` (EDICT-1.1).
     fields: Box<[Slot]>,
+}
+
+// Written out so that `clone_from` copies the field slots into the edict's own allocation: a
+// store restored from a snapshot before every call, as the compiler differential does
+// (DIFF-12.2), would otherwise allocate and free every edict's fields each time.
+impl Clone for Edict {
+    fn clone(&self) -> Self {
+        Self {
+            free: self.free,
+            freetime: self.freetime,
+            fields: self.fields.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.free = source.free;
+        self.freetime = source.freetime;
+        self.fields.clone_from(&source.fields);
+    }
 }
 
 impl Edict {
@@ -123,12 +142,37 @@ impl core::error::Error for EdictError {}
 /// starting at `maxclients + 1` and growing by one on each new allocation (EDICT-6.2). Edict 0
 /// is the world and edicts 1 to `maxclients` are the client slots (EDICT-5.1). Every edict
 /// starts zero-filled and in use (EDICT-1.8).
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct EdictStore {
     layout: EdictLayout,
     edicts: Vec<Edict>,
     num_edicts: usize,
     maxclients: usize,
+}
+
+// Written out so that `clone_from` reaches each edict's own `clone_from` (see `Edict`).
+impl Clone for EdictStore {
+    fn clone(&self) -> Self {
+        Self {
+            layout: self.layout,
+            edicts: self.edicts.clone(),
+            num_edicts: self.num_edicts,
+            maxclients: self.maxclients,
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        let Self {
+            layout,
+            edicts,
+            num_edicts,
+            maxclients,
+        } = source;
+        self.layout = *layout;
+        self.edicts.clone_from(edicts);
+        self.num_edicts = *num_edicts;
+        self.maxclients = *maxclients;
+    }
 }
 
 impl EdictStore {

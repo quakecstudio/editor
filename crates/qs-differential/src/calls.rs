@@ -292,20 +292,44 @@ pub fn run_codebase(
     ours: &[u8],
     rounds: u32,
 ) -> Result<CodebaseReport, CallsError> {
+    let mut worlds = Vec::new();
+    for spec in scenarios("") {
+        let text = format!("progs progs.dat\n{}", spec.directives);
+        let scenario = scenario::read(text.as_bytes(), Path::new("."))
+            .map_err(|e| CallsError::Scenario(format!("{}: {e}", spec.name)))?;
+        worlds.push((spec.name, scenario, spec.entities.unwrap_or_default()));
+    }
+    // The scenarios share nothing, so each runs on its own thread; their reports are taken in
+    // the scenarios' order, so the result is the same as one after another.
+    let reports: Vec<(&'static str, Result<Report, CallsError>)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = worlds
+            .iter()
+            .map(|(name, scenario, entities)| {
+                let handle = scope
+                    .spawn(move || run_calls(oracle, theirs, ours, scenario, entities, rounds));
+                (*name, handle)
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|(name, handle)| {
+                let report = handle
+                    .join()
+                    .unwrap_or_else(|_| Err(CallsError::Stopped(name.to_owned())));
+                (name, report)
+            })
+            .collect()
+    });
     let mut result = CodebaseReport {
         scenarios: Vec::new(),
         executed: BTreeSet::new(),
         total_statements: 0,
     };
-    for spec in scenarios("") {
-        let text = format!("progs progs.dat\n{}", spec.directives);
-        let scenario = scenario::read(text.as_bytes(), Path::new("."))
-            .map_err(|e| CallsError::Scenario(format!("{}: {e}", spec.name)))?;
-        let entities = spec.entities.unwrap_or_default();
-        let report = run_calls(oracle, theirs, ours, &scenario, &entities, rounds)?;
+    for (name, report) in reports {
+        let report = report?;
         result.executed.extend(report.executed.iter().copied());
         result.total_statements = report.total_statements;
-        result.scenarios.push((spec.name, report));
+        result.scenarios.push((name, report));
     }
     Ok(result)
 }
@@ -320,6 +344,8 @@ pub enum CallsError {
     /// The world's setup ended in an error in a progs, so there is no world to call functions
     /// in (DIFF-12.17).
     Setup(String),
+    /// The run of the scenario named here stopped before it gave a report.
+    Stopped(String),
 }
 
 impl core::fmt::Display for CallsError {
@@ -328,6 +354,7 @@ impl core::fmt::Display for CallsError {
             Self::Scenario(message) => write!(f, "bad scenario: {message}"),
             Self::Refused(refused) => write!(f, "progs refused: {refused}"),
             Self::Setup(message) => write!(f, "the world's setup failed: {message}"),
+            Self::Stopped(name) => write!(f, "{name}: the run stopped before it finished"),
         }
     }
 }
