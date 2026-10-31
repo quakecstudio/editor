@@ -5,8 +5,8 @@
 //!
 //! The check, for each profile: parsing any bytes terminates without a panic or a stack
 //! overflow, the tree's tokens tile the input and give it back byte for byte, every node lies
-//! inside its parent, every diagnostic points inside the input, and parsing the same bytes
-//! twice gives the same tree.
+//! inside its parent, every diagnostic points inside the input and is reported once (QCD-1.5),
+//! and parsing the same bytes twice gives the same tree.
 //!
 //! The mutator works on QuakeC tokens rather than bytes, so mutants stay close to programs
 //! and reach the parser's grammar instead of stopping in the lexer. It lexes the input with
@@ -45,10 +45,16 @@ fn check(data: &[u8], dialect: Dialect) {
         "{dialect:?}: the tree does not give back the input"
     );
     check_tiling(&root, data);
+    let mut seen = std::collections::HashSet::new();
     for diagnostic in parsed.diagnostics() {
         assert!(
             diagnostic.span.start <= diagnostic.span.end && diagnostic.span.end <= data.len(),
             "{dialect:?}: diagnostic outside the input: {diagnostic:?}"
+        );
+        // QCD-1.5: no two diagnostics with one code and one span.
+        assert!(
+            seen.insert((diagnostic.code, diagnostic.span)),
+            "{dialect:?}: diagnostic reported twice: {diagnostic:?}"
         );
     }
     assert_eq!(

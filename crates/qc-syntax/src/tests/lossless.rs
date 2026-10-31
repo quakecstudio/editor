@@ -421,3 +421,21 @@ fn skipped_bytes_stop_at_comments_and_commands() {
         ]
     );
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(512))]
+
+    // spec QCD-1.5: no two diagnostics the lexer and parser give for one input have the same
+    // code and span, in either profile, over token soup in the shape of QuakeC.
+    #[test]
+    fn a_syntax_diagnostic_is_reported_once(parts in proptest::collection::vec(fragment(), 0..60)) {
+        let source = parts.join(" ");
+        for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+            let parsed = crate::parse_with(source.as_bytes(), dialect);
+            let mut seen = std::collections::HashSet::new();
+            for d in parsed.diagnostics() {
+                prop_assert!(seen.insert((d.code, d.span)), "{dialect:?} {:?}: {d:?} twice", source);
+            }
+        }
+    }
+}

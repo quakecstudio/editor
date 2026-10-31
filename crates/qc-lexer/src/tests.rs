@@ -2413,3 +2413,20 @@ fn fteqcc_backslash_cr_at_the_end_of_input() {
         vec![(Code::E0104, "Bad character constant".to_owned())]
     );
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2048))]
+
+    // spec QCD-1.5: no two diagnostics of one input have the same code and span, in either
+    // profile, over text dense in the lexer's error cases: quotes, escapes, CRs and comments.
+    #[test]
+    fn a_diagnostic_is_reported_once(source in "[a\"'\\\\\r\n/*$ #0x.u8R(){}]{0,24}") {
+        for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+            let lexed = lex_with(source.as_bytes(), dialect);
+            let mut seen = std::collections::HashSet::new();
+            for d in &lexed.diagnostics {
+                prop_assert!(seen.insert((d.code, d.span)), "{dialect:?} {:?}: {d:?} twice", source);
+            }
+        }
+    }
+}

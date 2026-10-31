@@ -6,8 +6,8 @@
 //!
 //! The input is split at its first two NULs into a compiled file `a.qc`, a file it may
 //! `#include` (`b.qh`) and a second compiled file `c.qc`, so macros and frame macros carry
-//! from one file to the next. The check: no panic, and every diagnostic and every token lies
-//! in a file that was read, inside its text, in a first pass and in the second pass
+//! from one file to the next. The check: no panic, every diagnostic is reported once
+//! (QCD-1.5), and every diagnostic and every token lies in a file that was read, inside its text, in a first pass and in the second pass
 //! `Preprocessor::restart` begins (FTE-22.3), which keeps the first pass's frame macros; and the
 //! `#if` evaluator gives an answer for the first line under both profiles.
 
@@ -58,10 +58,13 @@ fn check_spans(sources: &SourceMap, out: &FileOutput) {
             "token outside its file: {token:?}"
         );
     }
+    let mut seen = std::collections::HashSet::new();
     for d in &out.diagnostics {
         assert!(
             sources.text(d.span).is_some(),
             "diagnostic outside its file: {d:?}"
         );
+        // QCD-1.5: no two diagnostics with one code and one span.
+        assert!(seen.insert((d.code, d.span)), "diagnostic reported twice: {d:?}");
     }
 }

@@ -1096,3 +1096,21 @@ fn module_defines_hold_before_the_first_file() {
     let (_, without) = one(text);
     assert_eq!(tokens(&without), "float b ;");
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(512))]
+
+    // spec QCD-1.5: no two preprocessor diagnostics of one input have the same code and span,
+    // in either profile, over text dense in directives, macros and conditionals.
+    #[test]
+    fn a_preprocessor_diagnostic_is_reported_once(
+        text in "(#(define|undef|if|ifdef|ifndef|elif|else|endif|include|pragma|error|warning) ?[A-Z(),0-9\"]{0,6}\n|[A-Z]{1,2}|[ (),;\"\\\\\n]){0,16}"
+    ) {
+        for (dialect, (_, out)) in [("vanilla", one(&text)), ("fteqcc", one_fte(&text))] {
+            let mut seen = std::collections::HashSet::new();
+            for d in &out.diagnostics {
+                prop_assert!(seen.insert((d.code, d.span)), "{dialect} {:?}: {d:?} twice", text);
+            }
+        }
+    }
+}

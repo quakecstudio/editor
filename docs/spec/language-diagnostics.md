@@ -36,6 +36,10 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   filled in as id does. The parser keeps going after an error with recovery of its own
   (LANG-2); the error limit and stop-at-first-file of QC-24 are id's behaviour, not
   requirements on this compiler.
+- **QCD-1.5** The lexer, the preprocessor and the parser report a diagnostic once: no two of the
+  diagnostics they give for one input have the same code and the same span, under any profile.
+  A rule broken at one place is one report there, as id's `qcc` and FTEQCC, which stop at their
+  first error, report it once (P2-144's double E0101 was a breach).
 
 ## QCD-2 Lexical errors
 
