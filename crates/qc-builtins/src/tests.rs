@@ -2043,6 +2043,22 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.6: registercvar makes a setting whose text is its name again (vkQuake
+    // reads OFS_PARM0 twice), empty with one argument, and leaves an existing one
+    #[test]
+    fn registercvar_makes_a_setting_once() {
+        let (strings, offsets) = string_table(&["mine", "5", "skill"]);
+        for (argc, name, expected) in [(2, 0, "mine"), (1, 0, ""), (2, 2, "1")] {
+            let mut f = Fixture::new(93, argc, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, offsets[name]);
+            f.set_parm_i(1, offsets[1]);
+            f.run_ok(ServerState::Active);
+            let key = ["mine", "5", "skill"][name];
+            assert_eq!(f.engine().cvars.text(key), Some(expected), "{argc} {key}");
+        }
+    }
+
     // spec BUILTIN-18.5: clientstat and globalstat change nothing; globalstat's name must be a
     // string
     #[test]

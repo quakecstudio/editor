@@ -805,6 +805,12 @@ profile (DIFF-12.19); everything else runs under id's.
   `num` (`PR_CustomStat`), which no builtin reads back, so they change nothing QuakeC sees.
   `globalstat` reads `name` with `G_STRING`, so a value that is no string is the mock's
   string error (BUILTIN-2.8); `clientstat` reads `fld` with `G_INT`.
+- **BUILTIN-18.6** `registercvar(name, value)` (#93) is `PF_registercvar`, which makes the
+  setting `name` with `Cvar_Create` unless it exists, so `cvar` then reads it. The value it
+  gives a new setting is read from the first parameter again: "const char *value =
+  (qcvm->argc > 1) ? G_STRING (OFS_PARM0) : \"\";", so `registercvar("x", "5")` makes `x`
+  with the text `x`, and a call with one argument makes it empty. An existing setting is
+  unchanged.
 
 ## Test vectors
 

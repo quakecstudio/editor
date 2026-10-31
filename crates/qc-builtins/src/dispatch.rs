@@ -1058,11 +1058,29 @@ impl MockBuiltins {
         context: &mut Context<'_, '_>,
     ) -> Option<Result<(), BuiltinError>> {
         match number {
+            93 => Some(self.b_registercvar(context)),
             213 => Some(self.b_forceinfokey(context)),
             232 => Some(read_parm(context, 2).map(|_| ())),
             233 => Some(read_parm_string(context, &self.engine, 2).map(|_| ())),
             _ => None,
         }
+    }
+
+    /// `registercvar(name, value)`, vkQuake's `PF_registercvar` (BUILTIN-18.6): the value it
+    /// gives a new setting is `name` again when the call has a second argument, as its
+    /// `G_STRING (OFS_PARM0)` reads it, and empty when it has none.
+    fn b_registercvar(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let name = read_parm_string(context, &self.engine, 0)?;
+        let value = if context.machine().argc() > 1 {
+            read_parm_string(context, &self.engine, 0)?
+        } else {
+            Vec::new()
+        };
+        self.engine.cvars.create(
+            &String::from_utf8_lossy(&name),
+            &String::from_utf8_lossy(&value),
+        );
+        Ok(())
     }
 
     /// `forceinfokey(player, key, value)`, vkQuake's `PF_sv_forceinfokey` and `SV_UpdateInfo`

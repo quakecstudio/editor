@@ -58,6 +58,14 @@ impl Cvars {
             false
         }
     }
+
+    /// Adds the setting `name` with `value` unless it exists, vkQuake's `Cvar_Create`
+    /// (BUILTIN-18.6).
+    pub fn create(&mut self, name: &str, value: &str) {
+        if self.text(name).is_none() {
+            self.entries.push((name.to_owned(), value.to_owned()));
+        }
+    }
 }
 
 /// The bounds of a model list entry, for `setmodel` (BUILTIN-9.4, DIFF-6.3).
