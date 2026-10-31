@@ -2043,6 +2043,54 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.21: strlen counts bytes; strcat joins up to 1023 bytes and reads no
+    // argument after the one that fills it; substring counts negative start and length from
+    // the end
+    #[test]
+    fn strlen_strcat_and_substring() {
+        let long = "x".repeat(1020);
+        let (strings, offsets) = string_table(&["hello", "ab", &long]);
+        let text = |f: &Fixture| f.engine().strings.text(f.return_i()).unwrap().to_vec();
+        let mut f = Fixture::new(114, 1, strings.clone(), 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.set_parm_i(0, offsets[0]);
+        f.run_ok(ServerState::Active);
+        assert_eq!(f.return_f(), 5.0);
+
+        let mut f = Fixture::new(115, 3, strings.clone(), 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.set_parm_i(0, offsets[0]);
+        f.set_parm_i(1, offsets[1]);
+        f.set_parm_i(2, offsets[0]);
+        f.run_ok(ServerState::Active);
+        assert_eq!(text(&f), b"helloabhello");
+        let mut f = Fixture::new(115, 3, strings.clone(), 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.set_parm_i(0, offsets[2]);
+        f.set_parm_i(1, offsets[0]);
+        f.set_parm_i(2, 999_999);
+        f.run_ok(ServerState::Active);
+        assert_eq!(text(&f).len(), 1023);
+
+        for (start, length, expected) in [
+            (1.0, 3.0, &b"ell"[..]),
+            (-3.0, 2.0, b"ll"),
+            (1.0, -2.0, b"ell"),
+            (-10.0, 2.0, b"he"),
+            (5.0, 1.0, b""),
+            (0.0, 0.0, b""),
+            (2.0, 100.0, b"llo"),
+        ] {
+            let mut f = Fixture::new(116, 3, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, offsets[0]);
+            f.set_parm_f(1, start);
+            f.set_parm_f(2, length);
+            f.run_ok(ServerState::Active);
+            assert_eq!(text(&f), expected, "{start} {length}");
+        }
+    }
+
     // spec BUILTIN-18.20: clienttype is 3 for no client slot, 1 for an active client, 0 for an
     // empty slot
     #[test]

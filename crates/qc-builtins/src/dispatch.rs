@@ -1192,6 +1192,9 @@ impl MockBuiltins {
             96 => Some(Self::b_bound(context)),
             99 => Some(self.b_checkextension(context)),
             110 => Some(self.b_fopen(context)),
+            114 => Some(self.b_strlen(context)),
+            115 => Some(self.b_strcat(context)),
+            116 => Some(self.b_substring(context)),
             118 => Some(self.b_strzone(context)),
             119 => Some(self.b_strunzone(context)),
             213 => Some(self.b_forceinfokey(context)),
@@ -1378,6 +1381,65 @@ impl MockBuiltins {
             Some(_) | None => 3.0,
         };
         write_return_float(context, value)
+    }
+
+    /// `strlen(s)`, vkQuake's `PF_strlen` (BUILTIN-18.21): `s`'s length in bytes.
+    fn b_strlen(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let text = read_parm_string(context, &self.engine, 0)?;
+        let len = text.iter().position(|&b| b == 0).unwrap_or(text.len());
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "BUILTIN-18.21: C's (float) of a size_t rounds to nearest, as this does"
+        )]
+        let value = len as f32;
+        write_return_float(context, value)
+    }
+
+    /// `strcat(s, ...)`, vkQuake's `PF_strcat` (BUILTIN-18.21): the strings joined with
+    /// `q_strlcat` into 1024 bytes, stopping at the first that does not fit.
+    fn b_strcat(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let mut out = Vec::new();
+        let argc = u16::try_from(context.machine().argc()).unwrap_or(u16::MAX);
+        for n in 0..argc {
+            let part = read_parm_string(context, &self.engine, n)?;
+            let part = part.split(|&b| b == 0).next().unwrap_or_default();
+            out.extend_from_slice(part);
+            if out.len() >= VKQUAKE_STRINGTEMP_LENGTH {
+                out.truncate(VKQUAKE_STRINGTEMP_LENGTH.saturating_sub(1));
+                break;
+            }
+        }
+        let value = self.engine.strings.make(out);
+        write_return_string(context, value)
+    }
+
+    /// `substring(s, start, length)`, vkQuake's `PF_substring` (BUILTIN-18.21).
+    fn b_substring(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let text = read_parm_string(context, &self.engine, 0)?;
+        let text = text.split(|&b| b == 0).next().unwrap_or_default().to_vec();
+        let mut start = read_parm_int(context, 1)?;
+        let mut length = read_parm_int(context, 2)?;
+        let slen = i32::try_from(text.len()).unwrap_or(i32::MAX);
+        if start < 0 {
+            start = slen.wrapping_add(start);
+        }
+        if length < 0 {
+            length = slen
+                .wrapping_sub(start)
+                .wrapping_add(length.wrapping_add(1));
+        }
+        start = start.max(0);
+        let piece = if start >= slen || length <= 0 {
+            Vec::new()
+        } else {
+            let rest = slen.wrapping_sub(start);
+            let take = length.min(rest).min(1023);
+            let from = usize::try_from(start).unwrap_or(0);
+            let to = from.saturating_add(usize::try_from(take).unwrap_or(0));
+            text.get(from..to).unwrap_or_default().to_vec()
+        };
+        let value = self.engine.strings.make(piece);
+        write_return_string(context, value)
     }
 
     /// `num_for_edict(e)`, vkQuake's `PF_num_for_edict` (BUILTIN-18.18): `e`'s number.

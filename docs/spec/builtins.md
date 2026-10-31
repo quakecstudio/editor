@@ -908,6 +908,15 @@ profile (DIFF-12.19); everything else runs under id's.
   world among them, as `NUM_FOR_EDICT (ed) - 1` wraps) is 3, `CLIENTTYPE_NOTACLIENT`; an active
   client with a connection is 1, `CLIENTTYPE_REAL`, which every client of the mock is (DIFF-4.1);
   an empty slot is 0, `CLIENTTYPE_DISCONNECTED`.
+- **BUILTIN-18.21** `strlen(s)` (#114) is `PF_strlen`, `s`'s length in bytes. `strcat(s, ...)`
+  (#115) is `PF_strcat`: each argument the call passed, read with `G_STRING`, appended with
+  `q_strlcat` into a 1024-byte temporary string, which stops after the first that does not fit
+  ("if (s >= STRINGTEMP_LENGTH) ... break;"), so the text is cut to 1023 bytes and no later
+  argument is read. `substring(s, start, length)` (#116) is `PF_substring`, with `start` and
+  `length` read as `G_FLOAT` and `(int)` (BUILTIN-2.2): a negative `start` counts from the end
+  (`slen + start`), a negative `length` ends that far from the end (`slen - start + (length +
+  1)`), a `start` still negative becomes 0, and a `start` at or past the end or a `length` of
+  0 or less gives the empty string; otherwise up to `length` bytes from `start`, at most 1023.
 
 ## Test vectors
 
