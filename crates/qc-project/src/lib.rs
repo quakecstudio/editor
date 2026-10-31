@@ -18,11 +18,12 @@ mod manifest;
 mod tests;
 
 pub use graph::{
-    Define, Diagnostic, FileGraph, Form, GraphFile, PRJ_MAX_DEPTH, PRJ_MAX_FILES, Via, build_graph,
-    normalize,
+    Define, Diagnostic, FileGraph, Form, GraphFile, GraphIndex, PRJ_MAX_DEPTH, PRJ_MAX_FILES, Via,
+    build_graph,
 };
+pub use manifest::ManifestError;
 pub use qc_lexer::Code;
-pub use qc_preproc::{FsLoader, Loader, MemoryLoader};
+pub use qc_preproc::{FsLoader, Loader, MemoryLoader, normalize};
 
 use std::collections::VecDeque;
 use std::fmt;
@@ -203,8 +204,8 @@ pub enum ProjectError {
     Manifest {
         /// The file.
         path: PathBuf,
-        /// What is wrong, with its line when TOML itself is wrong.
-        message: String,
+        /// What is wrong.
+        error: ManifestError,
     },
     /// A directory with neither `quakec.toml` nor `progs.src` (PRJ-1.2).
     NoProject {
@@ -217,7 +218,7 @@ impl fmt::Display for ProjectError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Read { path, source } => write!(f, "{}: {source}", path.display()),
-            Self::Manifest { path, message } => write!(f, "{}: {message}", path.display()),
+            Self::Manifest { path, error } => write!(f, "{}: {error}", path.display()),
             Self::NoProject { dir } => {
                 write!(f, "{}: no {PRJ_MANIFEST} and no progs.src", dir.display())
             }
@@ -229,7 +230,8 @@ impl std::error::Error for ProjectError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Read { source, .. } => Some(source),
-            Self::Manifest { .. } | Self::NoProject { .. } => None,
+            Self::Manifest { error, .. } => Some(error),
+            Self::NoProject { .. } => None,
         }
     }
 }
@@ -329,9 +331,9 @@ fn from_manifest<L: Loader>(
     bytes: &[u8],
 ) -> Result<Project, ProjectError> {
     let text = String::from_utf8_lossy(bytes);
-    let (project, modules) = manifest::parse(&text).map_err(|message| ProjectError::Manifest {
+    let (project, modules) = manifest::parse(&text).map_err(|error| ProjectError::Manifest {
         path: path.to_path_buf(),
-        message,
+        error,
     })?;
     let mod_name = project.mod_name.unwrap_or_else(|| default_mod_name(root));
     let dialect = project.dialect.unwrap_or(Dialect::Vanilla);
@@ -407,14 +409,6 @@ fn bare_module_name(root: &Path, src: &Path) -> String {
         .join("/")
 }
 
-/// Whether a graph is a list of programs rather than a module (PRJ-1.5).
-fn is_program_list(graph: &FileGraph) -> bool {
-    graph.form == Some(Form::Source)
-        && graph.files.len() == 1
-        && graph.declared_output.is_none()
-        && !graph.sourcefiles.is_empty()
-}
-
 /// A bare project of `sources` and every source file they register (PRJ-1.2 to PRJ-1.5).
 fn bare<L: Loader>(loader: &mut L, root: &Path, sources: Vec<PathBuf>) -> Project {
     let mod_name = default_mod_name(root);
@@ -429,7 +423,7 @@ fn bare<L: Loader>(loader: &mut L, root: &Path, sources: Vec<PathBuf>) -> Projec
                 queue.push_back(registered.clone());
             }
         }
-        if is_program_list(&graph) {
+        if graph.is_program_list() {
             continue;
         }
         let kind = ModuleKind::from_declared_output(graph.declared_output.as_deref());

@@ -2,6 +2,7 @@
 
 //! Properties of the graph on generated input.
 
+use crate::GraphIndex;
 use proptest::prelude::*;
 
 use super::{GraphSpec, build, diags, names};
@@ -69,7 +70,7 @@ proptest! {
             });
             prop_assert!(graph.files.len() <= PRJ_MAX_FILES);
             for (i, file) in graph.files.iter().enumerate() {
-                if let Some(parent) = file.parent {
+                if let Some(parent) = file.parent.map(GraphIndex::index) {
                     prop_assert!(parent < i);
                 }
                 prop_assert_eq!(file.via == Via::Root, i == 0 && file.parent.is_none()

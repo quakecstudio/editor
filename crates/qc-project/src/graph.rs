@@ -12,9 +12,10 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use qc_lexer::{Code, Dialect, is_whitespace};
+use qc_lexer::{Directive, Pragma, is_name_char, is_name_start};
 use qc_preproc::{
     FileStart, FteEvent, FteFileReader, Loader, ModuleState, com_parse, cond, include_dir_name,
-    join_paths, pragma_include_dir, qcc_load_as,
+    join_paths, normalize, pragma_include_dir, qcc_load_as,
 };
 
 /// Most entries a module's file graph may hold (PRJ-6.4).
@@ -67,7 +68,24 @@ pub struct GraphFile {
     /// How it came in.
     pub via: Via,
     /// The entry of the file that brought it in; `None` for the root and for list entries.
-    pub parent: Option<usize>,
+    pub parent: Option<GraphIndex>,
+}
+
+/// The place of an entry in [`FileGraph::files`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct GraphIndex(usize);
+
+impl GraphIndex {
+    /// The entry at `index`.
+    pub(crate) const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// Its index in [`FileGraph::files`].
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0
+    }
 }
 
 /// A problem found while building a graph.
@@ -104,6 +122,18 @@ pub struct FileGraph {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+impl FileGraph {
+    /// Whether the graph is a list of programs rather than a module (PRJ-1.5): a source file
+    /// alone, naming no output and registering other source files.
+    #[must_use]
+    pub fn is_program_list(&self) -> bool {
+        self.form == Some(Form::Source)
+            && self.files.len() == 1
+            && self.declared_output.is_none()
+            && !self.sourcefiles.is_empty()
+    }
+}
+
 /// A macro defined before a module's first file (PRJ-2.6).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Define {
@@ -120,35 +150,12 @@ impl Define {
         let (name, value) = entry.split_once('=').unwrap_or((entry, ""));
         let mut bytes = name.bytes();
         let first = bytes.next()?;
-        let is_name = (first.is_ascii_alphabetic() || first == b'_')
-            && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_');
+        let is_name = is_name_start(first) && bytes.all(is_name_char);
         is_name.then(|| Self {
             name: name.to_owned(),
             value: value.to_owned(),
         })
     }
-}
-
-/// The path with `.` removed and each `..` folded into the name before it.
-#[must_use]
-pub fn normalize(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if matches!(out.components().next_back(), Some(Component::Normal(_))) {
-                    out.pop();
-                } else {
-                    out.push(component);
-                }
-            }
-            Component::Prefix(_) | Component::RootDir | Component::Normal(_) => {
-                out.push(component);
-            }
-        }
-    }
-    out
 }
 
 fn dir_of(path: &Path) -> PathBuf {
@@ -165,6 +172,40 @@ const fn single_token(byte: u8) -> bool {
 /// a C string (QC-23.7).
 fn quoted_name(quoted: &[u8]) -> String {
     lossy(quoted.split(|b| *b == 0).next())
+}
+
+/// What a line scan meets at a byte (PRJ-5.1): the end of a `/* */` comment it is inside, which
+/// it goes on after; the line ending inside one; a `//` comment, which ends the line; a `/*`,
+/// which it goes on after as inside one; the line's end; or a byte of code.
+enum Step {
+    At(usize),
+    InComment,
+    LineComment,
+    End,
+    Code(u8),
+}
+
+/// The step of a line scan at byte `i` of `line`, `in_comment` saying it is inside a `/* */`
+/// comment, which the step updates.
+fn comment_step(line: &[u8], i: usize, in_comment: &mut bool) -> Step {
+    if *in_comment {
+        return match find(line, i, b"*/") {
+            Some(end) => {
+                *in_comment = false;
+                Step::At(end.saturating_add(2))
+            }
+            None => Step::InComment,
+        };
+    }
+    match (line.get(i), line.get(i.saturating_add(1))) {
+        (None, _) => Step::End,
+        (Some(b'/'), Some(b'/')) => Step::LineComment,
+        (Some(b'/'), Some(b'*')) => {
+            *in_comment = true;
+            Step::At(i.saturating_add(2))
+        }
+        (Some(&byte), _) => Step::Code(byte),
+    }
 }
 
 /// Splits `line`, which ends with the bytes `ending`, into tokens as `COM_Parse` does (QC-23.2),
@@ -194,24 +235,18 @@ fn com_parse_words(
         i = close.saturating_add(1);
     }
     loop {
-        if in_comment {
-            match find(line, i, b"*/") {
-                Some(end) => {
-                    in_comment = false;
-                    i = end.saturating_add(2);
-                }
-                None => return (words, true, None),
+        let byte = match comment_step(line, i, &mut in_comment) {
+            Step::At(at) => {
+                i = at;
+                continue;
             }
-            continue;
-        }
-        let Some(&byte) = line.get(i) else { break };
+            Step::InComment => return (words, true, None),
+            Step::LineComment => break,
+            Step::End => break,
+            Step::Code(byte) => byte,
+        };
         let next = line.get(i.saturating_add(1)).copied();
         match (byte, next) {
-            (b'/', Some(b'/')) => break,
-            (b'/', Some(b'*')) => {
-                in_comment = true;
-                i = i.saturating_add(2);
-            }
             // QC-23.8: `while ( (c = *data) <= ' ')` with a signed `char`.
             _ if is_whitespace(byte) => i = i.saturating_add(1),
             (b'"', _) => {
@@ -250,24 +285,18 @@ fn list_words(line: &[u8], mut in_comment: bool) -> (Vec<String>, bool) {
     let mut words = Vec::new();
     let mut i = 0_usize;
     loop {
-        if in_comment {
-            match find(line, i, b"*/") {
-                Some(end) => {
-                    in_comment = false;
-                    i = end.saturating_add(2);
-                }
-                None => return (words, true),
+        let byte = match comment_step(line, i, &mut in_comment) {
+            Step::At(at) => {
+                i = at;
+                continue;
             }
-            continue;
-        }
-        let Some(&byte) = line.get(i) else { break };
+            Step::InComment => return (words, true),
+            Step::LineComment => break,
+            Step::End => break,
+            Step::Code(byte) => byte,
+        };
         let next = line.get(i.saturating_add(1)).copied();
         match (byte, next) {
-            (b'/', Some(b'/')) => break,
-            (b'/', Some(b'*')) => {
-                in_comment = true;
-                i = i.saturating_add(2);
-            }
             _ if byte <= b' ' || matches!(byte, b',' | b';' | b'(' | b')' | b']') => {
                 i = i.saturating_add(1);
             }
@@ -299,24 +328,18 @@ fn list_words(line: &[u8], mut in_comment: bool) -> (Vec<String>, bool) {
 fn code_line(line: &[u8], mut in_comment: bool) -> bool {
     let mut i = 0_usize;
     loop {
-        if in_comment {
-            match find(line, i, b"*/") {
-                Some(end) => {
-                    in_comment = false;
-                    i = end.saturating_add(2);
-                }
-                None => return true,
+        let byte = match comment_step(line, i, &mut in_comment) {
+            Step::At(at) => {
+                i = at;
+                continue;
             }
-            continue;
-        }
-        let Some(&byte) = line.get(i) else { break };
+            Step::InComment => return true,
+            Step::LineComment => return false,
+            Step::End => break,
+            Step::Code(byte) => byte,
+        };
         let next = line.get(i.saturating_add(1)).copied();
         match (byte, next) {
-            (b'/', Some(b'/')) => return false,
-            (b'/', Some(b'*')) => {
-                in_comment = true;
-                i = i.saturating_add(2);
-            }
             (b'"' | b'\'', _) => {
                 i = i.saturating_add(1);
                 while let Some(&b) = line.get(i) {
@@ -354,13 +377,10 @@ fn directive(line: &[u8]) -> Option<(String, &[u8])> {
     let skip = rest.iter().take_while(|b| blank(b)).count();
     let rest = rest.get(skip..)?;
     let first = rest.first()?;
-    if !(first.is_ascii_alphabetic() || *first == b'_') {
+    if !is_name_start(*first) {
         return None;
     }
-    let len = rest
-        .iter()
-        .take_while(|b| b.is_ascii_alphanumeric() || **b == b'_')
-        .count();
+    let len = rest.iter().take_while(|b| is_name_char(**b)).count();
     Some((lossy(rest.get(..len)), rest.get(len..).unwrap_or_default()))
 }
 
@@ -380,18 +400,8 @@ fn quoted(operand: &[u8]) -> Option<String> {
 /// The first name in `text`, after blanks.
 fn first_name(text: &[u8]) -> Option<String> {
     let text = text.trim_ascii_start();
-    let len = text
-        .iter()
-        .take_while(|b| b.is_ascii_alphanumeric() || **b == b'_')
-        .count();
+    let len = text.iter().take_while(|b| is_name_char(**b)).count();
     (len > 0).then(|| lossy(text.get(..len)))
-}
-
-#[derive(Debug)]
-struct Cond {
-    taking: bool,
-    parent: bool,
-    done: bool,
 }
 
 /// What the words of a line are, in the file being read.
@@ -419,7 +429,8 @@ struct Cursor {
     entry: Option<usize>,
     base: Base,
     include_list: Option<u32>,
-    conds: Vec<Cond>,
+    /// The conditional blocks open in the file (PRJ-5.5).
+    conds: cond::CondStack<()>,
     in_comment: bool,
     /// In a list, the bytes of a quoted word open at the end of the line read last, and the line
     /// it opened on (QC-23.9).
@@ -455,7 +466,7 @@ impl Cursor {
             entry,
             base,
             include_list: None,
-            conds: Vec::new(),
+            conds: cond::CondStack::default(),
             in_comment: false,
             quote: None,
             ending: b"",
@@ -512,7 +523,7 @@ impl Cursor {
     }
 
     fn taking(&self) -> bool {
-        self.conds.last().is_none_or(|c| c.taking)
+        self.conds.taking()
     }
 
     /// The next line without its line break, with its 1-based number.
@@ -761,60 +772,44 @@ impl<L: Loader> Builder<'_, L> {
             return;
         };
         let parent = cursor.taking();
-        match name {
-            "ifdef" | "ifndef" => {
+        let directive = Directive::from_word(name);
+        match directive {
+            Some(Directive::Ifdef | Directive::Ifndef) => {
                 let defined = first_name(operand).is_some_and(|n| self.state.is_defined(&n));
-                let taking = parent && defined == (name == "ifdef");
-                cursor.conds.push(Cond {
-                    taking,
-                    parent,
-                    done: taking,
-                });
+                cursor
+                    .conds
+                    .open(defined == (directive == Some(Directive::Ifdef)), ());
             }
-            "if" => {
-                let taking = parent
+            Some(Directive::If) => {
+                let value = parent
                     && cond::eval(
                         &lossy(Some(operand)),
                         &|n| self.state.value(n).map(str::to_owned),
                         self.dialect,
                     );
-                cursor.conds.push(Cond {
-                    taking,
-                    parent,
-                    done: taking,
+                cursor.conds.open(value, ());
+            }
+            Some(Directive::Elif | Directive::Elifdef | Directive::Elifndef) => {
+                let state = &self.state;
+                let dialect = self.dialect;
+                cursor.conds.elif(|| match directive {
+                    Some(Directive::Elif) => cond::eval(
+                        &lossy(Some(operand)),
+                        &|n| state.value(n).map(str::to_owned),
+                        dialect,
+                    ),
+                    _ => {
+                        let defined = first_name(operand).is_some_and(|n| state.is_defined(&n));
+                        defined == (directive == Some(Directive::Elifdef))
+                    }
                 });
             }
-            "elif" | "elifdef" | "elifndef" => {
-                if let Some(c) = cursor.conds.last_mut() {
-                    let value = c.parent
-                        && !c.done
-                        && match name {
-                            "elif" => cond::eval(
-                                &lossy(Some(operand)),
-                                &|n| self.state.value(n).map(str::to_owned),
-                                self.dialect,
-                            ),
-                            _ => {
-                                let defined =
-                                    first_name(operand).is_some_and(|n| self.state.is_defined(&n));
-                                defined == (name == "elifdef")
-                            }
-                        };
-                    c.taking = value;
-                    c.done |= value;
-                }
-            }
-            "else" => {
-                if let Some(c) = cursor.conds.last_mut() {
-                    c.taking = c.parent && !c.done;
-                    c.done = true;
-                }
-            }
-            "endif" => {
-                cursor.conds.pop();
+            Some(Directive::Else) => cursor.conds.otherwise(),
+            Some(Directive::Endif) => {
+                cursor.conds.close();
             }
             _ if !parent => {}
-            "define" => {
+            Some(Directive::Define) => {
                 if let Some(macro_name) = first_name(operand) {
                     let body = operand
                         .trim_ascii_start()
@@ -824,24 +819,24 @@ impl<L: Loader> Builder<'_, L> {
                         .define(macro_name, lossy(Some(body.trim_ascii())));
                 }
             }
-            "undef" => {
+            Some(Directive::Undef) => {
                 if let Some(macro_name) = first_name(operand) {
                     self.state.undefine(&macro_name);
                 }
             }
-            "include" => {
+            Some(Directive::Include) => {
                 if let Some(path) = quoted(operand) {
                     cursor.pending.push_back((path, line, Via::Include));
                 }
             }
-            "includelist" => cursor.include_list = Some(line),
-            "endlist" => cursor.include_list = None,
-            "output" => {
+            Some(Directive::IncludeList) => cursor.include_list = Some(line),
+            Some(Directive::EndList) => cursor.include_list = None,
+            Some(Directive::Output) => {
                 if let Some(path) = quoted(operand) {
                     self.graph.declared_output = Some(normalize(&dir_of(&cursor.path).join(path)));
                 }
             }
-            "pragma" => {
+            Some(Directive::Pragma) => {
                 let operand = operand.trim_ascii_start();
                 let len = operand
                     .iter()
@@ -850,7 +845,21 @@ impl<L: Loader> Builder<'_, L> {
                 let name = lossy(operand.get(..len));
                 self.pragma(&name, operand.get(len..).unwrap_or_default());
             }
-            _ => {}
+            // The rest choose no file and no side of a block.
+            Some(
+                Directive::Append
+                | Directive::Eof
+                | Directive::Error
+                | Directive::Warning
+                | Directive::Message
+                | Directive::Copyright
+                | Directive::Package
+                | Directive::Pack
+                | Directive::ForceCrc
+                | Directive::Merge
+                | Directive::DataFile,
+            )
+            | None => {}
         }
     }
 
@@ -859,7 +868,6 @@ impl<L: Loader> Builder<'_, L> {
         let Some(cursor) = self.stack.last() else {
             return;
         };
-        let pragma = name.to_ascii_lowercase();
         let (args, _, _) = com_parse_words(args, b"", false, None);
         // FTEF-14.70: FTEQCC joins an include directory to the file being compiled and marks
         // that file with `#pragma once`; GMQCC's reading uses the file holding it (PRJ-5.12).
@@ -869,13 +877,13 @@ impl<L: Loader> Builder<'_, L> {
             (&cursor.path, cursor.name.as_ref())
         };
         let here = dir_of(marked);
-        match pragma.as_str() {
-            "progs_dat" => {
+        match Pragma::from_word(name.as_bytes()) {
+            Some(Pragma::ProgsDat) => {
                 if let Some(path) = args.first() {
                     self.graph.declared_output = Some(normalize(&here.join(path)));
                 }
             }
-            "sourcefile" => {
+            Some(Pragma::SourceFile) => {
                 for name in args {
                     let path = normalize(&self.root_dir.join(name));
                     if !self.graph.sourcefiles.contains(&path) {
@@ -883,7 +891,7 @@ impl<L: Loader> Builder<'_, L> {
                     }
                 }
             }
-            "includedir" => {
+            Some(Pragma::IncludeDir) => {
                 if let Some(dir) = args.first() {
                     // FTEF-14.70: the token with a `/`, joined to the file being compiled.
                     let (name, path) = match marked_name {
@@ -897,18 +905,42 @@ impl<L: Loader> Builder<'_, L> {
                     self.include_dirs.push(IncludeDir { name, path });
                 }
             }
-            "once" => {
+            Some(Pragma::Once) => {
                 self.once.insert(Marked::of(marked_name, marked));
             }
             // FTEF-12.18: `autoprototype = *msg?!!atoi(msg):true;`. FTEQCC reads a list-form
             // `progs.src` with its preprocessor, so the pragma there holds for the module.
-            "autoproto" if matches!(cursor.base, Base::Progs { .. }) => {
+            Some(Pragma::Autoproto) if matches!(cursor.base, Base::Progs { .. }) => {
                 let on = args
                     .first()
                     .is_none_or(|n| cond::fte_atoi(n.as_bytes()) != 0);
                 self.graph.autoproto = Some(on);
             }
-            _ => {}
+            // The rest name no file (PRJ-5.6 to PRJ-5.9), as does `autoproto` in a source file
+            // or a `progs.src` that is not a list.
+            Some(
+                Pragma::Autoproto
+                | Pragma::DontCompileThisFile
+                | Pragma::Copyright
+                | Pragma::Compress
+                | Pragma::ForceCrc
+                | Pragma::Framerate
+                | Pragma::File
+                | Pragma::Line
+                | Pragma::Noref
+                | Pragma::Nosave
+                | Pragma::DefaultStatic
+                | Pragma::Wrasm
+                | Pragma::Optimise
+                | Pragma::Optimize
+                | Pragma::Target
+                | Pragma::ProgsSrc
+                | Pragma::Opcode
+                | Pragma::Keyword
+                | Pragma::Flag
+                | Pragma::Warning,
+            )
+            | None => {}
         }
     }
 
@@ -1029,7 +1061,7 @@ impl<L: Loader> Builder<'_, L> {
             path: path.clone(),
             name: name.clone(),
             via,
-            parent,
+            parent: parent.map(GraphIndex::new),
         });
         let mut cursor = if self.dialect.has_fteqcc_extensions() {
             let start = if via == Via::Include {
@@ -1091,12 +1123,14 @@ fn com_parse_end(text: &[u8]) -> usize {
     text.len()
 }
 
-/// Whether the first token of `text`, split as `COM_Parse` splits (QC-23.2) with `/* */`
-/// comments skipped, starts with `#` (PRJ-4.1); under the FTEQCC and GMQCC dialects the first
-/// word `QCC_COM_Parse` reads (PRJ-4.9). `None` when there is no token.
-fn source_form(text: &[u8], dialect: Dialect) -> Option<bool> {
+/// The form of a `progs.src` whose text is `text`: [`Form::Source`] when its first token, split
+/// as `COM_Parse` splits (QC-23.2) with `/* */` comments skipped, starts with `#` (PRJ-4.1),
+/// under the FTEQCC and GMQCC dialects the first word `QCC_COM_Parse` reads (PRJ-4.9), and
+/// [`Form::List`] otherwise; `None` when there is no token.
+fn source_form(text: &[u8], dialect: Dialect) -> Option<Form> {
+    let form = |source: bool| if source { Form::Source } else { Form::List };
     if dialect.has_fteqcc_extensions() {
-        return com_parse(text, 0).map(|(word, _)| word.first() == Some(&b'#'));
+        return com_parse(text, 0).map(|(word, _)| form(word.first() == Some(&b'#')));
     }
     let mut in_comment = false;
     let mut quote = None;
@@ -1105,7 +1139,7 @@ fn source_form(text: &[u8], dialect: Dialect) -> Option<bool> {
         in_comment = still;
         quote = open;
         if let Some(first) = words.first() {
-            return Some(first.starts_with('#'));
+            return Some(form(first.starts_with('#')));
         }
     }
     None
@@ -1182,7 +1216,7 @@ pub fn build_graph<L: Loader>(
     let listed = progs_text(&text, dialect);
     let fte_reader = dialect.has_fteqcc_extensions();
     match source_form(&listed, dialect) {
-        Some(true) => {
+        Some(Form::Source) => {
             builder.graph.form = Some(Form::Source);
             builder.graph.files.push(GraphFile {
                 path: src.clone(),
@@ -1199,13 +1233,13 @@ pub fn build_graph<L: Loader>(
         }
         // PRJ-4.9: FTEQCC reads a list with no word, an empty output name and no file, as it
         // reads any other list.
-        Some(false) | None if fte_reader => {
+        Some(Form::List) | None if fte_reader => {
             builder.graph.form = Some(Form::List);
             builder
                 .stack
                 .push(Cursor::fteqcc_list(src, root_name, text));
         }
-        Some(false) => {
+        Some(Form::List) => {
             builder.graph.form = Some(Form::List);
             builder.stack.push(Cursor::list(src, root_name, listed));
         }
