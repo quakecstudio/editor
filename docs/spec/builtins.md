@@ -875,6 +875,11 @@ profile (DIFF-12.19); everything else runs under id's.
   particle ones) pass it under the server's defaults: protocol RMQ, `PEXT2_SUPPORTED_SERVER`
   with `PEXT2_REPLACEMENTDELTAS` (`Quake/protocol.h`), `r_fteparticles` 1 and `cl_nopext` 0, so
   every name in the list is supported.
+- **BUILTIN-18.15** `min(a, b, ...)` (#94) and `max(a, b, ...)` (#95) are `PF_min` and `PF_max`:
+  the first argument, replaced by each later one the call passed for which `r > v` (`r < v`)
+  holds, so a NaN is the answer only when it comes first. `bound(min, value, max)` (#96) is
+  `PF_bound`: `value` set to `max` when above it, then to `min` when below it, so `min` wins
+  when the two cross.
 
 ## Test vectors
 

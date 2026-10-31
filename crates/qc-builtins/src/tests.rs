@@ -2043,6 +2043,30 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.15: min and max over every argument passed, a NaN kept only when first;
+    // bound lowers to max then raises to min
+    #[test]
+    fn min_max_and_bound() {
+        let run = |number: u32, args: &[f32]| {
+            let mut f = Fixture::new(number, u16::try_from(args.len()).unwrap(), vec![0], 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            for (n, value) in args.iter().enumerate() {
+                f.set_parm_f(u16::try_from(n).unwrap(), *value);
+            }
+            f.run_ok(ServerState::Active);
+            f.return_f()
+        };
+        assert_eq!(run(94, &[3.0, 1.0, 2.0]), 1.0);
+        assert_eq!(run(95, &[3.0, 1.0, 7.0]), 7.0);
+        assert_eq!(run(95, &[3.0]), 3.0);
+        assert!(run(94, &[f32::NAN, 1.0]).is_nan());
+        assert_eq!(run(94, &[1.0, f32::NAN]), 1.0);
+        assert_eq!(run(96, &[0.0, 5.0, 10.0]), 5.0);
+        assert_eq!(run(96, &[0.0, 15.0, 10.0]), 10.0);
+        assert_eq!(run(96, &[0.0, -5.0, 10.0]), 0.0);
+        assert_eq!(run(96, &[10.0, 5.0, 0.0]), 10.0);
+    }
+
     // spec BUILTIN-18.14: checkextension is 1 for a listed extension, making its pr_ext_
     // setting, 0 when that setting is 0, and 0 for any other name
     #[test]

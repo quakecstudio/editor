@@ -1044,6 +1044,13 @@ impl MockBuiltins {
 
 // ===== vkQuake's extension builtins (BUILTIN-18) =====
 
+/// Which of `min` and `max` (BUILTIN-18.15).
+#[derive(Clone, Copy)]
+enum Extreme {
+    Min,
+    Max,
+}
+
 /// A call's parameters as `sprintf` reads them (BUILTIN-18.8).
 struct ParmArgs<'c, 'm, 'p, 'e> {
     context: &'c mut Context<'m, 'p>,
@@ -1172,6 +1179,9 @@ impl MockBuiltins {
         match number {
             80 => Some(self.b_infokey(context)),
             93 => Some(self.b_registercvar(context)),
+            94 => Some(Self::b_extreme(context, Extreme::Min)),
+            95 => Some(Self::b_extreme(context, Extreme::Max)),
+            96 => Some(Self::b_bound(context)),
             99 => Some(self.b_checkextension(context)),
             110 => Some(self.b_fopen(context)),
             118 => Some(self.b_strzone(context)),
@@ -1276,6 +1286,40 @@ impl MockBuiltins {
             None => 0,
         };
         write_return_string(context, value)
+    }
+
+    /// `min(a, b, ...)` and `max(a, b, ...)`, vkQuake's `PF_min` and `PF_max` (BUILTIN-18.15):
+    /// the first argument, replaced by each later one the call passed that is below it (above
+    /// it), so a NaN is replaced only when it comes first.
+    fn b_extreme(context: &mut Context<'_, '_>, extreme: Extreme) -> Result<(), BuiltinError> {
+        let mut r = read_parm_float(context, 0)?;
+        let argc = u16::try_from(context.machine().argc()).unwrap_or(u16::MAX);
+        for n in 1..argc {
+            let v = read_parm_float(context, n)?;
+            let replace = match extreme {
+                Extreme::Min => r > v,
+                Extreme::Max => r < v,
+            };
+            if replace {
+                r = v;
+            }
+        }
+        write_return_float(context, r)
+    }
+
+    /// `bound(min, value, max)`, vkQuake's `PF_bound` (BUILTIN-18.15): `value` lowered to
+    /// `max`, then raised to `min`.
+    fn b_bound(context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let low = read_parm_float(context, 0)?;
+        let mut value = read_parm_float(context, 1)?;
+        let high = read_parm_float(context, 2)?;
+        if value > high {
+            value = high;
+        }
+        if value < low {
+            value = low;
+        }
+        write_return_float(context, value)
     }
 
     /// `checkextension(name)`, vkQuake's `PF_checkextension` (BUILTIN-18.14): 1 for a name of
