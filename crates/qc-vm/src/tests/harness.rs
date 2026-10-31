@@ -27,6 +27,10 @@ use crate::exec::{Builtins, Context};
 pub(crate) struct StubBuiltins;
 
 impl Builtins for StubBuiltins {
+    fn limit(&self) -> Option<u32> {
+        Some(crate::LIMIT_NUM_BUILTINS)
+    }
+
     fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
         if number == 2 {
             let function = context.machine().globals()[4].as_i32();

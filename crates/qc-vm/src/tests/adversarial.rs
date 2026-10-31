@@ -38,6 +38,10 @@ fn read(bytes: &[u8]) -> Progs<'_> {
 struct NestedRunBuiltin;
 
 impl Builtins for NestedRunBuiltin {
+    fn limit(&self) -> Option<u32> {
+        Some(crate::LIMIT_NUM_BUILTINS)
+    }
+
     fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
         if number == 2 {
             let function = context.machine().globals()[4].as_i32();
@@ -287,6 +291,10 @@ fn engine_string_resolves_inside_a_nested_run() {
     // A dispatch that both runs nested programs (builtin 2) and owns one engine string.
     struct Dispatch;
     impl Builtins for Dispatch {
+        fn limit(&self) -> Option<u32> {
+            Some(crate::LIMIT_NUM_BUILTINS)
+        }
+
         fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
             if number == 2 {
                 let function = context.machine().globals()[4].as_i32();
@@ -458,6 +466,10 @@ fn reviewer_an_engine_strings_text_is_read_at_each_comparison() {
         text: Vec<u8>,
     }
     impl Builtins for Dispatch {
+        fn limit(&self) -> Option<u32> {
+            Some(crate::LIMIT_NUM_BUILTINS)
+        }
+
         fn call(&mut self, number: u32, _context: &mut Context<'_, '_>) -> Result<(), RunError> {
             if number == 2 {
                 self.text = b"two".to_vec();

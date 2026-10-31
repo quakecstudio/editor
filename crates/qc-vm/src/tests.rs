@@ -344,6 +344,10 @@ fn nested_run_clears_trace_flag() {
         after_nested: Option<bool>,
     }
     impl Builtins for TraceThenNest {
+        fn limit(&self) -> Option<u32> {
+            Some(crate::LIMIT_NUM_BUILTINS)
+        }
+
         fn call(&mut self, _number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
             context.machine().set_tracing(true);
             self.before_nested = Some(context.machine_view().tracing());

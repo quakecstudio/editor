@@ -67,9 +67,10 @@ pub trait Builtins {
     /// not below it fails with `Bad builtin call number`; `None` when every number reaches
     /// [`Builtins::call`], as vkQuake sends a number past its table to `PF_Fixme` (VM-14.7).
     /// id's table has [`LIMIT_NUM_BUILTINS`](crate::LIMIT_NUM_BUILTINS) (LIMIT-5.1).
-    fn limit(&self) -> Option<u32> {
-        Some(crate::LIMIT_NUM_BUILTINS)
-    }
+    ///
+    /// Required, as [`Builtins::engine_string`] is, so a dispatch that wraps another passes its
+    /// limit on rather than falling back to id's.
+    fn limit(&self) -> Option<u32>;
 }
 
 /// A [`Builtins`] that has no builtins: every call fails as `Bad builtin call number` would be
@@ -89,6 +90,11 @@ impl Builtins for NoBuiltins {
     /// `NoBuiltins` has no engine, so it makes no engine strings and resolves none (EDICT-13.1).
     fn engine_string(&self, _value: i32) -> Option<&[u8]> {
         None
+    }
+
+    /// id's table (VM-14.7).
+    fn limit(&self) -> Option<u32> {
+        Some(crate::LIMIT_NUM_BUILTINS)
     }
 }
 
