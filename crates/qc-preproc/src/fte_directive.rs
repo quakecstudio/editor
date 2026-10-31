@@ -1466,7 +1466,7 @@ impl<L: Loader> Preprocessor<L> {
     /// `s_filen` as `__FILE__` writes it (FTEF-14.74): the name the innermost `#pragma file`
     /// of an open chunk gave, or else the name of the file being read.
     pub(crate) fn fte_file_name(run: &Run) -> &[u8] {
-        run.chunks
+        run.chunks()
             .iter()
             .rev()
             .find_map(ChunkReader::file_name)
@@ -1933,7 +1933,7 @@ impl<L: Loader> Preprocessor<L> {
                         }
                     }
                     Bytes::Chunk(..) => {
-                        if let Some(chunk) = run.chunks.last_mut() {
+                        if let Some(chunk) = run.chunk_mut() {
                             chunk.rename(name);
                         }
                     }
@@ -1950,7 +1950,7 @@ impl<L: Loader> Preprocessor<L> {
                         }
                     }
                     Bytes::Chunk(..) => {
-                        if let Some(chunk) = run.chunks.last_mut() {
+                        if let Some(chunk) = run.chunk_mut() {
                             chunk.renumber(from, line);
                         }
                     }

@@ -886,13 +886,8 @@ struct Run {
     pending: Vec<Item>,
     /// The file's frame macros, as its dialect keeps them.
     frames: FrameMacros,
-    /// For each macro name, how many live hide-set nodes name it (QC-9.17).
-    live: HashMap<String, Live>,
-    /// In an FTEQCC dialect, the chunks open where reading stands, outermost first: the
-    /// expansion being read and those it was used in (FTEF-14.17).
-    chunks: Vec<ChunkReader>,
-    /// How many of [`Run::chunks`] each macro has, FTEQCC's `c->inside`.
-    open_names: HashMap<String, usize>,
+    /// How the dialect keeps a macro from expanding inside itself, chosen once.
+    guard: Guard,
     /// The macro expansions this file has made (FTEF-14.28, QC-9.18).
     expanded: Expanded,
     /// Under FTEQCC, how many directives are being run inside another reading (FTEF-14.47).
@@ -932,7 +927,99 @@ impl Expanded {
     }
 }
 
+/// How a dialect keeps a macro from expanding inside its own expansion, chosen once from the
+/// dialect.
+enum Guard {
+    /// `qcc`'s: each token's hide set, and for each macro name how many live hide-set nodes
+    /// name it (QC-9.17).
+    HideSets(HashMap<String, Live>),
+    /// FTEQCC's: the chunks open where reading stands, outermost first, the expansion being
+    /// read and those it was used in, and how many of them each macro has, `c->inside`
+    /// (FTEF-14.17).
+    Chunks {
+        open: Vec<ChunkReader>,
+        inside: HashMap<String, usize>,
+    },
+}
+
+impl Default for Guard {
+    fn default() -> Self {
+        Self::HideSets(HashMap::new())
+    }
+}
+
+impl Guard {
+    /// The guard of `dialect`.
+    fn for_dialect(dialect: Dialect) -> Self {
+        if dialect.has_fteqcc_extensions() {
+            Self::Chunks {
+                open: Vec::new(),
+                inside: HashMap::new(),
+            }
+        } else {
+            Self::default()
+        }
+    }
+}
+
 impl Run {
+    /// The chunks open where reading stands, outermost first; none under `qcc`'s guard.
+    pub(crate) fn chunks(&self) -> &[ChunkReader] {
+        match &self.guard {
+            Guard::Chunks { open, .. } => open,
+            Guard::HideSets(_) => &[],
+        }
+    }
+
+    /// The chunk being read, if one is open.
+    pub(crate) fn chunk_mut(&mut self) -> Option<&mut ChunkReader> {
+        match &mut self.guard {
+            Guard::Chunks { open, .. } => open.last_mut(),
+            Guard::HideSets(_) => None,
+        }
+    }
+
+    /// Takes the chunk being read off the open ones.
+    fn pop_chunk(&mut self) -> Option<ChunkReader> {
+        match &mut self.guard {
+            Guard::Chunks { open, .. } => open.pop(),
+            Guard::HideSets(_) => None,
+        }
+    }
+
+    /// Puts `chunk` back as the one being read.
+    fn push_chunk(&mut self, chunk: ChunkReader) {
+        if let Guard::Chunks { open, .. } = &mut self.guard {
+            open.push(chunk);
+        }
+    }
+
+    /// Opens `chunk`, one more of its macro's (`c->inside++`).
+    pub(crate) fn open_chunk(&mut self, chunk: ChunkReader) {
+        if let Guard::Chunks { open, inside } = &mut self.guard {
+            let count = inside.entry(chunk.name.clone()).or_default();
+            *count = count.saturating_add(1);
+            open.push(chunk);
+        }
+    }
+
+    /// Counts a chunk of the macro `name` closed (`c->inside--`).
+    pub(crate) fn closed_chunk(&mut self, name: &str) {
+        if let Guard::Chunks { inside, .. } = &mut self.guard
+            && let Some(count) = inside.get_mut(name)
+        {
+            *count = count.saturating_sub(1);
+        }
+    }
+
+    /// How many chunks of the macro `name` are open.
+    pub(crate) fn chunks_of(&self, name: &str) -> usize {
+        match &self.guard {
+            Guard::Chunks { inside, .. } => inside.get(name).copied().unwrap_or(0),
+            Guard::HideSets(_) => 0,
+        }
+    }
+
     /// Reports a diagnostic, under FTEQCC as its warning settings now say (FTEF-14.63).
     fn report(&mut self, code: Code, message: impl Into<String>, span: FileSpan) {
         let settings = self.warnings;
@@ -1379,6 +1466,7 @@ impl<L: Loader> Preprocessor<L> {
             unit: name.clone(),
             warnings,
             frames: FrameMacros::for_dialect(self.dialect),
+            guard: Guard::for_dialect(self.dialect),
             ..Run::default()
         };
         run.out.warnings.extend(warnings.map(|w| (0, w)));
@@ -1518,21 +1606,21 @@ impl<L: Loader> Preprocessor<L> {
             return Some(item);
         }
         let fte = self.dialect.has_fteqcc_extensions();
-        while let Some(mut chunk) = run.chunks.pop() {
+        while let Some(mut chunk) = run.pop_chunk() {
             chunk.refresh(self.lexing());
             if fte && let Some(hash) = chunk.directive_at() {
                 let bytes = chunk.bytes();
-                run.chunks.push(chunk);
+                run.push_chunk(chunk);
                 let resume = self.fte_directive(run, &bytes, hash, Position::Line);
-                chunk = run.chunks.pop()?;
+                chunk = run.pop_chunk()?;
                 if let Some(resume) = resume {
                     chunk.resume(hash, resume, self.lexing());
-                    run.chunks.push(chunk);
+                    run.push_chunk(chunk);
                     continue;
                 }
             }
             if let Some(item) = chunk.next_item(self.macro_strings()) {
-                run.chunks.push(chunk);
+                run.push_chunk(chunk);
                 return Some(item);
             }
             Self::close_chunk(run, chunk);
@@ -1978,7 +2066,10 @@ impl<L: Loader> Preprocessor<L> {
         let TokenKind::Name(name) = &item.tok.kind else {
             return Some(item);
         };
-        if hidden(&run.live, &item.hide, name) {
+        let Guard::HideSets(live) = &run.guard else {
+            return Some(item);
+        };
+        if hidden(live, &item.hide, name) {
             return Some(item);
         }
         let Some(mac) = self.macros.get(name).cloned() else {
@@ -2031,13 +2122,10 @@ impl<L: Loader> Preprocessor<L> {
             }
             collected_back = collected;
         }
-        let live = if let Some(live) = run.live.get(&name) {
-            Rc::clone(live)
-        } else {
-            let live = Live::default();
-            run.live.insert(name.clone(), Rc::clone(&live));
-            live
+        let Guard::HideSets(lives) = &mut run.guard else {
+            return Some(item);
         };
+        let live = Rc::clone(lives.entry(name.clone()).or_default());
         let hide = hide_with(&item.hide, &live);
         let id = ExpansionId::new(self.expansions.len());
         let limit = FTE_MAX_EXPANDED_TOKENS.saturating_sub(run.expanded.tokens);
