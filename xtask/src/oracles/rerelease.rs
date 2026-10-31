@@ -83,6 +83,36 @@ const CODEBASES: [Codebase; 6] = [
     },
 ];
 
+/// The corpus mods FTEQCC compiles with `-Tid` (P2-150): each compiled as a rerelease codebase
+/// is, with [`FLAGS`], into `target/oracles/rerelease/<id>/`, again at every run, with no
+/// digest recorded and none of [`check`]'s checks, as a large one takes FTEQCC's 32-bit layout.
+pub(crate) const MODS: [&str; 6] = [
+    "copper",
+    "arcane-dimensions",
+    "librequake",
+    "crmod7",
+    "qc-conduit",
+    "swab",
+];
+
+/// Compiles the corpus mod `id`, found in `codebases/<id>`, and returns the directory holding
+/// its `progs.dat` and `progs.lno`.
+pub(crate) fn build_mod(oracles: &Oracles, codebases: &Path, id: &str) -> Result<PathBuf, String> {
+    let id = MODS
+        .iter()
+        .find(|m| **m == id)
+        .ok_or_else(|| format!("{id} is not a corpus mod"))?;
+    let codebase = Codebase {
+        id,
+        extra: &[],
+        progs: "",
+        lno: "",
+    };
+    let out = oracles.rerelease.join(id);
+    compile(oracles, &codebases.join(id), &codebase, &out)?;
+    Ok(out)
+}
+
 /// LNO-2.1's magic.
 const LNO_MAGIC: &[u8; 4] = b"LNOF";
 /// LNO-2.2's only version.

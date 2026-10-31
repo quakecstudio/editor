@@ -47,15 +47,21 @@ pub(crate) enum Profile {
     },
 }
 
-/// Compiles the codebase whose `progs.src` is in `dir` with `qc-codegen` in `profile`.
+/// Compiles the codebase whose `progs.src` is in `dir` with `qc-codegen` in `profile`: its one
+/// module, or of several the server module, `progs.src`, which FTEQCC compiles when no
+/// `-srcfile` is given.
 pub(crate) fn compile_codebase(
     dir: &Path,
     profile: Profile,
     options: Options,
 ) -> Result<Compiled, String> {
     let project = qc_project::open(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let [module] = project.modules.as_slice() else {
-        return Err(format!("{}: one module expected", dir.display()));
+    let module = match project.modules.as_slice() {
+        [module] => module,
+        modules => modules
+            .iter()
+            .find(|m| m.src.file_name().is_some_and(|n| n == "progs.src"))
+            .ok_or_else(|| format!("{}: no progs.src module", dir.display()))?,
     };
     let mut db = Db::new();
     if let Profile::Fteqcc { autoproto } = profile {

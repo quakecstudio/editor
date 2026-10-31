@@ -48,6 +48,10 @@ const RERELEASE: [&str; 5] = [
 /// statements: a run names them, and each joins [`RERELEASE`] once it passes (P2-150).
 const PENDING: [&str; 1] = ["rerelease-ctf"];
 
+/// The corpus mods (`oracles/rerelease.rs`'s `MODS`) at DIFF-12.5's bar, which the nightly run
+/// compares; a run may name the others until each joins (DIFF-12.18).
+const MODS_AT_BAR: [&str; 1] = ["copper"];
+
 const USAGE: &str = "usage: cargo xtask compiler-diff [--fast | --full] [<codebase>...]";
 
 /// Runs `cargo xtask compiler-diff [--fast | --full] [<codebase>...]`.
@@ -88,7 +92,11 @@ impl Mode {
     fn codebases(self) -> Vec<&'static str> {
         match self {
             Self::Fast => VANILLA.to_vec(),
-            Self::Full => VANILLA.into_iter().chain(RERELEASE).collect(),
+            Self::Full => VANILLA
+                .into_iter()
+                .chain(RERELEASE)
+                .chain(MODS_AT_BAR)
+                .collect(),
         }
     }
 
@@ -97,7 +105,16 @@ impl Mode {
     fn named(self) -> Vec<&'static str> {
         match self {
             Self::Fast => self.codebases(),
-            Self::Full => self.codebases().into_iter().chain(PENDING).collect(),
+            Self::Full => self
+                .codebases()
+                .into_iter()
+                .chain(PENDING)
+                .chain(
+                    rerelease::MODS
+                        .into_iter()
+                        .filter(|id| !MODS_AT_BAR.contains(id)),
+                )
+                .collect(),
         }
     }
 
@@ -146,7 +163,11 @@ fn write_progs(
 ) -> Result<[PathBuf; 3], String> {
     fs::create_dir_all(work).map_err(|e| format!("{}: {e}", work.display()))?;
     let codebase = codebases.join(id);
-    let (theirs, profile) = if rerelease::compiles(id) {
+    let (theirs, profile) = if rerelease::MODS.contains(&id) {
+        let path = rerelease::build_mod(oracles, codebases, id)?.join("progs.dat");
+        let theirs = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        (theirs, Profile::Fteqcc { autoproto: false })
+    } else if rerelease::compiles(id) {
         let (dir, _) = rerelease::build(oracles, codebases, id)?;
         let path = dir.join("progs.dat");
         let theirs = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -200,7 +221,7 @@ fn run_suite(
             "--codebase",
             id,
             "--oracle",
-            if rerelease::compiles(id) {
+            if rerelease::compiles(id) || rerelease::MODS.contains(&id) {
                 "fteqcc"
             } else {
                 "qcc"
@@ -232,7 +253,7 @@ mod tests {
 
     use qc_codegen::Options;
 
-    use super::{Mode, PENDING, RERELEASE, VANILLA, parse, write_progs};
+    use super::{MODS_AT_BAR, Mode, PENDING, RERELEASE, VANILLA, parse, write_progs};
     use crate::exec::{Fake, Reply};
     use crate::oracles::codegen::{self, Profile};
     use crate::oracles::rerelease;
@@ -365,7 +386,7 @@ mod tests {
         assert_eq!(Mode::Fast.codebases(), ["id-1.01"]);
         let full = Mode::Full.codebases();
         assert_eq!(full.first(), Some(&"id-1.01"));
-        assert_eq!(full.len(), 1 + RERELEASE.len());
+        assert_eq!(full.len(), 1 + RERELEASE.len() + MODS_AT_BAR.len());
         assert_eq!(
             RERELEASE.len() + PENDING.len(),
             6,
@@ -387,5 +408,30 @@ mod tests {
                 .all(|id| rerelease::compiles(id))
         );
         assert!(VANILLA.iter().all(|id| !rerelease::compiles(id)));
+    }
+
+    // spec DIFF-12.18: the nightly run compares the corpus mods at the bar, and a run may name
+    // any of them, each compiled by the FTEQCC oracle as a mod
+    #[test]
+    fn the_nightly_run_adds_the_mods_at_the_bar() {
+        let full = Mode::Full.codebases();
+        assert!(MODS_AT_BAR.iter().all(|id| full.contains(id)));
+        assert!(MODS_AT_BAR.iter().all(|id| rerelease::MODS.contains(id)));
+        let named = Mode::Full.named();
+        let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        for id in rerelease::MODS {
+            assert_eq!(named.iter().filter(|n| **n == id).count(), 1, "{id}");
+            assert!(!rerelease::compiles(id));
+            assert_eq!(
+                parse(&args(&["--full", id])).unwrap(),
+                (Mode::Full, vec![id])
+            );
+            assert!(parse(&args(&["--fast", id])).is_err());
+        }
+        let pending: Vec<_> = rerelease::MODS
+            .into_iter()
+            .filter(|id| !MODS_AT_BAR.contains(id))
+            .collect();
+        assert!(pending.iter().all(|id| !full.contains(id)));
     }
 }
