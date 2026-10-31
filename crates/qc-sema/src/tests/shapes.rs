@@ -24,9 +24,9 @@ const FLOAT: Type = Type::Simple(SimpleType::Float);
 #[test]
 fn array_sizes_are_recorded() {
     let i = index("float a[3];\nstring s[] = { \"x\", \"y\" };\nfloat f;\n");
-    assert_eq!(i.arrays.get(&def(&i, "a")), Some(&3));
-    assert_eq!(i.arrays.get(&def(&i, "s")), Some(&2));
-    assert_eq!(i.arrays.get(&def(&i, "f")), None);
+    assert_eq!(i.array_len(def(&i, "a")), Some(3));
+    assert_eq!(i.array_len(def(&i, "s")), Some(2));
+    assert_eq!(i.array_len(def(&i, "f")), None);
 }
 
 // spec FTEF-6.13: a struct's words and each member's word, a parent's members first, a static
@@ -38,7 +38,7 @@ fn struct_layouts_are_recorded() {
          struct base { float a; };\nstruct child : base { float b; static float s; int bits : 3; };\n\
          struct child c;\n",
     );
-    let p = &i.structs[&named("P")];
+    let p = &i.struct_shape(&named("P")).unwrap();
     assert_eq!(p.words, 5);
     let member = |name: &str, ty: Type, word: u32| MemberShape {
         name: name.to_owned(),
@@ -54,7 +54,7 @@ fn struct_layouts_are_recorded() {
             member("f", FLOAT, 4),
         ]
     );
-    let c = &i.structs[&named("struct child")];
+    let c = &i.struct_shape(&named("struct child")).unwrap();
     assert_eq!(c.words, 3);
     assert_eq!(c.members, [member("a", FLOAT, 0), member("b", FLOAT, 1)]);
 }
@@ -65,11 +65,11 @@ fn member_arrays_and_nested_structs_are_recorded() {
     let i = index(
         "typedef struct { float x[2]; } In;\ntypedef struct { In i; float y; } Out;\nOut o;\n",
     );
-    let out = &i.structs[&named("Out")];
+    let out = &i.struct_shape(&named("Out")).unwrap();
     assert_eq!(out.words, 3);
     assert_eq!(out.members[0].word, 0);
     assert_eq!(out.members[1].word, 2);
-    let inner = &i.structs[&named("In")];
+    let inner = &i.struct_shape(&named("In")).unwrap();
     assert_eq!(inner.members[0].count, 2);
 }
 
@@ -81,14 +81,14 @@ fn named_types_are_aliased_to_their_types() {
         "enum E { A };\nenum F : string { B = \"b\" };\ntypedef float T;\n\
          typedef struct { float f; } S;\nE e;\nF g;\nT t;\nS s;\nfloat plain;\n",
     );
-    assert_eq!(i.aliases.get(&named("E")), Some(&FLOAT));
+    assert_eq!(i.alias(&named("E")), Some(&FLOAT));
     assert_eq!(
-        i.aliases.get(&named("F")),
+        i.alias(&named("F")),
         Some(&Type::Simple(SimpleType::String))
     );
-    assert_eq!(i.aliases.get(&named("T")), Some(&FLOAT));
-    assert!(!i.aliases.contains_key(&named("S")) || i.structs.contains_key(&named("S")));
-    assert!(!i.aliases.contains_key(&FLOAT));
+    assert_eq!(i.alias(&named("T")), Some(&FLOAT));
+    assert!(!i.alias(&named("S")).is_some() || i.struct_shape(&named("S")).is_some());
+    assert!(!i.alias(&FLOAT).is_some());
 }
 
 // spec FTEF-19.10: each enum item's value is recorded, a float's bits or an integer's
@@ -120,7 +120,8 @@ fn bitfields_and_narrow_members_are_left_out() {
          typedef struct { __int8 c; float g; } N;\nN nn;\n",
     );
     let names = |ty: &str| -> Vec<String> {
-        i.structs[&named(ty)]
+        i.struct_shape(&named(ty))
+            .unwrap()
             .members
             .iter()
             .map(|m| m.name.clone())

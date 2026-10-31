@@ -16,6 +16,7 @@
     reason = "test code: a failed unwrap, expect, panic or index is a failed test"
 )]
 
+mod accessors;
 mod aggregates;
 mod assignments;
 mod builtin_arguments;
