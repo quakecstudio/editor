@@ -785,14 +785,14 @@ mod bodies {
         reason = "test code: a failed unwrap, index, expect or overflow is a failed test"
     )]
 
-    use crate::mock::{MessageDest, MockEngine, Precache};
+    use crate::mock::{EngineProfile, MessageDest, MockEngine, Precache};
     use crate::{MockBuiltins, math};
     use qc_edict::system::{SYSTEM_GLOBALS, field_by_name, global_by_name};
     use qc_edict::{EDICT_SYS_GLOBALS_END, EdictNumber};
     use qc_progs::opcode::Opcode;
     use qc_progs::{Function, Progs, ProgsFile, Statement, write};
     use qc_types::{Etype, PROGS_OFS_PARM0, PROGS_OFS_RETURN, PROGS_PARM_SLOTS, Slot};
-    use qc_vm::{ErrorKind, Machine, NoObserver, RunError, ServerState};
+    use qc_vm::{Builtins as _, ErrorKind, Machine, NoObserver, RunError, ServerState};
 
     /// A global slot holding the function value the entry's `CALL` calls: the first slot past
     /// the system globals (EDICT-2.1), so no builtin that writes one, such as `makevectors`
@@ -812,6 +812,11 @@ mod bodies {
     /// then is done. Function 2 is the builtin (`first_statement = -number`). `strings` is the
     /// string table bytes (a leading NUL for the empty string); `numglobals` is at least 92.
     fn build_progs(number: u32, argc: u16, strings: Vec<u8>) -> Vec<u8> {
+        build_named_progs(number, argc, strings, 0)
+    }
+
+    /// [`build_progs`] with the builtin's function named by the string at `s_name`.
+    fn build_named_progs(number: u32, argc: u16, strings: Vec<u8>, s_name: i32) -> Vec<u8> {
         let mut globals = vec![Slot::ZERO; 128];
         globals[usize::try_from(CALL_TARGET_SLOT).unwrap()] = Slot::from_i32(2);
 
@@ -840,6 +845,7 @@ mod bodies {
             },
             Function {
                 first_statement: builtin_first,
+                s_name,
                 ..Function::default()
             },
         ];
@@ -1962,6 +1968,72 @@ mod bodies {
         let value = 10 * past.machine.edicts().layout().edict_size();
         past.set_parm_i(0, value);
         past.run_err(ServerState::Active, "NUM_FOR_EDICT: bad pointer");
+    }
+
+    /// A run of builtin `number`, called through a function named `name`, in a mock engine under
+    /// `profile`.
+    fn run_profiled(number: u32, name: &str, profile: EngineProfile) -> Result<(), RunError> {
+        let (strings, offsets) = string_table(&[name]);
+        let bytes = build_named_progs(number, 0, strings, offsets[0]);
+        let progs = Progs::read(&bytes).unwrap();
+        let mut machine = Machine::new(&progs, 0).unwrap();
+        let mut engine = MockEngine::new("test", 0, 1);
+        engine.profile = profile;
+        let mut builtins = MockBuiltins::with_engine(engine);
+        machine.execute_program(
+            &progs,
+            ServerState::Active,
+            &mut builtins,
+            &mut NoObserver,
+            1,
+        )
+    }
+
+    // spec BUILTIN-18.1: under vkQuake's profile every number reaches the dispatch; under
+    // id's the table ends at LIMIT_NUM_BUILTINS
+    #[test]
+    fn the_profile_decides_which_numbers_exist() {
+        let mut id = MockBuiltins::default();
+        assert_eq!(id.limit(), Some(qc_vm::LIMIT_NUM_BUILTINS));
+        id.engine_mut().profile = EngineProfile::VkQuake;
+        assert_eq!(id.limit(), None);
+        let bad = run_profiled(500, "ext", EngineProfile::Id).unwrap_err();
+        assert_eq!(bad.kind, ErrorKind::BadBuiltin);
+        // An id builtin keeps id's behaviour: `random` returns a value in [0, 1).
+        assert!(run_profiled(7, "random", EngineProfile::VkQuake).is_ok());
+    }
+
+    // spec BUILTIN-18.2: a number with no builtin is PF_Fixme's error, naming the number and
+    // the function called, id's gaps included
+    #[test]
+    fn vkquake_names_an_unimplemented_builtin() {
+        let far = run_profiled(500, "frobnicate", EngineProfile::VkQuake).unwrap_err();
+        assert_eq!(far.message(), "unimplemented builtin #500 - frobnicate");
+        let gap = run_profiled(5, "gap", EngineProfile::VkQuake).unwrap_err();
+        assert_eq!(gap.message(), "unimplemented builtin #5 - gap");
+        let id = run_profiled(5, "gap", EngineProfile::Id).unwrap_err();
+        assert_eq!(id.message(), "unimplemented bulitin");
+    }
+
+    // spec BUILTIN-18.3: vkQuake's precache lists hold 2048 sounds and 8192 models, id's 256
+    // each
+    #[test]
+    fn vkquake_precaches_more() {
+        assert_eq!(EngineProfile::VkQuake.precache_limit(Precache::Sound), 2048);
+        assert_eq!(EngineProfile::VkQuake.precache_limit(Precache::Model), 8192);
+        assert_eq!(EngineProfile::Id.precache_limit(Precache::Sound), 256);
+        assert_eq!(EngineProfile::Id.precache_limit(Precache::Model), 256);
+        for (profile, limit) in [(EngineProfile::Id, 256), (EngineProfile::VkQuake, 2048)] {
+            let mut engine = MockEngine::new("test", 0, 1);
+            engine.profile = profile;
+            for n in 1..limit {
+                engine
+                    .precache(Precache::Sound, &format!("s{n}.wav"))
+                    .unwrap();
+            }
+            assert_eq!(engine.sound_precache.len(), limit);
+            assert!(engine.precache(Precache::Sound, "full.wav").is_err());
+        }
     }
 
     // spec BUILTIN-1.2: a PF_Fixme gap number is the runtime error with id's spelling.
