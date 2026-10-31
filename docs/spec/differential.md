@@ -723,15 +723,20 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   least one statement of its body no earlier call had, up to `EXTRA_ROUNDS` (4) times `rounds`
   in all. The calls stay deterministic, and a function whose body every call already covers
   costs no more.
-- **DIFF-12.17** Each progs is loaded (DIFF-3.1) and set up as a world for each scenario of the
-  VM differential's corpus set (`qs-differential`'s `runner::scenarios`): the map's entities
-  are spawned and the settle frames run (DIFF-3), the scenario's clients enter (DIFF-4), and
-  the scenario's frames run with its inputs (DIFF-5.1), so the calls start from a world the
-  game has played: players on teams, items taken, monsters awake. A progs that is refused, or
-  a setup that ends in an error in either progs, a frame's included, stops the run with an
-  error. The two worlds are then compared as DIFF-12.3 compares two calls, the statements and
-  builtins of every frame with them; a difference there is the run's one divergence, and no
-  function is called.
+- **DIFF-12.17** **Withdrawn** 2026-10-31: it stopped the run when a setup ended in an error in
+  either progs, even when both ended in the same one, which a mod that refuses a scenario's
+  map does (crmod7 needs a deathmatch start, P2-150). Replaced by DIFF-12.20.
+- **DIFF-12.20** Each progs is loaded (DIFF-3.1) and set up as a world for each scenario of the
+  VM differential's corpus set (`qs-differential`'s `runner::scenarios`): the map's entities are
+  spawned and the settle frames run (DIFF-3), the scenario's clients enter (DIFF-4), and the
+  scenario's frames run with its inputs (DIFF-5.1), so the calls start from a world the game has
+  played: players on teams, items taken, monsters awake. A progs that is refused stops the run
+  with an error. A setup that both progs end in the same error, a frame's included, is compared
+  as two calls that end in it are (DIFF-12.3): it agrees, and the scenario has no calls and adds
+  no statements; one that only one progs ends in an error, or that the two end in different
+  errors, stops the run with an error. The two worlds are then compared as DIFF-12.3 compares
+  two calls, the statements and builtins of every frame with them; a difference there is the
+  run's one divergence, and no function is called.
 - **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and
   Arcane Dimensions, are set up and called with the mock engine under vkQuake's profile
   (BUILTIN-18): crmod7 calls extension builtins while it sets up its world, and Arcane

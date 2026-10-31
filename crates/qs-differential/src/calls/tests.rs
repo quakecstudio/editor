@@ -146,7 +146,7 @@ const FOLDED: &str = "float x;\nvector v;\n\
     void(float a, entity e, string s) g = { if (a > 1 + 1) x = a; else x = 0 - a; \
         if (e) x = x + 1; if (s == \"player\") x = x * 2; };\n";
 
-// spec DIFF-12.17, DIFF-12.3: a program compiled with `--opt fold` off and on has other
+// spec DIFF-12.20, DIFF-12.3: a program compiled with `--opt fold` off and on has other
 // statements and globals, yet every call agrees by name and type.
 #[test]
 fn a_program_folded_and_not_agrees() {
@@ -350,7 +350,7 @@ fn the_same_statements_must_run_the_same_way() {
     );
 }
 
-// spec DIFF-12.17: the two worlds are compared after the setup, before any call.
+// spec DIFF-12.20: the two worlds are compared after the setup, before any call.
 #[test]
 fn a_setup_that_differs_is_a_divergence_and_stops_the_run() {
     let report = run(
@@ -366,7 +366,7 @@ fn a_setup_that_differs_is_a_divergence_and_stops_the_run() {
     assert!(matches!(divergence.what, Difference::Global(..)));
 }
 
-// spec DIFF-12.17: the setup runs the scenario's frames, so a frame's work is in the world the
+// spec DIFF-12.20: the setup runs the scenario's frames, so a frame's work is in the world the
 // two progs' setups are compared by, and a frame that fails is a failed setup.
 #[test]
 fn the_setup_runs_the_scenarios_frames() {
@@ -432,9 +432,33 @@ fn the_setup_runs_the_scenarios_frames() {
         EngineProfile::Id,
     );
     assert!(matches!(setup, Err(CallsError::Setup(_))), "{setup:?}");
+    // Both ending in the same error agree, with nothing to call; two different errors do not.
+    let report = run_calls(
+        Oracle::Qcc,
+        &failing,
+        &failing,
+        &framed,
+        WORLD,
+        1,
+        EngineProfile::Id,
+    )
+    .unwrap();
+    assert_eq!((report.calls, report.divergences.len()), (0, 0));
+    assert!(report.executed.is_empty());
+    let other_failing = frames("void() PlayerPreThink = { error(\"y\"); };\n");
+    let setup = run_calls(
+        Oracle::Qcc,
+        &failing,
+        &other_failing,
+        &framed,
+        WORLD,
+        1,
+        EngineProfile::Id,
+    );
+    assert!(matches!(setup, Err(CallsError::Setup(_))), "{setup:?}");
 }
 
-// spec DIFF-12.17: a progs that is refused, or a setup that fails, leaves nothing to call.
+// spec DIFF-12.20: a progs that is refused, or a setup that fails, leaves nothing to call.
 #[test]
 fn a_refused_progs_or_a_failed_setup_is_an_error() {
     let good = compile("void() f = {};\n", false);
@@ -577,7 +601,7 @@ fn a_report_is_a_row_of_the_results_table() {
     );
 }
 
-// spec DIFF-12.17, DIFF-12.5: a codebase runs every world of the differential scenarios and
+// spec DIFF-12.20, DIFF-12.5: a codebase runs every world of the differential scenarios and
 // unions their statements.
 #[test]
 fn a_codebase_runs_every_scenario() {
@@ -748,7 +772,7 @@ fn a_function_that_is_a_builtin_in_the_second_is_missing() {
     );
 }
 
-// spec DIFF-12.17: the setups are compared as two calls are, the builtins they call in order
+// spec DIFF-12.20: the setups are compared as two calls are, the builtins they call in order
 // before the engine's state.
 #[test]
 fn a_setup_that_calls_other_builtins_is_a_divergence() {
