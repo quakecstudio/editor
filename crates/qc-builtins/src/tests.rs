@@ -2043,6 +2043,27 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.10: fopen opens nothing in any mode, after reading its name as a string
+    #[test]
+    fn fopen_opens_nothing() {
+        let (strings, offsets) = string_table(&["configs/levels.cfg"]);
+        for (name, mode, ok) in [
+            (offsets[0], 0.0, true),
+            (offsets[0], 2.0, true),
+            (999_999, 0.0, false),
+        ] {
+            let mut f = Fixture::new(110, 2, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, name);
+            f.set_parm_f(1, mode);
+            let result = f.run(ServerState::Active);
+            assert_eq!(result.is_ok(), ok, "{mode}");
+            if ok {
+                assert_eq!(f.return_f(), -1.0);
+            }
+        }
+    }
+
     // spec BUILTIN-18.9: strzone joins its arguments into a new string that strunzone frees,
     // after which it is no string; strunzone of 0 or of another string changes nothing
     #[test]

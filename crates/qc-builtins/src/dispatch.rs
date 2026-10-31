@@ -1091,6 +1091,7 @@ impl MockBuiltins {
     ) -> Option<Result<(), BuiltinError>> {
         match number {
             93 => Some(self.b_registercvar(context)),
+            110 => Some(self.b_fopen(context)),
             118 => Some(self.b_strzone(context)),
             119 => Some(self.b_strunzone(context)),
             213 => Some(self.b_forceinfokey(context)),
@@ -1140,6 +1141,13 @@ impl MockBuiltins {
         };
         let value = self.engine.strings.make(text);
         write_return_string(context, value)
+    }
+
+    /// `fopen(name, mode)`, vkQuake's `PF_fopen` over the mock's empty game directory
+    /// (BUILTIN-18.10): the name is read as a string, then -1, no file.
+    fn b_fopen(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let _name = read_parm_string(context, &self.engine, 0)?;
+        write_return_float(context, -1.0)
     }
 
     /// `strzone(s, ...)`, vkQuake's `PF_strzone` (BUILTIN-18.9): every argument's text joined,

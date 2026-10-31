@@ -844,6 +844,12 @@ profile (DIFF-12.19); everything else runs under id's.
   refuses it ("attempt to get a non-existant string"): the mock's string error (BUILTIN-2.8). A
   string `strzone` did not make, or one already freed, is left as it is ("string wasn't
   strzoned" is only a console warning). A freed value is not reused.
+- **BUILTIN-18.10** `fopen(name, mode)` (#110) is `PF_fopen`, which reads `name` with `G_STRING`
+  and returns -1 when it opens nothing ("G_FLOAT (OFS_RETURN) = -1; // assume failure"). The
+  mock's game directory is empty and cannot be written, so every `fopen` returns -1: a file to
+  read is not there, as in a game directory without it, and one to write or append is not
+  made, where vkQuake would create it. A file is no input the two progs could share, so the
+  mock keeps none.
 
 ## Test vectors
 
