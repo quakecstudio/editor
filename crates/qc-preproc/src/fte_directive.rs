@@ -1720,9 +1720,12 @@ impl<L: Loader> Preprocessor<L> {
         let reading = bytes.reading();
         let skipped = skip_side(text, from, earlier, |elif| {
             if elif.malformed {
+                // `QCC_PR_ParseError(ERR_UNKNOWNPUCTUATION, "malformed #elif\n");` ends the
+                // reading there, before the test (FTEF-14.76): no side is taken.
                 let other = elif.hash;
                 let span = reading.place(other..elif.at.max(other.saturating_add(1)));
                 run.report(Code::E0121, "malformed #elif", span);
+                return (false, elif.at, Junk::Ignored);
             }
             match elif.test {
                 ElifTest::Expression => self.fte_condition(run, &reading, elif.hash, elif.at),

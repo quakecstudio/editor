@@ -2262,6 +2262,13 @@ profile the preprocessor reads them as FTEQCC does.
   `xtask/src/oracles/builtins/directives.rs`) hold these cases, the profile reading every
   FTEQCC case with no `progs.src` of its own through its graph in a directory of its own
   (`graph_input`), and the run of 2026-10-22 (macOS arm64) bound each as the pinned FTEQCC does.
+- **FTEF-14.76** An `#elif` in a skipped block with no space or tab after its word is "malformed
+  #elif" (`E0121`) alone: `if (*pr_file_p != ' ' && *pr_file_p != '\t')
+  QCC_PR_ParseError(ERR_UNKNOWNPUCTUATION, "malformed #elif\n");` ends FTEQCC's reading before
+  the test that follows. This profile reports it and reads no test and takes no side there, so
+  `#if 0`, `#elif` and `#endif` is that error once, as the pinned FTEQCC gives it (QCD-1.5).
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_FalsePreProcessorIf`.
 
 ## FTEF-15 Declarations
 
