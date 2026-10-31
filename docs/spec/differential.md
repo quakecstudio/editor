@@ -732,6 +732,11 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   error. The two worlds are then compared as DIFF-12.3 compares two calls, the statements and
   builtins of every frame with them; a difference there is the run's one divergence, and no
   function is called.
+- **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and
+  Arcane Dimensions, are set up and called with the mock engine under vkQuake's profile
+  (BUILTIN-18): crmod7 calls extension builtins while it sets up its world, and Arcane
+  Dimensions precaches more sounds than id's engine holds (LIMIT-6.2). Every other codebase
+  runs under id's.
 
 ## DIFF-13 The FTEQCC grammar differential
 

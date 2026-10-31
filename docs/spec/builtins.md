@@ -768,6 +768,32 @@ statements give each expression as id writes it, because that decides the last b
   builtins and `checkextension` (`#99`) are not vanilla and are not in this spec; the engine
   target database (P2-04) covers them.
 
+## BUILTIN-18 vkQuake's profile
+
+**Source:** [Novum/vkQuake](https://github.com/Novum/vkQuake) at commit
+`27789d7333a46674474d871137bb71e056719628`: `Quake/pr_exec.c` (`PR_ExecuteProgram`),
+`Quake/pr_ext.c` (`PF_Fixme`, `PR_EnableExtensions`, `extensionbuiltins`) and
+`Quake/quakedef.h` (`MAX_SOUNDS`, `MAX_MODELS`). Ported under ADR-0018; each file's header
+grants "version 2 of the License, or (at your option) any later version".
+
+The compiler differential runs a mod written for an engine with extension builtins under this
+profile (DIFF-12.19); everything else runs under id's.
+
+### Behaviour
+
+- **BUILTIN-18.1** Every builtin number reaches the dispatch (VM-14.7): `PR_ExecuteProgram`
+  calls builtin 0, `PF_Fixme`, for a number past its table ("if (i >= qcvm->numbuiltins) i =
+  0; // just invoke the fixme builtin."), and `PF_Fixme` looks the number up among the
+  extension builtins. id's numbers keep id's builtins (BUILTIN-6 to BUILTIN-16): the profile
+  changes which numbers exist and the precache limits, not what id's builtins do.
+- **BUILTIN-18.2** A number that has no builtin fails as `PF_Fixme` does when no extension has
+  the number: `PR_RunError ("unimplemented builtin #%i - %s", binum, funcname)`, where
+  `funcname` is the name of the function the `CALL` called. This holds for id's gaps
+  (BUILTIN-1.2) too, which vkQuake's table fills with `PF_Fixme`.
+- **BUILTIN-18.3** The precache lists hold `MAX_SOUNDS` 2048 sounds and `MAX_MODELS` 8192
+  models ("#define MAX_MODELS 8192 // johnfitz -- was 256", "#define MAX_SOUNDS 2048 //
+  johnfitz -- was 256"), in place of LIMIT-6.2's 256 each.
+
 ## Test vectors
 
 ### Math and strings
