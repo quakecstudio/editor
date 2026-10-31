@@ -1078,6 +1078,82 @@ impl printf::Args for ParmArgs<'_, '_, '_, '_> {
 /// vkQuake's `STRINGTEMP_LENGTH`, a temporary string's buffer, its terminator included.
 const VKQUAKE_STRINGTEMP_LENGTH: usize = 1024;
 
+/// vkQuake's `qcextensions`, every one supported by its server's default protocol (RMQ with
+/// `PEXT2_REPLACEMENTDELTAS`) and `r_fteparticles` 1 (BUILTIN-18.14).
+const VKQUAKE_EXTENSIONS: [&str; 71] = [
+    "DP_CON_SET",
+    "DP_CON_SETA",
+    "DP_CSQC_QUERYRENDERENTITY",
+    "DP_ENT_ALPHA",
+    "DP_ENT_COLORMOD",
+    "DP_ENT_SCALE",
+    "DP_ENT_TRAILEFFECTNUM",
+    "DP_QC_ASINACOSATANATAN2TAN",
+    "DP_QC_COPYENTITY",
+    "DP_QC_CRC16",
+    "DP_QC_CVAR_DEFSTRING",
+    "DP_QC_CVAR_STRING",
+    "DP_QC_CVAR_TYPE",
+    "DP_QC_EDICT_NUM",
+    "DP_QC_ENTITYDATA",
+    "DP_QC_ETOS",
+    "DP_QC_FINDCHAIN",
+    "DP_QC_FINDCHAINFLAGS",
+    "DP_QC_FINDCHAINFLOAT",
+    "DP_QC_FINDFLAGS",
+    "DP_QC_FINDFLOAT",
+    "DP_QC_GETLIGHT",
+    "DP_QC_GETSURFACE",
+    "DP_QC_GETSURFACETRIANGLE",
+    "DP_QC_GETSURFACEPOINTATTRIBUTE",
+    "DP_QC_MINMAXBOUND",
+    "DP_QC_MULTIPLETEMPSTRINGS",
+    "DP_QC_RANDOMVEC",
+    "DP_QC_SINCOSSQRTPOW",
+    "DP_QC_SPRINTF",
+    "DP_QC_STRFTIME",
+    "DP_QC_STRING_CASE_FUNCTIONS",
+    "DP_QC_STRINGBUFFERS",
+    "DP_QC_STRINGCOLORFUNCTIONS",
+    "DP_QC_STRREPLACE",
+    "DP_QC_TOKENIZEBYSEPARATOR",
+    "DP_QC_TRACEBOX",
+    "DP_QC_TRACETOSS",
+    "DP_QC_TRACE_MOVETYPES",
+    "DP_QC_URI_ESCAPE",
+    "DP_QC_VECTOANGLES_WITH_ROLL",
+    "DP_QC_VECTORVECTORS",
+    "DP_QC_WHICHPACK",
+    "DP_VIEWZOOM",
+    "DP_REGISTERCVAR",
+    "DP_SV_BOTCLIENT",
+    "DP_SV_DRAWONLYTOCLIENT",
+    "DP_SV_DROPCLIENT",
+    "DP_SV_NODRAWTOCLIENT",
+    "DP_SV_POINTSOUND",
+    "DP_SV_PRINT",
+    "DP_SV_SPAWNFUNC_PREFIX",
+    "DP_SV_WRITEUNTERMINATEDSTRING",
+    "DP_TE_PARTICLERAIN",
+    "DP_TE_PARTICLESNOW",
+    "DP_TE_STANDARDEFFECTBUILTINS",
+    "EXT_BITSHIFT",
+    "FRIK_FILE",
+    "FTE_PART_SCRIPT",
+    "FTE_PART_NAMESPACES",
+    "FTE_PART_NAMESPACE_EFFECTINFO",
+    "FTE_QC_CHECKCOMMAND",
+    "FTE_QC_CROSSPRODUCT",
+    "FTE_QC_INFOKEY",
+    "FTE_FORCEINFOKEY",
+    "FTE_QC_INTCONV",
+    "FTE_QC_MULTICAST",
+    "FTE_STRINGS",
+    "FTE_SV_POINTPARTICLES",
+    "KRIMZON_SV_PARSECLIENTCOMMAND",
+    "ZQ_QC_STRINGS",
+];
+
 /// The cvars vkQuake registers with `CVAR_SERVERINFO` (`Quake/host.c`), which `forceinfokey`
 /// on the world sets (BUILTIN-18.4).
 const VKQUAKE_SERVERINFO_CVARS: [&str; 4] = ["fraglimit", "timelimit", "teamplay", "noexit"];
@@ -1096,6 +1172,7 @@ impl MockBuiltins {
         match number {
             80 => Some(self.b_infokey(context)),
             93 => Some(self.b_registercvar(context)),
+            99 => Some(self.b_checkextension(context)),
             110 => Some(self.b_fopen(context)),
             118 => Some(self.b_strzone(context)),
             119 => Some(self.b_strunzone(context)),
@@ -1164,7 +1241,7 @@ impl MockBuiltins {
             match key.as_slice() {
                 b"ip" => Some(b"LOCAL"),
                 b"ping" => Some(b"0.000000"),
-                b"protocol" => Some(b"fitz666"),
+                b"protocol" => Some(b"rmq999"),
                 b"name" => Some(b"player"),
                 b"topcolor" | b"bottomcolor" | b"csqcactive" => Some(b"0"),
                 b"team" => Some(b"t1"),
@@ -1199,6 +1276,21 @@ impl MockBuiltins {
             None => 0,
         };
         write_return_string(context, value)
+    }
+
+    /// `checkextension(name)`, vkQuake's `PF_checkextension` (BUILTIN-18.14): 1 for a name of
+    /// [`VKQUAKE_EXTENSIONS`] whose `pr_ext_NAME` setting, made with 1 if missing, is not 0.
+    fn b_checkextension(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let name = read_parm_string(context, &self.engine, 0)?;
+        let name = String::from_utf8_lossy(&name);
+        let found = if VKQUAKE_EXTENSIONS.contains(&name.as_ref()) {
+            let setting = format!("pr_ext_{}", name.to_ascii_lowercase());
+            self.engine.cvars.create(&setting, "1");
+            self.engine.cvars.text(&setting).map_or(0.0, math::q_atof) != 0.0
+        } else {
+            false
+        };
+        write_return_float(context, if found { 1.0 } else { 0.0 })
     }
 
     /// `fopen(name, mode)`, vkQuake's `PF_fopen` over the mock's empty game directory

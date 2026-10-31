@@ -2043,6 +2043,33 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.14: checkextension is 1 for a listed extension, making its pr_ext_
+    // setting, 0 when that setting is 0, and 0 for any other name
+    #[test]
+    fn checkextension_answers_vkquake_s_list() {
+        let (strings, offsets) = string_table(&["FRIK_FILE", "DP_QC_SPRINTF", "NOT_A_THING"]);
+        let run = |name: i32, blocked: bool| {
+            let mut f = Fixture::new(99, 1, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            if blocked {
+                f.builtins
+                    .engine_mut()
+                    .cvars
+                    .create("pr_ext_dp_qc_sprintf", "0");
+            }
+            f.set_parm_i(0, name);
+            f.run_ok(ServerState::Active);
+            (f.return_f(), f)
+        };
+        let (found, f) = run(offsets[0], false);
+        assert_eq!(found, 1.0);
+        assert_eq!(f.engine().cvars.text("pr_ext_frik_file"), Some("1"));
+        assert_eq!(run(offsets[1], true).0, 0.0);
+        let (missing, f) = run(offsets[2], false);
+        assert_eq!(missing, 0.0);
+        assert_eq!(f.engine().cvars.text("pr_ext_not_a_thing"), None);
+    }
+
     // spec BUILTIN-18.13: print reads every string it is passed and changes nothing
     #[test]
     fn print_reads_its_strings() {

@@ -860,7 +860,7 @@ profile (DIFF-12.19); everything else runs under id's.
   `ENGINE_NAME_AND_VER`, `vkQuake 1.37.1` (`Quake/quakever.h`). On an active client: `ip` is its
   socket's address, `LOCAL` for the local loop (`Quake/net_loop.c`), which every client of the
   mock is; `ping` is `%f` of its average ping, `0.000000`, as the mock's clients never ping;
-  `protocol` is `fitz666`, vkQuake's default protocol; `name` is `player` and `topcolor`,
+  `protocol` is `rmq999`, vkQuake's default protocol ("int sv_protocol = PROTOCOL_RMQ;"); `name` is `player` and `topcolor`,
   `bottomcolor` and `csqcactive` are `0`, the name and colours a client enters with (DIFF-4.1);
   `team` is `t1`, `t` and the bottom colour plus 1; `*VIP` and `*spectator` are empty. Any other
   key, and any key on an edict that is no active client, is 0, the null string. A text is a new
@@ -868,6 +868,13 @@ profile (DIFF-12.19); everything else runs under id's.
 - **BUILTIN-18.13** `print(s, ...)` (#339) is `PF_print`, which writes each argument the call
   passed, read with `G_STRING`, to the console. The mock has no console, so it reads and checks
   them, as `dprint` does (BUILTIN-11.3).
+- **BUILTIN-18.14** `checkextension(name)` (#99) is `PF_checkextension`: 0 for a name not in
+  vkQuake's `qcextensions` list; for one in it, the setting `pr_ext_NAME` in lower case is made
+  with `1` unless it exists (`Cvar_Create`), and the answer is 1 unless that setting is 0. The
+  entries with a support check (`DP_ENT_ALPHA`, `DP_ENT_COLORMOD`, `DP_ENT_SCALE`, the
+  particle ones) pass it under the server's defaults: protocol RMQ, `PEXT2_SUPPORTED_SERVER`
+  with `PEXT2_REPLACEMENTDELTAS` (`Quake/protocol.h`), `r_fteparticles` 1 and `cl_nopext` 0, so
+  every name in the list is supported.
 
 ## Test vectors
 
