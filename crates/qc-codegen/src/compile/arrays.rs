@@ -63,6 +63,9 @@ pub(super) struct ArrayFunction {
     /// The array it reads or stores; the function's statements come from where the array is
     /// declared.
     array: Array,
+    /// Whether a later subscript finds it by its name: a local array's function made inside a
+    /// `for` is forgotten at the statement's end (FTEF-19.78).
+    visible: bool,
 }
 
 /// A store to an array's element by an index that is a value, made by its setter after the
@@ -362,7 +365,7 @@ impl Compiler<'_> {
         if let Some(made) = self
             .array_functions
             .iter()
-            .find(|f| f.array.place == array.place && f.access == access)
+            .find(|f| f.visible && f.array.place == array.place && f.access == access)
         {
             return Ok(made.place);
         }
@@ -393,8 +396,24 @@ impl Compiler<'_> {
             place,
             access,
             array: array.clone(),
+            visible: true,
         });
         Ok(place)
+    }
+
+    /// FTEF-19.78: the array functions made since the first `mark` of them for an array declared
+    /// in a function, which are locals that a `for` statement takes out of `localstable` at its
+    /// end (FTEF-19.19), so the next subscript makes another.
+    pub(super) fn forget_local_array_functions(&mut self, mark: usize) {
+        for made in self.array_functions.iter_mut().skip(mark) {
+            let local = self
+                .program
+                .def(made.array.place)
+                .is_some_and(|def| def.scope.is_some());
+            if local {
+                made.visible = false;
+            }
+        }
     }
 
     /// `QCC_PR_EmitArrayGetFunction` and `QCC_PR_EmitArraySetFunction` for each array function

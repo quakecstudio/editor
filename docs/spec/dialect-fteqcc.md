@@ -3170,6 +3170,17 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   any type: `for (float i = 0;;) {} for (string i = "";;) {}` is two locals. A local the
   statement found again (`float i; for (float i = 0;;) {}`, FTEF-19.1) was not made there and
   stays. Only `for` does this: a block, `while`, `do`, `if` and `switch` keep their locals.
+- **FTEF-19.78** The getter and setter of an array declared in a function, `ArrayGet*NAME` and
+  `ArraySet*NAME`, are locals too: `QCC_PR_GetSRef (..., base.sym->scope, ...,
+  GDF_CONST|(base.sym->scope?GDF_STATIC:0))` makes them in the array's scope, so one made inside
+  a `for` statement leaves `localstable` at its end (FTEF-19.19), and the next subscript that
+  needs it finds none and makes another definition, which `QCC_PR_EmitArrayGetFunction` or
+  `QCC_PR_EmitArraySetFunction` gives a function of its own. One made before the statement is
+  found inside it and after it, and a global array's are never forgotten. So `void() f = {
+  float a[4]; float i, x; for (i = 0; i < 4; i++) x = a[i]; x = a[i]; };` has two `ArrayGet*a`
+  functions, and one when `x = a[i];` also comes before the loop.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_LoadFromArray`, `QCC_PR_ParseStatement_For`.
 - **FTEF-19.20** A name that is a definition's type, or part of it (a field's, a pointer's, a
   function's return or parameter type), must be a type at that point: C type words
   (FTEF-2.8), a name `QCC_PR_NewType` registers (`variant`, `__variant`, `__string`,

@@ -1001,6 +1001,29 @@ fn a_calls_value_as_a_left_operand_survives_the_next_call() {
     );
 }
 
+// spec FTEF-19.78: a local array's getter made inside a `for` is forgotten at its end, so the
+// next subscript makes another; one made before the loop is used in and after it, and a global
+// array's is never forgotten
+#[test]
+fn a_for_forgets_a_local_array_s_getter() {
+    let count = |source: &str| {
+        let p = fte_progs(source);
+        p.functions
+            .iter()
+            .filter(|f| super::string(&p, f.s_name) == "ArrayGet*a")
+            .count()
+    };
+    let inside = "void(string e) error = #10;\nvoid() f = { local float a[4]; local float i, x; \
+                  for (i = 0; i < 4; i++) x = a[i]; x = a[i]; };\n";
+    assert_eq!(count(inside), 2);
+    let before = "void(string e) error = #10;\nvoid() f = { local float a[4]; local float i, x; x = a[i]; \
+                  for (i = 0; i < 4; i++) x = a[i]; x = a[i]; };\n";
+    assert_eq!(count(before), 1);
+    let global = "void(string e) error = #10;\nfloat a[4];\nvoid() f = { local float i, x; \
+                  for (i = 0; i < 4; i++) x = a[i]; x = a[i]; };\n";
+    assert_eq!(count(global), 1);
+}
+
 // spec FTEF-32.16: a body's static locals and initialised constant ones take storage before its
 // parameters, outside the locals its record names; its other locals are among them
 #[test]

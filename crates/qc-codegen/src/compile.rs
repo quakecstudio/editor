@@ -1021,7 +1021,11 @@ impl<'a> Compiler<'a> {
                 cases.push((label.clone(), at));
             }
             ast::Stmt::Switch(switch) => self.switch(switch, span)?,
-            ast::Stmt::For(f) => self.for_loop(f, span)?,
+            ast::Stmt::For(f) => {
+                let mark = self.array_functions.len();
+                self.for_loop(f, span)?;
+                self.forget_local_array_functions(mark);
+            }
             ast::Stmt::Label(_)
             | ast::Stmt::Goto(_)
             | ast::Stmt::Loop(_)
