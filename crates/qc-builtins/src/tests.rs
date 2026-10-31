@@ -2043,6 +2043,44 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.17: strconv moves digits, letters and punctuation between Quake's white
+    // and red rows and changes case
+    #[test]
+    fn strconv_converts_case_and_colour() {
+        let (strings, offsets) = string_table(&["Ab1!", "x"]);
+        for (args, expected) in [
+            (
+                [0.0, 2.0, 2.0],
+                vec![b'A' + 128, b'b' + 128, b'1' + 128, b'!' + 128, b'x' + 128],
+            ),
+            ([1.0, 0.0, 0.0], b"ab1!x".to_vec()),
+            ([2.0, 1.0, 1.0], b"AB1!X".to_vec()),
+            (
+                [0.0, 5.0, 0.0],
+                vec![b'A' + 128, b'b', b'1', b'!', b'x' + 128],
+            ),
+            (
+                [0.0, 6.0, 3.0],
+                vec![b'A', b'b' + 128, b'1' - 30, b'!', b'x'],
+            ),
+        ] {
+            let mut f = Fixture::new(224, 5, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            for (n, value) in args.iter().enumerate() {
+                f.set_parm_f(u16::try_from(n).unwrap(), *value);
+            }
+            f.set_parm_i(3, offsets[0]);
+            f.set_parm_i(4, offsets[1]);
+            f.run_ok(ServerState::Active);
+            let value = f.return_i();
+            assert_eq!(
+                f.engine().strings.text(value),
+                Some(expected.as_slice()),
+                "{args:?}"
+            );
+        }
+    }
+
     // spec BUILTIN-18.16: strtolower and strtoupper change ASCII letters only, cut to 1023
     // bytes
     #[test]

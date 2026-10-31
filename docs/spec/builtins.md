@@ -883,6 +883,16 @@ profile (DIFF-12.19); everything else runs under id's.
 - **BUILTIN-18.16** `strtolower(s)` (#480) and `strtoupper(s)` (#481) are `PF_strtolower` and
   `PF_strtoupper`: a new temporary string of `s`'s bytes through `q_tolower` (`q_toupper`),
   which change only ASCII letters, up to 1023 of them.
+- **BUILTIN-18.17** `strconv(ccase, redalpha, rednum, s, ...)` (#224) is `PF_strconv`: the
+  strings from the fourth argument on, joined (`PF_VarString (3)`; the mock has no
+  localisation file, so each is itself), up to 1023 bytes, each byte converted as
+  `chrconv_number`, `chrchar_alpha` and `chrconv_punct` convert it. A digit in one of the four
+  digit rows (`0` to `9` plus 0, 128, 98 or -30) moves to the row `rednum` names: 1 white, 2
+  red, 3 the special row at -30, 4 the one at 98, any other its own. A letter keeps its place
+  in the alphabet; `ccase` 1 makes it lower case and 2 upper; `redalpha` 1 makes it white, 2
+  red, 5 red on even positions and 6 red on odd ones, any other its own colour. Any other byte
+  is kept when `redalpha` is 0 or its low 7 bits are below 16, else moved to the white or red
+  half by `redalpha` 1 or 2. The arguments are read as `G_FLOAT` and `(int)` (BUILTIN-2.2).
 
 ## Test vectors
 

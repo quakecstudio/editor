@@ -31,6 +31,7 @@ mod error;
 pub mod math;
 pub mod mock;
 mod printf;
+mod strconv;
 mod strftime;
 pub mod table;
 

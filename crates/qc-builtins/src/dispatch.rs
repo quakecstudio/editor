@@ -31,7 +31,7 @@ use crate::mock::{
     BUILTIN_FL_SWIM, EngineProfile, LIMIT_MAX_DATAGRAM, LIMIT_MAX_LIGHTSTYLES, MessageDest,
     MockEngine, Overflow, Precache,
 };
-use crate::{printf, strftime};
+use crate::{printf, strconv, strftime};
 
 /// The builtin dispatch over a mock engine (DIFF-6, DIFF-7).
 ///
@@ -1194,6 +1194,7 @@ impl MockBuiltins {
             118 => Some(self.b_strzone(context)),
             119 => Some(self.b_strunzone(context)),
             213 => Some(self.b_forceinfokey(context)),
+            224 => Some(self.b_strconv(context)),
             339 => Some(joined_string(context, &self.engine, 0).map(|_| ())),
             448 => Some(self.b_cvar_string(context)),
             478 => Some(self.b_strftime(context)),
@@ -1342,6 +1343,20 @@ impl MockBuiltins {
             Case::Upper => text.make_ascii_uppercase(),
         }
         let value = self.engine.strings.make(text);
+        write_return_string(context, value)
+    }
+
+    /// `strconv(ccase, redalpha, rednum, s, ...)`, vkQuake's `PF_strconv` (BUILTIN-18.17): a new
+    /// string of the strings from the fourth argument on, joined, converted byte by byte.
+    fn b_strconv(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let ccase = read_parm_int(context, 0)?;
+        let redalpha = read_parm_int(context, 1)?;
+        let rednum = read_parm_int(context, 2)?;
+        let text = joined_string(context, &self.engine, 3)?;
+        let value = self
+            .engine
+            .strings
+            .make(strconv::strconv(ccase, redalpha, rednum, &text));
         write_return_string(context, value)
     }
 
