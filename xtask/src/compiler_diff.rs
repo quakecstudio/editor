@@ -50,7 +50,7 @@ const PENDING: [&str; 1] = ["rerelease-ctf"];
 
 /// The corpus mods (`oracles/rerelease.rs`'s `MODS`) at DIFF-12.5's bar, which the nightly run
 /// compares; a run may name the others until each joins (DIFF-12.18).
-const MODS_AT_BAR: [&str; 1] = ["copper"];
+const MODS_AT_BAR: [&str; 4] = ["copper", "librequake", "qc-conduit", "swab"];
 
 const USAGE: &str = "usage: cargo xtask compiler-diff [--fast | --full] [<codebase>...]";
 
