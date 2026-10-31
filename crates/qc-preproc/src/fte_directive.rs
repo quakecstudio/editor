@@ -28,10 +28,13 @@ use std::ops::Range;
 use std::path::Path;
 use std::rc::Rc;
 
-use qc_lexer::{Code, Dialect, FTEQCC_MAX_WORD, Span};
+use qc_lexer::{
+    Code, Dialect, Directive as LexDirective, FTEQCC_MAX_WORD, Pragma as PragmaName, Span,
+    is_fteqcc_whitespace,
+};
 
 use crate::compiler_flags::{FlagEdit, PragmaDefault};
-use crate::cond::{self, FteIfError, fte_white};
+use crate::cond::{self, FteIfError};
 use crate::fte_keywords::{KeywordEdit, Keywords};
 use crate::fte_macro::{Reading, Text};
 use crate::fte_opcodes::OpcodeTarget;
@@ -185,7 +188,7 @@ pub(crate) fn whitespace(text: &[u8], mut at: usize) -> Gap {
         (byte_at(text, at) == Some(b'#')).then_some(Gap::LineStart(at))
     };
     loop {
-        while let Some(b) = byte_at(text, at).filter(|&b| fte_white(b)) {
+        while let Some(b) = byte_at(text, at).filter(|&b| is_fteqcc_whitespace(b)) {
             at = at.saturating_add(1);
             if line_ending(b, text.get(at).copied()) {
                 if let Some(gap) = new_line(at) {
@@ -313,7 +316,7 @@ pub(crate) fn skip_to_end_of_line(text: &[u8], mut at: usize, junk_is: Junk) -> 
         } else if rest.starts_with(b"\\\n") {
             at = at.saturating_add(2);
         } else {
-            junk |= check && comments && !fte_white(byte);
+            junk |= check && comments && !is_fteqcc_whitespace(byte);
             at = at.saturating_add(1);
         }
     }
@@ -345,7 +348,7 @@ pub(crate) fn simple_get_token(text: &[u8], mut at: usize) -> (Option<Range<usiz
         let Some(byte) = byte_at(text, at) else {
             return (None, at.min(text.len()));
         };
-        if !fte_white(byte) {
+        if !is_fteqcc_whitespace(byte) {
             break;
         }
         if byte == b'\n' {
@@ -367,7 +370,7 @@ pub(crate) fn simple_get_token(text: &[u8], mut at: usize) -> (Option<Range<usiz
     }
     let start = at;
     while let Some(byte) = byte_at(text, at) {
-        if fte_white(byte) || b",;()]".contains(&byte) || comment(at) {
+        if is_fteqcc_whitespace(byte) || b",;()]".contains(&byte) || comment(at) {
             break;
         }
         at = at.saturating_add(1);
@@ -386,7 +389,7 @@ fn simple_get_string(text: &[u8], mut at: usize) -> Result<(Option<Vec<u8>>, usi
         let Some(byte) = byte_at(text, at) else {
             return Ok((None, at.min(text.len())));
         };
-        if !fte_white(byte) {
+        if !is_fteqcc_whitespace(byte) {
             break;
         }
         if byte == b'\n' {
@@ -457,7 +460,7 @@ fn lex_integer(text: &[u8], at: usize) -> (usize, i32) {
 #[must_use]
 pub fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> {
     loop {
-        while byte_at(text, at).is_some_and(fte_white) {
+        while byte_at(text, at).is_some_and(is_fteqcc_whitespace) {
             at = at.saturating_add(1);
         }
         let byte = byte_at(text, at)?;
@@ -525,7 +528,7 @@ pub fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> {
         }
         at = at.saturating_add(1);
         match byte_at(text, at) {
-            Some(b) if single(b) || b == b'"' || fte_white(b) => break,
+            Some(b) if single(b) || b == b'"' || is_fteqcc_whitespace(b) => break,
             Some(_) => {}
             None => break,
         }
@@ -565,9 +568,9 @@ pub(crate) struct Pragma {
 }
 
 impl Pragma {
-    /// Whether the pragma's name is `word` in any case (`QC_strcasecmp`).
-    pub(crate) fn is(&self, word: &str) -> bool {
-        self.name.eq_ignore_ascii_case(word.as_bytes())
+    /// Whether the pragma's name is `known`'s, in any case (`QC_strcasecmp`).
+    pub(crate) fn named(&self, known: PragmaName) -> bool {
+        PragmaName::from_word(&self.name) == Some(known)
     }
 }
 
@@ -660,120 +663,117 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
     let rest = text.get(at..).unwrap_or_default();
     let after = |len: usize| at.saturating_add(len);
     let line = |from: usize, junk: Junk| skip_to_end_of_line(text, from, junk);
-    let directive = if rest.starts_with(b"define") || rest.starts_with(b"append") {
-        let (word, word_end) = simple_get_token(text, at);
-        if too_long(word.as_ref()) {
-            return Some(Directive::Fatal {
-                message: WORD_TOO_LONG,
-                at: word_end,
-            });
+    let (name, len) = LexDirective::fteqcc_prefix(rest)?;
+    let directive = match name {
+        LexDirective::Define | LexDirective::Append => {
+            let (word, word_end) = simple_get_token(text, at);
+            if too_long(word.as_ref()) {
+                return Some(Directive::Fatal {
+                    message: WORD_TOO_LONG,
+                    at: word_end,
+                });
+            }
+            let definer = if name == LexDirective::Append {
+                Definer::Append
+            } else {
+                Definer::Define
+            };
+            Directive::Define { definer, word_end }
         }
-        let definer = if rest.starts_with(b"append") {
-            Definer::Append
-        } else {
-            Definer::Define
-        };
-        Directive::Define { definer, word_end }
-    } else if rest.starts_with(b"undef") {
-        let (name, stop) = simple_get_token(text, skip_blanks(text, after(5)));
-        if too_long(name.as_ref()) {
-            return Some(Directive::Fatal {
-                message: WORD_TOO_LONG,
-                at: stop,
-            });
+        LexDirective::Undef => {
+            let (name, stop) = simple_get_token(text, skip_blanks(text, after(len)));
+            if too_long(name.as_ref()) {
+                return Some(Directive::Fatal {
+                    message: WORD_TOO_LONG,
+                    at: stop,
+                });
+            }
+            Directive::Undef {
+                name: name.unwrap_or(stop..stop),
+                end: line(stop, Junk::Checked),
+            }
         }
-        Directive::Undef {
-            name: name.unwrap_or(stop..stop),
-            end: line(stop, Junk::Checked),
+        LexDirective::If | LexDirective::Ifdef | LexDirective::Ifndef => read_if(text, at),
+        // `elifdef` and `elifndef` start with `elif`, which FTEQCC's `strncmp` finds first.
+        LexDirective::Else
+        | LexDirective::Elif
+        | LexDirective::Elifdef
+        | LexDirective::Elifndef => {
+            let junk = if name == LexDirective::Elif {
+                Junk::Ignored
+            } else {
+                Junk::Checked
+            };
+            Directive::Else {
+                end: line(after(len), junk),
+            }
         }
-    } else if rest.starts_with(b"if") {
-        read_if(text, at)
-    } else if rest.starts_with(b"else") || rest.starts_with(b"elif") {
-        let junk = if rest.starts_with(b"elif") {
-            Junk::Ignored
-        } else {
-            Junk::Checked
-        };
-        Directive::Else {
-            end: line(after(4), junk),
+        LexDirective::Endif => Directive::Endif {
+            end: line(after(len), Junk::Checked),
+        },
+        // `QCC_PR_Precompiler` has no `#endlist`: the text after the `#` is code.
+        LexDirective::EndList => return None,
+        LexDirective::Eof => Directive::Eof,
+        LexDirective::Error => Directive::Error {
+            message: message(text, after(len), |b| b == b'\t' || b == b'\n'),
+            end: line(after(len), Junk::Ignored),
+        },
+        LexDirective::Warning => Directive::Warning {
+            message: message(text, after(len), |b| b == b'\r' || b == b'\n'),
+            end: line(after(len), Junk::Ignored),
+        },
+        LexDirective::Message => Directive::Build {
+            end: line(after(len), Junk::Ignored),
+        },
+        LexDirective::Copyright => Directive::Build {
+            end: line(after(len), Junk::Ignored),
+        },
+        LexDirective::Package => Directive::Package {
+            end: line(after(len), Junk::Checked),
+        },
+        LexDirective::Pack => read_pack(text, after(len)),
+        LexDirective::ForceCrc => {
+            let (end, _) = lex_integer(text, after(len));
+            Directive::Build {
+                end: line(end, Junk::Checked),
+            }
         }
-    } else if rest.starts_with(b"endif") {
-        Directive::Endif {
-            end: line(after(5), Junk::Checked),
-        }
-    } else if rest.starts_with(b"eof") {
-        Directive::Eof
-    } else if rest.starts_with(b"error") {
-        Directive::Error {
-            message: message(text, after(5), |b| b == b'\t' || b == b'\n'),
-            end: line(after(5), Junk::Ignored),
-        }
-    } else if rest.starts_with(b"warning") {
-        Directive::Warning {
-            message: message(text, after(7), |b| b == b'\r' || b == b'\n'),
-            end: line(after(7), Junk::Ignored),
-        }
-    } else if rest.starts_with(b"message") {
-        Directive::Build {
-            end: line(after(7), Junk::Ignored),
-        }
-    } else if rest.starts_with(b"copyright") {
-        Directive::Build {
-            end: line(after(9), Junk::Ignored),
-        }
-    } else if rest.starts_with(b"package") {
-        Directive::Package {
-            end: line(after(7), Junk::Checked),
-        }
-    } else if rest.starts_with(b"pack") {
-        read_pack(text, after(4))
-    } else if rest.starts_with(b"forcecrc") {
-        let (end, _) = lex_integer(text, after(8));
-        Directive::Build {
-            end: line(end, Junk::Checked),
-        }
-    } else if rest.starts_with(b"merge") {
-        match simple_get_string(text, skip_blanks(text, after(5))) {
+        LexDirective::Merge => match simple_get_string(text, skip_blanks(text, after(len))) {
             Ok((_, end)) => Directive::Build {
                 end: line(end, Junk::Checked),
             },
             Err(message) => Directive::Fatal { message, at },
+        },
+        LexDirective::IncludeList => Directive::IncludeList {
+            end: line(after(len), Junk::Checked),
+        },
+        LexDirective::Include => read_include(text, skip_blanks(text, after(len))),
+        LexDirective::DataFile => {
+            // `pr_file_p++;` after the string, then on to the line break as bytes.
+            let end = match simple_get_string(text, skip_blanks(text, after(len))) {
+                Ok((_, end)) => end,
+                Err(message) => return Some(Directive::Fatal { message, at }),
+            };
+            let end = end.saturating_add(1);
+            let end = text
+                .get(end..)
+                .and_then(|rest| rest.iter().position(|&b| b == b'\n' || b == 0))
+                .map_or(text.len(), |len| end.saturating_add(len));
+            Directive::Build {
+                end: LineEnd {
+                    at: end,
+                    junk: false,
+                },
+            }
         }
-    } else if rest.starts_with(b"includelist") {
-        Directive::IncludeList {
-            end: line(after(11), Junk::Checked),
-        }
-    } else if rest.starts_with(b"include") {
-        read_include(text, skip_blanks(text, after(7)))
-    } else if rest.starts_with(b"datafile") {
-        // `pr_file_p++;` after the string, then on to the line break as bytes.
-        let end = match simple_get_string(text, skip_blanks(text, after(8))) {
-            Ok((_, end)) => end,
-            Err(message) => return Some(Directive::Fatal { message, at }),
-        };
-        let end = end.saturating_add(1);
-        let end = text
-            .get(end..)
-            .and_then(|rest| rest.iter().position(|&b| b == b'\n' || b == 0))
-            .map_or(text.len(), |len| end.saturating_add(len));
-        Directive::Build {
-            end: LineEnd {
-                at: end,
-                junk: false,
-            },
-        }
-    } else if rest.starts_with(b"output") {
-        match simple_get_string(text, skip_blanks(text, after(6))) {
+        LexDirective::Output => match simple_get_string(text, skip_blanks(text, after(len))) {
             Ok((name, end)) => Directive::Output {
                 name,
                 end: line(end, Junk::Checked),
             },
             Err(message) => Directive::Fatal { message, at },
-        }
-    } else if rest.starts_with(b"pragma") {
-        read_pragma(text, skip_blanks(text, after(6)))
-    } else {
-        return None;
+        },
+        LexDirective::Pragma => read_pragma(text, skip_blanks(text, after(len))),
     };
     Some(directive)
 }
@@ -801,7 +801,7 @@ fn read_if(text: &[u8], at: usize) -> Directive {
         let from = at.saturating_add(2);
         (IfTest::Expression(from), from)
     };
-    if !byte_at(text, from).is_some_and(fte_white) {
+    if !byte_at(text, from).is_some_and(is_fteqcc_whitespace) {
         let (word, word_end) = simple_get_token(text, at);
         if too_long(word.as_ref()) {
             return Directive::Fatal {
@@ -916,7 +916,7 @@ fn read_pragma(text: &[u8], at: usize) -> Directive {
         }
         message.push(byte);
     }
-    while message.last().copied().is_some_and(fte_white) {
+    while message.last().copied().is_some_and(is_fteqcc_whitespace) {
         message.pop();
     }
     if name.is_empty() {
@@ -1261,7 +1261,7 @@ impl Pragma {
 fn strtoul(text: &[u8]) -> u64 {
     let mut at = text
         .iter()
-        .take_while(|&&b| fte_white(b) || b == 0x0c)
+        .take_while(|&&b| is_fteqcc_whitespace(b) || b == 0x0c)
         .count();
     let negative = match text.get(at) {
         Some(b'-') => {
@@ -1434,7 +1434,7 @@ impl<L: Loader> Preprocessor<L> {
                 params: None,
                 variadic: Variadic::No,
                 body: Body::Text(Rc::default()),
-                file: FileId(u32::MAX),
+                file: FileId::new(u32::MAX),
                 name_span: Span::new(0, 0),
                 evil: false,
                 spelled: None,
@@ -1898,56 +1898,13 @@ impl<L: Loader> Preprocessor<L> {
         end: usize,
     ) -> Resume {
         let message = pragma.message.as_slice();
-        if pragma.is("DONT_COMPILE_THIS_FILE") {
-            return self.fte_dont_compile(run, bytes, end);
-        }
-        if pragma.is("once") {
-            let marked = self.pragma_base(run, bytes);
-            self.fte.once.push(marked);
-        } else if pragma.is("file") && !self.fte.flags.no_file_line() {
-            let name = pragma.file_name();
-            match bytes {
-                Bytes::File(file, _) => {
-                    if let Some(cursor) = run.cursors.iter_mut().rev().find(|c| c.file == *file) {
-                        cursor.name = name;
-                    }
-                }
-                Bytes::Chunk(..) => {
-                    if let Some(chunk) = run.chunks.last_mut() {
-                        chunk.rename(name);
-                    }
-                }
-            }
-        } else if pragma.is("line") && !self.fte.flags.no_file_line() {
-            let line = pragma.line();
-            let from = end.saturating_add(1);
-            match bytes {
-                Bytes::File(file, _) => {
-                    if let Some(cursor) = run.cursors.iter_mut().rev().find(|c| c.file == *file) {
-                        cursor.line_base = Some((from, line));
-                    }
-                }
-                Bytes::Chunk(..) => {
-                    if let Some(chunk) = run.chunks.last_mut() {
-                        chunk.renumber(from, line);
-                    }
-                }
-            }
-        } else if pragma.is("includedir") {
-            let base = self.pragma_base(run, bytes);
-            let dir = pragma.include_dir(&base);
-            if let Some(warning) = self.fte.add_include_dir(&dir) {
-                let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
-                run.report(Code::W0117, warning, at);
-            }
-        } else if let Some(default) = [
-            ("noref", PragmaDefault::Noref),
-            ("nosave", PragmaDefault::Nosave),
-            ("defaultstatic", PragmaDefault::Static),
-        ]
-        .into_iter()
-        .find_map(|(name, default)| pragma.is(name).then_some(default))
-        {
+        let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
+        let Some(known) = PragmaName::from_word(&pragma.name) else {
+            let name = lossy(&pragma.name);
+            run.report(Code::W0113, format!("Unknown pragma '{name}'"), at);
+            return Resume::At(end);
+        };
+        if let Some(default) = PragmaDefault::of_pragma(known) {
             // FTEF-12.6, FTEF-21.14: `defaultnoref = !!atoi(msg);`, and so `defaultnosave` and
             // `defaultstatic`.
             let on = cond::fte_atoi(message) != 0;
@@ -1955,90 +1912,154 @@ impl<L: Loader> Preprocessor<L> {
             run.out
                 .flags
                 .push((run.out.tokens.len(), FlagEdit::of_default(default, on)));
-        } else if pragma.is("autoproto") {
-            // FTEF-12.18: `autoprototype = *msg?!!atoi(msg):true;`
-            let on = message.is_empty() || cond::fte_atoi(message) != 0;
-            let index = run.out.tokens.len();
-            let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
-            run.out.autoproto.push((index, on, at));
-        } else if pragma.is("keyword") || pragma.is("flag") {
-            let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
-            let (warnings, set) = self.fte.flags.apply_pragma(message);
-            for warning in warnings {
-                run.report(Code::W0113, warning, at);
+            return Resume::At(end);
+        }
+        match known {
+            PragmaName::DontCompileThisFile => return self.fte_dont_compile(run, bytes, end),
+            PragmaName::Once => {
+                let marked = self.pragma_base(run, bytes);
+                self.fte.once.push(marked);
             }
-            // FTEF-21.1: the flags it names, which an `extern "C"` block may have changed since.
-            let edit = FlagEdit::of_flags(&set, self.fte.flags.compiler_flags());
-            if !edit.is_empty() {
-                run.out.flags.push((run.out.tokens.len(), edit));
-            }
-            // FTEF-20.1: the keywords it names, which a definition may have turned off since.
-            let edit = KeywordEdit::of_flags(&set, self.fte.keywords());
-            if !edit.is_empty() {
-                run.out.keywords.push((run.out.tokens.len(), edit));
-            }
-        } else if pragma.is("optimise") || pragma.is("optimize") {
-            let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
-            for warning in fte_pragma::optimise_warnings(&pragma.name, message) {
-                run.report(Code::W0113, warning, at);
-            }
-        } else if pragma.is("opcode") {
-            let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
-            let (edits, warnings) = fte_pragma::opcode_pragma(message);
-            for warning in warnings {
-                run.report(Code::W0113, warning, at);
-            }
-            // FTEF-25.3: `pr_opcodes[f].flags |= OPF_VALID` or `&= ~OPF_VALID`, in order.
-            if !edits.is_empty() {
-                for (op, on) in edits {
-                    self.fte.opcodes.set(op, on);
+            PragmaName::File if !self.fte.flags.no_file_line() => {
+                let name = pragma.file_name();
+                match bytes {
+                    Bytes::File(file, _) => {
+                        if let Some(cursor) = run.cursors.iter_mut().rev().find(|c| c.file == *file)
+                        {
+                            cursor.name = name;
+                        }
+                    }
+                    Bytes::Chunk(..) => {
+                        if let Some(chunk) = run.chunks.last_mut() {
+                            chunk.rename(name);
+                        }
+                    }
                 }
-                run.out
-                    .targets
-                    .push((run.out.tokens.len(), self.fte.opcodes));
             }
-        } else if pragma.is("TARGET") {
-            let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
-            let (target, warnings) = fte_pragma::target_warnings(message);
-            for warning in warnings {
-                run.report(Code::W0117, warning, at);
+            PragmaName::Line if !self.fte.flags.no_file_line() => {
+                let line = pragma.line();
+                let from = end.saturating_add(1);
+                match bytes {
+                    Bytes::File(file, _) => {
+                        if let Some(cursor) = run.cursors.iter_mut().rev().find(|c| c.file == *file)
+                        {
+                            cursor.line_base = Some((from, line));
+                        }
+                    }
+                    Bytes::Chunk(..) => {
+                        if let Some(chunk) = run.chunks.last_mut() {
+                            chunk.renumber(from, line);
+                        }
+                    }
+                }
             }
-            // FTEF-20.4: `QCC_OPCodeSetTargetName` sets `qcc_targetformat`, which a definition
-            // named `float` reads.
-            if let Some((target, revision)) = target {
-                // FTEF-25.1: `QCC_OPCodeSetTarget` makes every opcode valid or not again.
-                self.fte.opcodes = OpcodeTarget::new(target, revision);
-                run.out
-                    .targets
-                    .push((run.out.tokens.len(), self.fte.opcodes));
-                let was = self.fte.target.keeps_float();
-                self.fte.target = target;
-                if target.keeps_float() != was {
-                    let edit = KeywordEdit::hexen2_target(target.keeps_float());
+            PragmaName::IncludeDir => {
+                let base = self.pragma_base(run, bytes);
+                let dir = pragma.include_dir(&base);
+                if let Some(warning) = self.fte.add_include_dir(&dir) {
+                    run.report(Code::W0117, warning, at);
+                }
+            }
+            PragmaName::Autoproto => {
+                // FTEF-12.18: `autoprototype = *msg?!!atoi(msg):true;`
+                let on = message.is_empty() || cond::fte_atoi(message) != 0;
+                let index = run.out.tokens.len();
+                run.out.autoproto.push((index, on, at));
+            }
+            PragmaName::Keyword | PragmaName::Flag => {
+                let (warnings, set) = self.fte.flags.apply_pragma(message);
+                for warning in warnings {
+                    run.report(Code::W0113, warning, at);
+                }
+                // FTEF-21.1: the flags it names, which an `extern "C"` block may have changed
+                // since.
+                let edit = FlagEdit::of_flags(&set, self.fte.flags.compiler_flags());
+                if !edit.is_empty() {
+                    run.out.flags.push((run.out.tokens.len(), edit));
+                }
+                // FTEF-20.1: the keywords it names, which a definition may have turned off since.
+                let edit = KeywordEdit::of_flags(&set, self.fte.keywords());
+                if !edit.is_empty() {
                     run.out.keywords.push((run.out.tokens.len(), edit));
                 }
-                // FTEF-22.4: `QCC_OPCodeSetTarget` sets `flag_undefwordsize` by the format,
-                // which the casts read.
-                self.fte
-                    .flags
-                    .set(FteFlag::Undefwordsize, target.undefined_word_size());
-                let edit =
-                    FlagEdit::of_flags(&[FteFlag::Undefwordsize], self.fte.flags.compiler_flags());
-                run.out.flags.push((run.out.tokens.len(), edit));
             }
-        } else if !fte_pragma::is_known(&pragma.name) {
-            let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
-            let name = lossy(&pragma.name);
-            run.report(Code::W0113, format!("Unknown pragma '{name}'"), at);
-        } else if pragma.is("warning") {
-            let (settings, warnings) = self.fte.warnings.after_pragma(message);
-            let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
-            for (text, now) in warnings {
-                run.report_under(Some(&now), Code::W0113, text, at);
+            PragmaName::Optimise | PragmaName::Optimize => {
+                for warning in fte_pragma::optimise_warnings(&pragma.name, message) {
+                    run.report(Code::W0113, warning, at);
+                }
             }
-            self.set_warnings(run, bytes, end, settings);
+            PragmaName::Opcode => {
+                let (edits, warnings) = fte_pragma::opcode_pragma(message);
+                for warning in warnings {
+                    run.report(Code::W0113, warning, at);
+                }
+                // FTEF-25.3: `pr_opcodes[f].flags |= OPF_VALID` or `&= ~OPF_VALID`, in order.
+                if !edits.is_empty() {
+                    for (op, on) in edits {
+                        self.fte.opcodes.set(op, on);
+                    }
+                    run.out
+                        .targets
+                        .push((run.out.tokens.len(), self.fte.opcodes));
+                }
+            }
+            PragmaName::Target => self.fte_target(run, message, at),
+            PragmaName::Warning => {
+                let (settings, warnings) = self.fte.warnings.after_pragma(message);
+                for (text, now) in warnings {
+                    run.report_under(Some(&now), Code::W0113, text, at);
+                }
+                self.set_warnings(run, bytes, end, settings);
+            }
+            // Known, and read for nothing this profile keeps, or the `file` and `line` pragmas
+            // under `nofilelinepragmas` (FTEF-12.11).
+            PragmaName::File
+            | PragmaName::Line
+            | PragmaName::Noref
+            | PragmaName::Nosave
+            | PragmaName::DefaultStatic
+            | PragmaName::Copyright
+            | PragmaName::Compress
+            | PragmaName::ForceCrc
+            | PragmaName::Framerate
+            | PragmaName::Wrasm
+            | PragmaName::SourceFile
+            | PragmaName::ProgsSrc
+            | PragmaName::ProgsDat => {}
         }
         Resume::At(end)
+    }
+
+    /// `#pragma TARGET` (FTEF-20.4, FTEF-25.1): the target `message` names, with its warnings at
+    /// `at`, and what it changes from here on.
+    fn fte_target(&mut self, run: &mut Run, message: &[u8], at: FileSpan) {
+        let (target, warnings) = fte_pragma::target_warnings(message);
+        for warning in warnings {
+            run.report(Code::W0117, warning, at);
+        }
+        // FTEF-20.4: `QCC_OPCodeSetTargetName` sets `qcc_targetformat`, which a definition
+        // named `float` reads.
+        if let Some((target, revision)) = target {
+            // FTEF-25.1: `QCC_OPCodeSetTarget` makes every opcode valid or not again.
+            self.fte.opcodes = OpcodeTarget::new(target, revision);
+            run.out
+                .targets
+                .push((run.out.tokens.len(), self.fte.opcodes));
+            let was = self.fte.target.keeps_float();
+            self.fte.target = target;
+            if target.keeps_float() != was {
+                let edit = KeywordEdit::hexen2_target(target.keeps_float());
+                run.out.keywords.push((run.out.tokens.len(), edit));
+            }
+            // FTEF-22.4: `QCC_OPCodeSetTarget` sets `flag_undefwordsize` by the format,
+            // which the casts read.
+            self.fte
+                .flags
+                .set(FteFlag::Undefwordsize, target.undefined_word_size());
+            let edit =
+                FlagEdit::of_flags(&[FteFlag::Undefwordsize], self.fte.flags.compiler_flags());
+            run.out.flags.push((run.out.tokens.len(), edit));
+        }
     }
 
     /// Makes `settings` FTEQCC's warning settings from the end `end` of a `#pragma warning` in

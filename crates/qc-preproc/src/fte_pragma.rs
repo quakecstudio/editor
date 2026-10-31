@@ -22,42 +22,6 @@ use crate::fte_tables::{
     TargetFormat,
 };
 
-/// The pragmas `QCC_PR_Precompiler` knows; any other is "Unknown pragma" (FTEF-12.11).
-const KNOWN: [&str; 24] = [
-    "DONT_COMPILE_THIS_FILE",
-    "COPYRIGHT",
-    "compress",
-    "forcecrc",
-    "framerate",
-    "once",
-    "file",
-    "line",
-    "includedir",
-    "noref",
-    "nosave",
-    "defaultstatic",
-    "autoproto",
-    "wrasm",
-    "optimise",
-    "optimize",
-    "sourcefile",
-    "TARGET",
-    "PROGS_SRC",
-    "PROGS_DAT",
-    "opcode",
-    "keyword",
-    "flag",
-    "warning",
-];
-
-/// Whether `QCC_PR_Precompiler` knows the pragma `name` (`QC_strcasecmp`).
-#[must_use]
-pub(crate) fn is_known(name: &[u8]) -> bool {
-    KNOWN
-        .iter()
-        .any(|known| known.as_bytes().eq_ignore_ascii_case(name))
-}
-
 /// Which of FTEQCC's compiler flags and keywords are on (FTEF-12.11): `compiler_flag[]`'s
 /// defaults, and what `#pragma flag` has set since.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

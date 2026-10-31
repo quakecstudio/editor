@@ -54,6 +54,38 @@ pub enum PragmaDefault {
 }
 
 impl PragmaDefault {
+    /// The default `pragma` sets, for `#pragma noref`, `nosave` and `defaultstatic`.
+    #[must_use]
+    pub const fn of_pragma(pragma: qc_lexer::Pragma) -> Option<Self> {
+        use qc_lexer::Pragma as P;
+        match pragma {
+            P::Noref => Some(Self::Noref),
+            P::Nosave => Some(Self::Nosave),
+            P::DefaultStatic => Some(Self::Static),
+            P::DontCompileThisFile
+            | P::Copyright
+            | P::Compress
+            | P::ForceCrc
+            | P::Framerate
+            | P::Once
+            | P::File
+            | P::Line
+            | P::IncludeDir
+            | P::Autoproto
+            | P::Wrasm
+            | P::Optimise
+            | P::Optimize
+            | P::SourceFile
+            | P::Target
+            | P::ProgsSrc
+            | P::ProgsDat
+            | P::Opcode
+            | P::Keyword
+            | P::Flag
+            | P::Warning => None,
+        }
+    }
+
     /// Its bit in [`CompilerFlags`].
     const fn bit(self) -> u32 {
         match self {

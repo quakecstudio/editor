@@ -13,7 +13,20 @@ use qc_lexer::{LineIndex, Span};
 
 /// Index of a file in a [`SourceMap`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct FileId(pub u32);
+pub struct FileId(u32);
+
+impl FileId {
+    /// The id of the file at `index` in its [`SourceMap`].
+    pub(crate) const fn new(index: u32) -> Self {
+        Self(index)
+    }
+
+    /// Its index in its [`SourceMap`].
+    #[must_use]
+    pub const fn index(self) -> u32 {
+        self.0
+    }
+}
 
 /// A byte range in one file of a [`SourceMap`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -90,7 +103,7 @@ pub struct SourceMap {
 impl SourceMap {
     /// Adds a file whose text stands in its bytes as `origin` says, and returns its id.
     pub fn add(&mut self, path: PathBuf, text: Vec<u8>, origin: TextOrigin) -> FileId {
-        let id = FileId(u32::try_from(self.files.len()).unwrap_or(u32::MAX));
+        let id = FileId::new(u32::try_from(self.files.len()).unwrap_or(u32::MAX));
         let lines = LineIndex::new(&text);
         let text = Rc::from(text);
         self.files.push(SourceFile {
@@ -105,7 +118,7 @@ impl SourceMap {
     /// The file with id `id`.
     #[must_use]
     pub fn file(&self, id: FileId) -> Option<&SourceFile> {
-        self.files.get(usize::try_from(id.0).ok()?)
+        self.files.get(usize::try_from(id.index()).ok()?)
     }
 
     /// The bytes a span covers.

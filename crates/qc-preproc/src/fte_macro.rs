@@ -19,7 +19,7 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use qc_lexer::{Code, Span, TokenKind};
+use qc_lexer::{Code, Span, TokenKind, is_fteqcc_whitespace, is_name_char, is_name_start};
 
 use crate::fte_directive::{
     self, Bytes, Definer, FTE_MAX_MACRO_NAME, Gap, Resume, TextStart, WORD_TOO_LONG, WhiteStop,
@@ -27,7 +27,7 @@ use crate::fte_directive::{
 };
 use crate::{
     Body, Expansion, ExpansionId, FTE_MAX_EXPANDED_TOKENS, FTE_MAX_OPEN_CHUNKS, FileId, FileSpan,
-    Item, Lexing, Loader, Macro, Place, PpToken, Preprocessor, Run, TokenStream, Variadic, cond,
+    Item, Lexing, Loader, Macro, Place, PpToken, Preprocessor, Run, TokenStream, Variadic,
     moved_frames, quote_bytes,
 };
 
@@ -496,7 +496,7 @@ struct Word {
 /// the text.
 fn parse2(text: &[u8], mut at: usize) -> Option<Word> {
     loop {
-        while byte_at(text, at).is_some_and(cond::fte_white) {
+        while byte_at(text, at).is_some_and(is_fteqcc_whitespace) {
             at = at.saturating_add(1);
         }
         let byte = byte_at(text, at)?;
@@ -546,8 +546,8 @@ fn parse2(text: &[u8], mut at: usize) -> Option<Word> {
         |b: u8| b.is_ascii_hexdigit() || b == b'.'
     } else if first.is_ascii_digit() {
         |b: u8| b.is_ascii_digit() || b == b'.'
-    } else if first.is_ascii_alphabetic() || first == b'_' {
-        |b: u8| b.is_ascii_alphanumeric() || b == b'_'
+    } else if is_name_start(first) {
+        is_name_char
     } else {
         token.push(first);
         return Some(Word {
@@ -1005,7 +1005,7 @@ impl Writer<'_> {
             at = word.next;
             if let Some(arg) = self.argument_of(&word.token) {
                 let mut after = at;
-                while byte_at(bytes, after).is_some_and(cond::fte_white) {
+                while byte_at(bytes, after).is_some_and(is_fteqcc_whitespace) {
                     after = after.saturating_add(1);
                 }
                 let before_paste = bytes.get(after..after.saturating_add(2)) == Some(b"##");
@@ -1064,7 +1064,7 @@ impl Writer<'_> {
         let mut start = 0_usize;
         loop {
             let mut end = start;
-            while byte_at(bytes, end).is_some_and(cond::fte_white) {
+            while byte_at(bytes, end).is_some_and(is_fteqcc_whitespace) {
                 end = end.saturating_add(1);
             }
             let value = if byte_at(bytes, end) == Some(b'"') {
@@ -1312,7 +1312,7 @@ impl<L: Loader> Preprocessor<L> {
         if let Some(call) = &use_.call {
             self.resume_after(run, &item, call.after);
         }
-        let id = ExpansionId(self.expansions.len());
+        let id = ExpansionId::new(self.expansions.len());
         self.expansions.push(Expansion {
             name: name.clone(),
             use_span: use_.span,
@@ -1655,5 +1655,5 @@ impl<L: Loader> Preprocessor<L> {
 /// one of `)(+-*/|&=^~[]"{};:<>,.#`.
 pub(crate) fn ends_word(byte: u8) -> bool {
     const STOPS: &[u8] = b")(+-*/|&=^~[]\"{};:<>,.#";
-    byte == 0 || cond::fte_white(byte) || STOPS.contains(&byte)
+    byte == 0 || is_fteqcc_whitespace(byte) || STOPS.contains(&byte)
 }

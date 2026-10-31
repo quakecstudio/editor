@@ -452,7 +452,7 @@ fn expansion_spans() {
     }
     let one_token = expanded[1];
     let id = one_token.expansion.unwrap();
-    let expansion = &pp.expansions()[id.0];
+    let expansion = &pp.expansions()[id.index()];
     assert_eq!(expansion.name, "TWO");
     assert_eq!(span_text(&pp, expansion.use_span), "TWO");
     assert_eq!(span_text(&pp, expansion.definition), "TWO");
@@ -461,7 +461,7 @@ fn expansion_spans() {
         Some(1),
         "its text is in TWO's definition"
     );
-    let parent = &pp.expansions()[expansion.parent.unwrap().0];
+    let parent = &pp.expansions()[expansion.parent.unwrap().index()];
     assert_eq!(parent.name, "SUM");
     assert_eq!(parent.parent, None);
     let y = expanded

@@ -427,7 +427,7 @@ impl FteFileReader {
             | Directive::Build { end }
             | Directive::Pack { end, .. } => self.at = end.at,
             Directive::Define { definer, word_end } => {
-                let reading = Reading::File(FileId(0), text);
+                let reading = Reading::File(FileId::new(0), text);
                 let (read, stop) = read_define(&reading, word_end);
                 if let Ok(definition) = read {
                     let name = lossy(text.get(definition.name.clone()).unwrap_or_default());
@@ -513,7 +513,7 @@ impl FteFileReader {
                 return Some(FteEvent::Include { name, line });
             }
             Directive::Pragma { pragma, end } => {
-                if pragma.is("DONT_COMPILE_THIS_FILE") {
+                if pragma.named(qc_lexer::Pragma::DontCompileThisFile) {
                     self.open(Mode::DontCompile, end);
                     return None;
                 }
