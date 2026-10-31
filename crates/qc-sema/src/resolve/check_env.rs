@@ -46,6 +46,9 @@ pub(in crate::resolve) struct BodyEnv<'r, 'a> {
     pub(in crate::resolve) written: &'r [(usize, Type)],
     /// The body's locals.
     pub(in crate::resolve) locals: &'r [RawLocal],
+    /// Whether it is a nested function's that is not static, whose name is empty
+    /// (FTEF-18.39).
+    pub(in crate::resolve) nameless: bool,
 }
 
 impl BodyEnv<'_, '_> {
@@ -271,13 +274,16 @@ impl Env for BodyEnv<'_, '_> {
             Some(_) | None => (Type::Unknown, false),
         };
         FunctionFacts {
-            // `pr_scope->name`, a member function's `CLASS::NAME` (FTEF-21.23).
-            name: def.map_or_else(String::new, |d| {
-                match d.member_of.and_then(|class| self.resolver.index.def(class)) {
-                    Some(class) => format!("{}::{}", class.name, d.name),
-                    None => d.name.clone(),
-                }
-            }),
+            // `pr_scope->name`, a member function's `CLASS::NAME` (FTEF-21.23), and a nested
+            // function's `def?def->name:""` (FTEF-18.39).
+            name: def
+                .filter(|_| !self.nameless)
+                .map_or_else(String::new, |d| {
+                    match d.member_of.and_then(|class| self.resolver.index.def(class)) {
+                        Some(class) => format!("{}::{}", class.name, d.name),
+                        None => d.name.clone(),
+                    }
+                }),
             ret,
             accumulate: self
                 .owner
@@ -502,7 +508,12 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn this_type(&self) -> Option<Type> {
-        let class = self.resolver.index.def(self.owner?)?.member_of?;
+        // FTEF-18.40: a nested function's `this` is that of the member function around it.
+        let mut owner = self.owner?;
+        while let Some(around) = self.resolver.enclosing.get(&owner) {
+            owner = around.scope.owner;
+        }
+        let class = self.resolver.index.def(owner)?.member_of?;
         let name = &self.resolver.index.def(class)?.name;
         Some(Type::Named(name.as_str().into()))
     }

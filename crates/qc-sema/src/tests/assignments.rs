@@ -69,6 +69,43 @@ fn assignment_to_an_assignment() {
     );
 }
 
+// spec FTEF-29.15: a call's value is an alias of the return, which may be assigned to, plainly,
+// in a chain and with a compound operator
+#[test]
+fn assignment_to_a_call_is_silent() {
+    let source = concat!(
+        "entity self; .vector origin; void end_sys_fields;\n",
+        "float() gf = { return 1; };\nvector() gv = { return self.origin; };\n",
+        "void() f = { gf() = 2; gf() += 2; self.origin = gv() = [1, 2, 3]; };\n",
+    );
+    assert_eq!(diags(source), []);
+}
+
+// spec FTEF-29.15: a return larger than a vector is read back into a temporary, which is
+// read-only
+#[test]
+fn assignment_to_a_large_return_warns() {
+    let source = concat!(
+        "#pragma target fte_6614\nentity self; void end_sys_fields;\n",
+        "struct big { float a, b, c, d; };\n",
+        "struct small { float a, b; };\n",
+        "big() gb = { local big r; r.a = 1; return r; };\n",
+        "small() gs = { local small r; r.a = 1; return r; };\n",
+        "void() f = { local big v; local small w; v.a = 2; w.a = 2; gb() = v; gs() = w; };\n",
+    );
+    let found: Vec<_> = diags(source)
+        .into_iter()
+        .filter(|(code, _)| *code == Code::W0241)
+        .collect();
+    assert_eq!(
+        found,
+        of(&[
+            (Code::W0241, "Assignment to const"),
+            (Code::W0241, "Assignment to constant big"),
+        ])
+    );
+}
+
 // spec FTEF-29.2: `=` casts the value to the target's type, and a refused cast is fatal
 #[test]
 fn a_plain_store_casts() {

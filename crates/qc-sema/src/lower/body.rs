@@ -135,6 +135,9 @@ pub struct RawLocal {
     /// span: a statement `T x;` FTEQCC reads as an expression when `T` names no type
     /// (FTEF-19.74).
     pub bare_type: Option<(String, Span)>,
+    /// Under FTEQCC, the body a function-typed local is given, a function of its own
+    /// (FTEF-18.2).
+    pub nested: Option<Box<RawBody>>,
 }
 
 impl RawLocal {
@@ -614,6 +617,13 @@ fn lower_local(local: &ast::LocalDecl, cx: Cx<'_>, body: &mut RawBody) {
             Some(ast::Initializer::Value(expr)) => Some(raw_value(expr, cx)),
             _ => None,
         };
+        // FTEF-18.2: a function-typed local's body is lowered as any function's.
+        let nested = match &init {
+            Some(ast::Initializer::Body(fn_body)) if fte => {
+                Some(Box::new(lower_body(fn_body, &ty, cx)))
+            }
+            _ => None,
+        };
         let literal = if fte {
             LiteralValue::of_fteqcc(init.as_ref(), cx)
         } else {
@@ -643,6 +653,7 @@ fn lower_local(local: &ast::LocalDecl, cx: Cx<'_>, body: &mut RawBody) {
             flags: cx.flags_at(local.syntax().span().start),
             global_function,
             bare_type: bare_type.clone(),
+            nested,
         });
     }
 }
