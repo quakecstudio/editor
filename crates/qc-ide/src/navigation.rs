@@ -72,17 +72,14 @@ impl<L: Loader> AnalysisHost<L> {
             let Some((_, data)) = self.module(module) else {
                 continue;
             };
-            let found = data.analysis.index.defs.iter().position(|d| {
+            let found = data.analysis.index.definitions().find(|(_, d)| {
                 d.location.file == file
                     && d.location.span == at.span
                     && d.name == name
                     && d.kind == kind
             });
-            if let Some(index) = found {
-                out.push(ModuleDef {
-                    module,
-                    def: DefId(index),
-                });
+            if let Some((def, _)) = found {
+                out.push(ModuleDef { module, def });
             }
         }
         out

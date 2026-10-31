@@ -32,15 +32,13 @@ impl Names {
         let mut defs: HashMap<Location, Vec<(DefId, Option<DefId>)>> = HashMap::new();
         let mut refs = HashMap::new();
         let mut globals = HashMap::new();
-        for (id, def) in index.defs.iter().enumerate() {
-            defs.entry(def.location)
-                .or_default()
-                .push((DefId(id), def.owner));
+        for (id, def) in index.definitions() {
+            defs.entry(def.location).or_default().push((id, def.owner));
             if def.kind.is_global() && def.owner.is_none() && def.member_of.is_none() {
-                globals.entry(def.name.clone()).or_insert(DefId(id));
+                globals.entry(def.name.clone()).or_insert(id);
             }
         }
-        for reference in &index.refs {
+        for reference in index.refs() {
             refs.entry(reference.location).or_insert(reference.def);
         }
         Self {

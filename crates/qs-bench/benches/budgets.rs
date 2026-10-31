@@ -73,9 +73,12 @@ fn id1_recompile(group: &mut BenchmarkGroup<'_, WallTime>) {
             .file_name()
             .is_some_and(|name| name == EDITED_FILE)
         {
-            edited = Some((FileId(index), String::from_utf8_lossy(&text).into_owned()));
+            edited = Some((
+                FileId::new(index),
+                String::from_utf8_lossy(&text).into_owned(),
+            ));
         }
-        db.set_file(FileId(index), file.path.clone(), text);
+        db.set_file(FileId::new(index), file.path.clone(), text);
     }
     let (file, original) = edited.expect("id 1.01 has weapons.qc");
     assert!(
@@ -84,7 +87,7 @@ fn id1_recompile(group: &mut BenchmarkGroup<'_, WallTime>) {
     );
     let variants = [original.replacen(EDITED_LINE, EDITED_TO, 1), original];
     let input = ModuleInput::from_module(module);
-    let name = |id: FileId| format!("{}.qc", id.0);
+    let name = |id: FileId| format!("{}.qc", id.index());
     compile_module(&mut db, &input, name, Options::default()).expect("id 1.01 compiles");
     let mut turns = variants.iter().cycle();
     group.bench_function("id1_recompile", |bencher| {

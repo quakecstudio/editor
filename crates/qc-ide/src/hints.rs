@@ -39,7 +39,7 @@ impl<L: Loader> AnalysisHost<L> {
         let Some((state, data)) = self.module(module) else {
             return Vec::new();
         };
-        let Some(parse) = data.parses.get(file.0) else {
+        let Some(parse) = data.parses.get(file.index()) else {
             return Vec::new();
         };
         let index = &data.analysis.index;
@@ -113,13 +113,13 @@ fn function_parameters(
     }
     let declarations = std::iter::once(definition.location).chain(
         index
-            .redeclarations
+            .redeclarations()
             .iter()
             .filter(|r| r.def == def)
             .map(|r| r.location),
     );
     for location in declarations {
-        let Some(parse) = data.parses.get(location.file.0) else {
+        let Some(parse) = data.parses.get(location.file.index()) else {
             continue;
         };
         let text = state.db.file_text(location.file);

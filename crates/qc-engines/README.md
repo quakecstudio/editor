@@ -65,8 +65,8 @@ cargo test -p qc-engines
 - `declared_builtins` and `BuiltinRef` (`check`): the builtin each global name of a module is
   declared as, by number or engine name, and its entry in an engine's table (`BuiltinRef::lookup`),
   which the language server's hover reads.
-- `missing_builtins` and `FileDiagnostic` (`check`): the `W0311` warnings for a module of a
-  kind checked against a target engine, for builtins declared `#N` and, under FTEQCC,
+- `missing_builtins` (`check`): the `W0311` warnings for a module of a kind checked against a
+  target engine, as `qc_sema::FileDiagnostic`s, from each file's `FileId` and parse, for builtins declared `#N` and, under FTEQCC,
   `#0:NAME`, `#"NAME"` and `:NAME` (ENGT-4.14), in the dialect the module was parsed in: a
   number is the one the dialect's compiler binds, `(int)` of the literal's float value
   (ENGT-4.12), and under FTEQCC the value FTEQCC reads, hex, octal and `i` literals included

@@ -40,8 +40,8 @@ use crate::expand::{
 };
 use crate::lower::{FileDecls, lower_file};
 use crate::resolve::{
-    FileDiagnostic, FilePlace, FirstPass, ModuleIndex, ResolveOptions, Sources, resolve_mapped,
-    resolve_module,
+    FileDiagnostic, FilePlace, FileSource, FirstPass, ModuleIndex, ResolveOptions, Sources,
+    resolve_mapped, resolve_module,
 };
 use crate::symbol::{FileId, Location};
 
@@ -114,6 +114,28 @@ struct Memo<T> {
     value: T,
     /// The highest revision of any input this value read.
     computed_at: Revision,
+}
+
+/// The value memoized for `file` in `memos`, when no input it read has changed since
+/// `revision`.
+fn fresh<T: Clone>(
+    memos: &HashMap<FileId, Memo<T>>,
+    file: FileId,
+    revision: Revision,
+) -> Option<T> {
+    memos
+        .get(&file)
+        .filter(|memo| memo.computed_at >= revision)
+        .map(|memo| memo.value.clone())
+}
+
+/// A query [`QueryCounts`] counts.
+#[derive(Clone, Copy)]
+enum Query {
+    Parse,
+    Lower,
+    Preprocess,
+    ModuleIndex,
 }
 
 /// The incremental semantic database.
@@ -245,27 +267,16 @@ impl Db {
         self.files.get(&file).map_or(Revision(0), |f| f.revision)
     }
 
-    fn bump_parse(&self) {
+    /// Counts one computation of `query` from scratch.
+    fn bump(&self, query: Query) {
         let mut c = self.counts.get();
-        c.parse = c.parse.saturating_add(1);
-        self.counts.set(c);
-    }
-
-    fn bump_lower(&self) {
-        let mut c = self.counts.get();
-        c.lower = c.lower.saturating_add(1);
-        self.counts.set(c);
-    }
-
-    fn bump_preprocess(&self) {
-        let mut c = self.counts.get();
-        c.preprocess = c.preprocess.saturating_add(1);
-        self.counts.set(c);
-    }
-
-    fn bump_module_index(&self) {
-        let mut c = self.counts.get();
-        c.module_index = c.module_index.saturating_add(1);
+        let count = match query {
+            Query::Parse => &mut c.parse,
+            Query::Lower => &mut c.lower,
+            Query::Preprocess => &mut c.preprocess,
+            Query::ModuleIndex => &mut c.module_index,
+        };
+        *count = count.saturating_add(1);
         self.counts.set(c);
     }
 
@@ -274,12 +285,10 @@ impl Db {
     /// Recomputes only when the file's text has changed since the cached parse.
     pub fn parse(&mut self, file: FileId) -> Parse {
         let revision = self.file_revision(file);
-        if let Some(memo) = self.parses.get(&file)
-            && memo.computed_at >= revision
-        {
-            return memo.value.clone();
+        if let Some(value) = fresh(&self.parses, file, revision) {
+            return value;
         }
-        self.bump_parse();
+        self.bump(Query::Parse);
         let value = if self.module_sources.contains(&file) {
             qc_syntax::parse_module_source(self.file_text(file), self.dialect)
         } else {
@@ -300,13 +309,11 @@ impl Db {
     /// Depends only on the file's parse, so it recomputes only when the file changed.
     pub fn lower(&mut self, file: FileId) -> FileDecls {
         let revision = self.file_revision(file);
-        if let Some(memo) = self.lowerings.get(&file)
-            && memo.computed_at >= revision
-        {
-            return memo.value.clone();
+        if let Some(value) = fresh(&self.lowerings, file, revision) {
+            return value;
         }
         let parse = self.parse(file);
-        self.bump_lower();
+        self.bump(Query::Lower);
         let value = lower_file(&parse, self.dialect);
         self.lowerings.insert(
             file,
@@ -337,7 +344,7 @@ impl Db {
             return memo.value.1.clone();
         }
         let lowered: Vec<FileDecls> = files.iter().map(|&f| self.lower(f)).collect();
-        self.bump_module_index();
+        self.bump(Query::ModuleIndex);
         let options = ResolveOptions {
             dialect: self.dialect,
             autoproto: self.autoproto,
@@ -405,7 +412,7 @@ impl Db {
             self.module = None;
             self.module_sources = sources;
         }
-        self.bump_preprocess();
+        self.bump(Query::Preprocess);
         let preprocessed = {
             let mut files = Files {
                 texts: HashMap::new(),
@@ -478,7 +485,6 @@ impl Db {
                 syntax.push(d);
             }
         }
-        let maps: Vec<&OriginMap> = preprocessed.files.iter().map(|r| &r.origins).collect();
         // FTEF-19.7: FTEQCC keeps a function's first declaration against one in a file named
         // `*extensions.qc`.
         let extensions = self
@@ -492,32 +498,21 @@ impl Db {
             .map(|(&id, _)| id)
             .collect();
         let places = self.places();
-        let warnings = each_file(&preprocessed.files, |r| r.warnings.as_slice());
-        let keywords: Vec<&[(usize, qc_syntax::Keywords)]> =
-            keywords.iter().map(Vec::as_slice).collect();
-        let targets = each_file(&preprocessed.files, |r| r.targets.as_slice());
-        let message_places = each_file(&preprocessed.files, |r| r.places.as_slice());
-        let first_maps: Vec<&OriginMap> = preprocessed.first.iter().map(|r| &r.origins).collect();
-        let first_warnings = each_file(&preprocessed.first, |r| r.warnings.as_slice());
-        let first_keywords: Vec<&[(usize, qc_syntax::Keywords)]> =
-            first_keywords.iter().map(Vec::as_slice).collect();
+        let files = file_sources(&preprocessed.files, &keywords, &preprocessed.files);
+        // The first pass reads the targets and message places of the second (FTEF-25,
+        // FTEF-14.43).
+        let first_sources = file_sources(&preprocessed.first, &first_keywords, &preprocessed.files);
         let sources = Sources {
-            maps: &maps,
-            warnings: &warnings,
-            keywords: &keywords,
-            targets: &targets,
-            message_places: &message_places,
+            files: &files,
             extensions,
             places,
             plan: preprocessed.plan.as_ref(),
             first: preprocessed.autoproto.then_some(FirstPass {
                 files: &first_decls,
-                maps: &first_maps,
-                warnings: &first_warnings,
-                keywords: &first_keywords,
+                sources: &first_sources,
             }),
         };
-        self.bump_module_index();
+        self.bump(Query::ModuleIndex);
         let command_line_flags = input
             .command_line
             .flags(qc_preproc::FlagSettings::default());
@@ -643,7 +638,7 @@ impl Db {
         {
             return cached.clone();
         }
-        self.bump_parse();
+        self.bump(Query::Parse);
         let parse = qc_syntax::parse_preprocessed_flagged(
             text,
             self.dialect,
@@ -651,7 +646,7 @@ impl Db {
             &rendered.keywords,
             &rendered.seams,
         );
-        self.bump_lower();
+        self.bump(Query::Lower);
         let decls = lower_file(&parse, self.dialect);
         let value = ExpandedFile {
             text: text.to_vec(),
@@ -748,20 +743,28 @@ fn prototyped_initialisers(parse: &Parse, plan: &ProtoPlan, file: usize) -> Vec<
 
 /// A parser diagnostic of a file's expansion, at the source span it came from (QC-9.7).
 fn locate_diagnostic(origins: &OriginMap, file: FileId, d: &Diagnostic) -> FileDiagnostic {
-    let location = origins
-        .locate(d.span)
-        .unwrap_or(Location { file, span: d.span });
-    FileDiagnostic {
-        file: location.file,
-        diagnostic: Diagnostic {
-            code: d.code,
-            message: d.message.clone(),
-            span: location.span,
-        },
-    }
+    FileDiagnostic::new(d.code, origins.locate_or(file, d.span), d.message.clone())
 }
 
-/// What `get` reads of each of `files`, in order.
-fn each_file<'r, T>(files: &'r [Rendered], get: impl Fn(&'r Rendered) -> &'r [T]) -> Vec<&'r [T]> {
-    files.iter().map(get).collect()
+/// What resolution reads with each of `files`, in order: its origins, warning settings and
+/// `keywords`, and the targets and message places of the second pass's file of its index.
+fn file_sources<'r>(
+    files: &'r [Rendered],
+    keywords: &'r [Vec<(usize, qc_syntax::Keywords)>],
+    second: &'r [Rendered],
+) -> Vec<FileSource<'r>> {
+    files
+        .iter()
+        .enumerate()
+        .map(|(index, rendered)| {
+            let second = second.get(index);
+            FileSource {
+                origins: Some(&rendered.origins),
+                warnings: &rendered.warnings,
+                keywords: keywords.get(index).map_or(&[][..], Vec::as_slice),
+                targets: second.map_or(&[][..], |r| r.targets.as_slice()),
+                message_places: second.map_or(&[][..], |r| r.places.as_slice()),
+            }
+        })
+        .collect()
 }

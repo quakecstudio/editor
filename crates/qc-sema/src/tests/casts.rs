@@ -16,7 +16,7 @@ use crate::expand::ModuleInput;
 use crate::symbol::FileId;
 
 /// The one file these tests read.
-const FILE: FileId = FileId(0);
+const FILE: FileId = FileId::new(0);
 
 /// The diagnostics of the FTEQCC file `source`, preprocessed and read with the command line
 /// `args`.

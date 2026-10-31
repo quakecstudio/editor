@@ -354,12 +354,12 @@ fn a_macro_number_for_a_function_cannot_be_cast() {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
     db.set_file(
-        FileId(0),
+        FileId::new(0),
         PathBuf::from("t.qc"),
         b"#define N 5\nvoid() f = #N;\n".to_vec(),
     );
     let analysis = db.analyze_module(&ModuleInput {
-        compiled: vec![FileId(0)],
+        compiled: vec![FileId::new(0)],
         ..ModuleInput::default()
     });
     let found: Vec<String> = analysis
@@ -627,17 +627,17 @@ fn an_extensions_file_keeps_the_first_declaration() {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
     db.set_file(
-        FileId(0),
+        FileId::new(0),
         PathBuf::from("defs.qc"),
         b"void() spin = #6;\n".to_vec(),
     );
     db.set_file(
-        FileId(1),
+        FileId::new(1),
         PathBuf::from("fteextensions.qc"),
         b"float(float a) spin;\n".to_vec(),
     );
     let analysis = db.analyze_module(&ModuleInput {
-        compiled: vec![FileId(0), FileId(1)],
+        compiled: vec![FileId::new(0), FileId::new(1)],
         ..ModuleInput::default()
     });
     let found: Vec<(Code, String)> = analysis
@@ -896,7 +896,7 @@ fn a_strict_enums_value_before_a_global() {
         .defs
         .iter()
         .position(|d| d.name == "E::A")
-        .map(DefId)
+        .map(DefId::new)
         .unwrap();
     assert_eq!(index.refs.iter().filter(|r| r.def == value).count(), 1);
 }
@@ -1102,7 +1102,7 @@ fn a_for_statements_locals_leave_scope() {
         .iter()
         .enumerate()
         .filter(|(_, d)| d.name == "i")
-        .map(|(n, _)| DefId(n))
+        .map(|(n, _)| DefId::new(n))
         .collect();
     assert_eq!(locals.len(), 2);
     let uses: Vec<DefId> = index
@@ -1144,7 +1144,7 @@ fn a_for_statements_locals_leave_scope() {
         .defs
         .iter()
         .position(|d| d.name == "i")
-        .map(DefId)
+        .map(DefId::new)
         .unwrap();
     assert_eq!(index.refs.iter().filter(|r| r.def == global).count(), 1);
 }
@@ -1225,7 +1225,7 @@ fn a_replaced_definition_is_the_one_used() {
         .iter()
         .enumerate()
         .filter(|(_, d)| d.name == "anglemod")
-        .map(|(i, _)| DefId(i))
+        .map(|(i, _)| DefId::new(i))
         .collect();
     assert_eq!(defs.len(), 2);
     let used: Vec<_> = index

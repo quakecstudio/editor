@@ -1767,6 +1767,7 @@ issues:
   - P2-151
   - P2-152
   - P2-153
+  - P2-154
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -3140,3 +3141,29 @@ issues:
   verify:
   - cargo test -p qc-codegen -p qc-sema
   - cargo xtask compiler-diff --full
+- key: P2-154
+  title: Define the public API boundary of every library crate
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: L
+  reqs:
+  - ARCH-1
+  - CONV-17
+  summary: |
+    Asked for by Justin on 2026-10-31, while P2-142 made qc-sema's `FileId`, `DefId` and `ModuleIndex` fields private. `unreachable_pub` only catches a `pub` item that the crate root does not re-export; it does not ask whether a re-exported item should be public at all. Fields that dependents write, constructors that let a caller forge an ID, and items no dependent uses still reach other crates. Each library crate's root API should be a deliberate boundary: what dependents need, behind constructors and accessors that keep the crate's invariants.
+  depends:
+  - P2-142
+  deliverable:
+  - 'docs/audits/api-surface.md: for each library crate in layers.toml at L0 to L5 (not the tests and tooling layers, nor apps), its public items at the root, the workspace crates that use each, and a disposition per item: kept public with the reason, narrowed to `pub(crate)`, removed, or given private fields behind constructors and accessors'
+  - 'crates/*: the changes the dispositions name, one commit per layer from L0 up, each listing the public items changed and the dependents touched'
+  - 'xtask/src/api.rs: `cargo xtask api [--check]`, which writes (or checks) a sorted list of each library crate''s public items to docs/api/<crate>.txt, run by `cargo xtask ci` so a change to a crate''s public API shows in the diff that makes it'
+  acceptance:
+  - 'Every public item at the root of every L0 to L5 library crate has a disposition in docs/audits/api-surface.md, and the code matches it'
+  - 'No public struct of these crates has a public field that a dependent can use to break an invariant the crate keeps (an ID, an index into the crate''s own tables, a count), and no public constructor lets a dependent forge an ID the crate hands out'
+  - '`cargo xtask api --check` passes in `cargo xtask ci` and fails on a fixture that adds a public item without regenerating docs/api/'
+  - 'Behaviour is unchanged: the existing tests pass without changing what they assert (a test changes only to use an accessor or constructor in place of a field), every ratchet in ratchets.toml is kept, and `cargo xtask ci` passes'
+  verify:
+  - cargo xtask api --check
+  - cargo xtask ci

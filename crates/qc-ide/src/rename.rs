@@ -227,7 +227,7 @@ impl<L: Loader> AnalysisHost<L> {
         let file = state.file_id(&path).ok_or(RenameError::NoName)?;
         let token = data
             .parses
-            .get(file.0)
+            .get(file.index())
             .and_then(|parse| name_token_near(parse, offset))
             .ok_or(RenameError::NoName)?;
         let span = token.span();
@@ -318,11 +318,10 @@ impl<L: Loader> AnalysisHost<L> {
         for suffix in COMPONENTS {
             let component = format!("{name}{suffix}");
             let found = index
-                .defs
-                .iter()
-                .position(|d| d.location == def.location && d.name == component);
-            if let Some(found) = found {
-                out.push((DefId(found), suffix));
+                .definitions()
+                .find(|(_, d)| d.location == def.location && d.name == component);
+            if let Some((found, _)) = found {
+                out.push((found, suffix));
             }
         }
         out
@@ -394,11 +393,11 @@ impl<L: Loader> AnalysisHost<L> {
             db.set_dialect(state.dialect);
             db.set_autoproto(state.autoproto());
             for (id, path) in state.files.iter().enumerate() {
-                let text = state.db.file_text(FileId(id));
+                let text = state.db.file_text(FileId::new(id));
                 let text = by_path
                     .get(path.as_path())
                     .map_or_else(|| text.to_vec(), |edit| apply(text, &edit.edits));
-                db.set_file(FileId(id), path.clone(), text);
+                db.set_file(FileId::new(id), path.clone(), text);
             }
             let after = db.analyze_module(state.input());
             let moved = Moved {
@@ -430,10 +429,10 @@ fn engine_binding(index: &ModuleIndex, def: DefId) -> Option<EngineBinding> {
     let definition = index.def(def)?;
     let before = |marker: &str, kinds: &[DefKind]| {
         index
-            .defs
+            .defs()
             .iter()
             .position(|d| d.name == marker && d.owner.is_none())
-            .is_some_and(|end| def.0 < end && kinds.contains(&definition.kind))
+            .is_some_and(|end| def.index() < end && kinds.contains(&definition.kind))
     };
     if before("end_sys_globals", &[DefKind::Global, DefKind::Function]) {
         return Some(EngineBinding::SystemGlobal);
@@ -480,7 +479,7 @@ impl Moved<'_> {
     fn offset(&self, file: FileId, offset: usize) -> usize {
         let Some(edit) = self
             .files
-            .get(file.0)
+            .get(file.index())
             .and_then(|path| self.edits.get(path.as_path()))
         else {
             return offset;
@@ -520,24 +519,27 @@ fn first_difference(
     new: &str,
 ) -> Option<Location> {
     let (b, a) = (&before.index, &after.index);
-    for (id, def) in b.defs.iter().enumerate() {
+    for (id, def) in b.definitions() {
         let location = moved.location(def.location);
-        let name = if renamed.contains(&DefId(id)) {
+        let name = if renamed.contains(&id) {
             def.name.replacen(old, new, 1)
         } else {
             def.name.clone()
         };
-        let Some(other) = a.defs.get(id) else {
+        let Some(other) = a.def(id) else {
             return Some(location);
         };
         if other.name != name || other.kind != def.kind || other.location != location {
             return Some(location);
         }
     }
-    if let Some(extra) = a.defs.get(b.defs.len()) {
+    if let Some(extra) = a.defs().get(b.defs().len()) {
         return Some(extra.location);
     }
-    let pairs = [(&b.refs, &a.refs), (&b.redeclarations, &a.redeclarations)];
+    let pairs = [
+        (&b.refs(), &a.refs()),
+        (&b.redeclarations(), &a.redeclarations()),
+    ];
     for (was, now) in pairs {
         for (index, reference) in was.iter().enumerate() {
             let location = moved.location(reference.location);

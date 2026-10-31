@@ -37,11 +37,14 @@ impl Resolver<'_> {
         if decl.skipped_init {
             return false;
         }
-        if !decl.initialized {
+        if !decl.initialized() {
             if decl.has(&Qualifier::Accumulate)
                 && let Some(existing) = existing
                 && self.index.def(existing).is_some_and(|d| d.initialized)
-                && !self.facts.get(existing.0).is_some_and(|f| f.accumulate)
+                && !self
+                    .facts
+                    .get(existing.index())
+                    .is_some_and(|f| f.accumulate)
             {
                 self.report(
                     Code::W0218,
@@ -56,7 +59,7 @@ impl Resolver<'_> {
             return false;
         }
         let flag = |read: fn(&Facts) -> bool| {
-            existing.is_some_and(|d| self.facts.get(d.0).is_some_and(read))
+            existing.is_some_and(|d| self.facts.get(d.index()).is_some_and(read))
         };
         let (shared, accumulating, builtin) = (
             flag(|f| f.shared),
@@ -93,7 +96,7 @@ impl Resolver<'_> {
             }
             return false;
         }
-        if decl.body.is_none() {
+        if decl.body().is_none() {
             return false;
         }
         if wrap {
@@ -104,7 +107,7 @@ impl Resolver<'_> {
                     "wrapper function does not wrap anything".to_owned(),
                 );
                 return true;
-            } else if decl.body.as_ref().is_some_and(|b| {
+            } else if decl.body().is_some_and(|b| {
                 !b.uses
                     .iter()
                     .chain(&b.state_uses)
@@ -163,7 +166,7 @@ impl Resolver<'_> {
                 {
                     return;
                 }
-                self.facts.get(existing.0).is_some_and(|f| f.constant)
+                self.facts.get(existing.index()).is_some_and(|f| f.constant)
             }
             None => Self::constant_at_file_level(decl),
         };
@@ -343,7 +346,7 @@ impl Resolver<'_> {
                         Holder::Global => self.lookup_used_global(array),
                     };
                     if let Some(source) = found
-                        && !self.facts.get(source.0).is_some_and(|f| f.constant)
+                        && !self.facts.get(source.index()).is_some_and(|f| f.constant)
                     {
                         self.report(
                             Code::E0214,
@@ -380,7 +383,7 @@ impl Resolver<'_> {
         let Some(source) = self.lookup_used_global(source_name) else {
             return false;
         };
-        if self.facts.get(source.0).is_some_and(|f| f.constant) {
+        if self.facts.get(source.index()).is_some_and(|f| f.constant) {
             return false;
         }
         let Some(source_ty) = self
@@ -484,7 +487,7 @@ impl Resolver<'_> {
         let source_ty = word_type(&self.resolved(&source_ty));
         // FTEF-29.11: a constant whose word is 0 is null (`QCC_SRef_IsNull`), which casts to
         // any type but a struct or union with no warning.
-        let null = self.facts.get(source.0).is_some_and(|f| f.constant)
+        let null = self.facts.get(source.index()).is_some_and(|f| f.constant)
             && matches!(self.literals.get(&source), Some(LiteralValue::Float(0)))
             && !self.is_struct_type(ty);
         // A strict enum's value is refused even when it is null (FTEF-19.10).
@@ -500,7 +503,7 @@ impl Resolver<'_> {
             return Ok(None);
         }
         // FTEF-9.18: `Class::function` is the function `Class::function`, virtual or not.
-        let constant = self.facts.get(source.0).is_some_and(|f| f.constant)
+        let constant = self.facts.get(source.index()).is_some_and(|f| f.constant)
             || (class_member.is_some() && source_ty.is_function());
         if !constant {
             if matches!(holder, Holder::Global | Holder::Static(_)) {
@@ -566,7 +569,7 @@ impl Resolver<'_> {
         }
         // C's `float (*x[2])(float);` is an array of pointers to functions, a `var` (FTEF-21.7).
         if decl.array.is_some()
-            && !decl.initialized
+            && !decl.initialized()
             && !decl.pointer_var
             && self.resolved(&decl.ty).is_function()
         {
@@ -841,7 +844,7 @@ impl Resolver<'_> {
                     let Some(source) = self.lookup_global(name) else {
                         continue;
                     };
-                    if !self.facts.get(source.0).is_some_and(|f| f.constant) {
+                    if !self.facts.get(source.index()).is_some_and(|f| f.constant) {
                         self.report(
                             Code::E0217,
                             location,

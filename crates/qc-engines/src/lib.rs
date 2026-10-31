@@ -29,7 +29,7 @@
 pub mod check;
 mod tables;
 
-pub use check::{BuiltinRef, FileDiagnostic, declared_builtins, missing_builtins};
+pub use check::{BuiltinRef, declared_builtins, missing_builtins};
 pub use tables::SOURCES;
 
 use qc_builtins::table::BUILTINS;
@@ -137,12 +137,14 @@ enum Layer {
 }
 
 /// id's builtin as a table entry.
-const fn vanilla(b: &qc_builtins::Builtin) -> Builtin {
-    Builtin {
-        key: BuiltinKey::Number(b.number),
-        name: b.name,
-        signature: b.prototype,
-        extensions: &[],
+impl From<&qc_builtins::Builtin> for Builtin {
+    fn from(b: &qc_builtins::Builtin) -> Self {
+        Self {
+            key: BuiltinKey::Number(b.number),
+            name: b.name,
+            signature: b.prototype,
+            extensions: &[],
+        }
     }
 }
 
@@ -172,7 +174,7 @@ impl Layer {
     /// The layer's builtins, in source order.
     fn builtins(self) -> Vec<Builtin> {
         match self {
-            Self::Vanilla => BUILTINS.iter().map(vanilla).collect(),
+            Self::Vanilla => BUILTINS.iter().map(Builtin::from).collect(),
             Self::Rerelease
             | Self::Fteqw
             | Self::FteqwCsqc
@@ -194,7 +196,7 @@ impl Layer {
     /// The layer's entry for `key`.
     fn find(self, key: BuiltinKey) -> Option<Builtin> {
         match (self, key) {
-            (Self::Vanilla, BuiltinKey::Number(n)) => qc_builtins::lookup(n).map(vanilla),
+            (Self::Vanilla, BuiltinKey::Number(n)) => qc_builtins::lookup(n).map(Builtin::from),
             (Self::Vanilla, BuiltinKey::Name(_)) => None,
             (
                 Self::Rerelease
@@ -215,6 +217,14 @@ impl Layer {
                 _,
             ) => self.generated().iter().find(|b| b.key == key).copied(),
         }
+    }
+
+    /// The layer's entry for the engine name `name` (ENGT-4.17); id's table names none.
+    fn find_named(self, name: &str) -> Option<Builtin> {
+        self.generated()
+            .iter()
+            .find(|b| matches!(b.key, BuiltinKey::Name(n) if n == name))
+            .copied()
     }
 }
 
@@ -338,6 +348,15 @@ impl Engine {
     #[must_use]
     pub fn builtin(self, kind: ModuleKind, key: BuiltinKey) -> Option<Builtin> {
         self.layers(kind).iter().find_map(|layer| layer.find(key))
+    }
+
+    /// The engine's entry for the engine name `name` in its table for modules of `kind`, if it
+    /// has one: [`Self::builtin`] of the [`BuiltinKey::Name`] `name` (ENGT-3.9, ENGT-4.17).
+    #[must_use]
+    pub fn builtin_named(self, kind: ModuleKind, name: &str) -> Option<Builtin> {
+        self.layers(kind)
+            .iter()
+            .find_map(|layer| layer.find_named(name))
     }
 
     /// The extension names the engine declares for modules of `kind` (ENGT-3.10).

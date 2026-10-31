@@ -155,7 +155,7 @@ fn analyze(
     db.set_autoproto(autoproto);
     for (index, file) in module.graph.files.iter().enumerate() {
         let text = fs::read(&file.path).map_err(|e| format!("{}: {e}", file.path.display()))?;
-        db.set_file(FileId(index), file.path.clone(), text);
+        db.set_file(FileId::new(index), file.path.clone(), text);
     }
     let analysis = db.analyze_module(&ModuleInput::from_module(module));
     Ok((db, analysis))
@@ -181,19 +181,19 @@ fn place(db: &Db, dir: &Path, file: FileId, start: usize) -> String {
 fn render(text: &mut String, dir: &Path, module: &Module, db: &Db, analysis: &ModuleAnalysis) {
     let index = &analysis.index;
     let mut refs: HashMap<usize, usize> = HashMap::new();
-    for reference in &index.refs {
-        let count = refs.entry(reference.def.0).or_default();
+    for reference in index.refs() {
+        let count = refs.entry(reference.def.index()).or_default();
         *count = count.saturating_add(1);
     }
     let diagnostics: Vec<_> = analysis.diagnostics().collect();
     text.push_str(&format!(
         "module {}: {} definitions, {} references, {} diagnostics\n",
         module.name,
-        index.defs.len(),
-        index.refs.len(),
+        index.defs().len(),
+        index.refs().len(),
         diagnostics.len()
     ));
-    for (id, def) in index.defs.iter().enumerate() {
+    for (id, def) in index.defs().iter().enumerate() {
         text.push_str(&format!(
             "def {} {} {} {} refs {}\n",
             place(db, dir, def.location.file, def.location.span.start),
@@ -354,7 +354,7 @@ fn differential(
     let globals = defs_by_name(&progs, progs.global_defs().iter());
     let fields = defs_by_name(&progs, progs.field_defs().iter());
     let mut comparison = Comparison::default();
-    for def in &analysis.index.defs {
+    for def in analysis.index.defs() {
         if def.owner.is_some() || def.member_of.is_some() || def.generated {
             continue;
         }
@@ -466,7 +466,7 @@ mod tests {
         let parse = qc_syntax::parse(b"void(...) f;\nfloat(float a) g;\n.vector v;\n");
         let lowered = lower_file(&parse, qc_syntax::Dialect::Vanilla);
         let index = qc_sema::resolve_module(&[lowered], qc_sema::ResolveOptions::default());
-        let written: Vec<_> = index.defs.iter().map(|d| type_name(&d.ty)).collect();
+        let written: Vec<_> = index.defs().iter().map(|d| type_name(&d.ty)).collect();
         assert_eq!(
             written,
             [

@@ -24,8 +24,8 @@ fn reruns(before: QueryCounts, after: QueryCounts) -> (u64, u64, u64) {
 /// A two-file module in a fresh database, resolved once so every query is cached.
 fn seeded() -> (Db, Vec<FileId>) {
     let mut db = Db::new();
-    let defs = FileId(0);
-    let behaviour = FileId(1);
+    let defs = FileId::new(0);
+    let behaviour = FileId::new(1);
     db.set_file_text(defs, b"float shared;\nvoid() helper = {};".to_vec());
     db.set_file_text(
         behaviour,
@@ -62,7 +62,7 @@ fn editing_one_file_relowers_only_that_file() {
     let before = db.counts();
     // Edit the second file's function body only.
     db.set_file_text(
-        FileId(1),
+        FileId::new(1),
         b"void() worker = { shared = 2; helper(); };".to_vec(),
     );
     db.module_index(&files);
@@ -76,7 +76,10 @@ fn editing_one_file_relowers_only_that_file() {
 fn editing_the_other_file_relowers_only_it() {
     let (mut db, files) = seeded();
     let before = db.counts();
-    db.set_file_text(FileId(0), b"float shared;\nvoid() helper = { };".to_vec());
+    db.set_file_text(
+        FileId::new(0),
+        b"float shared;\nvoid() helper = { };".to_vec(),
+    );
     db.module_index(&files);
     let after = db.counts();
     assert_eq!(reruns(before, after), (1, 1, 1));
@@ -87,12 +90,12 @@ fn parse_and_lower_of_unedited_file_are_cached() {
     let (mut db, _files) = seeded();
     // Edit file 1, then ask directly for file 0's parse and lower: both cached.
     db.set_file_text(
-        FileId(1),
+        FileId::new(1),
         b"void() worker = { shared = 3; helper(); };".to_vec(),
     );
     let before = db.counts();
-    db.parse(FileId(0));
-    db.lower(FileId(0));
+    db.parse(FileId::new(0));
+    db.lower(FileId::new(0));
     let after = db.counts();
     assert_eq!(before, after);
 }
@@ -100,14 +103,14 @@ fn parse_and_lower_of_unedited_file_are_cached() {
 #[test]
 fn an_edit_that_adds_a_reference_is_reflected() {
     let mut db = Db::new();
-    let file = FileId(0);
+    let file = FileId::new(0);
     db.set_file_text(file, b"float a;\nvoid() f = { a = 1; };".to_vec());
     let before = db.module_index(&[file]);
     let a_before = before
         .defs
         .iter()
         .position(|d| d.name == "a")
-        .map(DefId)
+        .map(DefId::new)
         .expect("a");
     assert_eq!(before.references(a_before, false).len(), 1);
 
@@ -121,7 +124,7 @@ fn an_edit_that_adds_a_reference_is_reflected() {
         .defs
         .iter()
         .position(|d| d.name == "a")
-        .map(DefId)
+        .map(DefId::new)
         .expect("a");
     // Now three uses of `a`.
     assert_eq!(after.references(a_after, false).len(), 3);
@@ -133,7 +136,7 @@ fn setting_identical_text_still_advances_but_recomputes_once() {
     let before = db.counts();
     // Re-set file 1 to the same bytes: an input change by contract, so it re-lowers once.
     db.set_file_text(
-        FileId(1),
+        FileId::new(1),
         b"void() worker = { shared = 1; helper(); };".to_vec(),
     );
     db.module_index(&files);

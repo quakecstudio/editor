@@ -109,12 +109,7 @@ fn a_float_casts_to_numbers_and_vectors() {
         simple(SimpleType::Entity),
         simple(SimpleType::Void),
         Type::Field(Rc::new(simple(SimpleType::Float))),
-        Type::Function(Rc::new(FunctionType {
-            ret: simple(SimpleType::Void),
-            params: Vec::new(),
-            variadic: false,
-            labels: ParamLabels::default(),
-        })),
+        Type::function(simple(SimpleType::Void), Vec::new()),
     ] {
         assert!(refused(literal("1"), &to), "{to:?}");
         assert!(!refused(literal("0"), &to), "{to:?}");
@@ -259,14 +254,7 @@ fn pointers_and_warnings() {
     assert!(warns(literal("1"), &simple(SimpleType::Vector)));
     assert!(!warns(literal("0"), &simple(SimpleType::Vector)));
     assert!(!warns(literal("1"), &simple(SimpleType::String)));
-    let f = |param: SimpleType| {
-        Type::Function(Rc::new(FunctionType {
-            ret: simple(SimpleType::Void),
-            params: vec![simple(param)],
-            variadic: false,
-            labels: ParamLabels::default(),
-        }))
-    };
+    let f = |param: SimpleType| Type::function(simple(SimpleType::Void), vec![simple(param)]);
     assert!(warns(
         Source::Typed(&f(SimpleType::Float)),
         &f(SimpleType::Vector)

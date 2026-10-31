@@ -48,7 +48,9 @@ impl Resolver<'_> {
     /// The opcode target at offset `at` of the unit (FTEF-27.1): the last `#pragma target`
     /// at or before it, else the first.
     pub(in crate::resolve) fn target_at(&self, at: usize) -> OpcodeTarget {
-        let marks = self.targets.get(self.unit.0).copied().unwrap_or_default();
+        let marks = self
+            .source(self.unit)
+            .map_or(&[][..], |source| source.targets);
         let index = marks.partition_point(|&(from, _)| from <= at);
         index
             .checked_sub(1)

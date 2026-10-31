@@ -53,7 +53,7 @@ fn key(file: usize, d: &Diagnostic) -> Key {
 /// and the query results reflect caching rather than a single cold computation.
 fn editor_diagnostics(module: &Module) -> BTreeSet<Key> {
     let mut db = Db::new();
-    let ids: Vec<FileId> = (0..module.files.len()).map(FileId).collect();
+    let ids: Vec<FileId> = (0..module.files.len()).map(FileId::new).collect();
 
     // Seed every file with a throwaway earlier version, resolve once so the caches fill,
     // then type the real contents in. This exercises the incremental path (GOAL-1) instead
@@ -73,8 +73,8 @@ fn editor_diagnostics(module: &Module) -> BTreeSet<Key> {
             out.insert(key(index, d));
         }
     }
-    for d in &db.module_index(&ids).diagnostics {
-        out.insert(key(d.file.0, &d.diagnostic));
+    for d in db.module_index(&ids).diagnostics() {
+        out.insert(key(d.file.index(), &d.diagnostic));
     }
     out
 }
@@ -99,8 +99,8 @@ fn build_diagnostics(module: &Module) -> BTreeSet<Key> {
         .map(|p| lower_file(p, qc_syntax::Dialect::Vanilla))
         .collect();
     let module_index = resolve_module(&lowered, ResolveOptions::default());
-    for d in &module_index.diagnostics {
-        out.insert(key(d.file.0, &d.diagnostic));
+    for d in module_index.diagnostics() {
+        out.insert(key(d.file.index(), &d.diagnostic));
     }
     out
 }

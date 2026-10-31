@@ -1587,17 +1587,17 @@ fn analysed(case: &Case) -> (Db, Vec<(usize, Code)>) {
         graph_input(&mut db, case)
     } else {
         db.set_file(
-            FileId(0),
+            FileId::new(0),
             PathBuf::from(case.compiled()),
             case.source_bytes(),
         );
         // The other files are the preprocessor's to `#include` (PRJ-5.2, FTEF-14.40).
         for (index, (name, text)) in case.project.iter().flat_map(|p| &p.files).enumerate() {
-            let id = FileId(index.saturating_add(1));
+            let id = FileId::new(index.saturating_add(1));
             db.set_file(id, PathBuf::from(name), text.as_bytes().to_vec());
         }
         ModuleInput {
-            compiled: vec![FileId(0)],
+            compiled: vec![FileId::new(0)],
             include_dirs: case.include_dirs().map(PathBuf::from).collect(),
             command_line: CommandLine::new(&case.options),
             ..ModuleInput::default()
@@ -1643,12 +1643,12 @@ fn graph_input(db: &mut Db, case: &Case) -> ModuleInput {
             .unwrap_or_default()
     };
     for (index, file) in graph.files.iter().enumerate() {
-        db.set_file(FileId(index), file.path.clone(), text_of(&file.path));
+        db.set_file(FileId::new(index), file.path.clone(), text_of(&file.path));
     }
     let mut next = graph.files.len();
     for (path, text) in &texts {
         if graph.files.iter().all(|file| file.path != *path) {
-            db.set_file(FileId(next), path.clone(), text.clone());
+            db.set_file(FileId::new(next), path.clone(), text.clone());
             next = next.saturating_add(1);
         }
     }
@@ -1690,7 +1690,7 @@ fn binding(db: &mut Db, case: &Case) -> Option<Outcome> {
             name: function.name,
         });
     }
-    let parse = db.parse(FileId(0));
+    let parse = db.parse(FileId::new(0));
     let builtin = parse
         .tree()?
         .declarations()
@@ -1711,12 +1711,11 @@ fn binding(db: &mut Db, case: &Case) -> Option<Outcome> {
 /// The literal the analysed `db` lowers the first definition `name` of its file's expansion
 /// to, if any.
 fn expanded_literal<'a>(db: &'a Db, name: &str) -> Option<&'a qc_sema::LiteralValue> {
-    db.expanded_decls(FileId(0))?
+    db.expanded_decls(FileId::new(0))?
         .decls
         .iter()
         .find(|decl| decl.name == name)?
-        .literal
-        .as_ref()
+        .literal()
 }
 
 /// The name of the function `case` binds: `f`, or the long name of `n` bytes a case of

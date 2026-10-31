@@ -119,9 +119,9 @@ impl<L: Loader> AnalysisHost<L> {
         let vanilla = !state.dialect.has_fteqcc_extensions();
         let index = &data.analysis.index;
         let mut out = Vec::new();
-        let declarations = index.defs.iter().map(|d| (d.location, d)).chain(
+        let declarations = index.defs().iter().map(|d| (d.location, d)).chain(
             index
-                .redeclarations
+                .redeclarations()
                 .iter()
                 .filter_map(|r| index.def(r.def).map(|d| (r.location, d))),
         );
@@ -131,7 +131,7 @@ impl<L: Loader> AnalysisHost<L> {
                 out.push(highlight(location.span, def, modifiers));
             }
         }
-        for reference in &index.refs {
+        for reference in index.refs() {
             let Some(def) = index.def(reference.def) else {
                 continue;
             };
@@ -216,7 +216,7 @@ impl<L: Loader> AnalysisHost<L> {
         let Some((_, data)) = self.module(module) else {
             return Vec::new();
         };
-        let Some(parse) = data.parses.get(file.0) else {
+        let Some(parse) = data.parses.get(file.index()) else {
             return Vec::new();
         };
         parse

@@ -48,11 +48,15 @@ fn analyze(files: &[(&str, &str)], listed: Option<bool>) -> ModuleAnalysis {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
     for (index, (name, text)) in files.iter().enumerate() {
-        db.set_file(FileId(index), PathBuf::from(name), text.as_bytes().to_vec());
+        db.set_file(
+            FileId::new(index),
+            PathBuf::from(name),
+            text.as_bytes().to_vec(),
+        );
     }
     let input = ModuleInput {
         prelude: Vec::new(),
-        compiled: (0..files.len()).map(FileId).collect(),
+        compiled: (0..files.len()).map(FileId::new).collect(),
         autoproto: listed,
         ..ModuleInput::default()
     };
@@ -75,7 +79,7 @@ fn analysis_with(analysis: &ModuleAnalysis, code: Code) -> Vec<String> {
         .filter(|d| d.diagnostic.code == code)
         .map(|d| {
             let span = d.diagnostic.span;
-            format!("{}:{} {}", d.file.0, span.start, d.diagnostic.message)
+            format!("{}:{} {}", d.file.index(), span.start, d.diagnostic.message)
         })
         .collect()
 }

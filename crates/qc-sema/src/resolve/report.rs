@@ -11,17 +11,18 @@ use qc_diag::{Code, Span};
 use qc_syntax::Keywords;
 
 use crate::expand::settings_at;
-use crate::resolve::{Resolver, diag};
+use crate::resolve::FileSource;
+use crate::resolve::{FileDiagnostic, Resolver};
 use crate::symbol::{FileId, Location};
 
 impl Resolver<'_> {
     /// The source location of the span `span` of file `file`'s parsed text: through the
     /// file's origin map when it was preprocessed (QC-9.7), else the span itself.
     pub(in crate::resolve) fn at(&self, file: FileId, span: Span) -> Location {
-        self.maps
-            .get(file.0)
-            .and_then(|map| map.locate(span))
-            .unwrap_or(Location { file, span })
+        match self.source(file).and_then(|source| source.origins) {
+            Some(map) => map.locate_or(file, span),
+            None => Location { file, span },
+        }
     }
 
     /// Reports `code` at `location`, as the warning settings in force have it (FTEF-19.22): a
@@ -36,18 +37,25 @@ impl Resolver<'_> {
             }
             Some(_) | None => code,
         };
-        self.index.diagnostics.push(diag(code, location, message));
+        self.index
+            .diagnostics
+            .push(FileDiagnostic::new(code, location, message));
     }
 
     /// FTEF-19.22: takes the warning settings in force at `at` in the compiled file
     /// `self.unit`, as FTEQCC's `qccwarningaction` stands when it reads there.
     pub(in crate::resolve) fn settle(&mut self, at: usize) {
-        if let Some(events) = self.warnings.get(self.unit.0) {
-            self.settings = settings_at(events, at).or(self.settings);
+        if let Some(source) = self.source(self.unit) {
+            self.settings = settings_at(source.warnings, at).or(self.settings);
+            // FTEF-20.1: and the keywords the parser read there.
+            self.keywords = Keywords::at(source.keywords, at);
         }
-        // FTEF-20.1: and the keywords the parser read there.
-        if let Some(marks) = self.keyword_marks.get(self.unit.0) {
-            self.keywords = Keywords::at(marks, at);
-        }
+    }
+}
+
+impl<'a> Resolver<'a> {
+    /// What was read with the compiled file `file`, when the files were preprocessed.
+    pub(in crate::resolve) fn source(&self, file: FileId) -> Option<FileSource<'a>> {
+        self.sources.get(file.index()).copied()
     }
 }

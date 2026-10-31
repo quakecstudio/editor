@@ -25,14 +25,41 @@ pub struct Location {
 
 /// A file's index in a module's ordered file graph (`qc_project::Module::graph`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct FileId(pub usize);
+pub struct FileId(usize);
+
+impl FileId {
+    /// The file at `index` in the module's file graph; callers choose it for `Db::set_file`.
+    #[must_use]
+    pub const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// The file's index in the module's file graph.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
 
 /// A stable handle to a [`Definition`] within one module's resolved index.
 ///
 /// It is the definition's position in the module's definition list, which is built in
 /// declaration order (QC-12.2), so a smaller id was declared earlier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct DefId(pub usize);
+pub struct DefId(usize);
+
+impl DefId {
+    /// The definition at `index` in the module's definition list.
+    pub(crate) const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// The definition's position in the module's definition list.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
 
 /// What a definition is, in the two scopes `qcc` has (QC-12.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

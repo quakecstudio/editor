@@ -47,20 +47,28 @@ pub(crate) fn compile_with(
     let mut db = Db::new();
     let mut input = ModuleInput::default();
     for (i, (name, text)) in files.iter().enumerate() {
-        db.set_file(FileId(i), PathBuf::from(name), text.as_bytes().to_vec());
-        input.compiled.push(FileId(i));
+        db.set_file(
+            FileId::new(i),
+            PathBuf::from(name),
+            text.as_bytes().to_vec(),
+        );
+        input.compiled.push(FileId::new(i));
     }
     let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
-    compile_module(&mut db, &input, |id| names[id.0].clone(), options)
+    compile_module(&mut db, &input, |id| names[id.index()].clone(), options)
 }
 
 /// A program of one file, `t.qc`, compiled under the FTEQCC profile.
 pub(crate) fn compile_fteqcc(source: &str) -> Result<Compiled, CompileError> {
     let mut db = Db::new();
     db.set_dialect(qc_syntax::Dialect::Fteqcc);
-    db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+    db.set_file(
+        FileId::new(0),
+        PathBuf::from("t.qc"),
+        source.as_bytes().to_vec(),
+    );
     let input = ModuleInput {
-        compiled: vec![FileId(0)],
+        compiled: vec![FileId::new(0)],
         ..ModuleInput::default()
     };
     compile_module(&mut db, &input, |_| "t.qc".to_owned(), Options::default())

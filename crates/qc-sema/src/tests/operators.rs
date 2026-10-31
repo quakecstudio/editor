@@ -13,7 +13,7 @@ use crate::db::Db;
 use crate::expand::ModuleInput;
 use crate::symbol::FileId;
 
-const FILE: FileId = FileId(0);
+const FILE: FileId = FileId::new(0);
 
 /// The diagnostics of the FTEQCC file `source`.
 fn diags(source: &str) -> Vec<(Code, String)> {

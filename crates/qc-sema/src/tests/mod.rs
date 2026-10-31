@@ -16,6 +16,7 @@
     reason = "test code: a failed unwrap, expect, panic or index is a failed test"
 )]
 
+mod accessors;
 mod aggregates;
 mod assignments;
 mod builtin_arguments;
@@ -89,7 +90,7 @@ fn resolve(spec: &ModuleSpec<'_>) -> ModuleIndex {
         .iter()
         .enumerate()
         .map(|(index, text)| {
-            let id = FileId(index);
+            let id = FileId::new(index);
             db.set_file_text(id, text.as_bytes().to_vec());
             id
         })

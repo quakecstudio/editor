@@ -112,9 +112,13 @@ fn a_mismatched_redeclaration_makes_its_own_function() {
 fn fte_analysis_errors(source: &str) -> Vec<Code> {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
-    db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+    db.set_file(
+        FileId::new(0),
+        PathBuf::from("t.qc"),
+        source.as_bytes().to_vec(),
+    );
     let input = ModuleInput {
-        compiled: vec![FileId(0)],
+        compiled: vec![FileId::new(0)],
         ..ModuleInput::default()
     };
     db.analyze_module(&input)
@@ -203,7 +207,7 @@ fn unbound_builtins_and_vanilla_compare_as_before() {
     ] {
         let parse = qc_syntax::parse_with(source.as_bytes(), Dialect::Fteqcc);
         let decls = lower_file(&parse, Dialect::Fteqcc).decls;
-        let lowered = decls[0].literal.clone();
+        let lowered = decls[0].literal().cloned();
         match literal {
             None => assert!(
                 matches!(lowered, Some(LiteralValue::Text(_))),

@@ -165,9 +165,9 @@ fn malformed_type_is_unknown() {
 fn from_ast_calls(source: &str, dialect: Dialect) -> usize {
     let mut db = Db::new();
     db.set_dialect(dialect);
-    db.set_file_text(FileId(0), source.as_bytes().to_vec());
+    db.set_file_text(FileId::new(0), source.as_bytes().to_vec());
     FROM_AST_CALLS.with(|calls| calls.set(0));
-    let _index = db.module_index(&[FileId(0)]);
+    let _index = db.module_index(&[FileId::new(0)]);
     FROM_AST_CALLS.with(std::cell::Cell::get)
 }
 
@@ -222,7 +222,7 @@ fn a_checked_body_keeps_its_expression_types() {
         .defs
         .iter()
         .position(|d| d.name == "g")
-        .map(DefId)
+        .map(DefId::new)
         .unwrap();
     let body = &index.bodies[&g];
     let at = |text: &str| {

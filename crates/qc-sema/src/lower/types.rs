@@ -15,8 +15,8 @@ use crate::ty::{FunctionType, ParamLabel, ParamLabels, SimpleType, Type};
 
 use super::body::{RawBody, RawParam, lower_body, next_think_of};
 use super::decl::{
-    LiteralValue, Qualifier, RawDecl, RawValue, decl_base, declarator_type, lower_declarators,
-    no_function, qualifiers, qualifiers_of, raw_value,
+    LiteralValue, Qualifier, RawDecl, RawInit, RawValue, decl_base, declarator_type,
+    lower_declarators, no_function, qualifiers_of, raw_value,
 };
 use super::expr::{RawUse, UseKind, lower_expr};
 use super::{Cx, FileDecls, RawAccessor, first_word, token_text};
@@ -837,23 +837,26 @@ pub(super) fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecl
         type_only: Vec::new(),
     };
     // FTEF-9.2: `virtual:` and `nonvirtual:` set the kind of the member functions after them.
-    let mut assume_virtual = None;
+    let mut label = None;
     // FTEF-10.11: the functions accessor members name, declared once the class is a type.
     let mut functions = Vec::new();
     for node in class.syntax().children() {
         match node.kind() {
-            SyntaxKind::AccessLabel => {
-                // FTEF-20.11: the label's word, `__` and any case as the parser took it.
-                let word = first_word(&node).to_ascii_lowercase();
-                if word.ends_with("nonvirtual") {
-                    assume_virtual = Some(false);
-                } else if word.ends_with("virtual") {
-                    assume_virtual = Some(true);
-                }
-            }
+            SyntaxKind::AccessLabel => match MemberWord::of(&first_word(&node)) {
+                Some(MemberWord::Virtual) => label = Some(KindLabel::Virtual),
+                Some(MemberWord::Nonvirtual) => label = Some(KindLabel::Nonvirtual),
+                Some(
+                    MemberWord::Static
+                    | MemberWord::Const
+                    | MemberWord::Var
+                    | MemberWord::Ignore
+                    | MemberWord::Inline,
+                )
+                | None => {}
+            },
             SyntaxKind::Declaration => {
                 if let Some(decl) = ast::Declaration::cast(node) {
-                    lower_member(&decl, &class_name, assume_virtual, cx, &mut raw);
+                    lower_member(&decl, &class_name, label, cx, &mut raw);
                 }
             }
             SyntaxKind::AccessorMember => {
@@ -906,31 +909,71 @@ pub(super) fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecl
     }
 }
 
-/// One member declaration of a class (FTEF-9.2 to FTEF-9.4).
+/// A word of a class's access label or of a member's qualifiers that lowering reads (FTEF-9.2,
+/// FTEF-9.9), as the parser took it: the word or `__` and the word, in any case (FTEF-20.11).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MemberWord {
+    Virtual,
+    Nonvirtual,
+    Static,
+    Const,
+    Var,
+    Ignore,
+    Inline,
+}
+
+impl MemberWord {
+    /// The word `word` is, or `None` for any other.
+    fn of(word: &str) -> Option<Self> {
+        let bare = word.strip_prefix("__").unwrap_or(word).to_ascii_lowercase();
+        match bare.as_str() {
+            "virtual" => Some(Self::Virtual),
+            "nonvirtual" => Some(Self::Nonvirtual),
+            "static" => Some(Self::Static),
+            "const" => Some(Self::Const),
+            "var" => Some(Self::Var),
+            "ignore" => Some(Self::Ignore),
+            "inline" => Some(Self::Inline),
+            _ => None,
+        }
+    }
+}
+
+/// The kind the last `virtual:` or `nonvirtual:` label gives the member functions after it
+/// (FTEF-9.2).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum KindLabel {
+    Virtual,
+    Nonvirtual,
+}
+
+/// One member declaration of a class (FTEF-9.2 to FTEF-9.4), after the kind label `label`.
 fn lower_member(
     decl: &ast::Declaration,
     class: &str,
-    assume_virtual: Option<bool>,
+    label: Option<KindLabel>,
     cx: Cx<'_>,
     raw: &mut RawClass,
 ) {
     let out = &mut raw.members;
-    let words = qualifiers(decl);
-    // FTEF-20.11: a member's words are `__` and any case as the parser took them.
-    let has = |word: &str| {
-        words
-            .iter()
-            .any(|w| w.trim_start_matches('_').eq_ignore_ascii_case(word))
-    };
-    let virtual_ =
-        has("virtual") || (assume_virtual == Some(true) && !has("nonvirtual") && !has("static"));
+    let words: Vec<MemberWord> = decl
+        .syntax()
+        .children()
+        .filter(|n| n.kind() == SyntaxKind::Qualifier)
+        .filter_map(|n| MemberWord::of(&first_word(&n)))
+        .collect();
+    let has = |word: MemberWord| words.contains(&word);
+    let virtual_ = has(MemberWord::Virtual)
+        || (label == Some(KindLabel::Virtual)
+            && !has(MemberWord::Nonvirtual)
+            && !has(MemberWord::Static));
     let words_given = [
-        has("virtual"),
-        has("nonvirtual"),
-        has("static") || has("const"),
+        has(MemberWord::Virtual),
+        has(MemberWord::Nonvirtual),
+        has(MemberWord::Static) || has(MemberWord::Const),
     ];
     let qualification = match words_given.iter().filter(|&&given| given).count() {
-        0 if assume_virtual.is_none() => Qualification::Unqualified,
+        0 if label.is_none() => Qualification::Unqualified,
         0 | 1 => Qualification::Qualified,
         _ => Qualification::Conflicting,
     };
@@ -992,8 +1035,11 @@ fn lower_member(
             }
             _ => false,
         };
-        let bad_init =
-            init.is_some() && kind == MemberKind::Field && !null && !has("static") && !has("const");
+        let bad_init = init.is_some()
+            && kind == MemberKind::Field
+            && !null
+            && !has(MemberWord::Static)
+            && !has(MemberWord::Const);
         out.push(RawMember {
             name: name_token.text_lossless(),
             span: name_token.span(),
@@ -1002,21 +1048,21 @@ fn lower_member(
             initialized: init.is_some(),
             body,
             bad_init,
-            is_var: has("var"),
-            is_global: has("static") || has("ignore"),
+            is_var: has(MemberWord::Var),
+            is_global: has(MemberWord::Static) || has(MemberWord::Ignore),
             is_virtual: virtual_,
             qualification,
-            storage: if has("const") {
+            storage: if has(MemberWord::Const) {
                 MemberStorage::Const
-            } else if has("static") {
+            } else if has(MemberWord::Static) {
                 MemberStorage::Static
             } else {
                 MemberStorage::Instance
             },
             follow,
             function_words: FunctionWords {
-                virtuality: has("virtual") || has("nonvirtual"),
-                inline: has("inline"),
+                virtuality: has(MemberWord::Virtual) || has(MemberWord::Nonvirtual),
+                inline: has(MemberWord::Inline),
             },
             array: declarator
                 .array_suffixes()
@@ -1238,8 +1284,7 @@ fn lower_accessor_body(
             });
         }
         decl.ty = fn_ty;
-        decl.body = Some(body);
-        decl.initialized = true;
+        decl.init = Some(RawInit::Body(Box::new(body)));
     } else if let Some(ast::Expr::Name(function)) = member.value()
         && let Some(token) = function.name()
     {
@@ -1285,7 +1330,7 @@ fn lower_accessor_body(
         return Some(function_decl);
     } else if let Some(value) = member.value() {
         lower_expr(&value, cx, &mut decl.uses);
-        decl.initialized = true;
+        decl.init = Some(RawInit::Value(None));
     }
     out.push(decl);
     None

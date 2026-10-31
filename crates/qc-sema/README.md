@@ -155,7 +155,9 @@ computed only for literals.
   a module declares and the uses of them.
 - `ModuleIndex`, `FileDiagnostic` and `resolve_module` (`resolve`): a module's resolved
   definition list, references, later declarations of a name (QC-11.5) and diagnostics, each
-  diagnostic with its file.
+  diagnostic with its file, read through accessors (`defs`, `definitions`, `refs`,
+  `diagnostics`, `body`, ...) so no caller can change what a `DefId` names. `FileId::new`
+  names a file; a `DefId` comes only from the index.
 - `ModuleIndex::definition_at`, `references`, `references_at` (`nav`): go-to-definition and
   find-references, a later declaration naming the definition it declares again.
 - `FileDecls`, `lower_file` (`lower`): the per-file raw declarations the resolver joins.
