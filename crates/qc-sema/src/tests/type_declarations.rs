@@ -267,6 +267,15 @@ fn a_value_is_not_called() {
     }
 }
 
+// No spec statement: FTEF-19.41 is silent on a `var` member function, which the resolver keeps
+// as a field of function type that no body defines, so it has none to miss; `__var` is the same.
+#[test]
+fn a_var_member_function_needs_no_body() {
+    for source in ["class C { var void() m; };", "class C { __var void() m; };"] {
+        assert_eq!(errors(source, &[]), [], "{source}");
+    }
+}
+
 // spec FTEF-19.41: a function with no body is one whether a global or a member, and a typedef
 // of a function type names one
 #[test]
