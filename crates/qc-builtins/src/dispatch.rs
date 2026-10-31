@@ -1091,6 +1091,8 @@ impl MockBuiltins {
     ) -> Option<Result<(), BuiltinError>> {
         match number {
             93 => Some(self.b_registercvar(context)),
+            118 => Some(self.b_strzone(context)),
+            119 => Some(self.b_strunzone(context)),
             213 => Some(self.b_forceinfokey(context)),
             478 => Some(self.b_strftime(context)),
             627 => Some(self.b_sprintf(context)),
@@ -1138,6 +1140,29 @@ impl MockBuiltins {
         };
         let value = self.engine.strings.make(text);
         write_return_string(context, value)
+    }
+
+    /// `strzone(s, ...)`, vkQuake's `PF_strzone` (BUILTIN-18.9): every argument's text joined,
+    /// in a new string `strunzone` may free.
+    fn b_strzone(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let mut text = Vec::new();
+        let argc = u16::try_from(context.machine().argc()).unwrap_or(u16::MAX);
+        for n in 0..argc {
+            text.extend(read_parm_string(context, &self.engine, n)?);
+        }
+        let value = self.engine.strings.zone(text);
+        write_return_string(context, value)
+    }
+
+    /// `strunzone(s)`, vkQuake's `PF_strunzone` (BUILTIN-18.9): `s` is read as a string, then
+    /// freed when `strzone` made it; 0 and any other string change nothing.
+    fn b_strunzone(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let _text = read_parm_string(context, &self.engine, 0)?;
+        let value = read_parm_raw(context, 0)?;
+        if value != 0 {
+            let _freed = self.engine.strings.unzone(value);
+        }
+        Ok(())
     }
 
     /// `forceinfokey(player, key, value)`, vkQuake's `PF_sv_forceinfokey` and `SV_UpdateInfo`

@@ -279,6 +279,10 @@ pub struct EngineStrings {
     /// Whether the buffer was allocated or given a different text since the last
     /// `take_temp_change` (DIFF-3.9).
     temp_changed: bool,
+    /// The strings `strzone` made that `strunzone` has not freed (BUILTIN-18.9).
+    zoned: Vec<i32>,
+    /// The strings `strunzone` freed, which are no strings any more (BUILTIN-18.9).
+    freed: Vec<i32>,
 }
 
 impl EngineStrings {
@@ -315,6 +319,27 @@ impl EngineStrings {
         value
     }
 
+    /// Makes a new engine string holding `text` that [`Self::unzone`] may free, `strzone`'s
+    /// (BUILTIN-18.9).
+    pub fn zone(&mut self, text: Vec<u8>) -> i32 {
+        let value = self.make(text);
+        self.zoned.push(value);
+        value
+    }
+
+    /// Frees the string `value` when [`Self::zone`] made it and it is not freed yet; returns
+    /// whether it did (BUILTIN-18.9).
+    pub fn unzone(&mut self, value: i32) -> bool {
+        match self.zoned.iter().position(|&v| v == value) {
+            Some(at) => {
+                self.zoned.swap_remove(at);
+                self.freed.push(value);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// The temp buffer's value and text when it was allocated or given a different text since
     /// the last call, else `None`; the note is then cleared (DIFF-3.9).
     pub fn take_temp_change(&mut self) -> Option<(i32, Vec<u8>)> {
@@ -328,6 +353,9 @@ impl EngineStrings {
     /// The text of the engine string `value`, or `None` when no engine string has it.
     #[must_use]
     pub fn text(&self, value: i32) -> Option<&[u8]> {
+        if self.freed.contains(&value) {
+            return None;
+        }
         self.entries
             .iter()
             .find(|(key, _)| *key == value)

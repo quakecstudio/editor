@@ -2043,6 +2043,37 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.9: strzone joins its arguments into a new string that strunzone frees,
+    // after which it is no string; strunzone of 0 or of another string changes nothing
+    #[test]
+    fn strzone_and_strunzone() {
+        let (strings, offsets) = string_table(&["ab", "cd"]);
+        let mut f = Fixture::new(118, 2, strings.clone(), 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.set_parm_i(0, offsets[0]);
+        f.set_parm_i(1, offsets[1]);
+        f.run_ok(ServerState::Active);
+        let zoned = f.return_i();
+        assert_eq!(f.engine().strings.text(zoned), Some(&b"abcd"[..]));
+        let mut engine = f.engine().clone();
+        let made = engine.strings.make(b"kept".to_vec());
+        for (value, freed) in [(0, false), (made, false), (zoned, true), (zoned, false)] {
+            let mut u = Fixture::new(119, 1, strings.clone(), 0);
+            u.builtins = MockBuiltins::with_engine(engine.clone());
+            u.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            u.set_parm_i(0, value);
+            let result = u.run(ServerState::Active);
+            if value == zoned && !freed {
+                assert_eq!(result.unwrap_err().message(), "invalid string");
+                continue;
+            }
+            result.unwrap();
+            assert_eq!(u.engine().strings.text(zoned).is_none(), freed, "{value}");
+            assert_eq!(u.engine().strings.text(made), Some(&b"kept"[..]));
+            engine = u.engine().clone();
+        }
+    }
+
     // spec BUILTIN-18.7: strftime writes the mock's fixed instant, keeps an unknown conversion,
     // and gives an empty string for a text past STRINGTEMP_LENGTH
     #[test]

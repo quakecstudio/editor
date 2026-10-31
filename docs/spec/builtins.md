@@ -836,6 +836,14 @@ profile (DIFF-12.19); everything else runs under id's.
   a `*N` with no `$`, and any other letter (`%I` among them) end the text there. The text stops
   at 1023 bytes, and a `%c` of 0 ends its own directive's text at the NUL. A string argument
   that is no string is the mock's string error (BUILTIN-2.8).
+- **BUILTIN-18.9** `strzone(s, ...)` (#118) is `PF_strzone`: every argument the call passed,
+  read with `G_STRING`, joined into a new engine string that it remembers as zoned.
+  `strunzone(s)` (#119) is `PF_strunzone`: it reads `s` with `G_STRING`, does nothing for 0
+  ("don't bug out if they gave a null string"), and frees a zoned string with
+  `PR_ClearEngineString`, after which the value is no string, as vkQuake's `PR_GetString` then
+  refuses it ("attempt to get a non-existant string"): the mock's string error (BUILTIN-2.8). A
+  string `strzone` did not make, or one already freed, is left as it is ("string wasn't
+  strzoned" is only a console warning). A freed value is not reused.
 
 ## Test vectors
 
