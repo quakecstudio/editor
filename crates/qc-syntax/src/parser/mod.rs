@@ -1278,7 +1278,7 @@ impl<'a> Parser<'a> {
     /// FTE-13).
     fn declaration(&mut self) {
         self.start_node(K::Declaration);
-        // FTEF-19.21: after a qualifier the type may be left out, an `int`.
+        // FTEF-19.77: after a qualifier the type may be left out, an `int`.
         if self.fteqcc() && self.fte_qualifiers() && self.fte_type_omitted() {
             self.declarators(TypeShape::default(), Site::File);
             self.finish_node();
@@ -1337,7 +1337,7 @@ impl<'a> Parser<'a> {
             || (self.nth(1).is_some_and(|t| t.kind == K::Name)
                 && self.nth(2).is_some_and(|t| t.kind == K::LBrace));
         let mut shape = TypeShape::default();
-        // FTEF-19.21: `typedef` is a modifier, so after it the type may be left out, an `int`.
+        // FTEF-19.77: `typedef` is a modifier, so after it the type may be left out, an `int`.
         let omitted =
             self.fte_type_omitted() && self.type_word(0).is_none() && !self.c_type_word(0);
         match (omitted, self.at_struct_keyword(0) && tagged_body) {
@@ -2694,7 +2694,7 @@ impl<'a> Parser<'a> {
         if self.fteqcc() {
             // FTE-21.1: FTEQCC needs no `local`, for a field local `.float f;` too, and
             // `QCC_PR_ParseDefs` reads the qualifiers (FTE-10 to FTE-12, FTEF-15.1) with or
-            // without it. FTEF-19.21: after a qualifier the type may be left out, an `int`.
+            // without it. FTEF-19.77: after a qualifier the type may be left out, an `int`.
             if self.fte_qualifiers() && self.fte_type_omitted() {
                 self.declarators(TypeShape::default(), Site::Body);
                 self.finish_node();

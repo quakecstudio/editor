@@ -975,3 +975,30 @@ fn a_switch_of_a_truth_value_takes_no_float_case() {
     let sum = "float a, b;\nvoid() f = {\nswitch (a + b)\n{\ncase 0:\nbreak;\n}\n};\n";
     assert_eq!(lined(sum), []);
 }
+
+// spec FTEF-19.77: after a qualifier a type `QCC_TypeForName` finds, or a C type word, is the
+// declaration's type, so a definition of it with no name is "not a name", and one with `;`
+// declares nothing; a name that is no type has its type left out, an `int`
+#[test]
+fn a_type_after_a_qualifier_is_the_type() {
+    let not_a_name = || [(1, "\"=\" - not a name".to_owned())];
+    for source in [
+        "const float = 1;\n",
+        "const int = 0i;\n",
+        "const unsigned = 1;\n",
+        "__unused float = 1;\n",
+        "noref string = \"a\";\n",
+        "typedef float t; const t = 1;\n",
+    ] {
+        assert_eq!(lined(source), not_a_name(), "{source}");
+    }
+    for source in [
+        "static entity;\n",
+        "var vector;\n",
+        "typedef float t; static t;\n",
+        "static x;\n",
+        "const k = 5;\n",
+    ] {
+        assert_eq!(lined(source), [], "{source}");
+    }
+}

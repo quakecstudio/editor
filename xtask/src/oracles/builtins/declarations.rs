@@ -447,7 +447,7 @@ const FTEQCC: &[&str] = &[
     "#pragma flag enable qccx\nfloat x;\nvoid() g = { @x = \"a\"; };\n",
     "float x;\nvoid() g = { x = x ^^ x; };\n",
     "float x;\nvoid() g = { x = x ^ x; };\n",
-    // FTEF-19.21: after a qualifier the type may be left out, an `int`.
+    // FTEF-19.77: after a qualifier the type may be left out, an `int`.
     "const x = 5;\n",
     "static y;\n",
     "noref z;\n",
@@ -523,7 +523,7 @@ const WARNINGS: &[&str] = &[
     "void() g = { for (float i = 0; i < 2; i++) { float j = 1; f(); } string j = \"\"; if (j) f(); };\n",
     "void() g = { float i = 1; for (float i = 0; i < 2; i++) { f(); } };\n",
     "void() g = { for (float i = 0; i < 2; i++) { f(); } float i = 1; if (i) f(); };\n",
-    // FTEF-19.21: an omitted type is an `int`.
+    // FTEF-19.77: an omitted type is an `int`.
     "static y;\nvoid() g = { y = 1; };\n",
     "const k = \"a\";\n",
     "void() g = { static y; y = 1; };\n",

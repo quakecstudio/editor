@@ -3118,16 +3118,9 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   reports the same `E0203` there and makes no local, an error either way. A type of more than
   one word that is no run of C words (`struct tag`, an inline `enum` or `struct`) and the types
   of a class's or struct's members are not checked (FTEF-19.63).
-- **FTEF-19.21** After a qualifier the type may be left out: `QCC_PR_ParseDefs` sets
-  `hadmodifier` for each storage class or modifier it reads and calls `QCC_PR_ParseType (false,
-  hadmodifier, ...)`, whose `silentfail` returns no type instead of "not a type", and then
-  `if (hadmodifier) { //banned since c99... basetype = type_integer; }`. So `const x = 5;`,
-  `static y;`, `noref z;`, `var v;`, `__register r;` and, in a body, `static y;` define
-  `__int32`s, checked as any definition is (`const x = 5; float x;` is a type mismatch, `const
-  k = "a";` the warning "Implicit cast from string to __int32"). The parser reads the type as
-  left out when a qualifier is followed by a name and then `;`, `,`, `=` or `[`; a name that is
-  a type there (`static t;` after `typedef float t;`) is not told apart, and is read as the
-  name.
+- **FTEF-19.21** **Withdrawn** (P2-141, #616): it said a name that is a type after a qualifier
+  is read as the definition's name, but `QCC_PR_ParseType` finds the type, so `const float = 1;`
+  is "\"=\" - not a name"; replaced by FTEF-19.77.
 - **FTEF-19.22** The parser's and the semantic model's warnings are reported as FTEQCC's
   warning settings stand where it gives each (FTEF-14.63, FTEF-14.72): ignored, a warning, or
   an error, `E0125`. Each is the warning `QCC_PR_ParseWarning` is given its text with:
@@ -3384,7 +3377,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   Player".
 - **FTEF-19.51** An attribute list is a modifier too: `QCC_PR_ParseDefs` sets `hadmodifier = true;`
   at the end of each pass of its modifier loop, the `[[...]]` branch included, so after an
-  attribute list alone the type may be left out and is `__int32` (FTEF-19.21): with `attributes`
+  attribute list alone the type may be left out and is `__int32` (FTEF-19.77): with `attributes`
   on, `[[eraseable]] x = 5; string s = x;` warns "Implicit cast from __int32 to string".
 - **FTEF-19.52** An item of an enum of an integer base (`int`, `uint`, `__int64`, `__uint64`) is the
   constant `QCC_MakeIntConst(next_i)` and its kin make of its value, a constant of that type the
@@ -3532,7 +3525,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `QCC_PR_ParseInitializerType`, `QCC_SupplyConversionForAssignment`.
 - **FTEF-19.73** After a qualifier, `hadmodifier`, `QCC_PR_ParseType` with `silentfail` finds
   no type at any token that is no name and no field's `.` or `..`, and `QCC_PR_ParseDefs` takes
-  `type_integer` (FTEF-19.21); the token is then the definition's name, which
+  `type_integer` (FTEF-19.77); the token is then the definition's name, which
   `QCC_PR_ParseName` refuses: `var = 1;`, `const 5;` and `static = 2;` in a body are "\"=\" -
   not a name" and "\"5\" - not a name", never "is not a type". Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
@@ -3563,6 +3556,21 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `QCC_PR_DummyDef` makes at its global's three words, name `a`'s three. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseDefs`, `QCC_PR_GenerateInitializerType`.
+- **FTEF-19.77** After a qualifier the type may be left out: `QCC_PR_ParseDefs` sets
+  `hadmodifier` for each storage class or modifier it reads and calls `QCC_PR_ParseType (false,
+  hadmodifier, ...)`, whose `silentfail` returns no type instead of "not a type", and then
+  `if (hadmodifier) { //banned since c99... basetype = type_integer; }`. So `const x = 5;`,
+  `static y;`, `noref z;`, `var v;`, `__register r;` and, in a body, `static y;` define
+  `__int32`s, checked as any definition is (`const x = 5; float x;` is a type mismatch, `const
+  k = "a";` the warning "Implicit cast from string to __int32"). The parser reads the type as
+  left out when a qualifier is followed by a name that is no type and then `;`, `,`, `=` or
+  `[`. A name `QCC_TypeForName` finds (a type keyword, a registered scalar such as `int`, or a
+  type the program declared) or a C type word is the declaration's type, as `QCC_PR_ParseType`
+  reads it: so `const float = 1;`, `const int = 0i;`, `const unsigned = 1;` and `typedef float
+  t; const t = 1;` are "\"=\" - not a name", and `static entity;` and `typedef float t; static
+  t;` declare nothing, as the pinned FTEQCC compiles them. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefs`, `QCC_PR_ParseType`.
 
 ## FTEF-20 Keywords
 
@@ -3916,7 +3924,7 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   `auto`, `register` and `nonstatic` never are, and under `defaultstatic` a typedef has two storage
   classes, "Conflicting storage classes.". `QCC_PR_ParseDefs` reads `typedef` among its other
   qualifiers, before or after them, and after it, a modifier, a type may be left out
-  (FTEF-19.21): `typedef static x;` names an `__int32` and is the error.
+  (FTEF-19.77): `typedef static x;` names an `__int32` and is the error.
 - **FTEF-21.15** **Withdrawn** (P2-122, #558): it said the target's `flag_undefwordsize` and the
   casts `lax`, `typeexplicit` and `qccx` allow are not modelled, but the semantic model's casts
   and conversions read them (FTEF-22). Replaced by FTEF-21.18.
@@ -3960,7 +3968,7 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   `local` and then `extern`, as a definition, so the block's definitions are locals, and `x = 1;`
   in it is no definition; a `typedef` in the block is a definition of it as at file level. A
   qualifier alone, `static;`, `const;` or `const *x;`, is a definition of an `int` of no name:
-  the type is left out where the token after the qualifiers is no name (FTEF-19.21). The block is
+  the type is left out where the token after the qualifiers is no name (FTEF-19.77). The block is
   one level of nesting (FTEF-18.32). The parser lexes the text again with the blocks it read, and
   reports the lexical errors and warnings of the tokens they lex otherwise, in place of the
   preprocessor's.

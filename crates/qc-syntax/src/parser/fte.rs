@@ -138,17 +138,18 @@ enum Place {
 }
 
 impl Parser<'_> {
-    /// Whether a declaration whose qualifiers were read leaves its type out (FTEF-19.21): a
-    /// name followed by what ends a declarator, `;`, `,`, `=` or `[`, where
+    /// Whether a declaration whose qualifiers were read leaves its type out (FTEF-19.77): a
+    /// name that is no type, followed by what ends a declarator, `;`, `,`, `=` or `[`, where
     /// `QCC_PR_ParseType` with `silentfail` finds no type and `QCC_PR_ParseDefs` assumes
-    /// `int`.
+    /// `int`. A type `QCC_TypeForName` finds, or a C type word, is the declaration's type.
     pub(super) fn fte_type_omitted(&self) -> bool {
         match self.current().map(|t| t.kind) {
+            Some(K::Name) if self.registered_type(0) || self.c_type_word(0) => false,
             Some(K::Name) => self
                 .nth(1)
                 .is_some_and(|t| matches!(t.kind, K::Semicolon | K::Comma | K::Eq | K::LBracket)),
             // `QCC_PR_ParseType` with `silentfail` returns no type for a token that is no name,
-            // so `static;` and `const *x;` are an `int`'s definitions (FTEF-19.21), and `var =
+            // so `static;` and `const *x;` are an `int`'s definitions (FTEF-19.77), and `var =
             // 1;` one whose name `QCC_PR_ParseName` refuses, "\"=\" - not a name" (FTEF-19.73).
             Some(K::Dot | K::DotDot) | None => false,
             Some(_) => true,

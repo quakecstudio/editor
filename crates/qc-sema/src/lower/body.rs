@@ -560,7 +560,7 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
 }
 
 /// The type of a declaration that writes none, which the parser leaves out only under FTEQCC
-/// after a qualifier or an attribute list (FTEF-19.21): `int`, `type_integer`, as
+/// after a qualifier or an attribute list (FTEF-19.77): `int`, `type_integer`, as
 /// `QCC_PR_ParseDefs` assumes.
 pub(super) fn omitted_type() -> Type {
     Type::Named(std::rc::Rc::from(CScalar::Integer.name()))

@@ -629,7 +629,7 @@ pub(super) fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDec
     out.diagnostics
         .extend(typedef_diagnostics(td, cx, TypedefScope::File));
     let node = td.syntax().children().find_map(ast::Type::cast);
-    // FTEF-19.21: with its type left out, a typedef names an `int`.
+    // FTEF-19.77: with its type left out, a typedef names an `int`.
     let omitted = node.is_none()
         && td
             .syntax()

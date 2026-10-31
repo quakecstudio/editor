@@ -526,7 +526,7 @@ fn declaration_qualifiers_parse() {
     assert_eq!(fte_errors("unsigned = 2;\n"), [Code::E0201]);
 }
 
-// spec FTEF-19.21: after a qualifier the type may be left out, at file level and in a body
+// spec FTEF-19.77: after a qualifier the type may be left out, at file level and in a body
 #[test]
 fn a_qualifier_may_leave_the_type_out() {
     for source in [
