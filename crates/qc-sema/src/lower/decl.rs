@@ -888,16 +888,13 @@ impl LiteralValue {
                 // a string or name in place of the number (FTE-17.5), and its engine name. One
                 // FTEQCC binds no number for, or reads neither for, is an error, compared by
                 // its text.
-                let in_place_of_number = builtin
-                    .syntax()
-                    .child_tokens()
-                    .any(|t| matches!(t.kind(), SyntaxKind::StringLit | SyntaxKind::Name));
-                let number = match builtin.number() {
-                    Some(token) => {
-                        qc_syntax::builtin_binum(&token.text_lossless(), qc_syntax::Dialect::Fteqcc)
-                    }
-                    None => in_place_of_number.then_some(0),
-                };
+                let number =
+                    builtin
+                        .binding(qc_syntax::Dialect::Fteqcc)
+                        .map(|binding| match binding {
+                            ast::Binding::Number(number) => number,
+                            ast::Binding::Name => 0,
+                        });
                 Some(number.map_or_else(
                     || Self::Text(token_text(init.syntax())),
                     |number| Self::Builtin {
@@ -1190,7 +1187,7 @@ pub(super) fn lower_declarators(
         // own list or the type's.
         if let Some(list) = declarator
             .params()
-            .or_else(|| ty_node.as_ref().and_then(function_params))
+            .or_else(|| ty_node.as_ref().and_then(ast::Type::params))
         {
             raw.params = param_infos(&list, cx);
         }
@@ -1211,7 +1208,7 @@ pub(super) fn lower_declarators(
         // FTE-18.2: a parameter's default value may name definitions too.
         for list in ty_node
             .as_ref()
-            .and_then(function_params)
+            .and_then(ast::Type::params)
             .into_iter()
             .chain(declarator.params())
         {
@@ -1228,13 +1225,5 @@ pub(super) fn lower_declarators(
             }
         }
         out.push(raw);
-    }
-}
-
-/// The parameter list of a function type (QC-10.3).
-pub(super) fn function_params(ty: &ast::Type) -> Option<ast::ParamList> {
-    match ty {
-        ast::Type::Function(func) => func.params(),
-        ast::Type::Simple(_) | ast::Type::Field(_) | ast::Type::Pointer(_) => None,
     }
 }

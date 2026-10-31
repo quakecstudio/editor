@@ -717,6 +717,17 @@ pub enum SimpleTypeKind {
     Entity,
 }
 
+impl Type {
+    /// The parameter list of a function type (QC-10.3); `None` for any other type.
+    #[must_use]
+    pub fn params(&self) -> Option<ParamList> {
+        match self {
+            Self::Function(func) => func.params(),
+            Self::Simple(_) | Self::Field(_) | Self::Pointer(_) => None,
+        }
+    }
+}
+
 impl SimpleType {
     /// The keyword.
     #[must_use]
@@ -898,7 +909,39 @@ impl State {
     }
 }
 
+/// What a builtin initialiser binds its function to (FTE-17.5, FTE-17.6, ENGT-4.14).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Binding {
+    /// The builtin of this number, `binum`, which is not 0.
+    Number(i32),
+    /// The builtin of its engine name: `binum` 0, from a number that reads as 0 or from a
+    /// string or name in place of the number.
+    Name,
+}
+
 impl Builtin {
+    /// What the initialiser binds in `dialect` (FTE-17.5, FTE-17.6, ENGT-4.14): its number
+    /// literal's `binum` ([`crate::builtin_binum`]), [`Binding::Name`] when that is 0 or a
+    /// string or name stands in place of the number; `None` when it binds nothing.
+    #[must_use]
+    pub fn binding(&self, dialect: crate::Dialect) -> Option<Binding> {
+        let binum = match self.number() {
+            Some(token) => crate::builtin_binum(&token.text_lossless(), dialect)?,
+            None => {
+                let named = self
+                    .0
+                    .child_tokens()
+                    .any(|t| matches!(t.kind(), K::StringLit | K::Name));
+                return named.then_some(Binding::Name);
+            }
+        };
+        Some(if binum == 0 {
+            Binding::Name
+        } else {
+            Binding::Number(binum)
+        })
+    }
+
     /// The builtin number: a float literal or frame macro reference.
     #[must_use]
     pub fn number(&self) -> Option<SyntaxToken> {
@@ -946,7 +989,7 @@ impl Builtin {
             joined
         };
         let kept = bytes.get(..FTEQCC_MAX_ENGINE_NAME).unwrap_or(&bytes);
-        Some(kept.iter().copied().map(char::from).collect())
+        Some(qc_lexer::latin1(kept))
     }
 }
 
@@ -1548,23 +1591,22 @@ impl FieldExpr {
     /// The entity expression before `.` or the FTEQCC `->`.
     #[must_use]
     pub fn base(&self) -> Option<Expr> {
-        let split = if self.0.token_of(K::Arrow).is_some() {
-            K::Arrow
-        } else {
-            K::Dot
-        };
-        around(&self.0, split).0
+        around(&self.0, self.operator()).0
     }
 
     /// The field expression after `.` or the FTEQCC `->`.
     #[must_use]
     pub fn field(&self) -> Option<Expr> {
-        let split = if self.0.token_of(K::Arrow).is_some() {
+        around(&self.0, self.operator()).1
+    }
+
+    /// The operator between the two: the FTEQCC `->` when there is one, else `.`.
+    fn operator(&self) -> K {
+        if self.0.token_of(K::Arrow).is_some() {
             K::Arrow
         } else {
             K::Dot
-        };
-        around(&self.0, split).1
+        }
     }
 }
 

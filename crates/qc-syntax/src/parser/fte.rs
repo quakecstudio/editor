@@ -13,7 +13,7 @@
 use qc_lexer::{Code, LexFlag, Span};
 use qc_preproc::{Enabled, FteFlag, Keyword};
 
-use super::{Member, Parser, Site, TypeShape, UNARY_PRIORITY};
+use super::{BlockKind, Member, Parser, Scope, Site, Skip, TypeShape, UNARY_PRIORITY};
 use crate::c_scalar::{CContext, CScalar, CWord, CWords, REGISTERED_TYPES};
 use crate::kind::SyntaxKind as K;
 
@@ -158,7 +158,7 @@ impl Parser<'_> {
     /// Whether the token `n` ahead is `volatile` as `QCC_PR_ParseType` reads it, with its keyword,
     /// which by default only `__volatile` spells (FTEF-2.11, FTEF-20.8).
     pub(super) fn at_volatile(&self, n: usize) -> bool {
-        self.kw(n, Keyword::Volatile, "volatile")
+        self.kw(n, Keyword::Volatile)
     }
 
     /// FTEF-2.11: "ignoring unsupported const keyword" at the current token.
@@ -181,7 +181,7 @@ impl Parser<'_> {
     /// words `QCC_PR_ParseStatement` tests exactly with their keyword on (FTEF-20.14).
     fn starts_local_statement(&self, n: usize) -> bool {
         LOCAL_WORDS.iter().any(|&(word, enabled)| match enabled {
-            Enabled::By(keyword) => self.strcmp_kw(n, keyword, word),
+            Enabled::By(keyword) => self.strcmp_word(n, keyword, word),
             Enabled::Always | Enabled::Never => self
                 .nth(n)
                 .is_some_and(|t| t.kind == K::Name && t.text == word),
@@ -264,10 +264,10 @@ impl Parser<'_> {
     /// (FTEF-15.3, FTEF-20.10): `optional` with its keyword, and `inout`, `out` and `in` with
     /// `keyword_inout`.
     fn param_qualifier(&self, n: usize) -> bool {
-        self.kw(n, Keyword::Optional, "optional")
+        self.kw(n, Keyword::Optional)
             || ["inout", "out", "in"]
                 .iter()
-                .any(|word| self.kw(n, Keyword::Inout, word))
+                .any(|word| self.checks(n, Enabled::By(Keyword::Inout), word))
     }
 
     /// Whether the token `n` ahead is a statement or construct keyword with the keywords in
@@ -308,11 +308,11 @@ impl Parser<'_> {
                 continue;
             }
             read = true;
-            if self.kw(0, Keyword::Typedef, "typedef") {
+            if self.kw(0, Keyword::Typedef) {
                 self.bump_as(K::TypedefKw);
                 continue;
             }
-            accumulate |= self.kw(0, Keyword::Accumulate, "accumulate");
+            accumulate |= self.kw(0, Keyword::Accumulate);
             let text = self.found();
             let deprecated = self.checks(0, Enabled::Never, "deprecated");
             self.start_node(K::Qualifier);
@@ -466,10 +466,7 @@ impl Parser<'_> {
         if !self.fte_type_name(0) {
             return false;
         }
-        let mut n = 1_usize;
-        while self.nth(n).is_some_and(|t| t.kind == K::Star) {
-            n = n.saturating_add(1);
-        }
+        let n = self.skip_stars(1);
         match self.nth(n).map(|t| t.kind) {
             // `Type name`, never an expression.
             Some(K::Name) if n == 1 => true,
@@ -484,25 +481,11 @@ impl Parser<'_> {
 
     /// Whether the parenthesised list starting at token `n` is followed by a name.
     fn after_parens_is_name(&self, n: usize) -> bool {
-        let mut depth = 0_usize;
-        let mut ahead = n;
-        while let Some(t) = self.nth(ahead) {
-            match t.kind {
-                K::LParen => depth = depth.saturating_add(1),
-                K::RParen => {
-                    depth = depth.saturating_sub(1);
-                    if depth == 0 {
-                        return self
-                            .nth(ahead.saturating_add(1))
-                            .is_some_and(|t| t.kind == K::Name);
-                    }
-                }
-                K::Semicolon | K::LBrace | K::RBrace => return false,
-                _ => {}
-            }
-            ahead = ahead.saturating_add(1);
-        }
-        false
+        self.closing_paren(n, &[K::Semicolon, K::LBrace, K::RBrace], usize::MAX)
+            .is_some_and(|close| {
+                self.nth(close.saturating_add(1))
+                    .is_some_and(|t| t.kind == K::Name)
+            })
     }
 
     /// `QCC_PR_ParseType` (FTEF-2, FTEF-4, FTEF-7): `.T` and `..T` field types, `struct` or
@@ -525,14 +508,7 @@ impl Parser<'_> {
     }
 
     fn fte_type_at(&mut self, place: Place) -> Option<TypeShape> {
-        if !self.enter() {
-            self.bump_error();
-            self.leave(1);
-            return None;
-        }
-        let shape = self.fte_type_inner(place);
-        self.leave(1);
-        shape
+        self.nested(|parser| parser.fte_type_inner(place))
     }
 
     fn fte_type_inner(&mut self, place: Place) -> Option<TypeShape> {
@@ -543,7 +519,7 @@ impl Parser<'_> {
             Place::Member => true,
             Place::Nested => false,
         };
-        if self.kw(0, Keyword::Const, "const") {
+        if self.kw(0, Keyword::Const) {
             // FTEF-2.11: `QCC_PR_ParseType` reads a `const` and ignores it, with a warning.
             self.warn_const();
             self.start_node(K::Qualifier);
@@ -565,25 +541,15 @@ impl Parser<'_> {
             let inner = self.fte_type_at(place);
             self.finish_node();
             self.finish_node();
-            return inner.map(|_| TypeShape {
-                function: false,
-                field: true,
-                qcfuncs: false,
-            });
+            return inner.map(|_| TypeShape::FIELD.without_qcfuncs());
         }
         if self.at(K::Dot) {
-            self.start_node(K::FieldType);
-            self.bump();
-            if self.at(K::Star) {
-                // `.*float`: a field of pointer to float (FTEF-4.1).
-                self.bump();
-            }
-            let inner = self.fte_type_at(place);
-            self.finish_node();
-            return inner.map(|_| TypeShape {
-                function: false,
-                field: true,
-                qcfuncs: false,
+            return self.field_type(TypeShape::FIELD.without_qcfuncs(), |parser| {
+                if parser.at(K::Star) {
+                    // `.*float`: a field of pointer to float (FTEF-4.1).
+                    parser.bump();
+                }
+                parser.fte_type_at(place)
             });
         }
         let checkpoint = self.checkpoint();
@@ -601,7 +567,7 @@ impl Parser<'_> {
             }
             self.builder.start_node_at(checkpoint, K::PointerType);
             self.bump();
-            if self.kw(0, Keyword::Const, "const") {
+            if self.kw(0, Keyword::Const) {
                 // FTEF-2.11: `T *const` is the pointer, with the warning.
                 self.warn_const();
                 self.bump();
@@ -653,7 +619,7 @@ impl Parser<'_> {
         let qcfuncs = self.flag_ahead(0, FteFlag::Qcfuncs);
         while qcfuncs && self.at(K::Star) {
             self.bump();
-            if self.kw(0, Keyword::Const, "const") {
+            if self.kw(0, Keyword::Const) {
                 // FTEF-2.11: `T *const` is the pointer, with the warning.
                 self.warn_const();
                 self.bump();
@@ -699,9 +665,9 @@ impl Parser<'_> {
     /// alone (FTEF-9.8): `const`, `volatile`, `accessor`, `class` with `qcfuncs` on, `enum`,
     /// `enumflags`, `union` and `struct`.
     pub(super) fn type_form(&self, n: usize) -> bool {
-        self.kw(n, Keyword::Const, "const")
+        self.kw(n, Keyword::Const)
             || self.at_volatile(n)
-            || self.kw(n, Keyword::Accessor, "accessor")
+            || self.kw(n, Keyword::Accessor)
             || self.at_class_keyword(n)
             || self.at_tagged_type(n)
     }
@@ -714,12 +680,12 @@ impl Parser<'_> {
 
     /// Whether `enum` or `enumflags` is the token `n` ahead, with its keyword (FTEF-20.8).
     pub(super) fn at_enum_keyword(&self, n: usize) -> bool {
-        self.kw(n, Keyword::Enum, "enum") || self.kw(n, Keyword::Enumflags, "enumflags")
+        self.kw(n, Keyword::Enum) || self.kw(n, Keyword::Enumflags)
     }
 
     /// Whether `struct` or `union` is the token `n` ahead, with its keyword (FTEF-20.8).
     pub(super) fn at_struct_keyword(&self, n: usize) -> bool {
-        self.kw(n, Keyword::Union, "union") || self.kw(n, Keyword::Struct, "struct")
+        self.kw(n, Keyword::Union) || self.kw(n, Keyword::Struct)
     }
 
     /// The base of a type: a `SimpleType` node holding a vanilla keyword, a run of C type
@@ -741,7 +707,7 @@ impl Parser<'_> {
             self.finish_node();
             return true;
         }
-        if self.kw(0, Keyword::Accessor, "accessor") {
+        if self.kw(0, Keyword::Accessor) {
             // FTEF-10.1: an accessor, defined or named, as a type anywhere a type stands.
             self.start_node(K::SimpleType);
             self.start_node(K::AccessorDecl);
@@ -769,7 +735,7 @@ impl Parser<'_> {
             // FTEF-6.1: `struct tag` names a struct by its tag; the tag becomes a type there
             // if none is.
             self.start_node(K::SimpleType);
-            let keyword = if self.kw(0, Keyword::Union, "union") {
+            let keyword = if self.kw(0, Keyword::Union) {
                 K::UnionKw
             } else {
                 K::StructKw
@@ -1043,12 +1009,17 @@ impl Parser<'_> {
     /// Whether a keyword that starts a file-level construct of the full dialect is here:
     /// `typedef`, `class`, `accessor`, `enum`, `enumflags`, `struct` or `union` (FTEF-18.27).
     pub(super) fn at_fte_construct(&self) -> bool {
+        const CONSTRUCTS: [Keyword; 7] = [
+            Keyword::Typedef,
+            Keyword::Class,
+            Keyword::Accessor,
+            Keyword::Enum,
+            Keyword::Enumflags,
+            Keyword::Struct,
+            Keyword::Union,
+        ];
         self.current().is_some_and(|t| {
-            t.kind == K::Name
-                && matches!(
-                    t.text.as_str(),
-                    "typedef" | "class" | "accessor" | "enum" | "enumflags" | "struct" | "union"
-                )
+            t.kind == K::Name && CONSTRUCTS.iter().any(|keyword| t.text == keyword.word())
         })
     }
 
@@ -1074,7 +1045,7 @@ impl Parser<'_> {
     /// Whether `class` is the token `n` ahead, with its keyword, and `qcfuncs` on at it
     /// (`if (flag_qcfuncs && QCC_PR_CheckKeyword (keyword_class, "class"))`, FTEF-20.8).
     pub(super) fn at_class_keyword(&self, n: usize) -> bool {
-        self.kw(n, Keyword::Class, "class")
+        self.kw(n, Keyword::Class)
             && self
                 .nth(n)
                 .is_some_and(|t| self.lexed_with(t.span.start, LexFlag::QcFuncs))
@@ -1086,7 +1057,7 @@ impl Parser<'_> {
         while self.decl_qualifier(n) {
             n = n.saturating_add(1);
         }
-        self.kw(n, Keyword::Accessor, "accessor")
+        self.kw(n, Keyword::Accessor)
     }
 
     /// Whether a class starts here, after any declaration qualifiers (FTEF-9.1).
@@ -1161,8 +1132,8 @@ impl Parser<'_> {
             self.at_struct_keyword(0) && !(self.type_word(1).is_some() || self.c_type_word(1));
         // FTEF-10.6: an accessor declared with its base where a member's type stands ends
         // FTEQCC; the member is refused here.
-        let accessor_based = self.kw(0, Keyword::Accessor, "accessor")
-            && self.nth(2).is_some_and(|t| t.kind == K::Colon);
+        let accessor_based =
+            self.kw(0, Keyword::Accessor) && self.nth(2).is_some_and(|t| t.kind == K::Colon);
         let head = self.found();
         let accessor = self.nth(1).map(|t| t.text.clone()).unwrap_or_default();
         let ty = self.fte_type();
@@ -1190,7 +1161,7 @@ impl Parser<'_> {
             }
             // A member's recovery stops at the `}` that closes the class.
             Some(ty) => self.declarators(ty, Site::Member),
-            None => self.recover(true),
+            None => self.recover(Scope::Block),
         }
         self.finish_node();
     }
@@ -1283,7 +1254,7 @@ impl Parser<'_> {
                 Member::Accessor => self.expected("}"),
                 Member::Class => self.expected("get or set"),
             }
-            self.recover(true);
+            self.recover(Scope::Block);
             self.finish_node();
             return;
         }
@@ -1295,7 +1266,7 @@ impl Parser<'_> {
                 && let Some(span) = paren
             {
                 self.error_at(Code::E0204, "expected =, found (", span);
-                self.recover(true);
+                self.recover(Scope::Block);
                 self.finish_node();
                 return;
             }
@@ -1315,7 +1286,7 @@ impl Parser<'_> {
             if self.expect(K::Eq, "=") {
                 if self.at(K::LBrace) {
                     self.start_node(K::FunctionBody);
-                    self.block(true);
+                    self.block(BlockKind::FunctionBody);
                     self.finish_node();
                 } else {
                     self.expression();
@@ -1349,10 +1320,7 @@ impl Parser<'_> {
         if !self.fte_type_name(1) {
             return false;
         }
-        let mut n = 2_usize;
-        while self.nth(n).is_some_and(|t| t.kind == K::Star) {
-            n = n.saturating_add(1);
-        }
+        let n = self.skip_stars(2);
         if n > 2 {
             return self.nth(n).is_some_and(|t| t.kind == K::RParen)
                 && self.starts_term(n.saturating_add(1));
@@ -1362,27 +1330,13 @@ impl Parser<'_> {
             // `(Type(params))`: a function type, whose list starts with a parameter (a type
             // word, `...`, `)` or a name followed by a name or `*`), closed after its list. A
             // call in parentheses, `(visible(head))`, has an expression there.
-            Some(K::LParen) if self.starts_param(3) => {
-                let mut depth = 0_usize;
-                let mut ahead = 2_usize;
-                while let Some(t) = self.nth(ahead) {
-                    match t.kind {
-                        K::LParen => depth = depth.saturating_add(1),
-                        K::RParen => {
-                            depth = depth.saturating_sub(1);
-                            if depth == 0 {
-                                let close = ahead.saturating_add(1);
-                                return self.nth(close).is_some_and(|t| t.kind == K::RParen)
-                                    && self.starts_term(close.saturating_add(1));
-                            }
-                        }
-                        K::Semicolon | K::LBrace => return false,
-                        _ => {}
-                    }
-                    ahead = ahead.saturating_add(1);
-                }
-                false
-            }
+            Some(K::LParen) if self.starts_param(3) => self
+                .closing_paren(2, &[K::Semicolon, K::LBrace], usize::MAX)
+                .is_some_and(|list| {
+                    let close = list.saturating_add(1);
+                    self.nth(close).is_some_and(|t| t.kind == K::RParen)
+                        && self.starts_term(close.saturating_add(1))
+                }),
             _ => false,
         }
     }
@@ -1492,10 +1446,7 @@ impl Parser<'_> {
                 if !bracket || !self.fte_type_name(0) {
                     return false;
                 }
-                let mut n = 1_usize;
-                while self.nth(n).is_some_and(|t| t.kind == K::Star) {
-                    n = n.saturating_add(1);
-                }
+                let n = self.skip_stars(1);
                 n > 1 && self.nth(n).is_some_and(|t| t.kind == K::RParen)
             }
             _ => false,
@@ -1535,17 +1486,13 @@ impl Parser<'_> {
         }
         if !self.expect(K::RBracket, "]") {
             // The rest of a header that went wrong, up to its `]` or the body's `{`.
-            let mut open = false;
-            while !self.at(K::RBracket) && !self.at(K::LBrace) && self.current().is_some() {
-                if !open {
-                    self.start_node(K::Error);
-                    open = true;
+            self.skip_into_error(|parser| {
+                if parser.at(K::RBracket) || parser.at(K::LBrace) {
+                    Skip::Stop
+                } else {
+                    Skip::Take
                 }
-                self.bump();
-            }
-            if open {
-                self.finish_node();
-            }
+            });
             if self.at(K::RBracket) {
                 self.bump();
             }
@@ -1625,7 +1572,7 @@ impl Parser<'_> {
             self.expression();
             self.end_statement();
         } else {
-            self.recover(true);
+            self.recover(Scope::Block);
         }
         self.finish_node();
     }
@@ -1640,7 +1587,7 @@ impl Parser<'_> {
             self.end_statement();
         } else {
             self.expected("[");
-            self.recover(true);
+            self.recover(Scope::Block);
         }
         self.finish_node();
     }
@@ -1708,7 +1655,7 @@ impl Parser<'_> {
     /// its `opname` exactly and its operands up to the `;`, which are code generation's (L-01);
     /// any other token is "Bad op code name NAME" (`ERR_BADOPCODE`).
     fn asm_instruction(&mut self) {
-        if self.kw(0, Keyword::Local, "local") {
+        if self.kw(0, Keyword::Local) {
             self.local_decl(true);
             return;
         }
@@ -1718,7 +1665,7 @@ impl Parser<'_> {
         {
             let message = format!("Bad op code name {}", self.found());
             self.error(Code::E0511, message);
-            self.recover(true);
+            self.recover(Scope::Block);
             return;
         }
         while !self.at(K::Semicolon) && !self.at(K::RBrace) && self.current().is_some() {
@@ -1753,7 +1700,7 @@ impl Parser<'_> {
         else {
             let token = self.current().map(|t| t.text.clone()).unwrap_or_default();
             self.error(Code::E0201, format!("invalid label name \"{token}\""));
-            self.recover(true);
+            self.recover(Scope::Block);
             self.finish_node();
             return;
         };
@@ -1782,7 +1729,7 @@ impl Parser<'_> {
     /// Whether `until` starts here, with its keyword (FTEF-18.31, FTEF-20.5): by default only
     /// `__until`, the keyword being on only for the Hexen II targets, so `until (e)` is a call.
     pub(super) fn at_until(&self) -> bool {
-        self.kw(0, Keyword::Until, "until")
+        self.kw(0, Keyword::Until)
     }
 
     /// A name, and `::` and a member name after it (FTEF-16.4).

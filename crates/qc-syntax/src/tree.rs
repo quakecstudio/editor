@@ -469,7 +469,7 @@ impl SyntaxToken {
     /// Its bytes as a string, each byte one `char` (Latin-1), so nothing is lost.
     #[must_use]
     pub fn text_lossless(&self) -> String {
-        self.text().iter().copied().map(char::from).collect()
+        qc_lexer::latin1(self.text())
     }
 
     /// Its bytes in the source.

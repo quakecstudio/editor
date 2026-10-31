@@ -478,7 +478,7 @@ pub(super) fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>)
     let flags = en
         .syntax()
         .child_tokens()
-        .any(|t| t.kind() == SyntaxKind::EnumKw && cx.spells(&t, Keyword::Enumflags, "enumflags"));
+        .any(|t| t.kind() == SyntaxKind::EnumKw && cx.spells(&t, Keyword::Enumflags));
     // The base is the type after `:`; a parameter list after the body is the declaration's.
     let base_node = en
         .syntax()

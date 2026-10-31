@@ -211,10 +211,10 @@ impl Cx<'_> {
     }
 
     /// Whether `token` is `keyword` spelled `word`, as the parser read it (FTEF-20.2).
-    fn spells(self, token: &qc_syntax::SyntaxToken, keyword: Keyword, word: &str) -> bool {
+    fn spells(self, token: &qc_syntax::SyntaxToken, keyword: Keyword) -> bool {
         self.keywords_at(token.span().start).checks(
             Enabled::By(keyword),
-            word,
+            keyword.word(),
             &token.text_lossless(),
         )
     }

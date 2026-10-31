@@ -15,7 +15,7 @@ use crate::ty::{SimpleType, Type};
 use super::Cx;
 use super::decl::{
     ArrayDim, LiteralValue, Qualifier, RawAggregate, RawValue, ValueKind, array_dim,
-    declarator_type, function_params, qualifiers_of, raw_aggregate, raw_value,
+    declarator_type, qualifiers_of, raw_aggregate, raw_value,
 };
 use super::expr::{RawUse, UseKind, lower_expr};
 use super::types::{TypedefScope, typedef_diagnostics};
@@ -296,7 +296,7 @@ fn param_list_of(fn_body: &ast::FunctionBody) -> Option<ast::ParamList> {
         .children()
         .find_map(ast::Type::cast)
         .or_else(|| declarator.children().find_map(ast::Type::cast))?;
-    function_params(&ty)
+    ty.params()
 }
 
 /// Which `switch`es a statement is in, which a `case` finds its `switch` in (FTEF-21.19).

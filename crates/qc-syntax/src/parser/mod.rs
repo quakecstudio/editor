@@ -175,14 +175,40 @@ enum Site {
 }
 
 impl Site {
-    /// Whether a declaration here is inside a block, where its recovery stops at the block's
-    /// `}`.
-    const fn in_block(self) -> bool {
+    /// Where a declaration here recovers: inside a block, which stops at the block's `}`.
+    const fn scope(self) -> Scope {
         match self {
-            Self::File => false,
-            Self::Body | Self::Member => true,
+            Self::File => Scope::File,
+            Self::Body | Self::Member => Scope::Block,
         }
     }
+}
+
+/// Where recovery skips tokens: at file level, or inside a block, where it stops at the
+/// block's `}` and at a statement keyword starting a line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Scope {
+    File,
+    Block,
+}
+
+/// What [`Parser::skip_into_error`] does with the current token.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Skip {
+    /// Leaves it.
+    Stop,
+    /// Takes it and goes on.
+    Take,
+    /// Takes it and stops.
+    TakeAndStop,
+}
+
+/// Which block a `{ ... }` is: a function's body, which may be empty, or a statement's
+/// (QC-14.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BlockKind {
+    FunctionBody,
+    Nested,
 }
 
 /// What an accessor member is read in (FTEF-20.11).
@@ -254,6 +280,35 @@ struct TypeShape {
     /// Whether `QCC_PR_ParseType` read the type with `qcfuncs` on where a parameter list may
     /// follow it, so a `(` after it was the type's (FTEF-21.7).
     qcfuncs: bool,
+}
+
+impl TypeShape {
+    /// A field type, `.T`, read where a parameter list may follow.
+    const FIELD: Self = Self {
+        function: false,
+        field: true,
+        qcfuncs: true,
+    };
+    /// A function type, `T(...)`.
+    const FUNCTION: Self = Self {
+        function: true,
+        field: false,
+        qcfuncs: true,
+    };
+    /// Any other type, read where a parameter list may follow.
+    const PLAIN: Self = Self {
+        function: false,
+        field: false,
+        qcfuncs: true,
+    };
+
+    /// The shape read where no parameter list may follow it (FTEF-21.7).
+    const fn without_qcfuncs(self) -> Self {
+        Self {
+            qcfuncs: false,
+            ..self
+        }
+    }
 }
 
 /// A type the program declared (FTEF-20.14, FTEF-7.5).
@@ -567,8 +622,8 @@ impl<'a> Parser<'a> {
     }
 
     /// [`Self::checks`] of a keyword's own flag.
-    fn kw(&self, n: usize, keyword: Keyword, word: &str) -> bool {
-        self.checks(n, Enabled::By(keyword), word)
+    fn kw(&self, n: usize, keyword: Keyword) -> bool {
+        self.checks(n, Enabled::By(keyword), keyword.word())
     }
 
     /// `QCC_PR_CheckName(word)` of the token `n` ahead (FTEF-20.2): `word`, in any case under
@@ -581,7 +636,13 @@ impl<'a> Parser<'a> {
 
     /// `keyword_X && !STRCMP(word, pr_token)` of the token `n` ahead (FTEF-20.14): `word` exactly,
     /// with its keyword on; no `__` spelling and no other case.
-    fn strcmp_kw(&self, n: usize, keyword: Keyword, word: &str) -> bool {
+    fn strcmp_kw(&self, n: usize, keyword: Keyword) -> bool {
+        self.strcmp_word(n, keyword, keyword.word())
+    }
+
+    /// [`Self::strcmp_kw`] of `word`, which `keyword` enables though it is not the keyword's
+    /// own word.
+    fn strcmp_word(&self, n: usize, keyword: Keyword, word: &str) -> bool {
         self.nth(n).is_some_and(|t| {
             t.kind == K::Name && t.text == word && self.keywords_ahead(n).has(keyword)
         })
@@ -653,24 +714,12 @@ impl<'a> Parser<'a> {
         let next = n.saturating_add(1);
         match self.nth(next).map(|t| t.kind) {
             Some(K::Name) => true,
-            Some(K::LParen) => {
-                let mut depth = 0_usize;
-                for ahead in next..next.saturating_add(LOOKAHEAD) {
-                    match self.nth(ahead).map(|t| t.kind) {
-                        Some(K::LParen) => depth = depth.saturating_add(1),
-                        Some(K::RParen) => {
-                            depth = depth.saturating_sub(1);
-                            if depth == 0 {
-                                let after = self.nth(ahead.saturating_add(1)).map(|t| t.kind);
-                                return after == Some(K::Name);
-                            }
-                        }
-                        None => return false,
-                        Some(_) => {}
-                    }
-                }
-                false
-            }
+            Some(K::LParen) => self
+                .closing_paren(next, &[], LOOKAHEAD)
+                .is_some_and(|close| {
+                    self.nth(close.saturating_add(1))
+                        .is_some_and(|t| t.kind == K::Name)
+                }),
             _ => false,
         }
     }
@@ -679,14 +728,16 @@ impl<'a> Parser<'a> {
     /// a declaration's shape, or under FTEQCC a keyword that starts a file-level construct
     /// (FTEF-18.27).
     fn at_declaration_line(&self) -> bool {
-        self.current().is_some_and(|t| t.column0)
+        self.current().is_some_and(|t| t.position.column0())
             && (self.looks_like_declaration(0) || (self.fteqcc() && self.at_fte_construct()))
     }
 
     /// Whether the current token is a statement keyword first on its line.
     fn at_statement_line(&self) -> bool {
         self.current().is_some_and(|t| {
-            t.line_start && t.kind == K::Name && STATEMENT_WORDS.contains(&t.text.as_str())
+            t.position.line_start()
+                && t.kind == K::Name
+                && STATEMENT_WORDS.contains(&t.text.as_str())
         })
     }
 
@@ -752,6 +803,59 @@ impl<'a> Parser<'a> {
 
     fn finish_node(&mut self) {
         self.builder.finish_node();
+    }
+
+    /// The token that closes the `(` at token `open`, looking at most `cap` tokens on from it
+    /// and stopping at any token whose kind `stop` holds; `None` when none closes it there.
+    fn closing_paren(&self, open: usize, stop: &[K], cap: usize) -> Option<usize> {
+        let mut depth = 0_usize;
+        for ahead in open..open.saturating_add(cap) {
+            let kind = self.nth(ahead)?.kind;
+            match kind {
+                K::LParen => depth = depth.saturating_add(1),
+                K::RParen => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return Some(ahead);
+                    }
+                }
+                _ if stop.contains(&kind) => return None,
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// The first token from token `from` on that is no `*`.
+    fn skip_stars(&self, from: usize) -> usize {
+        let mut n = from;
+        while self.nth(n).is_some_and(|t| t.kind == K::Star) {
+            n = n.saturating_add(1);
+        }
+        n
+    }
+
+    /// Takes tokens into one error node while `step` says to, the node opened at the first
+    /// token taken and always closed, as the lossless tree needs.
+    fn skip_into_error(&mut self, mut step: impl FnMut(&Self) -> Skip) {
+        let mut open = false;
+        while self.current().is_some() {
+            let take = step(self);
+            if take == Skip::Stop {
+                break;
+            }
+            if !open {
+                self.start_node(K::Error);
+                open = true;
+            }
+            self.bump();
+            if take == Skip::TakeAndStop {
+                break;
+            }
+        }
+        if open {
+            self.finish_node();
+        }
     }
 
     /// Puts the current token, if any, in an error node.
@@ -888,44 +992,62 @@ impl<'a> Parser<'a> {
         self.depth = self.depth.saturating_sub(levels);
     }
 
+    /// `f` one level of nesting deeper (QC-27.15, QC-27.16): past the limit the current token
+    /// goes into an error node instead, and `f` gives nothing.
+    fn nested<T: Default>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        let result = if self.enter() {
+            f(self)
+        } else {
+            self.bump_error();
+            T::default()
+        };
+        self.leave(1);
+        result
+    }
+
     // ---- recovery ----
 
     /// Skips tokens into an error node until the end of a statement or declaration: a `;` at
-    /// brace depth 0 (taken), or, without taking it, a `}` closing the block when `in_block`, a
-    /// statement keyword starting a line when `in_block`, or a declaration line.
-    fn recover(&mut self, in_block: bool) {
-        self.skip(in_block, false);
+    /// brace depth 0 (taken), or, without taking it, a `}` closing the block in a block, a
+    /// statement keyword starting a line in a block, or a declaration line.
+    fn recover(&mut self, scope: Scope) {
+        self.skip(scope, false);
     }
 
-    /// [`Parser::recover`], taking at least one token when `force` is set.
-    fn skip(&mut self, in_block: bool, force: bool) {
+    /// [`Parser::recover`], taking at least one token first, so reading moves on.
+    fn recover_past(&mut self, scope: Scope) {
+        self.skip(scope, true);
+    }
+
+    fn skip(&mut self, scope: Scope, force: bool) {
+        let in_block = scope == Scope::Block;
         let mut depth = 0_usize;
-        let mut open = false;
-        while let Some(kind) = self.current().map(|t| t.kind) {
-            let first = force && !open;
-            let resume =
-                self.at_declaration_line() || (in_block && depth == 0 && self.at_statement_line());
+        let mut taken = false;
+        self.skip_into_error(|parser| {
+            let Some(kind) = parser.current().map(|t| t.kind) else {
+                return Skip::Stop;
+            };
+            let first = force && !taken;
+            let resume = parser.at_declaration_line()
+                || (in_block && depth == 0 && parser.at_statement_line());
             if resume && !first {
-                break;
+                return Skip::Stop;
             }
             match kind {
                 K::LBrace => depth = depth.saturating_add(1),
-                K::RBrace if depth == 0 && (in_block || self.open_blocks > 0) => break,
+                K::RBrace if depth == 0 && (in_block || parser.open_blocks > 0) => {
+                    return Skip::Stop;
+                }
                 K::RBrace => depth = depth.saturating_sub(1),
                 _ => {}
             }
-            if !open {
-                self.start_node(K::Error);
-                open = true;
-            }
-            self.bump();
+            taken = true;
             if kind == K::Semicolon && depth == 0 {
-                break;
+                Skip::TakeAndStop
+            } else {
+                Skip::Take
             }
-        }
-        if open {
-            self.finish_node();
-        }
+        });
     }
 
     // ---- declarations ----
@@ -980,7 +1102,7 @@ impl<'a> Parser<'a> {
         } else {
             let message = format!("\"{}\" is not a type", self.found());
             self.error(Code::E0203, message);
-            self.skip(false, true);
+            self.recover_past(Scope::File);
         }
     }
 
@@ -994,7 +1116,7 @@ impl<'a> Parser<'a> {
     fn at_typedef_at(&self, n: usize) -> bool {
         let mut n = n;
         while self.decl_qualifier(n) {
-            if self.kw(n, Keyword::Typedef, "typedef") {
+            if self.kw(n, Keyword::Typedef) {
                 return true;
             }
             n = n.saturating_add(1);
@@ -1011,7 +1133,7 @@ impl<'a> Parser<'a> {
 
     /// [`Self::at_extern_block`] at the token `n` ahead.
     fn at_extern_block_at(&self, n: usize) -> bool {
-        self.kw(n, Keyword::Extern, "extern")
+        self.kw(n, Keyword::Extern)
             && self
                 .nth(n.saturating_add(1))
                 .is_some_and(|t| t.kind == K::StringLit)
@@ -1041,12 +1163,7 @@ impl<'a> Parser<'a> {
     /// lexed them; the block is recorded for the pass that lexes the text with them. Each block
     /// is one level of nesting (FTEF-18.32).
     fn extern_block(&mut self, site: Site) {
-        if self.enter() {
-            self.extern_block_inner(site);
-        } else {
-            self.bump_error();
-        }
-        self.leave(1);
+        self.nested(|parser| parser.extern_block_inner(site));
     }
 
     fn extern_block_inner(&mut self, site: Site) {
@@ -1180,7 +1297,7 @@ impl<'a> Parser<'a> {
         }
         match self.type_or_user_type() {
             Some(ty) => self.declarators(ty, Site::File),
-            None => self.recover(false),
+            None => self.recover(Scope::File),
         }
         self.finish_node();
     }
@@ -1203,7 +1320,7 @@ impl<'a> Parser<'a> {
     /// defines a type. Only the FTEQCC dialect reads it.
     fn typedef_decl(&mut self, site: Site) {
         self.start_node(K::TypedefDecl);
-        if self.kw(0, Keyword::Local, "local") {
+        if self.kw(0, Keyword::Local) {
             // `local typedef ...`: `QCC_PR_ParseStatement` reads `local`, then `QCC_PR_ParseDefs`.
             self.bump_as(K::LocalKw);
         }
@@ -1247,7 +1364,7 @@ impl<'a> Parser<'a> {
     /// `QCC_PR_ParseStruct`'s loop reads them (FTEF-6.7).
     fn struct_type(&mut self) {
         self.start_node(K::StructType);
-        let union = self.kw(0, Keyword::Union, "union");
+        let union = self.kw(0, Keyword::Union);
         self.bump_as(if union { K::UnionKw } else { K::StructKw });
         if self.at(K::LBrace) {
             self.bump();
@@ -1395,14 +1512,14 @@ impl<'a> Parser<'a> {
             self.finish_node();
         }
         let Some(ty) = self.fte_member_type() else {
-            self.recover(true);
+            self.recover(Scope::Block);
             return (false, statics);
         };
         self.member_function = ty.function;
         if ty.qcfuncs && self.at(K::LParen) && self.nth(1).is_some_and(|t| t.kind == K::Star) {
             // `ParseType` with `qcfuncs` took the `(`, and `ParseFunctionType` found a `*`.
             self.error(Code::E0204, "expected function arg list");
-            self.recover(true);
+            self.recover(Scope::Block);
             return (false, statics);
         }
         self.struct_declarator();
@@ -1634,7 +1751,7 @@ impl<'a> Parser<'a> {
             return;
         }
         self.expected(";");
-        self.recover(site.in_block());
+        self.recover(site.scope());
     }
 
     /// Parses one declarator; returns whether its type is a function type, whose `;` an
@@ -1852,11 +1969,10 @@ impl<'a> Parser<'a> {
     /// element is an expression or a nested aggregate `{ ... }` (an array of structs). A
     /// trailing comma before `}` is allowed. Only the FTEQCC dialect reads it.
     fn aggregate_init(&mut self) {
-        if !self.enter() {
-            self.bump_error();
-            self.leave(1);
-            return;
-        }
+        self.nested(Self::aggregate_init_inner);
+    }
+
+    fn aggregate_init_inner(&mut self) {
         self.start_node(K::AggregateInit);
         self.bump_as(K::LBrace);
         while !self.at(K::RBrace) && self.current().is_some() {
@@ -1886,7 +2002,6 @@ impl<'a> Parser<'a> {
         }
         self.expect(K::RBrace, "}");
         self.finish_node();
-        self.leave(1);
     }
 
     /// `#number` (QC-13.3, QC-27.9), and in an FTEQCC dialect `#number:name`, `#"name"`,
@@ -1965,7 +2080,7 @@ impl<'a> Parser<'a> {
     fn function_body(&mut self) {
         let body = self.at(K::LBrace)
             || self.at(K::LBracket)
-            || self.current().is_some_and(|t| t.line_start);
+            || self.current().is_some_and(|t| t.position.line_start());
         if !body {
             self.expected("{");
             return;
@@ -1978,7 +2093,7 @@ impl<'a> Parser<'a> {
         if self.at(K::LBracket) {
             self.state();
         }
-        self.block(true);
+        self.block(BlockKind::FunctionBody);
         self.labels.clear();
         self.finish_node();
     }
@@ -2010,27 +2125,12 @@ impl<'a> Parser<'a> {
 
     /// `PR_ParseType`: `.T`, a simple type, or a simple type and a parameter list (QC-10).
     fn type_(&mut self) -> Option<TypeShape> {
-        if !self.enter() {
-            self.bump_error();
-            self.leave(1);
-            return None;
-        }
-        let shape = self.type_inner();
-        self.leave(1);
-        shape
+        self.nested(Self::type_inner)
     }
 
     fn type_inner(&mut self) -> Option<TypeShape> {
         if self.at(K::Dot) {
-            self.start_node(K::FieldType);
-            self.bump();
-            let inner = self.type_();
-            self.finish_node();
-            return inner.map(|_| TypeShape {
-                function: false,
-                field: true,
-                qcfuncs: true,
-            });
+            return self.field_type(TypeShape::FIELD, Self::type_);
         }
         let Some(keyword) = self.type_word(0) else {
             let message = format!("\"{}\" is not a type", self.found());
@@ -2042,20 +2142,26 @@ impl<'a> Parser<'a> {
         self.bump_as(keyword);
         self.finish_node();
         if !self.at(K::LParen) {
-            return Some(TypeShape {
-                function: false,
-                field: false,
-                qcfuncs: true,
-            });
+            return Some(TypeShape::PLAIN);
         }
         self.builder.start_node_at(checkpoint, K::FunctionType);
         self.param_list();
         self.finish_node();
-        Some(TypeShape {
-            function: true,
-            field: false,
-            qcfuncs: true,
-        })
+        Some(TypeShape::FUNCTION)
+    }
+
+    /// A field type at its `.`, in a `FieldType` node: the type after it, which `inner` reads as
+    /// the dialect reads a type (QC-10.2, FTEF-4.1), and `shape` when it is one.
+    fn field_type(
+        &mut self,
+        shape: TypeShape,
+        inner: impl FnOnce(&mut Self) -> Option<TypeShape>,
+    ) -> Option<TypeShape> {
+        self.start_node(K::FieldType);
+        self.bump();
+        let inner = inner(self);
+        self.finish_node();
+        inner.map(|_| shape)
     }
 
     /// `( )`, `( ... )` or `( type name {, type name} )` (QC-10.3, QC-10.4, QC-27.7); the
@@ -2105,35 +2211,31 @@ impl<'a> Parser<'a> {
 
     /// Skips a parameter that has no type, up to the next `,` or `)`.
     fn skip_param(&mut self) {
-        let mut open = false;
-        while let Some(kind) = self.current().map(|t| t.kind) {
-            let stop = matches!(
-                kind,
-                K::Comma | K::RParen | K::Semicolon | K::Eq | K::LBrace | K::RBrace
-            );
-            if stop || self.at_declaration_line() {
-                break;
+        self.skip_into_error(|parser| {
+            let stop = parser.current().is_none_or(|t| {
+                matches!(
+                    t.kind,
+                    K::Comma | K::RParen | K::Semicolon | K::Eq | K::LBrace | K::RBrace
+                )
+            });
+            if stop || parser.at_declaration_line() {
+                Skip::Stop
+            } else {
+                Skip::Take
             }
-            if !open {
-                self.start_node(K::Error);
-                open = true;
-            }
-            self.bump();
-        }
-        if open {
-            self.finish_node();
-        }
+        });
     }
 
     // ---- statements ----
 
     /// `{ statements }`. A function's body may be empty; a nested block may not (QC-14.2).
-    fn block(&mut self, function: bool) {
+    fn block(&mut self, kind: BlockKind) {
+        let function = kind == BlockKind::FunctionBody;
         if function {
             self.bodies = self.bodies.saturating_add(1);
         }
         self.block_depth = self.block_depth.saturating_add(1);
-        self.block_inner(function);
+        self.block_inner(kind);
         self.block_depth = self.block_depth.saturating_sub(1);
         let depth = self.block_depth;
         self.types.retain(|t| t.depth <= depth);
@@ -2191,7 +2293,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn block_inner(&mut self, function: bool) {
+    fn block_inner(&mut self, block: BlockKind) {
         self.start_node(K::Block);
         self.expect(K::LBrace, "{");
         let mut count = 0_usize;
@@ -2204,7 +2306,7 @@ impl<'a> Parser<'a> {
             if kind == K::RBrace {
                 // FTE-21.4: FTEQCC's `QCC_PR_ParseStatement` reads statements until the
                 // `}`, so its blocks may be empty.
-                if !function && count == 0 && !self.fteqcc() {
+                if block == BlockKind::Nested && count == 0 && !self.fteqcc() {
                     self.not_a_name();
                 }
                 self.bump();
@@ -2232,12 +2334,7 @@ impl<'a> Parser<'a> {
 
     /// `PR_ParseStatement` (QC-14.1).
     fn statement(&mut self) {
-        if self.enter() {
-            self.statement_inner();
-        } else {
-            self.bump_error();
-        }
-        self.leave(1);
+        self.nested(Self::statement_inner);
     }
 
     fn statement_inner(&mut self) {
@@ -2246,7 +2343,7 @@ impl<'a> Parser<'a> {
             return;
         };
         match tok.kind {
-            K::LBrace => self.block(false),
+            K::LBrace => self.block(BlockKind::Nested),
             // FTE-21.5: an FTEQCC `;` alone is an empty statement, with FTEQCC's warning
             // "Hanging ';'".
             K::Semicolon if self.fteqcc() => {
@@ -2291,60 +2388,60 @@ impl<'a> Parser<'a> {
     /// tests its keywords, in its order, each with the keywords in force (FTEF-20.5, FTEF-20.14).
     fn fte_statement(&mut self) {
         let break_call =
-            self.kw(0, Keyword::Break, "break") && self.nth(1).is_some_and(|t| t.kind == K::LParen);
+            self.kw(0, Keyword::Break) && self.nth(1).is_some_and(|t| t.kind == K::LParen);
         if self.checks(0, Enabled::Always, "return") {
             self.return_stmt();
         } else if self.checks(0, Enabled::Never, "exit") {
             // `keyword_exit` is `flag_acc`, reacc's, which this profile does not read
             // (FTEF-19.63): only `__exit` is the keyword.
             self.exit_stmt();
-        } else if self.kw(0, Keyword::Loop, "loop") {
+        } else if self.kw(0, Keyword::Loop) {
             self.loop_stmt();
         } else if self.at_until() || self.checks(0, Enabled::Always, "while") {
             self.while_stmt();
-        } else if self.kw(0, Keyword::For, "for") {
+        } else if self.kw(0, Keyword::For) {
             self.for_stmt();
         } else if self.checks(0, Enabled::Always, "do") {
             self.do_stmt();
-        } else if self.kw(0, Keyword::Local, "local") && self.at_extern_block_at(1) {
+        } else if self.kw(0, Keyword::Local) && self.at_extern_block_at(1) {
             // FTEF-21.17: `local` and then an `extern` block.
             self.extern_block(Site::Body);
-        } else if self.kw(0, Keyword::Local, "local") && self.at_typedef_at(1) {
+        } else if self.kw(0, Keyword::Local) && self.at_typedef_at(1) {
             self.typedef_decl(Site::Body);
-        } else if self.kw(0, Keyword::Local, "local") {
+        } else if self.kw(0, Keyword::Local) {
             self.local_decl(true);
-        } else if self.strcmp_kw(0, Keyword::Typedef, "typedef")
+        } else if self.strcmp_kw(0, Keyword::Typedef)
             || (self.fte_looks_like_local() && self.at_typedef())
         {
             // FTEF-19.9: `typedef` in a function body names a type there; FTEF-21.14: after the
             // qualifiers a statement of definitions starts with.
             self.typedef_decl(Site::Body);
-        } else if self.strcmp_kw(0, Keyword::Extern, "extern") && self.at_extern_block() {
+        } else if self.strcmp_kw(0, Keyword::Extern) && self.at_extern_block() {
             // FTEF-21.17: `QCC_PR_ParseStatement` tests `extern` exactly, then
             // `QCC_PR_ParseDefs` reads the block, whose definitions are locals.
             self.extern_block(Site::Body);
         } else if self.fte_looks_like_local() {
             // FTEF-16.1, FTEF-20.14: a statement of the full dialect that declares locals.
             self.local_decl(false);
-        } else if self.kw(0, Keyword::State, "state") {
+        } else if self.kw(0, Keyword::State) {
             self.state_stmt();
         } else if self.checks(0, Enabled::Always, "if") {
             self.if_stmt();
-        } else if self.kw(0, Keyword::Switch, "switch") {
+        } else if self.kw(0, Keyword::Switch) {
             self.switch_stmt();
-        } else if self.kw(0, Keyword::Using, "using") {
+        } else if self.kw(0, Keyword::Using) {
             self.using_stmt();
-        } else if self.kw(0, Keyword::Asm, "asm") {
+        } else if self.kw(0, Keyword::Asm) {
             self.asm_stmt();
-        } else if self.kw(0, Keyword::Goto, "goto") {
+        } else if self.kw(0, Keyword::Goto) {
             self.goto_stmt();
-        } else if self.kw(0, Keyword::Break, "break") && !break_call {
+        } else if self.kw(0, Keyword::Break) && !break_call {
             // `if (!STRCMP ("(", pr_token))`: a `break` before `(` is a call of the function
             // `break`, read again as a name.
             self.break_continue_stmt(K::BreakStmt, K::BreakKw, "break");
-        } else if self.kw(0, Keyword::Continue, "continue") {
+        } else if self.kw(0, Keyword::Continue) {
             self.break_continue_stmt(K::ContinueStmt, K::ContinueKw, "continue");
-        } else if self.kw(0, Keyword::Thinktime, "thinktime") {
+        } else if self.kw(0, Keyword::Thinktime) {
             self.thinktime_stmt();
         } else if self.at_c_label() {
             // FTEF-18.23: `name:`, the C label, its `:` right after the name.
@@ -2358,7 +2455,7 @@ impl<'a> Parser<'a> {
 
     /// Whether a `case` or `default` label starts here, with its keyword (FTEF-20.5).
     fn at_case_label(&self) -> bool {
-        self.kw(0, Keyword::Case, "case") || self.kw(0, Keyword::Default, "default")
+        self.kw(0, Keyword::Case) || self.kw(0, Keyword::Default)
     }
 
     /// `for (init; cond; step) body` (FTE-2). `init` is an expression or a local declaration,
@@ -2395,7 +2492,7 @@ impl<'a> Parser<'a> {
         self.start_node(K::ForClause);
         // FTEF-16.14: `QCC_PR_ParseType` reads no `local`, so under FTEQCC it starts no
         // declaration here.
-        let local = !self.fteqcc() && self.kw(0, Keyword::Local, "local");
+        let local = !self.fteqcc() && self.kw(0, Keyword::Local);
         let declares =
             local || self.looks_like_declaration(0) || (self.fteqcc() && self.for_init_declares());
         if init && declares {
@@ -2530,7 +2627,7 @@ impl<'a> Parser<'a> {
     fn case_label(&mut self) {
         self.start_item();
         self.start_node(K::CaseLabel);
-        if self.kw(0, Keyword::Default, "default") {
+        if self.kw(0, Keyword::Default) {
             self.bump_as(K::DefaultKw);
         } else {
             self.bump_as(K::CaseKw);
@@ -2584,12 +2681,7 @@ impl<'a> Parser<'a> {
             }
         }
         let start = self.current_span().start;
-        let ty = if self.fteqcc() {
-            self.type_or_user_type()
-        } else {
-            self.type_()
-        };
-        match ty {
+        match self.type_or_user_type() {
             Some(ty) => {
                 // FTE-21.2: FTEQCC has no "Fields and functions must be global" check (it is
                 // commented out of `QCC_PR_ParseDefs`), so a local may be a field or a
@@ -2600,7 +2692,7 @@ impl<'a> Parser<'a> {
                 }
                 self.declarators(ty, Site::Body);
             }
-            None => self.recover(true),
+            None => self.recover(Scope::Block),
         }
         self.finish_node();
     }
@@ -2695,7 +2787,7 @@ impl<'a> Parser<'a> {
 
     fn end_statement(&mut self) {
         if !self.expect(K::Semicolon, ";") {
-            self.recover(true);
+            self.recover(Scope::Block);
         }
     }
 
@@ -2741,13 +2833,7 @@ impl<'a> Parser<'a> {
         self.discard_before_comma(&first);
         self.builder.start_node_at(checkpoint, K::BinaryExpr);
         self.bump();
-        let rest = if self.enter() {
-            self.sequence()
-        } else {
-            self.bump_error();
-            None
-        };
-        self.leave(1);
+        let rest = self.nested(Self::sequence);
         self.finish_node();
         Some(Expr {
             kind: K::BinaryExpr,
@@ -2805,14 +2891,7 @@ impl<'a> Parser<'a> {
     /// left-associative operator of priority `p` takes a right operand of priority `p - 1`,
     /// `=` one of its own priority.
     fn expr(&mut self, max: u8) -> Option<Expr> {
-        if !self.enter() {
-            self.bump_error();
-            self.leave(1);
-            return None;
-        }
-        let expr = self.expr_inner(max);
-        self.leave(1);
-        expr
+        self.nested(|parser| parser.expr_inner(max))
     }
 
     fn expr_inner(&mut self, max: u8) -> Option<Expr> {
