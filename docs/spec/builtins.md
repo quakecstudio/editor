@@ -820,6 +820,22 @@ profile (DIFF-12.19); everything else runs under id's.
   kept as written. A text that does not fit vkQuake's `STRINGTEMP_LENGTH` (1024 bytes) with its
   terminator is empty, as `strftime` then returns 0. The result is a new engine string
   (EDICT-13.1).
+- **BUILTIN-18.8** `sprintf(format, ...)` (#627) is `PF_sprintf`, `PF_sprintf_internal (format,
+  1, ...)` into a 1024-byte temporary string, the result a new engine string. It reads each
+  directive as vkQuake does: an argument position `N$`, the flags `#0- +` (a width written
+  with a leading `0` also sets `0`), a width and a precision that `*` or `*N$` take from a
+  float argument (a negative width left-justifies), and the letters `h` (a float argument),
+  `l` and `L` (an integer one) and `q` (64 bits). An argument is a float unless a letter, `%i`
+  or `%p` makes it an integer, and one not passed is 0 or the empty string. `%d`, `%i`, `%o`,
+  `%u`, `%x`, `%X`, `%e`, `%E`, `%f`, `%F`, `%g`, `%G`, `%c` and `%s` are written as glibc's
+  `printf` writes them (a negative NaN as `-nan`); `%p` and `%P` are `%x` and `%X` zero-padded
+  to 8; `%v` and `%V` are a vector's three components as `%g` or `%G` with spaces between; `%S`
+  is the string in double quotes, with a leading `\` and `\n`, `\r` and `\"` escaped when it
+  has a line break or quote. A float converted to an integer is truncated as x86-64's
+  `cvttsd2si` does, `INT64_MIN` out of range. `%%` is `%`. A `.` with no number or `*` after it,
+  a `*N` with no `$`, and any other letter (`%I` among them) end the text there. The text stops
+  at 1023 bytes, and a `%c` of 0 ends its own directive's text at the NUL. A string argument
+  that is no string is the mock's string error (BUILTIN-2.8).
 
 ## Test vectors
 

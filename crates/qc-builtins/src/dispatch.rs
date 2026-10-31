@@ -31,6 +31,7 @@ use crate::mock::{
     BUILTIN_FL_SWIM, EngineProfile, LIMIT_MAX_DATAGRAM, LIMIT_MAX_LIGHTSTYLES, MessageDest,
     MockEngine, Overflow, Precache,
 };
+use crate::{printf, strftime};
 
 /// The builtin dispatch over a mock engine (DIFF-6, DIFF-7).
 ///
@@ -1043,6 +1044,37 @@ impl MockBuiltins {
 
 // ===== vkQuake's extension builtins (BUILTIN-18) =====
 
+/// A call's parameters as `sprintf` reads them (BUILTIN-18.8).
+struct ParmArgs<'c, 'm, 'p, 'e> {
+    context: &'c mut Context<'m, 'p>,
+    engine: &'e MockEngine,
+}
+
+impl printf::Args for ParmArgs<'_, '_, '_, '_> {
+    fn count(&self) -> usize {
+        self.context.machine_view().argc()
+    }
+
+    fn word(&self, arg: usize, offset: usize) -> u32 {
+        let slot = arg
+            .checked_mul(3)
+            .and_then(|n| n.checked_add(usize::from(qc_types::PROGS_OFS_PARM0)))
+            .and_then(|n| n.checked_add(offset))
+            .and_then(|n| i32::try_from(n).ok())
+            .unwrap_or(i32::MAX);
+        self.context
+            .machine_view()
+            .global(slot)
+            .map_or(0, Slot::bits)
+    }
+
+    fn string(&mut self, arg: usize) -> Result<Vec<u8>, BuiltinError> {
+        let n = u16::try_from(arg)
+            .map_err(|_| BuiltinError::from(RuntimeError::ParameterOutOfRange))?;
+        read_parm_string(self.context, self.engine, n)
+    }
+}
+
 /// The cvars vkQuake registers with `CVAR_SERVERINFO` (`Quake/host.c`), which `forceinfokey`
 /// on the world sets (BUILTIN-18.4).
 const VKQUAKE_SERVERINFO_CVARS: [&str; 4] = ["fraglimit", "timelimit", "teamplay", "noexit"];
@@ -1061,6 +1093,7 @@ impl MockBuiltins {
             93 => Some(self.b_registercvar(context)),
             213 => Some(self.b_forceinfokey(context)),
             478 => Some(self.b_strftime(context)),
+            627 => Some(self.b_sprintf(context)),
             232 => Some(read_parm(context, 2).map(|_| ())),
             233 => Some(read_parm_string(context, &self.engine, 2).map(|_| ())),
             _ => None,
@@ -1088,7 +1121,22 @@ impl MockBuiltins {
     /// (BUILTIN-18.7): a new engine string holding `format` written out.
     fn b_strftime(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let format = read_parm_string(context, &self.engine, 1)?;
-        let value = self.engine.strings.make(crate::strftime::strftime(&format));
+        let value = self.engine.strings.make(strftime::strftime(&format));
+        write_return_string(context, value)
+    }
+
+    /// `sprintf(format, ...)`, vkQuake's `PF_sprintf` (BUILTIN-18.8): a new engine string
+    /// holding `format` written out with the arguments after it.
+    fn b_sprintf(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let format = read_parm_string(context, &self.engine, 0)?;
+        let text = {
+            let mut args = ParmArgs {
+                context: &mut *context,
+                engine: &self.engine,
+            };
+            printf::sprintf(&format, 1, &mut args)?
+        };
+        let value = self.engine.strings.make(text);
         write_return_string(context, value)
     }
 

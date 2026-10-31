@@ -2035,7 +2035,7 @@ mod bodies {
         let (result, other) = run(0, offsets[2]);
         result.unwrap();
         assert_eq!(other.engine().cvars.text("skill"), Some("1"));
-        let edict = i32::try_from(other.machine.edicts().layout().edict_size()).unwrap();
+        let edict = other.machine.edicts().layout().edict_size();
         let (result, player) = run(edict, offsets[0]);
         result.unwrap();
         assert_eq!(player.engine().cvars.text("teamplay"), Some("0"));

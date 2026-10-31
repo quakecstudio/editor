@@ -30,6 +30,7 @@ mod dispatch;
 mod error;
 pub mod math;
 pub mod mock;
+mod printf;
 mod strftime;
 pub mod table;
 
