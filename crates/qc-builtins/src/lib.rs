@@ -26,6 +26,7 @@
 //! L1 VM. It depends on [`qc_vm`], [`qc_edict`] (both L1) and [`qc_progs`], [`qc_types`] (both
 //! L0), and nothing higher.
 
+mod atof;
 mod dispatch;
 mod error;
 pub mod math;

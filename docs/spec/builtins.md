@@ -896,6 +896,13 @@ profile (DIFF-12.19); everything else runs under id's.
 - **BUILTIN-18.18** `num_for_edict(e)` (#512) is `PF_num_for_edict`: "G_FLOAT (OFS_RETURN) =
   G_EDICTNUM (OFS_PARM0);", the edict's number, and `NUM_FOR_EDICT`'s error for a value that
   is no edict (BUILTIN-2.7).
+- **BUILTIN-18.19** `stof(s)` (#81) is `PF_stof`, "G_FLOAT (OFS_RETURN) = atof (G_STRING
+  (OFS_PARM0));": C's `atof`, `strtod` of the longest prefix that is a number, rounded to a
+  float. After white space and an optional sign it reads a decimal number with an optional
+  point and an exponent taken only when a digit follows its `e` and sign, a hexadecimal one
+  after `0x` with an optional `p` exponent, or `inf`, `infinity` or `nan` in any case; with
+  none it is 0. A decimal number is rounded correctly, as glibc's `strtod` does; a hexadecimal
+  one is exact up to 13 digits. This is not `Q_atof` (BUILTIN-11.7), which `cvar` uses.
 
 ## Test vectors
 

@@ -31,7 +31,7 @@ use crate::mock::{
     BUILTIN_FL_SWIM, EngineProfile, LIMIT_MAX_DATAGRAM, LIMIT_MAX_LIGHTSTYLES, MessageDest,
     MockEngine, Overflow, Precache,
 };
-use crate::{printf, strconv, strftime};
+use crate::{atof, printf, strconv, strftime};
 
 /// The builtin dispatch over a mock engine (DIFF-6, DIFF-7).
 ///
@@ -1185,6 +1185,7 @@ impl MockBuiltins {
     ) -> Option<Result<(), BuiltinError>> {
         match number {
             80 => Some(self.b_infokey(context)),
+            81 => Some(self.b_stof(context)),
             93 => Some(self.b_registercvar(context)),
             94 => Some(Self::b_extreme(context, Extreme::Min)),
             95 => Some(Self::b_extreme(context, Extreme::Max)),
@@ -1365,6 +1366,17 @@ impl MockBuiltins {
     fn b_num_for_edict(context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let number = read_parm_edictnum(context, 0)?;
         let value = u16::try_from(number.index()).map_or(f32::MAX, f32::from);
+        write_return_float(context, value)
+    }
+
+    /// `stof(s)`, vkQuake's `PF_stof` (BUILTIN-18.19): C's `atof` of `s`, as a float.
+    fn b_stof(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let text = read_parm_string(context, &self.engine, 0)?;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "BUILTIN-18.19: G_FLOAT of a double rounds it to the nearest float, as this does"
+        )]
+        let value = atof::atof(&text) as f32;
         write_return_float(context, value)
     }
 

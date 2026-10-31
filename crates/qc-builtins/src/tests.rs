@@ -2043,6 +2043,55 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.19: stof is C's atof of the longest numeric prefix
+    #[test]
+    fn stof_is_c_atof() {
+        let texts = [
+            "  1.5e2xyz",
+            "-0x1Fp1",
+            ".5",
+            "e5",
+            "1e",
+            "INF",
+            "abc",
+            "1.2.3",
+            "+.e1",
+            "0x",
+            "-nan",
+            "1e-2",
+        ];
+        let (strings, offsets) = string_table(&texts);
+        for (text, expected) in [
+            (0, 150.0),
+            (1, -62.0),
+            (2, 0.5),
+            (3, 0.0),
+            (4, 1.0),
+            (5, f32::INFINITY),
+            (6, 0.0),
+            (7, 1.2),
+            (8, 0.0),
+            (9, 0.0),
+            (11, 0.01),
+        ] {
+            let mut f = Fixture::new(81, 1, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, offsets[text]);
+            f.run_ok(ServerState::Active);
+            assert_eq!(
+                f.return_f().to_bits(),
+                f32::to_bits(expected),
+                "{}",
+                texts[text]
+            );
+        }
+        let mut f = Fixture::new(81, 1, strings, 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.set_parm_i(0, offsets[10]);
+        f.run_ok(ServerState::Active);
+        assert!(f.return_f().is_nan());
+    }
+
     // spec BUILTIN-18.18: num_for_edict is an edict's number; a bad value is NUM_FOR_EDICT's
     // error
     #[test]
