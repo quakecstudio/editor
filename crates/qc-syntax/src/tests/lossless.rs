@@ -471,3 +471,22 @@ fn an_accessor_member_error_is_reported_once() {
         ])
     );
 }
+
+// spec QCD-1.5: a state header its error stops short is skipped to its `]` or the body's `{`, so
+// the body does not start inside it and report the place again (the parser fuzz target's find)
+#[test]
+fn a_state_header_error_is_reported_once() {
+    for (source, at) in [
+        ("void() f = [$a, ) {};", 16),
+        ("void() f = [$a, );", 16),
+        ("void() f = [1, ) g;", 15),
+        ("void() f = [1, ) f = [1, gg] {};", 15),
+    ] {
+        let found: Vec<_> = crate::parse_with(source.as_bytes(), Dialect::Vanilla)
+            .diagnostics()
+            .iter()
+            .map(|d| (d.span.start, d.message.clone()))
+            .collect();
+        assert_eq!(found, [(at, "not a name".to_owned())], "{source}");
+    }
+}

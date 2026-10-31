@@ -13,7 +13,7 @@
 use qc_lexer::{Code, LexFlag, Span};
 use qc_preproc::{Enabled, FteFlag, Keyword};
 
-use super::{BlockKind, Member, Parser, Scope, Site, Skip, TypeShape, UNARY_PRIORITY};
+use super::{BlockKind, Member, Parser, Scope, Site, TypeShape, UNARY_PRIORITY};
 use crate::c_scalar::{CContext, CScalar, CWord, CWords, REGISTERED_TYPES};
 use crate::kind::SyntaxKind as K;
 
@@ -1489,19 +1489,7 @@ impl Parser<'_> {
                 self.expression();
             }
         }
-        if !self.expect(K::RBracket, "]") {
-            // The rest of a header that went wrong, up to its `]` or the body's `{`.
-            self.skip_into_error(|parser| {
-                if parser.at(K::RBracket) || parser.at(K::LBrace) {
-                    Skip::Stop
-                } else {
-                    Skip::Take
-                }
-            });
-            if self.at(K::RBracket) {
-                self.bump();
-            }
-        }
+        self.close_state();
         self.finish_node();
     }
 

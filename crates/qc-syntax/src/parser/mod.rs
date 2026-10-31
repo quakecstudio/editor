@@ -2117,8 +2117,26 @@ impl<'a> Parser<'a> {
         }
         self.expect(K::Comma, ",");
         self.name();
-        self.expect(K::RBracket, "]");
+        self.close_state();
         self.finish_node();
+    }
+
+    /// A state header's `]`. A header that went wrong is skipped up to its `]` or the body's
+    /// `{`, so the body's statements do not start inside it and report it again (QCD-1.5).
+    fn close_state(&mut self) {
+        if self.expect(K::RBracket, "]") {
+            return;
+        }
+        self.skip_into_error(|parser| {
+            if parser.at(K::RBracket) || parser.at(K::LBrace) {
+                Skip::Stop
+            } else {
+                Skip::Take
+            }
+        });
+        if self.at(K::RBracket) {
+            self.bump();
+        }
     }
 
     // ---- types ----
