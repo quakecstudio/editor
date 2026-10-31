@@ -949,3 +949,29 @@ fn programs_both_refuse_keep_this_profile_s_text() {
         [(1, "\"T\" is not a type".to_owned())]
     );
 }
+
+// spec FTEF-22.9: a truth value is its own type, to which a float case does not convert, the
+// mismatch reported at the token after the switch's body, where the cases are converted; a
+// switch of a sum takes it
+#[test]
+fn a_switch_of_a_truth_value_takes_no_float_case() {
+    let logical = "float a, b;\nvoid() f = {\nswitch (a || b)\n{\ncase 0:\nbreak;\n}\nf();\n};\n";
+    assert_eq!(
+        lined(logical),
+        [(
+            8,
+            "Implicit type mismatch. Needed bool, got float.".to_owned()
+        )]
+    );
+    let compared =
+        "float a, b;\nvoid() f = {\nswitch (a < b) { case 1: break; default: break; }\n};\n";
+    assert_eq!(
+        lined(compared),
+        [(
+            4,
+            "Implicit type mismatch. Needed bool, got float.".to_owned()
+        )]
+    );
+    let sum = "float a, b;\nvoid() f = {\nswitch (a + b)\n{\ncase 0:\nbreak;\n}\n};\n";
+    assert_eq!(lined(sum), []);
+}

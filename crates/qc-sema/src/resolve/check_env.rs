@@ -297,8 +297,21 @@ impl Env for BodyEnv<'_, '_> {
                 .shape(t)
                 .is_some_and(|s| s.etype == Etype::Enum)
         };
+        // FTEF-22.9: a truth value is `ev_boolean`, which `QCC_ShouldConvert` reads as its
+        // parent type when it is the source, and to which nothing else converts.
+        let truth = |t: &Type| {
+            let t = self.resolver.resolved_deep(t, MAX_TYPEDEF_DEPTH);
+            matches!(t.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat))
+        };
         // A strict enum is its own basic type, `ev_enum`, to which nothing else converts.
-        if enum_shape(wanted) && !enum_shape(&ty) {
+        let needed = if enum_shape(wanted) && !enum_shape(&ty) {
+            Some("enum")
+        } else if truth(wanted) && !truth(&ty) {
+            Some("bool")
+        } else {
+            None
+        };
+        if let Some(needed) = needed {
             let flags_lax = flags.has(qc_preproc::FteFlag::Laxcasts);
             let (code, text) = if flags.has(qc_preproc::FteFlag::Typeexplicit) {
                 (Code::E0236, "Automatic type conversions disabled.")
@@ -311,7 +324,7 @@ impl Env for BodyEnv<'_, '_> {
                 .resolver
                 .shape(&ty)
                 .map_or("variant", |s| s.etype.basic_name());
-            let message = format!("{text} Needed enum, got {from}.");
+            let message = format!("{text} Needed {needed}, got {from}.");
             self.resolver.report(code, location, message);
             return code != Code::W0230;
         }

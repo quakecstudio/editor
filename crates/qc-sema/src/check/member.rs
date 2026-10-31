@@ -595,12 +595,17 @@ fn alignment(ty: &Type) -> u32 {
 
 /// The text of the token after `node` in its tree, empty at the end.
 fn token_after(node: &qc_syntax::SyntaxNode) -> String {
+    next_token(node)
+        .map(|token| token.text_lossless())
+        .unwrap_or_default()
+}
+
+/// The token after `node` in its tree, the one FTEQCC has read once it has read `node`.
+pub(super) fn next_token(node: &qc_syntax::SyntaxNode) -> Option<qc_syntax::SyntaxToken> {
     let end = node.span().end;
     node.ancestors()
         .last()
         .into_iter()
         .flat_map(|root| root.tokens().collect::<Vec<_>>())
         .find(|token| !token.kind().is_trivia() && token.span().start >= end)
-        .map(|token| token.text_lossless())
-        .unwrap_or_default()
 }

@@ -16,8 +16,9 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
 use crate::check::flow::{Finding, Step};
+use crate::check::member;
 use crate::check::reference::eval_int;
-use crate::check::truth::{Jump, Test};
+use crate::check::truth::{Jump, Test, is_truth};
 use crate::check::{Constness, Reference, Value};
 use crate::ty::{SimpleType, Type};
 
@@ -457,6 +458,9 @@ impl Checker<'_> {
         let table = self.layout.here();
         self.layout.patch(patch1, table);
         self.uncovered_items(&value, &cases, span);
+        // FTEF-22.9: the cases are converted once the body is read, where FTEQCC's lexer is at
+        // the token after it.
+        let after = member::next_token(s.syntax()).map_or(span, |token| token.span());
         let mut default = None;
         for case in cases {
             let Some(min) = case.value else {
@@ -474,11 +478,11 @@ impl Checker<'_> {
                 continue;
             };
             let min = self.read(min, case.span)?;
-            let min = self.case_value(min, &value, case.span)?;
+            let min = self.case_value(min, &value, after)?;
             let max = match case.range_end {
                 Some(max) => {
                     let max = self.read(max, case.span)?;
-                    Some(self.case_value(max, &value, case.span)?)
+                    Some(self.case_value(max, &value, after)?)
                 }
                 None => None,
             };
@@ -567,7 +571,11 @@ impl Checker<'_> {
 
     /// A case value made the switch's type, `QCC_SupplyConversion(dmin, e.cast->type, true)`.
     fn case_value(&mut self, case: Value, switch: &Value, span: Span) -> Result<Value, Fatal> {
-        if case.ty == Type::Unknown || self.etype_of(&case.ty) == self.etype_of(&switch.ty) {
+        // FTEF-22.9: `dmin.cast->type != e.cast->type` tells a truth value, `ev_boolean`, from
+        // its parent type.
+        let same = self.etype_of(&case.ty) == self.etype_of(&switch.ty)
+            && is_truth(&case.ty) == is_truth(&switch.ty);
+        if case.ty == Type::Unknown || same {
             return Ok(case);
         }
         self.supplied(&case, &switch.ty, span)

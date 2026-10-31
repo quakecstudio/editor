@@ -4124,6 +4124,17 @@ the others (FTEF-21.1) and the target as it reads the files (FTEF-20.4).
   `void(int)` is "Implicit cast from void(__int32) to void(float)". Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_TryEvaluateCast`.
+- **FTEF-22.9** A truth value, the result of a comparison, `!`, `&&` or `||`, is `ev_boolean`,
+  which `QCC_ShouldConvert` reads as its parent type when it is the value converted (`if
+  (from->type == ev_boolean && wanted != ev_boolean) from = from->parentclass;`) and to which no
+  other type converts, so `QCC_SupplyConversion(var, ev_boolean, true)` of a float is the fatal
+  `E0227` "Implicit type mismatch. Needed bool, got float.". A `switch` converts each case to the
+  switch value's type, `if (dmin.cast->type != e.cast->type) dmin = QCC_SupplyConversion(dmin,
+  e.cast->type, true);`, once its body is read, where the lexer is at the token after it: so
+  `switch (a || b) { case 0: break; }` and `switch (a < b) { case 1: ... }` are refused there,
+  and `switch (a + b)` is not. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_ShouldConvert`, `QCC_SupplyConversion`,
+  `QCC_PR_ParseStatement`.
 
 ## FTEF-23 Operators as FTEQCC types them
 

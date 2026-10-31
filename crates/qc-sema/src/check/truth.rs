@@ -457,6 +457,6 @@ const fn words(etype: Etype) -> u32 {
 }
 
 /// Whether `ty` is a truth value, `__bfloat` or `__bint`.
-fn is_truth(ty: &Type) -> bool {
+pub(super) fn is_truth(ty: &Type) -> bool {
     matches!(ty.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat))
 }
