@@ -1008,7 +1008,7 @@ impl<'a> Compiler<'a> {
                 Some(ast::Initializer::Value(expr)) if self.dialect.has_fteqcc_extensions() => {
                     let to = self.def_value(place, span)?;
                     let value = self.expr(&expr)?;
-                    self.store_to(&to, &value, expr.syntax().span())?;
+                    self.store_value(&to, value, expr.syntax().span())?;
                 }
                 Some(ast::Initializer::Value(expr)) => {
                     let literal = literal_of(&expr, self.dialect).at(expr.syntax().span())?;
@@ -1182,6 +1182,62 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    /// Whether `value` is an FTEQCC `int` (FTEF-2), which the vanilla target has no opcodes
+    /// for.
+    fn is_integer(&self, value: &Value) -> bool {
+        matches!(
+            self.type_of(value),
+            ValueType::Of(ty) if ty.fteqcc_scalar() == Some(CScalar::Integer)
+        )
+    }
+
+    /// FTEF-27.8: the two operands of a float operator, an integer one of them made a float
+    /// (FTEF-27.4) when the other is a float.
+    fn floats_of(&mut self, left: &Value, right: &Value, span: Span) -> Lowered<(Value, Value)> {
+        let float = |c: &Self, v: &Value| c.type_of(v).etype() == Etype::Float;
+        if self.is_integer(left) && float(self, right) {
+            return Ok((self.int_as_float(left, span)?, right.clone()));
+        }
+        if self.is_integer(right) && float(self, left) {
+            let right = self.int_as_float(right, span)?;
+            return Ok((left.clone(), right));
+        }
+        Ok((left.clone(), right.clone()))
+    }
+
+    /// FTEF-27.4: `OP_CONV_ITOF` on the vanilla target: a constant is the float it converts to
+    /// (FTEF-26.3); else the program's `itof` called with it, `QCC_PR_EmulationFunc(itof)`; else
+    /// `DIV_F` by the integer 1, a denormal's float.
+    fn int_as_float(&mut self, value: &Value, span: Span) -> Lowered<Value> {
+        let float = ValueType::simple(Etype::Float);
+        if let ValueKind::Def(place) = value.kind
+            && let Some(constant) = self.integer_constant(place)
+        {
+            let place = self.program.immediate(&Literal::Float(constant)).at(span)?;
+            return self.def_value(place, span);
+        }
+        if let Some(itof) = self
+            .names
+            .global("itof")
+            .and_then(|id| self.program.place(id))
+        {
+            return self.call1(itof, value.ofs, float, span);
+        }
+        let one = self
+            .program
+            .immediate(&Literal::Float(f32::from_bits(1)))
+            .at(span)?;
+        let one = self.program.def(one).at(span)?.ofs;
+        let ofs = self
+            .program
+            .emit_result(Opcode::DivF, value.ofs, one, Etype::Float)
+            .at(span)?;
+        Ok(Value {
+            ofs,
+            kind: ValueKind::Temp(float),
+        })
+    }
+
     /// FTE-15.8: a number literal initialising an `int` or `unsigned` global is the integer
     /// it converts to, C's conversion of the float the lexer reads (`QCC_SupplyConversion` of a
     /// constant), not the float's bits.
@@ -1239,10 +1295,7 @@ impl<'a> Compiler<'a> {
                 kind: ValueKind::Def(place),
             };
             let value = self.expr(element)?;
-            let value = self.null_as(value, &self.type_of(&to));
-            if !self.fold_store(&to, &value) {
-                self.store_to(&to, &value, at)?;
-            }
+            self.store_value(&to, value, at)?;
         }
         Ok(())
     }
@@ -1926,6 +1979,8 @@ impl<'a> Compiler<'a> {
         right: &Value,
         (op_span, span): (Span, Span),
     ) -> Lowered<Value> {
+        // FTEF-27.8: an integer operand of a float operator is made a float first.
+        let (left, right) = &self.floats_of(left, right, op_span)?;
         // The types are read after both operands, as `PR_Expression` reads them: a call in the
         // right operand retypes the return value the left one may be (QC-18.6).
         let a = self.type_of(left).etype();
@@ -2420,21 +2475,16 @@ impl<'a> Compiler<'a> {
             (_, false) => None,
             (Target::Value(to), true) => Some(Pending::Value(to.clone())),
             (Target::Field { slot, .. }, true) => Some(Pending::Field(slot.clone())),
-            // A read through a pointer, `LOADP_*`, and a read of an element a setter stores
-            // are not lowered yet.
-            (Target::Pointer { .. } | Target::Element(_), true) => {
+            (Target::Element(store), true) => Some(Pending::Value(self.read_stored(store, span)?)),
+            // A read through a pointer, `LOADP_*`, is not lowered yet.
+            (Target::Pointer { .. }, true) => {
                 return Err(Abort::Internal(Internal::Unsupported, span));
             }
         };
         let value = value(self, pending)?;
         let (to, inner) = match target {
             Target::Value(to) => {
-                let value = self.null_as(value, &self.type_of(&to));
-                if self.fold_store(&to, &value) {
-                    return Ok(to);
-                }
-                self.store_to(&to, &value, op_span)?;
-                return Ok(value);
+                return Ok(self.store_value(&to, value, op_span)?.unwrap_or(to));
             }
             Target::Field {
                 slot,
@@ -2606,6 +2656,21 @@ impl<'a> Compiler<'a> {
             ty: ValueType::simple(Etype::Float),
         };
         self.target_of(slot, span).map(Some)
+    }
+
+    /// A store of `value` to `to`: a null made `to`'s type, an integer stored to a float made
+    /// one first (`OP_STORE_IF`, FTEF-27.4), then folded into the statement that made it
+    /// (FTEF-29.13), `None`, or stored by `store_to`, the value stored.
+    fn store_value(&mut self, to: &Value, value: Value, span: Span) -> Lowered<Option<Value>> {
+        let mut value = self.null_as(value, &self.type_of(to));
+        if self.type_of(to).etype() == Etype::Float && self.is_integer(&value) {
+            value = self.int_as_float(&value, span)?;
+        }
+        if self.fold_store(to, &value) {
+            return Ok(None);
+        }
+        self.store_to(to, &value, span)?;
+        Ok(Some(value))
     }
 
     /// Stores `value` in the definition or temporary `to` by the `STORE_*` row of their types.

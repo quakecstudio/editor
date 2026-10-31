@@ -4698,6 +4698,16 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   y + 1)` only `ADD_F`, `float q = x++;` `STORE_F` and `ADD_F`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_StoreSRefToRef`, `QCC_PR_RefExpression` (`ref->postinc`), `QCC_RefToDef`.
+- **FTEF-29.14** A compound assignment, `++` or `--` of an array element whose index is a value
+  (FTE-13.11) reads the element first by the array's getter, `QCC_RefToDef` of the `REF_ARRAY`
+  reference calling `QCC_LoadFromArray`, then applies the operator to the getter's value and
+  stores the result by the setter, `QCC_StoreToArray`, which asks for the setter only then: the
+  index read once is passed to both. So `arr[d]++;` is `STORE_F d` and `CALL1` of
+  `ArrayGet*arr`, `ADD_F` of the return value and 1, then `STORE_F d`, `STORE_F` of the sum and
+  `CALL2` of `ArraySet*arr`, and the getter's record comes before the setter's; `x = arr[d]++`
+  first copies the return value to a temporary (FTEF-29.13). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_RefToDef`, `QCC_LoadFromArray`, `QCC_StoreToArray`.
 - **FTEF-29.10** An array named bare, its head, is the pointer to its first element to a
   prefix or postfix `++` and `--` (`REF_ARRAYHEAD`): read by its address, which the id target
   refuses (FTEF-31.4), stepped by `OP_ADD_PIW` of its element's size, `--` warning of the

@@ -69,8 +69,9 @@ pub(super) struct ArrayFunction {
 /// value is read (FTE-13.11).
 #[derive(Clone, Debug)]
 pub(super) struct ElementStore {
-    /// The setter's definition.
-    setter: usize,
+    /// The array, whose setter stores the element and whose getter reads one an operator
+    /// stores again (FTEF-29.14).
+    array: Array,
     /// The index in words, a float.
     words: u32,
     /// Whether the array holds vectors, whose setter takes the element's index.
@@ -164,6 +165,27 @@ impl Compiler<'_> {
             }
             Slot::Words(words) => words,
         };
+        self.read_words(array, words, ty, span)
+    }
+
+    /// FTEF-29.14: the element a compound assignment or `++`/`--` stores by `store` read first
+    /// by the array's getter, at the index words the store takes, as `QCC_LoadFromArray` reads
+    /// it before the operator.
+    pub(super) fn read_stored(&mut self, store: &ElementStore, span: Span) -> Lowered<Value> {
+        let array = store.array.clone();
+        self.read_words(&array, store.words, store.ty.clone(), span)
+    }
+
+    /// The element of `array` at index `words`, a value of type `ty`, read by its getter: a
+    /// vector array's by its element's index, `DIV_F` 3, and a value of more than one word a
+    /// word at a time into a temporary.
+    fn read_words(
+        &mut self,
+        array: &Array,
+        words: u32,
+        ty: ValueType,
+        span: Span,
+    ) -> Lowered<Value> {
         let getter = self.array_function(array, Access::Get, span)?;
         if array.elem.etype() == Etype::Vector {
             let elements = self.float_op(Opcode::DivF, words, 3, span)?;
@@ -204,7 +226,6 @@ impl Compiler<'_> {
         index: &ast::Expr,
         member: Option<(u32, ValueType)>,
     ) -> Lowered<Result<Value, ElementStore>> {
-        let span = index.syntax().span();
         let (word, ty) = member.unwrap_or((0, array.elem.clone()));
         Ok(match self.slot(array, index, word)? {
             Slot::At(ofs) => Ok(Value {
@@ -212,7 +233,7 @@ impl Compiler<'_> {
                 kind: ValueKind::Temp(ty),
             }),
             Slot::Words(words) => Err(ElementStore {
-                setter: self.array_function(array, Access::Set, span)?,
+                array: array.clone(),
                 words,
                 vector: array.elem.etype() == Etype::Vector,
                 ty,
@@ -252,7 +273,10 @@ impl Compiler<'_> {
         self.store_word(index, OFS_PARM0, Etype::Float, span)?;
         let second = OFS_PARM0.checked_add(3).at(span)?;
         self.store_word(value.ofs, second, b, span)?;
-        let setter = self.program.def(store.setter).at(span)?.ofs;
+        // `QCC_StoreToArray` asks for the setter when it stores, after the value is read.
+        let array = store.array.clone();
+        let setter = self.array_function(&array, Access::Set, span)?;
+        let setter = self.program.def(setter).at(span)?.ofs;
         self.program
             .emit(Opcode::Call2, operand(setter).at(span)?, 0);
         Ok(())
@@ -311,7 +335,13 @@ impl Compiler<'_> {
 
     /// `QCC_PR_GenerateFunctionCall1`: the argument at `arg` stored to the first parameter by
     /// its type, `CALL1` of the function at `function`, the value the return global as `ret`.
-    fn call1(&mut self, function: usize, arg: u32, ret: ValueType, span: Span) -> Lowered<Value> {
+    pub(super) fn call1(
+        &mut self,
+        function: usize,
+        arg: u32,
+        ret: ValueType,
+        span: Span,
+    ) -> Lowered<Value> {
         self.program.emit(
             Opcode::StoreF,
             operand(arg).at(span)?,

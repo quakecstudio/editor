@@ -1754,3 +1754,96 @@ fn a_local_arrays_initialiser_is_read_up_to_its_size() {
         ]
     );
 }
+
+// spec FTEF-29.14: `arr[d]++` reads the element by the getter, adds 1 to its value and stores
+// the sum by the setter, the getter's record before the setter's
+#[test]
+fn an_element_incremented_by_a_value_index_is_read_then_stored() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nfloat arr[4]; float d;\nvoid() t = { arr[d]++; };\n",
+    );
+    let (d, get, set) = (
+        global(&p, "d"),
+        global(&p, "ArrayGet*arr"),
+        global(&p, "ArraySet*arr"),
+    );
+    let t = body(&p, "t");
+    let sum = t[2].c;
+    assert_eq!(
+        t,
+        [
+            st(StoreF, d, 4, 0),
+            st(Opcode::Call1, get, 0, 0),
+            st(AddF, 1, immediate(&p, 1.0), sum),
+            st(StoreF, d, 4, 0),
+            st(StoreF, sum, 7, 0),
+            st(Call2, set, 0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+    let names: Vec<String> = p.functions.iter().map(|f| string(&p, f.s_name)).collect();
+    let getter = names.iter().position(|n| n == "ArrayGet*arr").unwrap();
+    assert_eq!(names[getter + 1], "ArraySet*arr");
+}
+
+// spec FTEF-29.14: `x = arr[d]++` copies the getter's value to a temporary before the sum is
+// stored, and `x` takes the copy
+#[test]
+fn an_incremented_elements_old_value_is_its_value() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nfloat arr[4]; float d, x;\nvoid() t = { x = arr[d]++; };\n",
+    );
+    let t = body(&p, "t");
+    let old = t[2].b;
+    assert_eq!(t[2], st(StoreF, 1, old, 0));
+    assert_eq!(t[3], st(AddF, old, immediate(&p, 1.0), t[3].c));
+    assert_eq!(t[7], st(StoreF, old, global(&p, "x"), 0));
+}
+
+// spec FTEF-27.4: an integer made a float on the vanilla target calls the program's `itof`, in a
+// comparison and in a store to a float
+// spec FTEF-27.8: an integer operand of a float operator is converted before the operator
+#[test]
+fn an_integer_is_made_a_float_by_itof() {
+    let p = fte_progs(concat!(
+        "float(__int) itof = #0;\nfloat bytes;\n",
+        "void(__int n) t = { if (n > 0) bytes = n; };\n",
+    ));
+    let (n, itof, bytes) = (global(&p, "n"), global(&p, "itof"), global(&p, "bytes"));
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, n, 4, 0));
+    assert_eq!(t[1], st(Opcode::Call1, itof, 0, 0));
+    assert_eq!(t[2].op, u32::from(Opcode::Gt.number()));
+    assert_eq!((t[2].a, t[2].b), (1, immediate(&p, 0.0)));
+    assert_eq!(t[4], st(StoreF, n, 4, 0));
+    assert_eq!(t[5], st(Opcode::Call1, itof, 0, 0));
+    assert_eq!(t[6], st(StoreF, 1, bytes, 0));
+}
+
+// spec FTEF-27.4: with no `itof` and F313 off, the integer is `DIV_F` by the integer 1, which the
+// store to a float folds into (FTEF-29.13); an integer constant is its float
+#[test]
+fn an_integer_is_made_a_float_by_dividing_by_one() {
+    let p = fte_progs(concat!(
+        "#pragma warning disable F313\nfloat bytes;\nconst __int five = 5;\n",
+        "void(__int n) t = { bytes = n; bytes = five; };\n",
+    ));
+    let (n, bytes) = (global(&p, "n"), global(&p, "bytes"));
+    let t = body(&p, "t");
+    assert_eq!(t[0].op, u32::from(DivF.number()));
+    assert_eq!((t[0].a, t[0].c), (n, bytes));
+    assert_eq!(p.globals[usize::try_from(t[0].b).unwrap()].bits(), 1);
+    assert_eq!(t[1], st(StoreF, immediate(&p, 5.0), bytes, 0));
+}
+
+// spec FTEF-29.13: a local's initialiser that an operator made is folded into the operator, as
+// any store to a definition is
+#[test]
+fn a_local_initialiser_folds_into_its_operator() {
+    let p = fte_progs("float a, b;\nvoid() t = { float q = a * b; a = q; };\n");
+    let (a, b, q) = (global(&p, "a"), global(&p, "b"), global(&p, "q"));
+    assert_eq!(
+        body(&p, "t"),
+        [st(MulF, a, b, q), st(StoreF, q, a, 0), st(Done, 0, 0, 0)]
+    );
+}
