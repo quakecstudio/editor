@@ -1094,3 +1094,17 @@ fn a_case_is_a_statement_of_the_innermost_switch() {
     let outside = "float a; void() f = {\nif (a) case 1: a = 2;\n};\n";
     assert_eq!(messages(outside), ["f: function contains illegal cases"]);
 }
+
+// spec FTEF-6.7: a struct member followed by a token that starts no `;`, `,` or `}` is "missing
+// semi-colon", and a `}` while the member is open is too
+#[test]
+fn a_struct_member_needs_its_semicolon() {
+    for source in [
+        "typedef union { float string b; } S1;\n",
+        "struct S { float a vector b; };\n",
+        "struct S { float a };\n",
+    ] {
+        let first = lined(source).into_iter().next().map(|(_, m)| m);
+        assert_eq!(first.as_deref(), Some("missing semi-colon"), "{source}");
+    }
+}

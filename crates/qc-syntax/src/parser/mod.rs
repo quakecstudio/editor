@@ -1418,7 +1418,8 @@ impl<'a> Parser<'a> {
             }
             if self.at(K::RBrace) {
                 if open {
-                    self.expected(";");
+                    // FTEF-6.7: `if (newparm) QCC_PR_ParseError(..., "missing semi-colon");`.
+                    self.error(Code::E0204, "missing semi-colon");
                 }
                 if members == 0 {
                     let name = if tag.is_empty() {
@@ -1460,7 +1461,7 @@ impl<'a> Parser<'a> {
             } else {
                 if open {
                     // "missing semi-colon" (FTEF-6.7): the member is read on (QCD-1.4).
-                    self.expected(";");
+                    self.error(Code::E0204, "missing semi-colon");
                     open = false;
                 }
                 if self.member_label() {
