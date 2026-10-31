@@ -91,6 +91,11 @@ impl Builtins for MockBuiltins {
 impl MockBuiltins {
     /// Dispatches one builtin, returning a [`BuiltinError`] the caller maps to a [`RunError`].
     fn dispatch(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        if self.engine.profile == EngineProfile::VkQuake
+            && let Some(result) = self.vkquake_extension(number, context)
+        {
+            return result;
+        }
         match number {
             // --- class pure: math and strings (BUILTIN-6, BUILTIN-7) ---
             1 => self.b_makevectors(context),
@@ -1032,6 +1037,44 @@ impl MockBuiltins {
         let val = String::from_utf8_lossy(&val_bytes).into_owned();
         // An unknown name is a console message, not an error (BUILTIN-11.8).
         let _existed = self.engine.cvars.set(&var, &val);
+        Ok(())
+    }
+}
+
+// ===== vkQuake's extension builtins (BUILTIN-18) =====
+
+/// The cvars vkQuake registers with `CVAR_SERVERINFO` (`Quake/host.c`), which `forceinfokey`
+/// on the world sets (BUILTIN-18.4).
+const VKQUAKE_SERVERINFO_CVARS: [&str; 4] = ["fraglimit", "timelimit", "teamplay", "noexit"];
+
+impl MockBuiltins {
+    /// The extension builtin `number` under vkQuake's profile, when the mock ports it
+    /// (BUILTIN-18.1); `None` sends the number on to id's table.
+    fn vkquake_extension(
+        &mut self,
+        number: u32,
+        context: &mut Context<'_, '_>,
+    ) -> Option<Result<(), BuiltinError>> {
+        match number {
+            213 => Some(self.b_forceinfokey(context)),
+            _ => None,
+        }
+    }
+
+    /// `forceinfokey(player, key, value)`, vkQuake's `PF_sv_forceinfokey` and `SV_UpdateInfo`
+    /// (BUILTIN-18.4): the player through `G_EDICTNUM`, then the two strings; on the world a
+    /// serverinfo cvar is set as `cvar_set` sets it.
+    fn b_forceinfokey(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let edict = read_parm_edictnum(context, 0)?;
+        let key = read_parm_string(context, &self.engine, 1)?;
+        let value = read_parm_string(context, &self.engine, 2)?;
+        let key = String::from_utf8_lossy(&key).into_owned();
+        if edict.index() == 0 && VKQUAKE_SERVERINFO_CVARS.contains(&key.as_str()) {
+            let _existed = self
+                .engine
+                .cvars
+                .set(&key, &String::from_utf8_lossy(&value));
+        }
         Ok(())
     }
 }

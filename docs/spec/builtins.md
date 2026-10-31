@@ -793,6 +793,13 @@ profile (DIFF-12.19); everything else runs under id's.
 - **BUILTIN-18.3** The precache lists hold `MAX_SOUNDS` 2048 sounds and `MAX_MODELS` 8192
   models ("#define MAX_MODELS 8192 // johnfitz -- was 256", "#define MAX_SOUNDS 2048 //
   johnfitz -- was 256"), in place of LIMIT-6.2's 256 each.
+- **BUILTIN-18.4** `forceinfokey(player, key, value)` (#213) is `PF_sv_forceinfokey`: the
+  player through `G_EDICTNUM`, so a bad one is `NUM_FOR_EDICT`'s error (BUILTIN-2.7), then the
+  key and value strings, then `SV_UpdateInfo`. On the world (`if (!edict)`) a cvar registered
+  with `CVAR_SERVERINFO` (`fraglimit`, `timelimit`, `teamplay` and `noexit` in `Quake/host.c`) is
+  set with `Cvar_Set`, which `cvar` reads back. Every other key goes to the server's or the
+  player's info string and the network, which the mock does not keep: no builtin it ports reads
+  an info string back.
 
 ## Test vectors
 

@@ -2015,6 +2015,34 @@ mod bodies {
         assert_eq!(id.message(), "unimplemented bulitin");
     }
 
+    // spec BUILTIN-18.4: forceinfokey on the world sets a serverinfo cvar and no other; on a
+    // player it sets none, and a bad player is NUM_FOR_EDICT's error
+    #[test]
+    fn forceinfokey_sets_serverinfo_cvars_on_the_world() {
+        let (strings, offsets) = string_table(&["teamplay", "3", "skill"]);
+        let run = |player: i32, key: i32| {
+            let mut f = Fixture::new(213, 3, strings.clone(), 1);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, player);
+            f.set_parm_i(1, key);
+            f.set_parm_i(2, offsets[1]);
+            let result = f.run(ServerState::Active);
+            (result, f)
+        };
+        let (result, world) = run(0, offsets[0]);
+        result.unwrap();
+        assert_eq!(world.engine().cvars.text("teamplay"), Some("3"));
+        let (result, other) = run(0, offsets[2]);
+        result.unwrap();
+        assert_eq!(other.engine().cvars.text("skill"), Some("1"));
+        let edict = i32::try_from(other.machine.edicts().layout().edict_size()).unwrap();
+        let (result, player) = run(edict, offsets[0]);
+        result.unwrap();
+        assert_eq!(player.engine().cvars.text("teamplay"), Some("0"));
+        let (result, _) = run(edict * 1000, offsets[0]);
+        assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
+    }
+
     // spec BUILTIN-18.3: vkQuake's precache lists hold 2048 sounds and 8192 models, id's 256
     // each
     #[test]
