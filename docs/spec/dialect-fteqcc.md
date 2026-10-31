@@ -1240,7 +1240,9 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
 - **FTEF-13.12** **Withdrawn** (P2-75, #480): it said this profile takes a character
   constant's escape with no code of its own as its byte, with no error, and reports no "Bad
   character code" there. Replaced by FTEF-13.13.
-- **FTEF-13.13** A character constant's escape, `'\c'`, is read as a string's is (FTEF-13.11),
+- **FTEF-13.13** **Withdrawn** 2026-10-30: it said this profile reports `E0101` after a `\`
+  and a CR at the end of the input, where the pinned FTEQCC reports "Bad character constant";
+  replaced by FTEF-13.27. A character constant's escape, `'\c'`, is read as a string's is (FTEF-13.11),
   errors included: `QCC_PR_LexVector` reads `if (*pr_file_p == '\\') {//extended character
   constant` and then `pr_immediate._float = QCC_PR_LexEscapedCodepoint();` (`_int` under
   `flag_assume_integer`), the function a string's escapes go through. The constant's value is the
@@ -1362,6 +1364,27 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   `QCC_PR_LexEscapedCodepoint`), and when that byte is no LF FTEQCC warns `"Hanging \\\\\r"`
   (`WARN_HANGINGSLASHR`, `W0123`), the text `Hanging \\` and a CR: the pinned FTEQCC gives it for
   `"a`, `\`, a CR and `b"`. A `\` before a CR and an LF is the LF, with no warning.
+- **FTEF-13.26** A string or character constant that ends after a `\` and a CR, at the end of
+  the input, is not ended by the escape: `QCC_PR_LexEscapedCodepoint` reads the byte after the
+  CR with no test (`c = *pr_file_p++;`), the end of the buffer, and the caller then meets the
+  end. So a string is one `E0101` "EOF inside quote", from its own loop, and a character
+  constant one `E0104` "Bad character constant", with no "Hanging" warning: the pinned FTEQCC
+  gives each for `"a`, `\` and a CR, and for `'`, `\` and a CR. This profile reports the same,
+  each once (QCD-2.1).
+- **FTEF-13.27** A character constant's escape, `'\c'`, is read as a string's is (FTEF-13.11),
+  errors included: `QCC_PR_LexVector` reads `if (*pr_file_p == '\\') {//extended character
+  constant` and then `pr_immediate._float = QCC_PR_LexEscapedCodepoint();` (`_int` under
+  `flag_assume_integer`), the function a string's escapes go through. The constant's value is the
+  code: `'\n'` is 10, `'\['` 0xE010, `'\.'` 0xE01C and `'\x4'` 4. "Unknown escape char" (`'\s'`,
+  `'\b'` and `'\q'`: only a string reads `\s` and `\b`, as bronze, FTEF-13.10), "Bad character
+  code" (`'\{6z}'`, `'\xg'`) and "Unicode character terminated unexpectedly" (`'\u0041'`;
+  `'\u041'` is 65) are errors, `E0103` as in a string. The end of the file right after the `\` is
+  "EOF inside quote" (`E0101`), and no other error; after a `\` and CR it is FTEF-13.26's
+  "Bad character constant". Any other byte than
+  `'` after the escape is "Bad character constant" (`if (*pr_file_p != '\'') QCC_PR_ParseError
+  (ERR_INVALIDVECTORIMMEDIATE, "Bad character constant");`, `E0104`). FTEQCC stops at its first
+  error; this profile goes on after the escape, and so may also report "Bad character constant"
+  after a bad one.
 
 ## FTEF-14 Preprocessor directives and macros
 

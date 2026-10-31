@@ -1295,7 +1295,7 @@ impl Lexer<'_> {
     }
 
     /// An FTEQCC character constant at a `'` (FTEF-13.3), as `QCC_PR_LexVector` reads one:
-    /// `'\c'`, an escape read as a string's is, errors included (FTEF-13.13); one byte and a
+    /// `'\c'`, an escape read as a string's is, errors included (FTEF-13.27); one byte and a
     /// closing `'`; or a UTF-8 sequence. Pushes
     /// it as a float token holding the character's code and returns true; false, consuming
     /// nothing, when the quote holds a vector.

@@ -360,7 +360,7 @@ impl Lexer<'_> {
 
     /// The code of the escape whose `\` is at `escape`, the byte after it current, as
     /// `QCC_PR_LexEscapedCodepoint` reads it (FTEF-13.11), in a string or a character
-    /// constant (FTEF-13.13) starting at `start`. An error is reported at the escape and the
+    /// constant (FTEF-13.27) starting at `start`. An error is reported at the escape and the
     /// code read so far returned.
     pub(crate) fn fte_escape(&mut self, start: usize, escape: usize) -> u32 {
         let Some(c) = self.peek(0) else {
@@ -411,7 +411,8 @@ impl Lexer<'_> {
                 }
             }
             // A `\` before CR is the byte after the CR, which should be a LF: `if (c != '\n')
-            // QCC_PR_ParseWarning(WARN_HANGINGSLASHR, "Hanging \\\\\r");` (FTEF-13.25).
+            // QCC_PR_ParseWarning(WARN_HANGINGSLASHR, "Hanging \\\\\r");` (FTEF-13.25). At
+            // the end of the input the string or character ends with no warning (FTEF-13.26).
             b'\r' => match self.peek(0) {
                 Some(next) => {
                     self.bump(1);
@@ -420,10 +421,7 @@ impl Lexer<'_> {
                     }
                     u32::from(next)
                 }
-                None => {
-                    self.error(Code::E0101, "EOF inside quote", Span::new(start, self.pos));
-                    0
-                }
+                None => 0,
             },
             _ => {
                 // `QCC_PR_ParseError (ERR_INVALIDSTRINGIMMEDIATE, "Unknown escape char %c", c);`
