@@ -36,8 +36,9 @@ jobs:
     name: Differential
     runs-on: ubuntu-latest
     # Building the oracles and FTEQCC, compiling the corpus and running every
-    # codebase twice.
-    timeout-minutes: 90
+    # codebase twice; the compiler differential alone, over the rerelease
+    # codebases and the corpus mods, takes most of an hour.
+    timeout-minutes: 150
     permissions:
       contents: read
     defaults:

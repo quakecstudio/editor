@@ -886,3 +886,56 @@ fn edict_number_converts_to_and_from_int() {
     assert_eq!(EdictNumber::new(max + 1).to_i32(), None);
     assert_eq!(EdictNumber::new(42).to_string(), "42");
 }
+
+// ---- Copies ----
+
+/// Whether two stores agree in everything the store models: the layout, the counts and every
+/// edict's free flag, `freetime` and fields.
+fn same_store(a: &EdictStore, b: &EdictStore) -> bool {
+    a.layout() == b.layout()
+        && a.num_edicts() == b.num_edicts()
+        && a.maxclients() == b.maxclients()
+        && (0..LIMIT_MAX_EDICTS).all(|n| {
+            let n = EdictNumber::new(n);
+            a.is_free(n) == b.is_free(n)
+                && a.freetime(n).map(f32::to_bits) == b.freetime(n).map(f32::to_bits)
+                && a.fields(n) == b.fields(n)
+        })
+}
+
+// No spec statement: the differential restores a store from a snapshot with `clone_from`
+// (DIFF-12.2), which must leave the copy equal to the snapshot whatever was done to it since.
+#[test]
+fn clone_from_restores_a_changed_copy() {
+    let mut snapshot = store(1);
+    let spawned = snapshot.alloc(1.0).unwrap();
+    snapshot.set_field(spawned, 7, Slot::from_f32(3.5)).unwrap();
+    let mut copy = snapshot.clone();
+    assert!(same_store(&copy, &snapshot));
+
+    let other = copy.alloc(2.0).unwrap();
+    copy.set_field(other, 9, Slot::from_i32(-4)).unwrap();
+    copy.set_field(EdictNumber::new(0), 1, Slot::from_i32(11))
+        .unwrap();
+    copy.free(spawned, 2.5);
+    assert!(!same_store(&copy, &snapshot));
+
+    copy.clone_from(&snapshot);
+    assert!(same_store(&copy, &snapshot));
+}
+
+// No spec statement: `clone_from` from a store of another layout and client count takes that
+// layout, its field count included.
+#[test]
+fn clone_from_takes_another_layout() {
+    let mut wide = EdictStore::new(EdictLayout::new(200, GLOBALS_128).unwrap(), 4).unwrap();
+    wide.set_field(EdictNumber::new(3), 150, Slot::from_i32(8))
+        .unwrap();
+    let mut narrow = store(1);
+    narrow.clone_from(&wide);
+    assert!(same_store(&narrow, &wide));
+    assert_eq!(
+        narrow.field(EdictNumber::new(3), 150),
+        Some(Slot::from_i32(8))
+    );
+}

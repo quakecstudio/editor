@@ -40,7 +40,7 @@ pub struct GlobalAccessError {
 /// call to the next; only the runaway counter and the exit depth belong to one call (VM-2.3,
 /// VM-18.1). The current function, statement and `pr_argc` are the ones id keeps in
 /// `pr_xfunction`, `pr_xstatement` and `pr_argc`.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Machine {
     /// Every global slot, slots 0 to `numglobals - 1` (PROGS-12). id's `pr_globals`.
     pub(crate) globals: Vec<Slot>,
@@ -63,6 +63,49 @@ pub struct Machine {
     /// and cleared at the start of each run (VM-2.3). This VM traces every statement through
     /// its own hook, so the flag changes nothing observable (DIFF-6.7).
     pub(crate) trace_flag: bool,
+}
+
+// Written out so that `clone_from` copies into the machine's own allocations: the compiler
+// differential restores a machine from a snapshot before every call (DIFF-12.2).
+impl Clone for Machine {
+    fn clone(&self) -> Self {
+        let mut machine = Self {
+            globals: Vec::new(),
+            edicts: self.edicts.clone(),
+            stack: Vec::new(),
+            localstack: Vec::new(),
+            localstack_used: 0,
+            xfunction: 0,
+            xstatement: 0,
+            argc: 0,
+            trace_flag: false,
+        };
+        machine.clone_from(self);
+        machine
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        let Self {
+            globals,
+            edicts,
+            stack,
+            localstack,
+            localstack_used,
+            xfunction,
+            xstatement,
+            argc,
+            trace_flag,
+        } = source;
+        self.globals.clone_from(globals);
+        self.edicts.clone_from(edicts);
+        self.stack.clone_from(stack);
+        self.localstack.clone_from(localstack);
+        self.localstack_used = *localstack_used;
+        self.xfunction = *xfunction;
+        self.xstatement = *xstatement;
+        self.argc = *argc;
+        self.trace_flag = *trace_flag;
+    }
 }
 
 impl Machine {

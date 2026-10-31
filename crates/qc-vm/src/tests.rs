@@ -23,6 +23,7 @@ mod vectors;
 use qc_progs::Progs;
 
 use crate::exec::{Builtins, Context, NoBuiltins, NoObserver, ServerState};
+use crate::machine::Frame;
 use crate::{Machine, RunError};
 
 // spec VM-1.1: the machine state persists between runs; a fresh machine has empty stacks.
@@ -41,6 +42,57 @@ fn new_machine_has_empty_stacks() {
     let machine = Machine::new(&progs, 0).unwrap();
     assert_eq!(machine.depth(), 0);
     assert_eq!(machine.localstack_used(), 0);
+}
+
+/// A machine for a progs of one `DONE` statement and `numglobals` globals.
+fn machine_with_globals(numglobals: usize) -> Machine {
+    let bytes = harness::ProgsBuilder::default()
+        .statements(&[harness::Stmt::op("DONE", 0, 0, 0)])
+        .numglobals(numglobals)
+        .build();
+    let progs = Progs::read_with(
+        &bytes,
+        &qc_progs::ReadOptions {
+            check_header_crc: false,
+        },
+    )
+    .unwrap();
+    Machine::new(&progs, 1).unwrap()
+}
+
+// No spec statement: the differential restores a machine from a snapshot with `clone_from`
+// (DIFF-12.2), which must leave every part of it equal to the snapshot's, the globals, the
+// edicts, the stacks and the run state, whatever was done to it since.
+#[test]
+fn clone_from_restores_a_changed_machine() {
+    let mut snapshot = machine_with_globals(128);
+    snapshot.set_global(100, Slot::from_i32(5)).unwrap();
+    let mut copy = snapshot.clone();
+    assert_eq!(format!("{copy:?}"), format!("{snapshot:?}"));
+
+    copy.set_global(101, Slot::from_i32(6)).unwrap();
+    let spawned = copy.edicts_mut().alloc(1.0).unwrap();
+    copy.edicts_mut()
+        .set_field(spawned, 2, Slot::from_i32(7))
+        .unwrap();
+    copy.stack.push(Frame {
+        statement: 9,
+        function: 1,
+    });
+    copy.localstack[3] = Slot::from_i32(8);
+    copy.localstack_used = 4;
+    copy.xfunction = 1;
+    copy.xstatement = 2;
+    copy.argc = 3;
+    copy.trace_flag = true;
+    assert_ne!(format!("{copy:?}"), format!("{snapshot:?}"));
+
+    copy.clone_from(&snapshot);
+    assert_eq!(format!("{copy:?}"), format!("{snapshot:?}"));
+
+    let mut other = machine_with_globals(300);
+    other.clone_from(&snapshot);
+    assert_eq!(format!("{other:?}"), format!("{snapshot:?}"));
 }
 
 // spec VM-1.2: execution never writes the statements or functions tables (the progs is read
