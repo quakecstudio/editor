@@ -490,3 +490,33 @@ fn a_state_header_error_is_reported_once() {
         assert_eq!(found, [(at, "not a name".to_owned())], "{source}");
     }
 }
+
+// spec QCD-1.5: a case label its error stops short is skipped to its `:`, so the statement after
+// it does not start inside it and report the place again (the parser fuzz target's find)
+#[test]
+fn a_case_label_error_is_reported_once() {
+    let at = |source: &str| -> Vec<(usize, String)> {
+        crate::parse_with(source.as_bytes(), Dialect::Fteqcc)
+            .diagnostics()
+            .iter()
+            .map(|d| (d.span.start, d.message.clone()))
+            .collect()
+    };
+    assert_eq!(
+        at("void() f = { switch (x) { case] } };"),
+        [(30, "\"]\" - not a name".to_owned())]
+    );
+    assert_eq!(
+        at("void() f = { switch (x) { case ]; } };"),
+        [(31, "\"]\" - not a name".to_owned())]
+    );
+    assert_eq!(
+        at("void() f = { switch (x) { case 1] } };"),
+        [(32, "expected :, found ]".to_owned())]
+    );
+    // The label after a broken one is read as a label.
+    assert_eq!(
+        at("void() f = { switch (x) { case 1 2 case 3: break; } };"),
+        [(33, "expected :, found 2".to_owned())]
+    );
+}

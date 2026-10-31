@@ -2656,7 +2656,16 @@ impl<'a> Parser<'a> {
                 self.expression();
             }
         }
-        self.expect(K::Colon, ":");
+        if !self.expect(K::Colon, ":") {
+            // QCD-1.5: the rest of a label that went wrong, up to its `:`, so the statement
+            // after it does not start inside it and report it again.
+            self.skip_into_error(|parser| match parser.current().map(|t| t.kind) {
+                Some(K::LBrace | K::RBrace) | None => Skip::Stop,
+                _ if parser.at_case_label() => Skip::Stop,
+                Some(K::Colon | K::Semicolon) => Skip::TakeAndStop,
+                Some(_) => Skip::Take,
+            });
+        }
         self.finish_node();
     }
 
