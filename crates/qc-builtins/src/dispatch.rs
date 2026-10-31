@@ -1075,6 +1075,9 @@ impl printf::Args for ParmArgs<'_, '_, '_, '_> {
     }
 }
 
+/// vkQuake's `STRINGTEMP_LENGTH`, a temporary string's buffer, its terminator included.
+const VKQUAKE_STRINGTEMP_LENGTH: usize = 1024;
+
 /// The cvars vkQuake registers with `CVAR_SERVERINFO` (`Quake/host.c`), which `forceinfokey`
 /// on the world sets (BUILTIN-18.4).
 const VKQUAKE_SERVERINFO_CVARS: [&str; 4] = ["fraglimit", "timelimit", "teamplay", "noexit"];
@@ -1095,6 +1098,7 @@ impl MockBuiltins {
             118 => Some(self.b_strzone(context)),
             119 => Some(self.b_strunzone(context)),
             213 => Some(self.b_forceinfokey(context)),
+            448 => Some(self.b_cvar_string(context)),
             478 => Some(self.b_strftime(context)),
             627 => Some(self.b_sprintf(context)),
             232 => Some(read_parm(context, 2).map(|_| ())),
@@ -1140,6 +1144,26 @@ impl MockBuiltins {
             printf::sprintf(&format, 1, &mut args)?
         };
         let value = self.engine.strings.make(text);
+        write_return_string(context, value)
+    }
+
+    /// `cvar_string(name)`, vkQuake's `PF_cvar_string` (BUILTIN-18.11): a new string holding
+    /// the setting's text, the game's directory for `game`, and 0 for any other name.
+    fn b_cvar_string(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let name = read_parm_string(context, &self.engine, 0)?;
+        let name = String::from_utf8_lossy(&name);
+        let text = match self.engine.cvars.text(&name) {
+            Some(text) => Some(text.as_bytes().to_vec()),
+            None if name == "game" => Some(b"id1".to_vec()),
+            None => None,
+        };
+        let value = match text {
+            Some(mut text) => {
+                text.truncate(VKQUAKE_STRINGTEMP_LENGTH.saturating_sub(1));
+                self.engine.strings.make(text)
+            }
+            None => 0,
+        };
         write_return_string(context, value)
     }
 

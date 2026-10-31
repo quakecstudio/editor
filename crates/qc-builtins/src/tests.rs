@@ -2043,6 +2043,24 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.11: cvar_string is a setting's text, `id1` for game, and 0 for an unknown
+    // name
+    #[test]
+    fn cvar_string_reads_a_setting() {
+        let (strings, offsets) = string_table(&["skill", "game", "nothing"]);
+        for (name, expected) in [(0, Some(&b"1"[..])), (1, Some(&b"id1"[..])), (2, None)] {
+            let mut f = Fixture::new(448, 1, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, offsets[name]);
+            f.run_ok(ServerState::Active);
+            let value = f.return_i();
+            match expected {
+                Some(text) => assert_eq!(f.engine().strings.text(value), Some(text)),
+                None => assert_eq!(value, 0),
+            }
+        }
+    }
+
     // spec BUILTIN-18.10: fopen opens nothing in any mode, after reading its name as a string
     #[test]
     fn fopen_opens_nothing() {

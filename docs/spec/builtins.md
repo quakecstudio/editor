@@ -850,6 +850,10 @@ profile (DIFF-12.19); everything else runs under id's.
   read is not there, as in a game directory without it, and one to write or append is not
   made, where vkQuake would create it. A file is no input the two progs could share, so the
   mock keeps none.
+- **BUILTIN-18.11** `cvar_string(name)` (#448) is `PF_cvar_string`: for a known setting a new
+  temporary string holding its text (`var->string` for server QuakeC), cut to 1023 bytes; for
+  `game`, when no setting has the name, the game's directory names (`COM_GetGameNames`), which
+  for the mock's game is `id1`; for any other name 0, the null string.
 
 ## Test vectors
 
