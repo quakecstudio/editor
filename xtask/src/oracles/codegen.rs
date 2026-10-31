@@ -70,7 +70,7 @@ pub(crate) fn compile_codebase(
     }
     for (index, file) in module.graph.files.iter().enumerate() {
         let text = fs::read(&file.path).map_err(|e| format!("{}: {e}", file.path.display()))?;
-        db.set_file(FileId(index), file.path.clone(), text);
+        db.set_file(FileId::new(index), file.path.clone(), text);
     }
     let base = module.src.parent().unwrap_or(dir).to_path_buf();
     let names: Vec<String> = module
@@ -89,7 +89,7 @@ pub(crate) fn compile_codebase(
     compile_module(
         &mut db,
         &input,
-        |id| names.get(id.0).cloned().unwrap_or_default(),
+        |id| names.get(id.index()).cloned().unwrap_or_default(),
         options,
     )
     .map_err(|e| describe(&db, &e))
@@ -298,15 +298,19 @@ pub(crate) fn ours(case: &Case) -> Ours {
     let mut db = Db::new();
     let mut input = ModuleInput::default();
     for (index, (name, text)) in files.iter().enumerate() {
-        db.set_file(FileId(index), PathBuf::from(name), text.as_bytes().to_vec());
-        input.compiled.push(FileId(index));
+        db.set_file(
+            FileId::new(index),
+            PathBuf::from(name),
+            text.as_bytes().to_vec(),
+        );
+        input.compiled.push(FileId::new(index));
     }
     let result = compile_module(
         &mut db,
         &input,
         |id| {
             files
-                .get(id.0)
+                .get(id.index())
                 .map(|(n, _)| (*n).to_owned())
                 .unwrap_or_default()
         },

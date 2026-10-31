@@ -22,11 +22,15 @@ fn module(files: &[(&str, &str)], compiled: &[&str], dialect: Dialect) -> (Db, M
     db.set_dialect(dialect);
     let mut input = ModuleInput::default();
     for (index, (name, text)) in files.iter().enumerate() {
-        db.set_file(FileId(index), PathBuf::from(name), text.as_bytes().to_vec());
+        db.set_file(
+            FileId::new(index),
+            PathBuf::from(name),
+            text.as_bytes().to_vec(),
+        );
     }
     for name in compiled {
         let index = files.iter().position(|(n, _)| n == name).unwrap();
-        input.compiled.push(FileId(index));
+        input.compiled.push(FileId::new(index));
     }
     (db, input)
 }
@@ -58,16 +62,21 @@ fn a_macro_used_as_a_statement_resolves_at_the_use() {
     let uses: Vec<_> = index
         .refs
         .iter()
-        .filter(|r| r.def.0 == coop)
+        .filter(|r| r.def.index() == coop)
         .map(|r| r.location)
         .collect();
     assert_eq!(uses.len(), 1);
-    assert_eq!(uses[0].file, FileId(1));
+    assert_eq!(uses[0].file, FileId::new(1));
     assert_eq!(text_at(&db, uses[0]), "INHIBIT_COOP");
     // An ordinary token is at its own span.
     let x = index.defs.iter().position(|d| d.name == "x").unwrap();
-    let x_use = index.refs.iter().find(|r| r.def.0 == x).unwrap().location;
-    assert_eq!(x_use.file, FileId(1));
+    let x_use = index
+        .refs
+        .iter()
+        .find(|r| r.def.index() == x)
+        .unwrap()
+        .location;
+    assert_eq!(x_use.file, FileId::new(1));
     assert_eq!(x_use.span.start, USES.find("x = 1").unwrap());
     assert_eq!(text_at(&db, x_use), "x");
 }
@@ -85,12 +94,12 @@ fn the_files_as_written_do_not_resolve() {
     assert!(!c.iter().any(|code| code.is_error()), "{c:?}");
     // As written, uses.qc calls `INHIBIT_COOP`, which only the macro defines, so resolving
     // the files without the preprocessor reports the name as unknown.
-    let ids = [FileId(0), FileId(1)];
+    let ids = [FileId::new(0), FileId::new(1)];
     let index = db.module_index(&ids);
     let unknown: Vec<String> = index
         .diagnostics
         .iter()
-        .filter(|d| d.diagnostic.code.is_error() && d.file == FileId(1))
+        .filter(|d| d.diagnostic.code.is_error() && d.file == FileId::new(1))
         .map(|d| d.diagnostic.message.clone())
         .collect();
     assert!(
@@ -117,7 +126,7 @@ fn a_diagnostic_from_a_macro_body_is_at_the_use() {
         file: unknown[0].file,
         span: unknown[0].diagnostic.span,
     };
-    assert_eq!(at.file, FileId(1));
+    assert_eq!(at.file, FileId::new(1));
     assert_eq!(text_at(&db, at), "BAD");
 }
 
@@ -136,7 +145,7 @@ fn a_parse_error_is_at_its_source_span() {
     assert!(!errors.is_empty());
     let source = files[0].1;
     for d in errors {
-        assert_eq!(d.file, FileId(0));
+        assert_eq!(d.file, FileId::new(0));
         assert!(d.diagnostic.span.start >= source.find("a = ;").unwrap());
         assert!(d.diagnostic.span.end <= source.len());
     }
@@ -162,7 +171,7 @@ fn an_included_definition_is_in_the_included_file() {
         .iter()
         .find(|d| d.name == "common")
         .unwrap();
-    assert_eq!(common.location.file, FileId(1));
+    assert_eq!(common.location.file, FileId::new(1));
     assert_eq!(text_at(&db, common.location), "common");
 }
 
@@ -178,7 +187,7 @@ fn an_include_the_database_lacks_is_an_error() {
         .iter()
         .find(|d| d.diagnostic.code == Code::E0111)
         .unwrap();
-    assert_eq!(d.file, FileId(0));
+    assert_eq!(d.file, FileId::new(0));
     assert_eq!(d.diagnostic.span.start, 0);
 }
 
@@ -212,7 +221,7 @@ fn a_vanilla_include_is_found_in_the_include_directories() {
         .iter()
         .find(|d| d.name == "common")
         .unwrap();
-    assert_eq!(common.location.file, FileId(1));
+    assert_eq!(common.location.file, FileId::new(1));
     assert!(analysis.index.defs.iter().all(|d| d.name != "other"));
 }
 
@@ -221,22 +230,30 @@ fn a_vanilla_include_is_found_in_the_include_directories() {
 #[test]
 fn a_compiled_file_that_cannot_be_read_is_an_error() {
     let mut db = Db::new();
-    db.set_file(FileId(0), PathBuf::from("a.qc"), b"float a;\n".to_vec());
-    db.set_file(FileId(1), PathBuf::from("b.qc"), b"float b;\n".to_vec());
+    db.set_file(
+        FileId::new(0),
+        PathBuf::from("a.qc"),
+        b"float a;\n".to_vec(),
+    );
+    db.set_file(
+        FileId::new(1),
+        PathBuf::from("b.qc"),
+        b"float b;\n".to_vec(),
+    );
     // File 2 has no path, so it cannot be read.
     let input = ModuleInput {
         prelude: Vec::new(),
-        compiled: vec![FileId(0), FileId(2), FileId(1)],
+        compiled: vec![FileId::new(0), FileId::new(2), FileId::new(1)],
         ..ModuleInput::default()
     };
     assert_eq!(
-        db.file_path(FileId(1)),
+        db.file_path(FileId::new(1)),
         Some(PathBuf::from("b.qc").as_path())
     );
-    assert_eq!(db.file_path(FileId(2)), None);
+    assert_eq!(db.file_path(FileId::new(2)), None);
     let analysis = db.analyze_module(&input);
     assert_eq!(codes(&analysis), [Code::E0402]);
-    assert_eq!(analysis.syntax[0].file, FileId(2));
+    assert_eq!(analysis.syntax[0].file, FileId::new(2));
     let names: Vec<_> = analysis
         .index
         .defs
@@ -275,7 +292,7 @@ fn the_prelude_defines_macros_and_is_not_compiled() {
         ("a.qc", "#ifdef FLAG\nfloat seen;\n#endif\n"),
     ];
     let (mut db, mut input) = module(&files, &["a.qc"], Dialect::Fteqcc);
-    input.prelude.push(FileId(0));
+    input.prelude.push(FileId::new(0));
     let analysis = db.analyze_module(&input);
     let names: Vec<_> = analysis
         .index
@@ -302,7 +319,7 @@ fn the_prelude_passes_over_a_script_line() {
         };
         let (mut db, mut input) = module(&files, compiled, Dialect::Fteqcc);
         if prelude {
-            input.prelude.push(FileId(0));
+            input.prelude.push(FileId::new(0));
         }
         let analysis = db.analyze_module(&input);
         analysis.index.defs.iter().any(|d| d.name == "seen")
@@ -345,7 +362,11 @@ fn editing_a_macro_reparses_only_its_users() {
     let (mut db, input) = seeded();
     let before = db.counts();
     let edited = DEFS.replace("if (coop) return;", "if (coop) { return; }");
-    db.set_file(FileId(0), PathBuf::from("defs.qc"), edited.into_bytes());
+    db.set_file(
+        FileId::new(0),
+        PathBuf::from("defs.qc"),
+        edited.into_bytes(),
+    );
     let analysis = db.analyze_module(&input);
     let after = db.counts();
     assert!(codes(&analysis).is_empty(), "{:?}", codes(&analysis));
@@ -361,7 +382,11 @@ fn editing_a_plain_file_reparses_only_it() {
     let (mut db, input) = seeded();
     let before = db.counts();
     let edited = OTHER.replace("x = 2", "x = 3");
-    db.set_file(FileId(2), PathBuf::from("other.qc"), edited.into_bytes());
+    db.set_file(
+        FileId::new(2),
+        PathBuf::from("other.qc"),
+        edited.into_bytes(),
+    );
     db.analyze_module(&input);
     let after = db.counts();
     assert_eq!(after.parse - before.parse, 1);
@@ -406,8 +431,8 @@ fn a_profile_change_reanalyses() {
 // through the token it ends in when both are in one file, and to nothing before any token.
 #[test]
 fn origin_maps_locate_spans() {
-    let a = FileId(0);
-    let b = FileId(1);
+    let a = FileId::new(0);
+    let b = FileId::new(1);
     let map = OriginMap::from_origins(vec![
         (
             2,
@@ -447,7 +472,7 @@ fn origin_maps_locate_spans() {
 // before the macro's own tokens) keeps the first token's origin.
 #[test]
 fn origin_maps_keep_the_first_origin_out_of_order() {
-    let a = FileId(0);
+    let a = FileId::new(0);
     let map = OriginMap::from_origins(vec![
         (
             0,
@@ -489,15 +514,15 @@ fn module_input_from_a_graph() {
         ..FileGraph::default()
     };
     let input = ModuleInput::from_graph(&graph);
-    assert_eq!(input.prelude, [FileId(0)]);
-    assert_eq!(input.compiled, [FileId(1), FileId(3)]);
+    assert_eq!(input.prelude, [FileId::new(0)]);
+    assert_eq!(input.compiled, [FileId::new(1), FileId::new(3)]);
     graph.form = Some(Form::List);
     graph.files = vec![file("defs.qc", Via::Listed), file("world.qc", Via::Listed)];
     let input = ModuleInput::from_graph(&graph);
     assert!(input.prelude.is_empty());
-    assert_eq!(input.compiled, [FileId(0), FileId(1)]);
+    assert_eq!(input.compiled, [FileId::new(0), FileId::new(1)]);
     graph.files = vec![file("main.qc", Via::Root)];
-    assert_eq!(ModuleInput::from_graph(&graph).compiled, [FileId(0)]);
+    assert_eq!(ModuleInput::from_graph(&graph).compiled, [FileId::new(0)]);
     let module = qc_project::Module {
         name: "progs".to_owned(),
         kind: qc_project::ModuleKind::Ssqc,
@@ -511,7 +536,7 @@ fn module_input_from_a_graph() {
     };
     let input = ModuleInput::from_module(&module);
     assert_eq!(input.include_dirs, [PathBuf::from("lib")]);
-    assert_eq!(input.compiled, [FileId(0)]);
+    assert_eq!(input.compiled, [FileId::new(0)]);
 }
 
 // spec PRJ-5.4: a module's defines are defined before its first file, in both dialects and in
@@ -584,11 +609,11 @@ fn rendered(text: &str, dialect: Dialect) -> String {
     let path = PathBuf::from("a.qc");
     let files = Files {
         texts: HashMap::from([(path.clone(), text.as_bytes())]),
-        ids: HashMap::from([(path.clone(), FileId(0))]),
-        paths: HashMap::from([(FileId(0), path)]),
+        ids: HashMap::from([(path.clone(), FileId::new(0))]),
+        paths: HashMap::from([(FileId::new(0), path)]),
     };
     let input = ModuleInput {
-        compiled: vec![FileId(0)],
+        compiled: vec![FileId::new(0)],
         ..ModuleInput::default()
     };
     let out = preprocess(&files, &input, dialect, false);
@@ -662,17 +687,17 @@ fn rendering_keeps_a_macro_body_s_spacing() {
 fn the_expansion_s_declarations_are_kept() {
     let files = [("a.qc", "#define D float x;\nD\n")];
     let (mut db, input) = module(&files, &["a.qc"], Dialect::Fteqcc);
-    assert!(db.expanded_decls(FileId(0)).is_none());
+    assert!(db.expanded_decls(FileId::new(0)).is_none());
     db.analyze_module(&input);
     let names: Vec<_> = db
-        .expanded_decls(FileId(0))
+        .expanded_decls(FileId::new(0))
         .unwrap()
         .decls
         .iter()
         .map(|decl| decl.name.clone())
         .collect();
     assert_eq!(names, ["x"]);
-    assert!(db.expanded_decls(FileId(1)).is_none());
+    assert!(db.expanded_decls(FileId::new(1)).is_none());
 }
 
 // spec QC-9.16: a builtin initialiser or a label a macro makes reads as the same text written
@@ -688,7 +713,7 @@ fn rules_on_touching_tokens_read_a_macro_s_tokens_as_written() {
             .decls
             .into_iter()
             .find(|decl| decl.name == "f")
-            .and_then(|decl| decl.literal)
+            .and_then(|decl| decl.literal().cloned())
             .and_then(|literal| literal.builtin_function("f"))
             .map(|function| (function.number, function.name));
         (errors, function)
@@ -912,7 +937,7 @@ fn an_indented_hash_on_an_included_file_s_first_line_is_code() {
         .collect();
     assert_eq!(
         found.first(),
-        Some(&(Code::E0203, FileId(1), "#".to_owned())),
+        Some(&(Code::E0203, FileId::new(1), "#".to_owned())),
         "{found:?}"
     );
 }
@@ -932,7 +957,7 @@ fn an_expansion_is_parsed_with_the_lexer_s_flags() {
     assert!(!db.analyze_module(&input).syntax.is_empty());
     // The same rendered text under other flags is parsed again, not served from the cache.
     db.set_file(
-        FileId(0),
+        FileId::new(0),
         PathBuf::from("t.qc"),
         format!("#pragma flag enable qccx\n{plain}").into_bytes(),
     );

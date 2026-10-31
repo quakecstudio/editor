@@ -114,7 +114,7 @@ fn element_records(
     (name, ty, ofs): (&str, &ValueType, u32),
 ) -> Result<(), Internal> {
     let shape = match ty {
-        ValueType::Of(t) => index.structs.get(t),
+        ValueType::Of(t) => index.struct_shape(t),
         ValueType::FloatField => None,
     };
     let type_bits = if shape.is_some() {
@@ -221,7 +221,7 @@ pub(crate) fn progs(
         }
         if records == Records::Fteqcc
             && let ValueType::Of(t) = &def.ty
-            && let Some(shape) = index.structs.get(t)
+            && let Some(shape) = index.struct_shape(t)
         {
             member_records(&mut global_defs, &mut program, &def.name, shape, def.ofs)?;
             continue;

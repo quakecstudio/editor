@@ -14,7 +14,7 @@ use crate::db::Db;
 use crate::expand::ModuleInput;
 use crate::symbol::FileId;
 
-const FILE: FileId = FileId(0);
+const FILE: FileId = FileId::new(0);
 
 const DEFS: &str = "struct t { float f; vector v; }; struct q { float f; __int8 b; __int8 c; \
                     __uint16 h; }; struct s { int a : 3; int b : 5; };\nt *pt; t st; q *pq; s \

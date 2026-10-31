@@ -312,21 +312,21 @@ impl Program {
         // by which its layout is found.
         let written = &definition.ty;
         let ty = ty.unwrap_or_else(|| {
-            ValueType::Of(match index.aliases.get(written) {
-                Some(alias) if !index.structs.contains_key(written) => alias.clone(),
+            ValueType::Of(match index.alias(written) {
+                Some(alias) if !index.struct_shape(written).is_some() => alias.clone(),
                 _ => written.clone(),
             })
         });
         let ofs = self.next_global()?;
         let place = self.defs.len();
-        let count = index.arrays.get(&id).copied();
+        let count = index.array_len(id);
         self.defs.push(Def {
             name: definition.name.clone(),
             ty: ty.clone(),
             ofs,
             scope: definition.owner,
             initialized: false,
-            constant: index.constants.contains(&id),
+            constant: index.is_constant(id),
             count,
             id: Some(id),
         });
@@ -565,7 +565,9 @@ impl Program {
 /// The words a value of `ty` takes: a struct's layout's (FTE-14.5), else `type_size`.
 pub(crate) fn type_words(index: &ModuleIndex, ty: &ValueType) -> u32 {
     match ty {
-        ValueType::Of(t) => index.structs.get(t).map_or_else(|| ty.words(), |s| s.words),
+        ValueType::Of(t) => index
+            .struct_shape(t)
+            .map_or_else(|| ty.words(), |s| s.words),
         ValueType::FloatField => ty.words(),
     }
 }
@@ -585,15 +587,13 @@ pub(crate) fn component(index: &ModuleIndex, vector: DefId, suffix: &str) -> Opt
     // QC-11.7: the components are made at the vector's name, so a local vector's are its own,
     // not a global's of the same names, such as a field `velocity`'s `velocity_z`.
     let made_with = index
-        .defs
-        .iter()
-        .position(|d| named(&d) && d.location == base.location && d.owner == base.owner);
+        .definitions()
+        .find(|(_, d)| named(d) && d.location == base.location && d.owner == base.owner);
     made_with
         .or_else(|| {
             index
-                .defs
-                .iter()
-                .position(|d| named(&d) && (d.owner.is_none() || d.owner == base.owner))
+                .definitions()
+                .find(|(_, d)| named(d) && (d.owner.is_none() || d.owner == base.owner))
         })
-        .map(DefId)
+        .map(|(id, _)| id)
 }

@@ -136,8 +136,7 @@ impl Compiler<'_> {
         };
         let member = self
             .index
-            .structs
-            .get(ty)?
+            .struct_shape(ty)?
             .members
             .iter()
             .find(|m| m.name == name)?;
@@ -853,7 +852,7 @@ impl Compiler<'_> {
         let ValueType::Of(t) = ty else {
             return Ok(false);
         };
-        let Some(shape) = self.index.structs.get(t) else {
+        let Some(shape) = self.index.struct_shape(t) else {
             return Ok(false);
         };
         let mut w = 0;
@@ -912,7 +911,7 @@ impl Compiler<'_> {
     ) -> Lowered<()> {
         let span = item.span();
         if let ValueType::Of(t) = ty
-            && let Some(shape) = self.index.structs.get(t).cloned()
+            && let Some(shape) = self.index.struct_shape(t).cloned()
         {
             let aggregate = ast::AggregateInit::cast(item.clone()).at(span)?;
             if aggregate.syntax().children().count() > shape.members.len() {

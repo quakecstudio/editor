@@ -232,7 +232,7 @@ impl<'a> Compiler<'a> {
             program: Program::new(),
             precaches: Precaches::default(),
             errors: Vec::new(),
-            file: FileId(0),
+            file: FileId::new(0),
             s_file: 0,
             scope: None,
             locals_end: 0,
@@ -457,7 +457,7 @@ impl<'a> Compiler<'a> {
                     } else if let Some(literal) = literal_of(&expr, self.dialect) {
                         self.program.initialise(place, &literal).at(span)?;
                     } else {
-                        let value = self.index.initial_values.get(&id).at(span)?;
+                        let value = self.index.initial_value(id).at(span)?;
                         self.program
                             .initialise_words(place, value.words())
                             .at(span)?;
@@ -524,7 +524,7 @@ impl<'a> Compiler<'a> {
                 .at(item.span())?;
             let place = self.declare(&name)?;
             let id = self.def_of(&name)?;
-            let value = self.index.initial_values.get(&id).at(name.span())?;
+            let value = self.index.initial_value(id).at(name.span())?;
             self.program
                 .initialise_words(place, value.words())
                 .at(name.span())?;
@@ -1314,9 +1314,9 @@ impl<'a> Compiler<'a> {
         self.program.def(place).is_some_and(|def| {
             def.initialized
                 && def.count.is_none()
-                && def.id.map_or(def.name == "IMMEDIATE", |id| {
-                    self.index.constants.contains(&id)
-                })
+                && def
+                    .id
+                    .map_or(def.name == "IMMEDIATE", |id| self.index.is_constant(id))
         })
     }
 
@@ -1766,7 +1766,7 @@ impl<'a> Compiler<'a> {
         let value = self.expr(&cast.operand().at(span)?)?;
         let target = self
             .scope
-            .and_then(|function| self.index.bodies.get(&function))
+            .and_then(|function| self.index.body(function))
             .and_then(|body| body.type_at(span))
             .cloned()
             .map(ValueType::Of)

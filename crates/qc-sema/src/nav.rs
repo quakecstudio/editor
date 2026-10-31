@@ -36,7 +36,7 @@ impl ModuleIndex {
             .iter()
             .enumerate()
             .find(|(_, d)| d.location.file == file && d.location.span.covers(offset))
-            .map(|(index, d)| (DefId(index), d.location))
+            .map(|(index, d)| (DefId::new(index), d.location))
     }
 
     /// Every reference to definition `def`, in source order (find-references).

@@ -89,7 +89,7 @@ fn resolve(spec: &ModuleSpec<'_>) -> ModuleIndex {
         .iter()
         .enumerate()
         .map(|(index, text)| {
-            let id = FileId(index);
+            let id = FileId::new(index);
             db.set_file_text(id, text.as_bytes().to_vec());
             id
         })

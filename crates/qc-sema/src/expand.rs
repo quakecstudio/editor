@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::path::{Path, PathBuf};
 
-use qc_diag::{Code, Diagnostic, Span};
+use qc_diag::{Code, Span};
 use qc_lexer::TokenKind;
 use qc_preproc::{CommandLine, FileSpan, Loader, PpToken, Preprocessor, WarningSettings};
 use qc_project::{FileGraph, Form, Module, Via};
@@ -70,7 +70,7 @@ impl ModuleInput {
             ..Self::default()
         };
         for (index, file) in graph.files.iter().enumerate() {
-            let id = FileId(index);
+            let id = FileId::new(index);
             match file.via {
                 Via::Include => continue,
                 Via::Root if graph.form == Some(Form::Source) => input.prelude.push(id),
@@ -110,6 +110,13 @@ pub struct OriginMap {
 }
 
 impl OriginMap {
+    /// [`Self::locate`] of `span`, or `span` in `file` itself, the rendered file, when it has
+    /// no origin.
+    #[must_use]
+    pub fn locate_or(&self, file: FileId, span: Span) -> Location {
+        self.locate(span).unwrap_or(Location { file, span })
+    }
+
     /// The source location of the span `span` of the rendered text (QC-9.7): from the origin
     /// of the token it starts in to the end of the origin of the token it ends in, when the
     /// two are in the same file and in order, and otherwise the first token's origin alone.
@@ -361,20 +368,21 @@ fn run<L: Loader>(
                 };
                 output.map_err(|err| format!("{}: {err}", path.display()))
             }
-            None => Err(format!("file {} has no path", id.0)),
+            None => Err(format!("file {} has no path", id.index())),
         };
         let output = match read {
             Ok(output) => output,
             Err(err) => {
                 // QCD-5.2: a listed file that cannot be read (QC-23.5).
-                out.diagnostics.push(FileDiagnostic {
+                let location = Location {
                     file: *id,
-                    diagnostic: Diagnostic {
-                        code: Code::E0402,
-                        message: format!("Error opening {err}"),
-                        span: Span::new(0, 0),
-                    },
-                });
+                    span: Span::new(0, 0),
+                };
+                out.diagnostics.push(FileDiagnostic::new(
+                    Code::E0402,
+                    location,
+                    format!("Error opening {err}"),
+                ));
                 if compiled {
                     out.files.push(Rendered::default());
                 }
@@ -391,14 +399,8 @@ fn run<L: Loader>(
             let Some(location) = source_location(pp, files, d.span) else {
                 continue;
             };
-            out.diagnostics.push(FileDiagnostic {
-                file: location.file,
-                diagnostic: Diagnostic {
-                    code: d.code,
-                    message: d.message,
-                    span: location.span,
-                },
-            });
+            out.diagnostics
+                .push(FileDiagnostic::new(d.code, location, d.message));
         }
         let mut rendered = render(pp, files, &output.tokens);
         let offset_of = |rendered: &Rendered, token: usize| {

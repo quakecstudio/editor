@@ -14,7 +14,7 @@ use qc_diag::Code;
 use qc_syntax::Keyword;
 use std::collections::{HashMap, HashSet};
 
-use crate::resolve::{Found, Resolver, Scope, component_type, is_intrinsic};
+use crate::resolve::{Found, Resolver, Scope, is_intrinsic};
 use crate::symbol::{DefId, DefKind, Definition};
 use crate::ty::Type;
 
@@ -28,7 +28,7 @@ impl Resolver<'_> {
             !self.profile.qualifiers()
                 || self
                     .facts
-                    .get(def.0)
+                    .get(def.index())
                     .and_then(|f| f.statics)
                     .is_none_or(|unit| unit == self.unit)
         })
@@ -40,7 +40,7 @@ impl Resolver<'_> {
         self.globals.get(name).is_some_and(|defs| {
             defs.iter().any(|def| {
                 self.facts
-                    .get(def.0)
+                    .get(def.index())
                     .and_then(|f| f.statics)
                     .is_some_and(|unit| unit != self.unit)
             })
@@ -108,9 +108,7 @@ impl Resolver<'_> {
             .index
             .def(before)
             .zip(self.index.def(def))
-            .is_some_and(|(b, d)| {
-                b.name == format!("{}_x", d.name) && component_type(&d.ty).is_some()
-            });
+            .is_some_and(|(b, d)| b.name == format!("{}_x", d.name) && d.ty.component().is_some());
         !x_component
     }
 
@@ -123,10 +121,7 @@ impl Resolver<'_> {
         name: &str,
         type_ok: bool,
     ) -> Found {
-        let def = match scope {
-            Some(scope) => self.lookup_in_scope(scope, name),
-            None => self.lookup_used_global(name),
-        };
+        let def = self.lookup(scope, name);
         if let Some(def) = def {
             // FTEF-19.38: a type's name is no value; `QCC_PR_ParseValue` finds no definition by
             // it.
@@ -257,7 +252,7 @@ impl Resolver<'_> {
                         && self.in_scope_at(*index, scope.at)
                         && (!statics_only || self.facts.get(*index).is_some_and(|f| f.static_local))
                 })
-                .map(|(index, _)| DefId(index))
+                .map(|(index, _)| DefId::new(index))
         };
         let mut found = newest(scope, self.index.defs.len(), false);
         let mut outer = self.enclosing.get(&scope.owner);
@@ -278,6 +273,15 @@ impl Resolver<'_> {
             && facts
                 .and_then(|f| f.scope_start)
                 .is_none_or(|start| at >= start)
+    }
+
+    /// A name as a use finds it (QC-12.2): in `scope` when it is in a function, else among the
+    /// globals.
+    pub(in crate::resolve) fn lookup(&self, scope: Option<Scope>, name: &str) -> Option<DefId> {
+        match scope {
+            Some(scope) => self.lookup_in_scope(scope, name),
+            None => self.lookup_used_global(name),
+        }
     }
 
     /// A global name as a use finds it (QC-12.2): as written, then under `-Fcaseinsens` in any

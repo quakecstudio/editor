@@ -41,7 +41,7 @@ impl<L: Loader> AnalysisHost<L> {
         let Some((state, data)) = self.module(module) else {
             return Vec::new();
         };
-        let Some(parse) = data.parses.get(file.0) else {
+        let Some(parse) = data.parses.get(file.index()) else {
             return Vec::new();
         };
         let index = &data.analysis.index;
@@ -79,7 +79,7 @@ impl<L: Loader> AnalysisHost<L> {
         };
         let mut seen: HashSet<&str> = HashSet::new();
         let mut out = Vec::new();
-        for (id, def) in index.defs.iter().enumerate() {
+        for (id, def) in index.defs().iter().enumerate() {
             if visible(id, def) && seen.insert(def.name.as_str()) {
                 out.push(Completion {
                     label: def.name.clone(),
@@ -98,7 +98,7 @@ impl<L: Loader> AnalysisHost<L> {
 fn declared_before(index: &ModuleIndex, file: FileId, offset: usize) -> Option<usize> {
     let mut first = None;
     let mut last = None;
-    for (id, def) in index.defs.iter().enumerate() {
+    for (id, def) in index.defs().iter().enumerate() {
         if def.location.file != file {
             continue;
         }

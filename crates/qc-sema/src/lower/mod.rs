@@ -17,7 +17,7 @@ mod types;
 pub use body::{RawAlias, RawBody, RawLocal, RawParam, StatePart};
 pub use decl::{
     ArrayDim, BuiltinFunction, ExternBase, LiteralValue, Qualifier, RawAggregate, RawBraces,
-    RawDecl, RawElement, RawParamInfo, RawValue, ValueKind, declares,
+    RawDecl, RawElement, RawInit, RawParamInfo, RawValue, ValueKind, declares,
 };
 pub use expr::{MemberBase, RawUse, UseKind};
 pub use types::{
@@ -31,7 +31,6 @@ use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::c_scalar::CContext;
 use qc_syntax::{CompilerFlags, Dialect, Keyword, Keywords, Parse, SyntaxKind, SyntaxNode};
 
-use crate::symbol::DefKind;
 use crate::ty::{FunctionType, Type, TypeContext};
 
 use decl::{decl_base, lower_declaration, lower_declarators};
@@ -77,12 +76,12 @@ pub struct RawAccessor {
     pub indexer: Option<Type>,
 }
 
-/// What lowering reads besides the tree: whether the dialect is FTEQCC's, the compiler flags
+/// What lowering reads besides the tree: the dialect, the compiler flags
 /// FTEQCC's lexer read the file's tokens with (FTEF-12.12) and the keywords its parser read them
 /// with (FTEF-20.1), each from the offset it holds.
 #[derive(Clone, Copy)]
 struct Cx<'a> {
-    fte: bool,
+    dialect: Dialect,
     flags: &'a [(usize, qc_syntax::CompilerFlags)],
     /// The lexer's flags, which differ from `flags` at the token after an `extern` block
     /// (FTEF-21.17).
@@ -237,7 +236,6 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
     let Some(tree) = parse.tree() else {
         return out;
     };
-    let fte = dialect.has_fteqcc_extensions();
     let tokens: Vec<usize> = tree
         .syntax()
         .tokens()
@@ -245,7 +243,7 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
         .map(|t| t.span().start)
         .collect();
     let cx = Cx {
-        fte,
+        dialect,
         flags: parse.flags(),
         lex: parse.lex_flags(),
         tokens: &tokens,
@@ -416,16 +414,4 @@ fn first_word(node: &SyntaxNode) -> String {
         .find(|t| !t.kind().is_trivia())
         .map(|t| t.text_lossless())
         .unwrap_or_default()
-}
-
-/// The kind a top-level raw declaration resolves to, from its type (QC-11.8, QC-11.9).
-#[must_use]
-pub fn top_level_kind(ty: &Type) -> DefKind {
-    if ty.is_function() {
-        DefKind::Function
-    } else if ty.is_field() {
-        DefKind::Field
-    } else {
-        DefKind::Global
-    }
 }

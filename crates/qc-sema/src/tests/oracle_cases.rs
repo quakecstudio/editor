@@ -17,12 +17,12 @@ fn messages(source: &str) -> Vec<String> {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
     db.set_file(
-        FileId(0),
+        FileId::new(0),
         PathBuf::from("t.qc"),
         format!("{source}\n").into_bytes(),
     );
     let analysis = db.analyze_module(&ModuleInput {
-        compiled: vec![FileId(0)],
+        compiled: vec![FileId::new(0)],
         command_line: CommandLine::new::<&str>(&[]),
         ..ModuleInput::default()
     });

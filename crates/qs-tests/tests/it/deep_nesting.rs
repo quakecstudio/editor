@@ -58,7 +58,7 @@ fn deep_fteqcc_input_resolves() {
     for (name, source) in deep_sources() {
         let mut db = Db::new();
         db.set_dialect(Dialect::Fteqcc);
-        let file = FileId(0);
+        let file = FileId::new(0);
         db.set_file_text(file, source.into_bytes());
         let parse = db.parse(file);
         assert!(
@@ -67,7 +67,7 @@ fn deep_fteqcc_input_resolves() {
         );
         let index = db.module_index(&[file]);
         assert!(
-            index.diagnostics.iter().all(|d| d.file == file),
+            index.diagnostics().iter().all(|d| d.file == file),
             "{name}: a diagnostic outside the file"
         );
     }
@@ -90,7 +90,7 @@ fn a_long_chain_of_macros_resolves() {
             .spawn(move || {
                 let mut db = Db::new();
                 db.set_dialect(dialect);
-                let file = FileId(0);
+                let file = FileId::new(0);
                 db.set_file(file, PathBuf::from("a.qc"), source.into_bytes());
                 let input = ModuleInput {
                     compiled: vec![file],
@@ -98,7 +98,7 @@ fn a_long_chain_of_macros_resolves() {
                 };
                 let analysis = db.analyze_module(&input);
                 let codes: Vec<Code> = analysis.diagnostics().map(|d| d.diagnostic.code).collect();
-                (codes, analysis.index.defs.len())
+                (codes, analysis.index.defs().len())
             })
             .unwrap()
             .join()

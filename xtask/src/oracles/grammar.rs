@@ -122,9 +122,9 @@ pub(crate) fn cases() -> Vec<Case> {
 pub(crate) fn profile(program: &str) -> Vec<(u32, String)> {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
-    db.set_file(FileId(0), "t.qc".into(), program.as_bytes().to_vec());
+    db.set_file(FileId::new(0), "t.qc".into(), program.as_bytes().to_vec());
     let analysis = db.analyze_module(&ModuleInput {
-        compiled: vec![FileId(0)],
+        compiled: vec![FileId::new(0)],
         command_line: CommandLine::new::<&str>(&[]),
         ..ModuleInput::default()
     });

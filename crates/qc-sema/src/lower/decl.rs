@@ -28,19 +28,8 @@ pub struct RawDecl {
     pub span: Span,
     /// Its declared type.
     pub ty: Type,
-    /// Whether it is a `local` (QC-11.10); at file level it is a global, function or field.
-    pub local: bool,
-    /// Whether the declaration has an initialiser (QC-11.5).
-    pub initialized: bool,
-    /// Under FTEQCC, the value of its initialiser, which FTEQCC compares when a name is
-    /// initialised twice (FTE-22.6, FTEF-17.10); `None` for none, and under the vanilla
-    /// profile, which compares no two values (QCD-3.6).
-    pub literal: Option<LiteralValue>,
-    /// For a function definition, the lowered body; otherwise `None`.
-    pub body: Option<RawBody>,
-    /// Whether the initialiser is a builtin number, `= #n` (QC-13.3), which FTEQCC does not
-    /// let replace a function with a body (FTEF-17.9).
-    pub builtin: bool,
+    /// Its initialiser, when it has one (QC-11.5).
+    pub init: Option<RawInit>,
     /// For a function definition with a `[frame, next]` header, the next-think name and its
     /// span (QC-13.6): resolution declares it as a global `void()` if new.
     pub next_think: Option<(String, Span)>,
@@ -269,18 +258,58 @@ pub struct RawParamInfo {
     pub default_literal: Option<LiteralValue>,
 }
 
+/// A declaration's initialiser, as resolution reads it (QC-11.5).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RawInit {
+    /// A value or an aggregate; under FTEQCC its value when it is a literal, which FTEQCC
+    /// compares when a name is initialised twice (FTE-22.6, FTEF-17.10), and `None` under the
+    /// vanilla profile, which compares no two values (QCD-3.6).
+    Value(Option<LiteralValue>),
+    /// A builtin number, `= #n` (QC-13.3), which FTEQCC does not let replace a function with a
+    /// body (FTEF-17.9); under FTEQCC its binding as a value (FTE-23.17).
+    Builtin(Option<LiteralValue>),
+    /// A function's lowered body.
+    Body(Box<RawBody>),
+}
+
 impl RawDecl {
+    /// Whether the declaration has an initialiser (QC-11.5).
+    #[must_use]
+    pub const fn initialized(&self) -> bool {
+        self.init.is_some()
+    }
+
+    /// Under FTEQCC, the value of its initialiser when it has one (FTE-22.6, FTEF-17.10).
+    #[must_use]
+    pub fn literal(&self) -> Option<&LiteralValue> {
+        match &self.init {
+            Some(RawInit::Value(literal) | RawInit::Builtin(literal)) => literal.as_ref(),
+            Some(RawInit::Body(_)) | None => None,
+        }
+    }
+
+    /// Whether the initialiser is a builtin number (QC-13.3, FTEF-17.9).
+    #[must_use]
+    pub const fn is_builtin(&self) -> bool {
+        matches!(self.init, Some(RawInit::Builtin(_)))
+    }
+
+    /// For a function definition, the lowered body.
+    #[must_use]
+    pub const fn body(&self) -> Option<&RawBody> {
+        match &self.init {
+            Some(RawInit::Body(body)) => Some(body),
+            Some(RawInit::Value(_) | RawInit::Builtin(_)) | None => None,
+        }
+    }
+
     /// A declaration of `name` at `span` of type `ty`, with no initialiser.
     pub(super) fn new(name: String, span: Span, ty: Type) -> Self {
         Self {
             name,
             span,
             ty,
-            local: false,
-            initialized: false,
-            literal: None,
-            body: None,
-            builtin: false,
+            init: None,
             next_think: None,
             uses: Vec::new(),
             scope: None,
@@ -338,11 +367,8 @@ impl RawDecl {
             .collect();
         Self {
             params,
-            skipped_init: self.initialized,
-            initialized: false,
-            literal: None,
-            body: None,
-            builtin: false,
+            skipped_init: self.initialized(),
+            init: None,
             next_think: None,
             uses: Vec::new(),
             value: None,
@@ -404,11 +430,11 @@ impl RawDecl {
     }
 }
 
-/// The value initialiser `expr` is, in the dialect `fte` says (QC-11.3, FTEF-19.31): a literal
+/// The value initialiser `expr` is, in `cx`'s dialect (QC-11.3, FTEF-19.31): a literal
 /// with its type, which FTEQCC gives a number by its digits and suffix (FTEF-3.1) and vanilla
 /// always `float` (QC-4); a plain name; or another expression.
 pub(super) fn raw_value(expr: &ast::Expr, cx: Cx<'_>) -> RawValue {
-    let fte = cx.fte;
+    let fte = cx.dialect.has_fteqcc_extensions();
     let span = expr.syntax().span();
     let flags = cx.lex_flags_at(span.start);
     let kind = match expr {
@@ -925,7 +951,7 @@ impl LiteralValue {
     /// literal's, or under FTEQCC its text (FTEF-17.10).
     fn of_expr(expr: &ast::Expr, cx: Cx<'_>) -> Option<Self> {
         let flags = cx.lex_flags_at(expr.syntax().span().start);
-        if cx.fte {
+        if cx.dialect.has_fteqcc_extensions() {
             Self::of_literal(expr, Dialect::Fteqcc, flags)
                 .or_else(|| Some(Self::Text(token_text(expr.syntax()))))
         } else {
@@ -999,15 +1025,6 @@ fn deprecated_of(qualifiers: &[Qualifier]) -> Option<&str> {
     })
 }
 
-/// The qualifier words of a declaration (FTEF-15.1, FTEF-9.2), as written.
-pub(super) fn qualifiers(decl: &ast::Declaration) -> Vec<String> {
-    decl.syntax()
-        .children()
-        .filter(|n| n.kind() == SyntaxKind::Qualifier)
-        .map(|n| first_word(&n))
-        .collect()
-}
-
 /// `base` under the `*`s and parameter lists a struct, union, class, enum or accessor declaration
 /// took as its type's with `qcfuncs` on (FTEF-6.8, FTEF-21.7): `struct S { float a; } *p, q;`
 /// declares two pointers, `enum { A }(float) h` a function. A type with no declarator after it,
@@ -1035,7 +1052,7 @@ pub(super) fn decl_base(decl: &SyntaxNode, base: Type, cx: Cx<'_>, out: &mut Vec
 }
 
 pub(super) fn lower_declaration(decl: &ast::Declaration, cx: Cx<'_>, out: &mut Vec<RawDecl>) {
-    let fte = cx.fte;
+    let fte = cx.dialect.has_fteqcc_extensions();
     // FTEF-8.2: an enum written as a type declares its names first.
     for en in decl.syntax().descendants().filter_map(ast::EnumDecl::cast) {
         lower_enum(&en, cx, out);
@@ -1139,7 +1156,7 @@ pub(super) fn lower_declarators(
     cx: Cx<'_>,
     out: &mut Vec<RawDecl>,
 ) {
-    let fte = cx.fte;
+    let fte = cx.dialect.has_fteqcc_extensions();
     let mut pointer_var = false;
     for declarator in declarators {
         let Some(name_token) = declarator.name() else {
@@ -1159,15 +1176,19 @@ pub(super) fn lower_declarators(
             .as_ref()
             .map_or(declarator.syntax().span().end, |i| i.syntax().span().start);
         raw.assumevar = cx.flags_at(after_eq).has(FteFlag::Assumevar);
-        raw.initialized = init.is_some();
         // QCD-3.6: the vanilla profile compares no two values, so it keeps none.
-        raw.literal = if fte {
+        let literal = if fte {
             LiteralValue::of_fteqcc(init.as_ref(), cx)
         } else {
             None
         };
+        raw.init = init.as_ref().map(|init| match init {
+            ast::Initializer::Builtin(_) => RawInit::Builtin(literal),
+            ast::Initializer::Body(_)
+            | ast::Initializer::Value(_)
+            | ast::Initializer::Aggregate(_) => RawInit::Value(literal),
+        });
         raw.scope = declarator.scope().map(|t| t.text_lossless());
-        raw.builtin = matches!(init, Some(ast::Initializer::Builtin(_)));
         raw.array = array_dim(&declarator, init.as_ref());
         raw.array_dims = declarator.array_suffixes().count();
         raw.size_expr = size_expr(&declarator);
@@ -1194,19 +1215,12 @@ pub(super) fn lower_declarators(
         {
             raw.params = param_infos(&list, cx);
         }
-        match &init {
-            Some(ast::Initializer::Body(fn_body)) => {
-                raw.next_think = next_think_of(fn_body);
-                raw.body = Some(lower_body(fn_body, &ty, cx));
-            }
+        if let Some(ast::Initializer::Body(fn_body)) = &init {
+            raw.next_think = next_think_of(fn_body);
+            raw.init = Some(RawInit::Body(Box::new(lower_body(fn_body, &ty, cx))));
+        } else {
             // FTE-10.2: a value initialiser may name other definitions, `const float B = A;`.
-            Some(ast::Initializer::Value(expr)) => lower_expr(expr, cx, &mut raw.uses),
-            Some(ast::Initializer::Aggregate(agg)) => {
-                for element in agg.elements() {
-                    lower_expr(&element, cx, &mut raw.uses);
-                }
-            }
-            Some(ast::Initializer::Builtin(_)) | None => {}
+            lower_initializer_uses(init.as_ref(), cx, &mut raw.uses);
         }
         // FTE-18.2: a parameter's default value may name definitions too.
         for list in ty_node
@@ -1221,12 +1235,34 @@ pub(super) fn lower_declarators(
                 }
             }
         }
-        // FTEF-5.1: an array's size expressions name definitions too.
-        for suffix in declarator.array_suffixes() {
-            for expr in suffix.children().filter_map(ast::Expr::cast) {
-                lower_expr(&expr, cx, &mut raw.uses);
+        lower_array_sizes(&declarator, cx, &mut raw.uses);
+        out.push(raw);
+    }
+}
+
+/// The names a value or aggregate initialiser uses, in source order (FTE-10.2, QC-12.5); a
+/// body's and a builtin's are none.
+pub(super) fn lower_initializer_uses(
+    init: Option<&ast::Initializer>,
+    cx: Cx<'_>,
+    uses: &mut Vec<RawUse>,
+) {
+    match init {
+        Some(ast::Initializer::Value(expr)) => lower_expr(expr, cx, uses),
+        Some(ast::Initializer::Aggregate(agg)) => {
+            for element in agg.elements() {
+                lower_expr(&element, cx, uses);
             }
         }
-        out.push(raw);
+        Some(ast::Initializer::Body(_) | ast::Initializer::Builtin(_)) | None => {}
+    }
+}
+
+/// The names an array declarator's size expressions use (FTEF-5.1).
+pub(super) fn lower_array_sizes(declarator: &ast::Declarator, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
+    for suffix in declarator.array_suffixes() {
+        for expr in suffix.children().filter_map(ast::Expr::cast) {
+            lower_expr(&expr, cx, uses);
+        }
     }
 }

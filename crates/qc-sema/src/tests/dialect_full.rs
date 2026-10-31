@@ -43,7 +43,7 @@ fn defs_named(index: &ModuleIndex, name: &str) -> Vec<DefId> {
         .iter()
         .enumerate()
         .filter(|(_, d)| d.name == name)
-        .map(|(i, _)| DefId(i))
+        .map(|(i, _)| DefId::new(i))
         .collect()
 }
 
@@ -116,7 +116,7 @@ fn class_members_resolve() {
     let thing = defs_named(&index, "Thing")[0];
     assert!(targets(&index, CLASSES, "Thing").contains(&thing));
     // A member is not a global by its name.
-    assert!(index.defs[base_field[0].0].member_of.is_some());
+    assert!(index.defs[base_field[0].index()].member_of.is_some());
 }
 
 // spec FTEF-9.2: a virtual member function is a field, a nonvirtual or static one a function.
@@ -125,7 +125,7 @@ fn class_members_resolve() {
 #[test]
 fn member_kinds_and_definitions() {
     let index = fte_index_of(CLASSES);
-    let kind = |name: &str| index.defs[defs_named(&index, name)[0].0].kind;
+    let kind = |name: &str| index.defs[defs_named(&index, name)[0].index()].kind;
     assert_eq!(kind("Spawned"), DefKind::Field);
     assert_eq!(kind("Helper"), DefKind::Function);
     assert_eq!(kind("Make"), DefKind::Function);
@@ -135,7 +135,7 @@ fn member_kinds_and_definitions() {
     assert_eq!(spawned.len(), 2);
     let defined: Vec<_> = targets(&index, CLASSES, "Spawned");
     assert!(defined.contains(&spawned[0]) && defined.contains(&spawned[1]));
-    assert!(index.defs[spawned[1].0].initialized);
+    assert!(index.defs[spawned[1].index()].initialized);
 }
 
 // spec FTEF-17.3: a member access resolves through the class of a typed local, a cast and a
@@ -208,7 +208,7 @@ fn type_names_may_be_declared_again() {
     );
     assert_eq!(errors(&index), Vec::<Code>::new());
     let h = defs_named(&index, "h")[0];
-    assert_eq!(index.defs[h.0].ty, Type::Named("handle_t".into()));
+    assert_eq!(index.defs[h.index()].ty, Type::Named("handle_t".into()));
 }
 
 // spec FTEF-17.4: `this`, `super`, `prior` and the intrinsics are no names to define, and
@@ -347,7 +347,7 @@ fn redefinable_external_and_variable_functions() {
     );
     assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
     let v = defs_named(&index, "v")[0];
-    assert_eq!(index.defs[v.0].kind, DefKind::Global);
+    assert_eq!(index.defs[v.index()].kind, DefKind::Global);
     let twice = fte_index_of("void() a = { };\nvoid() a = { };\n");
     assert_eq!(errors(&twice), [Code::E0216, Code::E0363]);
     // FTEF-19.57: a body after a wrap is one more body for the function.
@@ -384,11 +384,15 @@ fn noref_allows_reinitialisation() {
         ("mod.qc", "string() info = #0;\nfloat() plain = #2;\n"),
     ];
     for (index, (name, text)) in files.iter().enumerate() {
-        db.set_file(FileId(index), PathBuf::from(name), text.as_bytes().to_vec());
+        db.set_file(
+            FileId::new(index),
+            PathBuf::from(name),
+            text.as_bytes().to_vec(),
+        );
     }
     let input = ModuleInput {
         prelude: Vec::new(),
-        compiled: vec![FileId(0), FileId(1)],
+        compiled: vec![FileId::new(0), FileId::new(1)],
         ..ModuleInput::default()
     };
     let analysis = db.analyze_module(&input);
@@ -407,7 +411,7 @@ fn pointer_declarators_and_struct_variables() {
     assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
     let seat = defs_named(&index, "seat")[0];
     assert_eq!(
-        index.defs[seat.0].ty,
+        index.defs[seat.index()].ty,
         Type::Pointer(std::rc::Rc::new(Type::Named("seat_s".into())))
     );
 }
@@ -446,7 +450,7 @@ fn parameter_forms_resolve() {
     let codes = errors(&index);
     assert_eq!(codes, [Code::E0211, Code::E0211], "{:?}", messages(&index));
     let none = defs_named(&index, "none")[0];
-    let Type::Function(func) = &index.defs[none.0].ty else {
+    let Type::Function(func) = &index.defs[none.index()].ty else {
         panic!("not a function");
     };
     assert!(func.params.is_empty());

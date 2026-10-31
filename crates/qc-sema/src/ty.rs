@@ -10,6 +10,8 @@
 
 use std::rc::Rc;
 
+use crate::symbol::DefKind;
+
 use crate::check::fold::c_g;
 
 use qc_syntax::ast::{self, AstNode as _};
@@ -131,6 +133,59 @@ impl std::hash::Hash for ParamLabels {
 }
 
 impl Type {
+    /// The type of a function returning `ret` and taking `params`, not variadic, with no
+    /// parameter labels.
+    #[must_use]
+    pub fn function(ret: Self, params: Vec<Self>) -> Self {
+        Self::Function(Rc::new(FunctionType {
+            ret,
+            params,
+            variadic: false,
+            labels: ParamLabels::default(),
+        }))
+    }
+
+    /// The type `void()`.
+    #[must_use]
+    pub fn void_function() -> Self {
+        Self::function(Self::Simple(SimpleType::Void), Vec::new())
+    }
+
+    /// The type of each component of a definition of this type: `float` for a `vector`,
+    /// `.float` for a `.vector` field (QC-11.7); `None` for any other type.
+    pub(crate) fn component(&self) -> Option<Self> {
+        match self {
+            Self::Simple(SimpleType::Vector) => Some(Self::Simple(SimpleType::Float)),
+            Self::Field(inner) if **inner == Self::Simple(SimpleType::Vector) => {
+                Some(Self::Field(Rc::new(Self::Simple(SimpleType::Float))))
+            }
+            Self::Unknown
+            | Self::Simple(_)
+            | Self::Field(_)
+            | Self::Function(_)
+            | Self::Named(_)
+            | Self::Pointer(_) => None,
+        }
+    }
+
+    /// The kind a top-level declaration of this type resolves to (QC-11.8, QC-11.9).
+    pub(crate) fn top_level_kind(&self) -> DefKind {
+        if self.is_function() {
+            DefKind::Function
+        } else if self.is_field() {
+            DefKind::Field
+        } else {
+            DefKind::Global
+        }
+    }
+
+    /// Whether a redeclaration of type `ty` matches an earlier one of this type under `qcc`
+    /// (QC-11.5): equal and not variadic, which is never the same as another (QC-10.10), or
+    /// either unknown.
+    pub(crate) fn redeclares_in_qcc(&self, ty: &Self) -> bool {
+        (self == ty && !self.holds_variadic()) || *self == Self::Unknown || *ty == Self::Unknown
+    }
+
     /// Whether this type is, or holds, a variadic function type, which id's `PR_FindType` never
     /// finds again, so that no other type is ever the same as it (QC-10.10).
     #[must_use]
@@ -228,14 +283,7 @@ impl Type {
                         Self::from_ast(&r, context)
                     });
                 func.params().map_or_else(
-                    || {
-                        Self::Function(Rc::new(FunctionType {
-                            ret: ret.clone(),
-                            params: Vec::new(),
-                            variadic: false,
-                            labels: ParamLabels::default(),
-                        }))
-                    },
+                    || Self::function(ret.clone(), Vec::new()),
                     |list| Self::function_of(ret.clone(), &list, context),
                 )
             }

@@ -11,7 +11,7 @@ use super::{index_of, module_index_of};
 use crate::lower::lower_file;
 use crate::resolve::{ResolveOptions, resolve_module};
 use crate::symbol::{DefId, DefKind};
-use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
+use crate::ty::{SimpleType, Type};
 
 /// The codes of the diagnostics an index reports, in order.
 fn codes(source: &str) -> Vec<Code> {
@@ -165,8 +165,8 @@ fn params_and_locals_belong_to_their_function() {
     let local = index.defs.iter().find(|d| d.name == "l").unwrap();
     assert_eq!(param.kind, DefKind::Param);
     assert_eq!(local.kind, DefKind::Local);
-    assert_eq!(param.owner, Some(DefId(func)));
-    assert_eq!(local.owner, Some(DefId(func)));
+    assert_eq!(param.owner, Some(DefId::new(func)));
+    assert_eq!(local.owner, Some(DefId::new(func)));
 }
 
 // spec QC-12.3, QCD-7.3: a local that names a global declared before it reuses the global
@@ -265,15 +265,7 @@ fn next_think_name_is_declared_void_function() {
     let th2 = index.defs.iter().find(|d| d.name == "th2").unwrap();
     assert_eq!(th2.kind, DefKind::Function);
     assert_eq!(th2.owner, None);
-    assert_eq!(
-        th2.ty,
-        Type::Function(Rc::new(FunctionType {
-            ret: Type::Simple(SimpleType::Void),
-            params: Vec::new(),
-            variadic: false,
-            labels: ParamLabels::default(),
-        }))
-    );
+    assert_eq!(th2.ty, Type::void_function());
     assert_eq!(th2.location.span.start, source.find("th2").unwrap());
     // th2 is defined by its own body, so no "not defined" error.
     assert!(

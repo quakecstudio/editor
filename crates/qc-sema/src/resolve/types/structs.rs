@@ -6,10 +6,11 @@
 
 //! Structs and unions: their definitions, redeclaration and members (FTEF-6).
 
+use crate::resolve::Init;
 use qc_diag::Code;
 
 use crate::check::StructMemberFacts;
-use crate::lower::{IntConst, MemberBase, RawStruct, StructMember, top_level_kind};
+use crate::lower::{IntConst, MemberBase, RawStruct, StructMember};
 use crate::resolve::{ComparedMember, MAX_CLASS_DEPTH, Resolver, Scope, StructDef, StructMatch};
 use crate::symbol::{FileId, Location};
 use crate::ty::Type;
@@ -132,13 +133,13 @@ impl<'a> Resolver<'a> {
             for member in st.members.iter().filter(|m| m.is_static) {
                 let global = format!("{owner}::{}", member.name);
                 let at = self.at(file, member.span);
-                let kind = top_level_kind(&member.ty);
+                let kind = member.ty.top_level_kind();
                 self.declare_global(
                     &global,
                     &member.ty,
                     kind,
                     at,
-                    member.initialized.then_some(None),
+                    Init::of(member.initialized, None),
                 );
             }
         }
@@ -319,7 +320,7 @@ impl<'a> Resolver<'a> {
     /// Whether the global `name` is a constant (`QCC_PR_IntConstExpr` reads a constant's value).
     fn names_constant(&self, name: &str) -> bool {
         self.lookup_global(name)
-            .is_some_and(|def| self.facts.get(def.0).is_some_and(|f| f.constant))
+            .is_some_and(|def| self.facts.get(def.index()).is_some_and(|f| f.constant))
     }
 
     /// FTEF-6.17: each array size of a struct member, `QCC_PR_IntConstExpr()`, is an integer
@@ -447,14 +448,15 @@ impl<'a> Resolver<'a> {
         let MemberBase::Name(base) = base else {
             return StructMatch::NotStruct;
         };
-        let Some(def) = (match scope {
-            Some(scope) => self.lookup_in_scope(scope, base),
-            None => self.lookup_used_global(base),
-        }) else {
+        let Some(def) = self.lookup(scope, base) else {
             return StructMatch::NotStruct;
         };
         // FTE-13: an array's member is its `length`, no member of its elements' struct.
-        if self.facts.get(def.0).is_some_and(|f| f.array.is_some()) {
+        if self
+            .facts
+            .get(def.index())
+            .is_some_and(|f| f.array.is_some())
+        {
             return StructMatch::NotStruct;
         }
         let Some(Type::Named(type_name)) = self.index.def(def).map(|d| self.resolved(&d.ty)) else {

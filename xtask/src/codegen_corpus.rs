@@ -62,7 +62,7 @@ fn compile(module: &Module, autoproto: bool) -> Result<Result<usize, String>, St
     db.set_autoproto(autoproto);
     for (index, file) in module.graph.files.iter().enumerate() {
         let text = fs::read(&file.path).map_err(|e| format!("{}: {e}", file.path.display()))?;
-        db.set_file(FileId(index), file.path.clone(), text);
+        db.set_file(FileId::new(index), file.path.clone(), text);
     }
     let names: Vec<String> = module
         .graph
@@ -74,7 +74,7 @@ fn compile(module: &Module, autoproto: bool) -> Result<Result<usize, String>, St
     let result = compile_module(
         &mut db,
         &input,
-        |id| names.get(id.0).cloned().unwrap_or_default(),
+        |id| names.get(id.index()).cloned().unwrap_or_default(),
         Options::default(),
     );
     Ok(match result {

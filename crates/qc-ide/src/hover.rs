@@ -72,7 +72,7 @@ impl<L: Loader> AnalysisHost<L> {
         let (state, data) = self.module(target.module)?;
         let def = data.analysis.index.def(target.def)?;
         let file = state.file_id(&qc_project::normalize(path))?;
-        let parse = data.parses.get(file.0)?;
+        let parse = data.parses.get(file.index())?;
         let under = name_token_near(parse, offset)?;
         Some(Hover {
             range: FileRange {
@@ -105,7 +105,7 @@ fn docs(state: &ModuleState, data: &ModuleData, def: &Definition, id: DefId) -> 
     let declarations = std::iter::once(def.location).chain(
         data.analysis
             .index
-            .redeclarations
+            .redeclarations()
             .iter()
             .filter(|r| r.def == id)
             .map(|r| r.location),
@@ -117,7 +117,7 @@ fn docs(state: &ModuleState, data: &ModuleData, def: &Definition, id: DefId) -> 
         };
         let Some(docs) = data
             .parses
-            .get(location.file.0)
+            .get(location.file.index())
             .and_then(|parse| doc_comment(parse, &decl))
         else {
             continue;
@@ -140,7 +140,7 @@ fn declaration_at(
     if !name_at(state.db.file_text(location.file), location.span, &def.name) {
         return None;
     }
-    let token = token_at(data.parses.get(location.file.0)?, location.span)?;
+    let token = token_at(data.parses.get(location.file.index())?, location.span)?;
     let decl = declaration_of(&token)?;
     Some((decl, token))
 }

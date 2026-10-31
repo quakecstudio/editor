@@ -19,21 +19,20 @@ use std::rc::Rc;
 
 use crate::lower::{
     ArrayDim, ExternBase, LiteralValue, Qualifier, RawAggregate, RawDecl, RawParamInfo,
-    top_level_kind,
 };
 use crate::resolve::aggregate::{AggregateSite, Initialised};
 use crate::resolve::init::string_of_chars;
 use crate::resolve::{
     COMPONENTS, DeclFacts, Facts, Fatal, FileDiagnostic, Holder, Init, MAX_TYPEDEF_DEPTH,
-    MISDECLARED_BUILTINS, Pending, Redeclaration, Resolver, Special, TypeCheck, component_type,
-    defaults_agree, diag,
+    MISDECLARED_BUILTINS, Origin, Pending, Redeclaration, Resolver, Special, TypeCheck,
+    defaults_agree,
 };
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{FunctionType, Type};
 
 impl<'a> Resolver<'a> {
     pub(in crate::resolve) fn fact_mut(&mut self, def: DefId) -> Option<&mut Facts> {
-        self.facts.get_mut(def.0)
+        self.facts.get_mut(def.index())
     }
 
     /// Adds a definition and returns its id. A class member is not a global by its name.
@@ -61,7 +60,7 @@ impl<'a> Resolver<'a> {
             let message = format!("\"{}\" keyword used as variable name - {what}", def.name);
             self.report(Code::W0221, def.location, message);
         }
-        let id = DefId(self.index.defs.len());
+        let id = DefId::new(self.index.defs.len());
         if def.kind.is_global() && def.member_of.is_none() {
             self.globals.entry(def.name.clone()).or_default().push(id);
         }
@@ -117,8 +116,7 @@ impl<'a> Resolver<'a> {
         if self.profile.redeclaration_by_typecmp() {
             self.typecmp(old, ty)
         } else {
-            // QC-10.10: a variadic type is never the same as another.
-            (old == ty && !old.holds_variadic()) || *old == Type::Unknown || *ty == Type::Unknown
+            old.redeclares_in_qcc(ty)
         }
     }
 
@@ -203,7 +201,7 @@ impl<'a> Resolver<'a> {
                 self.redeclare(&redeclaration);
                 return existing;
             }
-            match self.check_redeclared_type(&redeclaration, decl.component) {
+            match self.check_redeclared_type(&redeclaration, decl.origin) {
                 TypeCheck::Same => {
                     if !self.check_array(&redeclaration, false) {
                         self.redeclare(&redeclaration);
@@ -229,14 +227,15 @@ impl<'a> Resolver<'a> {
             kind,
             location,
             owner: None,
-            initialized: init.is_some(),
+            initialized: init.is_initialized(),
             member_of: None,
             generated: false,
         });
         let constant = decl.constant;
         let statics = decl.statics;
-        let field_component =
-            decl.component && self.profile.field_components_typed_apart() && kind == DefKind::Field;
+        let field_component = decl.origin == Origin::Component
+            && self.profile.field_components_typed_apart()
+            && kind == DefKind::Field;
         if let Some(facts) = self.fact_mut(id) {
             facts.constant = constant;
             facts.array = decl.array;
@@ -245,7 +244,7 @@ impl<'a> Resolver<'a> {
             facts.statics = statics;
             facts.deprecated = decl.deprecated.map(str::to_owned);
         }
-        if let Some(Some(literal)) = init {
+        if let Init::Literal(literal) = init {
             self.note_builtin_function(id, name, literal);
             self.literals.insert(id, literal.clone());
         }
@@ -254,12 +253,12 @@ impl<'a> Resolver<'a> {
         // initialiser does not initialise them under the vanilla profile; FTEQCC gives them
         // the vector's initialised state and its words (FTEF-19.58).
         if decl.array.is_none()
-            && let Some(component) = component_type(ty)
+            && let Some(component) = ty.component()
         {
-            let component_kind = top_level_kind(&component);
+            let component_kind = component.top_level_kind();
             let words = match init {
-                Some(Some(LiteralValue::Vector(words))) => Some(*words),
-                _ => None,
+                Init::Literal(LiteralValue::Vector(words)) => Some(*words),
+                Init::Literal(_) | Init::Opaque | Init::Uninitialized => None,
             };
             for (index, suffix) in COMPONENTS.iter().enumerate() {
                 let component_name = format!("{name}{suffix}");
@@ -267,12 +266,12 @@ impl<'a> Resolver<'a> {
                     .and_then(|w| w.get(index).copied())
                     .map(LiteralValue::Float);
                 let component_init = if self.profile.components_initialised() {
-                    init.map(|_| word.as_ref())
+                    Init::of(init.is_initialized(), word.as_ref())
                 } else {
-                    None
+                    Init::Uninitialized
                 };
                 let facts = DeclFacts {
-                    component: true,
+                    origin: Origin::Component,
                     constant,
                     statics,
                     ..DeclFacts::default()
@@ -299,24 +298,31 @@ impl<'a> Resolver<'a> {
 
     /// Records that the declaration at `location` declares `def` again (QC-11.5); returns
     /// `def`.
+    /// Marks `def` initialised (QC-11.5).
+    pub(in crate::resolve) fn mark_initialized(&mut self, def: DefId) {
+        if let Some(d) = self.index.defs.get_mut(def.index()) {
+            d.initialized = true;
+        }
+    }
+
     fn redeclared(&mut self, location: Location, def: DefId) -> DefId {
         self.index.redeclarations.push(Reference { location, def });
         def
     }
 
     /// The type check of a redeclaration (QC-11.5, FTEF-19.7), with FTEQCC's rules for the
-    /// differences it accepts. `component` is a vector's component being declared.
+    /// differences it accepts, for a declaration from `origin`.
     pub(in crate::resolve) fn check_redeclared_type(
         &mut self,
         r: &Redeclaration<'_>,
-        component: bool,
+        origin: Origin,
     ) -> TypeCheck {
-        let Some(def) = self.index.defs.get(r.existing.0) else {
+        let Some(def) = self.index.defs.get(r.existing.index()) else {
             return TypeCheck::Mismatch;
         };
         let old = def.ty.clone();
         let kind = def.kind;
-        let facts = self.facts.get(r.existing.0);
+        let facts = self.facts.get(r.existing.index());
         let field_component = facts.is_some_and(|f| f.field_component);
         let referenced = facts.is_some_and(|f| f.referenced);
         let params = facts.map_or(&[][..], |f| f.params.as_slice());
@@ -327,7 +333,7 @@ impl<'a> Resolver<'a> {
         // QC-11.12: a vector field's component has `qcc`'s `type_floatfield`, which no `.float`
         // written in the source is, and only another component's lookup has.
         if self.profile.field_components_typed_apart()
-            && field_component != component
+            && field_component != (origin == Origin::Component)
             && kind == DefKind::Field
         {
             self.mismatch(r.name, r.location, &old, r.ty);
@@ -368,7 +374,7 @@ impl<'a> Resolver<'a> {
                 && b.params.len() > a.params.len()
             {
                 let new_ty = r.ty.clone();
-                if let Some(def) = self.index.defs.get_mut(r.existing.0) {
+                if let Some(def) = self.index.defs.get_mut(r.existing.index()) {
                     def.ty = new_ty;
                 }
                 let params = r.params.to_vec();
@@ -510,7 +516,7 @@ impl<'a> Resolver<'a> {
             Some(ArrayDim::Sized(n)) => Some(n),
             Some(ArrayDim::Unsized | ArrayDim::Unknown) => None,
         };
-        let old = self.facts.get(r.existing.0).and_then(|f| f.array);
+        let old = self.facts.get(r.existing.index()).and_then(|f| f.array);
         let (Some(new), Some(was)) = (size(r.array), size(old)) else {
             if matches!(old, Some(ArrayDim::Unsized))
                 && let Some(facts) = self.fact_mut(r.existing)
@@ -539,12 +545,13 @@ impl<'a> Resolver<'a> {
 
     /// Handles the initialiser of a redeclaration of an existing definition (QC-11.5).
     pub(in crate::resolve) fn redeclare(&mut self, r: &Redeclaration<'_>) {
-        let Some(def) = self.index.defs.get(r.existing.0) else {
+        let Some(def) = self.index.defs.get(r.existing.index()) else {
             return;
         };
-        let Some(literal) = r.init else {
+        if !r.init.is_initialized() {
             return;
-        };
+        }
+        let literal = r.init.literal();
         let existing = r.existing;
         let name = r.name;
         if def.initialized {
@@ -585,9 +592,7 @@ impl<'a> Resolver<'a> {
             }
             return;
         }
-        if let Some(def) = self.index.defs.get_mut(existing.0) {
-            def.initialized = true;
-        }
+        self.mark_initialized(existing);
         if let Some(literal) = literal {
             self.note_builtin_function(existing, name, literal);
             self.literals.insert(existing, literal.clone());
@@ -649,7 +654,7 @@ impl<'a> Resolver<'a> {
     /// `autocvar_` never is (FTEF-19.16).
     pub(in crate::resolve) fn constant_at_file_level(decl: &RawDecl) -> bool {
         !decl.name.starts_with("autocvar_")
-            && Self::constness(decl, decl.initialized || decl.skipped_init)
+            && Self::constness(decl, decl.initialized() || decl.skipped_init)
     }
 
     /// FTEF-19.3: the constness `QCC_PR_ParseDefs` gives a file-level declaration, initialised
@@ -679,8 +684,13 @@ impl<'a> Resolver<'a> {
             self.declare_type_name(kind, decl, location);
             // FTEF-17.1: a type's name may be declared again, a class first forward and then
             // with its body, and a typedef in more than one header.
-            let def =
-                self.declare_global(&decl.name, &Type::Unknown, DefKind::Global, location, None);
+            let def = self.declare_global(
+                &decl.name,
+                &Type::Unknown,
+                DefKind::Global,
+                location,
+                Init::Uninitialized,
+            );
             self.type_defs.insert(def);
             if let Some(class) = &decl.class {
                 return Special::Declared(self.declare_class(file, def, class));
@@ -716,7 +726,7 @@ impl<'a> Resolver<'a> {
                 &decl.name,
                 &decl.ty,
                 target,
-                decl.initialized,
+                decl.initialized(),
                 location,
             );
             return Special::Declared(Vec::new());
@@ -780,11 +790,10 @@ impl<'a> Resolver<'a> {
         {
             DefKind::Global
         } else {
-            top_level_kind(&resolved_ty)
+            resolved_ty.top_level_kind()
         };
         let pending = |def: DefId| {
-            decl.body
-                .as_ref()
+            decl.body()
                 .map(|body| vec![(file, def, None, body, Some(decl))])
                 .unwrap_or_default()
         };
@@ -822,7 +831,9 @@ impl<'a> Resolver<'a> {
         let reported = self.index.diagnostics.len();
         // QC-11.5: id's qcc reports "NAME redeclared" at the `=`, before it reads the value.
         let value = if aborted
-            || (!self.profile.reinitialise_with_same_value() && was_initialized && decl.initialized)
+            || (!self.profile.reinitialise_with_same_value()
+                && was_initialized
+                && decl.initialized())
         {
             Ok(None)
         } else {
@@ -840,7 +851,7 @@ impl<'a> Resolver<'a> {
             .is_some_and(|new| new.iter().any(|d| d.diagnostic.code == Code::E0214));
         let literal = match value {
             Ok(_) if not_constant && self.profile.reinitialise_with_same_value() => None,
-            Ok(value) => value.or_else(|| decl.literal.clone()),
+            Ok(value) => value.or_else(|| decl.literal().cloned()),
             Err(Fatal) => {
                 aborted = true;
                 None
@@ -853,18 +864,18 @@ impl<'a> Resolver<'a> {
             decl.redefinable() || existing.is_some_and(|d| self.redefinable.contains(&d));
         let external = self.is_extern(decl) && self.resolved(&decl.ty).is_function();
         let shared = decl.has(&Qualifier::Shared);
-        let initialized = decl.initialized || external || (self.profile.qualifiers() && shared);
-        let marks_only = (external || shared) && !decl.initialized;
+        let initialized = decl.initialized() || external || (self.profile.qualifiers() && shared);
+        let marks_only = (external || shared) && !decl.initialized();
         let init = if aborted || (replaces && existing.is_some()) || marks_only {
-            None
+            Init::Uninitialized
         } else {
-            initialized.then_some(literal.as_ref())
+            Init::of(initialized, literal.as_ref())
         };
         // FTEF-17.9: a builtin given for a function that has a body is a warning, and the
         // function keeps its body.
         if self.profile.definition_checks()
             && !aborted
-            && decl.builtin
+            && decl.is_builtin()
             && let Some(existing) = existing
             && self.bodies.contains(&existing)
             && !self.unused.contains(&existing)
@@ -880,7 +891,7 @@ impl<'a> Resolver<'a> {
         }
         let statics = (self.profile.qualifiers() && decl.is_static()).then_some(self.unit);
         let facts = DeclFacts {
-            component: false,
+            origin: Origin::Source,
             checked: true,
             constant: Self::constant_at_file_level(decl),
             array: self.array_of(decl),
@@ -897,7 +908,7 @@ impl<'a> Resolver<'a> {
         }
         if let Some(f) = self.fact_mut(def) {
             f.shared |= shared;
-            f.builtin |= decl.builtin && !aborted;
+            f.builtin |= decl.is_builtin() && !aborted;
             f.accumulate |= decl.has(&Qualifier::Accumulate);
             // FTEQCC's `noref` marks a definition referenced too (`def->referenced = true;`).
             f.referenced |= decl.is_noref();
@@ -905,17 +916,15 @@ impl<'a> Resolver<'a> {
         if aborted {
             return pending(def);
         }
-        if decl.body.is_some() {
+        if decl.body().is_some() {
             self.bodies.insert(def);
         }
-        if ((replaces && initialized) || marks_only)
-            && let Some(d) = self.index.defs.get_mut(def.0)
-        {
-            d.initialized = true;
+        if (replaces && initialized) || marks_only {
+            self.mark_initialized(def);
         }
         if decl.has(&Qualifier::Weak) || decl.has(&Qualifier::Accumulate) || decl.accessor_body {
             self.redefinable.insert(def);
-        } else if decl.initialized && !self.facts.get(def.0).is_some_and(|f| f.accumulate) {
+        } else if decl.initialized() && !self.facts.get(def.index()).is_some_and(|f| f.accumulate) {
             self.redefinable.remove(&def);
         }
         pending(def)
@@ -937,12 +946,12 @@ impl<'a> Resolver<'a> {
             name: &decl.name,
             ty: &decl.ty,
             location,
-            init: None,
+            init: Init::Uninitialized,
             params: &decl.params,
             array: self.array_of(decl),
         };
         // QC-11.5: a refused redeclaration still names the definition.
-        match self.check_redeclared_type(&redeclaration, false) {
+        match self.check_redeclared_type(&redeclaration, Origin::Source) {
             TypeCheck::Mismatch => Err(self.redeclared(location, found)),
             TypeCheck::Replaced => {
                 if let Some(defs) = self.globals.get_mut(&decl.name) {
@@ -975,7 +984,7 @@ impl<'a> Resolver<'a> {
         if !decl.name.starts_with("autocvar_") {
             return;
         }
-        let what = if Self::constness(decl, decl.initialized || decl.skipped_init) {
+        let what = if Self::constness(decl, decl.initialized() || decl.skipped_init) {
             "constant"
         } else if decl.is_static() {
             "static"
@@ -1108,10 +1117,10 @@ impl<'a> Resolver<'a> {
             .is_some_and(|target| !target.supports_extern());
         let mut undefined: Vec<FileDiagnostic> = Vec::new();
         for (index, def) in self.index.defs.iter().enumerate() {
-            let id = DefId(index);
+            let id = DefId::new(index);
             if externs_refused && self.externs.contains(&id) && self.resolved(&def.ty).is_function()
             {
-                undefined.push(diag(
+                undefined.push(FileDiagnostic::new(
                     Code::E0239,
                     def.location,
                     "extern is not supported with this target format".to_owned(),
@@ -1125,7 +1134,10 @@ impl<'a> Resolver<'a> {
                 .member_of
                 .is_some_and(|c| self.var_members.contains(&(c, def.name.clone())));
             // An array of member functions is an array of fields, which no body defines.
-            let member_array = self.facts.get(id.0).is_some_and(|f| f.array.is_some());
+            let member_array = self
+                .facts
+                .get(id.index())
+                .is_some_and(|f| f.array.is_some());
             let member_function = def.member_of.is_some()
                 && !var_member
                 && !member_array
@@ -1138,7 +1150,7 @@ impl<'a> Resolver<'a> {
                 // body", d->name)`.
                 let message = if self.profile.fteqcc_diagnostics() {
                     // A member function is named `CLASS::NAME`, as FTEQCC defines it.
-                    let class = def.member_of.and_then(|c| self.index.defs.get(c.0));
+                    let class = def.member_of.and_then(|c| self.index.defs.get(c.index()));
                     match class {
                         Some(class) => format!("function {}::{} has no body", class.name, def.name),
                         None => format!("function {} has no body", def.name),
@@ -1146,7 +1158,7 @@ impl<'a> Resolver<'a> {
                 } else {
                     format!("function {} was not defined", def.name)
                 };
-                undefined.push(diag(Code::E0211, def.location, message));
+                undefined.push(FileDiagnostic::new(Code::E0211, def.location, message));
             }
         }
         self.index.diagnostics.extend(undefined);

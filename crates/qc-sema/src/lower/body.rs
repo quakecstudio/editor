@@ -15,7 +15,8 @@ use crate::ty::{SimpleType, Type};
 use super::Cx;
 use super::decl::{
     ArrayDim, LiteralValue, Qualifier, RawAggregate, RawValue, ValueKind, array_dim,
-    declarator_type, qualifiers_of, raw_aggregate, raw_value,
+    declarator_type, lower_array_sizes, lower_initializer_uses, qualifiers_of, raw_aggregate,
+    raw_value,
 };
 use super::expr::{RawUse, UseKind, lower_expr};
 use super::types::{TypedefScope, typedef_diagnostics};
@@ -249,7 +250,7 @@ fn collect_params(
     let count = param_list.params().count();
     // QC-13.11: id's qcc names the body's parameters from `pr_parm_names`, which a parameter
     // of function type also writes; FTEQCC keeps each parameter's own name.
-    let qcc_names = (!cx.fte).then(|| param_list.qcc_parm_names());
+    let qcc_names = (!cx.dialect.has_fteqcc_extensions()).then(|| param_list.qcc_parm_names());
     for (index, param) in param_list.params().enumerate() {
         let name = match &qcc_names {
             Some(names) => names.get(index).cloned().flatten(),
@@ -329,7 +330,10 @@ pub(super) fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody, fl
         .flags
         .iter()
         .any(|(_, flags)| flags.has(FteFlag::PrSubscopedlocals));
-    if cx.fte && subscope_somewhere && cx.next_flags(end).has(FteFlag::PrSubscopedlocals) {
+    if cx.dialect.has_fteqcc_extensions()
+        && subscope_somewhere
+        && cx.next_flags(end).has(FteFlag::PrSubscopedlocals)
+    {
         for local in body.locals.iter_mut().skip(first) {
             local.scope_end.get_or_insert(end);
         }
@@ -564,7 +568,7 @@ pub(super) fn omitted_type() -> Type {
 }
 
 fn lower_local(local: &ast::LocalDecl, cx: Cx<'_>, body: &mut RawBody) {
-    let fte = cx.fte;
+    let fte = cx.dialect.has_fteqcc_extensions();
     let base = local.ty().map_or_else(omitted_type, |t| cx.ty(&t));
     // QC-11.9 holds only in vanilla: FTEQCC allows a field or function local (FTE-21.2).
     let bad = !fte && (base.is_field() || base.is_function());
@@ -599,20 +603,8 @@ fn lower_local(local: &ast::LocalDecl, cx: Cx<'_>, body: &mut RawBody) {
         let init = declarator.initializer();
         // A local initialiser is a constant value; if it is a non-constant expression we
         // still record any names it uses, so references in it resolve (QC-12.5).
-        match &init {
-            Some(ast::Initializer::Value(expr)) => lower_expr(expr, cx, &mut body.uses),
-            Some(ast::Initializer::Aggregate(agg)) => {
-                for element in agg.elements() {
-                    lower_expr(&element, cx, &mut body.uses);
-                }
-            }
-            _ => {}
-        }
-        for suffix in declarator.array_suffixes() {
-            for expr in suffix.children().filter_map(ast::Expr::cast) {
-                lower_expr(&expr, cx, &mut body.uses);
-            }
-        }
+        lower_initializer_uses(init.as_ref(), cx, &mut body.uses);
+        lower_array_sizes(&declarator, cx, &mut body.uses);
         let value = match &init {
             Some(ast::Initializer::Value(expr)) => Some(raw_value(expr, cx)),
             _ => None,

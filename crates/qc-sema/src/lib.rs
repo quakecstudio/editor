@@ -74,7 +74,8 @@ pub use check::fold::{fold_builtin_call, fold_floats};
 pub use db::{Db, ModuleAnalysis, QueryCounts};
 pub use expand::{ModuleInput, OriginMap};
 pub use lower::{
-    BuiltinFunction, FileDecls, LiteralValue, RawBody, RawDecl, RawLocal, RawParam, RawUse, UseKind,
+    BuiltinFunction, FileDecls, LiteralValue, RawBody, RawDecl, RawInit, RawLocal, RawParam,
+    RawUse, UseKind,
 };
 pub use resolve::{
     FileDiagnostic, InitialValue, MemberShape, ModuleIndex, ResolveOptions, StructShape,

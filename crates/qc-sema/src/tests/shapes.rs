@@ -10,7 +10,7 @@ use crate::ty::{SimpleType, Type};
 /// The definition named `name`.
 fn def(index: &ModuleIndex, name: &str) -> DefId {
     let at = index.defs.iter().position(|d| d.name == name).unwrap();
-    DefId(at)
+    DefId::new(at)
 }
 
 fn named(name: &str) -> Type {

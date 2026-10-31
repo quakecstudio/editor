@@ -21,13 +21,13 @@ fn analysed_files(sources: &[&str], args: &[&str]) -> Vec<(Code, String)> {
     db.set_dialect(Dialect::Fteqcc);
     for (index, source) in sources.iter().enumerate() {
         db.set_file(
-            FileId(index),
+            FileId::new(index),
             PathBuf::from(format!("t{index}.qc")),
             source.as_bytes().to_vec(),
         );
     }
     let analysis = db.analyze_module(&ModuleInput {
-        compiled: (0..sources.len()).map(FileId).collect(),
+        compiled: (0..sources.len()).map(FileId::new).collect(),
         command_line: CommandLine::new(args),
         ..ModuleInput::default()
     });
@@ -55,9 +55,13 @@ fn errors(source: &str, args: &[&str]) -> Vec<Code> {
 fn type_of(source: &str, args: &[&str], name: &str) -> Option<Type> {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
-    db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+    db.set_file(
+        FileId::new(0),
+        PathBuf::from("t.qc"),
+        source.as_bytes().to_vec(),
+    );
     let analysis = db.analyze_module(&ModuleInput {
-        compiled: vec![FileId(0)],
+        compiled: vec![FileId::new(0)],
         command_line: CommandLine::new(args),
         ..ModuleInput::default()
     });
