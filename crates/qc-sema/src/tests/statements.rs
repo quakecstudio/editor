@@ -1108,3 +1108,24 @@ fn a_struct_member_needs_its_semicolon() {
         assert_eq!(first.as_deref(), Some("missing semi-colon"), "{source}");
     }
 }
+
+// spec FTEF-19.20: the type of a definition that declares no name is still a type that must
+// be: a class member `T;` and a definition whose name is missing, after the one before it lost
+// its `;`, are "not a type" for a name no type has, and a type that is one is not
+#[test]
+fn a_type_with_no_name_after_it_is_checked() {
+    let messages = |source: &str| -> Vec<String> {
+        lined(source)
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    let not_a_type = |name: &str| format!("\"{name}\" is not a type");
+    let member = "entity self;\nclass C1 : entity\n{\nm2;\nvoid() M3;\n};\n";
+    assert!(messages(member).contains(&not_a_type("m2")));
+    let typed = "entity self;\ntypedef float T;\nclass C1 : entity\n{\nT;\n};\n";
+    assert!(!messages(typed).iter().any(|m| m.ends_with("is not a type")));
+    let lost = "entity entity f6(void)\n{\n};\n";
+    assert!(messages(lost).contains(&not_a_type("f6")));
+    assert!(messages("m2(void) {};\n").contains(&not_a_type("m2")));
+}

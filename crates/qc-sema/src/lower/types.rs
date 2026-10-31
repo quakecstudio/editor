@@ -97,6 +97,9 @@ pub struct RawClass {
     pub body: bool,
     /// The members, in declaration order.
     pub members: Vec<RawMember>,
+    /// The types of members that declare no name, `T;`, whose type names are checked as a
+    /// member's are (FTEF-19.20).
+    pub type_only: Vec<(Type, Span)>,
 }
 
 /// One member of an FTEQCC class (FTEF-9.2, FTEF-9.3).
@@ -831,6 +834,7 @@ pub(super) fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecl
             .child_tokens()
             .any(|t| t.kind() == SyntaxKind::LBrace),
         members: Vec::new(),
+        type_only: Vec::new(),
     };
     // FTEF-9.2: `virtual:` and `nonvirtual:` set the kind of the member functions after them.
     let mut assume_virtual = None;
@@ -849,7 +853,7 @@ pub(super) fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecl
             }
             SyntaxKind::Declaration => {
                 if let Some(decl) = ast::Declaration::cast(node) {
-                    lower_member(&decl, &class_name, assume_virtual, cx, &mut raw.members);
+                    lower_member(&decl, &class_name, assume_virtual, cx, &mut raw);
                 }
             }
             SyntaxKind::AccessorMember => {
@@ -908,8 +912,9 @@ fn lower_member(
     class: &str,
     assume_virtual: Option<bool>,
     cx: Cx<'_>,
-    out: &mut Vec<RawMember>,
+    raw: &mut RawClass,
 ) {
+    let out = &mut raw.members;
     let words = qualifiers(decl);
     // FTEF-20.11: a member's words are `__` and any case as the parser took them.
     let has = |word: &str| {
@@ -1054,6 +1059,12 @@ fn lower_member(
             follow: String::new(),
             function_words: FunctionWords::default(),
         });
+        return;
+    }
+    // FTEF-19.20: `QCC_PR_ParseType` reads a member's type before its name, so `T;` is "not a
+    // type" when `T` names none.
+    if !declared && let Some(ty) = decl.ty() {
+        raw.type_only.push((base, ty.syntax().span()));
     }
 }
 

@@ -1059,7 +1059,9 @@ pub(super) fn lower_declaration(decl: &ast::Declaration, cx: Cx<'_>, out: &mut V
         raw.untyped = untyped;
         raw.returns_function = inline_function && declarator.params().is_some();
     }
-    if decl.declarators().next().is_none()
+    // FTEF-19.20: `QCC_PR_ParseType` reads the type before any name, so a declaration whose
+    // declarator lost its name still has its type's names checked.
+    if decl.declarators().all(|d| d.name().is_none())
         && fte
         && let Some(node) = decl.ty()
     {

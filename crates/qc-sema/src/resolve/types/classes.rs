@@ -193,6 +193,10 @@ impl<'a> Resolver<'a> {
         {
             info.shape.get_or_insert(shape);
         }
+        for (ty, span) in &class.type_only {
+            let location = self.at(file, *span);
+            self.check_type_names(ty, &[], span.start, location);
+        }
         for member in &class.members {
             let location = self.at(file, member.span);
             // FTEF-9.9: `basetype = QCC_PR_ParseType(false, false, false)`: a member's type
