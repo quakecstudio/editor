@@ -630,6 +630,17 @@ full dialect also uses `enumflags`.
   and `string s = A;` casts the null constant. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseEnum`.
+- **FTEF-8.7** An `enum` or `enumflags` with no `{` after its keyword reads a type first,
+  `type = autoprototyped?NULL:QCC_PR_ParseType(false, true, false); //legacy behaviour`, which
+  takes a keyword that starts a type: another enum, a struct, a union or an accessor, whole,
+  as the enum's base type, with the warning `W0224` "legacy enum base type" and then
+  `QCC_PR_Expect("{")`. So `enum enum { A };` and `enumflags enumflags { A };` are "expected {,
+  found ;", `enum enum { B } { A };` warns, `enum struct S { float a; } { A };` is "values for
+  enums of this type must be initialised", and `enum accessor A : float { A };` is "expected },
+  found A", as the pinned FTEQCC compiles them. `class` after the keyword is `enum class`'s
+  (`strictenum = QCC_PR_CheckName("class");`). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseEnum`.
 
 ## FTEF-9 Classes
 

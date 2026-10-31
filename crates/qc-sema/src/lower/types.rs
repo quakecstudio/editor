@@ -479,13 +479,23 @@ pub(super) fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>)
         .syntax()
         .child_tokens()
         .any(|t| t.kind() == SyntaxKind::EnumKw && cx.spells(&t, Keyword::Enumflags));
-    // The base is the type after `:`; a parameter list after the body is the declaration's.
-    let base_node = en
+    // The base is the type after `:`, or a keyword type before the `{` with no `:`, the legacy
+    // form (FTEF-8.7); a parameter list after the body is the declaration's.
+    let colon = en
         .syntax()
         .child_tokens()
-        .any(|t| t.kind() == SyntaxKind::Colon)
-        .then(|| en.syntax().children().find_map(ast::Type::cast))
-        .flatten();
+        .any(|t| t.kind() == SyntaxKind::Colon);
+    let brace = en
+        .syntax()
+        .child_tokens()
+        .find(|t| t.kind() == SyntaxKind::LBrace)
+        .map_or(usize::MAX, |t| t.span().start);
+    let base_node = en
+        .syntax()
+        .children()
+        .find_map(ast::Type::cast)
+        .filter(|ty| ty.syntax().span().start < brace);
+    let legacy_node = !colon && base_node.is_some();
     let base = match (&base_node, &legacy_word) {
         (Some(node), _) => cx.ty(node),
         (None, Some(word)) => legacy_base(word, cx).unwrap_or(Type::Unknown),
@@ -510,7 +520,7 @@ pub(super) fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>)
     }
     // FTEF-19.10: a base type with no `:` before it is FTEQCC's legacy form, and `enum class`
     // names its values only as `Name::value`.
-    let legacy = legacy_word.is_some();
+    let legacy = legacy_word.is_some() || legacy_node;
     // `strictenum = QCC_PR_CheckName("class");`
     let strict = en
         .syntax()

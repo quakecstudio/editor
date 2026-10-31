@@ -1002,3 +1002,30 @@ fn a_type_after_a_qualifier_is_the_type() {
         assert_eq!(lined(source), [], "{source}");
     }
 }
+
+// spec FTEF-8.7: a keyword that starts a type after `enum` is the enum's legacy base type, read
+// whole, then the `{` is expected
+#[test]
+fn a_keyword_type_after_enum_is_its_base() {
+    let legacy = "legacy enum base type. Use \"enum [class] [name_e]:type\" instead";
+    let expected = |list: &[&str]| -> Vec<(u32, String)> {
+        list.iter().map(|m| (1, (*m).to_owned())).collect()
+    };
+    assert_eq!(
+        lined("enum enum { A };\n"),
+        expected(&["expected {, found ;"])
+    );
+    assert_eq!(
+        lined("enumflags enumflags { A, B };\n"),
+        expected(&["expected {, found ;"])
+    );
+    assert_eq!(lined("enum enum { B } { A };\n"), expected(&[legacy]));
+    assert_eq!(
+        lined("enum struct S { float a; } { A };\n"),
+        expected(&[legacy, "values for enums of this type must be initialised"])
+    );
+    assert_eq!(
+        lined("enum accessor A : float { A };\n"),
+        expected(&["expected }, found A"])
+    );
+}

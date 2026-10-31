@@ -1653,7 +1653,14 @@ impl<'a> Parser<'a> {
         if strict {
             self.bump();
         }
-        if self.at(K::Name) {
+        // FTEF-8.7: `type = QCC_PR_ParseType(false, true, false); //legacy behaviour` reads a
+        // keyword that starts a type, another enum, a struct, a union or an accessor, as the
+        // enum's base type.
+        let keyword_type =
+            self.at_enum_keyword(0) || self.at_struct_keyword(0) || self.kw(0, Keyword::Accessor);
+        if keyword_type {
+            self.fte_type();
+        } else if self.at(K::Name) {
             self.declare_type(self.found());
             self.bump();
         }
