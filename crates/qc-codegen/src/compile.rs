@@ -406,6 +406,40 @@ impl<'a> Compiler<'a> {
             .ok_or(Abort::Internal(Internal::Unresolved, token.span()))
     }
 
+    /// FTEF-32.16: `QCC_UnmarshalLocals` finalises each `static` local and each initialised
+    /// constant one with the globals, before the locals it lays out: so they are made here,
+    /// before the body's parameters, and the body's own locals of nested functions are left to
+    /// those functions.
+    fn hoist_static_locals(&mut self, body: &ast::FunctionBody) -> Lowered<()> {
+        let root = body.syntax();
+        for local in root.descendants().filter_map(ast::LocalDecl::cast) {
+            let nested = local
+                .syntax()
+                .ancestors()
+                .skip(1)
+                .take_while(|node| node != root)
+                .any(|node| node.kind() == SyntaxKind::FunctionBody);
+            if nested {
+                continue;
+            }
+            let is_static = declares(local.syntax(), &Qualifier::Static);
+            for declarator in local.declarators() {
+                let init = declarator.initializer();
+                let Some(name) = declarator.name() else {
+                    continue;
+                };
+                if matches!(init, Some(ast::Initializer::Body(_))) {
+                    continue;
+                }
+                let id = self.def_of(&name)?;
+                if is_static || (init.is_some() && self.index.is_constant(id)) {
+                    self.program.get_def(self.index, id).at(name.span())?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// The place in the list of the definition `token` names, made now if it is new: the
     /// allocating `PR_GetDef` a declaration calls (QC-11, QC-21.2).
     fn declare(&mut self, token: &SyntaxToken) -> Lowered<usize> {
@@ -555,9 +589,16 @@ impl<'a> Compiler<'a> {
             .len()
             .checked_add(usize::from(wrapped.is_none()))
             .at(span)?;
+        self.scope = Some(id);
+        // FTEF-32.16: a body's static locals and its initialised constant ones take storage
+        // before its own, outside the locals its record names.
+        if let FunctionInit::Body(body) = init
+            && self.dialect.has_fteqcc_extensions()
+        {
+            self.hoist_static_locals(body)?;
+        }
         let locals_start = self.program.next_global().at(span)?;
         self.locals_end = locals_start;
-        self.scope = Some(id);
         let mut record_name = if written.nested {
             String::new()
         } else {

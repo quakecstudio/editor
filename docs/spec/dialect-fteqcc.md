@@ -5258,6 +5258,16 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   self.f };` is `STORE_F Q a[0]`, `STORE_F 2 a[1]`, `LOAD_F self f a[2]`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseInitializerType_Internal`, `QCC_PR_GenerateInitializerType`.
+- **FTEF-32.16** A function's `static` locals and its initialised constant ones are not among
+  the locals its record names: `QCC_UnmarshalLocals` finalises them before it lays out any
+  function's locals ("first, finalize all static locals that shouldn't form part of the local
+  defs. ... if (d->isstatic || (d->constant && d->initialized)) QCC_FinaliseDef(d);"), so their
+  slots lie outside every record's `parm_start` to `parm_start + locals`. qc-codegen gives them
+  their storage before the function's parameters, in declaration order, so `void() f = { const
+  string tab[] = {"a", "b"}; };` has `tab[0]` and `tab[1]` outside `f`'s locals; a local
+  function given a body is a function of its own (FTEF-18.2). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
+  `QCC_UnmarshalLocals`.
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,

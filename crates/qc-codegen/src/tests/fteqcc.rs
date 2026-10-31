@@ -1001,6 +1001,25 @@ fn a_calls_value_as_a_left_operand_survives_the_next_call() {
     );
 }
 
+// spec FTEF-32.16: a body's static locals and initialised constant ones take storage before its
+// parameters, outside the locals its record names; its other locals are among them
+#[test]
+fn static_and_constant_locals_are_outside_the_record() {
+    let source = "void(float d) f = { const string tab[] = {\"a\", \"b\"}; static float s; \
+                  local float x; const float c; x = d + s + c; };\n";
+    let p = fte_progs(source);
+    let f = function(&p, "f");
+    let range = f.parm_start..f.parm_start + f.locals;
+    for name in ["tab[0]", "tab[1]", "s"] {
+        let at = global(&p, name);
+        assert!(!range.contains(&at), "{name} at {at} in {range:?}");
+        assert!(at < f.parm_start, "{name}");
+    }
+    for name in ["d", "x", "c"] {
+        assert!(range.contains(&global(&p, name)), "{name}");
+    }
+}
+
 // spec FTE-21.6: under FTEQCC a function's record counts its parameters among its locals, so a
 // nested call restores them; id's qcc counts none for a function with no `local` (QC-21.4)
 #[test]
