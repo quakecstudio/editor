@@ -3740,6 +3740,22 @@ and compares the outcome with the pinned FTEQCC's.
   declares a body's enum as one at file level, its values and name seen after the body too,
   since the file's enum checks (the legacy base form, a name another type has, FTEF-19.10) read
   it there.
+- **FTEF-20.16** `enum`'s `class` and an accessor's `inline`, `get` and `set` are names, matched
+  exactly, not keywords: `QCC_PR_ParseEnum` reads `strictenum = QCC_PR_CheckName("class");` and
+  the accessor body `isinline = QCC_PR_CheckName("inline");` and `if (QCC_PR_CheckName("set"))
+  ... else if (QCC_PR_CheckName("get")) ... else break;`, then `QCC_PR_Expect("}")`, where a
+  class member's words are `QCC_PR_CheckKeyword(1, ...)`'s (FTEF-20.11), which take `__` and any
+  case. So in an accessor `__get`, `__set` and `__inline`, as any other word that is no `get` or
+  `set`, are "expected }, found NAME" (`E0204`): the pinned FTEQCC gives it for `accessor buf :
+  float { __get float len = size; };`. After `enum`, `__class` is no `class`: FTEQCC reads it with
+  `QCC_PR_ParseType` as the legacy base type, a class `__class X` declares, and reports that
+  declaration's errors, `"A" is not a type` for `enum __class X { A };` and `Parent type float is
+  not a class/entity` for `enum __class X : float { A };`; this profile reads it as the enum's name
+  and reports `expected {, found X` (`E0204`) there, and for `enum string X { A };` that error
+  without the legacy form's `F328` FTEQCC gives first (FTEF-19.10). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseEnum`; `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseType`, `QCC_PR_CheckName`,
+  `QCC_PR_CheckKeyword`.
 
 ## FTEF-21 Flags that change in the middle of a file
 

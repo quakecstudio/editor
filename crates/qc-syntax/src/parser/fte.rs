@@ -1277,7 +1277,12 @@ impl Parser<'_> {
             }
         }
         if !accessor {
-            self.expected("get or set");
+            // FTEF-20.16: an accessor's loop stops at a word that is not `get` or `set`, and
+            // `QCC_PR_Expect("}")` then refuses it; a class member's needs one of them.
+            match member {
+                Member::Accessor => self.expected("}"),
+                Member::Class => self.expected("get or set"),
+            }
             self.recover(true);
             self.finish_node();
             return;
