@@ -2043,6 +2043,26 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.16: strtolower and strtoupper change ASCII letters only, cut to 1023
+    // bytes
+    #[test]
+    fn string_case() {
+        let long = "a".repeat(1100);
+        let (strings, offsets) = string_table(&["MiXeD 1é", &long]);
+        for (number, text, expected) in [
+            (480, 0, "mixed 1é".as_bytes().to_vec()),
+            (481, 0, "MIXED 1é".as_bytes().to_vec()),
+            (481, 1, vec![b'A'; 1023]),
+        ] {
+            let mut f = Fixture::new(number, 1, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, offsets[text]);
+            f.run_ok(ServerState::Active);
+            let value = f.return_i();
+            assert_eq!(f.engine().strings.text(value), Some(expected.as_slice()));
+        }
+    }
+
     // spec BUILTIN-18.15: min and max over every argument passed, a NaN kept only when first;
     // bound lowers to max then raises to min
     #[test]

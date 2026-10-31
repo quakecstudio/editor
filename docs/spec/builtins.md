@@ -880,6 +880,9 @@ profile (DIFF-12.19); everything else runs under id's.
   holds, so a NaN is the answer only when it comes first. `bound(min, value, max)` (#96) is
   `PF_bound`: `value` set to `max` when above it, then to `min` when below it, so `min` wins
   when the two cross.
+- **BUILTIN-18.16** `strtolower(s)` (#480) and `strtoupper(s)` (#481) are `PF_strtolower` and
+  `PF_strtoupper`: a new temporary string of `s`'s bytes through `q_tolower` (`q_toupper`),
+  which change only ASCII letters, up to 1023 of them.
 
 ## Test vectors
 

@@ -1044,6 +1044,13 @@ impl MockBuiltins {
 
 // ===== vkQuake's extension builtins (BUILTIN-18) =====
 
+/// The case `strtolower` and `strtoupper` give (BUILTIN-18.16).
+#[derive(Clone, Copy)]
+enum Case {
+    Lower,
+    Upper,
+}
+
 /// Which of `min` and `max` (BUILTIN-18.15).
 #[derive(Clone, Copy)]
 enum Extreme {
@@ -1190,6 +1197,8 @@ impl MockBuiltins {
             339 => Some(joined_string(context, &self.engine, 0).map(|_| ())),
             448 => Some(self.b_cvar_string(context)),
             478 => Some(self.b_strftime(context)),
+            480 => Some(self.b_strcase(context, Case::Lower)),
+            481 => Some(self.b_strcase(context, Case::Upper)),
             627 => Some(self.b_sprintf(context)),
             232 => Some(read_parm(context, 2).map(|_| ())),
             233 => Some(read_parm_string(context, &self.engine, 2).map(|_| ())),
@@ -1320,6 +1329,20 @@ impl MockBuiltins {
             value = low;
         }
         write_return_float(context, value)
+    }
+
+    /// `strtolower(s)` and `strtoupper(s)`, vkQuake's `PF_strtolower` and `PF_strtoupper`
+    /// (BUILTIN-18.16): a new string of `s` with its ASCII letters in that case, cut to 1023
+    /// bytes.
+    fn b_strcase(&mut self, context: &mut Context<'_, '_>, case: Case) -> Result<(), BuiltinError> {
+        let mut text = read_parm_string(context, &self.engine, 0)?;
+        text.truncate(VKQUAKE_STRINGTEMP_LENGTH.saturating_sub(1));
+        match case {
+            Case::Lower => text.make_ascii_lowercase(),
+            Case::Upper => text.make_ascii_uppercase(),
+        }
+        let value = self.engine.strings.make(text);
+        write_return_string(context, value)
     }
 
     /// `checkextension(name)`, vkQuake's `PF_checkextension` (BUILTIN-18.14): 1 for a name of
