@@ -1086,7 +1086,8 @@ impl MockBuiltins {
     /// The extension builtin `number` under vkQuake's profile, when the mock ports it
     /// (BUILTIN-18.1); `None` sends the number on to id's table. `clientstat` (232) and
     /// `globalstat` (233) only choose what a client's stats send, so they read their last
-    /// parameter, `globalstat`'s a string, and keep nothing (BUILTIN-18.5).
+    /// parameter, `globalstat`'s a string, and keep nothing (BUILTIN-18.5). `print` (339) only
+    /// writes to the console, so it reads its strings (BUILTIN-18.13).
     fn vkquake_extension(
         &mut self,
         number: u32,
@@ -1099,6 +1100,7 @@ impl MockBuiltins {
             118 => Some(self.b_strzone(context)),
             119 => Some(self.b_strunzone(context)),
             213 => Some(self.b_forceinfokey(context)),
+            339 => Some(joined_string(context, &self.engine, 0).map(|_| ())),
             448 => Some(self.b_cvar_string(context)),
             478 => Some(self.b_strftime(context)),
             627 => Some(self.b_sprintf(context)),

@@ -865,6 +865,9 @@ profile (DIFF-12.19); everything else runs under id's.
   `team` is `t1`, `t` and the bottom colour plus 1; `*VIP` and `*spectator` are empty. Any other
   key, and any key on an edict that is no active client, is 0, the null string. A text is a new
   temporary string.
+- **BUILTIN-18.13** `print(s, ...)` (#339) is `PF_print`, which writes each argument the call
+  passed, read with `G_STRING`, to the console. The mock has no console, so it reads and checks
+  them, as `dprint` does (BUILTIN-11.3).
 
 ## Test vectors
 

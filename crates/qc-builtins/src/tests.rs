@@ -2043,6 +2043,21 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.13: print reads every string it is passed and changes nothing
+    #[test]
+    fn print_reads_its_strings() {
+        let (strings, offsets) = string_table(&["a", "b"]);
+        for (second, ok) in [(offsets[1], true), (999_999, false)] {
+            let mut f = Fixture::new(339, 2, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            let before = f.engine().clone();
+            f.set_parm_i(0, offsets[0]);
+            f.set_parm_i(1, second);
+            assert_eq!(f.run(ServerState::Active).is_ok(), ok);
+            assert_eq!(f.engine(), &before);
+        }
+    }
+
     // spec BUILTIN-18.12: infokey answers the world's *version and an active client's fixed
     // keys, and 0 for anything else
     #[test]
