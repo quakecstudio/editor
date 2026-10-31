@@ -893,6 +893,9 @@ profile (DIFF-12.19); everything else runs under id's.
   red, 5 red on even positions and 6 red on odd ones, any other its own colour. Any other byte
   is kept when `redalpha` is 0 or its low 7 bits are below 16, else moved to the white or red
   half by `redalpha` 1 or 2. The arguments are read as `G_FLOAT` and `(int)` (BUILTIN-2.2).
+- **BUILTIN-18.18** `num_for_edict(e)` (#512) is `PF_num_for_edict`: "G_FLOAT (OFS_RETURN) =
+  G_EDICTNUM (OFS_PARM0);", the edict's number, and `NUM_FOR_EDICT`'s error for a value that
+  is no edict (BUILTIN-2.7).
 
 ## Test vectors
 

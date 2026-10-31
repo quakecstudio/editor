@@ -2043,6 +2043,25 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.18: num_for_edict is an edict's number; a bad value is NUM_FOR_EDICT's
+    // error
+    #[test]
+    fn num_for_edict_is_the_number() {
+        for (n, ok) in [(0, true), (1, true), (5000, false)] {
+            let mut f = Fixture::new(512, 1, vec![0], 1);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            let value = n * f.machine.edicts().layout().edict_size();
+            f.set_parm_i(0, value);
+            let result = f.run(ServerState::Active);
+            if ok {
+                result.unwrap();
+                assert_eq!(f.return_f(), f32::from(u16::try_from(n).unwrap()));
+            } else {
+                assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
+            }
+        }
+    }
+
     // spec BUILTIN-18.17: strconv moves digits, letters and punctuation between Quake's white
     // and red rows and changes case
     #[test]

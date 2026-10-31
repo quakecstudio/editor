@@ -1200,6 +1200,7 @@ impl MockBuiltins {
             478 => Some(self.b_strftime(context)),
             480 => Some(self.b_strcase(context, Case::Lower)),
             481 => Some(self.b_strcase(context, Case::Upper)),
+            512 => Some(Self::b_num_for_edict(context)),
             627 => Some(self.b_sprintf(context)),
             232 => Some(read_parm(context, 2).map(|_| ())),
             233 => Some(read_parm_string(context, &self.engine, 2).map(|_| ())),
@@ -1358,6 +1359,13 @@ impl MockBuiltins {
             .strings
             .make(strconv::strconv(ccase, redalpha, rednum, &text));
         write_return_string(context, value)
+    }
+
+    /// `num_for_edict(e)`, vkQuake's `PF_num_for_edict` (BUILTIN-18.18): `e`'s number.
+    fn b_num_for_edict(context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let number = read_parm_edictnum(context, 0)?;
+        let value = u16::try_from(number.index()).map_or(f32::MAX, f32::from);
+        write_return_float(context, value)
     }
 
     /// `checkextension(name)`, vkQuake's `PF_checkextension` (BUILTIN-18.14): 1 for a name of
