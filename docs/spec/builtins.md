@@ -854,6 +854,17 @@ profile (DIFF-12.19); everything else runs under id's.
   temporary string holding its text (`var->string` for server QuakeC), cut to 1023 bytes; for
   `game`, when no setting has the name, the game's directory names (`COM_GetGameNames`), which
   for the mock's game is `id1`; for any other name 0, the null string.
+- **BUILTIN-18.12** `infokey(e, key)` (#80) is `PF_infokey_s`, which reads `e` with
+  `G_EDICTNUM` (BUILTIN-2.7) and `key` with `G_STRING` and answers from fixed sources, not from
+  the info strings `forceinfokey` sets (BUILTIN-18.4). On the world, `*version` is
+  `ENGINE_NAME_AND_VER`, `vkQuake 1.37.1` (`Quake/quakever.h`). On an active client: `ip` is its
+  socket's address, `LOCAL` for the local loop (`Quake/net_loop.c`), which every client of the
+  mock is; `ping` is `%f` of its average ping, `0.000000`, as the mock's clients never ping;
+  `protocol` is `fitz666`, vkQuake's default protocol; `name` is `player` and `topcolor`,
+  `bottomcolor` and `csqcactive` are `0`, the name and colours a client enters with (DIFF-4.1);
+  `team` is `t1`, `t` and the bottom colour plus 1; `*VIP` and `*spectator` are empty. Any other
+  key, and any key on an edict that is no active client, is 0, the null string. A text is a new
+  temporary string.
 
 ## Test vectors
 

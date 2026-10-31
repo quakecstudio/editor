@@ -1093,6 +1093,7 @@ impl MockBuiltins {
         context: &mut Context<'_, '_>,
     ) -> Option<Result<(), BuiltinError>> {
         match number {
+            80 => Some(self.b_infokey(context)),
             93 => Some(self.b_registercvar(context)),
             110 => Some(self.b_fopen(context)),
             118 => Some(self.b_strzone(context)),
@@ -1144,6 +1145,37 @@ impl MockBuiltins {
             printf::sprintf(&format, 1, &mut args)?
         };
         let value = self.engine.strings.make(text);
+        write_return_string(context, value)
+    }
+
+    /// `infokey(e, key)`, vkQuake's `PF_infokey_s` (BUILTIN-18.12): the world's `*version`, an
+    /// active client's fixed keys, and 0 for any other.
+    fn b_infokey(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let ent = read_parm_edictnum(context, 0)?.index();
+        let key = read_parm_string(context, &self.engine, 1)?;
+        let active = ent
+            .checked_sub(1)
+            .is_some_and(|slot| self.engine.clients_active.get(slot) == Some(&true));
+        let text: Option<&[u8]> = if ent == 0 {
+            (key == b"*version").then_some(b"vkQuake 1.37.1")
+        } else if active {
+            match key.as_slice() {
+                b"ip" => Some(b"LOCAL"),
+                b"ping" => Some(b"0.000000"),
+                b"protocol" => Some(b"fitz666"),
+                b"name" => Some(b"player"),
+                b"topcolor" | b"bottomcolor" | b"csqcactive" => Some(b"0"),
+                b"team" => Some(b"t1"),
+                b"*VIP" | b"*spectator" => Some(b""),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let value = match text {
+            Some(text) => self.engine.strings.make(text.to_vec()),
+            None => 0,
+        };
         write_return_string(context, value)
     }
 

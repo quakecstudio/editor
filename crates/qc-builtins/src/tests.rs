@@ -2043,6 +2043,54 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.12: infokey answers the world's *version and an active client's fixed
+    // keys, and 0 for anything else
+    #[test]
+    fn infokey_answers_fixed_keys() {
+        let keys = [
+            "*version",
+            "name",
+            "team",
+            "ping",
+            "ip",
+            "*spectator",
+            "hostname",
+        ];
+        let (strings, offsets) = string_table(&keys);
+        let client = |f: &Fixture| f.machine.edicts().layout().edict_size();
+        for (on_client, key, expected) in [
+            (false, 0, Some(&b"vkQuake 1.37.1"[..])),
+            (false, 6, None),
+            (true, 1, Some(&b"player"[..])),
+            (true, 2, Some(&b"t1"[..])),
+            (true, 3, Some(&b"0.000000"[..])),
+            (true, 4, Some(&b"LOCAL"[..])),
+            (true, 5, Some(&b""[..])),
+            (true, 6, None),
+            (true, 0, None),
+        ] {
+            let mut f = Fixture::new(80, 2, strings.clone(), 1);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            let e = if on_client { client(&f) } else { 0 };
+            f.set_parm_i(0, e);
+            f.set_parm_i(1, offsets[key]);
+            f.run_ok(ServerState::Active);
+            let value = f.return_i();
+            match expected {
+                Some(text) => assert_eq!(f.engine().strings.text(value), Some(text), "{key}"),
+                None => assert_eq!(value, 0, "{key}"),
+            }
+        }
+        let mut inactive = Fixture::new(80, 2, strings, 1);
+        inactive.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        inactive.builtins.engine_mut().clients_active = vec![false];
+        let e = client(&inactive);
+        inactive.set_parm_i(0, e);
+        inactive.set_parm_i(1, offsets[1]);
+        inactive.run_ok(ServerState::Active);
+        assert_eq!(inactive.return_i(), 0);
+    }
+
     // spec BUILTIN-18.11: cvar_string is a setting's text, `id1` for game, and 0 for an unknown
     // name
     #[test]
