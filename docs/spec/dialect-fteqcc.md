@@ -2864,6 +2864,18 @@ against FTEQCC.
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseInitializerType_Internal`, `QCC_PR_GenerateQCFunction`, `QCC_PR_FinaliseFunctions`,
   `QCC_PR_GenerateInitializerType`.
+- **FTEF-18.40** A nested function (FTEF-18.2) sees the `static` locals of the functions
+  around it that are declared before it, and no other of their locals. `QCC_PR_GetDef` passes
+  over a def of the local table whose scope is not the function's, `if ( def->scope &&
+  def->scope != scope)`, unless `if (def->isstatic)` and the def's scope is one of `for (pscope
+  = scope->parentscope; pscope; pscope = pscope->parentscope)`; the table holds only the defs
+  made so far, so an outer static declared after the nested function is not found. The table's
+  chain gives the newest first, so a local of the nested function's own comes before the
+  outer one. A plain local of the nested function named as an outer static is then that static,
+  with "nonstatic redeclaration of NAME ignored" (FTEF-19.1). So `void() f = { static float
+  s; void() h = { s = 1; }; h(); };` compiles, and with the `static float s;` after `h` it is
+  `Unknown value "s".` Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GetDef`.
 - **FTEF-18.34** This profile's error recovery (QCD-1.4) ends the body of a struct, class,
   accessor, `switch` or function at a declaration line, a token at column 0 that has a
   declaration's shape or is one of `typedef`, `class`, `accessor`, `enum`, `enumflags`, `struct`
@@ -4708,6 +4720,17 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   first copies the return value to a temporary (FTEF-29.13). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_RefToDef`, `QCC_LoadFromArray`, `QCC_StoreToArray`.
+- **FTEF-29.15** A call's value may be assigned to with no warning unless it is larger than a
+  vector. `QCC_PR_GenerateFunctionCallRef` returns `retval = QCC_GetAliasTemp(QCC_MakeSRefForce(
+  &def_ret, 0, t->aux_type))`, a def `qccHunkAlloc` makes that sets neither `temp` nor
+  `constant`, so `QCC_DefToRef`'s `!def.sym || !!def.sym->constant || def.sym->temp` is false
+  and the reference is not `readonly` (FTEF-29.1). A return type `if (t->aux_type->size >
+  type_vector->size)` is written through `bigret`, read back by `QCC_RefToDef` of a
+  `REF_POINTER` into a temporary, and is read-only: "Assignment to const" and "Assignment to
+  constant NAME" (FTEF-29.3). So `t.origin = t.G("o") = v;` and `gf() += 2;` compile silently
+  and a four-float struct's `gb() = v;` warns twice. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`, `QCC_GetAliasTemp`, `QCC_DefToRef`.
 - **FTEF-29.10** An array named bare, its head, is the pointer to its first element to a
   prefix or postfix `++` and `--` (`REF_ARRAYHEAD`): read by its address, which the id target
   refuses (FTEF-31.4), stepped by `OP_ADD_PIW` of its element's size, `--` warning of the

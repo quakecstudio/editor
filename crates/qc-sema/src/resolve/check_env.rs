@@ -495,7 +495,12 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn this_type(&self) -> Option<Type> {
-        let class = self.resolver.index.def(self.owner?)?.member_of?;
+        // FTEF-18.40: a nested function's `this` is that of the member function around it.
+        let mut owner = self.owner?;
+        while let Some(around) = self.resolver.enclosing.get(&owner) {
+            owner = around.scope.owner;
+        }
+        let class = self.resolver.index.def(owner)?.member_of?;
         let name = &self.resolver.index.def(class)?.name;
         Some(Type::Named(name.as_str().into()))
     }

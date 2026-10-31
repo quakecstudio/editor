@@ -971,3 +971,52 @@ fn a_nested_function_does_not_see_the_outer_locals() {
     let source = "void() f = { float x; void() h = { x = 1; }; h(); };\n";
     assert_eq!(lined(source), [(1, "Unknown value \"x\".".to_owned())]);
 }
+
+// spec FTEF-18.40: a nested function sees the static locals declared before it in the functions
+// around it, at any depth, but not one declared after it
+#[test]
+fn a_nested_function_sees_the_outer_statics_declared_before_it() {
+    let before = "void() f = { static float s; void() h = { s = 1; }; h(); };\n";
+    assert_eq!(lined(before), []);
+    let deeper =
+        "void() f = { static float s; void() h = { void() g = { s = 2; }; g(); }; h(); };\n";
+    assert_eq!(lined(deeper), []);
+    let after = "void() f = { void() h = { s = 1; }; static float s; h(); };\n";
+    assert_eq!(lined(after), [(1, "Unknown value \"s\".".to_owned())]);
+}
+
+// spec FTEF-18.40: a nested function's own local named as an outer static is that static, a
+// nonstatic redeclaration
+#[test]
+fn a_nested_local_named_as_an_outer_static_redeclares_it() {
+    let source = "void() f = { static float s; void() h = { float s; s = 1; }; h(); };\n";
+    assert_eq!(
+        lined(source),
+        [(1, "nonstatic redeclaration of s ignored".to_owned())]
+    );
+}
+
+// spec FTEF-18.40: a nested function in a member function is read in its class: its members,
+// `this` and `self` as the class, whose missing field is named in the class
+#[test]
+fn a_nested_function_in_a_member_function_sees_its_class() {
+    let header = concat!(
+        "entity self; .vector origin; void end_sys_fields;\nfloat time;\n",
+        "class D { float q; };\nclass C { float m; void() A; void(float x) B; };\n",
+        "void(float x) C::B = {};\n",
+    );
+    let members = format!(
+        "{header}void() C::A = {{ static void N(void) {{ m = 2; B(1); this.m = time; }}; N(); }};\n"
+    );
+    let found = |source: &str| -> Vec<String> {
+        lined(source)
+            .into_iter()
+            .map(|(_, message)| message)
+            .filter(|m| !m.contains("not qualified") && !m.contains("'self' used"))
+            .collect()
+    };
+    assert_eq!(found(&members), Vec::<String>::new());
+    let other =
+        format!("{header}void() C::A = {{ static void N(void) {{ self.q = time; }}; N(); }};\n");
+    assert_eq!(found(&other), ["Unknown field \"q\" in class \"C\""]);
+}

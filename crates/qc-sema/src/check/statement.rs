@@ -788,9 +788,13 @@ impl Checker<'_> {
     /// Whether the function returns a type larger than a vector, through a pointer its caller
     /// passes.
     fn returns_large(&self) -> bool {
-        self.env
-            .layout(&self.function.ret)
-            .is_some_and(|l| l.words > VECTOR_WORDS)
+        self.is_large(&self.function.ret)
+    }
+
+    /// Whether `ty` is larger than a vector, `ty->size > type_vector->size`, so a function
+    /// returns it through a pointer its caller passes.
+    pub(super) fn is_large(&self, ty: &Type) -> bool {
+        self.env.layout(ty).is_some_and(|l| l.words > VECTOR_WORDS)
     }
 
     /// FTEF-34.8: the start of a function returning a type larger than a vector stores the

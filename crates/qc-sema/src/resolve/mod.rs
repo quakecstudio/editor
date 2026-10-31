@@ -351,6 +351,7 @@ pub(crate) fn resolve_mapped(
         use_defs: HashMap::new(),
         autoproto: false,
         externs: HashSet::new(),
+        enclosing: HashMap::new(),
         unit: FileId(0),
         facts: Vec::new(),
         globals: HashMap::new(),
@@ -561,6 +562,8 @@ struct Resolver<'a> {
     autoproto: bool,
     /// The functions an `extern` at file level made, `def->isextern` (FTEF-22.5).
     externs: HashSet<DefId>,
+    /// Each nested function's enclosing scope, whose `static` locals it sees (FTEF-18.40).
+    enclosing: HashMap<DefId, Enclosing>,
     /// The compiled file, the unit a `static` is visible in (FTEF-19.12).
     unit: FileId,
     /// For each definition, what [`Facts`] holds.
@@ -940,6 +943,16 @@ enum Found {
     Error(Code, String),
     /// Nothing: "Unknown value" (QCD-4.1).
     Unknown,
+}
+
+/// Where a nested function is declared in the function around it (FTEF-18.40).
+#[derive(Clone, Copy)]
+struct Enclosing {
+    /// The scope of the function around it, at the nested function's declaration.
+    scope: Scope,
+    /// The definitions made before it, beyond which the outer function's locals are not yet
+    /// declared.
+    end: usize,
 }
 
 /// The function whose body is being resolved, where its locals start in the definition
