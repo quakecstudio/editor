@@ -126,6 +126,45 @@ pub const LIMIT_MAX_SOUNDS: usize = 256;
 /// `LIMIT_MAX_MODELS`, the model precache list size (LIMIT-6.2), id's `MAX_MODELS`.
 pub const LIMIT_MAX_MODELS: usize = 256;
 
+/// vkQuake's `MAX_SOUNDS` (BUILTIN-18.3).
+pub const VKQUAKE_MAX_SOUNDS: usize = 2048;
+/// vkQuake's `MAX_MODELS` (BUILTIN-18.3).
+pub const VKQUAKE_MAX_MODELS: usize = 8192;
+
+/// Whose rules the mock follows where engines differ (BUILTIN-18).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EngineProfile {
+    /// id's engine: its builtin table and its limits.
+    #[default]
+    Id,
+    /// vkQuake's: every builtin number reaches the dispatch and its precache lists are longer
+    /// (BUILTIN-18.1, BUILTIN-18.3).
+    VkQuake,
+}
+
+impl EngineProfile {
+    /// The builtin numbers the engine's table has, as [`qc_vm::Builtins::limit`] gives them
+    /// (VM-14.7): id's [`qc_vm::LIMIT_NUM_BUILTINS`], or none for vkQuake (BUILTIN-18.1).
+    #[must_use]
+    pub const fn builtin_limit(self) -> Option<u32> {
+        match self {
+            Self::Id => Some(qc_vm::LIMIT_NUM_BUILTINS),
+            Self::VkQuake => None,
+        }
+    }
+
+    /// The size of precache list `kind` (LIMIT-6.2, BUILTIN-18.3).
+    #[must_use]
+    pub const fn precache_limit(self, kind: Precache) -> usize {
+        match (self, kind) {
+            (Self::Id, Precache::Sound) => LIMIT_MAX_SOUNDS,
+            (Self::Id, Precache::Model) => LIMIT_MAX_MODELS,
+            (Self::VkQuake, Precache::Sound) => VKQUAKE_MAX_SOUNDS,
+            (Self::VkQuake, Precache::Model) => VKQUAKE_MAX_MODELS,
+        }
+    }
+}
+
 /// One of the two precache lists (BUILTIN-10, LIMIT-6.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Precache {
@@ -133,17 +172,6 @@ pub enum Precache {
     Sound,
     /// The model list, `precache_model`.
     Model,
-}
-
-impl Precache {
-    /// The list's size: [`LIMIT_MAX_SOUNDS`] or [`LIMIT_MAX_MODELS`] (LIMIT-6.2).
-    #[must_use]
-    pub const fn limit(self) -> usize {
-        match self {
-            Self::Sound => LIMIT_MAX_SOUNDS,
-            Self::Model => LIMIT_MAX_MODELS,
-        }
-    }
 }
 
 /// An append that did not fit: a full precache list (LIMIT-6.2), message buffer
@@ -206,6 +234,8 @@ pub struct MockEngine {
     /// `false` while the map loads (DIFF-3.2) and `true` from the settle frames on (DIFF-3.6);
     /// it decides whether `cvar_set` broadcasts and whether `lightstyle` sends.
     pub server_active: bool,
+    /// Whose rules the mock follows (BUILTIN-18); id's unless the caller chooses another.
+    pub profile: EngineProfile,
     /// The server clock `sv.time`, a `double` (DIFF-3.2): 1.0 at map start.
     ///
     /// `spawn` and `remove` read it for the edict reuse policy and `freetime` (EDICT-6,
@@ -358,6 +388,7 @@ impl MockEngine {
             checkclient: CheckClient::default(),
             clients_active: Vec::new(),
             server_active: false,
+            profile: EngineProfile::Id,
             clock: 1.0,
         }
     }
@@ -395,7 +426,8 @@ impl MockEngine {
     ///
     /// # Errors
     ///
-    /// [`Overflow`] when the list already has [`Precache::limit`] entries (LIMIT-6.2).
+    /// [`Overflow`] when the list already has [`EngineProfile::precache_limit`] entries
+    /// (LIMIT-6.2, BUILTIN-18.3).
     pub fn precache(&mut self, kind: Precache, name: &str) -> Result<(), Overflow> {
         if self.precache_index(kind, name).is_some() {
             return Ok(());
@@ -404,7 +436,7 @@ impl MockEngine {
             Precache::Sound => &mut self.sound_precache,
             Precache::Model => &mut self.model_precache,
         };
-        if list.len() >= kind.limit() {
+        if list.len() >= self.profile.precache_limit(kind) {
             return Err(Overflow);
         }
         list.push(name.to_owned());

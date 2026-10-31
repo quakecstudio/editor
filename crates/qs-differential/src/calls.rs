@@ -20,7 +20,7 @@ use qc_edict::EdictNumber;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use qc_builtins::MockBuiltins;
+use qc_builtins::{EngineProfile, MockBuiltins};
 use qc_progs::{Def, Progs};
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::{ErrorKind, Machine, Observer, RunError};
@@ -291,6 +291,7 @@ pub fn run_codebase(
     theirs: &[u8],
     ours: &[u8],
     rounds: u32,
+    profile: EngineProfile,
 ) -> Result<CodebaseReport, CallsError> {
     let mut worlds = Vec::new();
     for spec in scenarios("") {
@@ -305,8 +306,9 @@ pub fn run_codebase(
         let handles: Vec<_> = worlds
             .iter()
             .map(|(name, scenario, entities)| {
-                let handle = scope
-                    .spawn(move || run_calls(oracle, theirs, ours, scenario, entities, rounds));
+                let handle = scope.spawn(move || {
+                    run_calls(oracle, theirs, ours, scenario, entities, rounds, profile)
+                });
                 (*name, handle)
             })
             .collect();
@@ -375,12 +377,13 @@ pub fn run_calls(
     scenario: &Scenario,
     entities: &[u8],
     rounds: u32,
+    profile: EngineProfile,
 ) -> Result<Report, CallsError> {
     let refused = |e: qc_progs::ReadError| CallsError::Refused(RunRefused::Progs(e.to_string()));
     let their_progs = Progs::read(theirs).map_err(refused)?;
     let our_progs = Progs::read(ours).map_err(refused)?;
-    let mut their_world = World::new(&their_progs, scenario, entities)?;
-    let mut our_world = World::new(&our_progs, scenario, entities)?;
+    let mut their_world = World::new(&their_progs, scenario, entities, profile)?;
+    let mut our_world = World::new(&our_progs, scenario, entities, profile)?;
     let pair = Pair::new(oracle, &their_world, &our_world);
     let total = u32::try_from(their_progs.statements().len())
         .unwrap_or(u32::MAX)
@@ -804,8 +807,10 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
         progs: &'a Progs<'p>,
         scenario: &'s Scenario,
         entities: &[u8],
+        profile: EngineProfile,
     ) -> Result<Self, CallsError> {
         let mut host = Host::new(scenario, progs).map_err(CallsError::Refused)?;
+        host.builtins.engine_mut().profile = profile;
         host.start_map(progs, entities)
             .map_err(|e| CallsError::Setup(format!("{e:?}")))?;
         for slot in 0..scenario.clients {

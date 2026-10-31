@@ -30,6 +30,8 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use qc_builtins::EngineProfile;
+
 use qs_differential::calls::{
     CodebaseReport, FAST_ROUNDS, FULL_ROUNDS, Oracle, run_codebase, uncovered,
 };
@@ -38,7 +40,7 @@ use qs_differential::calls::{
 const PRINTED: usize = 10;
 
 const USAGE: &str = "usage: compiler-diff --mode <fast|full> --codebase <id> \
-                     [--oracle <qcc|fteqcc>] [--summary <file>] [--uncovered <file>] \
+                     [--oracle <qcc|fteqcc>] [--engine <id|vkquake>] [--summary <file>] [--uncovered <file>] \
                      --theirs <progs> \
                      --ours <progs> [--ours <progs>...]";
 
@@ -59,6 +61,8 @@ struct Options {
     rounds: u32,
     codebase: String,
     oracle: Oracle,
+    /// Whose engine rules the mock follows (BUILTIN-18).
+    engine: EngineProfile,
     summary: Option<PathBuf>,
     /// Where to write each function's statements the calls did not execute (DIFF-12.13).
     uncovered: Option<PathBuf>,
@@ -70,6 +74,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut rounds = FAST_ROUNDS;
     let mut codebase = None;
     let mut oracle = Oracle::Qcc;
+    let mut engine = EngineProfile::Id;
     let mut summary = None;
     let mut uncovered = None;
     let mut theirs = None;
@@ -93,6 +98,13 @@ fn parse(args: &[String]) -> Result<Options, String> {
                     other => return Err(format!("--oracle takes qcc or fteqcc, not {other:?}")),
                 };
             }
+            "--engine" => {
+                engine = match value()?.as_str() {
+                    "id" => EngineProfile::Id,
+                    "vkquake" => EngineProfile::VkQuake,
+                    other => return Err(format!("--engine takes id or vkquake, not {other:?}")),
+                };
+            }
             "--summary" => summary = Some(PathBuf::from(value()?)),
             "--uncovered" => uncovered = Some(PathBuf::from(value()?)),
             "--theirs" => theirs = Some(PathBuf::from(value()?)),
@@ -107,6 +119,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
         rounds,
         codebase: codebase.ok_or(USAGE)?,
         oracle,
+        engine,
         summary,
         uncovered,
         theirs: theirs.ok_or(USAGE)?,
@@ -126,8 +139,14 @@ fn run(args: &[String]) -> Result<bool, String> {
         let report = match reports.iter().find(|(bytes, _)| *bytes == ours) {
             Some((_, report)) => report.clone(),
             None => {
-                let report = run_codebase(options.oracle, &theirs, &ours, options.rounds)
-                    .map_err(|e| e.to_string())?;
+                let report = run_codebase(
+                    options.oracle,
+                    &theirs,
+                    &ours,
+                    options.rounds,
+                    options.engine,
+                )
+                .map_err(|e| e.to_string())?;
                 reports.push((ours.clone(), report.clone()));
                 report
             }
@@ -225,6 +244,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::path::PathBuf;
 
+    use qc_builtins::EngineProfile;
     use qs_differential::calls::{CodebaseReport, Oracle};
 
     use super::{Options, add_row};
@@ -241,6 +261,7 @@ mod tests {
             rounds: 1,
             codebase: "rerelease".to_owned(),
             oracle: Oracle::Fteqcc,
+            engine: EngineProfile::Id,
             summary: Some(summary.clone()),
             uncovered: None,
             theirs: PathBuf::from("x/oracle.dat"),

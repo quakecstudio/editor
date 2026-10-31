@@ -159,6 +159,13 @@ impl Machine {
         self.argc
     }
 
+    /// The statement being executed, id's `pr_xstatement`: during a builtin, the `CALL` that
+    /// called it (VM-14.7).
+    #[must_use]
+    pub const fn current_statement(&self) -> i32 {
+        self.xstatement
+    }
+
     /// The current QC call depth, id's `pr_depth`: the number of active QC frames (LIMIT-2.1).
     #[must_use]
     pub const fn depth(&self) -> usize {

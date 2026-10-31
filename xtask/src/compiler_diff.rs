@@ -52,6 +52,11 @@ const PENDING: [&str; 1] = ["rerelease-ctf"];
 /// compares; a run may name the others until each joins (DIFF-12.18).
 const MODS_AT_BAR: [&str; 4] = ["copper", "librequake", "qc-conduit", "swab"];
 
+/// The corpus mods written for an engine with extension builtins, which the mock runs under
+/// vkQuake's rules (BUILTIN-18): crmod7 calls them while it sets up, and Arcane Dimensions
+/// precaches more sounds than id's engine holds.
+const VKQUAKE_MODS: [&str; 2] = ["arcane-dimensions", "crmod7"];
+
 const USAGE: &str = "usage: cargo xtask compiler-diff [--fast | --full] [<codebase>...]";
 
 /// Runs `cargo xtask compiler-diff [--fast | --full] [<codebase>...]`.
@@ -225,6 +230,12 @@ fn run_suite(
                 "fteqcc"
             } else {
                 "qcc"
+            },
+            "--engine",
+            if VKQUAKE_MODS.contains(&id) {
+                "vkquake"
+            } else {
+                "id"
             },
             "--summary",
         ])

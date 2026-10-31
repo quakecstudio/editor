@@ -28,8 +28,8 @@ use crate::error::{BuiltinError, FatalError, RuntimeError};
 use crate::math;
 use crate::mock::{
     BUILTIN_CHECKCLIENT_INTERVAL, BUILTIN_FL_FLY, BUILTIN_FL_NOTARGET, BUILTIN_FL_ONGROUND,
-    BUILTIN_FL_SWIM, LIMIT_MAX_DATAGRAM, LIMIT_MAX_LIGHTSTYLES, MessageDest, MockEngine, Overflow,
-    Precache,
+    BUILTIN_FL_SWIM, EngineProfile, LIMIT_MAX_DATAGRAM, LIMIT_MAX_LIGHTSTYLES, MessageDest,
+    MockEngine, Overflow, Precache,
 };
 
 /// The builtin dispatch over a mock engine (DIFF-6, DIFF-7).
@@ -72,6 +72,11 @@ impl Builtins for MockBuiltins {
             Ok(()) => Ok(()),
             Err(error) => Err(to_run_error(context, error)),
         }
+    }
+
+    /// The engine profile's builtin numbers (VM-14.7, BUILTIN-18.1).
+    fn limit(&self) -> Option<u32> {
+        self.engine.profile.builtin_limit()
     }
 
     /// The text of the engine-allocated string `value` the mock holds, or `None` (EDICT-13.1,
@@ -158,8 +163,15 @@ impl MockBuiltins {
             30 => self.b_traceoff(context),
             // 49 ChangeYaw is a pure movement builtin handled with movement.
             49 => self.b_changeyaw(context),
-            // A number with no builtin is a PF_Fixme gap (BUILTIN-1.2).
-            _ => Err(BuiltinError::from(RuntimeError::Unimplemented)),
+            // A number with no builtin is a PF_Fixme gap (BUILTIN-1.2); vkQuake's names the
+            // number and the function (BUILTIN-18.2).
+            _ => Err(BuiltinError::from(match self.engine.profile {
+                EngineProfile::Id => RuntimeError::Unimplemented,
+                EngineProfile::VkQuake => RuntimeError::UnimplementedBuiltin {
+                    number,
+                    name: called_name(context),
+                },
+            })),
         }
     }
 }
@@ -634,6 +646,22 @@ fn parm_slot(n: u16) -> Result<i32, BuiltinError> {
 /// [`ErrorKind::Builtin`], which resets the call depth (BUILTIN-3.1, VM-19.1); a host error
 /// becomes [`ErrorKind::Host`], which keeps it (BUILTIN-3.2, DIFF-8.4); a fatal error becomes
 /// [`ErrorKind::Fatal`], after which a host runs no shutdown (BUILTIN-3.3, DIFF-8.6).
+/// The name of the function the current `CALL` statement called, as vkQuake's `PF_Fixme` reads
+/// it (BUILTIN-18.2): the function in the global the statement's first operand names; empty
+/// when there is none.
+fn called_name(context: &Context<'_, '_>) -> String {
+    let machine = context.machine_view();
+    let progs = context.progs();
+    let name = progs
+        .statements()
+        .get(usize::try_from(machine.current_statement()).unwrap_or(usize::MAX))
+        .and_then(|statement| machine.global(statement.a).ok())
+        .and_then(|function| usize::try_from(function.as_i32()).ok())
+        .and_then(|index| progs.functions().get(index))
+        .and_then(|function| progs.string(function.s_name));
+    String::from_utf8_lossy(name.unwrap_or_default()).into_owned()
+}
+
 fn to_run_error(context: &Context<'_, '_>, error: BuiltinError) -> RunError {
     let kind = match error {
         BuiltinError::Host(message) => ErrorKind::Host { message },

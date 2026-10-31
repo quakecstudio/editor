@@ -64,6 +64,14 @@ impl fmt::Display for BuiltinError {
 pub enum RuntimeError {
     /// A call to a number id fills with `PF_Fixme` (BUILTIN-1.2).
     Unimplemented,
+    /// Under vkQuake's profile, a call to a number neither its table nor a ported extension
+    /// has: its `PF_Fixme`'s error, with the called function's name (BUILTIN-18.2).
+    UnimplementedBuiltin {
+        /// The builtin number.
+        number: u32,
+        /// The name of the function the progs called it through.
+        name: String,
+    },
     /// `G_EDICT` on a value that does not name an edict (BUILTIN-2.7, DIFF-6.6).
     InvalidEntity,
     /// A string value outside the table and the engine strings (BUILTIN-2.8, DIFF-6.6).
@@ -116,6 +124,9 @@ impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unimplemented => f.write_str(BUILTIN_FIXME_MESSAGE),
+            Self::UnimplementedBuiltin { number, name } => {
+                write!(f, "unimplemented builtin #{number} - {name}")
+            }
             Self::InvalidEntity => f.write_str("invalid entity"),
             Self::InvalidString => f.write_str("invalid string"),
             Self::InvalidField => f.write_str("invalid field"),
