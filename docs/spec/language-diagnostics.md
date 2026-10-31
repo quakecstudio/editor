@@ -39,7 +39,10 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-1.5** The lexer, the preprocessor and the parser report a diagnostic once: no two of the
   diagnostics they give for one input have the same code and the same span, under any profile.
   A rule broken at one place is one report there, as id's `qcc` and FTEQCC, which stop at their
-  first error, report it once (P2-144's double E0101 was a breach).
+  first error, report it once (P2-144's double E0101 was a breach). The one exception is
+  FTEQCC's `W0227` (FTEF-21.6), a warning for each binary operator in the operand of a `!` or
+  `~`, given at the token after the operator's right operand: in `x = ~a - ~b - c;` both `-`
+  end at the `;`, and FTEQCC prints the warning twice.
 
 ## QCD-2 Lexical errors
 

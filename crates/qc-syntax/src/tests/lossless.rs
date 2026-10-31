@@ -434,7 +434,13 @@ proptest! {
             let parsed = crate::parse_with(source.as_bytes(), dialect);
             let mut seen = std::collections::HashSet::new();
             for d in parsed.diagnostics() {
-                prop_assert!(seen.insert((d.code, d.span)), "{dialect:?} {:?}: {d:?} twice", source);
+                // QCD-1.5: `W0227` is one per operator, which two operators can give at one
+                // token.
+                prop_assert!(
+                    d.code == Code::W0227 || seen.insert((d.code, d.span)),
+                    "{dialect:?} {:?}: {d:?} twice",
+                    source
+                );
             }
         }
     }
@@ -519,4 +525,21 @@ fn a_case_label_error_is_reported_once() {
         at("void() f = { switch (x) { case 1 2 case 3: break; } };"),
         [(33, "expected :, found 2".to_owned())]
     );
+}
+
+// spec QCD-1.5: `W0227` is given for each operator in a `~` operand, so two nested ones that end
+// at one token warn there twice, as the pinned FTEQCC prints it twice
+// spec FTEF-21.6: each binary operator the operand of `~` takes warns at the token after it
+#[test]
+fn nested_unary_operands_warn_once_per_operator() {
+    let source = "float a, b, c;\nvoid() f = { local float x; x = ~a - ~b - c; };\n";
+    let warned: Vec<_> = crate::parse_with(source.as_bytes(), Dialect::Fteqcc)
+        .diagnostics()
+        .iter()
+        .filter(|d| d.code == Code::W0227)
+        .map(|d| d.span.start)
+        .collect();
+    let semicolon = source.rfind("c;").map(|at| at + 1);
+    assert_eq!(warned.len(), 2);
+    assert!(warned.iter().all(|&at| Some(at) == semicolon), "{warned:?}");
 }

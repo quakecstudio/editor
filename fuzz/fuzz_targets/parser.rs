@@ -27,7 +27,7 @@
 
 use libfuzzer_sys::{fuzz_crossover, fuzz_mutator, fuzz_target, fuzzer_mutate};
 use qc_lexer::{Dialect, lex_with};
-use qc_syntax::{SyntaxNode, parse_with};
+use qc_syntax::{Code, SyntaxNode, parse_with};
 
 fuzz_target!(|data: &[u8]| {
     for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
@@ -51,9 +51,10 @@ fn check(data: &[u8], dialect: Dialect) {
             diagnostic.span.start <= diagnostic.span.end && diagnostic.span.end <= data.len(),
             "{dialect:?}: diagnostic outside the input: {diagnostic:?}"
         );
-        // QCD-1.5: no two diagnostics with one code and one span.
+        // QCD-1.5: no two diagnostics with one code and one span, but for `W0227`, one per
+        // operator, which two operators can give at one token.
         assert!(
-            seen.insert((diagnostic.code, diagnostic.span)),
+            diagnostic.code == Code::W0227 || seen.insert((diagnostic.code, diagnostic.span)),
             "{dialect:?}: diagnostic reported twice: {diagnostic:?}"
         );
     }
