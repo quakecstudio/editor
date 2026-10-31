@@ -27,7 +27,7 @@ const VECTOR_WORDS: u32 = 3;
 
 /// A `case` of a `switch`: its value, the end of its range, where it is and the statement it
 /// jumps to (`pr_casesref`, `pr_casesref2`, `pr_cases`).
-struct Case {
+pub(super) struct Case {
     value: Option<Value>,
     range_end: Option<Value>,
     span: Span,
@@ -58,6 +58,14 @@ impl Checker<'_> {
         self.line_starts.entry(line).or_insert(stmt.syntax().span());
         match stmt {
             ast::Stmt::Block(block) => self.block(block),
+            ast::Stmt::Case(label) => {
+                // A `case` no switch holds is "illegal cases", the lowering's (FTEF-21.19).
+                if let Some(mut cases) = self.switches.pop() {
+                    let ended = self.case(label, &mut cases);
+                    self.switches.push(cases);
+                    ended?;
+                }
+            }
             ast::Stmt::Expr(s) => {
                 let expr = s.expr();
                 if expr.as_ref().is_some_and(generates) {
@@ -436,18 +444,16 @@ impl Checker<'_> {
         let step = if hcstyle { Step::Branch } else { Step::Goto };
         let patch1 = self.layout.push(step, None, line);
         let body = self.layout.here();
-        let mut cases = Vec::new();
+        // FTEF-16.16: each `case` read while the body is, at any depth, is this switch's.
+        self.switches.push(Vec::new());
         if let Some(block) = s.block() {
-            for node in block.syntax().children() {
-                if let Some(label) = ast::CaseLabel::cast(node.clone()) {
-                    let _ended: Result<(), Fatal> = self.case(&label, &mut cases);
-                } else if let Some(stmt) = ast::Stmt::cast(node) {
-                    self.statement(&stmt);
-                }
+            for stmt in block.statements() {
+                self.statement(&stmt);
             }
         } else {
             self.statement_of(s.statement());
         }
+        let cases = self.switches.pop().unwrap_or_default();
         let here = self.layout.here();
         let jumps_out = match self.layout.last() {
             Some(Step::Return | Step::Done | Step::Goto) => here != body,

@@ -1625,3 +1625,25 @@ fn a_bare_return_returns_the_ret_local() {
     assert_eq!(returns, [ret, ret]);
     assert_eq!(body(&p, "g")[0], st(Return, 0, 0, 0));
 }
+
+// spec FTEF-16.16: a `case` nested in a statement of the body is a label of the switch, tested
+// with the others after the body, as the pinned FTEQCC compiles `case 2:` inside an `if`
+#[test]
+fn a_nested_case_is_a_label_of_its_switch() {
+    let p = fte_progs(
+        "float a, b;\nvoid() t = { switch (a) { case 1: if (b) { case 2: b = 3; } break; \
+         default: b = 4; } };\n",
+    );
+    let t = body(&p, "t");
+    assert_eq!(
+        opcodes(&t),
+        ops(&[
+            Goto, IfNot, StoreF, Goto, StoreF, Goto, EqF, If, EqF, If, Goto, Done
+        ])
+    );
+    // The `GOTO`s jump by their `a`, `IF` and `IFNOT` by their `b`, as FTEQCC wrote them.
+    let gotos = [0, 3, 5, 10].map(|at| i64::from(t[at].a));
+    let tests = [1, 7, 9].map(|at| i64::from(t[at].b));
+    assert_eq!(gotos, [6, 8, 6, -6]);
+    assert_eq!(tests, [2, -6, -7]);
+}

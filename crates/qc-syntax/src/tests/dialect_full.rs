@@ -716,7 +716,7 @@ fn assignment_to_a_call_parses() {
     );
 }
 
-// spec FTEF-16.12: a `case` label may stand in a block nested in the `switch` body.
+// spec FTEF-16.16: a `case` label may stand in a block nested in the `switch` body.
 #[test]
 fn nested_case_labels_parse() {
     fte_ok(&in_body(

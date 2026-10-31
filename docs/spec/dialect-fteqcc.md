@@ -2428,8 +2428,9 @@ The corpus writes locals of class and pointer types, casts to classes (`(ncPlaye
   writes; FTEQCC reports no error there, so neither does this profile.
 - **FTEF-16.11** An aggregate initialiser may name the member each value initialises,
   `{ .name = value, ... }`.
-- **FTEF-16.12** A `case` or `default` label may stand in a block nested in the `switch` body,
-  as C allows; the corpus does so (`client/viewmodel.qc`).
+- **FTEF-16.12** **Withdrawn** (P2-141, #616): it allowed a `case` or `default` label in a block
+  nested in the `switch` body, but FTEQCC reads one wherever a statement stands, an `if`'s
+  body and a `switch`'s with no braces too; replaced by FTEF-16.16.
 - **FTEF-16.13** Any expression may stand left of an assignment operator: `QCC_PR_RefExpression`
   reads the left side as a term whatever it is, and an assignment to a value that is no
   variable is checked, not refused by the parser (FTEF-29.1). `~a = 1`, `1 = a` and
@@ -2455,6 +2456,17 @@ The corpus writes locals of class and pointer types, casts to classes (`(ncPlaye
   found [", `y = (x) 1;` "Expected punctuation" and "expected ;, found 1", and no `(x)` is
   "\"x\" is not a type". Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefTerm`, `QCC_PR_RefExpression`.
+- **FTEF-16.16** `case` and `default` are statements: `QCC_PR_ParseStatement` reads `if
+  (QCC_PR_CheckKeyword(keyword_case, "case"))` and `keyword_default` among the others, adds the
+  label to `pr_cases` at the statement it stands before, and returns, so a label stands
+  wherever a statement does, in a block nested in the `switch` body as C allows (the corpus
+  does so, `client/viewmodel.qc`), as an `if`'s body, or as the whole body of a `switch` with no
+  braces (FTEF-18.33). It is a label of the innermost `switch` being read, whose cases are
+  those added since its body began, and one that no `switch` holds is "illegal cases"
+  (FTEF-21.19). So `switch (a) { case 1: if (b) { case 2: b = 3; } break; }` jumps to `b = 3`
+  for 2, and `switch (a < b) case 0: ...` is the switch of one case. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseStatement`.
 ## FTEF-17 Name resolution
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseRefValue` (`assumeclass`, `this`, `super`, the

@@ -1072,3 +1072,25 @@ fn an_accessor_member_reads_as_fteqcc_reads_it() {
         assert_eq!(first(member).as_deref(), Some(message), "{member}");
     }
 }
+
+// spec FTEF-16.16: a `case` is a statement of the innermost switch wherever a statement stands:
+// the whole body of a switch with no braces, in an `if` inside a switch, and outside any switch
+// it is "illegal cases"
+#[test]
+fn a_case_is_a_statement_of_the_innermost_switch() {
+    let messages = |source: &str| -> Vec<String> {
+        lined(source)
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
+    };
+    let bare = "float a; void() f = {\nswitch ((a < 2))\ncase 0:\nf();\n};\n";
+    assert!(
+        messages(bare).contains(&"Implicit type mismatch. Needed bool, got float.".to_owned()),
+        "{bare}"
+    );
+    let nested = "float a; void() f = {\nswitch (a) {\ncase 0: if (a) case 1: a = 2;\n}\n};\n";
+    assert_eq!(messages(nested), Vec::<String>::new());
+    let outside = "float a; void() f = {\nif (a) case 1: a = 2;\n};\n";
+    assert_eq!(messages(outside), ["f: function contains illegal cases"]);
+}

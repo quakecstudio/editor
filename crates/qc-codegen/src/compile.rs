@@ -178,6 +178,9 @@ pub(crate) struct Compiler<'a> {
     /// The loops and switches the statement is in, innermost last, with the jumps their
     /// `break` and `continue` statements left to patch.
     jumps: Vec<Jumps>,
+    /// The labels of each `switch` being compiled, the innermost last, with the statement each
+    /// stands at: a `case` anywhere in the body is the switch's (FTEF-16.16).
+    switches: Vec<Vec<(ast::CaseLabel, usize)>>,
     /// The default value of each parameter of each function declared so far, an expression of
     /// the file it is written in (FTE-18.7).
     defaults: HashMap<DefId, Vec<Option<(FileId, ast::Expr)>>>,
@@ -225,6 +228,7 @@ impl<'a> Compiler<'a> {
             flags: Vec::new(),
             lex_flags: Vec::new(),
             jumps: Vec::new(),
+            switches: Vec::new(),
             array_functions: Vec::new(),
             prior: None,
             extra_parms: HashMap::new(),
@@ -879,6 +883,12 @@ impl<'a> Compiler<'a> {
                 jumps.continues.push(jump);
             }
             ast::Stmt::Empty(_) => {}
+            ast::Stmt::Case(label) => {
+                let at = self.program.statements.len();
+                // The check refuses a `case` no switch holds (FTEF-21.19).
+                let cases = self.switches.last_mut().at(span)?;
+                cases.push((label.clone(), at));
+            }
             ast::Stmt::Switch(switch) => self.switch(switch, span)?,
             ast::Stmt::For(f) => self.for_loop(f, span)?,
             ast::Stmt::Label(_)
@@ -1231,15 +1241,16 @@ impl<'a> Compiler<'a> {
         let value = self.hold(value, span)?;
         let to_tests = self.program.emit(Opcode::Goto, 0, 0);
         self.jumps.push(Jumps::default());
-        let mut cases: Vec<(ast::CaseLabel, usize)> = Vec::new();
-        let block = switch.block().at(span)?;
-        for node in block.syntax().children() {
-            if let Some(label) = ast::CaseLabel::cast(node.clone()) {
-                cases.push((label, self.program.statements.len()));
-            } else if let Some(statement) = ast::Stmt::cast(node) {
-                self.statement(&statement)?;
-            }
-        }
+        self.switches.push(Vec::new());
+        // FTEF-18.33: the body is any statement, a block most often.
+        let body = match switch.block() {
+            Some(block) => block
+                .statements()
+                .try_for_each(|statement| self.statement(&statement)),
+            None => self.statement(&switch.statement().at(span)?),
+        };
+        let cases = self.switches.pop().unwrap_or_default();
+        body?;
         let past_tests = self.program.emit(Opcode::Goto, 0, 0);
         let tests = self.program.statements.len();
         self.set_goto(to_tests, tests, span)?;

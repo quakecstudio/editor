@@ -2342,11 +2342,6 @@ impl<'a> Parser<'a> {
                 break;
             }
             self.start_item();
-            if self.fteqcc() && self.at_case_label() {
-                // FTEF-16.12: a label of the enclosing `switch` may stand in a nested block.
-                self.case_label();
-                continue;
-            }
             let before = self.pos;
             self.statement();
             if self.pos == before {
@@ -2383,6 +2378,9 @@ impl<'a> Parser<'a> {
             K::DotDot => self.local_decl(false),
             // FTEF-18.23: `:name`, the FrikQCC label.
             K::Colon => self.label_stmt(),
+            // FTEF-16.16: `case` and `default` are statements of `QCC_PR_ParseStatement`'s,
+            // labels of the enclosing `switch` wherever a statement stands.
+            K::Name if self.fteqcc() && self.at_case_label() => self.case_label(),
             K::Name if self.fteqcc() => self.fte_statement(),
             K::Name => match tok.text.as_str() {
                 "return" => self.return_stmt(),

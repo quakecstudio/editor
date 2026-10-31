@@ -410,6 +410,8 @@ ast_enum!(
         Continue(ContinueStmt),
         /// `;` alone (FTE-21.5).
         Empty(EmptyStmt),
+        /// `case e:` or `default:`, a label of the innermost `switch` (FTEF-16.16).
+        Case(CaseLabel),
         /// `name:` or `:name` (FTEF-18.23).
         Label(LabelStmt),
         /// `goto name;` (FTEF-18.23).
