@@ -903,6 +903,11 @@ profile (DIFF-12.19); everything else runs under id's.
   after `0x` with an optional `p` exponent, or `inf`, `infinity` or `nan` in any case; with
   none it is 0. A decimal number is rounded correctly, as glibc's `strtod` does; a hexadecimal
   one is exact up to 13 digits. This is not `Q_atof` (BUILTIN-11.7), which `cvar` uses.
+- **BUILTIN-18.20** `clienttype(e)` (#455) is `PF_clienttype`: `e` through `G_EDICT` and
+  `NUM_FOR_EDICT` (BUILTIN-2.7); an edict that is no client slot (`i >= svs.maxclients`, the
+  world among them, as `NUM_FOR_EDICT (ed) - 1` wraps) is 3, `CLIENTTYPE_NOTACLIENT`; an active
+  client with a connection is 1, `CLIENTTYPE_REAL`, which every client of the mock is (DIFF-4.1);
+  an empty slot is 0, `CLIENTTYPE_DISCONNECTED`.
 
 ## Test vectors
 

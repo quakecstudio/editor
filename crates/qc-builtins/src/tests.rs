@@ -2043,6 +2043,26 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.20: clienttype is 3 for no client slot, 1 for an active client, 0 for an
+    // empty slot
+    #[test]
+    fn clienttype_of_slots() {
+        for (n, active, expected) in [
+            (0, true, 3.0),
+            (1, true, 1.0),
+            (1, false, 0.0),
+            (2, true, 3.0),
+        ] {
+            let mut f = Fixture::new(455, 1, vec![0], 1);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.builtins.engine_mut().clients_active = vec![active];
+            let value = n * f.machine.edicts().layout().edict_size();
+            f.set_parm_i(0, value);
+            f.run_ok(ServerState::Active);
+            assert_eq!(f.return_f(), expected, "{n} {active}");
+        }
+    }
+
     // spec BUILTIN-18.19: stof is C's atof of the longest numeric prefix
     #[test]
     fn stof_is_c_atof() {

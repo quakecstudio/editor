@@ -1198,6 +1198,7 @@ impl MockBuiltins {
             224 => Some(self.b_strconv(context)),
             339 => Some(joined_string(context, &self.engine, 0).map(|_| ())),
             448 => Some(self.b_cvar_string(context)),
+            455 => Some(self.b_clienttype(context)),
             478 => Some(self.b_strftime(context)),
             480 => Some(self.b_strcase(context, Case::Lower)),
             481 => Some(self.b_strcase(context, Case::Upper)),
@@ -1360,6 +1361,23 @@ impl MockBuiltins {
             .strings
             .make(strconv::strconv(ccase, redalpha, rednum, &text));
         write_return_string(context, value)
+    }
+
+    /// `clienttype(e)`, vkQuake's `PF_clienttype` (BUILTIN-18.20): 3 for no client slot, 1 for
+    /// an active client, every one of the mock's being a real one, 0 for an empty slot.
+    fn b_clienttype(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let number = read_parm_edictnum(context, 0)?.index();
+        let value = match number.checked_sub(1) {
+            Some(slot) if slot < self.engine.clients_active.len() => {
+                if self.engine.clients_active.get(slot) == Some(&true) {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            Some(_) | None => 3.0,
+        };
+        write_return_float(context, value)
     }
 
     /// `num_for_edict(e)`, vkQuake's `PF_num_for_edict` (BUILTIN-18.18): `e`'s number.
