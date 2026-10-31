@@ -1029,3 +1029,46 @@ fn a_keyword_type_after_enum_is_its_base() {
         expected(&["expected }, found A"])
     );
 }
+
+// spec FTEF-10.13: an accessor's member takes one name `QCC_TypeForName` finds as its type,
+// "Invalid type: NAME" for another; after its `=` a name is a function's alone and any other
+// token starts a body, which expects its `{`
+#[test]
+fn an_accessor_member_reads_as_fteqcc_reads_it() {
+    let first = |member: &str| -> Option<String> {
+        let source = format!("accessor A1 : float\n{{\n{member}\n}};\n");
+        lined(&source)
+            .into_iter()
+            .next()
+            .map(|(_, message)| message)
+    };
+    let cases = [
+        (
+            "inline get get float twice = { return this * 2; };",
+            "Invalid type: get",
+        ),
+        (
+            "inline get twice = { return this * 2; };",
+            "Invalid type: twice",
+        ),
+        (
+            "set set float twice = { this = value / 2; };",
+            "Invalid type: set",
+        ),
+        (
+            "set float twice = ; { this = value / 2; };",
+            "expected {, found ;",
+        ),
+        (
+            "set float twice = = { this = value / 2; };",
+            "expected {, found =",
+        ),
+        (
+            "set float = twice = { this = value / 2; };",
+            "expected }, found =",
+        ),
+    ];
+    for (member, message) in cases {
+        assert_eq!(first(member).as_deref(), Some(message), "{member}");
+    }
+}

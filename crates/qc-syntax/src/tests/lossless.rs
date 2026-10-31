@@ -461,18 +461,18 @@ fn an_accessor_member_error_is_reported_once() {
         list.iter().map(|&(at, m)| (at, m.to_owned())).collect()
     };
     assert_eq!(
-        at("accessor h : float { set v v g; };"),
-        found(&[(29, "expected =, found g")])
+        at("accessor h : float { set float v g; };"),
+        found(&[(33, "expected =, found g")])
     );
     assert_eq!(
-        at("accessor h : float { set v v g };"),
-        found(&[(29, "expected =, found g")])
+        at("accessor h : float { set float v g };"),
+        found(&[(33, "expected =, found g")])
     );
     assert_eq!(
         at("\naccessor h : float { get float = = f; set v v g;float v = g; };"),
         found(&[
-            (34, "\"=\" - not a name"),
-            (47, "expected =, found g"),
+            (34, "expected {, found ="),
+            (43, "Invalid type: v"),
             (49, "expected }, found float"),
         ])
     );

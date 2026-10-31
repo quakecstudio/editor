@@ -1259,6 +1259,27 @@ impl Parser<'_> {
             self.finish_node();
             return;
         }
+        // FTEF-10.13: an accessor's member, `QCC_PR_ParseAccessorMember` in the accessor's loop,
+        // takes a `&` or a `*`, then one name `QCC_TypeForName` finds, "Invalid type: NAME"
+        // for any other.
+        if member == Member::Accessor {
+            if self.at(K::Amp) || self.at(K::Star) {
+                self.bump();
+            }
+            if !self.at(K::Name) {
+                self.not_a_name();
+                self.recover(Scope::Block);
+                self.finish_node();
+                return;
+            }
+            if !self.registered_type(0) {
+                let message = format!("Invalid type: {}", self.found());
+                self.error(Code::E0203, message);
+                self.recover(Scope::Block);
+                self.finish_node();
+                return;
+            }
+        }
         // FTEF-10.9: `QCC_PR_ParseAccessorMember` reads a type's name and its `*`s, so a
         // parameter list after it is where the `=` should be.
         let paren = self.nth(1).filter(|t| t.kind == K::LParen).map(|t| t.span);
@@ -1283,14 +1304,20 @@ impl Parser<'_> {
                 self.expect(K::RBracket, "]");
                 self.finish_node();
             }
-            // FTEF-10.11: `QCC_PR_Expect("=")`, then a body or a function's name.
+            // FTEF-10.11: `QCC_PR_Expect("=")`, then a body or a function's name. FTEF-10.13: in
+            // an accessor the name is `QCC_PR_ParseName`'s alone, and any other token starts
+            // the body, `QCC_PR_ParseImmediateStatements`'s, which expects its `{`.
             if self.expect(K::Eq, "=") {
                 if self.at(K::LBrace) {
                     self.start_node(K::FunctionBody);
                     self.block(BlockKind::FunctionBody);
                     self.finish_node();
-                } else {
+                } else if member == Member::Class {
                     self.expression();
+                } else if self.at(K::Name) {
+                    self.expr(0);
+                } else {
+                    self.expected("{");
                 }
             }
         }

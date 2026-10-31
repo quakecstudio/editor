@@ -84,7 +84,7 @@ fn not_a_type() {
         "goto x;\n",
         "void(1) f;\n",
         "class C { 1; };\n",
-        "accessor A : float { get 1; };\n",
+        "accessor A : float { get foo x = f; };\n",
     ] {
         assert!(fte_errors(source).contains(&Code::E0203), "{source}");
     }

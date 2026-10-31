@@ -917,6 +917,19 @@ others).
   from the member's only in such a parameter is not reported. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_ParseAccessorMember`.
+- **FTEF-10.13** An accessor's members are read by `QCC_PR_ParseAccessorMember` after
+  `QCC_PR_CheckName("inline")` and `get` or `set`: an optional `&` or `*`, then the type as one
+  name, `fieldtypename = QCC_PR_ParseName(); fieldtype = QCC_TypeForName(fieldtypename);`, which
+  is the error `E0203` "Invalid type: NAME" when it names no type, and "\"TOKEN\" - not a name"
+  for a token that is no name; its `*`s; the member's name unless the next token is punctuation
+  (`if (pr_token_type != tt_punct)`); an optional `[type [name]]`; and `QCC_PR_Expect("=")`.
+  After it a name is the function's, read by `QCC_PR_ParseName` alone, and any other token
+  starts the body, `QCC_PR_ParseImmediateStatements`, which expects its `{`. So `get get float x
+  = f;` is "Invalid type: get", `get 1;` "\"1\" - not a name", `set float x = ;` "expected {,
+  found ;", and `set float = x = { ... };` reads `x` as the function and then meets the `=`
+  where the loop's `QCC_PR_Expect("}")` stands, "expected }, found =". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseAccessorMember`, `QCC_PR_ParseType`.
 - **FTEF-10.12** A second `get` or `set` member of one name defines its function again:
   `QCC_PR_ParseAccessorMember` parses the body into the definition with no test that it has one
   (`f = QCC_PR_ParseImmediateStatements(...); def.sym->initialized = 1;`), so `get float x = {

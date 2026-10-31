@@ -77,7 +77,8 @@ pub enum Code {
     E0201,
     /// "name too long" (QCD-3.2).
     E0202,
-    /// "\"TOKEN\" is not a type" (QCD-3.3).
+    /// "\"TOKEN\" is not a type" (QCD-3.3), and in an accessor's member "Invalid type: NAME"
+    /// (FTEF-10.13).
     E0203,
     /// "expected X, found Y" (QCD-3.4).
     E0204,
