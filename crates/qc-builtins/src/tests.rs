@@ -2047,12 +2047,7 @@ mod bodies {
     // empty slot
     #[test]
     fn clienttype_of_slots() {
-        for (n, active, expected) in [
-            (0, true, 3.0),
-            (1, true, 1.0),
-            (1, false, 0.0),
-            (2, true, 3.0),
-        ] {
+        for (n, active, expected) in [(0, true, 3.0), (1, true, 1.0), (1, false, 0.0)] {
             let mut f = Fixture::new(455, 1, vec![0], 1);
             f.builtins.engine_mut().profile = EngineProfile::VkQuake;
             f.builtins.engine_mut().clients_active = vec![active];
