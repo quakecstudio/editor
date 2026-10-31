@@ -917,6 +917,17 @@ profile (DIFF-12.19); everything else runs under id's.
   (`slen + start`), a negative `length` ends that far from the end (`slen - start + (length +
   1)`), a `start` still negative becomes 0, and a `start` at or past the end or a `length` of
   0 or less gives the empty string; otherwise up to `length` bytes from `start`, at most 1023.
+- **BUILTIN-18.22** `strncmp(a, b, len, aofs, bofs)` (#228) is `PF_strncmp`: with two arguments
+  glibc's `strcmp (a, b)`; with more, `strncmp (a + aofs, b, len)`, where `aofs` defaults to 0
+  and becomes `strlen (a)` when negative or past it, and `bofs` is read but not used ("bofs =
+  strlen (b);" changes nothing compared). The answer is the difference of the first bytes that
+  differ, as unsigned chars, or 0. `strcasecmp(a, b)` (#229) and `strncasecmp(a, b, len, aofs,
+  bofs)` (#230) are both `PF_strncasecmp`, the same with QuakeSpasm's `q_strcasecmp` and
+  `q_strncasecmp` (`Quake/common.c`): ASCII letters lowered, and the answer `c1 - c2` of the
+  first `char`s that differ or where `a` ends, which x86 signs, so a byte from 128 up counts
+  as negative. A negative `len` is past any string. `strstrofs(s, sub, firstofs)` (#221) is
+  `PF_strstrofs`: -1 when `firstofs` is not 0 and is negative or past `strlen (s)`; else the
+  offset in `s` of `sub` found from `firstofs` (an empty `sub` at `firstofs`), or -1.
 
 ## Test vectors
 

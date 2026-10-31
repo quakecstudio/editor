@@ -31,7 +31,7 @@ use crate::mock::{
     BUILTIN_FL_SWIM, EngineProfile, LIMIT_MAX_DATAGRAM, LIMIT_MAX_LIGHTSTYLES, MessageDest,
     MockEngine, Overflow, Precache,
 };
-use crate::{atof, printf, strconv, strftime};
+use crate::{atof, cstring, printf, strconv, strftime};
 
 /// The builtin dispatch over a mock engine (DIFF-6, DIFF-7).
 ///
@@ -1044,6 +1044,11 @@ impl MockBuiltins {
 
 // ===== vkQuake's extension builtins (BUILTIN-18) =====
 
+/// A C string's bytes before its first NUL.
+fn c_str(text: &[u8]) -> &[u8] {
+    text.split(|&b| b == 0).next().unwrap_or_default()
+}
+
 /// The case `strtolower` and `strtoupper` give (BUILTIN-18.16).
 #[derive(Clone, Copy)]
 enum Case {
@@ -1198,7 +1203,10 @@ impl MockBuiltins {
             118 => Some(self.b_strzone(context)),
             119 => Some(self.b_strunzone(context)),
             213 => Some(self.b_forceinfokey(context)),
+            221 => Some(self.b_strstrofs(context)),
             224 => Some(self.b_strconv(context)),
+            228 => Some(self.b_strncmp(context, Case::Upper)),
+            229 | 230 => Some(self.b_strncmp(context, Case::Lower)),
             339 => Some(joined_string(context, &self.engine, 0).map(|_| ())),
             448 => Some(self.b_cvar_string(context)),
             455 => Some(self.b_clienttype(context)),
@@ -1440,6 +1448,69 @@ impl MockBuiltins {
         };
         let value = self.engine.strings.make(piece);
         write_return_string(context, value)
+    }
+
+    /// `strncmp(a, b, len, aofs, bofs)`, vkQuake's `PF_strncmp`, and with `Case::Lower`
+    /// `strcasecmp` and `strncasecmp`, its `PF_strncasecmp` (BUILTIN-18.22).
+    fn b_strncmp(&mut self, context: &mut Context<'_, '_>, case: Case) -> Result<(), BuiltinError> {
+        let a = read_parm_string(context, &self.engine, 0)?;
+        let b = read_parm_string(context, &self.engine, 1)?;
+        let a = c_str(&a);
+        let b = c_str(&b);
+        let argc = context.machine().argc();
+        let (a, n) = if argc > 2 {
+            let len = read_parm_int(context, 2)?;
+            let aofs = if argc > 3 {
+                read_parm_int(context, 3)?
+            } else {
+                0
+            };
+            let alen = i32::try_from(a.len()).unwrap_or(i32::MAX);
+            let aofs = if aofs < 0 || (aofs != 0 && aofs > alen) {
+                alen
+            } else {
+                aofs
+            };
+            let from = usize::try_from(aofs).unwrap_or(0);
+            // `(size_t) len`: a negative length is past any string.
+            (a.get(from..).unwrap_or_default(), usize::try_from(len).ok())
+        } else {
+            (a, None)
+        };
+        let result = match case {
+            Case::Upper => cstring::strncmp(a, b, n),
+            Case::Lower => cstring::strncasecmp(a, b, n),
+        };
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "BUILTIN-18.22: a byte difference is small enough for a float"
+        )]
+        let value = result as f32;
+        write_return_float(context, value)
+    }
+
+    /// `strstrofs(s, sub, firstofs)`, vkQuake's `PF_strstrofs` (BUILTIN-18.22).
+    fn b_strstrofs(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let text = read_parm_string(context, &self.engine, 0)?;
+        let needle = read_parm_string(context, &self.engine, 1)?;
+        let (text, needle) = (c_str(&text), c_str(&needle));
+        let first = if context.machine().argc() > 2 {
+            read_parm_int(context, 2)?
+        } else {
+            0
+        };
+        let len = i32::try_from(text.len()).unwrap_or(i32::MAX);
+        let found = if first != 0 && (first < 0 || first > len) {
+            None
+        } else {
+            let from = usize::try_from(first).unwrap_or(0);
+            cstring::strstr(text.get(from..).unwrap_or_default(), needle)
+                .map(|at| at.saturating_add(from))
+        };
+        let value = found
+            .and_then(|at| u16::try_from(at).ok())
+            .map_or(-1.0, f32::from);
+        write_return_float(context, value)
     }
 
     /// `num_for_edict(e)`, vkQuake's `PF_num_for_edict` (BUILTIN-18.18): `e`'s number.

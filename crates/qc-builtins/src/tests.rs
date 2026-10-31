@@ -2043,6 +2043,48 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.22: strncmp and strcasecmp answer C's differences; strstrofs finds an
+    // offset from firstofs
+    #[test]
+    fn string_comparisons() {
+        let (strings, offsets) = string_table(&["Hello", "help", "hello", "é", "a", "l"]);
+        let run = |number: u32, args: &[(bool, usize, f32)]| {
+            let argc = u16::try_from(args.len()).unwrap();
+            let mut f = Fixture::new(number, argc, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            for (n, (is_string, index, value)) in args.iter().enumerate() {
+                let n = u16::try_from(n).unwrap();
+                if *is_string {
+                    f.set_parm_i(n, offsets[*index]);
+                } else {
+                    f.set_parm_f(n, *value);
+                }
+            }
+            f.run_ok(ServerState::Active);
+            f.return_f()
+        };
+        let s = |i: usize| (true, i, 0.0);
+        let n = |v: f32| (false, 0, v);
+        assert_eq!(run(228, &[s(0), s(2)]), f32::from(b'H') - f32::from(b'h'));
+        assert_eq!(run(228, &[s(1), s(2), n(3.0)]), 0.0);
+        assert_eq!(
+            run(228, &[s(1), s(2), n(4.0)]),
+            f32::from(b'p') - f32::from(b'l')
+        );
+        assert_eq!(run(228, &[s(2), s(5), n(1.0), n(2.0)]), 0.0);
+        assert_eq!(run(228, &[s(2), s(5), n(1.0), n(99.0)]), -f32::from(b'l'));
+        assert_eq!(run(229, &[s(0), s(2)]), 0.0);
+        assert_eq!(run(230, &[s(0), s(1), n(3.0)]), 0.0);
+        assert_eq!(run(230, &[s(0), s(1), n(0.0)]), 0.0);
+        assert!(run(229, &[s(3), s(4)]) < 0.0);
+        assert!(run(228, &[s(3), s(4)]) > 0.0);
+        assert_eq!(run(221, &[s(2), s(5)]), 2.0);
+        assert_eq!(run(221, &[s(2), s(5), n(3.0)]), 3.0);
+        assert_eq!(run(221, &[s(2), s(5), n(4.0)]), -1.0);
+        assert_eq!(run(221, &[s(2), s(5), n(9.0)]), -1.0);
+        assert_eq!(run(221, &[s(2), s(4)]), -1.0);
+    }
+
     // spec BUILTIN-18.21: strlen counts bytes; strcat joins up to 1023 bytes and reads no
     // argument after the one that fills it; substring counts negative start and length from
     // the end

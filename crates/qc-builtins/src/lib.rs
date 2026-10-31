@@ -27,6 +27,7 @@
 //! L0), and nothing higher.
 
 mod atof;
+mod cstring;
 mod dispatch;
 mod error;
 pub mod math;
