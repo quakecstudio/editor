@@ -30,6 +30,12 @@ flags (`LexFlags`, FTEF-12.12): `qcfuncs` off for C's octal escapes, `qccx`, `ut
 `ssp`, `assumeint`, and `macroinstrings`, whose `#NAME` in a string reads the macro text
 `macros` gives. Every other rule, and the vanilla output byte for byte, is unchanged.
 
+The crates above read a few rules from here so that each is written once: `Directive` and
+`Pragma` name the preprocessor's directives (QC-9.1, FTEF-14.52) and FTEQCC's pragmas
+(FTEF-12.11), `is_name_start` and `is_name_char` the bytes of a name (QC-3.1),
+`is_fteqcc_whitespace` FTEQCC's `qcc_iswhite` (FTEF-13.15), `int_to_f32` C's `(float)` of an
+integer and `latin1` a byte string's text.
+
 Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported; the spec's
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check
 them.

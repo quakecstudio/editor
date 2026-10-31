@@ -54,13 +54,22 @@ enum Output {
     Utf8,
 }
 
+/// How a string literal's characters are read (FTEF-13.7): `R"..."` as they are, up to its
+/// delimiter (FTEF-13.9), or with escapes and written as `Output` (FTEF-13.8).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Reading {
+    /// `R"delim(...)delim"`, written as Quake output.
+    Raw,
+    /// Every other prefix.
+    Cooked(Output),
+}
+
 /// The prefix of a string literal (FTEF-13.7): its length before the `"` and how its
-/// characters are written. `raw` for `R`.
+/// characters are read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Prefix {
     len: usize,
-    output: Output,
-    raw: bool,
+    reading: Reading,
 }
 
 /// The most bytes an FTEQCC string holds, its parts joined: `pr_token[8192]` less its NUL
@@ -84,18 +93,24 @@ impl Lexer<'_> {
     /// `QCC_PR_LexString` an `L"` too, but only after another part of the same string, which
     /// `joins` says.
     pub(crate) fn fte_string_prefix(&self, joins: bool) -> Option<Prefix> {
-        let prefix = |len, output, raw| Some(Prefix { len, output, raw });
+        let cooked = |len, output| {
+            Some(Prefix {
+                len,
+                reading: Reading::Cooked(output),
+            })
+        };
         match (self.peek(0)?, self.peek(1), self.peek(2)) {
             // FTEF-12.12: `stringtype = flag_utf8strings?2:0;`.
-            (b'"', _, _) if self.flags.has(crate::LexFlag::Utf8Strings) => {
-                prefix(0, Output::Utf8, false)
-            }
-            (b'"', _, _) => prefix(0, Output::Quake, false),
-            (b'R', Some(b'"'), _) => prefix(1, Output::Quake, true),
-            (b'Q', Some(b'"'), _) => prefix(1, Output::QuakeFromUtf8, false),
-            (b'u' | b'U', Some(b'"'), _) => prefix(1, Output::Utf8, false),
-            (b'L', Some(b'"'), _) if joins => prefix(1, Output::Utf8, false),
-            (b'u', Some(b'8'), Some(b'"')) => prefix(2, Output::Utf8, false),
+            (b'"', _, _) if self.flags.has(crate::LexFlag::Utf8Strings) => cooked(0, Output::Utf8),
+            (b'"', _, _) => cooked(0, Output::Quake),
+            (b'R', Some(b'"'), _) => Some(Prefix {
+                len: 1,
+                reading: Reading::Raw,
+            }),
+            (b'Q', Some(b'"'), _) => cooked(1, Output::QuakeFromUtf8),
+            (b'u' | b'U', Some(b'"'), _) => cooked(1, Output::Utf8),
+            (b'L', Some(b'"'), _) if joins => cooked(1, Output::Utf8),
+            (b'u', Some(b'8'), Some(b'"')) => cooked(2, Output::Utf8),
             _ => None,
         }
     }
@@ -126,7 +141,7 @@ impl Lexer<'_> {
         let start = self.pos;
         // FTEF-13.22: `QCC_PR_ParseWarning(WARN_NOTUTF8, "char32_t/char16_t/wchar_t strings are
         // not supported, treating as u8 prefix (as utf-8)");` for `U`, `u` and `L`.
-        if prefix.output == Output::Utf8 && prefix.len == 1 {
+        if prefix.reading == Reading::Cooked(Output::Utf8) && prefix.len == 1 {
             self.error(
                 Code::W0119,
                 "char32_t/char16_t/wchar_t strings are not supported, treating as u8 prefix (as utf-8)",
@@ -134,10 +149,9 @@ impl Lexer<'_> {
             );
         }
         self.bump(prefix.len.saturating_add(1));
-        if prefix.raw {
-            self.raw_string(start)
-        } else {
-            self.cooked_string(start, prefix.output)
+        match prefix.reading {
+            Reading::Raw => self.raw_string(start),
+            Reading::Cooked(output) => self.cooked_string(start, output),
         }
     }
 
@@ -235,15 +249,21 @@ impl Lexer<'_> {
                         // `\u` is "a utf-8 code regardless of output encoding", `\x` "an
                         // explicit byte regardless of encoding".
                         Some(b'u' | b'U') => {
-                            let code = self.fte_escape(start, escape);
+                            let Some(code) = self.fte_escape(start, escape) else {
+                                return contents;
+                            };
                             self.utf8_code(&mut contents, code, escape);
                         }
                         Some(b'x' | b'X') => {
-                            let code = self.fte_escape(start, escape);
+                            let Some(code) = self.fte_escape(start, escape) else {
+                                return contents;
+                            };
                             contents.push(low_byte(code));
                         }
                         Some(_) => {
-                            let code = self.fte_escape(start, escape);
+                            let Some(code) = self.fte_escape(start, escape) else {
+                                return contents;
+                            };
                             self.write_code(&mut contents, code, output, escape);
                         }
                         None => {
@@ -361,14 +381,15 @@ impl Lexer<'_> {
     /// The code of the escape whose `\` is at `escape`, the byte after it current, as
     /// `QCC_PR_LexEscapedCodepoint` reads it (FTEF-13.11), in a string or a character
     /// constant (FTEF-13.27) starting at `start`. An error is reported at the escape and the
-    /// code read so far returned.
-    pub(crate) fn fte_escape(&mut self, start: usize, escape: usize) -> u32 {
+    /// code read so far returned; `None` when the input ends after the `\`, "EOF inside quote"
+    /// reported, which ends the string or constant.
+    pub(crate) fn fte_escape(&mut self, start: usize, escape: usize) -> Option<u32> {
         let Some(c) = self.peek(0) else {
             self.error(Code::E0101, "EOF inside quote", Span::new(start, self.pos));
-            return 0;
+            return None;
         };
         self.bump(1);
-        match c {
+        Some(match c {
             b'n' | b'\n' => u32::from(b'\n'),
             b'r' => u32::from(b'\r'),
             b't' => u32::from(b'\t'),
@@ -399,7 +420,7 @@ impl Lexer<'_> {
             b'x' | b'X' => {
                 let Some(high) = self.peek(0).and_then(|d| char::from(d).to_digit(16)) else {
                     self.bad_character_code(escape);
-                    return 0;
+                    return Some(0);
                 };
                 self.bump(1);
                 match self.peek(0).and_then(|d| char::from(d).to_digit(16)) {
@@ -432,7 +453,7 @@ impl Lexer<'_> {
                 );
                 u32::from(c)
             }
-        }
+        })
     }
 
     /// C's octal escape whose first digit `first` is read, at `escape`, as FTEQCC reads it without
