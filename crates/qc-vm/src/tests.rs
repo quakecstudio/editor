@@ -191,6 +191,10 @@ use qc_types::Slot;
 struct Unlimited;
 
 impl Builtins for Unlimited {
+    #[expect(
+        clippy::unwrap_in_result,
+        reason = "test code: a failed unwrap setting up the fixture is a failed test"
+    )]
     fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
         let number = i32::try_from(number).unwrap();
         context
@@ -209,6 +213,10 @@ impl Builtins for Unlimited {
 }
 
 /// A run of function 1, which calls builtin `number` (function 2) and returns.
+#[expect(
+    clippy::unwrap_in_result,
+    reason = "test code: a failed unwrap setting up the fixture is a failed test"
+)]
 fn call_builtin(number: i32, builtins: &mut impl Builtins) -> Result<Machine, RunError> {
     use harness::{Func, Stmt};
     let bytes = harness::ProgsBuilder::default()
