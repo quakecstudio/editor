@@ -3169,7 +3169,7 @@ issues:
   - cargo xtask api --check
   - cargo xtask ci
 - key: P2-155
-  title: Report the #pack too-many error apart from its line's junk error
+  title: "Report the #pack too-many error apart from its line's junk error"
   labels:
   - L2-syntax
   - area:language
