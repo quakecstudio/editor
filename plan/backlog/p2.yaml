@@ -1768,6 +1768,7 @@ issues:
   - P2-152
   - P2-153
   - P2-154
+  - P2-155
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -3167,3 +3168,25 @@ issues:
   verify:
   - cargo xtask api --check
   - cargo xtask ci
+- key: P2-155
+  title: Report the #pack too-many error apart from its line's junk error
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-3
+  - QA-2
+  summary: |
+    Found by the nightly Fuzz workflow on main (run 41298922339), which crashed the qc-preproc fuzz target on the input crash-0e3e4e65603a2319b9bdd42bac248a49ae8519cb (bytes beginning `#pack8ea`). The target's QCD-1.5 check (no two preprocessor diagnostics of one input share a code and a span) failed, not a panic in shipped code: under the FTEQCC profile `#pack N` with N above 5 reports "No more than 5 packs are allowed" (E0121), and because FTEQCC's error for that is a non-fatal `QCC_PR_ParseWarning`, the line is then read with `errorifnonwhite`, so trailing junk is a second "unexpected tokens at end of line" (E0121). Both were placed at the whole directive line span (`hash..end.at`) in `fte_run` (crates/qc-preproc/src/fte_directive.rs), so for `#pack8ea` the two E0121 errors landed on the identical span and QCD-1.5 was breached. FTEF-14.39 defines #pack and FTEF-14.43 states this profile keeps the place of each diagnostic's own text, a deliberate divergence from FTEQCC's line reporting; the too-many error's own text is the number N, so it belongs at the number's span, not the whole line.
+  environment: |
+    main; nightly Fuzz workflow run 41298922339, qc-preproc target
+  depends: []
+  deliverable:
+  - 'crates/qc-preproc/src/fte_directive.rs (`read_pack`, the `Directive::Pack` arm of `fte_run`): the "No more than 5 packs are allowed" error (E0121) is placed at the number operand `QCC_PR_LexInteger` reads, keeping the place of its own text (FTEF-14.43), so it and any "unexpected tokens at end of line" (E0121) for the line''s junk keep distinct spans and QCD-1.5 holds; FTEQCC''s two errors are both still reported'
+  acceptance:
+  - 'A qc-preproc test feeds the exact crash bytes through the same entry points as the fuzz target (preprocess a.qc and c.qc, restart, again) and finds no two diagnostics with one code and span, citing QCD-1.5; it fails before the fix'
+  - 'A qc-preproc test shows `#pack 8 zz` reports two E0121 errors with distinct spans, the too-many error at the number and the junk error at the line, each citing FTEF-14.39 and QCD-1.5'
+  verify:
+  - cargo test -p qc-preproc

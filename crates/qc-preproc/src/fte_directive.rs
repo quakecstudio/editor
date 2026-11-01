@@ -619,8 +619,14 @@ pub(crate) enum Directive {
     /// `#output` and the text of the string after it, which names the module's output for the
     /// project graph (PRJ-5.6); `None` when no string follows (FTEF-14.39).
     Output { name: Option<Vec<u8>>, end: LineEnd },
-    /// `#pack`, too many of them or not (FTEF-14.39).
-    Pack { end: LineEnd, too_many: bool },
+    /// `#pack`, with the range of the `N` of `#pack N` when it is above 5, which is "No more
+    /// than 5 packs are allowed" at that number, so the error keeps the place of its own text,
+    /// apart from any "unexpected tokens at end of line" for the line's junk (FTEF-14.39,
+    /// QCD-1.5); `None` when the count is in range or `#pack id`.
+    Pack {
+        end: LineEnd,
+        too_many: Option<Range<usize>>,
+    },
     /// `#package`, which ends the text being read once its line is read.
     Package { end: LineEnd },
     /// `#includelist`, whose list starts at the line's end (FTEF-14.41).
@@ -842,11 +848,13 @@ fn read_if(text: &[u8], at: usize) -> Directive {
 /// (FTEF-14.39).
 fn read_pack(text: &[u8], at: usize) -> Directive {
     let (end, too_many) = if text.get(at..).is_some_and(|rest| rest.starts_with(b"id")) {
-        (at.saturating_add(3), false)
+        (at.saturating_add(3), None)
     } else {
-        let (end, value) = lex_integer(text, at);
+        let (number_end, value) = lex_integer(text, at);
         let packs = if value == 0 { 1 } else { value };
-        (end.saturating_add(1), packs > FTE_MAX_PACKS)
+        // `N` spans `at..number_end`; `#pack N` then passes over one byte more (FTEF-14.39).
+        let too_many = (packs > FTE_MAX_PACKS).then_some(at..number_end);
+        (number_end.saturating_add(1), too_many)
     };
     Directive::Pack {
         end: skip_to_end_of_line(text, end.min(text.len()), Junk::Checked),
@@ -1641,9 +1649,12 @@ impl<L: Loader> Preprocessor<L> {
                 end.resume(run, &reading, hash)
             }
             Directive::Pack { end, too_many } => {
-                if too_many {
+                if let Some(number) = too_many {
+                    // QCD-8.14, QCD-1.5: at the number's own text, not the whole line, so this
+                    // error and any "unexpected tokens at end of line" for the line's junk keep
+                    // distinct spans.
                     let message = "No more than 5 packs are allowed";
-                    run.report(Code::E0121, message, at(end.at));
+                    run.report(Code::E0121, message, reading.place(number));
                 }
                 end.resume(run, &reading, hash)
             }
