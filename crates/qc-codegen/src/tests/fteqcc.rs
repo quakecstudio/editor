@@ -79,6 +79,34 @@ fn a_constant_index_is_the_elements_global() {
     );
 }
 
+// spec FTEF-26.2: with both operands constant the arithmetic opcodes fold even without
+// `--opt fold`, as FTEQCC's default `opt_constantarithmatic` does, reading a named constant
+// with QCC_SRef_EvalConst
+// spec FTEF-31.10: the folded constant index is the element's global, so no ArrayGet* is made
+#[test]
+fn a_constant_arithmetic_index_folds_and_needs_no_accessor() {
+    // `base` has a float index 0 (a file-level initialised non-var is a constant, FTEF-19.3),
+    // so `s[base + 2]` folds to `s[2]` and reads the element directly, as FTEQCC does with
+    // `opt_constantarithmatic` on, its default, even though `--opt fold` is off here.
+    let p = fte_progs(
+        "float base = 0;\nstring s[] = { \"a\", \"b\", \"c\", \"d\" };\nstring r;\n\
+         void() t = { r = s[base + 2]; };\n",
+    );
+    let (s, r) = (global(&p, "s"), global(&p, "r"));
+    assert_eq!(
+        body(&p, "t"),
+        [st(StoreS, s + 2, r, 0), st(Done, 0, 0, 0)],
+        "the index folds to 2 and the element is read directly"
+    );
+    // No getter is generated, since no subscript needs a runtime index.
+    assert!(
+        p.global_defs
+            .iter()
+            .all(|d| string(&p, d.s_name) != "ArrayGet*s"),
+        "a constant-folding index makes no ArrayGet* accessor"
+    );
+}
+
 // spec FTE-13.6: a constant index outside the array is not lowered
 #[test]
 fn a_constant_index_outside_the_array_is_not_lowered() {

@@ -2068,7 +2068,13 @@ impl<'a> Compiler<'a> {
             }
             return Self::mismatch(operator, op_span);
         };
-        if self.fold
+        // FTEF-26.2: with both operands constant the arithmetic opcodes fold to a constant;
+        // `QCC_PR_StatementFlags` does this when `opt_constantarithmatic` is on (`-O1`, a
+        // default optimisation, so on for the pinned FTEQCC's `-Tid`) or outside a function
+        // (`!pr_scope`), reading each operand with `QCC_SRef_EvalConst`, which takes a named
+        // constant as well as an immediate, so `named[CONST + 3]` folds to `named[3]` and
+        // needs no `ArrayGet*` (FTEF-31.10). `--opt fold` (COMP-5, QC-27.20) folds the rest.
+        if (self.fold || self.both_constant(left, right))
             && let Some(value) = self.folded(row.opcode, left, right).at(span)?
         {
             return Ok(value);
@@ -2195,7 +2201,7 @@ impl<'a> Compiler<'a> {
         left: &Value,
         right: &Value,
     ) -> Result<Option<Value>, Internal> {
-        let (Some(a), Some(b)) = (self.literal_of(left), self.literal_of(right)) else {
+        let (Some(a), Some(b)) = (self.constant_literal(left), self.constant_literal(right)) else {
             return Ok(None);
         };
         let each =
@@ -2230,22 +2236,34 @@ impl<'a> Compiler<'a> {
         }))
     }
 
-    /// The literal a value is, when it is one of the float or vector immediates
-    /// `PR_ParseImmediate` makes (QC-20).
-    fn literal_of(&self, value: &Value) -> Option<Literal> {
+    /// The float or vector literal a value holds when it is a compile-time constant, a named
+    /// constant as well as an immediate, as FTEQCC's `QCC_SRef_EvalConst` reads a constant and
+    /// initialised definition (FTEF-26.13): the words at the constant's globals read as its
+    /// basic type. A constant of another type folds no arithmetic here, so `None`.
+    fn constant_literal(&self, value: &Value) -> Option<Literal> {
         let ValueKind::Def(place) = value.kind else {
             return None;
         };
-        let def = self.program.def(place)?;
-        if def.name != "IMMEDIATE" {
+        if !self.constant(place) {
             return None;
         }
+        let def = self.program.def(place)?;
         let float = |i: u32| f32::from_bits(self.program.word(def.ofs.saturating_add(i)));
         match def.ty.etype() {
             Etype::Float => Some(Literal::Float(float(0))),
             Etype::Vector => Some(Literal::Vector([float(0), float(1), float(2)])),
             _ => None,
         }
+    }
+
+    /// Whether both operands are compile-time constants and the dialect folds their operator
+    /// even inside a function: FTEQCC's `opt_constantarithmatic` (`-O1`, a default optimisation)
+    /// does (FTEF-26.2), id's `qcc` does not (QC-27.20). FTEQCC reads each operand with
+    /// `QCC_SRef_EvalConst`, which takes a named constant or an immediate.
+    fn both_constant(&self, left: &Value, right: &Value) -> bool {
+        self.dialect.has_fteqcc_extensions()
+            && self.constant_literal(left).is_some()
+            && self.constant_literal(right).is_some()
     }
 
     fn mismatch<T>(operator: Operator, span: Span) -> Lowered<T> {
