@@ -581,7 +581,8 @@ impl Compiler<'_> {
         let error = self
             .defined("error")
             .ok_or(Abort::Internal(Internal::Unsupported, span))?;
-        self.store_word(message, OFS_PARM0, Etype::String, span)?;
+        // `QCC_PR_EmitArraySetFunction` stores the message with `OP_STORE_F`.
+        self.store_word(message, OFS_PARM0, Etype::Float, span)?;
         self.program
             .emit(Opcode::Call1, operand(error).at(span)?, 0);
         self.program.emit(Opcode::Done, 0, 0);
@@ -721,20 +722,14 @@ impl Compiler<'_> {
                 let format = b"bounds check failed (0 <= %g < %g is false)\n".to_vec();
                 let format = self.string_immediate(format, span)?;
                 let count = self.float_immediate(slots, span)?;
-                for (slot, (arg, etype)) in [
-                    (format, Etype::String),
-                    (index, Etype::Float),
-                    (count, Etype::Float),
-                ]
-                .into_iter()
-                .enumerate()
-                {
+                for (slot, arg) in [format, index, count].into_iter().enumerate() {
                     let to = u32::try_from(slot)
                         .ok()
                         .and_then(|s| s.checked_mul(3))
                         .and_then(|s| s.checked_add(OFS_PARM0))
                         .at(span)?;
-                    self.store_word(arg, to, etype, span)?;
+                    // `QCC_PR_EmitArrayGetFunction` stores every argument with `OP_STORE_F`.
+                    self.store_word(arg, to, Etype::Float, span)?;
                 }
                 self.program
                     .emit(Opcode::Call3, operand(sprintf).at(span)?, 0);

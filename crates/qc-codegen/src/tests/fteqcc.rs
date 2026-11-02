@@ -264,7 +264,7 @@ fn a_getter_formats_its_bounds_error_with_sprintf() {
     assert_eq!(
         tail,
         [
-            st(StoreS, format, 4, 0),
+            st(StoreF, format, 4, 0),
             st(StoreF, index, 7, 0),
             st(StoreF, immediate(&p, 2.0), 10, 0),
             st(Call3, global(&p, "sprintf"), 0, 0),
