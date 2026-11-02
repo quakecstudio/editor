@@ -617,7 +617,10 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
 - **DIFF-12.6** `cargo xtask compiler-diff` compiles each vanilla corpus codebase (`id-1.01`)
   with id's `qcc` and with `qc-codegen` with `--opt fold` off and on (QC-27.20), and compares
   `qcc`'s progs with each of the two. `--fast`, which CI runs on every change, makes 32
-  rounds; `--full`, which the nightly differential workflow runs, makes 128.
+  rounds; `--full`, which the nightly differential workflow runs, makes 128 over exactly one
+  codebase, named on the command line, since one full run takes up to an hour: the workflow
+  runs one job per codebase in parallel, and a local run names the codebase it is after. Each
+  codebase's progs and results table are under `target/compiler-diff/<id>/`.
 - **DIFF-12.7** When the two progs' definitions, functions or strings differ, a call's return
   value is compared too, since the return slot is named by neither. A version 6 progs does not
   record a function's return type, so the slot's first word is read as a float, a string, an
@@ -707,9 +710,9 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   Eternity, Dimension of the Past, Dawn of the Machine, the last with `-Fautoproto`'s
   prototypes as FTEQCC is given it (FTE-1.2), and Capture the Flag, whose calls reach 90% of
   its statements with the draws of DIFF-12.21 and DIFF-12.22. Every pair compared adds a row to
-  the results table `target/compiler-diff/summary.md`: the codebase, the oracle's progs and
-  ours, the divergences, the statements executed, and whether it passes; the nightly
-  differential workflow publishes it as the run's summary.
+  the codebase's results table `target/compiler-diff/<id>/summary.md`: the codebase, the
+  oracle's progs and ours, the divergences, the statements executed, and whether it passes;
+  the nightly differential workflow publishes each job's table as the run's summary.
 - **DIFF-12.18** `cargo xtask compiler-diff --full` also compares the corpus mods the pinned
   FTEQCC compiles with `-Tid` (COMP-8): Copper, Arcane Dimensions, librequake, crmod7, QC
   Conduit and SWAB, each compiled with the flags of DIFF-12.14 in a copy of its directory, and

@@ -10,12 +10,13 @@
 //! which calls every function of the oracle's progs and of each of ours in `qc-vm` and compares
 //! them (DIFF-12, DIFF-12.9). It runs that binary with `cargo run`, as `cargo xtask
 //! differential` does, because `qs-differential` is a `tests`-layer crate nothing may depend on
-//! (`layers.toml`). Each pair adds a row to `target/compiler-diff/summary.md` (DIFF-12.14).
+//! (`layers.toml`). Each pair adds a row to `target/compiler-diff/<id>/summary.md`
+//! (DIFF-12.14).
 //!
 //! - `cargo xtask compiler-diff` and `--fast`: the CI subset, id 1.01, fewer rounds of calls.
-//! - `cargo xtask compiler-diff --full`: the nightly run, id 1.01 and the rerelease, more rounds.
-//! - Codebases named after the mode narrow the run; `--full` may also name the rerelease
-//!   codebases not yet at the bar.
+//! - `cargo xtask compiler-diff --full <codebase>`: the nightly run's 128 rounds over one
+//!   codebase, id 1.01, a rerelease codebase or a corpus mod, which the nightly workflow runs
+//!   as one job per codebase; `--full` may also name a corpus mod not yet at the bar.
 //!
 //! Both fail on any divergence and on a codebase whose oracle progs has less than 90% of its
 //! statements executed (DIFF-12.5). The codebases come from the asset cache
@@ -71,28 +72,30 @@ fn engine(id: &str) -> &'static str {
     }
 }
 
-const USAGE: &str = "usage: cargo xtask compiler-diff [--fast | --full] [<codebase>...]";
+const USAGE: &str = "usage: cargo xtask compiler-diff [--fast [<codebase>...] | --full <codebase>]";
 
-/// Runs `cargo xtask compiler-diff [--fast | --full] [<codebase>...]`.
+/// Runs `cargo xtask compiler-diff [--fast [<codebase>...] | --full <codebase>]`: the CI
+/// subset over id 1.01, or 128 rounds over the one codebase named, which runs for up to an
+/// hour on its own, so that the codebases run one at a time or in parallel, each in its own
+/// directory under `target/compiler-diff/<id>/` with its own results table (DIFF-12.6).
 pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     let (mode, selected) = parse(args)?;
     let oracles = oracles::build(root)?;
     let codebases = asset_root()?.join("codebase");
     let out = root.join("target").join("compiler-diff");
-    let summary = out.join("summary.md");
-    fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
-    write(&summary, SUMMARY_HEADER.as_bytes())?;
     let mut ok = true;
     for id in selected {
         let work = out.join(id);
         let progs = write_progs(&oracles, &codebases, id, &work)?;
+        let summary = work.join("summary.md");
+        write(&summary, SUMMARY_HEADER.as_bytes())?;
         ok &= run_suite(root, mode, id, &progs, &summary)?;
     }
     Ok(ok)
 }
 
-/// The head of the results table, `target/compiler-diff/summary.md`; the binary adds a row
-/// for each pair it compares (DIFF-12.14).
+/// The head of a codebase's results table, `target/compiler-diff/<id>/summary.md`; the
+/// binary adds a row for each pair it compares (DIFF-12.14).
 const SUMMARY_HEADER: &str = "| Codebase | Oracle | Ours | Divergences | Statements | Result |\n\
                               | --- | --- | --- | ---: | ---: | --- |\n";
 
@@ -146,16 +149,21 @@ impl Mode {
 }
 
 /// The mode `args` name, fast for none or `--fast` and full for `--full`, and the codebases
-/// to compare: those named after it, each one the mode compares, or with none every one.
+/// to compare: those named after it, each one the mode compares. A fast run with none named
+/// compares its whole subset; a full run names exactly one codebase, each full run being
+/// long enough to run on its own.
 fn parse(args: &[String]) -> Result<(Mode, Vec<&'static str>), String> {
     let (mode, named) = match args.split_first() {
         Some((flag, rest)) if flag == "--fast" => (Mode::Fast, rest),
         Some((flag, rest)) if flag == "--full" => (Mode::Full, rest),
         _ => (Mode::Fast, args),
     };
-    let all = mode.codebases();
+    if mode == Mode::Full && named.len() != 1 {
+        let all = mode.named().join(", ");
+        return Err(format!("--full takes one codebase: one of {all}\n{USAGE}"));
+    }
     if named.is_empty() {
-        return Ok((mode, all));
+        return Ok((mode, mode.codebases()));
     }
     let named_ok = mode.named();
     let mut selected = Vec::new();
@@ -375,20 +383,25 @@ mod tests {
         );
     }
 
-    // spec DIFF-12.6: `--fast` and no argument are the CI subset, `--full` the nightly run;
-    // codebases named after the mode are the ones compared, each one the mode compares.
+    // spec DIFF-12.6: `--fast` and no argument are the CI subset, `--full` the nightly run of
+    // exactly one codebase, named; codebases named after the mode are the ones compared, each
+    // one the mode compares.
     #[test]
     fn the_mode_is_fast_unless_full_is_asked_for() {
         let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         assert_eq!(parse(&args(&[])).unwrap(), (Mode::Fast, vec!["id-1.01"]));
         assert_eq!(parse(&args(&["--fast"])).unwrap().0, Mode::Fast);
-        assert_eq!(parse(&args(&["--full"])).unwrap().0, Mode::Full);
+        assert!(
+            parse(&args(&["--full"])).is_err(),
+            "a full run names a codebase"
+        );
+        assert!(parse(&args(&["--full", "rerelease-mg3", "id-1.01"])).is_err());
+        assert_eq!(
+            parse(&args(&["--full", "rerelease-mg3"])).unwrap(),
+            (Mode::Full, vec!["rerelease-mg3"])
+        );
         assert_eq!(Mode::Fast.arg(), "fast");
         assert_eq!(Mode::Full.arg(), "full");
-        assert_eq!(
-            parse(&args(&["--full", "rerelease-mg3", "id-1.01"])).unwrap(),
-            (Mode::Full, vec!["rerelease-mg3", "id-1.01"])
-        );
         assert_eq!(
             parse(&args(&["id-1.01"])).unwrap(),
             (Mode::Fast, vec!["id-1.01"])
