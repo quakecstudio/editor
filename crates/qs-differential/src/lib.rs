@@ -29,6 +29,7 @@ pub mod generate;
 pub mod host;
 pub mod runner;
 pub mod scenario;
+pub mod source;
 pub mod suite;
 
 pub use compare::{Comparison, Divergence, Slot, compare, coverage};

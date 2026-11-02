@@ -811,10 +811,10 @@ const fn drawable(def_type: DefType) -> Option<Etype> {
 
 /// SplitMix64, seeded with an FNV-1a hash of a function's name and the round (DIFF-12.2).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Rng(u64);
+pub(crate) struct Rng(u64);
 
 impl Rng {
-    pub(super) fn new(name: &[u8], round: u32) -> Self {
+    pub(crate) fn new(name: &[u8], round: u32) -> Self {
         let mut seed: u64 = 0xcbf2_9ce4_8422_2325;
         for byte in name.iter().chain(&round.to_le_bytes()) {
             seed = (seed ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3);
@@ -822,7 +822,7 @@ impl Rng {
         Self(seed)
     }
 
-    pub(super) fn next(&mut self) -> u64 {
+    pub(crate) fn next(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut z = self.0;
         z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -831,12 +831,12 @@ impl Rng {
     }
 
     /// A number below `bound`; 0 when `bound` is 0.
-    pub(super) fn below(&mut self, bound: u64) -> u64 {
+    pub(crate) fn below(&mut self, bound: u64) -> u64 {
         self.next().checked_rem(bound).unwrap_or(0)
     }
 
     /// An element of `items`; `None` when it is empty.
-    pub(super) fn pick<'t, T>(&mut self, items: &'t [T]) -> Option<&'t T> {
+    pub(crate) fn pick<'t, T>(&mut self, items: &'t [T]) -> Option<&'t T> {
         let count = u64::try_from(items.len()).ok()?;
         items.get(usize::try_from(self.below(count)).ok()?)
     }
@@ -845,7 +845,7 @@ impl Rng {
     /// of two powers of two up to 2^23 (2 in 10), a 24-bit flag mask (1 in 10), a whole
     /// number below 1000 (2 in 10), a fraction in thousandths below 1 (1 in 10), or a negative
     /// whole number above -1000 (1 in 10).
-    pub(super) fn float(&mut self) -> f32 {
+    pub(crate) fn float(&mut self) -> f32 {
         let whole = |n: u64| f32::from(u16::try_from(n).unwrap_or(0));
         match self.below(10) {
             0..=2 => whole(self.below(12)) - 1.0,
