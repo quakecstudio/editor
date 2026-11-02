@@ -286,21 +286,11 @@ impl Compiler<'_> {
         };
         self.store_word(index, OFS_PARM0, Etype::Float, span)?;
         let second = OFS_PARM0.checked_add(3).at(span)?;
-        // FTE-13.14: a call's value stored to an element is copied out of the return global to
-        // a temporary first, after the index's store (`arr[i] = f(x)` is `STORE_F i`, `STORE_F`
-        // of the return global to a temporary, `STORE_F` of it to the second slot).
+        // FTE-13.15: a call's value stored to an element is stored to the second slot from the
+        // return global and then, still referenced, copied to a temporary by the clobber before
+        // the setter's call (`arr[i] = f(x)` is `STORE_F i`, `STORE_F` of the return global to
+        // the second slot, `STORE_F` of it to a temporary, `CALL2`).
         let from = self.operand_of(&value);
-        let from = if matches!(value.kind, ValueKind::Return(_)) && from == OFS_RETURN {
-            let temp = self.program.allocate(1).at(span)?;
-            self.program.emit(
-                Opcode::StoreF,
-                operand(OFS_RETURN).at(span)?,
-                operand(temp).at(span)?,
-            );
-            temp
-        } else {
-            from
-        };
         // `QCC_PR_GenerateFunctionCall2` stores the value by its size, `STORE_F` for one word.
         let by_size = if b == Etype::Vector {
             Etype::Vector
@@ -308,10 +298,13 @@ impl Compiler<'_> {
             Etype::Float
         };
         self.store_word(from, second, by_size, span)?;
-        // `QCC_StoreToArray` asks for the setter when it stores, after the value is read.
+        self.keep_alive(&value);
+        // `QCC_StoreToArray` asks for the setter when it stores, after the value is read; the
+        // call's `QCC_ClobberDef(&def_ret)` copies the value's alias (FTE-18.13).
         let array = store.array.clone();
         let setter = self.array_function(&array, Access::Set, span)?;
         let setter = self.program.def(setter).at(span)?.ofs;
+        self.clobber_aliases(span)?;
         self.program
             .emit(Opcode::Call2, operand(setter).at(span)?, 0);
         Ok(())

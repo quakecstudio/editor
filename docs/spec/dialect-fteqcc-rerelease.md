@@ -117,6 +117,34 @@ Vanilla `qcc` has no `switch`; the words `switch`, `case` and `default` are ordi
   QCC_Generate_OP_GOTO();`), so a call in the body does not change the value the cases test:
   `switch (ceil(t)) { case 1: centerprint(self, "a"); break; }` tests the copy.
 
+- **FTE-3.6** A constant condition makes no test. In `while`, a float constant (`eval =
+  QCC_SRef_EvalConst(e); if (eval && /*opt_compound_jumps &&*/ e.cast->type == ev_float)`)
+  that is true makes no jump (`patch1 = NULL`) and one that is false a `GOTO` past the loop
+  (`if ((!eval->_float) != wasuntil) QCC_FreeTemp(QCC_PR_Statement (&pr_opcodes[OP_GOTO], ...,
+  &patch1))`), so `while (1)` is its body and `GOTO` back. In `do ... while`, a constant of any
+  type that is true by its word (`if (until?!eval->_int:eval->_int)`) is a `GOTO` back and one
+  that is false nothing. In `if`, a float constant keeps the branch it selects and no jump: the
+  other branch's statements are parsed and taken out again (`QCC_UngenerateStatements(oldnumst)`)
+  when no label was made in them, `striptruth` for a false condition and `stripfalse` for a
+  true one, inverted by `if not` and `if !` (FTEF-16.5, FTEF-18.8). Copper's
+  `CycleWeaponCommand` loops `while (1)`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseStatement`.
+- **FTE-3.7** After a `switch`'s body, the `GOTO` past the tests is made unless the body's last
+  statement is a `RETURN`, `DONE` or `GOTO` (`QCC_StatementIsAJump`) and no jump of the
+  function so far targets the statement after it (`QCC_AStatementJumpsTo(numstatements,
+  pr_scope->code, numstatements)`): `if (oldst == numstatements ||
+  !QCC_StatementIsAJump(numstatements-1, numstatements-1) || QCC_AStatementJumpsTo(numstatements,
+  pr_scope->code, numstatements)) patch2 = QCC_Generate_OP_GOTO();`. So a body whose cases all
+  `return` (the rerelease's `GetNetName`) has no `GOTO` after its last `RETURN`, a body ending
+  in `break` after an `if` whose branch ended in `break` too has one (crmod7's
+  `config_command`), and an empty body has one. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseStatement`.
+- **FTE-3.8** A `case` whose constant's word is 0 (`const QCC_eval_t *eval =
+  QCC_SRef_EvalConst(dmin); if (!eval || eval->_int)` is false) tests the switched value itself
+  with `IFNOT` to its label (`patch3 = QCC_Generate_OP_IFNOT(e, false)`), with no `EQ_*`; and
+  the `GOTO` after the tests is made only when there is a `default` case (`if (defaultcase>=0)
+  { patch3 = QCC_Generate_OP_GOTO(); ... }`), the tests otherwise falling through to the end.
+  Copper's `target_sound_next` switches on `self.lip` with a `case 0:`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseStatement`.
+
 ## FTE-4 `break` and `continue`
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseStatement` (the `break` and `continue` cases), fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
@@ -261,6 +289,13 @@ only entity-field access); a vector has no members. The rerelease applies `.z` d
   compound assignment or increment reads it first by `LOAD_F` of that field. The component is
   never a copy of the loaded vector. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`
   (`fieldarrayindex`, `type_floatfield`).
+
+- **FTE-9.5** `e.v.y`, and `e.v[1]` with a constant index, of an entity's vector field `v` is
+  a reference to the component field `e.v_y`, read by `LOAD_F` of the field `v_y`'s own
+  definition and stored through its own `ADDRESS` (`QCC_PR_ParseArrayPointer` moves a field
+  reference's index by the component, `ref index.ofs += idx`, for a vector), not the vector
+  loaded and its word taken. SWAB's `w_rockets.qc` reads `other.angles.y`, the rerelease's
+  `doors.qc` `self.movedir[0]`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseArrayPointer`, `QCC_PR_ParseValue`.
 
 ## FTE-10 `const` declarations
 
@@ -434,6 +469,18 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   f`, makes no field definition. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qccmain.c`, `QCC_WriteData`.
 
+- **FTE-13.15** An element store by a value's index, `arr[i] = x`, is `QCC_StoreToArray`'s
+  `QCC_PR_GenerateFunctionCall2` of the setter: the index stored to the first slot, the value
+  to the second by its size (`STORE_F` for one word, `STORE_V` for three) whatever its type,
+  and a call's value first copied out of the return global to a temporary after the index's
+  store (`arr[i] = f(x)` is `STORE_F i`, `STORE_F` of the return global to a temporary,
+  `STORE_F` of it to the second slot, `CALL2`), while a call's value as the index is stored
+  straight from the return global. The functions `QCC_PR_EmitArrayGetFunction` and
+  `QCC_PR_EmitArraySetFunction` emit store every one-word argument of the calls they make,
+  `error`'s message and `sprintf`'s format among them, with `OP_STORE_F`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreToArray`, `QCC_PR_GenerateFunctionCall2`, `QCC_PR_EmitArrayGetFunction`,
+  `QCC_PR_EmitArraySetFunction`.
+
 ## FTE-14 `typedef struct` and member access
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseDefs`/`QCC_PR_ParseStruct` and the typedef handling,
@@ -466,6 +513,13 @@ Vanilla `qcc` has `void`, `float`, `vector`, `string` and `entity` only (QC-10.1
 - **FTE-14.7** A struct's aggregate initialiser `{ a, b }` writes each member's value at its
   word in order, an array of structs one brace group per element (FTE-13.10). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseInitializerType`.
+
+- **FTE-14.8** A struct local initialised with a struct value, `poseInfo pose = poses[i];`, is
+  copied a word at a time by `STORE_FLD`, each word a field of the struct to
+  `QCC_PR_ParseInitializerType`; an assignment `a = b;` of struct values copies three words at
+  a time by `STORE_V` and the rest by `STORE_F` (FTE-14.6). Dimension of the Past's
+  `misc_corpse` initialises its `pose` so. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseInitializerType`,
+  `QCC_StoreToSRef`.
 
 ## FTE-15 `enum`
 
@@ -621,11 +675,13 @@ name (QC-10.3), and nothing follows the name.
   program defined, such as the named enum (FTE-15.4) of `float GetUpgradeAmount(UpgradeType
   Type)` (`rerelease-mg3/mg3_upgrades.qc`).
 - **FTE-18.4** A call reads every argument before it stores any to a parameter slot, a call's
-  value among them copied out of the return global to a temporary when another argument
-  follows (`QCC_PR_ParseFunctionCall` collects the arguments as references, which
-  `QCC_PR_GenerateFunctionCallRef` copies to the slots); so a call in an argument overwrites
-  no slot an earlier argument filled, and an argument past the last parameter is read and
-  ignored. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`.
+  value among them copied out of the return global to a temporary where a later argument's
+  call clobbers it, after that call's own argument stores (FTE-18.13; `QCC_PR_ParseFunctionCall`
+  collects the arguments as references, which `QCC_PR_GenerateFunctionCallRef` copies to the
+  slots); so a call in an argument overwrites no slot an earlier argument filled, and an
+  argument past the last parameter is read and ignored. `f(g(1), g(2))` is `STORE_F 1`,
+  `CALL1 g`, `STORE_F 2`, `STORE_F` of the return global to a temporary, `CALL1 g`, `STORE_F`
+  of the temporary to the first slot, `STORE_F` of the return global to the second, `CALL2 f`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`.
 - **FTE-18.5** A call's value as the left operand of a binary operator is copied out of the
   return global before a call in the right operand overwrites it: the value is an alias of
   `OFS_RETURN` (`QCC_GetAliasTemp`), and before each call `QCC_ClobberDef` copies the aliases
@@ -633,9 +689,9 @@ name (QC-10.3), and nothing follows the name.
   adds `g()`'s to itself (QC-18.6). The pinned FTEQCC (`-Tid`) writes `CALL0 f`, `STORE_F` of
   the return global to a temporary, `CALL0 g` and `ADD_F` of the temporary and the return global
   for `x = f() + g();`, the same for `==` and `%`, and no copy for `f() + 2`, where no call
-  follows. `qc-codegen` copies a call's left operand to a temporary whether or not a call
-  follows, which reads the same values. The rerelease's `dog_bite`
-  (`rerelease/monsters/rottweiler.qc`) sums `random() + random() + random()`.
+  follows: `ADD_F` of the return global and the constant. `qc-codegen` does the same
+  (FTE-18.13). The rerelease's `dog_bite` (`rerelease/monsters/rottweiler.qc`) sums
+  `random() + random() + random()`.
 - **FTE-18.6** A QC function with `...` copies the parameter slots after its named ones into a
   static array of 24 vectors, `__va_list`, as its first statements, for `va_arg` to read
   (`QCC_PR_ParseImmediateStatements`: `int maxvacount = 24;`, `va_list =
@@ -671,17 +727,79 @@ name (QC-10.3), and nothing follows the name.
   argument is read (`if (args[i].ref.cast->size == 3) ... OP_STORE_V ... else if
   (args[i].ref.cast->size == 1) ... OP_STORE_F`), so a one-word argument leaves the slot's other
   two words as they were, where vanilla `qcc` stores every argument by `STORE_V` (QC-18.3).
-  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
-  `QCC_PR_GenerateFunctionCallRef`.
+  The size is the argument's after its cast to the parameter's type: a `__variant` parameter,
+  a field of `__variant` included, is three words, so Copper's `clientstat(STAT_KEYCOUNTS, 2,
+  worldtype)` stores the float `worldtype` with `STORE_V`; a null passed to a `vector`
+  parameter is the vector constant `'0 0 0'`, three words (FTEF-29.16); and a float argument of
+  an `int` parameter is converted as it is read (`QCC_SupplyConversion` in
+  `QCC_PR_ParseFunctionCall`), a constant at compile time (`QCC_MakeIntConst`) and any other
+  value by the program's `ftoi`, `STORE_F` of it to the first slot and `CALL1 ftoi` before the
+  call's own stores, the return global then the argument (FTEF-26.3; crmod7's
+  `uri_get_callback` passes `data ? strlen(data) : 0` to an `__int`). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`, `QCC_PR_ParseFunctionCall`.
 - **FTE-18.10** A bare `return;` in a function that returns a value returns a local named
   `ret*` of the return type, made at the first such `return` and returned by every later one
   (`if (!pr_scope->returndef.cast) { //but if it does, allocate a local that can be return=foo;
   before the return. depend upon qc's null initialisation rules for the default value.
   pr_scope->returndef = QCC_PR_GetSRef(pr_scope->type->aux_type, "ret*", pr_scope, true, 0,
   GDF_NONE);` and `QCC_PR_Statement (&pr_opcodes[OP_RETURN], pr_scope->returndef, ...)`); in a
-  `void` function it returns 0. `rerelease-hipnotic`'s and `rerelease-rogue`'s `FindTarget`
-  return so. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
-  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseStatement`.
+  `void` function it returns 0. A body that made the local ends with one more `RETURN` of it
+  before `DONE` (`if (f->returndef.cast && f->type->aux_type->size <= type_vector->size) { ...
+  QCC_PR_Statement (&pr_opcodes[OP_RETURN], f->returndef, nullsref, NULL)); }` at the
+  function's end), so `float() f = { if (x) return; return; };` has three `RETURN ret*`.
+  `rerelease-hipnotic`'s and `rerelease-rogue`'s `FindTarget` return so. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseStatement`, `QCC_PR_ParseImmediateStatements`.
+
+- **FTE-18.11** An argument that is still a reference to an entity's field when the call is
+  generated, `e.f`, `e.v.y` or `e.v[1]` (FTE-9.5), its entity read, is loaded straight into its
+  parameter slot, `LOAD_V` for three words and `LOAD_F` for one whatever the field's type
+  (`case REF_FIELD: ... copyop[2] = OP_LOAD_V; ... copyop[0] = OP_LOAD_F;` in
+  `QCC_PR_GenerateFunctionCallRef`'s loop that writes the arguments into temps), in argument
+  order after every argument's own statements and before any argument is stored, so
+  `setorigin(targ, targ.owner.origin)` is `LOAD_ENT targ owner`, `LOAD_V` of the temporary's
+  `origin` into the second slot, `STORE_F targ` to the first, `CALL2`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`.
+- **FTE-18.12** A store whose value is the temporary the statement before wrote writes that
+  statement to the store's target instead, `opt_assignments` (`-O1`, a default optimisation):
+  `if (OpAssignsToC(statements[numstatements-1].op) && opt_assignments && var_a.cast &&
+  var_a.sym == statements[numstatements-1].c.sym && var_a.ofs == statements[numstatements-1].c.ofs)
+  { if (var_a.cast->type == var_b.cast->type) { if (var_a.sym && var_b.sym && var_a.sym->temp &&
+  var_a.sym->refcount==1) { statement = &statements[numstatements-1]; statement->c = var_b;
+  ... return var_b;` in `QCC_PR_StatementFlags`. It applies to a parameter slot
+  (`foo(x - 1, x)` is `SUB_F x 1` into the first slot, `STORE_F x` to the second; `foo(x, x - 1)`
+  stores both, the `SUB_F` no longer the statement before), to any word of a definition, a local
+  vector's component (`offset_z = x * -1` is `MUL_F` into the word), to a `?:`'s temporary
+  (`x = c ? a / b : d` is `DIV_F` into the temporary), to a vector constructor's word, and to
+  the first slot of the calls `%`, `<<` and an array's index make (FTE-19.8, FTE-19.11,
+  FTE-13.8). It never applies when the temporary is read again later, as a struct element's
+  index is for its second word, when the value is a definition's word read as a value (an
+  element at a constant index, `as_finalammo = shellqty[9]`), when the statement before is a
+  call, whose value is an alias (FTE-18.13), or to a `?:`'s temporary from the other arm, which
+  wrote it too. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`, `QCC_CollapseStore`.
+- **FTE-18.13** A call's value is an alias of the return global (`QCC_GetAliasTemp`), read in
+  place until a clobber copies it: `QCC_ClobberDef` copies every alias still referenced to a
+  temporary of its type (`STORE_F` or `STORE_V` from the return global) and points its later
+  reads at the temporary. The clobbers are: before a function call is generated
+  (`QCC_ClobberDef(&def_ret)` and `QCC_LockActiveTemps` in `QCC_PR_GenerateFunctionCallSref`,
+  after that call's argument stores); before a statement a caller asks for, a patched `IF`,
+  `IFNOT` or `GOTO` (`if (outstatement) QCC_ClobberDef(NULL);` before the statement is made in
+  `QCC_PR_StatementFlags`), so `if (f())` is `CALL0`, `STORE_F` of the return global to a
+  temporary and `IFNOT` of it, and `switch (f())` the same before its `GOTO` (FTE-3.5); and at
+  the start of every statement (`QCC_ClobberDef(NULL); //make sure any conditionals don't weird
+  out.`). An alias is freed when a statement reads it (`QCC_FreeTemp` of the operands in
+  `QCC_PR_StatementFlags`) or an expression statement discards it, so `x = f() + 2` and `f();
+  g();` copy nothing; an assignment expression keeps its value readable (`QCC_StoreSRefToRef`
+  with `readable`), so `while ((line = fgets(f)))` copies before its `IFNOT`, but a `for`'s
+  condition reads the value itself; a dropped `NOT` (FTEF-34.16) gives the alias back to the
+  `IF` (`QCC_ForceUnFreeDef(var_a.sym)`), so `if (!f())` is `CALL0`, `STORE_F` of the return
+  global to a temporary and `IF` of it; the `^` emulation (FTE-19.12) frees only one of an
+  operand's two references, so `seedval ^= magicshift(...)` leaves the call's value live and the
+  next call copies it; and a function's end drops its aliases (`QCC_PurgeTemps`). Under
+  FTEQCC an alias keeps the type of its own call; under id's `qcc` the return global is retyped
+  by the last call (QC-18.6). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_GetAliasTemp`, `QCC_ClobberDef`,
+  `QCC_PR_StatementFlags`, `QCC_PR_ParseStatement`, `QCC_PR_GenerateFunctionCallSref`.
 
 ## FTE-19 Further operators
 
@@ -763,6 +881,17 @@ and sets flags with `self.flags &~= FL_ONGROUND` and `other.flags (+) FL_INSHELT
   (b & ~a)` with each `~` as `OP_BITNOT_V`, `'-1 -1 -1' - x` by `SUB_V`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_StatementFlags`.
+- **FTE-19.13** `random(a)` and `random(a, b)` on the vanilla opcodes, which have no
+  `OP_RAND*` (`if (QCC_OPCodeValid(&pr_opcodes[OP_RAND0]))` is false under `-Tid`), are
+  `random()` called and its value scaled: the arguments read, then `QCC_ClobberDef(&def_ret)`,
+  `CALL0 random`, the value an alias of the return global, and `MUL_F` of it and `a`, or for
+  two arguments `min + (max-min)*random()` as `SUB_F b a`, `MUL_F` of the value and that, and
+  `ADD_F` of the product and `a` (`t = QCC_PR_StatementFlags(&pr_opcodes[OP_SUB_F], d, e, NULL,
+  STFL_PRESERVEB); out = QCC_PR_Statement(&pr_opcodes[OP_MUL_F], out, t, NULL); out =
+  QCC_PR_Statement(&pr_opcodes[OP_ADD_F], out, e, NULL);`). Arcane Dimensions'
+  `part.velocity_x = random(self.part_vel_x) + self.part_vel_x;` loads the field, calls, and
+  multiplies. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`.
+
 ## FTE-20 Further literals
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_Lex`, `QCC_PR_LexNumber` and `QCC_PR_LexEscapedCodepoint`,

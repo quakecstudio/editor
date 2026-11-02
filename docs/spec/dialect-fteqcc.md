@@ -2696,7 +2696,14 @@ FTEF-18.5.
   not supported when returning %s".
 - **FTEF-18.8** `if !(e)` takes the statement when `e` is false, like `if not (e)`
   (FTEF-16.5): `if (!negate && QCC_PR_CheckToken("!"))` sets `negate = 2`, with the warning
-  "if !() is specific to fteqcc" (`WARN_FTE_SPECIFIC`).
+  "if !() is specific to fteqcc" (`WARN_FTE_SPECIFIC`). A float or string `e` is then negated
+  by its `NOT` and tested by `IFNOT` (`if (negate == 2) { if (e.cast->type == ev_string ... ||
+  e.cast->type == ev_float ...) { e = QCC_PR_GenerateLogicalNot(e, ...); negate = 0; } }`),
+  the float's `NOT_F` shortened into `IF` of `e` (FTEF-34.16) and the string's `NOT_S` kept,
+  since `NOT_S` is true for the empty string too; `e` of any other type, as with `if not (e)`,
+  is tested by `IF` of `e` itself (`patch1 = QCC_Generate_OP_IF(e, false)`), a vector under
+  `ifvector` by `NOT_V` and `IFNOT` (FTEF-23.10). crmod7's `rubicon2.qc` writes `if
+  !(self.noise1)`.
 - **FTEF-18.9** **Withdrawn** (P2-119, #554): it said `until` is a keyword only for the Hexen II
   targets, but a `#pragma keyword` or a `-K` option turns it on too. Replaced by FTEF-18.31.
 - **FTEF-18.10** A `case` label may give a range, `case a .. b:`, matched when the value is from
@@ -3197,6 +3204,15 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   functions, and one when `x = a[i];` also comes before the loop.
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_LoadFromArray`, `QCC_PR_ParseStatement_For`.
+- **FTEF-19.79** A definition declared under `#pragma noref 1` (`def->unused = true;
+  def->referenced = true;`) that is initialised again keeps its first value: the "dupe
+  initialisation" comparison (FTE-22.6) is for `basedef->initialized && !basedef->unused`, and
+  the later initialiser leaves its words alone, so crmod7's `const float EF_GREEN = 262144;`
+  in `fteextensions.qc` is 262144 after `defs2.qc`'s `float EF_GREEN = 256;` (measured with
+  the pinned FTEQCC); without `noref` the differing value is `E0363`. This profile keeps an
+  initialised definition's value when it is initialised again, the model having judged the
+  differing value. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_GenerateInitializerType`.
 - **FTEF-19.20** A name that is a definition's type, or part of it (a field's, a pointer's, a
   function's return or parameter type), must be a type at that point: C type words
   (FTEF-2.8), a name `QCC_PR_NewType` registers (`variant`, `__variant`, `__string`,
@@ -4536,6 +4552,32 @@ saturates, as on the arm64 build the differential is recorded on.
   id target `b = (_Bool)fn;` of a `void() fn` is the `OP_NE_FNC` truth and three "ftoi
   emulation", as of an entity. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`, `QCC_SRef_EvalConst`.
+- **FTEF-26.14** `BITOR_F`, `BITAND_F` and `EQ_F` of two constants fold too: the bit operators
+  on each constant's `int` (`QCC_MakeFloatConst(QCC_PR_RoundFloatConst(eval_a) |
+  QCC_PR_RoundFloatConst(eval_b))`, `& ...`, the conversion `int ival = val;` with the warning
+  "Constant float operand %f will be truncated to %i" when it is not whole) and `EQ_F` to 1 or
+  0 (`QCC_MakeFloatConst(eval_a->_float == eval_b->_float)`); `AND_F` and `OR_F` fold to an int
+  constant. So `self.items & (IT_SHOTGUN | IT_AXE)` is one `BITAND` of the folded mask. A
+  constant vector's component, its component definition or a word read by offset, is a
+  constant (`QCC_SRef_EvalConst` reads the symbol's data at the reference's offset), so
+  `16 * HUDSIZE_16_x` folds. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`, `QCC_PR_RoundFloatConst`.
+- **FTEF-26.15** With one float constant operand, `opt_constantarithmatic` folds the
+  identities: `0 + x`, `0 | x`, `1 * x` are `x` (`case OP_BITOR_F: case OP_ADD_F: if
+  (eval_a->_float == 0) { ... return var_b; }`, `case OP_MUL_F: if (eval_a->_float == 1) ...
+  return var_b;`), `x + 0`, `x - 0`, `x | 0`, `x * 1`, `x / 1` are `x` (the `eval_b` cases), `0
+  & x` is the constant 0 (`QCC_PR_RoundFloatConst(eval_a) == 0`), `a && b` with a false
+  constant on either side is the constant 0 (`if (!QCC_Eval_Truth(eval_b, var_b.cast, false))
+  ... return QCC_MakeFloatConst(0);`), and `a || b` with a true constant on the left the
+  constant 1 (`QCC_Eval_Truth(eval_a, ...)`), but with one on the right no fold at all, `y ||
+  1` being `OR y 1`: the right-constant case tests `eval_a` too, which is null there, and
+  `QCC_Eval_Truth` of a null is its `assume`, false. The comparisons are exact (`== 0`,
+  `== 1`). The value returned is the other operand itself, so `x = 0 + x;` is `STORE_F x x`
+  and `1 << n` is `pow(2, n)`'s value unscaled (FTE-19.11), and `if (coop &&
+  TEAM_STRICT_COOP)` with the constant 0 is a constant condition (FTE-3.6). An assignment
+  binds before `&&` and `||` (FTE-8.4's priorities), so `x = y && 0` is `(x = y) && 0`, the
+  store and the fold's constant discarded. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`.
 - **FTEF-26.13** A value is a constant when it is a literal, a folded result, or a definition
   that is constant and initialised (`QCC_SRef_EvalConst`), an enum's item and a `length` among
   them. An array's `length` is its size when the model knows it (FTEF-24.8), an `int`. A
@@ -5001,6 +5043,17 @@ reference are FTEF-31's.
   always generated (`if (pr_scope) eval = NULL;`). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_RefExpression`.
+- **FTEF-30.16** A `?:`'s first arm is stored to the temporary by its size, `STORE_F` for one
+  word and `STORE_V` for three, whatever its type (`QCC_PR_StatementFlags(pr_opcodes +
+  OP_STORE_F, ...)` for the truth), and its last arm by its type's row (`QCC_StoreToSRef`),
+  `STORE_S` for a string; a `?:` with no middle arm stores the condition as its first. An arm
+  the statement before made is written to the temporary by that statement (FTE-18.12), with no
+  clobber; otherwise the first arm's store asks for its statement and copies the aliases first
+  (FTEF-30.13). So `s = c ? a : "x"` is `IFNOT c`, `STORE_F a`, `GOTO`, `STORE_S "x"`,
+  `STORE_S` of the temporary to `s`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_RefExpression`.
+
 ## FTEF-31 References
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`, `QCC_RefToDef`,

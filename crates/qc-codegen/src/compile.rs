@@ -603,7 +603,7 @@ impl<'a> Compiler<'a> {
                 None => {}
                 Some(ast::Initializer::Value(expr)) => {
                     let span = expr.syntax().span();
-                    // FTEF-19.80: under FTEQCC a definition already initialised keeps its value
+                    // FTEF-19.79: under FTEQCC a definition already initialised keeps its value
                     // when initialised again: the model has judged a differing value (FTE-22.6),
                     // and one of a `#pragma noref 1` definition is dropped without a word.
                     if self.dialect.has_fteqcc_extensions()
@@ -1668,11 +1668,14 @@ impl<'a> Compiler<'a> {
         // the end (`QCC_AStatementJumpsTo`), as an `if` whose branch ends in `break` does;
         // an empty body gets the `GOTO` either way.
         let end = self.program.statements.len();
-        let unconditional = self.program.statements.last().is_some_and(|last| {
-            [Opcode::Return, Opcode::Done, Opcode::Goto]
-                .iter()
-                .any(|op| u32::from(op.number()) == last.op)
-        }) && !self.jumps_to(end);
+        let empty = to_tests.saturating_add(1) == end;
+        let unconditional = !empty
+            && self.program.statements.last().is_some_and(|last| {
+                [Opcode::Return, Opcode::Done, Opcode::Goto]
+                    .iter()
+                    .any(|op| u32::from(op.number()) == last.op)
+            })
+            && !self.jumps_to(end);
         let past_tests = if unconditional && self.dialect.has_fteqcc_extensions() {
             None
         } else {
@@ -1821,9 +1824,17 @@ impl<'a> Compiler<'a> {
             };
             negated = false;
         }
-        // FTE-3.6: a constant float condition keeps the branch it selects and no jump,
-        // the other's statements taken out again (`QCC_UngenerateStatements`).
-        if let Some(truth) = self.constant_truth(&condition) {
+        // FTE-3.6: a constant condition of any type keeps the branch it selects and no jump,
+        // the other's statements taken out again (`QCC_UngenerateStatements`): a float by its
+        // value (`eval->_float == 0`), any other type by its word (`eval->_int == 0`).
+        let truth = match self.constant_truth(&condition) {
+            Some(truth) => Some(truth),
+            None if self.dialect.has_fteqcc_extensions() => {
+                self.constant_word(&condition).map(|word| word != 0)
+            }
+            None => None,
+        };
+        if let Some(truth) = truth {
             if truth != negated {
                 self.statement(&i.then_branch().at(span)?)?;
             } else if let Some(otherwise) = i.else_branch() {
@@ -2122,7 +2133,9 @@ impl<'a> Compiler<'a> {
 
     /// The truth of a float constant condition under FTEQCC (FTE-3.6), `None` for any other.
     fn constant_truth(&self, condition: &Value) -> Option<bool> {
-        if !self.dialect.has_fteqcc_extensions() || self.type_of(condition).etype() != Etype::Float
+        if !self.dialect.has_fteqcc_extensions()
+            || self.type_of(condition).etype() != Etype::Float
+            || self.is_integer(condition)
         {
             return None;
         }
@@ -2607,6 +2620,26 @@ impl<'a> Compiler<'a> {
                 let equal = x == y;
                 Literal::Float(if equal { 1.0 } else { 0.0 })
             }
+            // FTEF-26.14: `AND_F` and `OR_F` of two constants fold to an int constant
+            // (`QCC_MakeIntConst(eval_a->_float && eval_b->_float)`), made a float where a
+            // float is stored (FTEF-27.4).
+            (Opcode::And | Opcode::Or, Literal::Float(x), Literal::Float(y))
+                if self.dialect.has_fteqcc_extensions() =>
+            {
+                let (x, y) = (x != 0.0, y != 0.0);
+                let truth = if opcode == Opcode::And {
+                    x && y
+                } else {
+                    x || y
+                };
+                let int = ValueType::Of(Type::Named(CScalar::Integer.name().into()));
+                let place = self.program.int_immediate(u32::from(truth), int)?;
+                let ofs = self.program.def(place).ok_or(Internal::NoDefinition)?.ofs;
+                return Ok(Some(Value {
+                    ofs,
+                    kind: ValueKind::Def(place),
+                }));
+            }
             _ => return Ok(None),
         };
         let place = self.program.immediate(&literal)?;
@@ -2648,12 +2681,12 @@ impl<'a> Compiler<'a> {
         let is = |value: Option<f32>, want: f32| value.is_some_and(|value| value == want);
         let (a, b) = (constant(self, left), constant(self, right));
         let folded = match opcode {
-            // `QCC_Eval_Truth` of a float constant: not 0. `a && b` with a false constant is
-            // the constant 0, `a || b` with a true one the constant 1.
+            // `QCC_Eval_Truth` of a float constant: not 0. `a && b` with a false constant on
+            // either side is the constant 0; `a || b` with a true constant on the left is the
+            // constant 1, and with one on the right no fold, FTEQCC's right-constant case
+            // testing the left operand's truth with no constant to read (FTEF-26.15).
             Opcode::And if is(a, 0.0) || is(b, 0.0) => Some(self.float_literal(0.0, span)?),
-            Opcode::Or if a.is_some_and(|a| a != 0.0) || b.is_some_and(|b| b != 0.0) => {
-                Some(self.float_literal(1.0, span)?)
-            }
+            Opcode::Or if a.is_some_and(|a| a != 0.0) => Some(self.float_literal(1.0, span)?),
             Opcode::AddF | Opcode::BitOr if is(a, 0.0) => Some(right.clone()),
             Opcode::MulF if is(a, 1.0) => Some(right.clone()),
             Opcode::BitAnd if a.is_some_and(|a| float_to_int(a) == 0) => {
@@ -3401,7 +3434,7 @@ impl Compiler<'_> {
     }
 
     /// `random(a)` and `random(a, b)` on the vanilla opcodes, which have no `OP_RAND*`
-    /// (FTEF-33.x): the arguments read, then `random()` called and its value scaled, `MUL_F`
+    /// (FTE-19.13): the arguments read, then `random()` called and its value scaled, `MUL_F`
     /// of it and `a`, or `min + (max-min)*random()` as `SUB_F b a`, `MUL_F` and `ADD_F`.
     /// `None` for any other call.
     fn random_call(
