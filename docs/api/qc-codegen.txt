@@ -24,7 +24,6 @@ struct qc_codegen::Unit
 struct qc_codegen::precache::Precache
 struct qc_codegen::precache::Precaches
 use qc_codegen::Precache = precache::Precache
-use qc_codegen::Precaches = precache::Precaches
 variant qc_codegen::CompileError::Diagnostics
 variant qc_codegen::CompileError::Dialect
 variant qc_codegen::CompileError::Internal

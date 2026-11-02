@@ -32,6 +32,7 @@ mod tables;
 pub use check::{BuiltinRef, declared_builtins, missing_builtins};
 pub use tables::SOURCES;
 
+#[cfg(test)]
 use qc_builtins::table::BUILTINS;
 use qc_project::{ModuleKind, Target};
 
@@ -172,6 +173,7 @@ impl Layer {
     }
 
     /// The layer's builtins, in source order.
+    #[cfg(test)]
     fn builtins(self) -> Vec<Builtin> {
         match self {
             Self::Vanilla => BUILTINS.iter().map(Builtin::from).collect(),
@@ -268,9 +270,10 @@ impl Engine {
         }
     }
 
-    /// The engine with the id `id`, if any (ENGT-3.4).
+    /// The engine with the id `id`, if any (ENGT-3.4); the tests read it.
+    #[cfg(test)]
     #[must_use]
-    pub fn from_id(id: &str) -> Option<Self> {
+    pub(crate) fn from_id(id: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|engine| engine.id() == id)
     }
 
@@ -329,9 +332,10 @@ impl Engine {
 
     /// The engine's builtin table for modules of `kind`: each key once, the first layer that
     /// has it giving the entry, in layer and then source order (ENGT-3.9, ENGT-3.11). Empty
-    /// when the engine has no table for that kind.
+    /// when the engine has no table for that kind; the tests read it.
+    #[cfg(test)]
     #[must_use]
-    pub fn builtins(self, kind: ModuleKind) -> Vec<Builtin> {
+    pub(crate) fn builtins(self, kind: ModuleKind) -> Vec<Builtin> {
         let mut table: Vec<Builtin> = Vec::new();
         for layer in self.layers(kind) {
             for builtin in layer.builtins() {
@@ -353,7 +357,7 @@ impl Engine {
     /// The engine's entry for the engine name `name` in its table for modules of `kind`, if it
     /// has one: [`Self::builtin`] of the [`BuiltinKey::Name`] `name` (ENGT-3.9, ENGT-4.17).
     #[must_use]
-    pub fn builtin_named(self, kind: ModuleKind, name: &str) -> Option<Builtin> {
+    pub(crate) fn builtin_named(self, kind: ModuleKind, name: &str) -> Option<Builtin> {
         self.layers(kind)
             .iter()
             .find_map(|layer| layer.find_named(name))

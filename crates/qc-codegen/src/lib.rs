@@ -53,7 +53,8 @@ use qc_syntax::{Dialect, Parse};
 use crate::compile::Compiler;
 use crate::names::Names;
 
-pub use precache::{Precache, Precaches};
+pub use precache::Precache;
+pub(crate) use precache::Precaches;
 
 /// One compiled file: the name its functions record (`s_file`, QC-25.4) and its syntax tree,
 /// the text the compiler reads after preprocessing (QC-9.16).
