@@ -7,7 +7,7 @@
 use qc_diag::Code;
 use qc_progs::opcode::Opcode::{
     self, AddF, And, BitAnd, BitOr, Call1, Call2, Call3, DivF, Done, EqF, Goto, If, IfNot, Lt,
-    MulF, MulV, MulVf, NotF, NotS, NotV, Return, StoreF, StoreFld, StoreS, StoreV, SubF, SubV,
+    MulF, MulV, MulVf, NotF, NotS, NotV, Return, StoreF, StoreS, StoreV, SubF, SubV,
 };
 use qc_progs::{ProgsFile, Statement};
 
@@ -164,12 +164,10 @@ fn a_struct_elements_words_are_read_one_at_a_time() {
     let u = body(&p, "u");
     // The index is read again for the second word, so its first store is not folded; the
     // sum for the second word is (FTE-18.12).
-    // Each word read is stored to the element's temporary with STORE_FLD, as FTEQCC stores
-    // the members, fields of the element to it.
     assert_eq!(
         opcodes(&u),
         ops(&[
-            MulF, StoreF, Call1, StoreFld, AddF, Call1, StoreFld, StoreF, StoreF, Done
+            MulF, StoreF, Call1, StoreF, AddF, Call1, StoreF, StoreF, StoreF, Done
         ])
     );
     assert_eq!(u[1], st(StoreF, u[0].c, 4, 0));

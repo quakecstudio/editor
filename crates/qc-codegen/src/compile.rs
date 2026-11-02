@@ -1209,7 +1209,11 @@ impl<'a> Compiler<'a> {
                 Some(ast::Initializer::Value(expr)) if self.dialect.has_fteqcc_extensions() => {
                     let to = self.def_value(place, span)?;
                     let value = self.expr(&expr)?;
-                    self.store_value(&to, value, expr.syntax().span())?;
+                    // A struct local's initialiser is copied a word at a time by `STORE_FLD`,
+                    // the words being fields of the struct to `QCC_PR_ParseInitializerType`.
+                    if !self.init_struct(&to, &value, expr.syntax().span())? {
+                        self.store_value(&to, value, expr.syntax().span())?;
+                    }
                 }
                 Some(ast::Initializer::Value(expr)) => {
                     let literal = literal_of(&expr, self.dialect).at(expr.syntax().span())?;
@@ -3225,6 +3229,28 @@ impl<'a> Compiler<'a> {
         }
         self.store_to(to, &value, span)?;
         Ok(Some(value))
+    }
+
+    /// A struct local's initialiser copied to it a word at a time by `STORE_FLD`; false when
+    /// `to` is no struct.
+    fn init_struct(&mut self, to: &Value, value: &Value, span: Span) -> Lowered<bool> {
+        let ValueType::Of(ty) = self.type_of(to) else {
+            return Ok(false);
+        };
+        let Some(shape) = self.index.struct_shape(&ty) else {
+            return Ok(false);
+        };
+        if self.type_of(value) != self.type_of(to) {
+            return Ok(false);
+        }
+        let from = self.operand_of(value);
+        for w in 0..shape.words {
+            let a = from.checked_add(w).at(span)?;
+            let b = to.ofs.checked_add(w).at(span)?;
+            self.program
+                .emit(Opcode::StoreFld, operand(a).at(span)?, operand(b).at(span)?);
+        }
+        Ok(true)
     }
 
     /// Marks a call's value live again after a statement read it, as a readable store does.
