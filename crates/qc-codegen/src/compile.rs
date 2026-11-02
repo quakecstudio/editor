@@ -1135,9 +1135,14 @@ impl<'a> Compiler<'a> {
                 self.statement(&d.body().at(span)?)?;
                 let test_at = self.program.statements.len();
                 let condition = self.expr(&d.condition().at(span)?)?;
-                // FTE-3.6: a constant condition makes no test: a true one (by its word) a
-                // `GOTO` back, a false one nothing.
-                match self.constant_word(&condition).map(|word| word != 0) {
+                // FTE-3.6: under FTEQCC a constant condition makes no test: a true one (by
+                // its word) a `GOTO` back, a false one nothing.
+                let constant = if self.dialect.has_fteqcc_extensions() {
+                    self.constant_word(&condition).map(|word| word != 0)
+                } else {
+                    None
+                };
+                match constant {
                     Some(true) => {
                         let back = branch(self.program.statements.len(), top).at(span)?;
                         self.program.emit(Opcode::Goto, back, 0);
