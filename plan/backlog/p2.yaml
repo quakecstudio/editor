@@ -1770,6 +1770,7 @@ issues:
   - P2-154
   - P2-155
   - P2-156
+  - P2-157
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -3142,6 +3143,37 @@ issues:
   - '`cargo xtask compiler-diff --full` holds each mod FTEQCC compiles with `-Tid` to DIFF-12.5''s bar: no divergence and at least 90% of statements executed'
   verify:
   - cargo test -p qc-codegen -p qc-sema
+  - cargo xtask compiler-diff --full
+- key: P2-157
+  title: Emit FTEQCC's array accessors for a constant index and reach the CTF bar
+  labels:
+  - L4-bridges
+  - area:compiler
+  - type:feature
+  size: M
+  reqs:
+  - COMP-8
+  - COMP-9
+  summary: |
+    Split from P2-150 (#639). P2-150's first five lowering forms are done: `cargo xtask codegen-corpus` compiles the server module of every mod it names (Copper, SWAB, progs_dump, re:mobilize, Arcane Dimensions, librequake, crmod7 and QC Conduit all report `ok` for their `progs` module; copper's `csprogs` is a CSQC module, L-09 #193), and `cargo xtask compiler-diff --full` passes on five of the six rerelease codebases (rerelease, rerelease-hipnotic, rerelease-rogue, rerelease-mg1, rerelease-mg3 are in `RERELEASE`; Copper, librequake, QC Conduit and SWAB are in `MODS_AT_BAR`). Three targets remain below DIFF-12.5's bar, recorded from a local run of `cargo xtask compiler-diff --full rerelease-ctf arcane-dimensions crmod7` on macOS arm64 against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `-Tid`), oracle progs under target/compiler-diff/<id>/:
+    1. Arcane Dimensions: 5 divergences, each a `Definitions` divergence at the setup (round 0), so no call runs; our progs has 24120 global definitions to FTEQCC's 21273. The first unpaired named global is FTEQCC's `ArrayGet*backgrd` (ofs 3004), which ours never names: FTEQCC emits an `ArrayGet*NAME` accessor for `string backgrd[16]` and `string backgrd2[12]` (csqc_hudad.qc, in the server progs.src), while qc-codegen makes an accessor only where a subscript's index is a value (crates/qc-codegen/src/compile/arrays.rs, `ArrayFunction` "made where a subscript by a value first needs it"). Every `backgrd[...]` use is a constant index (`backgrd[HUDTYPE_0+3]`, csqc_hudad.qc:538), which qc-codegen reads directly and FTEQCC still routes through the accessor, so FTEQCC's accessor and its locals have no counterpart in ours and the definition tables stop pairing.
+    2. crmod7: 4 divergences, the same `Definitions` class at the setup; 35089 global definitions to FTEQCC's 33835. The first unpaired named global is FTEQCC's `strings_get_teamname_bronze` after `ArrayGet*tab`, where ours has `strings_get_teamname2`: FTEQCC interleaves the accessor, its `tab[N]` element definitions and the following function definitions in an order qc-codegen does not reproduce.
+    3. rerelease-ctf: 0 divergences but 88.9% of statements, below the 90% bar (each scenario reaches 82.8% to 85.0%). The uncovered statements are CTF gameplay the scripted call set does not drive: ClientObituary (261 of 612 statements unexecuted), TeamCaptureFlagThink (189 of 203), TeamCaptureFlagTouch (144 of 275), ExitIntermission, WaterMove, CheckPowerups and the flag-handling paths (target/compiler-diff uncovered report). This is a differential call-set or scenario gap (crates/qs-differential), not a codegen divergence.
+    The fix for (1) and (2) is to port FTEQCC's exact `ArrayGet*`/`ArraySet*` emission trigger and ordering from qcc_pr_comp.c (where `QCC_PR_EmitArrayGetFunction` is called and how per-file flushing interleaves the accessors with element and following definitions) so qc-codegen names the same globals in the same order, without regressing the codebases already at the bar. The fix for (3) is to extend the differential's scenarios or call set so the CTF paths run, lifting rerelease-ctf to at least 90%. Each needs a spec statement quoting the pinned FTEQCC source (guardrail 3) and a citing test.
+  environment: |
+    main after PRs #648, #650, #652, #654; recorded from `cargo xtask compiler-diff --full rerelease-ctf arcane-dimensions crmod7` and `cargo xtask codegen-corpus` on macOS arm64 against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, -Tid), with the corpus fetched by `cargo xtask corpus fetch`
+  depends:
+  - P2-150
+  deliverable:
+  - 'crates/qc-codegen/src/compile/arrays.rs and compile.rs: qc-codegen emits an `ArrayGet*NAME` (and `ArraySet*NAME` where FTEQCC does) accessor for the same arrays FTEQCC does, including an array only ever subscripted by a constant index, and names the accessors, their locals and the element and following definitions in FTEQCC''s order, with a spec statement in docs/spec/dialect-fteqcc.md quoting qcc_pr_comp.c (QCC_PR_EmitArrayGetFunction and its call sites) and a citing test'
+  - 'crates/qs-differential: the scenarios or scripted call set drive the CTF gameplay paths (team flag handling, obituaries, water movement) so rerelease-ctf reaches at least 90% of statements, with the forms recorded in docs/spec/differential.md'
+  - 'xtask/src/compiler_diff.rs: rerelease-ctf moved from `PENDING` to `RERELEASE`, and arcane-dimensions and crmod7 added to `MODS_AT_BAR`, each passing; .github/workflows/differential.yml: arcane-dimensions and crmod7 added to the `corpus fetch` list of the full compiler differential'
+  acceptance:
+  - '`cargo xtask compiler-diff --full` passes on rerelease-ctf: no divergence and at least 90% of statements executed'
+  - '`cargo xtask compiler-diff --full` holds arcane-dimensions and crmod7 to DIFF-12.5''s bar: no divergence and at least 90% of statements executed'
+  - 'The five rerelease codebases and four mods already at the bar stay at the bar: `cargo xtask compiler-diff --full` passes on all six rerelease codebases and all six -Tid mods'
+  verify:
+  - cargo test -p qc-codegen -p qc-sema -p qs-differential
   - cargo xtask compiler-diff --full
 - key: P2-154
   title: Define the public API boundary of every library crate
