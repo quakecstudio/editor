@@ -38,7 +38,7 @@ pub mod trace;
 mod tests;
 
 pub use error::{Divergence, ErrorKind, FieldFault, RunError, StackEntry};
-pub use exec::{Builtins, Context, NoBuiltins, NoObserver, Observer, ServerState};
+pub use exec::{Builtins, Context, NoObserver, Observer, ServerState};
 pub use machine::{GlobalAccessError, Machine, MachineError};
 
 /// Slots of the local stack shared by every active QC function (VM-15.2).

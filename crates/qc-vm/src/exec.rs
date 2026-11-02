@@ -75,9 +75,11 @@ pub trait Builtins {
 
 /// A [`Builtins`] that has no builtins: every call fails as `Bad builtin call number` would be
 /// unreachable here, so it is used only when a progs makes no builtin calls.
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Default)]
-pub struct NoBuiltins;
+pub(crate) struct NoBuiltins;
 
+#[cfg(test)]
 impl Builtins for NoBuiltins {
     fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
         Err(

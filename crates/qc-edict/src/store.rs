@@ -243,7 +243,8 @@ impl EdictStore {
     ///
     /// Returns `None` for a number the array does not hold.
     #[must_use]
-    pub fn freetime(&self, number: EdictNumber) -> Option<f32> {
+    #[cfg(test)]
+    pub(crate) fn freetime(&self, number: EdictNumber) -> Option<f32> {
         self.edicts.get(number.index()).map(|edict| edict.freetime)
     }
 

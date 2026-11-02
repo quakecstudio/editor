@@ -21,7 +21,7 @@ use qc_vm::convert::{double_to_float, double_to_int, float_to_int, int_to_float}
 /// The mask id's `PF_random` applies to `rand()` (BUILTIN-6.6).
 ///
 /// `BUILTIN_RANDOM_MASK` in BUILTIN-6: `(rand () & 0x7fff) / ((float)0x7fff)`.
-pub const BUILTIN_RANDOM_MASK: u32 = 0x7fff;
+pub(crate) const BUILTIN_RANDOM_MASK: u32 = 0x7fff;
 
 /// `makevectors(ang)`: the forward, right and up vectors of `AngleVectors` (BUILTIN-6.1).
 ///
@@ -230,7 +230,7 @@ fn u32_to_i32(v: u32) -> i32 {
 /// decimal digits with at most one `.`; it stops at the first other character, with no
 /// exponent and no leading spaces. The result is id's `(float)(sign * total)`.
 #[must_use]
-pub fn q_atof(text: &str) -> f32 {
+pub(crate) fn q_atof(text: &str) -> f32 {
     let bytes = text.as_bytes();
     let mut i = 0;
     // id: skip a leading '-' only; no spaces are skipped (BUILTIN-11.7, `" 5"` is 0).

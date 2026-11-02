@@ -1,10 +1,4 @@
-const qc_edict::EDICT_FREED_NEXTTHINK
 const qc_edict::EDICT_HEADER_SIZE
-const qc_edict::EDICT_MAX_CLIENTS
-const qc_edict::EDICT_MAX_FIELDS
-const qc_edict::EDICT_REUSE_DELAY
-const qc_edict::EDICT_REUSE_GRACE
-const qc_edict::EDICT_SYS_FIELDS_END
 const qc_edict::EDICT_SYS_GLOBALS_END
 const qc_edict::number::EdictNumber::WORLD
 enum qc_edict::layout::LayoutError
@@ -31,7 +25,6 @@ fn qc_edict::store::EdictStore::field
 fn qc_edict::store::EdictStore::fields
 fn qc_edict::store::EdictStore::fields_mut
 fn qc_edict::store::EdictStore::free
-fn qc_edict::store::EdictStore::freetime
 fn qc_edict::store::EdictStore::is_client
 fn qc_edict::store::EdictStore::is_free
 fn qc_edict::store::EdictStore::layout
@@ -40,9 +33,7 @@ fn qc_edict::store::EdictStore::new
 fn qc_edict::store::EdictStore::num_edicts
 fn qc_edict::store::EdictStore::num_for_edict
 fn qc_edict::store::EdictStore::set_field
-fn qc_edict::system::field_at_slot
 fn qc_edict::system::field_by_name
-fn qc_edict::system::global_at_slot
 fn qc_edict::system::global_by_name
 impl qc_edict::layout::LayoutError: core::error::Error
 impl qc_edict::layout::LayoutError: fmt::Display

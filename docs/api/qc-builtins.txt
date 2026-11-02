@@ -1,4 +1,3 @@
-const qc_builtins::math::BUILTIN_RANDOM_MASK
 const qc_builtins::mock::BUILTIN_CHECKCLIENT_INTERVAL
 const qc_builtins::mock::BUILTIN_CMD_TEXT_SIZE
 const qc_builtins::mock::BUILTIN_FL_FLY
@@ -16,7 +15,6 @@ const qc_builtins::mock::LIMIT_MAX_SOUNDS
 const qc_builtins::mock::VKQUAKE_MAX_MODELS
 const qc_builtins::mock::VKQUAKE_MAX_SOUNDS
 const qc_builtins::table::BUILTINS
-const qc_builtins::table::BUILTIN_FIXME_MESSAGE
 const qc_builtins::table::BUILTIN_MAX_NUMBER
 enum qc_builtins::error::BuiltinError
 enum qc_builtins::error::FatalError
@@ -63,7 +61,6 @@ fn qc_builtins::math::floor
 fn qc_builtins::math::ftos
 fn qc_builtins::math::makevectors
 fn qc_builtins::math::normalize
-fn qc_builtins::math::q_atof
 fn qc_builtins::math::random
 fn qc_builtins::math::rint
 fn qc_builtins::math::vectoangles
@@ -91,7 +88,6 @@ fn qc_builtins::mock::MockEngine::precache_index
 fn qc_builtins::mock::MockEngine::set_lightstyle
 fn qc_builtins::mock::Rng::new
 fn qc_builtins::mock::Rng::next_rand
-fn qc_builtins::table::is_fixme
 fn qc_builtins::table::lookup
 impl qc_builtins::dispatch::MockBuiltins: Builtins
 impl qc_builtins::dispatch::MockBuiltins: Default

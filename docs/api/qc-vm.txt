@@ -18,7 +18,6 @@ fn qc_vm::convert::double_to_int
 fn qc_vm::convert::float_to_int
 fn qc_vm::convert::int_to_float
 fn qc_vm::error::Divergence::statement
-fn qc_vm::error::ErrorKind::is_executed_statement
 fn qc_vm::error::ErrorKind::is_fatal
 fn qc_vm::error::ErrorKind::resets_depth
 fn qc_vm::error::RunError::message
@@ -59,7 +58,6 @@ impl qc_vm::error::ErrorKind: fmt::Display
 impl qc_vm::error::FieldFault: fmt::Display
 impl qc_vm::error::RunError: core::error::Error
 impl qc_vm::error::RunError: fmt::Display
-impl qc_vm::exec::NoBuiltins: Builtins
 impl qc_vm::exec::NoObserver: Observer
 impl qc_vm::machine::Machine: Clone
 impl qc_vm::machine::MachineError: From
@@ -71,7 +69,6 @@ mod qc_vm::trace
 struct qc_vm::error::RunError
 struct qc_vm::error::StackEntry
 struct qc_vm::exec::Context
-struct qc_vm::exec::NoBuiltins
 struct qc_vm::exec::NoObserver
 struct qc_vm::machine::GlobalAccessError
 struct qc_vm::machine::Machine
@@ -90,7 +87,6 @@ use qc_vm::LIMIT_NUM_BUILTINS = qc_progs::limits::LIMIT_NUM_BUILTINS
 use qc_vm::LIMIT_RUNAWAY = qc_progs::limits::LIMIT_RUNAWAY
 use qc_vm::Machine = machine::Machine
 use qc_vm::MachineError = machine::MachineError
-use qc_vm::NoBuiltins = exec::NoBuiltins
 use qc_vm::NoObserver = exec::NoObserver
 use qc_vm::Observer = exec::Observer
 use qc_vm::RunError = error::RunError
