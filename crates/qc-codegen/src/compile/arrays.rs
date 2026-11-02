@@ -219,8 +219,10 @@ impl Compiler<'_> {
             };
             let to = temp.checked_add(w).at(span)?;
             let from = self.operand_of(&word);
+            // FTEQCC stores each word of a struct element it reads with `OP_STORE_FLD`, the
+            // members being fields of the element to it.
             self.program.emit(
-                Opcode::StoreF,
+                Opcode::StoreFld,
                 operand(from).at(span)?,
                 operand(to).at(span)?,
             );

@@ -226,6 +226,8 @@ pub(crate) struct Compiler<'a> {
     /// The temporaries both arms of a `?:` write (FTEF-30.3), which no store folds into the
     /// statement that wrote them last, since the other arm wrote them too.
     joined: HashSet<u32>,
+    /// The first statement of the body being compiled, `pr_scope->code`.
+    body_first: usize,
     /// Each file's `s_file`, which a getter's function record takes from its array's file.
     s_files: HashMap<FileId, i32>,
     /// The functions defined in the body being compiled, compiled after it (FTEF-18.2).
@@ -276,6 +278,7 @@ impl<'a> Compiler<'a> {
             aliases: Vec::new(),
             last_read: None,
             joined: HashSet::new(),
+            body_first: 0,
             prior: None,
             extra_parms: HashMap::new(),
             body_return: None,
@@ -758,6 +761,7 @@ impl<'a> Compiler<'a> {
                     self.locals_end = self.program.next_global().at(span)?;
                 }
                 let code = operand_index(self.program.statements.len()).at(span)?;
+                self.body_first = self.program.statements.len();
                 self.body_return = Some(ValueType::Of(function_type.ret.clone()));
                 self.ret_local = None;
                 if self.dialect.has_fteqcc_extensions() && function_type.variadic {
@@ -1648,12 +1652,15 @@ impl<'a> Compiler<'a> {
         let cases = self.switches.pop().unwrap_or_default();
         body?;
         // FTE-3.7: no `GOTO` past the tests after a body whose last statement is a `RETURN`,
-        // `DONE` or `GOTO` (`QCC_StatementIsAJump`), and none for an empty body either way.
+        // `DONE` or `GOTO` (`QCC_StatementIsAJump`) when no jump of the body so far targets
+        // the end (`QCC_AStatementJumpsTo`), as an `if` whose branch ends in `break` does;
+        // an empty body gets the `GOTO` either way.
+        let end = self.program.statements.len();
         let unconditional = self.program.statements.last().is_some_and(|last| {
             [Opcode::Return, Opcode::Done, Opcode::Goto]
                 .iter()
                 .any(|op| u32::from(op.number()) == last.op)
-        });
+        }) && !self.jumps_to(end);
         let past_tests = if unconditional && self.dialect.has_fteqcc_extensions() {
             None
         } else {
@@ -1709,6 +1716,28 @@ impl<'a> Compiler<'a> {
             self.set_goto(past_tests, end, span)?;
         }
         self.end_jumps(end, span)
+    }
+
+    /// Whether a jump of the body so far targets statement `target`
+    /// (`QCC_AStatementJumpsTo`): a `GOTO`'s `a` or an `IF`'s or `IFNOT`'s `b` offset.
+    fn jumps_to(&self, target: usize) -> bool {
+        let Some(body) = self.program.statements.get(self.body_first..) else {
+            return false;
+        };
+        body.iter().enumerate().any(|(i, statement)| {
+            let at = self.body_first.saturating_add(i);
+            let offset = if statement.op == u32::from(Opcode::Goto.number()) {
+                statement.a
+            } else if statement.op == u32::from(Opcode::If.number())
+                || statement.op == u32::from(Opcode::IfNot.number())
+            {
+                statement.b
+            } else {
+                return false;
+            };
+            offset != 0
+                && at.checked_add_signed(isize::try_from(offset).unwrap_or(0)) == Some(target)
+        })
     }
 
     /// Points the `GOTO` at statement `at` at statement `to`.
@@ -3380,6 +3409,35 @@ impl Compiler<'_> {
         }
     }
 
+    /// FTEF-26.3: a float argument of an integer parameter `param` is converted as it is read
+    /// (`QCC_SupplyConversion` in `QCC_PR_ParseFunctionCall`): a constant at compile time
+    /// (`QCC_MakeIntConst`), any other value by the program's `ftoi`, whose value is the
+    /// argument.
+    fn int_argument(&mut self, value: Value, param: Option<&Type>, span: Span) -> Lowered<Value> {
+        let Some(param) = param else {
+            return Ok(value);
+        };
+        if param.fteqcc_scalar() != Some(CScalar::Integer)
+            || self.type_of(&value).etype() != Etype::Float
+            || self.is_integer(&value)
+        {
+            return Ok(value);
+        }
+        if let Some(Literal::Float(constant)) = self.constant_literal(&value) {
+            let bits = u32::from_ne_bytes(float_to_int(constant).to_ne_bytes());
+            let place = self
+                .program
+                .immediate(&Literal::Float(f32::from_bits(bits)))
+                .at(span)?;
+            return self.def_value(place, span);
+        }
+        let Some(ftoi) = self.conversion_function("ftoi") else {
+            return Ok(value);
+        };
+        let from = self.operand_of(&value);
+        self.call1(ftoi, from, ValueType::Of(param.clone()), span)
+    }
+
     /// An argument of an FTEQCC call (FTE-18.11): an entity's field, `e.f`, is left a
     /// reference, its base read, to be loaded straight into its slot; anything else is its
     /// value.
@@ -3480,7 +3538,18 @@ impl Compiler<'_> {
         let mut values = Vec::with_capacity(count);
         for i in 0..count {
             let (value, arg_span) = match slots.get(i).cloned().flatten() {
-                Some(arg) => (self.argument(&arg)?, arg.syntax().span()),
+                Some(arg) => {
+                    let value = self.argument(&arg)?;
+                    let value = match value {
+                        Argument::Value(value) => Argument::Value(self.int_argument(
+                            value,
+                            function.params.get(i),
+                            arg.syntax().span(),
+                        )?),
+                        Argument::Field(_) => value,
+                    };
+                    (value, arg.syntax().span())
+                }
                 None => {
                     let (file, default) = defaults
                         .get(i)
@@ -3548,30 +3617,13 @@ impl Compiler<'_> {
             }
             let to = parm_slot(slot).at(*arg_span)?;
             let param = function.params.get(slot).map(|p| ValueType::Of(p.clone()));
-            // FTEF-26.3: a float argument of an integer parameter is converted by the
-            // program's `ftoi` first (`QCC_SupplyConversion`), its value then stored.
-            let converted;
+            // FTEF-29.16: a null passed to a vector parameter is the vector zero, three words.
+            let zeroed;
             let value = if let Some(param) = &param
-                && matches!(param, ValueType::Of(ty) if ty.fteqcc_scalar() == Some(CScalar::Integer))
-                && self.type_of(value).etype() == Etype::Float
-                && !self.is_integer(value)
+                && param.etype() == Etype::Vector
             {
-                if let Some(Literal::Float(constant)) = self.constant_literal(value) {
-                    // A constant converts at compile time, `QCC_MakeIntConst`.
-                    let bits = u32::from_ne_bytes(float_to_int(constant).to_ne_bytes());
-                    let place = self
-                        .program
-                        .immediate(&Literal::Float(f32::from_bits(bits)))
-                        .at(*arg_span)?;
-                    converted = self.def_value(place, *arg_span)?;
-                    &converted
-                } else if let Some(ftoi) = self.conversion_function("ftoi") {
-                    let from = self.operand_of(value);
-                    converted = self.call1(ftoi, from, param.clone(), *arg_span)?;
-                    &converted
-                } else {
-                    value
-                }
+                zeroed = self.null_as(value.clone(), param, *arg_span)?;
+                &zeroed
             } else {
                 value
             };
