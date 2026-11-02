@@ -123,11 +123,7 @@ fn read_module(file: &Path, path: &str, items: &mut BTreeSet<String>) -> Result<
     {
         dir.to_path_buf()
     } else {
-        dir.join(
-            file.file_stem()
-                .map(Path::new)
-                .unwrap_or_else(|| Path::new("")),
-        )
+        dir.join(file.file_stem().map_or_else(|| Path::new(""), Path::new))
     };
     let mut visitor = Items {
         path: path.to_owned(),
@@ -187,10 +183,6 @@ impl Items<'_> {
         }
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one arm per item kind, each a few lines; splitting them hides the shape"
-    )]
     fn item(&mut self, item: &Item) {
         match item {
             Item::Mod(m) => {
@@ -377,7 +369,8 @@ fn path_name(path: &syn::Path) -> String {
 mod tests {
     #![expect(
         clippy::unwrap_used,
-        reason = "test code: a failed unwrap is a failed test"
+        clippy::indexing_slicing,
+        reason = "test code: a failed unwrap or index is a failed test"
     )]
 
     use std::fs;
