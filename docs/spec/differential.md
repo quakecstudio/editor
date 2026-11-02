@@ -743,6 +743,33 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   errors, stops the run with an error. The two worlds are then compared as DIFF-12.3 compares
   two calls, the statements and builtins of every frame with them; a difference there is the
   run's one divergence, and no function is called.
+- **DIFF-12.21** After the share's draws of a round above 0 of four (DIFF-12.2), the fields
+  and variables the called function's own statements name are drawn too, each one time in
+  two: for `self`, `other`, each entity parameter and, when the round drew it, the world, the
+  field of each field global an operand of the body's statements names, by the field's type;
+  and each float or string variable an operand names (a global at a slot other than 0 whose
+  value in the progs is 0) that DIFF-12.2 draws at all. The values are drawn as DIFF-12.2 draws
+  them, from the function's own constants first. So a call reaches the branches its own
+  conditions guard, which a share of every field seldom sets together: a flag's `think` with
+  `self.cnt` carried and `self.owner` a player, an obituary with the weapon and the water type
+  its texts name (`rerelease-ctf`'s `TeamCaptureFlagThink` and `ClientObituary`, P2-157). The
+  draws stay deterministic (DIFF-1.4), and a function whose statements name no field or
+  variable draws as before.
+- **DIFF-12.22** A field, variable or parameter DIFF-12.21 draws takes, one time in two, a
+  value the called function's own statements compare it with, when they compare it with one
+  of its type; otherwise it is drawn as DIFF-12.2 draws it. The compared values are read from
+  the body's statements: a field a `LOAD` reads into a slot, a float or string variable, or a
+  parameter of the call is a name, and a `STORE` of a name carries it to the slot stored to;
+  an `EQ`, `NE`, `LT`, `GT`, `LE` or `GE` of a name and a float or string constant gives the
+  name the constant; a `BITAND` or `BITOR` of a name and a constant gives it the constant and
+  0; an `IF`, `IFNOT` or `NOT` of a name gives it 0 and 1, `""` and `world`; an `EQ_E` or
+  `NE_E` of a name gives it `world`; and an `EQ`, `NE` or ordering of two names pairs them,
+  so after the draws the second of a pair takes the first's value one time in two, for each
+  edict the first was drawn for, or as a variable. A constant is a global at a slot whose value
+  is not 0 or whose first definition is `IMMEDIATE`. So `rerelease-ctf`'s
+  `TeamCaptureFlagTouch` runs with `other.team` equal to `other.lastteam` and `self.cnt` at
+  one of the flag states its body names, and `ClientObituary` with `attacker.classname` one
+  of the texts it compares it with. The draws stay deterministic (DIFF-1.4).
 - **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and
   Arcane Dimensions, are set up and called with the mock engine under vkQuake's profile
   (BUILTIN-18): crmod7 calls extension builtins while it sets up its world, and Arcane
