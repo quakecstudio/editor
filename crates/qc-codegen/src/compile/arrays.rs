@@ -275,7 +275,22 @@ impl Compiler<'_> {
         };
         self.store_word(index, OFS_PARM0, Etype::Float, span)?;
         let second = OFS_PARM0.checked_add(3).at(span)?;
-        self.store_word(value.ofs, second, b, span)?;
+        // FTE-13.14: a call's value stored to an element is copied out of the return global to
+        // a temporary first, after the index's store (`arr[i] = f(x)` is `STORE_F i`, `STORE_F`
+        // of the return global to a temporary, `STORE_F` of it to the second slot).
+        let from = self.operand_of(&value);
+        let from = if matches!(value.kind, ValueKind::Return(_)) && from == OFS_RETURN {
+            let temp = self.program.allocate(1).at(span)?;
+            self.program.emit(
+                Opcode::StoreF,
+                operand(OFS_RETURN).at(span)?,
+                operand(temp).at(span)?,
+            );
+            temp
+        } else {
+            from
+        };
+        self.store_word(from, second, b, span)?;
         // `QCC_StoreToArray` asks for the setter when it stores, after the value is read.
         let array = store.array.clone();
         let setter = self.array_function(&array, Access::Set, span)?;
@@ -854,6 +869,7 @@ impl Compiler<'_> {
         if self.fold_word_into(from, to) {
             return Ok(());
         }
+
         let row = ops::select(Operator::Assign, etype, etype, None).at(span)?;
         self.program
             .emit(row.opcode, operand(from).at(span)?, operand(to).at(span)?);

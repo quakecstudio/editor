@@ -20,7 +20,7 @@ use qc_diag::{Code, Diagnostic, Span};
 use qc_progs::Function;
 use qc_progs::opcode::Opcode;
 use qc_sema::lower::{Qualifier, declares};
-use qc_sema::{DefId, DefKind, FileDiagnostic, FileId, FunctionType, ModuleIndex};
+use qc_sema::{DefId, DefKind, FileDiagnostic, FileId, FunctionType, ModuleIndex, Type};
 use qc_syntax::ast::{self, AstNode};
 use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{Dialect, Parse, SyntaxKind, SyntaxToken};
@@ -2002,6 +2002,10 @@ impl<'a> Compiler<'a> {
         let temp = self.program.allocate(3).at(span)?;
         for (word, part) in (0_u32..).zip(&parts) {
             let to = temp.checked_add(word).at(span)?;
+            // FTE-18.12: `opt_assignments` folds the store of a part the statement before made.
+            if self.fold_into(part, to) {
+                continue;
+            }
             let from = self.operand_of(part);
             self.program.emit(
                 Opcode::StoreF,
@@ -2395,9 +2399,10 @@ impl<'a> Compiler<'a> {
             Opcode::BitOr
         };
         let temp = self.program.allocate(3).at(span)?;
+        let (left, right) = (self.operand_of(left), self.operand_of(right));
         for word in 0..3_u32 {
-            let a = left.ofs.checked_add(word).at(span)?;
-            let b = right.ofs.checked_add(word).at(span)?;
+            let a = left.checked_add(word).at(span)?;
+            let b = right.checked_add(word).at(span)?;
             let c = temp.checked_add(word).at(span)?;
             self.program.emit_into(op, a, b, c).at(span)?;
         }
@@ -2419,15 +2424,16 @@ impl<'a> Compiler<'a> {
     ) -> Lowered<Value> {
         let flags = qc_syntax::CompilerFlags::at(&self.flags, span.start);
         let truth = |compiler: &mut Self, value: &Value| -> Lowered<u32> {
+            let from = compiler.operand_of(value);
             if compiler.type_of(value).etype() == Etype::Vector
                 && flags.has(qc_preproc::FteFlag::Vectorlogic)
             {
                 return compiler
                     .program
-                    .emit_result(Opcode::MulV, value.ofs, value.ofs, Etype::Float)
+                    .emit_result(Opcode::MulV, from, from, Etype::Float)
                     .at(span);
             }
-            Ok(value.ofs)
+            Ok(from)
         };
         let a = truth(self, left)?;
         let b = truth(self, right)?;
@@ -2504,6 +2510,14 @@ impl<'a> Compiler<'a> {
         }))
     }
 
+    /// The program's conversion function `name` (`itof` or `ftoi`, `QCC_PR_EmulationFunc`),
+    /// when it defines one (FTEF-26.3).
+    fn conversion_function(&self, name: &str) -> Option<usize> {
+        self.names
+            .global(name)
+            .and_then(|id| self.program.place(id))
+    }
+
     /// FTEF-26.15: `QCC_PR_StatementFlags` with one constant float operand, under
     /// `opt_constantarithmatic`: the identity element's other operand is the value itself, no
     /// statement made, and `0 & x` is the constant 0.
@@ -2551,8 +2565,26 @@ impl<'a> Compiler<'a> {
     /// initialised definition (FTEF-26.13): the words at the constant's globals read as its
     /// basic type. A constant of another type folds no arithmetic here, so `None`.
     fn constant_literal(&self, value: &Value) -> Option<Literal> {
-        let ValueKind::Def(place) = value.kind else {
-            return None;
+        let place = match value.kind {
+            ValueKind::Def(place) => place,
+            // A word of a constant, such as a vector constant's component (`QCC_SRef_EvalConst`
+            // reads the symbol's data at the reference's offset).
+            ValueKind::Temp(_) | ValueKind::Cast(_)
+                if self.type_of(value).etype() == Etype::Float =>
+            {
+                let place = self.program.defs.iter().position(|def| {
+                    def.name != "IMMEDIATE"
+                        && def.count.is_none()
+                        && def.ty.etype() == Etype::Vector
+                        && value.ofs > def.ofs
+                        && value.ofs < def.ofs.saturating_add(3)
+                })?;
+                if !self.constant(place) {
+                    return None;
+                }
+                return Some(Literal::Float(f32::from_bits(self.program.word(value.ofs))));
+            }
+            ValueKind::Temp(_) | ValueKind::Cast(_) | ValueKind::Return(_) => return None,
         };
         if !self.constant(place) {
             return None;
@@ -2587,6 +2619,13 @@ impl<'a> Compiler<'a> {
     /// A field access `e.f` (QC-16.1, QC-16.6): the entity, the field, then `LOAD_*` by the
     /// field's type into a temporary of that type.
     fn field(&mut self, field: &ast::FieldExpr, span: Span) -> Lowered<Value> {
+        // FTE-9.3: `e.v.y` of an entity's vector field reads the component field `e.v_y`.
+        if let Some(which) = self.component_selector(field)
+            && let Some(base) = field.base()
+            && let Some(slot) = self.entity_component_slot(&base, which, span)?
+        {
+            return self.read_field(&slot, span);
+        }
         let base = match self.member(field, span)? {
             Member::Done(value) => return Ok(value),
             Member::Base(base) => base,
@@ -3193,6 +3232,15 @@ enum Argument {
     Field(FieldSlot),
 }
 
+/// Whether `ty` is FTEQCC's `__variant`, three words wide (`type_variant->size`).
+fn is_variant(ty: &Type) -> bool {
+    match ty {
+        Type::Named(name) => matches!(name.as_ref(), "__variant" | "variant"),
+        Type::Unknown => true,
+        Type::Simple(_) | Type::Field(_) | Type::Function(_) | Type::Pointer(_) => false,
+    }
+}
+
 /// What [`Compiler::member`] made of a member access.
 enum Member {
     /// The member's value.
@@ -3224,6 +3272,12 @@ impl Compiler<'_> {
             return Ok(Argument::Field(slot));
         }
         if let Some(ast::Expr::Field(field)) = unparenthesized(arg) {
+            if let Some(which) = self.component_selector(&field)
+                && let Some(base) = field.base()
+                && let Some(slot) = self.entity_component_slot(&base, which, span)?
+            {
+                return Ok(Argument::Field(slot));
+            }
             let base = match self.member(&field, span)? {
                 Member::Done(value) => return Ok(Argument::Value(value)),
                 Member::Base(base) => base,
@@ -3363,14 +3417,36 @@ impl Compiler<'_> {
                 self.precaches.record(name, &self.program, value.ofs);
             }
             let to = parm_slot(slot).at(*arg_span)?;
+            let param = function.params.get(slot).map(|p| ValueType::Of(p.clone()));
+            // FTEF-26.3: a float argument of an integer parameter is converted by the
+            // program's `ftoi` first (`QCC_SupplyConversion`), its value then stored.
+            let converted;
+            let value = if let Some(param) = &param
+                && matches!(param, ValueType::Of(ty) if ty.fteqcc_scalar() == Some(CScalar::Integer))
+                && self.type_of(value).etype() == Etype::Float
+                && !self.is_integer(value)
+                && let Some(ftoi) = self.conversion_function("ftoi")
+            {
+                let from = self.operand_of(value);
+                converted = self.call1(ftoi, from, param.clone(), *arg_span)?;
+                &converted
+            } else {
+                value
+            };
             // FTE-18.12: a store of the temporary the statement before made writes that
             // statement to the slot instead (`opt_assignments`).
             if self.fold_into(value, to) {
                 continue;
             }
             // FTE-18.9: each argument is stored by its size, `STORE_V` for three words and
-            // `STORE_F` for one, so a slot's other words keep what they held.
-            let store = if self.type_of(value).words() == 3 {
+            // `STORE_F` for one, so a slot's other words keep what they held; a variant
+            // parameter, a field of variant included, takes three words (its `size`).
+            let variant = param.as_ref().is_some_and(|p| match p {
+                ValueType::Of(Type::Field(inner)) => is_variant(inner),
+                ValueType::Of(ty) => is_variant(ty),
+                ValueType::FloatField => false,
+            });
+            let store = if self.type_of(value).words() == 3 || variant {
                 Opcode::StoreV
             } else {
                 Opcode::StoreF
