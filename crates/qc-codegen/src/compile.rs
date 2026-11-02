@@ -14,13 +14,13 @@
 //! (QC-16 to QC-19): an operator's operands select its opcode by their basic types, a call's
 //! arguments must have its parameters' types.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use qc_diag::{Code, Diagnostic, Span};
 use qc_progs::Function;
 use qc_progs::opcode::Opcode;
 use qc_sema::lower::{Qualifier, declares};
-use qc_sema::{DefId, DefKind, FileDiagnostic, FileId, FunctionType, ModuleIndex};
+use qc_sema::{DefId, DefKind, FileDiagnostic, FileId, FunctionType, ModuleIndex, Type};
 use qc_syntax::ast::{self, AstNode};
 use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{Dialect, Parse, SyntaxKind, SyntaxToken};
@@ -30,7 +30,11 @@ use crate::Internal;
 use crate::names::Names;
 use crate::ops::{self, Operator};
 use crate::precache::Precaches;
-use crate::program::{self, Literal, OFS_PARM0, OFS_RETURN, Program, ValueType, operand};
+use qc_vm::convert::{float_to_int, int_to_float};
+
+use crate::program::{
+    self, Literal, OFS_PARM0, OFS_RETURN, Program, ValueType, operand, type_words,
+};
 
 mod arrays;
 
@@ -77,13 +81,31 @@ enum ValueKind {
     Def(usize),
     /// An operator's temporary, of the type the operator gives (QC-21.5).
     Temp(ValueType),
-    /// The return value's global, `def_ret`: its type is that of the last call made, read when
-    /// an operator checks it, since `qcc` keeps one `def_ret` and retypes it at each call
-    /// (QC-18.4, QC-18.6).
-    Return,
+    /// A call's value: the return global, `def_ret`, as an alias (FTE-18.5). Under id's `qcc`
+    /// its type is that of the last call made, read when an operator checks it, since `qcc`
+    /// keeps one `def_ret` and retypes it at each call (QC-18.4, QC-18.6); under FTEQCC the
+    /// alias keeps the type of its own call, and reads the temporary a clobber copied it to.
+    Return(AliasId),
     /// A definition read as another type of its basic type by a cast, with no statement
     /// (FTEF-30.6).
     Cast(ValueType),
+}
+
+/// The index of an [`Alias`] in [`Compiler::aliases`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AliasId(usize);
+
+/// FTEQCC's alias of the return global for one call's value (`QCC_GetAliasTemp`, FTE-18.5):
+/// live until a statement reads it, and copied to a temporary when a clobber comes first
+/// (`QCC_ClobberDef`, FTE-18.13).
+#[derive(Clone, Debug)]
+struct Alias {
+    /// The type of the call's value.
+    ty: ValueType,
+    /// The temporary a clobber copied the value to, which later reads take.
+    temp: Option<u32>,
+    /// Whether no statement has read it yet.
+    live: bool,
 }
 
 /// `a[i].m` as a member access names it: the array, the index and the member's word and type.
@@ -97,7 +119,9 @@ struct ArrayMember {
 /// `LOAD_*` row that reads it into a temporary of type `ty` (QC-16.1).
 #[derive(Clone, Debug)]
 struct FieldSlot {
-    entity: u32,
+    /// The entity, read when the slot is used so that a call's value stays referenced until
+    /// then and a clobber in between copies it (FTE-18.13).
+    entity: Value,
     field: u32,
     load: Opcode,
     loaded: Etype,
@@ -197,6 +221,15 @@ pub(crate) struct Compiler<'a> {
     /// The array getters and setters made so far, emitted after every file (FTE-13.8,
     /// FTE-13.11).
     array_functions: Vec<arrays::ArrayFunction>,
+    /// The aliases of the return global made so far (FTE-18.5).
+    aliases: Vec<Alias>,
+    /// The alias a statement read last, which a dropped `NOT` gives back to an `IF`.
+    last_read: Option<AliasId>,
+    /// The temporaries both arms of a `?:` write (FTEF-30.3), which no store folds into the
+    /// statement that wrote them last, since the other arm wrote them too.
+    joined: HashSet<u32>,
+    /// The first statement of the body being compiled, `pr_scope->code`.
+    body_first: usize,
     /// Each file's `s_file`, which a getter's function record takes from its array's file.
     s_files: HashMap<FileId, i32>,
     /// The functions defined in the body being compiled, compiled after it (FTEF-18.2).
@@ -244,6 +277,10 @@ impl<'a> Compiler<'a> {
             jumps: Vec::new(),
             switches: Vec::new(),
             array_functions: Vec::new(),
+            aliases: Vec::new(),
+            last_read: None,
+            joined: HashSet::new(),
+            body_first: 0,
             prior: None,
             extra_parms: HashMap::new(),
             body_return: None,
@@ -455,8 +492,96 @@ impl<'a> Compiler<'a> {
                 .def(*place)
                 .map_or(ValueType::simple(Etype::Void), |d| d.ty.clone()),
             ValueKind::Temp(ty) | ValueKind::Cast(ty) => ty.clone(),
-            ValueKind::Return => self.return_type.clone(),
+            ValueKind::Return(alias) => {
+                if self.dialect.has_fteqcc_extensions()
+                    && let Some(alias) = self.aliases.get(alias.0)
+                {
+                    alias.ty.clone()
+                } else {
+                    self.return_type.clone()
+                }
+            }
         }
+    }
+
+    /// A call's value: an alias of the return global of type `ty` (FTE-18.5).
+    fn alias(&mut self, ty: ValueType) -> Value {
+        self.return_type = ty.clone();
+        let id = AliasId(self.aliases.len());
+        self.aliases.push(Alias {
+            ty,
+            temp: None,
+            live: true,
+        });
+        Value {
+            ofs: OFS_RETURN,
+            kind: ValueKind::Return(id),
+        }
+    }
+
+    /// The global a statement reads `value` from, which reads the value: for a call's value,
+    /// the temporary a clobber copied it to, else the return global (FTE-18.5).
+    fn operand_of(&mut self, value: &Value) -> u32 {
+        match value.kind {
+            ValueKind::Return(id) => {
+                let Some(alias) = self.aliases.get_mut(id.0) else {
+                    return value.ofs;
+                };
+                alias.live = false;
+                self.last_read = Some(id);
+                alias.temp.unwrap_or(OFS_RETURN)
+            }
+            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Cast(_) => value.ofs,
+        }
+    }
+
+    /// `QCC_ClobberDef(NULL)` (FTE-18.13): under FTEQCC, each alias of the return global no
+    /// statement has read yet is copied to a temporary of its type, which its reads take from
+    /// now on. Nothing under id's `qcc`, which reads the return global as it is (QC-18.6).
+    fn clobber_aliases(&mut self, span: Span) -> Lowered<()> {
+        if !self.dialect.has_fteqcc_extensions() {
+            return Ok(());
+        }
+        for i in 0..self.aliases.len() {
+            let Some(alias) = self.aliases.get(i) else {
+                continue;
+            };
+            if !alias.live || alias.temp.is_some() {
+                continue;
+            }
+            let ty = alias.ty.clone();
+            let temp = self.program.allocate(ty.words()).at(span)?;
+            let store = if ty.etype() == Etype::Vector {
+                Opcode::StoreV
+            } else {
+                Opcode::StoreF
+            };
+            self.program.emit(
+                store,
+                operand(OFS_RETURN).at(span)?,
+                operand(temp).at(span)?,
+            );
+            if let Some(alias) = self.aliases.get_mut(i) {
+                alias.temp = Some(temp);
+            }
+        }
+        Ok(())
+    }
+
+    /// Marks `value` read by nothing more, so no clobber copies it (`QCC_FreeTemp`).
+    fn drop_value(&mut self, value: &Value) {
+        if let ValueKind::Return(alias) = value.kind
+            && let Some(alias) = self.aliases.get_mut(alias.0)
+        {
+            alias.live = false;
+        }
+    }
+
+    /// A `GOTO` whose target is patched later (FTE-18.13: a patched jump copies the aliases
+    /// still to be read, `QCC_ClobberDef(NULL)` for a statement asked for).
+    fn goto(&mut self, span: Span) -> Lowered<usize> {
+        self.clobber_aliases(span)?;
+        Ok(self.program.emit(Opcode::Goto, 0, 0))
     }
 
     // ---------------------------------------------------------------------------------------
@@ -480,6 +605,14 @@ impl<'a> Compiler<'a> {
                 None => {}
                 Some(ast::Initializer::Value(expr)) => {
                     let span = expr.syntax().span();
+                    // FTEF-19.79: under FTEQCC a definition already initialised keeps its value
+                    // when initialised again: the model has judged a differing value (FTE-22.6),
+                    // and one of a `#pragma noref 1` definition is dropped without a word.
+                    if self.dialect.has_fteqcc_extensions()
+                        && self.program.def(place).is_some_and(|def| def.initialized)
+                    {
+                        continue;
+                    }
                     // A literal is stored as it is (QC-20); under FTEQCC an expression is the
                     // value the semantic model folded it to (FTEF-34.9).
                     if let Some(other) = self.field_alias(place, &expr)? {
@@ -590,6 +723,9 @@ impl<'a> Compiler<'a> {
             .checked_add(usize::from(wrapped.is_none()))
             .at(span)?;
         self.scope = Some(id);
+        // FTE-18.13: `QCC_PurgeTemps` at a function's end drops its aliases.
+        self.aliases.clear();
+        self.last_read = None;
         // FTEF-32.16: a body's static locals and its initialised constant ones take storage
         // before its own, outside the locals its record names.
         if let FunctionInit::Body(body) = init
@@ -635,6 +771,7 @@ impl<'a> Compiler<'a> {
                     self.locals_end = self.program.next_global().at(span)?;
                 }
                 let code = operand_index(self.program.statements.len()).at(span)?;
+                self.body_first = self.program.statements.len();
                 self.body_return = Some(ValueType::Of(function_type.ret.clone()));
                 self.ret_local = None;
                 if self.dialect.has_fteqcc_extensions() && function_type.variadic {
@@ -647,6 +784,12 @@ impl<'a> Compiler<'a> {
                     for statement in block.statements() {
                         self.statement(&statement)?;
                     }
+                }
+                // FTE-18.10: a body that made a `ret*` local ends with `RETURN` of it before
+                // `DONE` (`if (f->returndef.cast ...) QCC_PR_Statement(OP_RETURN, f->returndef)`).
+                if let Some(place) = self.ret_local {
+                    let ofs = self.program.def(place).at(span)?.ofs;
+                    self.program.emit(Opcode::Return, operand(ofs).at(span)?, 0);
                 }
                 // QC-13.7: the body ends with `DONE`.
                 self.program.emit(Opcode::Done, 0, 0);
@@ -937,6 +1080,8 @@ impl<'a> Compiler<'a> {
     fn statement(&mut self, statement: &ast::Stmt) -> Lowered<()> {
         let span = statement.syntax().span();
         self.set_line(span);
+        // FTE-18.13: `QCC_PR_ParseStatement` starts with `QCC_ClobberDef(NULL)`.
+        self.clobber_aliases(span)?;
         match statement {
             ast::Stmt::Block(block) => {
                 for inner in block.statements() {
@@ -946,7 +1091,10 @@ impl<'a> Compiler<'a> {
             ast::Stmt::Return(ret) => {
                 // QC-14.3, QC-19.5: the value is not checked against the return type.
                 let a = match ret.value() {
-                    Some(value) => operand(self.expr(&value)?.ofs).at(span)?,
+                    Some(value) => {
+                        let value = self.expr(&value)?;
+                        operand(self.operand_of(&value)).at(span)?
+                    }
                     None => operand(self.bare_return(span)?).at(span)?,
                 };
                 self.program.emit(Opcode::Return, a, 0);
@@ -955,7 +1103,13 @@ impl<'a> Compiler<'a> {
                 // QC-14.5: the condition, `IFNOT` past the loop, the body, `GOTO` back.
                 let top = self.program.statements.len();
                 let condition = self.expr(&w.condition().at(span)?)?;
-                let test = self.unless(&condition, span)?;
+                // FTE-3.6: a constant float condition makes no test: a true one no jump, a
+                // false one a `GOTO` past the loop.
+                let test = match self.constant_truth(&condition) {
+                    Some(true) => None,
+                    Some(false) => Some((self.goto(span)?, true)),
+                    None => Some((self.unless(&condition, span)?, false)),
+                };
                 self.jumps.push(Jumps {
                     is_loop: true,
                     ..Jumps::default()
@@ -963,7 +1117,14 @@ impl<'a> Compiler<'a> {
                 self.statement(&w.body().at(span)?)?;
                 let back = branch(self.program.statements.len(), top).at(span)?;
                 self.program.emit(Opcode::Goto, back, 0);
-                self.patch_b(test, span)?;
+                match test {
+                    Some((at, true)) => {
+                        let end = self.program.statements.len();
+                        self.set_goto(at, end, span)?;
+                    }
+                    Some((at, false)) => self.patch_b(at, span)?,
+                    None => {}
+                }
                 self.end_jumps(top, span)?;
             }
             ast::Stmt::Do(d) => {
@@ -976,29 +1137,29 @@ impl<'a> Compiler<'a> {
                 self.statement(&d.body().at(span)?)?;
                 let test_at = self.program.statements.len();
                 let condition = self.expr(&d.condition().at(span)?)?;
-                let (op, tested) = self.test(&condition, true, span)?;
-                let back = branch(self.program.statements.len(), top).at(span)?;
-                self.program.emit(op, operand(tested).at(span)?, back);
+                // FTE-3.6: under FTEQCC a constant condition makes no test: a true one (by
+                // its word) a `GOTO` back, a false one nothing.
+                let constant = if self.dialect.has_fteqcc_extensions() {
+                    self.constant_word(&condition).map(|word| word != 0)
+                } else {
+                    None
+                };
+                match constant {
+                    Some(true) => {
+                        let back = branch(self.program.statements.len(), top).at(span)?;
+                        self.program.emit(Opcode::Goto, back, 0);
+                    }
+                    Some(false) => {}
+                    None => {
+                        let (op, tested) = self.test(&condition, true, span)?;
+                        let back = branch(self.program.statements.len(), top).at(span)?;
+                        self.program.emit(op, operand(tested).at(span)?, back);
+                    }
+                }
                 self.end_jumps(test_at, span)?;
             }
             ast::Stmt::Local(local) => self.local(local)?,
-            ast::Stmt::If(i) => {
-                // QC-14.4: `IFNOT` past the statement; with `else`, a `GOTO` past the other.
-                let condition = self.expr(&i.condition().at(span)?)?;
-                let test = self.unless(&condition, span)?;
-                self.statement(&i.then_branch().at(span)?)?;
-                if let Some(otherwise) = i.else_branch() {
-                    let skip = self.program.emit(Opcode::Goto, 0, 0);
-                    self.patch_b(test, span)?;
-                    self.statement(&otherwise)?;
-                    let past = branch(skip, self.program.statements.len()).at(span)?;
-                    if let Some(s) = self.program.statements.get_mut(skip) {
-                        s.a = past;
-                    }
-                } else {
-                    self.patch_b(test, span)?;
-                }
-            }
+            ast::Stmt::If(i) => self.if_statement(i, span)?,
             ast::Stmt::Expr(e) => {
                 // QC-14.9: any expression, its statements emitted.
                 self.discard(&e.expr().at(span)?)?;
@@ -1063,7 +1224,11 @@ impl<'a> Compiler<'a> {
                 Some(ast::Initializer::Value(expr)) if self.dialect.has_fteqcc_extensions() => {
                     let to = self.def_value(place, span)?;
                     let value = self.expr(&expr)?;
-                    self.store_value(&to, value, expr.syntax().span())?;
+                    // A struct local's initialiser is copied a word at a time by `STORE_FLD`,
+                    // the words being fields of the struct to `QCC_PR_ParseInitializerType`.
+                    if !self.init_struct(&to, &value, expr.syntax().span())? {
+                        self.store_value(&to, value, expr.syntax().span())?;
+                    }
                 }
                 Some(ast::Initializer::Value(expr)) => {
                     let literal = literal_of(&expr, self.dialect).at(expr.syntax().span())?;
@@ -1090,9 +1255,10 @@ impl<'a> Compiler<'a> {
                             return Self::mismatch(Operator::Assign, at);
                         }
                         let component = base.checked_add(i).at(at)?;
+                        let from = self.operand_of(&value);
                         self.program.emit(
                             Opcode::StoreF,
-                            operand(value.ofs).at(at)?,
+                            operand(from).at(at)?,
                             operand(component).at(at)?,
                         );
                     }
@@ -1192,9 +1358,10 @@ impl<'a> Compiler<'a> {
                 let Some(op) = ops::not_opcode(ty) else {
                     return Self::error(Code::E0302, "type mismatch for !".to_owned(), span);
                 };
+                let from = self.operand_of(&value);
                 let ofs = self
                     .program
-                    .emit_result(op, value.ofs, 0, Etype::Float)
+                    .emit_result(op, from, 0, Etype::Float)
                     .at(span)?;
                 Ok(Value {
                     ofs,
@@ -1276,16 +1443,18 @@ impl<'a> Compiler<'a> {
             .global("itof")
             .and_then(|id| self.program.place(id))
         {
-            return self.call1(itof, value.ofs, float, span);
+            let from = self.operand_of(value);
+            return self.call1(itof, from, float, span);
         }
         let one = self
             .program
             .immediate(&Literal::Float(f32::from_bits(1)))
             .at(span)?;
         let one = self.program.def(one).at(span)?.ofs;
+        let from = self.operand_of(value);
         let ofs = self
             .program
-            .emit_result(Opcode::DivF, value.ofs, one, Etype::Float)
+            .emit_result(Opcode::DivF, from, one, Etype::Float)
             .at(span)?;
         Ok(Value {
             ofs,
@@ -1392,6 +1561,9 @@ impl<'a> Compiler<'a> {
         let test = match f.condition() {
             Some(condition) => {
                 let condition = self.clause(&condition, span)?.at(span)?;
+                // FTE-18.13: a `for` condition's assignment is not read again by the test,
+                // which reads the call's value itself (no copy).
+                self.drop_value(&condition);
                 Some(self.unless(&condition, span)?)
             }
             None => None,
@@ -1460,7 +1632,10 @@ impl<'a> Compiler<'a> {
             let target = postfix.operand().at(span)?;
             self.increment(&target, postfix_step(postfix), span)?;
         } else {
-            self.expr(expr)?;
+            let value = self.expr(expr)?;
+            // FTE-18.13: a value nothing reads is freed (`QCC_FreeTemp(e)`), so no clobber
+            // copies a call's value that a statement discards.
+            self.drop_value(&value);
         }
         Ok(())
     }
@@ -1480,10 +1655,10 @@ impl<'a> Compiler<'a> {
     /// `GE_F`, `LE_F` and `AND`) with `IF` to the label, and `GOTO` to `default:` or past the
     /// switch; `break` goes past it.
     fn switch(&mut self, switch: &ast::SwitchStmt, span: Span) -> Lowered<()> {
-        // FTE-3.5: a call's value is held before the body's calls overwrite the return global.
+        // FTE-3.5: the `GOTO` to the tests copies a call's value out of the return global
+        // before the body's calls overwrite it (FTE-18.13).
         let value = self.expr(&switch.scrutinee().at(span)?)?;
-        let value = self.hold(value, span)?;
-        let to_tests = self.program.emit(Opcode::Goto, 0, 0);
+        let to_tests = self.goto(span)?;
         self.jumps.push(Jumps::default());
         self.switches.push(Vec::new());
         // FTEF-18.33: the body is any statement, a block most often.
@@ -1495,7 +1670,24 @@ impl<'a> Compiler<'a> {
         };
         let cases = self.switches.pop().unwrap_or_default();
         body?;
-        let past_tests = self.program.emit(Opcode::Goto, 0, 0);
+        // FTE-3.7: no `GOTO` past the tests after a body whose last statement is a `RETURN`,
+        // `DONE` or `GOTO` (`QCC_StatementIsAJump`) when no jump of the body so far targets
+        // the end (`QCC_AStatementJumpsTo`), as an `if` whose branch ends in `break` does;
+        // an empty body gets the `GOTO` either way.
+        let end = self.program.statements.len();
+        let empty = to_tests.saturating_add(1) == end;
+        let unconditional = !empty
+            && self.program.statements.last().is_some_and(|last| {
+                [Opcode::Return, Opcode::Done, Opcode::Goto]
+                    .iter()
+                    .any(|op| u32::from(op.number()) == last.op)
+            })
+            && !self.jumps_to(end);
+        let past_tests = if unconditional && self.dialect.has_fteqcc_extensions() {
+            None
+        } else {
+            Some(self.goto(span)?)
+        };
         let tests = self.program.statements.len();
         self.set_goto(to_tests, tests, span)?;
         let mut default = None;
@@ -1506,6 +1698,17 @@ impl<'a> Compiler<'a> {
                 continue;
             };
             let low = self.expr(&case)?;
+            // FTE-3.8: a case whose constant's word is 0 is `IFNOT` of the value itself.
+            if label.range_end().is_none()
+                && self.dialect.has_fteqcc_extensions()
+                && self.constant_word(&low) == Some(0)
+            {
+                let to = branch(self.program.statements.len(), *at).at(label_span)?;
+                let tested = self.operand_of(&value);
+                self.program
+                    .emit(Opcode::IfNot, operand(tested).at(label_span)?, to);
+                continue;
+            }
             let hit = match label.range_end() {
                 Some(end) => {
                     let high = self.expr(&end)?;
@@ -1520,11 +1723,43 @@ impl<'a> Compiler<'a> {
             self.program
                 .emit(Opcode::If, operand(hit.ofs).at(label_span)?, to);
         }
-        let fallback = self.program.emit(Opcode::Goto, 0, 0);
+        // FTE-3.8: a `GOTO` to the default case only when there is one; without one the tests
+        // fall through to the end.
+        let fallback = match default {
+            Some(_) => Some(self.program.emit(Opcode::Goto, 0, 0)),
+            None if self.dialect.has_fteqcc_extensions() => None,
+            None => Some(self.program.emit(Opcode::Goto, 0, 0)),
+        };
         let end = self.program.statements.len();
-        self.set_goto(fallback, default.unwrap_or(end), span)?;
-        self.set_goto(past_tests, end, span)?;
+        if let Some(fallback) = fallback {
+            self.set_goto(fallback, default.unwrap_or(end), span)?;
+        }
+        if let Some(past_tests) = past_tests {
+            self.set_goto(past_tests, end, span)?;
+        }
         self.end_jumps(end, span)
+    }
+
+    /// Whether a jump of the body so far targets statement `target`
+    /// (`QCC_AStatementJumpsTo`): a `GOTO`'s `a` or an `IF`'s or `IFNOT`'s `b` offset.
+    fn jumps_to(&self, target: usize) -> bool {
+        let Some(body) = self.program.statements.get(self.body_first..) else {
+            return false;
+        };
+        body.iter().enumerate().any(|(i, statement)| {
+            let at = self.body_first.saturating_add(i);
+            let offset = if statement.op == u32::from(Opcode::Goto.number()) {
+                statement.a
+            } else if statement.op == u32::from(Opcode::If.number())
+                || statement.op == u32::from(Opcode::IfNot.number())
+            {
+                statement.b
+            } else {
+                return false;
+            };
+            offset != 0
+                && at.checked_add_signed(isize::try_from(offset).unwrap_or(0)) == Some(target)
+        })
     }
 
     /// Points the `GOTO` at statement `at` at statement `to`.
@@ -1540,8 +1775,104 @@ impl<'a> Compiler<'a> {
     fn unless(&mut self, condition: &Value, span: Span) -> Lowered<usize> {
         let (op, tested) = self.test(condition, false, span)?;
         if let Some(not) = self.shortened_not(op, condition) {
+            // FTE-18.13: the dropped `NOT` had read a call's value; the `IF` reads it again
+            // (`QCC_ForceUnFreeDef`), so the clobber of the jump copies it after all.
+            let not = if not == operand(OFS_RETURN).unwrap_or_default() {
+                operand(self.revive_last_alias(span)?).at(span)?
+            } else {
+                not
+            };
             return Ok(self.program.emit(Opcode::If, not, 0));
         }
+        Ok(self.program.emit(op, operand(tested).at(span)?, 0))
+    }
+
+    /// The alias of the return global read last, read again (FTE-18.13): live once more, it is
+    /// copied by the clobber of the jump about to be made, and its copy is returned.
+    fn revive_last_alias(&mut self, span: Span) -> Lowered<u32> {
+        let Some(last) = self.last_read else {
+            return Ok(OFS_RETURN);
+        };
+        if let Some(alias) = self.aliases.get_mut(last.0) {
+            alias.live = true;
+        }
+        self.clobber_aliases(span)?;
+        Ok(self
+            .aliases
+            .get(last.0)
+            .and_then(|alias| alias.temp)
+            .unwrap_or(OFS_RETURN))
+    }
+
+    /// `if`, QC-14.4: `IFNOT` past the statement; with `else`, a `GOTO` past the other.
+    fn if_statement(&mut self, i: &ast::IfStmt, span: Span) -> Lowered<()> {
+        // QC-14.4: `IFNOT` past the statement; with `else`, a `GOTO` past the other.
+        let mut condition = self.expr(&i.condition().at(span)?)?;
+        // FTEF-18.8, FTEF-16.5: `if !(e)` of a float or string is `if (!e)`, its `NOT`
+        // made here (`QCC_PR_GenerateLogicalNot`); of any other type, and `if not (e)`,
+        // the jump is taken when `e` is true (`QCC_Generate_OP_IF`).
+        let mut negated = i.negation().is_some();
+        if i.negation() == Some(ast::Negation::Bang)
+            && matches!(
+                self.type_of(&condition).etype(),
+                Etype::Float | Etype::String
+            )
+        {
+            let ty = self.type_of(&condition).etype();
+            let op = ops::not_opcode(ty).at(span)?;
+            let from = self.operand_of(&condition);
+            let ofs = self
+                .program
+                .emit_result(op, from, 0, Etype::Float)
+                .at(span)?;
+            condition = Value {
+                ofs,
+                kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
+            };
+            negated = false;
+        }
+        // FTE-3.6: a constant condition of any type keeps the branch it selects and no jump,
+        // the other's statements taken out again (`QCC_UngenerateStatements`): a float by its
+        // value (`eval->_float == 0`), any other type by its word (`eval->_int == 0`).
+        let truth = match self.constant_truth(&condition) {
+            Some(truth) => Some(truth),
+            None if self.dialect.has_fteqcc_extensions() => {
+                self.constant_word(&condition).map(|word| word != 0)
+            }
+            None => None,
+        };
+        if let Some(truth) = truth {
+            if truth != negated {
+                self.statement(&i.then_branch().at(span)?)?;
+            } else if let Some(otherwise) = i.else_branch() {
+                self.statement(&otherwise)?;
+            }
+            return Ok(());
+        }
+        let test = if negated {
+            self.when(&condition, span)?
+        } else {
+            self.unless(&condition, span)?
+        };
+        self.statement(&i.then_branch().at(span)?)?;
+        if let Some(otherwise) = i.else_branch() {
+            let skip = self.program.emit(Opcode::Goto, 0, 0);
+            self.patch_b(test, span)?;
+            self.statement(&otherwise)?;
+            let past = branch(skip, self.program.statements.len()).at(span)?;
+            if let Some(s) = self.program.statements.get_mut(skip) {
+                s.a = past;
+            }
+        } else {
+            self.patch_b(test, span)?;
+        }
+
+        Ok(())
+    }
+
+    /// A jump taken when `condition` is true, its target patched later; returns its index.
+    fn when(&mut self, condition: &Value, span: Span) -> Lowered<usize> {
+        let (op, tested) = self.test(condition, true, span)?;
         Ok(self.program.emit(op, operand(tested).at(span)?, 0))
     }
 
@@ -1585,13 +1916,22 @@ impl<'a> Compiler<'a> {
             && vector
             && flags.has(qc_preproc::FteFlag::Ifvector)
         {
+            let from = self.operand_of(condition);
             let not = self
                 .program
-                .emit_result(Opcode::NotV, condition.ofs, 0, Etype::Float)
+                .emit_result(Opcode::NotV, from, 0, Etype::Float)
                 .at(span)?;
+            // FTE-18.13: the jump after the `NOT_V` is the statement asked for.
+            self.clobber_aliases(span)?;
             return Ok((if when { Opcode::IfNot } else { Opcode::If }, not));
         }
-        Ok((if when { Opcode::If } else { Opcode::IfNot }, condition.ofs))
+        // FTE-18.13: the jump is a statement asked for, so the aliases still to be read are
+        // copied first, the condition's among them.
+        self.clobber_aliases(span)?;
+        Ok((
+            if when { Opcode::If } else { Opcode::IfNot },
+            self.operand_of(condition),
+        ))
     }
 
     /// FTEQCC's `c ? a : b` and `c ?: b` (FTE-8.1, FTEF-30.3): the condition tested, the first
@@ -1610,28 +1950,42 @@ impl<'a> Compiler<'a> {
             None => condition,
         };
         let ty = self.type_of(&first);
-        let (words, store) = if ty.etype() == Etype::Vector {
-            (3, Opcode::StoreV)
+        let words = ty.words();
+        // The first arm is stored by its size, `STORE_F` or `STORE_V`; the last arm by its
+        // type's row (`QCC_StoreToSRef`), `STORE_S` for a string.
+        let store = if words == 3 {
+            Opcode::StoreV
         } else {
-            (1, Opcode::StoreF)
+            Opcode::StoreF
         };
+        let store_last = ops::select(Operator::Assign, ty.etype(), ty.etype(), None)
+            .map_or(Opcode::StoreF, |row| row.opcode);
         let result = self.program.allocate(words).at(span)?;
-        self.program.emit(
-            store,
-            operand(first.ofs).at(span)?,
-            operand(result).at(span)?,
-        );
-        let skip = self.program.emit(Opcode::Goto, 0, 0);
+        self.joined.insert(result);
+        // FTE-18.12: an arm the statement before made is written to the temporary by that
+        // statement (`opt_assignments` returns before any clobber); otherwise, FTEF-30.13: the
+        // first arm's store is a statement asked for (`&truthstore`), so the aliases still to
+        // be read are copied first, the arm's own value among them.
+        if !self.fold_into(&first, result) {
+            self.clobber_aliases(span)?;
+            let from = self.operand_of(&first);
+            self.program
+                .emit(store, operand(from).at(span)?, operand(result).at(span)?);
+        }
+        let skip = self.goto(span)?;
         self.patch_b(test, span)?;
         let second = self.expr(&last.at(span)?)?;
         if self.type_of(&second).etype() != ty.etype() {
             return Self::error(Code::E0302, "type mismatch for ?".to_owned(), span);
         }
-        self.program.emit(
-            store,
-            operand(second.ofs).at(span)?,
-            operand(result).at(span)?,
-        );
+        if !self.fold_into(&second, result) {
+            let from = self.operand_of(&second);
+            self.program.emit(
+                store_last,
+                operand(from).at(span)?,
+                operand(result).at(span)?,
+            );
+        }
         let past = branch(skip, self.program.statements.len()).at(span)?;
         if let Some(s) = self.program.statements.get_mut(skip) {
             s.a = past;
@@ -1662,9 +2016,10 @@ impl<'a> Compiler<'a> {
                 return Self::mismatch(Operator::Add, span);
             }
             let temp = compiler.program.allocate(1).at(span)?;
+            let from = compiler.operand_of(&current);
             compiler.program.emit(
                 Opcode::StoreF,
-                operand(current.ofs).at(span)?,
+                operand(from).at(span)?,
                 operand(temp).at(span)?,
             );
             let copy = Value {
@@ -1739,22 +2094,12 @@ impl<'a> Compiler<'a> {
             return Err(Abort::Internal(Internal::Unsupported, span));
         }
         let mut parts = Vec::with_capacity(3);
-        for (i, element) in elements.iter().enumerate() {
+        for element in &elements {
             let value = self.expr(element)?;
             if self.type_of(&value).etype() != Etype::Float {
                 return Err(Abort::Internal(Internal::Unsupported, span));
             }
-            let calls_later = elements.iter().skip(i.saturating_add(1)).any(|later| {
-                later
-                    .syntax()
-                    .descendants()
-                    .any(|node| ast::CallExpr::can_cast(node.kind()))
-            });
-            parts.push(if calls_later {
-                self.hold(value, span)?
-            } else {
-                value
-            });
+            parts.push(value);
         }
         while parts.len() < 3 {
             parts.push(self.float_literal(0.0, span)?);
@@ -1778,9 +2123,14 @@ impl<'a> Compiler<'a> {
         let temp = self.program.allocate(3).at(span)?;
         for (word, part) in (0_u32..).zip(&parts) {
             let to = temp.checked_add(word).at(span)?;
+            // FTE-18.12: `opt_assignments` folds the store of a part the statement before made.
+            if self.fold_into(part, to) {
+                continue;
+            }
+            let from = self.operand_of(part);
             self.program.emit(
                 Opcode::StoreF,
-                operand(part.ofs).at(span)?,
+                operand(from).at(span)?,
                 operand(to).at(span)?,
             );
         }
@@ -1788,6 +2138,18 @@ impl<'a> Compiler<'a> {
             ofs: temp,
             kind: ValueKind::Temp(ValueType::simple(Etype::Vector)),
         })
+    }
+
+    /// The truth of a float constant condition under FTEQCC (FTE-3.6), `None` for any other.
+    fn constant_truth(&self, condition: &Value) -> Option<bool> {
+        if !self.dialect.has_fteqcc_extensions()
+            || self.type_of(condition).etype() != Etype::Float
+            || self.is_integer(condition)
+        {
+            return None;
+        }
+        self.constant_word(condition)
+            .map(|word| f32::from_bits(word) != 0.0)
     }
 
     /// The word of a one-word constant, `QCC_SRef_EvalConst` (FTEF-30.7).
@@ -1822,7 +2184,7 @@ impl<'a> Compiler<'a> {
         let kind = match value.kind {
             ValueKind::Def(_) | ValueKind::Cast(_) => ValueKind::Cast(target),
             ValueKind::Temp(_) => ValueKind::Temp(target),
-            ValueKind::Return => return Err(Abort::Internal(Internal::Unsupported, span)),
+            ValueKind::Return(_) => return Err(Abort::Internal(Internal::Unsupported, span)),
         };
         Ok(Value {
             ofs: value.ofs,
@@ -1863,9 +2225,10 @@ impl<'a> Compiler<'a> {
             return Err(Abort::Internal(Internal::Unsupported, span));
         };
         let slot = self.field_slot(&base, &field, span)?;
+        let entity = self.operand_of(&slot.entity);
         let ofs = self
             .program
-            .emit_result(Opcode::Address, slot.entity, slot.field, Etype::Pointer)
+            .emit_result(Opcode::Address, entity, slot.field, Etype::Pointer)
             .at(span)?;
         Ok(Value {
             ofs,
@@ -1880,6 +2243,13 @@ impl<'a> Compiler<'a> {
         let at = index.index().at(span)?;
         if let Some(array) = self.array_named(&base_expr)? {
             return self.element(&array, &at, None);
+        }
+        // FTE-9.3: `e.v[0]` of an entity's vector field reads the component field `e.v_x`.
+        if self.dialect.has_fteqcc_extensions()
+            && let Some(which) = self.vector_index(&at)
+            && let Some(slot) = self.entity_component_slot(&base_expr, which, span)?
+        {
+            return self.read_field(&slot, span);
         }
         let base = self.expr(&base_expr)?;
         if self.type_of(&base).etype() != Etype::Vector {
@@ -2023,7 +2393,13 @@ impl<'a> Compiler<'a> {
         let a_only = self.operate(Operator::BitAnd, left, &not_b, spans)?;
         let not_a = self.operate(Operator::Sub, &minus_one, left, spans)?;
         let b_only = self.operate(Operator::BitAnd, right, &not_a, spans)?;
-        self.operate(Operator::BitOr, &a_only, &b_only, spans)
+        let result = self.operate(Operator::BitOr, &a_only, &b_only, spans)?;
+        // The emulation reads each operand twice (`QCC_UnFreeTemp`), and FTEQCC frees only one
+        // of a call's value's references, so the alias stays live for the next clobber to
+        // copy (FTE-18.13).
+        self.keep_alive(left);
+        self.keep_alive(right);
+        Ok(result)
     }
 
     /// The row of `operator` for the two operands' types, folded under `--opt fold`, else
@@ -2079,32 +2455,42 @@ impl<'a> Compiler<'a> {
         {
             return Ok(value);
         }
-        let ofs = self
-            .program
-            .emit_result(row.opcode, left.ofs, right.ofs, row.c)
-            .at(span)?;
+        // FTEF-26.15: with one float constant operand, `0 + x`, `0 | x`, `x + 0`, `x - 0`,
+        // `x | 0`, `1 * x`, `x * 1` and `x / 1` are the other operand, and `0 & x` is 0.
+        if let Some(value) = self.folded_with_one_constant(row.opcode, left, right, span)? {
+            return Ok(value);
+        }
+        let (a, b) = (self.operand_of(left), self.operand_of(right));
+        let ofs = self.program.emit_result(row.opcode, a, b, row.c).at(span)?;
         Ok(Value {
             ofs,
             kind: ValueKind::Temp(ValueType::simple(row.c)),
         })
     }
 
-    /// FTEQCC's store of a null (FTEF-29.2): a float constant whose word is 0, such as
-    /// `__NULL__`, stored to a target of another type is the target's zero, `rhsd =
-    /// QCC_MakeIntConst(0);`, its word read as `ty`.
-    fn null_as(&self, value: Value, ty: &ValueType) -> Value {
+    /// FTEQCC's store of a null (FTEF-29.16): a float constant whose word is 0, such as
+    /// `__NULL__`, stored to a target of another type is the target's zero: for a vector the
+    /// three-word constant `'0 0 0'` (`QCC_MakeVectorConst(0,0,0)`), else its own word read
+    /// as `ty`.
+    fn null_as(&mut self, value: Value, ty: &ValueType, span: Span) -> Lowered<Value> {
         let null = self.dialect.has_fteqcc_extensions()
             && self.type_of(&value).etype() == Etype::Float
             && ty.etype() != Etype::Float
             && self.constant_word(&value) == Some(0);
-        if null {
-            Value {
-                ofs: value.ofs,
-                kind: ValueKind::Cast(ty.clone()),
-            }
-        } else {
-            value
+        if !null {
+            return Ok(value);
         }
+        if ty.etype() == Etype::Vector {
+            let place = self
+                .program
+                .immediate(&Literal::Vector([0.0; 3]))
+                .at(span)?;
+            return self.def_value(place, span);
+        }
+        Ok(Value {
+            ofs: value.ofs,
+            kind: ValueKind::Cast(ty.clone()),
+        })
     }
 
     /// FTEF-23.3, FTEF-23.4: under FTEQCC, with no row for the two types, the row whose operand
@@ -2143,9 +2529,10 @@ impl<'a> Compiler<'a> {
             Opcode::BitOr
         };
         let temp = self.program.allocate(3).at(span)?;
+        let (left, right) = (self.operand_of(left), self.operand_of(right));
         for word in 0..3_u32 {
-            let a = left.ofs.checked_add(word).at(span)?;
-            let b = right.ofs.checked_add(word).at(span)?;
+            let a = left.checked_add(word).at(span)?;
+            let b = right.checked_add(word).at(span)?;
             let c = temp.checked_add(word).at(span)?;
             self.program.emit_into(op, a, b, c).at(span)?;
         }
@@ -2167,15 +2554,16 @@ impl<'a> Compiler<'a> {
     ) -> Lowered<Value> {
         let flags = qc_syntax::CompilerFlags::at(&self.flags, span.start);
         let truth = |compiler: &mut Self, value: &Value| -> Lowered<u32> {
+            let from = compiler.operand_of(value);
             if compiler.type_of(value).etype() == Etype::Vector
                 && flags.has(qc_preproc::FteFlag::Vectorlogic)
             {
                 return compiler
                     .program
-                    .emit_result(Opcode::MulV, value.ofs, value.ofs, Etype::Float)
+                    .emit_result(Opcode::MulV, from, from, Etype::Float)
                     .at(span);
             }
-            Ok(value.ofs)
+            Ok(from)
         };
         let a = truth(self, left)?;
         let b = truth(self, right)?;
@@ -2226,6 +2614,42 @@ impl<'a> Compiler<'a> {
             (Opcode::MulVf, Literal::Vector(v), Literal::Float(s)) => {
                 Literal::Vector(each(v, &|_, c| s * c))
             }
+            // FTEF-26.14: `BITOR_F` and `BITAND_F` of two constants fold on each one's `int`
+            // (`QCC_PR_RoundFloatConst`), `EQ_F` to 1 or 0.
+            (Opcode::BitOr, Literal::Float(x), Literal::Float(y)) => {
+                Literal::Float(int_to_float(float_to_int(x) | float_to_int(y)))
+            }
+            (Opcode::BitAnd, Literal::Float(x), Literal::Float(y)) => {
+                Literal::Float(int_to_float(float_to_int(x) & float_to_int(y)))
+            }
+            (Opcode::EqF, Literal::Float(x), Literal::Float(y)) => {
+                #[expect(
+                    clippy::float_cmp,
+                    reason = "spec FTEF-26.14: FTEQCC folds `eval_a->_float == eval_b->_float`"
+                )]
+                let equal = x == y;
+                Literal::Float(if equal { 1.0 } else { 0.0 })
+            }
+            // FTEF-26.14: `AND_F` and `OR_F` of two constants fold to an int constant
+            // (`QCC_MakeIntConst(eval_a->_float && eval_b->_float)`), made a float where a
+            // float is stored (FTEF-27.4).
+            (Opcode::And | Opcode::Or, Literal::Float(x), Literal::Float(y))
+                if self.dialect.has_fteqcc_extensions() =>
+            {
+                let (x, y) = (x != 0.0, y != 0.0);
+                let truth = if opcode == Opcode::And {
+                    x && y
+                } else {
+                    x || y
+                };
+                let int = ValueType::Of(Type::Named(CScalar::Integer.name().into()));
+                let place = self.program.int_immediate(u32::from(truth), int)?;
+                let ofs = self.program.def(place).ok_or(Internal::NoDefinition)?.ofs;
+                return Ok(Some(Value {
+                    ofs,
+                    kind: ValueKind::Def(place),
+                }));
+            }
             _ => return Ok(None),
         };
         let place = self.program.immediate(&literal)?;
@@ -2236,17 +2660,99 @@ impl<'a> Compiler<'a> {
         }))
     }
 
+    /// Whether a float value of type `ty` passed to the parameter `param` is converted to an
+    /// integer (FTEF-26.3): `param` is an `int` and the value a float that is not one already.
+    fn converts_to_int(&self, ty: &ValueType, param: Option<&Type>) -> bool {
+        let int = param.is_some_and(|param| param.fteqcc_scalar() == Some(CScalar::Integer));
+        let integer = matches!(ty, ValueType::Of(t) if t.fteqcc_scalar() == Some(CScalar::Integer));
+        int && ty.etype() == Etype::Float && !integer
+    }
+
+    /// The program's conversion function `name` (`itof` or `ftoi`), when it has defined one
+    /// (FTEF-26.3): `QCC_PR_EmulationFunc` is `QCC_PR_GetSRef(NULL, #n, pr_scope, false, 0, 0)`,
+    /// a lookup that makes nothing.
+    fn conversion_function(&self, name: &str) -> Option<usize> {
+        let id = self.names.global(name)?;
+        self.program.place(id)
+    }
+
+    /// FTEF-26.15: `QCC_PR_StatementFlags` with one constant float operand, under
+    /// `opt_constantarithmatic`: the identity element's other operand is the value itself, no
+    /// statement made, and `0 & x` is the constant 0.
+    fn folded_with_one_constant(
+        &mut self,
+        opcode: Opcode,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> Lowered<Option<Value>> {
+        if !self.dialect.has_fteqcc_extensions() {
+            return Ok(None);
+        }
+        let constant = |compiler: &Self, value: &Value| match compiler.constant_literal(value) {
+            Some(Literal::Float(f)) => Some(f),
+            Some(Literal::Vector(_) | Literal::String(_)) | None => None,
+        };
+        #[expect(
+            clippy::float_cmp,
+            reason = "spec FTEF-26.15: FTEQCC tests `eval_a->_float == 0` and `== 1` exactly"
+        )]
+        let is = |value: Option<f32>, want: f32| value.is_some_and(|value| value == want);
+        let (a, b) = (constant(self, left), constant(self, right));
+        let folded = match opcode {
+            // `QCC_Eval_Truth` of a float constant: not 0. `a && b` with a false constant on
+            // either side is the constant 0; `a || b` with a true constant on the left is the
+            // constant 1, and with one on the right no fold, FTEQCC's right-constant case
+            // testing the left operand's truth with no constant to read (FTEF-26.15).
+            Opcode::And if is(a, 0.0) || is(b, 0.0) => Some(self.float_literal(0.0, span)?),
+            Opcode::Or if a.is_some_and(|a| a != 0.0) => Some(self.float_literal(1.0, span)?),
+            Opcode::AddF | Opcode::BitOr if is(a, 0.0) => Some(right.clone()),
+            Opcode::MulF if is(a, 1.0) => Some(right.clone()),
+            Opcode::BitAnd if a.is_some_and(|a| float_to_int(a) == 0) => {
+                Some(self.float_literal(0.0, span)?)
+            }
+            Opcode::AddF | Opcode::SubF | Opcode::BitOr if is(b, 0.0) => Some(left.clone()),
+            Opcode::MulF | Opcode::DivF if is(b, 1.0) => Some(left.clone()),
+            _ => None,
+        };
+        // `QCC_FreeTemp` of the operand the fold drops: a call's value among them is read by
+        // nothing more, so no clobber copies it (FTE-18.13); the operand returned stays live.
+        if let Some(value) = &folded {
+            self.drop_value(left);
+            self.drop_value(right);
+            self.keep_alive(value);
+        }
+        Ok(folded)
+    }
+
     /// The float or vector literal a value holds when it is a compile-time constant, a named
     /// constant as well as an immediate, as FTEQCC's `QCC_SRef_EvalConst` reads a constant and
     /// initialised definition (FTEF-26.13): the words at the constant's globals read as its
     /// basic type. A constant of another type folds no arithmetic here, so `None`.
     fn constant_literal(&self, value: &Value) -> Option<Literal> {
-        let ValueKind::Def(place) = value.kind else {
-            return None;
+        let place = match value.kind {
+            ValueKind::Def(place) if self.constant(place) => place,
+            // A word of a constant vector, its component definition or a word read by offset
+            // (`QCC_SRef_EvalConst` reads the symbol's data at the reference's offset).
+            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Cast(_)
+                if self.type_of(value).etype() == Etype::Float =>
+            {
+                let place = self.program.defs.iter().position(|def| {
+                    def.name != "IMMEDIATE"
+                        && def.count.is_none()
+                        && def.ty.etype() == Etype::Vector
+                        && value.ofs >= def.ofs
+                        && value.ofs < def.ofs.saturating_add(3)
+                })?;
+                if !self.constant(place) {
+                    return None;
+                }
+                return Some(Literal::Float(f32::from_bits(self.program.word(value.ofs))));
+            }
+            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Cast(_) | ValueKind::Return(_) => {
+                return None;
+            }
         };
-        if !self.constant(place) {
-            return None;
-        }
         let def = self.program.def(place)?;
         let float = |i: u32| f32::from_bits(self.program.word(def.ofs.saturating_add(i)));
         match def.ty.etype() {
@@ -2277,6 +2783,13 @@ impl<'a> Compiler<'a> {
     /// A field access `e.f` (QC-16.1, QC-16.6): the entity, the field, then `LOAD_*` by the
     /// field's type into a temporary of that type.
     fn field(&mut self, field: &ast::FieldExpr, span: Span) -> Lowered<Value> {
+        // FTE-9.3: `e.v.y` of an entity's vector field reads the component field `e.v_y`.
+        if let Some(which) = self.component_selector(field)
+            && let Some(base) = field.base()
+            && let Some(slot) = self.entity_component_slot(&base, which, span)?
+        {
+            return self.read_field(&slot, span);
+        }
         let base = match self.member(field, span)? {
             Member::Done(value) => return Ok(value),
             Member::Base(base) => base,
@@ -2384,9 +2897,10 @@ impl<'a> Compiler<'a> {
 
     /// `LOAD_*` of the field `slot` into a temporary of its type (QC-16.1).
     fn read_field(&mut self, slot: &FieldSlot, span: Span) -> Lowered<Value> {
+        let entity = self.operand_of(&slot.entity);
         let ofs = self
             .program
-            .emit_result(slot.load, slot.entity, slot.field, slot.loaded)
+            .emit_result(slot.load, entity, slot.field, slot.loaded)
             .at(span)?;
         Ok(Value {
             ofs,
@@ -2436,7 +2950,7 @@ impl<'a> Compiler<'a> {
             ValueType::simple(row.c)
         };
         Ok(FieldSlot {
-            entity: base.ofs,
+            entity: base.clone(),
             field: selector.ofs,
             load: row.opcode,
             loaded: row.c,
@@ -2448,9 +2962,14 @@ impl<'a> Compiler<'a> {
     /// QC-27.11), then the value, then `STORE_*` or `STOREP_*` by the two basic types. The
     /// value of the assignment is the value stored (QC-17.6, QC-17.7).
     fn assign(&mut self, lhs: &ast::Expr, rhs: &ast::Expr, op_span: Span) -> Lowered<Value> {
-        self.store(lhs, op_span, Current::Unread, |compiler, _| {
+        let value = self.store(lhs, op_span, Current::Unread, |compiler, _| {
             compiler.expr(rhs)
-        })
+        })?;
+        // FTE-18.13: an assignment's value is readable (`QCC_StoreSRefToRef` with `readable`
+        // keeps the source's reference), so a call's value stays live for a jump or call that
+        // follows to copy; a statement that discards it frees it.
+        self.keep_alive(&value);
+        Ok(value)
     }
 
     /// FTEQCC's `x OP= e` (FTE-8.1): `x = x OP e`, the operator's row chosen as for `x OP e`;
@@ -2568,20 +3087,21 @@ impl<'a> Compiler<'a> {
                 slot,
                 address: None,
             } => {
+                let entity = self.operand_of(&slot.entity);
                 let to = self
                     .program
-                    .emit_result(Opcode::Address, slot.entity, slot.field, Etype::Pointer)
+                    .emit_result(Opcode::Address, entity, slot.field, Etype::Pointer)
                     .at(op_span)?;
                 (to, slot.ty)
             }
             Target::Pointer { address, ty } => (address, ty),
             Target::Element(store) => {
-                let value = self.null_as(value, &store.ty);
+                let value = self.null_as(value, &store.ty, op_span)?;
                 self.store_element(&store, &value, op_span)?;
                 return Ok(value);
             }
         };
-        let value = self.null_as(value, &inner);
+        let value = self.null_as(value, &inner, op_span)?;
         let inner = inner.etype();
         let b = self.type_of(&value).etype();
         let Some(row) = ops::select(Operator::Assign, Etype::Pointer, b, None) else {
@@ -2590,12 +3110,28 @@ impl<'a> Compiler<'a> {
         if inner != b {
             return Self::mismatch(Operator::Assign, op_span);
         }
+        let from = self.operand_of(&value);
         self.program.emit(
             row.opcode,
-            operand(value.ofs).at(op_span)?,
+            operand(from).at(op_span)?,
             operand(to).at(op_span)?,
         );
         Ok(value)
+    }
+
+    /// Whether `value` is a definition or a word of one (a local vector's component, a
+    /// struct's member), rather than a temporary: FTEQCC's `sym->temp` is false for it.
+    fn is_definition_word(&self, value: &Value) -> bool {
+        match value.kind {
+            ValueKind::Def(_) | ValueKind::Cast(_) => true,
+            ValueKind::Return(_) => false,
+            ValueKind::Temp(_) => self.program.defs.iter().any(|def| {
+                let words = type_words(self.index, &def.ty).saturating_mul(def.count.unwrap_or(1));
+                def.name != "IMMEDIATE"
+                    && value.ofs >= def.ofs
+                    && value.ofs < def.ofs.saturating_add(words)
+            }),
+        }
     }
 
     /// FTEF-29.13: under FTEQCC a store of the temporary the statement before made to a
@@ -2603,8 +3139,10 @@ impl<'a> Compiler<'a> {
     /// `opt_assignments` folds it; true when it was.
     fn fold_store(&mut self, to: &Value, value: &Value) -> bool {
         if self.dialect != Dialect::Fteqcc
-            || !matches!(to.kind, ValueKind::Def(_))
+            || !self.is_definition_word(to)
             || !matches!(value.kind, ValueKind::Temp(_))
+            || self.joined.contains(&value.ofs)
+            || self.is_definition_word(value)
             || self.type_of(to) != self.type_of(value)
         {
             return false;
@@ -2695,6 +3233,21 @@ impl<'a> Compiler<'a> {
         which: u32,
         span: Span,
     ) -> Lowered<Option<Target>> {
+        match self.entity_component_slot(base, which, span)? {
+            Some(slot) => self.target_of(slot, span).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// The component field `e.v_x`, `e.v_y` or `e.v_z` that `e.v[which]` or `e.v_x` names,
+    /// as FTEQCC's reference to it (FTE-9.3): a `LOAD_F` slot of the component's own field
+    /// definition, with the entity read; `None` when `base` is no vector field of an entity.
+    fn entity_component_slot(
+        &mut self,
+        base: &ast::Expr,
+        which: u32,
+        span: Span,
+    ) -> Lowered<Option<FieldSlot>> {
         let base = match base {
             ast::Expr::Paren(paren) => paren.expr().at(span)?,
             other => other.clone(),
@@ -2722,21 +3275,20 @@ impl<'a> Compiler<'a> {
         let component = self.program.get_def(self.index, component).at(span)?;
         let component = self.program.def(component).at(span)?.ofs;
         let entity = self.expr(&field.base().at(span)?)?;
-        let slot = FieldSlot {
-            entity: entity.ofs,
+        Ok(Some(FieldSlot {
+            entity,
             field: component,
             load: Opcode::LoadF,
             loaded: Etype::Float,
             ty: ValueType::simple(Etype::Float),
-        };
-        self.target_of(slot, span).map(Some)
+        }))
     }
 
     /// A store of `value` to `to`: a null made `to`'s type, an integer stored to a float made
     /// one first (`OP_STORE_IF`, FTEF-27.4), then folded into the statement that made it
     /// (FTEF-29.13), `None`, or stored by `store_to`, the value stored.
     fn store_value(&mut self, to: &Value, value: Value, span: Span) -> Lowered<Option<Value>> {
-        let mut value = self.null_as(value, &self.type_of(to));
+        let mut value = self.null_as(value, &self.type_of(to), span)?;
         if self.type_of(to).etype() == Etype::Float && self.is_integer(&value) {
             value = self.int_as_float(&value, span)?;
         }
@@ -2745,6 +3297,37 @@ impl<'a> Compiler<'a> {
         }
         self.store_to(to, &value, span)?;
         Ok(Some(value))
+    }
+
+    /// A struct local's initialiser copied to it a word at a time by `STORE_FLD`; false when
+    /// `to` is no struct.
+    fn init_struct(&mut self, to: &Value, value: &Value, span: Span) -> Lowered<bool> {
+        let ValueType::Of(ty) = self.type_of(to) else {
+            return Ok(false);
+        };
+        let Some(shape) = self.index.struct_shape(&ty) else {
+            return Ok(false);
+        };
+        if self.type_of(value) != self.type_of(to) {
+            return Ok(false);
+        }
+        let from = self.operand_of(value);
+        for w in 0..shape.words {
+            let a = from.checked_add(w).at(span)?;
+            let b = to.ofs.checked_add(w).at(span)?;
+            self.program
+                .emit(Opcode::StoreFld, operand(a).at(span)?, operand(b).at(span)?);
+        }
+        Ok(true)
+    }
+
+    /// Marks a call's value live again after a statement read it, as a readable store does.
+    fn keep_alive(&mut self, value: &Value) {
+        if let ValueKind::Return(alias) = value.kind
+            && let Some(alias) = self.aliases.get_mut(alias.0)
+        {
+            alias.live = true;
+        }
     }
 
     /// Stores `value` in the definition or temporary `to` by the `STORE_*` row of their types.
@@ -2758,9 +3341,10 @@ impl<'a> Compiler<'a> {
         let Some(row) = ops::select(Operator::Assign, a, b, None) else {
             return Self::mismatch(Operator::Assign, span);
         };
+        let from = self.operand_of(value);
         self.program.emit(
             row.opcode,
-            operand(value.ofs).at(span)?,
+            operand(from).at(span)?,
             operand(to.ofs).at(span)?,
         );
         Ok(())
@@ -2789,7 +3373,7 @@ impl<'a> Compiler<'a> {
         };
         let name = match &callee.kind {
             ValueKind::Def(place) => self.program.def(*place).map(|d| d.name.clone()),
-            ValueKind::Temp(_) | ValueKind::Return | ValueKind::Cast(_) => None,
+            ValueKind::Temp(_) | ValueKind::Return(_) | ValueKind::Cast(_) => None,
         };
         let fixed = (!function.variadic).then_some(function.params.len());
         let mut count = 0_usize;
@@ -2822,9 +3406,10 @@ impl<'a> Compiler<'a> {
                 );
             }
             if let Some(slot) = parm_slot(count) {
+                let from = self.operand_of(&value);
                 self.program.emit(
                     Opcode::StoreV,
-                    operand(value.ofs).at(arg_span)?,
+                    operand(from).at(arg_span)?,
                     operand(slot).at(arg_span)?,
                 );
             }
@@ -2838,11 +3423,25 @@ impl<'a> Compiler<'a> {
             return Self::error(Code::E0307, "More than eight parameters".to_owned(), span);
         };
         self.program.emit(op, operand(callee.ofs).at(span)?, 0);
-        self.return_type = ValueType::Of(function.ret.clone());
-        Ok(Value {
-            ofs: OFS_RETURN,
-            kind: ValueKind::Return,
-        })
+        Ok(self.alias(ValueType::Of(function.ret.clone())))
+    }
+}
+
+/// An argument of an FTEQCC call as `QCC_PR_GenerateFunctionCallRef` holds it (FTE-18.11): a
+/// value its own statements made, or an entity's field still a reference, read straight into
+/// its parameter slot when the call is generated.
+enum Argument {
+    Value(Value),
+    Field(FieldSlot),
+}
+
+/// Whether `ty` is FTEQCC's `__variant`, three words wide (`type_variant->size`).
+fn is_variant(ty: &Type) -> bool {
+    match ty {
+        Type::Named(name) => matches!(name.as_ref(), "__variant" | "variant"),
+        Type::Unknown | Type::Simple(_) | Type::Field(_) | Type::Function(_) | Type::Pointer(_) => {
+            false
+        }
     }
 }
 
@@ -2855,38 +3454,167 @@ enum Member {
 }
 
 impl Compiler<'_> {
-    /// `value`, copied to a temporary when it is a call's value in the return global, so a
-    /// call made before it is read cannot overwrite it, as FTEQCC's `QCC_ClobberDef` copies
-    /// the return global's aliases before each call (FTE-18.4, FTEF-30.13).
-    fn hold(&mut self, value: Value, span: Span) -> Lowered<Value> {
-        if !matches!(value.kind, ValueKind::Return) {
-            return Ok(value);
-        }
-        let ty = self.type_of(&value);
-        let temp = self.program.allocate(ty.words()).at(span)?;
-        let copy = Value {
-            ofs: temp,
-            kind: ValueKind::Temp(ty),
-        };
-        self.store_to(&copy, &value, span)?;
-        Ok(copy)
-    }
-
     /// The left operand `lhs` of a binary operator: under FTEQCC a call's value is held before
     /// the right operand runs (FTE-18.5); under id's `qcc` it stays in the return global, which
     /// a call in the right operand overwrites (QC-18.6).
     fn left_operand(&mut self, lhs: &ast::Expr) -> Lowered<Value> {
-        let value = self.expr(lhs)?;
-        if self.dialect == Dialect::Fteqcc {
-            self.hold(value, lhs.syntax().span())
-        } else {
-            Ok(value)
+        self.expr(lhs)
+    }
+
+    /// `random(a)` and `random(a, b)` on the vanilla opcodes, which have no `OP_RAND*`
+    /// (FTE-19.13): the arguments read, then `random()` called and its value scaled, `MUL_F`
+    /// of it and `a`, or `min + (max-min)*random()` as `SUB_F b a`, `MUL_F` and `ADD_F`.
+    /// `None` for any other call.
+    fn random_call(
+        &mut self,
+        callee: &Value,
+        name: Option<&str>,
+        slots: &[Option<ast::Expr>],
+        span: Span,
+    ) -> Lowered<Option<Value>> {
+        if name != Some("random") || !matches!(slots.len(), 1 | 2) {
+            return Ok(None);
+        }
+        let Some(arguments) = slots.iter().cloned().collect::<Option<Vec<ast::Expr>>>() else {
+            return Ok(None);
+        };
+        {
+            let mut values = Vec::with_capacity(2);
+            for arg in &arguments {
+                let value = self.expr(arg)?;
+                if self.type_of(&value).etype() != Etype::Float {
+                    return Self::error(Code::E0306, "type mismatch on parm 1".to_owned(), span);
+                }
+                values.push(value);
+            }
+            self.clobber_aliases(span)?;
+            self.program
+                .emit(Opcode::Call0, operand(callee.ofs).at(span)?, 0);
+            let out = self.alias(ValueType::simple(Etype::Float));
+            let value = match values.as_slice() {
+                [low, high] => {
+                    let range = self.operate(Operator::Sub, high, low, (span, span))?;
+                    let scaled = self.operate(Operator::Mul, &out, &range, (span, span))?;
+                    self.operate(Operator::Add, &scaled, low, (span, span))?
+                }
+                [scale] => self.operate(Operator::Mul, &out, scale, (span, span))?,
+                _ => out,
+            };
+            Ok(Some(value))
         }
     }
 
-    /// A call under FTEQCC (FTE-18.4): every argument is read first, a call's value copied out
-    /// of the return global before the next argument runs, then each copied to its parameter
-    /// slot and `CALLn` made, so a call in an argument overwrites no slot. The semantic model
+    /// FTEF-26.3: a float argument of an integer parameter `param` is converted as it is read
+    /// (`QCC_SupplyConversion` in `QCC_PR_ParseFunctionCall`): a constant at compile time
+    /// (`QCC_MakeIntConst`), any other value by the program's `ftoi`, whose value is the
+    /// argument.
+    fn int_argument(&mut self, value: Value, param: Option<&Type>, span: Span) -> Lowered<Value> {
+        let Some(param) = param else {
+            return Ok(value);
+        };
+        if !self.converts_to_int(&self.type_of(&value), Some(param)) {
+            return Ok(value);
+        }
+        if let Some(Literal::Float(constant)) = self.constant_literal(&value) {
+            let bits = u32::from_ne_bytes(float_to_int(constant).to_ne_bytes());
+            let place = self
+                .program
+                .immediate(&Literal::Float(f32::from_bits(bits)))
+                .at(span)?;
+            return self.def_value(place, span);
+        }
+        let Some(ftoi) = self.conversion_function("ftoi") else {
+            return Ok(value);
+        };
+        let from = self.operand_of(&value);
+        self.call1(ftoi, from, ValueType::Of(param.clone()), span)
+    }
+
+    /// FTEF-26.3 for a float field passed to the `int` parameter `param`: `QCC_SupplyConversion`
+    /// calls the program's `ftoi` with the field as its argument, which FTE-18.11 loads into the
+    /// slot (`LOAD_F e f` into the first slot, `CALL1 ftoi`); the value is the call's.
+    fn int_field_argument(
+        &mut self,
+        slot: &FieldSlot,
+        param: Option<&Type>,
+        span: Span,
+    ) -> Lowered<Value> {
+        let Some(param) = param else {
+            return self.read_field(slot, span);
+        };
+        let Some(ftoi) = self.conversion_function("ftoi") else {
+            return self.read_field(slot, span);
+        };
+        let entity = self.operand_of(&slot.entity);
+        self.program
+            .emit_into(Opcode::LoadF, entity, slot.field, OFS_PARM0)
+            .at(span)?;
+        let ftoi = self.program.def(ftoi).at(span)?.ofs;
+        self.clobber_aliases(span)?;
+        self.program.emit(Opcode::Call1, operand(ftoi).at(span)?, 0);
+        Ok(self.alias(ValueType::Of(param.clone())))
+    }
+
+    /// An argument of an FTEQCC call (FTE-18.11): an entity's field, `e.f`, is left a
+    /// reference, its base read, to be loaded straight into its slot; anything else is its
+    /// value.
+    fn argument(&mut self, arg: &ast::Expr) -> Lowered<Argument> {
+        let span = arg.syntax().span();
+        if let Some(ast::Expr::Index(index)) = unparenthesized(arg)
+            && let Some(at) = index.index()
+            && let Some(which) = self.vector_index(&at)
+            && let Some(base) = index.base()
+            && self.array_named(&base)?.is_none()
+            && let Some(slot) = self.entity_component_slot(&base, which, span)?
+        {
+            return Ok(Argument::Field(slot));
+        }
+        if let Some(ast::Expr::Field(field)) = unparenthesized(arg) {
+            if let Some(which) = self.component_selector(&field)
+                && let Some(base) = field.base()
+                && let Some(slot) = self.entity_component_slot(&base, which, span)?
+            {
+                return Ok(Argument::Field(slot));
+            }
+            let base = match self.member(&field, span)? {
+                Member::Done(value) => return Ok(Argument::Value(value)),
+                Member::Base(base) => base,
+            };
+            return Ok(match self.component(&base, &field, span)? {
+                Some(component) => Argument::Value(component),
+                None => Argument::Field(self.field_slot(&base, &field, span)?),
+            });
+        }
+        Ok(Argument::Value(self.expr(arg)?))
+    }
+
+    /// FTE-18.12: `opt_assignments` for a store to the global `to`: a temporary that the
+    /// statement before writes is written to `to` by that statement instead; true when it was.
+    fn fold_into(&mut self, value: &Value, to: u32) -> bool {
+        if !self.dialect.has_fteqcc_extensions()
+            || !matches!(value.kind, ValueKind::Temp(_))
+            || self.joined.contains(&value.ofs)
+            || self.is_definition_word(value)
+        {
+            return false;
+        }
+        let Some(last) = self.program.statements.last_mut() else {
+            return false;
+        };
+        let (Ok(made), Ok(to)) = (operand(value.ofs), operand(to)) else {
+            return false;
+        };
+        if last.c != made {
+            return false;
+        }
+        last.c = to;
+        true
+    }
+
+    /// A call under FTEQCC (FTE-18.4): every argument is read first, then a field argument is
+    /// loaded straight into its slot (FTE-18.11), each other argument stored to its slot or
+    /// folded into the statement that made it (FTE-18.12), the aliases still to be read copied
+    /// out of the return global (FTE-18.13), and `CALLn` made. The semantic model
     /// has judged the call (FTEF-32.3): fewer arguments than parameters leave the rest as the
     /// slots hold them, and an argument past the last parameter is read and ignored.
     fn fteqcc_call(
@@ -2897,6 +3625,9 @@ impl Compiler<'_> {
         slots: &[Option<ast::Expr>],
         span: Span,
     ) -> Lowered<Value> {
+        if let Some(value) = self.random_call(callee, name, slots, span)? {
+            return Ok(value);
+        }
         let fixed = (!function.variadic).then_some(function.params.len());
         let defaults = match callee.kind {
             ValueKind::Def(place) => self
@@ -2906,7 +3637,7 @@ impl Compiler<'_> {
                 .and_then(|id| self.defaults.get(&id))
                 .cloned()
                 .unwrap_or_default(),
-            ValueKind::Temp(_) | ValueKind::Return | ValueKind::Cast(_) => Vec::new(),
+            ValueKind::Temp(_) | ValueKind::Return(_) | ValueKind::Cast(_) => Vec::new(),
         };
         // FTE-18.7: an empty slot takes its parameter's default, and so does each parameter
         // after the last argument that has one and is not `optional`.
@@ -2923,9 +3654,28 @@ impl Compiler<'_> {
         }
         let mut values = Vec::with_capacity(count);
         for i in 0..count {
-            let last = i.saturating_add(1) >= count;
             let (value, arg_span) = match slots.get(i).cloned().flatten() {
-                Some(arg) => (self.expr(&arg)?, arg.syntax().span()),
+                Some(arg) => {
+                    let value = self.argument(&arg)?;
+                    let param = function.params.get(i);
+                    let value = match value {
+                        Argument::Value(value) => {
+                            Argument::Value(self.int_argument(value, param, arg.syntax().span())?)
+                        }
+                        // A float field of an `int` parameter is `ftoi`'s own field argument
+                        // (FTEF-26.3, FTE-18.11), loaded straight into its slot, and the
+                        // conversion's value the argument.
+                        Argument::Field(slot) if self.converts_to_int(&slot.ty, param) => {
+                            Argument::Value(self.int_field_argument(
+                                &slot,
+                                param,
+                                arg.syntax().span(),
+                            )?)
+                        }
+                        Argument::Field(_) => value,
+                    };
+                    (value, arg.syntax().span())
+                }
                 None => {
                     let (file, default) = defaults
                         .get(i)
@@ -2942,57 +3692,101 @@ impl Compiler<'_> {
                     let here = std::mem::replace(&mut self.file, file);
                     let value = self.expr(&default);
                     self.file = here;
-                    (value?, span)
+                    (Argument::Value(value?), span)
                 }
-            };
-            let value = if last {
-                value
-            } else {
-                self.hold(value, arg_span)?
             };
             values.push((value, arg_span));
         }
         // FTEF-32.14: a call of constants that FTEQCC folds by its function's name.
         if let Some(name) = name {
-            let words: Vec<Option<u32>> =
-                values.iter().map(|(v, _)| self.constant_word(v)).collect();
-            let floats = values
+            let words: Vec<Option<u32>> = values
                 .iter()
-                .all(|(v, _)| self.type_of(v).etype() == Etype::Float);
+                .map(|(v, _)| match v {
+                    Argument::Value(v) => self.constant_word(v),
+                    Argument::Field(_) => None,
+                })
+                .collect();
+            let floats = values.iter().all(|(v, _)| match v {
+                Argument::Value(v) => self.type_of(v).etype() == Etype::Float,
+                Argument::Field(_) => false,
+            });
             if let Some(folded) = qc_sema::fold_builtin_call(name, &words, floats) {
                 return self.float_literal(folded, span);
             }
         }
         let passed = fixed.map_or(values.len(), |n| n.min(values.len()));
-        for (slot, (value, arg_span)) in values.iter().take(passed).enumerate() {
+        // FTE-18.11: a field still a reference is read straight into its slot, in argument
+        // order, before any argument is stored.
+        for (slot, (argument, arg_span)) in values.iter().take(passed).enumerate() {
+            if let Argument::Field(field) = argument {
+                let to = parm_slot(slot).at(*arg_span)?;
+                // `copyop[2] = OP_LOAD_V; copyop[0] = OP_LOAD_F;`: by the field's size, not
+                // its type.
+                let load = if field.ty.words() == 3 {
+                    Opcode::LoadV
+                } else {
+                    Opcode::LoadF
+                };
+                let entity = self.operand_of(&field.entity);
+                self.program
+                    .emit_into(load, entity, field.field, to)
+                    .at(*arg_span)?;
+            }
+        }
+        for (slot, (argument, arg_span)) in values.iter().take(passed).enumerate() {
+            let Argument::Value(value) = argument else {
+                continue;
+            };
             if slot == 0
                 && let Some(name) = name
             {
                 self.precaches.record(name, &self.program, value.ofs);
             }
             let to = parm_slot(slot).at(*arg_span)?;
+            let param = function.params.get(slot).map(|p| ValueType::Of(p.clone()));
+            // FTEF-29.16: a null passed to a vector parameter is the vector zero, three words.
+            let zeroed;
+            let value = if let Some(param) = &param
+                && param.etype() == Etype::Vector
+            {
+                zeroed = self.null_as(value.clone(), param, *arg_span)?;
+                &zeroed
+            } else {
+                value
+            };
+            // FTE-18.12: a store of the temporary the statement before made writes that
+            // statement to the slot instead (`opt_assignments`).
+            if self.fold_into(value, to) {
+                continue;
+            }
             // FTE-18.9: each argument is stored by its size, `STORE_V` for three words and
-            // `STORE_F` for one, so a slot's other words keep what they held.
-            let store = if self.type_of(value).words() == 3 {
+            // `STORE_F` for one, so a slot's other words keep what they held; a variant
+            // parameter, a field of variant included, takes three words (its `size`).
+            let variant = param.as_ref().is_some_and(|p| match p {
+                ValueType::Of(Type::Field(inner)) => is_variant(inner),
+                ValueType::Of(ty) => is_variant(ty),
+                ValueType::FloatField => false,
+            });
+            let store = if self.type_of(value).words() == 3 || variant {
                 Opcode::StoreV
             } else {
                 Opcode::StoreF
             };
+            let from = self.operand_of(value);
             self.program.emit(
                 store,
-                operand(value.ofs).at(*arg_span)?,
+                operand(from).at(*arg_span)?,
                 operand(to).at(*arg_span)?,
             );
         }
         let Some(op) = ops::call_opcode(passed) else {
             return Self::error(Code::E0307, "More than eight parameters".to_owned(), span);
         };
+        // FTE-18.13: `QCC_ClobberDef(&def_ret)` before the call: an earlier call's value still
+        // to be read is copied out of the return global the call overwrites.
+        self.clobber_aliases(span)?;
         self.program.emit(op, operand(callee.ofs).at(span)?, 0);
-        self.return_type = ValueType::Of(function.ret.clone());
-        Ok(Value {
-            ofs: OFS_RETURN,
-            kind: ValueKind::Return,
-        })
+        Ok(self.alias(ValueType::Of(function.ret.clone())))
     }
 }
 

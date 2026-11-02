@@ -139,12 +139,17 @@ fn run(args: &[String]) -> Result<bool, String> {
         let report = match reports.iter().find(|(bytes, _)| *bytes == ours) {
             Some((_, report)) => report.clone(),
             None => {
+                // Progress on stderr, since a full run of one codebase can take an hour.
+                let progress = |scenario: &str, done: usize, of: usize| {
+                    eprintln!("      {scenario}: {done} of {of} functions called");
+                };
                 let report = run_codebase(
                     options.oracle,
                     &theirs,
                     &ours,
                     options.rounds,
                     options.engine,
+                    &progress,
                 )
                 .map_err(|e| e.to_string())?;
                 reports.push((ours.clone(), report.clone()));

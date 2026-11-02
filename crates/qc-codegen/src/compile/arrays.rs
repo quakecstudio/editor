@@ -201,15 +201,27 @@ impl Compiler<'_> {
         let temp = self.program.allocate(size).at(span)?;
         for w in 0..size {
             let arg = if w == 0 {
-                words
+                // The index is read again for the next words (its refcount is above 1 in
+                // FTEQCC), so its store is not folded into the statement that made it.
+                let to = OFS_PARM0;
+                self.program.emit(
+                    Opcode::StoreF,
+                    operand(words).at(span)?,
+                    operand(to).at(span)?,
+                );
+                None
             } else {
-                self.float_op(Opcode::AddF, words, w, span)?
+                Some(self.float_op(Opcode::AddF, words, w, span)?)
             };
-            self.call1(getter, arg, ValueType::simple(Etype::Float), span)?;
+            let word = match arg {
+                Some(arg) => self.call1(getter, arg, ValueType::simple(Etype::Float), span)?,
+                None => self.call_stored(getter, ValueType::simple(Etype::Float), span)?,
+            };
             let to = temp.checked_add(w).at(span)?;
+            let from = self.operand_of(&word);
             self.program.emit(
                 Opcode::StoreF,
-                operand(OFS_RETURN).at(span)?,
+                operand(from).at(span)?,
                 operand(to).at(span)?,
             );
         }
@@ -274,11 +286,25 @@ impl Compiler<'_> {
         };
         self.store_word(index, OFS_PARM0, Etype::Float, span)?;
         let second = OFS_PARM0.checked_add(3).at(span)?;
-        self.store_word(value.ofs, second, b, span)?;
-        // `QCC_StoreToArray` asks for the setter when it stores, after the value is read.
+        // FTE-13.15: a call's value stored to an element is stored to the second slot from the
+        // return global and then, still referenced, copied to a temporary by the clobber before
+        // the setter's call (`arr[i] = f(x)` is `STORE_F i`, `STORE_F` of the return global to
+        // the second slot, `STORE_F` of it to a temporary, `CALL2`).
+        let from = self.operand_of(&value);
+        // `QCC_PR_GenerateFunctionCall2` stores the value by its size, `STORE_F` for one word.
+        let by_size = if b == Etype::Vector {
+            Etype::Vector
+        } else {
+            Etype::Float
+        };
+        self.store_word(from, second, by_size, span)?;
+        self.keep_alive(&value);
+        // `QCC_StoreToArray` asks for the setter when it stores, after the value is read; the
+        // call's `QCC_ClobberDef(&def_ret)` copies the value's alias (FTE-18.13).
         let array = store.array.clone();
         let setter = self.array_function(&array, Access::Set, span)?;
         let setter = self.program.def(setter).at(span)?.ofs;
+        self.clobber_aliases(span)?;
         self.program
             .emit(Opcode::Call2, operand(setter).at(span)?, 0);
         Ok(())
@@ -296,7 +322,9 @@ impl Compiler<'_> {
             {
                 Some(f32::from_bits(self.program.word(at.ofs)))
             }
-            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Return | ValueKind::Cast(_) => None,
+            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Return(_) | ValueKind::Cast(_) => {
+                None
+            }
         };
         if let Some(i) = constant {
             let element = element_number(i, array.count).at(span)?;
@@ -310,7 +338,7 @@ impl Compiler<'_> {
         if self.type_of(&at).etype() != Etype::Float {
             return Err(Abort::Internal(Internal::Unsupported, span));
         }
-        let mut words = at.ofs;
+        let mut words = self.operand_of(&at);
         if array.words != 1 {
             words = self.float_op(Opcode::MulF, words, array.words, span)?;
         }
@@ -335,6 +363,15 @@ impl Compiler<'_> {
         Ok(self.program.def(place).at(span)?.ofs)
     }
 
+    /// `CALL1` of the function at `function` with its argument already in the first slot, the
+    /// value the return global as `ret`.
+    fn call_stored(&mut self, function: usize, ret: ValueType, span: Span) -> Lowered<Value> {
+        let ofs = self.program.def(function).at(span)?.ofs;
+        self.clobber_aliases(span)?;
+        self.program.emit(Opcode::Call1, operand(ofs).at(span)?, 0);
+        Ok(self.alias(ret))
+    }
+
     /// `QCC_PR_GenerateFunctionCall1`: the argument at `arg` stored to the first parameter by
     /// its type, `CALL1` of the function at `function`, the value the return global as `ret`.
     pub(super) fn call1(
@@ -344,18 +381,17 @@ impl Compiler<'_> {
         ret: ValueType,
         span: Span,
     ) -> Lowered<Value> {
-        self.program.emit(
-            Opcode::StoreF,
-            operand(arg).at(span)?,
-            operand(OFS_PARM0).at(span)?,
-        );
+        if !self.fold_word_into(arg, OFS_PARM0) {
+            self.program.emit(
+                Opcode::StoreF,
+                operand(arg).at(span)?,
+                operand(OFS_PARM0).at(span)?,
+            );
+        }
         let ofs = self.program.def(function).at(span)?.ofs;
+        self.clobber_aliases(span)?;
         self.program.emit(Opcode::Call1, operand(ofs).at(span)?, 0);
-        self.return_type = ret;
-        Ok(Value {
-            ofs: OFS_RETURN,
-            kind: ValueKind::Return,
-        })
+        Ok(self.alias(ret))
     }
 
     /// The getter of `array`, `ArrayGet*NAME` of type `T(float)`, or its setter,
@@ -544,7 +580,8 @@ impl Compiler<'_> {
         let error = self
             .defined("error")
             .ok_or(Abort::Internal(Internal::Unsupported, span))?;
-        self.store_word(message, OFS_PARM0, Etype::String, span)?;
+        // `QCC_PR_EmitArraySetFunction` stores the message with `OP_STORE_F`.
+        self.store_word(message, OFS_PARM0, Etype::Float, span)?;
         self.program
             .emit(Opcode::Call1, operand(error).at(span)?, 0);
         self.program.emit(Opcode::Done, 0, 0);
@@ -684,20 +721,14 @@ impl Compiler<'_> {
                 let format = b"bounds check failed (0 <= %g < %g is false)\n".to_vec();
                 let format = self.string_immediate(format, span)?;
                 let count = self.float_immediate(slots, span)?;
-                for (slot, (arg, etype)) in [
-                    (format, Etype::String),
-                    (index, Etype::Float),
-                    (count, Etype::Float),
-                ]
-                .into_iter()
-                .enumerate()
-                {
+                for (slot, arg) in [format, index, count].into_iter().enumerate() {
                     let to = u32::try_from(slot)
                         .ok()
                         .and_then(|s| s.checked_mul(3))
                         .and_then(|s| s.checked_add(OFS_PARM0))
                         .at(span)?;
-                    self.store_word(arg, to, etype, span)?;
+                    // `QCC_PR_EmitArrayGetFunction` stores every argument with `OP_STORE_F`.
+                    self.store_word(arg, to, Etype::Float, span)?;
                 }
                 self.program
                     .emit(Opcode::Call3, operand(sprintf).at(span)?, 0);
@@ -708,7 +739,9 @@ impl Compiler<'_> {
         let error = self
             .defined("error")
             .ok_or(Abort::Internal(Internal::Unsupported, span))?;
-        self.store_word(message, OFS_PARM0, Etype::String, span)?;
+        // `QCC_PR_EmitArrayGetFunction` stores the message with `OP_STORE_F`, whatever its
+        // type, as every one-word argument of the functions it emits.
+        self.store_word(message, OFS_PARM0, Etype::Float, span)?;
         self.program
             .emit(Opcode::Call1, operand(error).at(span)?, 0);
         Ok(())
@@ -744,57 +777,55 @@ impl Compiler<'_> {
         if let (Some(power), Some(floor)) = (power, self.defined("floor")) {
             let two = self.float_immediate(2, span)?;
             self.store_word(two, OFS_PARM0, Etype::Float, span)?;
+            let count = self.operand_of(right);
             self.store_word(
-                right.ofs,
+                count,
                 OFS_PARM0.checked_add(3).at(span)?,
                 Etype::Float,
                 span,
             )?;
+            self.clobber_aliases(span)?;
             self.program
                 .emit(Opcode::Call2, operand(power).at(span)?, 0);
+            let powered = self.alias(float.clone());
             let scale = match shift {
-                Shift::Left => Opcode::MulF,
-                Shift::Right => Opcode::DivF,
+                Shift::Left => Operator::Mul,
+                Shift::Right => Operator::Div,
             };
-            let scaled = self
-                .program
-                .emit_result(scale, left.ofs, OFS_RETURN, Etype::Float)
-                .at(span)?;
+            // `QCC_PR_Statement` of the scale, so `1 << n` is the power itself (FTEF-26.15).
+            let scaled = self.operate(scale, left, &powered, (span, span))?;
+            let scaled = self.operand_of(&scaled);
             self.store_word(scaled, OFS_PARM0, Etype::Float, span)?;
+            self.clobber_aliases(span)?;
             self.program
                 .emit(Opcode::Call1, operand(floor).at(span)?, 0);
-            self.return_type = float;
-            return Ok(Value {
-                ofs: OFS_RETURN,
-                kind: ValueKind::Return,
-            });
+            return Ok(self.alias(float));
         }
         let bitshift = self
             .defined("bitshift")
             .ok_or(Abort::Internal(Internal::Unsupported, op_span))?;
+        let right_ofs = self.operand_of(right);
         let count = match shift {
-            Shift::Left => right.ofs,
+            Shift::Left => right_ofs,
             Shift::Right => {
                 let zero = self.float_immediate(0, span)?;
                 self.program
-                    .emit_result(Opcode::SubF, zero, right.ofs, Etype::Float)
+                    .emit_result(Opcode::SubF, zero, right_ofs, Etype::Float)
                     .at(span)?
             }
         };
-        self.store_word(left.ofs, OFS_PARM0, Etype::Float, span)?;
+        let left_ofs = self.operand_of(left);
+        self.store_word(left_ofs, OFS_PARM0, Etype::Float, span)?;
         self.store_word(
             count,
             OFS_PARM0.checked_add(3).at(span)?,
             Etype::Float,
             span,
         )?;
+        self.clobber_aliases(span)?;
         self.program
             .emit(Opcode::Call2, operand(bitshift).at(span)?, 0);
-        self.return_type = float;
-        Ok(Value {
-            ofs: OFS_RETURN,
-            kind: ValueKind::Return,
-        })
+        Ok(self.alias(float))
     }
 
     /// FTEQCC's `a % b` of floats on the vanilla opcodes (FTE-19.8), `OP_MOD_F`'s emulation:
@@ -810,16 +841,14 @@ impl Compiler<'_> {
             return Err(Abort::Internal(Internal::Unsupported, op_span));
         }
         if let Some(function) = self.defined("mod") {
-            for (slot, arg) in [(OFS_PARM0, left.ofs), (OFS_PARM0 + 3, right.ofs)] {
+            let (a, b) = (self.operand_of(left), self.operand_of(right));
+            for (slot, arg) in [(OFS_PARM0, a), (OFS_PARM0 + 3, b)] {
                 self.store_word(arg, slot, Etype::Float, span)?;
             }
+            self.clobber_aliases(span)?;
             self.program
                 .emit(Opcode::Call2, operand(function).at(span)?, 0);
-            self.return_type = ValueType::simple(Etype::Float);
-            return Ok(Value {
-                ofs: OFS_RETURN,
-                kind: ValueKind::Return,
-            });
+            return Ok(self.alias(ValueType::simple(Etype::Float)));
         }
         let emit = |compiler: &mut Self, op, a, b| {
             compiler
@@ -827,10 +856,11 @@ impl Compiler<'_> {
                 .emit_result(op, a, b, Etype::Float)
                 .at(span)
         };
-        let quotient = emit(self, Opcode::DivF, left.ofs, right.ofs)?;
+        let (a, b) = (self.operand_of(left), self.operand_of(right));
+        let quotient = emit(self, Opcode::DivF, a, b)?;
         let whole = emit(self, Opcode::BitOr, quotient, quotient)?;
-        let product = emit(self, Opcode::MulF, right.ofs, whole)?;
-        let ofs = emit(self, Opcode::SubF, left.ofs, product)?;
+        let product = emit(self, Opcode::MulF, b, whole)?;
+        let ofs = emit(self, Opcode::SubF, a, product)?;
         Ok(Value {
             ofs,
             kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
@@ -853,10 +883,37 @@ impl Compiler<'_> {
 
     /// `STORE_*` of the value of basic type `etype` at `from` to `to`.
     fn store_word(&mut self, from: u32, to: u32, etype: Etype, span: Span) -> Lowered<()> {
+        // FTE-18.12: a temporary the statement before made is written to `to` by that
+        // statement instead (`opt_assignments`).
+        if self.fold_word_into(from, to) {
+            return Ok(());
+        }
+
         let row = ops::select(Operator::Assign, etype, etype, None).at(span)?;
         self.program
             .emit(row.opcode, operand(from).at(span)?, operand(to).at(span)?);
         Ok(())
+    }
+
+    /// FTE-18.12 for a word `from`: when it is a temporary the statement before wrote, that
+    /// statement writes `to` instead; true when it did.
+    fn fold_word_into(&mut self, from: u32, to: u32) -> bool {
+        if !self.dialect.has_fteqcc_extensions() {
+            return false;
+        }
+        // A definition's word, an immediate's among them, is never a temporary.
+        let a_definitions = self.program.defs.iter().any(|def| {
+            let words = type_words(self.index, &def.ty).saturating_mul(def.count.unwrap_or(1));
+            from >= def.ofs && from < def.ofs.saturating_add(words)
+        });
+        if a_definitions {
+            return false;
+        }
+        let temp = Value {
+            ofs: from,
+            kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
+        };
+        self.fold_into(&temp, to)
     }
 
     /// FTE-14.6: a struct value copied to `to`, `STORE_V` for each three words and `STORE_F`

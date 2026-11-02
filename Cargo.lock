@@ -2218,6 +2218,7 @@ dependencies = [
  "qc-sema",
  "qc-syntax",
  "qc-types",
+ "qc-vm",
 ]
 
 [[package]]
@@ -2385,6 +2386,7 @@ dependencies = [
  "qc-edict",
  "qc-progs",
  "qc-sema",
+ "qc-syntax",
  "qc-trace",
  "qc-types",
  "qc-vm",

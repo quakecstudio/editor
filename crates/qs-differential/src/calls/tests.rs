@@ -114,6 +114,69 @@ fn compile(source: &str, fold: bool) -> Vec<u8> {
     qc_progs::write(&compiled.progs).unwrap()
 }
 
+/// The progs `qc-codegen` writes for `source` in the FTEQCC dialect, after the system defs
+/// and the entry points.
+fn compile_fteqcc(source: &str) -> Vec<u8> {
+    let files = [
+        ("defs.qc", system_defs()),
+        ("entry.qc", entry_points(source)),
+        ("t.qc", format!("{source}{PADDING}")),
+    ];
+    let mut db = Db::new();
+    db.set_dialect(qc_syntax::Dialect::Fteqcc);
+    let mut input = ModuleInput::default();
+    for (i, (name, text)) in files.iter().enumerate() {
+        db.set_file(
+            FileId::new(i),
+            PathBuf::from(name),
+            text.as_bytes().to_vec(),
+        );
+        input.compiled.push(FileId::new(i));
+    }
+    let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
+    let compiled = compile_module(
+        &mut db,
+        &input,
+        |id| names[id.index()].clone(),
+        Options { fold: false },
+    )
+    .unwrap_or_else(|e| panic!("{source:?} did not compile: {e:?}"));
+    qc_progs::write(&compiled.progs).unwrap()
+}
+
+// spec DIFF-12.11: a function definition whose value is a QuakeC function of its name is no
+// local, whichever of the functions sharing the name it holds: FTEQCC makes an `ArrayGet*a`
+// for each `for` statement that subscripts a local array (FTEF-19.78), and ours gives the
+// second its slot among the body's locals when a local is declared after it (QC-21.4).
+#[test]
+fn an_array_function_made_in_a_body_is_not_a_local() {
+    let bytes = compile_fteqcc(
+        "float() f = { local float a[4]; local float i, s; \
+         for (i = 0; i < 4; i = i + 1) a[i] = a[i] + 1; \
+         for (i = 0; i < 4; i = i + 1) s = s + a[i]; local float t = s; return t; };\n",
+    );
+    let progs = Progs::read(&bytes).unwrap();
+    let program = super::Program::new(&progs);
+    let getters: Vec<&super::Global> = program
+        .globals
+        .iter()
+        .filter(|(name, ..)| name == b"ArrayGet*a")
+        .collect();
+    assert_eq!(getters.len(), 2, "{:?}", program.globals);
+    let (_, _, second) = getters[1];
+    assert!(
+        program
+            .locals
+            .iter()
+            .any(|(start, end)| (*start..*end).contains(second)),
+        "the second getter's slot {second} lies among f's locals {:?}",
+        program.locals
+    );
+    for getter in getters {
+        assert!(!program.is_local(getter), "{getter:?}");
+    }
+}
+
 /// One client in the world of [`WORLD`].
 fn scenario() -> Scenario {
     scenario::read(b"progs progs.dat\nclients 1\n", Path::new(".")).unwrap()
@@ -613,12 +676,30 @@ fn a_report_is_a_row_of_the_results_table() {
 }
 
 // spec DIFF-12.20, DIFF-12.5: a codebase runs every world of the differential scenarios and
-// unions their statements.
+// unions their statements; each scenario reports its progress, the last report every function
 #[test]
 fn a_codebase_runs_every_scenario() {
     let progs = compile(FOLDED, false);
     let folded = compile(FOLDED, true);
-    let report = run_codebase(Oracle::Qcc, &progs, &folded, 2, EngineProfile::Id).unwrap();
+    let reported = std::sync::Mutex::new(Vec::new());
+    let progress = |name: &str, done: usize, of: usize| {
+        reported.lock().unwrap().push((name.to_owned(), done, of));
+    };
+    let report = run_codebase(
+        Oracle::Qcc,
+        &progs,
+        &folded,
+        2,
+        EngineProfile::Id,
+        &progress,
+    )
+    .unwrap();
+    let reported = reported.into_inner().unwrap();
+    for spec in scenarios("") {
+        let last = reported.iter().rfind(|(n, _, _)| n == spec.name).unwrap();
+        assert_eq!(last.1, last.2, "{}: every function called", spec.name);
+        assert!(last.2 > 0);
+    }
     let names: Vec<_> = report.scenarios.iter().map(|(n, _)| *n).collect();
     let expected: Vec<_> = scenarios("").iter().map(|s| s.name).collect();
     assert_eq!(names, expected);
@@ -629,7 +710,17 @@ fn a_codebase_runs_every_scenario() {
         .flat_map(|(_, r)| r.executed.iter().copied())
         .collect();
     assert_eq!(report.executed, union);
-    assert!(run_codebase(Oracle::Qcc, b"", &folded, 1, EngineProfile::Id).is_err());
+    assert!(
+        run_codebase(
+            Oracle::Qcc,
+            b"",
+            &folded,
+            1,
+            EngineProfile::Id,
+            &|_, _, _| {}
+        )
+        .is_err()
+    );
 }
 
 // spec DIFF-12.2: the generator is seeded by the function's name and the round, so a context
@@ -673,7 +764,12 @@ fn the_float_pool_is_what_it_says() {
 
 /// The drawer over the first world of [`FOLDED`], with a function's record by name.
 fn with_drawer(test: impl FnOnce(&Drawer<'_, '_>, &Progs<'_>)) {
-    let bytes = compile(FOLDED, false);
+    with_drawer_of(FOLDED, test);
+}
+
+/// The drawer over the first world of `source`.
+fn with_drawer_of(source: &str, test: impl FnOnce(&Drawer<'_, '_>, &Progs<'_>)) {
+    let bytes = compile(source, false);
     let progs = Progs::read(&bytes).unwrap();
     let scenario = scenario();
     let world = World::new(&progs, &scenario, WORLD, EngineProfile::Id).unwrap();
@@ -689,11 +785,144 @@ fn function(progs: &Progs<'_>, name: &[u8]) -> qc_progs::Function {
 #[test]
 fn a_functions_constants_are_its_operands() {
     with_drawer(|drawer, progs| {
-        let Pools { numbers, texts } = drawer.pools(function(progs, b"g"));
+        let Pools { numbers, texts, .. } = drawer.pools(function(progs, b"g"));
         let numbers: Vec<f32> = numbers.iter().map(|b| f32::from_bits(*b)).collect();
         assert!(numbers.contains(&1.0), "{numbers:?}");
         assert_eq!(texts, [b"player".to_vec()]);
         assert_eq!(drawer.pools(function(progs, b"main")), Pools::default());
+    });
+}
+
+// spec DIFF-12.21: a function's statements name the fields and variables drawn for its call,
+// and a round above 0 draws them one time in two each, from the function's own constants.
+#[test]
+fn a_functions_named_fields_and_variables_are_drawn() {
+    const NAMED: &str = "float x;\nfloat y;\n\
+        void() h = { if (self.frags == 3 && self.netname == \"player\") x = self.frags; \
+        if (other.health == 7) y = other.health; };\n\
+        void() k = { };\n";
+    with_drawer_of(NAMED, |drawer, progs| {
+        let h = function(progs, b"h");
+        let pools = drawer.pools(h);
+        assert_eq!(
+            pools.fields,
+            [b"frags".to_vec(), b"health".to_vec(), b"netname".to_vec()]
+        );
+        assert_eq!(pools.variables, [b"x".to_vec(), b"y".to_vec()]);
+        let draw = |round| drawer.draw(&mut Rng::new(b"h", round), (h, &pools), round);
+        assert!(draw(0).fields.is_empty() && draw(0).globals.is_empty());
+        let contexts: Vec<_> = (1..32).map(draw).collect();
+        // Some round sets `self.frags` to 3 and `self.netname` to "player" together, the
+        // values the body compares them with, and some round sets `other.health` to 7.
+        assert!(contexts.iter().any(|c| {
+            let has = |name: &[u8], value: &Draw| {
+                c.fields
+                    .iter()
+                    .rev()
+                    .find(|(edict, field, _)| *edict == c.self_edict && field == name)
+                    .is_some_and(|(_, _, draw)| draw == value)
+            };
+            has(b"frags", &Draw::Float(3.0)) && has(b"netname", &Draw::Text(b"player".to_vec()))
+        }));
+        assert!(contexts.iter().any(|c| {
+            c.fields
+                .iter()
+                .rev()
+                .find(|(edict, field, _)| *edict == c.other_edict && field == b"health")
+                .is_some_and(|(_, _, draw)| *draw == Draw::Float(7.0))
+        }));
+        assert!(
+            contexts
+                .iter()
+                .any(|c| c.globals.iter().any(|(name, _)| name == b"x"))
+        );
+        // A function naming no field or variable draws as DIFF-12.2 alone does.
+        let k = function(progs, b"k");
+        let pools = drawer.pools(k);
+        assert!(pools.fields.is_empty() && pools.variables.is_empty());
+    });
+}
+
+// spec DIFF-12.22: the values a function's statements compare a field, a variable or a
+// parameter with are read from its body, a name compared with another pairs them, and a
+// round draws a name to one of its compared values, the second of a pair to the first's.
+#[test]
+fn compared_values_are_mined_and_drawn() {
+    const COMPARED: &str = "float x;\nfloat y;\n.float lastteam;\n\
+        float(float n, string s) h = { local float t; t = self.frags; \
+        if (t == 3 || self.health > 7) x = 1; \
+        if (self.netname == \"carrier\") y = 2; \
+        if (self.items & 32) y = 3; \
+        if (!self.enemy) y = 4; \
+        if (self.team == self.lastteam) y = 5; \
+        if (n == 9 && s == \"go\") y = 6; \
+        if (x == y) y = 7; return y; };\n";
+    with_drawer_of(COMPARED, |drawer, progs| {
+        let h = function(progs, b"h");
+        let pools = drawer.pools(h);
+        let numbers = |name: &[u8]| -> Vec<f32> {
+            pools.compared[name]
+                .numbers
+                .iter()
+                .map(|bits| f32::from_bits(*bits))
+                .collect()
+        };
+        // A field read into a local, then compared: the constant is the field's.
+        assert_eq!(numbers(b"frags"), [3.0]);
+        assert_eq!(numbers(b"health"), [7.0]);
+        assert_eq!(
+            pools.compared[&b"netname"[..]].texts,
+            BTreeSet::from([b"carrier".to_vec()])
+        );
+        // A bit test gives the mask and 0; a truth test 0 and 1, "" and world.
+        assert_eq!(numbers(b"items"), [0.0, 32.0]);
+        assert!(pools.compared[&b"enemy"[..]].world);
+        assert_eq!(numbers(b"enemy"), [0.0, 1.0]);
+        // Parameters by name.
+        assert_eq!(numbers(b"n"), [9.0]);
+        assert_eq!(
+            pools.compared[&b"s"[..]].texts,
+            BTreeSet::from([b"go".to_vec()])
+        );
+        // Two names compared pair them.
+        assert!(
+            pools
+                .pairs
+                .contains(&(b"team".to_vec(), b"lastteam".to_vec()))
+        );
+        assert!(pools.pairs.contains(&(b"x".to_vec(), b"y".to_vec())));
+        let draw = |round| drawer.draw(&mut Rng::new(b"h", round), (h, &pools), round);
+        let contexts: Vec<_> = (1..32).map(draw).collect();
+        let last_field = |c: &super::draw::Context, edict: usize, name: &[u8]| {
+            c.fields
+                .iter()
+                .rev()
+                .find(|(e, field, _)| *e == edict && field == name)
+                .map(|(_, _, draw)| draw.clone())
+        };
+        assert!(
+            contexts
+                .iter()
+                .any(|c| { last_field(c, c.self_edict, b"frags") == Some(Draw::Float(3.0)) })
+        );
+        assert!(contexts.iter().any(|c| {
+            last_field(c, c.self_edict, b"netname") == Some(Draw::Text(b"carrier".to_vec()))
+        }));
+        assert!(
+            contexts
+                .iter()
+                .any(|c| { last_field(c, c.self_edict, b"enemy") == Some(Draw::Entity(0)) })
+        );
+        // The second of a pair takes the first's value.
+        assert!(contexts.iter().any(|c| {
+            let team = last_field(c, c.self_edict, b"team");
+            team.is_some() && last_field(c, c.self_edict, b"lastteam") == team
+        }));
+        assert!(
+            contexts
+                .iter()
+                .any(|c| { c.parms == [Draw::Float(9.0), Draw::Text(b"go".to_vec())] })
+        );
     });
 }
 

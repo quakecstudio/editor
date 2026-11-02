@@ -22,6 +22,7 @@ qs-sim.workspace = true
 [dev-dependencies]
 qc-codegen.workspace = true
 qc-sema.workspace = true
+qc-syntax.workspace = true
 
 [lints]
 workspace = true

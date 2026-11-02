@@ -7,8 +7,9 @@
 # and reports coverage without gating on it (ADR-0013); the fast subset (id
 # 1.01) runs on every change in the Test Assets (linux) job of ci.yml. It also
 # runs the compiler differential's nightly run (P2-09, P2-10, DIFF-12,
-# `cargo xtask compiler-diff --full`) over id 1.01 and the rerelease, and
-# publishes its results table as the run's summary (DIFF-12.8).
+# `cargo xtask compiler-diff --full <codebase>`), one job per codebase in
+# parallel over id 1.01, the rerelease and the corpus mods at the bar, each
+# publishing its results table in the run's summary (DIFF-12.14).
 #
 # It does not run on pull requests or in the merge queue, and is not a required
 # check (docs/ci.md): the full corpus takes minutes and the fast subset already
@@ -36,9 +37,8 @@ jobs:
     name: Differential
     runs-on: ubuntu-latest
     # Building the oracles and FTEQCC, compiling the corpus and running every
-    # codebase twice; the compiler differential alone, over the rerelease
-    # codebases and the corpus mods, takes most of an hour.
-    timeout-minutes: 150
+    # codebase twice.
+    timeout-minutes: 90
     permissions:
       contents: read
     defaults:
@@ -74,14 +74,11 @@ jobs:
           key: oracles-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**') }}
       - name: Build and check the oracles
         run: cargo xtask oracles
-      # id 1.01 (compiled by id's qcc), the six rerelease codebases (compiled by FTEQCC), and
-      # the corpus mods at the bar that `compiler-diff --full` compares (DIFF-12.18: Copper,
-      # librequake, QC Conduit and SWAB); the mods' sources (their `progs.src` included) must be
-      # in the asset cache for the compiler differential to compile them.
-      - name: Write id 1.01, the rerelease codebases and the mods at the bar to the asset cache
+      # id 1.01 (compiled by id's qcc) and the six rerelease codebases (compiled by FTEQCC).
+      - name: Write id 1.01 and the rerelease codebases to the asset cache
         run: |
           cargo xtask corpus fetch id-1.01 rerelease rerelease-hipnotic rerelease-rogue \
-            rerelease-mg1 rerelease-ctf rerelease-mg3 copper librequake qc-conduit swab
+            rerelease-mg1 rerelease-ctf rerelease-mg3
       - name: Compile the rerelease with FTEQCC
         run: cargo xtask oracles rerelease "$QS_TEST_ASSETS/codebase"
       # P1-14: every corpus progs.dat round-trips through qc-progs; it also writes the progs the
@@ -92,15 +89,80 @@ jobs:
       # statement coverage (TEST-6, ADR-0013).
       - name: Run the full differential VM suite
         run: cargo xtask differential --full
-      # P2-09 and P2-10: the compiler differential's nightly run, 128 rounds of calls to every
-      # function of id 1.01 as qcc compiles it and of the rerelease as the pinned FTEQCC compiles
-      # it, against qc-codegen with fold off and on (DIFF-12, DIFF-12.8).
+
+  # P2-09 and P2-10: the compiler differential's nightly run, 128 rounds of calls to every
+  # function of one codebase as its oracle compiles it (id's qcc for id 1.01, the pinned FTEQCC
+  # for the rerelease and the corpus mods at the bar), against qc-codegen with fold off and on
+  # (DIFF-12, DIFF-12.6, DIFF-12.14, DIFF-12.18); one job per codebase, since one takes up to
+  # an hour.
+  compiler-diff:
+    name: Compiler differential (${{ matrix.codebase }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        codebase:
+          - id-1.01
+          - rerelease
+          - rerelease-hipnotic
+          - rerelease-rogue
+          - rerelease-mg1
+          - rerelease-mg3
+          - rerelease-ctf
+          - copper
+          - librequake
+          - qc-conduit
+          - swab
+          - arcane-dimensions
+          - crmod7
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: differential-${{ runner.os }}
+          save-if: false
+      - name: Point QS_TEST_ASSETS outside the source tree
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/test-assets/downloads
+          key: test-assets-${{ runner.os }}-${{ hashFiles('corpus/manifest.toml') }}
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            target/oracles/src
+            target/oracles/bin
+          key: oracles-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**') }}
+      - name: Build and check the oracles
+        run: cargo xtask oracles
+      # The codebase's sources, its `progs.src` included, in the asset cache for the compiler
+      # differential to compile them with its oracle and with qc-codegen.
+      - name: Write the codebase to the asset cache
+        env:
+          CODEBASE: ${{ matrix.codebase }}
+        run: cargo xtask corpus fetch "$CODEBASE"
       - name: Run the full compiler differential
-        run: cargo xtask compiler-diff --full
-      # DIFF-12.8: the results table, published even when a codebase fails.
+        env:
+          CODEBASE: ${{ matrix.codebase }}
+        run: cargo xtask compiler-diff --full "$CODEBASE"
+      # DIFF-12.14: the results table, published even when the codebase fails.
       - name: Publish the compiler differential's results table
         if: ${{ !cancelled() }}
+        env:
+          CODEBASE: ${{ matrix.codebase }}
         run: |
-          if [[ -f target/compiler-diff/summary.md ]]; then
-            cat target/compiler-diff/summary.md >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f "target/compiler-diff/$CODEBASE/summary.md" ]]; then
+            cat "target/compiler-diff/$CODEBASE/summary.md" >> "$GITHUB_STEP_SUMMARY"
           fi

@@ -617,7 +617,10 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
 - **DIFF-12.6** `cargo xtask compiler-diff` compiles each vanilla corpus codebase (`id-1.01`)
   with id's `qcc` and with `qc-codegen` with `--opt fold` off and on (QC-27.20), and compares
   `qcc`'s progs with each of the two. `--fast`, which CI runs on every change, makes 32
-  rounds; `--full`, which the nightly differential workflow runs, makes 128.
+  rounds; `--full`, which the nightly differential workflow runs, makes 128 over exactly one
+  codebase, named on the command line, since one full run takes up to an hour: the workflow
+  runs one job per codebase in parallel, and a local run names the codebase it is after. Each
+  codebase's progs and results table are under `target/compiler-diff/<id>/`.
 - **DIFF-12.7** When the two progs' definitions, functions or strings differ, a call's return
   value is compared too, since the return slot is named by neither. A version 6 progs does not
   record a function's return type, so the slot's first word is read as a float, a string, an
@@ -647,8 +650,11 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   (!def->symbolheader->used) { ... return; }`), so a definition it writes for one is at slot 0.
   So: (1) the fields must have the same names, as DIFF-12.3 says; (2) a global of either progs
   inside a QuakeC function's locals (from `parm_start`, `locals` slots) is a local and is not
-  compared, unless it is a function definition whose value is the QuakeC function of its name,
-  as a state's `[frame, next]` declares `next` inside the body; (3) every other named global of
+  compared, unless it is a function definition whose value is a QuakeC function of its name,
+  as a state's `[frame, next]` declares `next` inside the body, and as ours gives an
+  `ArrayGet*NAME` or `ArraySet*NAME` made inside a body its slot among the body's locals;
+  several functions share such a name, one for each `for` statement that subscripts a local
+  array (FTEF-19.78), and the one judged is the function the slot holds; (3) every other named global of
   the first progs at a slot other than 0 must be found among ours in the same order, the next
   one of its name, and is compared with it; ours may name more. FTEQCC also gives named
   constants of one value one slot, so DIFF-12.2's draw leaves out a float or string global whose
@@ -672,8 +678,11 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   (!def->symbolheader->used) { ... return; }`), so a definition it writes for one is at slot 0.
   So: (1) the fields must have the same names, as DIFF-12.3 says; (2) a global of either progs
   inside a QuakeC function's locals (from `parm_start`, `locals` slots) is a local and is not
-  compared, unless it is a function definition whose value is the QuakeC function of its name,
-  as a state's `[frame, next]` declares `next` inside the body; (3) every other named global of
+  compared, unless it is a function definition whose value is a QuakeC function of its name,
+  as a state's `[frame, next]` declares `next` inside the body, and as ours gives an
+  `ArrayGet*NAME` or `ArraySet*NAME` made inside a body its slot among the body's locals;
+  several functions share such a name, one for each `for` statement that subscripts a local
+  array (FTEF-19.78), and the one judged is the function the slot holds; (3) every other named global of
   the first progs at a slot other than 0 must be found among ours in the same order, the next
   one of its name, and is compared with it; ours may name more. FTEQCC also gives named
   constants of one value one slot, so DIFF-12.2's draw leaves out a float or string global whose
@@ -698,20 +707,20 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   is compiled with the pinned FTEQCC as `cargo xtask oracles rerelease` compiles it,
   the oracle progs, and with `qc-codegen` in the FTEQCC dialect, with `--opt fold` off and on,
   and each pair is held to DIFF-12.5's bar: `rerelease`, Scourge of Armagon, Dissolution of
-  Eternity, Dimension of the Past and Dawn of the Machine, the last with `-Fautoproto`'s
-  prototypes as FTEQCC is given it (FTE-1.2). Capture the Flag, which has no divergence but
-  whose calls reach under 90% of its statements, is compared when a run names it, and joins
-  the nightly set once it passes. Every pair compared adds a row to
-  the results table `target/compiler-diff/summary.md`: the codebase, the oracle's progs and
-  ours, the divergences, the statements executed, and whether it passes; the nightly
-  differential workflow publishes it as the run's summary.
+  Eternity, Dimension of the Past, Dawn of the Machine, the last with `-Fautoproto`'s
+  prototypes as FTEQCC is given it (FTE-1.2), and Capture the Flag, whose calls reach 90% of
+  its statements with the draws of DIFF-12.21 and DIFF-12.22. Every pair compared adds a row to
+  the codebase's results table `target/compiler-diff/<id>/summary.md`: the codebase, the
+  oracle's progs and ours, the divergences, the statements executed, and whether it passes;
+  the nightly differential workflow publishes each job's table as the run's summary.
 - **DIFF-12.18** `cargo xtask compiler-diff --full` also compares the corpus mods the pinned
   FTEQCC compiles with `-Tid` (COMP-8): Copper, Arcane Dimensions, librequake, crmod7, QC
   Conduit and SWAB, each compiled with the flags of DIFF-12.14 in a copy of its directory, and
   with `qc-codegen` in the FTEQCC dialect, of a codebase with several modules its server module
   `progs.src`, as FTEQCC compiles that one with no `-srcfile`. Each pair is compared as a
   rerelease codebase is, with the FTEQCC rules of DIFF-12.11, and held to DIFF-12.5's bar. A
-  mod at the bar is in the nightly set; one not yet at it is compared when a run names it.
+  mod at the bar is in the nightly set, all six since P2-157; one not yet at it is compared
+  when a run names it.
 - **DIFF-12.15** One time in two, `self` for a call is drawn from the edicts in use whose
   named fields of function type hold the function called, when any does, as the engine calls a
   `think`, `touch` or `use` with its own edict as `self`; otherwise as DIFF-12.2 draws it. The
@@ -737,6 +746,33 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   errors, stops the run with an error. The two worlds are then compared as DIFF-12.3 compares
   two calls, the statements and builtins of every frame with them; a difference there is the
   run's one divergence, and no function is called.
+- **DIFF-12.21** After the share's draws of a round above 0 of four (DIFF-12.2), the fields
+  and variables the called function's own statements name are drawn too, each one time in
+  two: for `self`, `other`, each entity parameter and, when the round drew it, the world, the
+  field of each field global an operand of the body's statements names, by the field's type;
+  and each float or string variable an operand names (a global at a slot other than 0 whose
+  value in the progs is 0) that DIFF-12.2 draws at all. The values are drawn as DIFF-12.2 draws
+  them, from the function's own constants first. So a call reaches the branches its own
+  conditions guard, which a share of every field seldom sets together: a flag's `think` with
+  `self.cnt` carried and `self.owner` a player, an obituary with the weapon and the water type
+  its texts name (`rerelease-ctf`'s `TeamCaptureFlagThink` and `ClientObituary`, P2-157). The
+  draws stay deterministic (DIFF-1.4), and a function whose statements name no field or
+  variable draws as before.
+- **DIFF-12.22** A field, variable or parameter DIFF-12.21 draws takes, one time in two, a
+  value the called function's own statements compare it with, when they compare it with one
+  of its type; otherwise it is drawn as DIFF-12.2 draws it. The compared values are read from
+  the body's statements: a field a `LOAD` reads into a slot, a float or string variable, or a
+  parameter of the call is a name, and a `STORE` of a name carries it to the slot stored to;
+  an `EQ`, `NE`, `LT`, `GT`, `LE` or `GE` of a name and a float or string constant gives the
+  name the constant; a `BITAND` or `BITOR` of a name and a constant gives it the constant and
+  0; an `IF`, `IFNOT` or `NOT` of a name gives it 0 and 1, `""` and `world`; an `EQ_E` or
+  `NE_E` of a name gives it `world`; and an `EQ`, `NE` or ordering of two names pairs them,
+  so after the draws the second of a pair takes the first's value one time in two, for each
+  edict the first was drawn for, or as a variable. A constant is a global at a slot whose value
+  is not 0 or whose first definition is `IMMEDIATE`. So `rerelease-ctf`'s
+  `TeamCaptureFlagTouch` runs with `other.team` equal to `other.lastteam` and `self.cnt` at
+  one of the flag states its body names, and `ClientObituary` with `attacker.classname` one
+  of the texts it compares it with. The draws stay deterministic (DIFF-1.4).
 - **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and
   Arcane Dimensions, are set up and called with the mock engine under vkQuake's profile
   (BUILTIN-18): crmod7 calls extension builtins while it sets up its world, and Arcane

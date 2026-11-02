@@ -170,6 +170,10 @@ pub fn coverage(executed: &BTreeSet<i32>, total: u32) -> f64 {
     f64::from(count) / f64::from(total)
 }
 
+/// What a run tells of its progress: a scenario's name, the functions called so far and the
+/// functions to call.
+pub type Progress<'a> = dyn Fn(&str, usize, usize) + Sync + 'a;
+
 /// The rounds of calls to each function in the CI subset (DIFF-12.6).
 pub const FAST_ROUNDS: u32 = 32;
 /// The rounds of calls to each function in the nightly run (DIFF-12.6).
@@ -283,7 +287,9 @@ impl Oracle {
 }
 
 /// Runs [`run_calls`] on `theirs` and `ours` from each world of [`crate::runner::scenarios`],
-/// `rounds` rounds each (DIFF-12.20, DIFF-12.5); `oracle` compiled `theirs`.
+/// `rounds` rounds each (DIFF-12.20, DIFF-12.5); `oracle` compiled `theirs`. `progress` is
+/// told a scenario's name, the functions it has called so far and the functions it will call,
+/// after every [`PROGRESS_EVERY`] functions and at its end, from the scenario's own thread.
 ///
 /// # Errors
 ///
@@ -294,6 +300,7 @@ pub fn run_codebase(
     ours: &[u8],
     rounds: u32,
     profile: EngineProfile,
+    progress: &Progress<'_>,
 ) -> Result<CodebaseReport, CallsError> {
     let mut worlds = Vec::new();
     for spec in scenarios("") {
@@ -309,7 +316,10 @@ pub fn run_codebase(
             .iter()
             .map(|(name, scenario, entities)| {
                 let handle = scope.spawn(move || {
-                    run_calls(oracle, theirs, ours, scenario, entities, rounds, profile)
+                    let report = |done, of| progress(name, done, of);
+                    run_calls_reporting(
+                        oracle, theirs, ours, scenario, entities, rounds, profile, &report,
+                    )
                 });
                 (*name, handle)
             })
@@ -381,6 +391,37 @@ pub fn run_calls(
     rounds: u32,
     profile: EngineProfile,
 ) -> Result<Report, CallsError> {
+    run_calls_reporting(
+        oracle,
+        theirs,
+        ours,
+        scenario,
+        entities,
+        rounds,
+        profile,
+        &|_, _| {},
+    )
+}
+
+/// How often a scenario reports its progress: after every this many functions.
+const PROGRESS_EVERY: usize = 250;
+
+/// [`run_calls`], reporting to `progress` the functions called so far and the functions to
+/// call after every [`PROGRESS_EVERY`] functions and at the end.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the run's inputs, each one named; a struct would only rename them"
+)]
+fn run_calls_reporting(
+    oracle: Oracle,
+    theirs: &[u8],
+    ours: &[u8],
+    scenario: &Scenario,
+    entities: &[u8],
+    rounds: u32,
+    profile: EngineProfile,
+    progress: &dyn Fn(usize, usize),
+) -> Result<Report, CallsError> {
     let refused = |e: qc_progs::ReadError| CallsError::Refused(RunRefused::Progs(e.to_string()));
     let their_progs = Progs::read(theirs).map_err(refused)?;
     let our_progs = Progs::read(ours).map_err(refused)?;
@@ -428,7 +469,16 @@ pub fn run_calls(
     }
 
     let drawer = Drawer::new(&their_world);
-    for (index, function) in their_progs.functions().iter().enumerate() {
+    let functions = their_progs.functions();
+    let of = functions.iter().filter(|f| f.first_statement > 0).count();
+    let mut done = 0_usize;
+    for (index, function) in functions.iter().enumerate() {
+        if function.first_statement > 0 {
+            done = done.saturating_add(1);
+            if done.checked_rem(PROGRESS_EVERY) == Some(0) || done == of {
+                progress(done, of);
+            }
+        }
         let (Some(name), Ok(their_index)) =
             (their_progs.string(function.s_name), i32::try_from(index))
         else {
@@ -777,15 +827,22 @@ impl<'a, 'p> Program<'a, 'p> {
     }
 
     /// Whether `global` is a parameter or local of a QuakeC function: a global in its locals
-    /// that is not the definition of the QuakeC function of its name, as a state's
-    /// `[frame, next]` declares `next` while the body is compiled (QC-13.9).
+    /// that is not the definition of a QuakeC function of its name, as a state's
+    /// `[frame, next]` declares `next` while the body is compiled (QC-13.9), and as
+    /// `qc-codegen` gives an `ArrayGet*NAME` made inside a body its slot among the body's
+    /// locals; several functions may share the name, one for each `for` statement that
+    /// subscripts a local array (FTEF-19.78), so the slot's own function is the one looked at
+    /// (DIFF-12.11).
     fn is_local(&self, (name, def_type, ofs): &Global) -> bool {
         let declares_function = *def_type == DefType::Known(Etype::Function)
-            && self.functions.get(name).is_some_and(|index| {
-                self.progs
-                    .globals()
-                    .get(*ofs)
-                    .is_some_and(|slot| u32::try_from(*index) == Ok(slot.bits()))
+            && self.progs.globals().get(*ofs).is_some_and(|slot| {
+                usize::try_from(slot.bits())
+                    .ok()
+                    .and_then(|index| self.progs.functions().get(index))
+                    .is_some_and(|function| {
+                        function.first_statement > 0
+                            && self.progs.string(function.s_name) == Some(name.as_slice())
+                    })
             });
         !declares_function
             && self

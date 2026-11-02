@@ -505,6 +505,35 @@ impl Program {
         Ok(place)
     }
 
+    /// `QCC_MakeIntConst`: the global of an integer constant of type `ty`, whose one word is
+    /// `bits`; an `IMMEDIATE` of that type holding the word is reused.
+    pub(crate) fn int_immediate(&mut self, bits: u32, ty: ValueType) -> Result<usize, Internal> {
+        let found = self.defs.iter().position(|d| {
+            d.initialized
+                && d.constant
+                && d.count.is_none()
+                && d.ty == ty
+                && self.word(d.ofs) == bits
+        });
+        if let Some(place) = found {
+            return Ok(place);
+        }
+        let ofs = self.allocate(1)?;
+        let place = self.defs.len();
+        self.defs.push(Def {
+            name: "IMMEDIATE".to_owned(),
+            ty,
+            ofs,
+            scope: None,
+            initialized: true,
+            constant: true,
+            count: None,
+            id: None,
+        });
+        self.set_words(ofs, &[bits])?;
+        Ok(place)
+    }
+
     /// Whether the words from `ofs` hold `literal`'s value, compared as `PR_ParseImmediate`
     /// compares: floats and each vector component with `==`, strings by their text at the
     /// stored offset (QC-20.2).

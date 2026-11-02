@@ -10,7 +10,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qc_progs::{Function, Progs};
+use qc_progs::opcode::Opcode;
+use qc_progs::{Function, Progs, Statement};
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::ServerState;
 
@@ -105,45 +106,278 @@ fn write_globals(host: &mut Host<'_>, ofs: usize, draw: &Draw) {
     }
 }
 
-/// The constants a value is drawn from (DIFF-12.2): float constants by their bits, and texts.
+/// What a function's statements name (DIFF-12.2, DIFF-12.21): the constants a value is drawn
+/// from, float constants by their bits and texts, and the fields and variables drawn for the
+/// call.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct Pools {
     pub(super) numbers: Vec<u32>,
     pub(super) texts: Vec<Vec<u8>>,
+    /// The names of the fields whose field globals the statements name (DIFF-12.21).
+    pub(super) fields: Vec<Vec<u8>>,
+    /// The names of the float and string variables the statements name: globals whose value
+    /// in the progs is 0 (DIFF-12.21).
+    pub(super) variables: Vec<Vec<u8>>,
+    /// The values the statements compare each named field, variable or parameter with
+    /// (DIFF-12.22), by name.
+    pub(super) compared: ComparedByName,
+    /// The pairs of names the statements compare with each other (DIFF-12.22), the second
+    /// drawn to the first's value.
+    pub(super) pairs: Pairs,
+}
+
+/// The compared values of a function's statements, by name (DIFF-12.22).
+type ComparedByName = BTreeMap<Vec<u8>, Compared>;
+/// The pairs of names a function's statements compare with each other (DIFF-12.22).
+type Pairs = Vec<(Vec<u8>, Vec<u8>)>;
+
+/// The values a function's statements compare one name with (DIFF-12.22).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct Compared {
+    /// Float constants, by their bits; a truth test adds 0 and 1, a bit test its mask and 0.
+    pub(super) numbers: BTreeSet<u32>,
+    /// String constants; a truth test adds `""`.
+    pub(super) texts: BTreeSet<Vec<u8>>,
+    /// Whether an entity is tested for being `world`.
+    pub(super) world: bool,
+}
+
+impl Compared {
+    /// A value drawn from these for a value of type `def_type`, or `None` when there is none
+    /// of that type.
+    fn draw(&self, rng: &mut Rng, def_type: DefType) -> Option<Draw> {
+        match drawable(def_type)? {
+            Etype::Float => {
+                let numbers: Vec<u32> = self.numbers.iter().copied().collect();
+                rng.pick(&numbers)
+                    .map(|bits| Draw::Float(f32::from_bits(*bits)))
+            }
+            Etype::String => {
+                let texts: Vec<&Vec<u8>> = self.texts.iter().collect();
+                rng.pick(&texts).map(|text| Draw::Text((*text).clone()))
+            }
+            Etype::Entity => self.world.then_some(Draw::Entity(0)),
+            Etype::Vector | Etype::Void | Etype::Field | Etype::Function | Etype::Pointer => None,
+        }
+    }
+}
+
+/// What an operand of a statement is, for the compared values (DIFF-12.22).
+enum Operand {
+    /// A field a `LOAD` read into the slot, a variable, or a parameter, by name.
+    Named(Vec<u8>),
+    /// A float constant, by its bits.
+    Number(u32),
+    /// A string constant.
+    Text(Vec<u8>),
+    /// Anything else: a temporary, a vector, a function.
+    Other,
+}
+
+/// Records that `name` is compared with `other`: a constant among its values, a name a pair.
+fn record(compared: &mut ComparedByName, pairs: &mut Pairs, name: Vec<u8>, other: &Operand) {
+    let entry = compared.entry(name.clone()).or_default();
+    match other {
+        Operand::Number(bits) => {
+            entry.numbers.insert(*bits);
+        }
+        Operand::Text(text) => {
+            entry.texts.insert(text.clone());
+        }
+        Operand::Named(second) => {
+            if *second != name {
+                pairs.push((name, second.clone()));
+            }
+        }
+        Operand::Other => {}
+    }
+}
+
+/// The compared values and pairs of the statements `statements` (DIFF-12.22): a field read by
+/// a `LOAD` into a slot, a float or string variable, or a parameter in `parms`, compared with
+/// a constant by `EQ`, `NE`, `LT`, `GT`, `LE` or `GE`, masked by `BITAND` or `BITOR`, or
+/// tested by `IF`, `IFNOT` or `NOT`; a `STORE` carries the name to the slot stored to.
+fn mine_compared(
+    progs: &Progs<'_>,
+    (types, names): (&BTreeMap<u32, DefType>, &BTreeMap<u32, Vec<u8>>),
+    parms: std::ops::Range<i32>,
+    statements: impl Iterator<Item = Statement>,
+) -> (ComparedByName, Pairs) {
+    let mut compared = ComparedByName::new();
+    let mut pairs = Pairs::new();
+    let mut loaded: BTreeMap<i32, Vec<u8>> = BTreeMap::new();
+    let operand = |loaded: &BTreeMap<i32, Vec<u8>>, slot: i32| -> Operand {
+        if let Some(name) = loaded.get(&slot) {
+            return Operand::Named(name.clone());
+        }
+        let (Ok(ofs), Ok(index)) = (u32::try_from(slot), usize::try_from(slot)) else {
+            return Operand::Other;
+        };
+        let Some(value) = progs.globals().get(index) else {
+            return Operand::Other;
+        };
+        let name = names.get(&ofs);
+        let immediate = name.is_some_and(|name| name == b"IMMEDIATE");
+        match types.get(&ofs) {
+            Some(DefType::Known(Etype::Float)) => {
+                if parms.contains(&slot) || (value.bits() == 0 && !immediate && ofs != 0) {
+                    name.cloned().map_or(Operand::Other, Operand::Named)
+                } else {
+                    Operand::Number(value.bits())
+                }
+            }
+            Some(DefType::Known(Etype::String)) => {
+                if parms.contains(&slot) || (value.bits() == 0 && !immediate && ofs != 0) {
+                    name.cloned().map_or(Operand::Other, Operand::Named)
+                } else {
+                    progs
+                        .string(value.as_i32())
+                        .map_or(Operand::Other, |text| Operand::Text(text.to_vec()))
+                }
+            }
+            Some(DefType::Known(Etype::Entity)) if parms.contains(&slot) => {
+                name.cloned().map_or(Operand::Other, Operand::Named)
+            }
+            _ => Operand::Other,
+        }
+    };
+    for statement in statements {
+        let Some(op) = Opcode::from_number(statement.op) else {
+            continue;
+        };
+        let (a, b, c) = (statement.a, statement.b, statement.c);
+        match op {
+            Opcode::LoadF
+            | Opcode::LoadV
+            | Opcode::LoadS
+            | Opcode::LoadEnt
+            | Opcode::LoadFld
+            | Opcode::LoadFnc => {
+                let field = u32::try_from(b)
+                    .ok()
+                    .filter(|ofs| types.get(ofs) == Some(&DefType::Known(Etype::Field)))
+                    .and_then(|ofs| names.get(&ofs).cloned());
+                match field {
+                    Some(name) => {
+                        loaded.insert(c, name);
+                    }
+                    None => {
+                        loaded.remove(&c);
+                    }
+                }
+            }
+            Opcode::StoreF | Opcode::StoreS | Opcode::StoreEnt => match operand(&loaded, a) {
+                Operand::Named(name) => {
+                    loaded.insert(b, name);
+                }
+                Operand::Number(_) | Operand::Text(_) | Operand::Other => {
+                    loaded.remove(&b);
+                }
+            },
+            Opcode::EqF
+            | Opcode::EqS
+            | Opcode::NeF
+            | Opcode::NeS
+            | Opcode::Le
+            | Opcode::Ge
+            | Opcode::Lt
+            | Opcode::Gt
+            | Opcode::BitAnd
+            | Opcode::BitOr => {
+                let (first, second) = (operand(&loaded, a), operand(&loaded, b));
+                let masked = matches!(op, Opcode::BitAnd | Opcode::BitOr);
+                if let Operand::Named(name) = &first {
+                    record(&mut compared, &mut pairs, name.clone(), &second);
+                    if masked {
+                        record(&mut compared, &mut pairs, name.clone(), &Operand::Number(0));
+                    }
+                }
+                if let Operand::Named(name) = &second {
+                    record(&mut compared, &mut pairs, name.clone(), &first);
+                    if masked {
+                        record(&mut compared, &mut pairs, name.clone(), &Operand::Number(0));
+                    }
+                }
+                loaded.remove(&c);
+            }
+            Opcode::If | Opcode::IfNot | Opcode::NotF | Opcode::NotS | Opcode::NotEnt => {
+                if let Operand::Named(name) = operand(&loaded, a) {
+                    let entry = compared.entry(name).or_default();
+                    entry.numbers.insert(0);
+                    entry.numbers.insert(1.0_f32.to_bits());
+                    entry.texts.insert(Vec::new());
+                    entry.world = true;
+                }
+                if matches!(op, Opcode::NotF | Opcode::NotS | Opcode::NotEnt) {
+                    loaded.remove(&c);
+                }
+            }
+            Opcode::EqE | Opcode::NeE => {
+                if let Operand::Named(name) = operand(&loaded, a) {
+                    compared.entry(name).or_default().world = true;
+                }
+                if let Operand::Named(name) = operand(&loaded, b) {
+                    compared.entry(name).or_default().world = true;
+                }
+                loaded.remove(&c);
+            }
+            _ => {
+                loaded.remove(&c);
+            }
+        }
+    }
+    (compared, pairs)
 }
 
 impl Pools {
-    /// The constants among the global slots `slots`: each slot with a value other than 0 in the
-    /// progs, read through the type of the first definition at it, a float or a string.
+    /// What the global slots `slots` name: the constants, each slot with a value other than 0
+    /// in the progs, read through the type of the first definition at it, a float or a
+    /// string; the fields, each slot a field definition names; and the variables, each slot
+    /// outside 0 with the value 0 that a float or string definition names.
     pub(super) fn of(
         progs: &Progs<'_>,
-        types: &BTreeMap<u32, DefType>,
+        (types, names): (&BTreeMap<u32, DefType>, &BTreeMap<u32, Vec<u8>>),
         slots: impl Iterator<Item = i32>,
     ) -> Self {
         let mut numbers = BTreeSet::new();
         let mut texts = BTreeSet::new();
+        let mut fields = BTreeSet::new();
+        let mut variables = BTreeSet::new();
         for slot in slots {
             let (Ok(ofs), Ok(index)) = (u32::try_from(slot), usize::try_from(slot)) else {
                 continue;
             };
-            let Some(value) = progs.globals().get(index).filter(|value| value.bits() != 0) else {
+            let Some(value) = progs.globals().get(index) else {
                 continue;
             };
-            match types.get(&ofs) {
-                Some(DefType::Known(Etype::Float)) => {
-                    numbers.insert(value.bits());
+            let name = || names.get(&ofs).cloned();
+            match (types.get(&ofs), value.bits()) {
+                (Some(DefType::Known(Etype::Field)), _) => {
+                    fields.extend(name());
                 }
-                Some(DefType::Known(Etype::String)) => {
+                (Some(DefType::Known(Etype::Float | Etype::String)), 0) => {
+                    if ofs != 0 {
+                        variables.extend(name());
+                    }
+                }
+                (Some(DefType::Known(Etype::Float)), bits) => {
+                    numbers.insert(bits);
+                }
+                (Some(DefType::Known(Etype::String)), _) => {
                     if let Some(text) = progs.string(value.as_i32()) {
                         texts.insert(text.to_vec());
                     }
                 }
-                Some(_) | None => {}
+                (Some(_) | None, _) => {}
             }
         }
         Self {
             numbers: numbers.into_iter().collect(),
             texts: texts.into_iter().collect(),
+            fields: fields.into_iter().collect(),
+            variables: variables.into_iter().collect(),
+            compared: BTreeMap::new(),
+            pairs: Vec::new(),
         }
     }
 }
@@ -155,6 +389,8 @@ pub(super) struct Drawer<'a, 'p> {
     all: Pools,
     /// The type of the first global definition at each slot.
     types: BTreeMap<u32, DefType>,
+    /// The name of the first global definition at each slot.
+    names: BTreeMap<u32, Vec<u8>>,
     /// Each QuakeC function's first statement and the statement after its last (DIFF-11.3).
     bodies: BTreeMap<i32, i32>,
     /// The edicts in use, the world first.
@@ -165,9 +401,9 @@ pub(super) struct Drawer<'a, 'p> {
     /// the progs is 0, so variables rather than constants, outside slot 0 and in a slot no
     /// other float or string definition names, as FTEQCC's merged constants share one
     /// (DIFF-12.2, DIFF-12.11).
-    variables: Vec<(Vec<u8>, DefType)>,
+    variables: BTreeMap<Vec<u8>, DefType>,
     /// The named fields of a type a value is drawn for.
-    fields: Vec<(Vec<u8>, DefType)>,
+    fields: BTreeMap<Vec<u8>, DefType>,
     /// For each QuakeC function by its first statement, the edicts in use whose function
     /// fields (`think`, `touch`, `use` and the rest) hold it (DIFF-12.15).
     owners: BTreeMap<i32, Vec<usize>>,
@@ -247,20 +483,25 @@ impl<'a, 'p> Drawer<'a, 'p> {
             .map(|(name, (def_type, _))| (name.clone(), *def_type))
             .collect();
         let mut types = BTreeMap::new();
+        let mut names = BTreeMap::new();
         for def in progs.global_defs().iter() {
             types.entry(def.ofs).or_insert(def.def_type());
+            if let Some(name) = progs.string(def.s_name) {
+                names.entry(def.ofs).or_insert_with(|| name.to_vec());
+            }
         }
         let owners = owners(world, progs);
         let slots = progs
             .global_defs()
             .iter()
             .filter_map(|def| i32::try_from(def.ofs).ok());
-        let mut all = Pools::of(progs, &types, slots);
+        let mut all = Pools::of(progs, (&types, &names), slots);
         all.texts.extend(TEXTS.iter().map(|text| text.to_vec()));
         Self {
             progs,
             all,
             types,
+            names,
             bodies: bodies(progs),
             edicts: world.in_use(),
             owners,
@@ -280,10 +521,25 @@ impl<'a, 'p> Drawer<'a, 'p> {
         let first = function.first_statement;
         let end = self.bodies.get(&first).copied().unwrap_or(first);
         let statements = self.progs.statements();
-        let slots = (first..end)
-            .filter_map(|n| statements.get(usize::try_from(n).ok()?))
-            .flat_map(|s| [s.a, s.b, s.c]);
-        Pools::of(self.progs, &self.types, slots)
+        let body = || (first..end).filter_map(|n| statements.get(usize::try_from(n).ok()?));
+        let slots = body().flat_map(|s| [s.a, s.b, s.c]);
+        let mut pools = Pools::of(self.progs, (&self.types, &self.names), slots);
+        let parm_words: i32 = function
+            .parm_size
+            .iter()
+            .take(
+                usize::try_from(function.numparms)
+                    .unwrap_or(0)
+                    .min(MAX_PARMS),
+            )
+            .map(|size| i32::from(*size))
+            .sum();
+        let parms = function.parm_start..function.parm_start.saturating_add(parm_words);
+        let (compared, pairs) =
+            mine_compared(self.progs, (&self.types, &self.names), parms, body());
+        pools.compared = compared;
+        pools.pairs = pairs;
+        pools
     }
 
     /// An edict in use.
@@ -323,6 +579,25 @@ impl<'a, 'p> Drawer<'a, 'p> {
                 Draw::Float(self.float(rng, own))
             }
         })
+    }
+
+    /// A value for the field, variable or parameter `name` of type `def_type`: one time in
+    /// two a value the called function's statements compare it with, when there is one of
+    /// its type (DIFF-12.22), else as [`Drawer::value`] draws it.
+    fn named_value(
+        &self,
+        rng: &mut Rng,
+        own: &Pools,
+        name: &[u8],
+        def_type: DefType,
+    ) -> Option<Draw> {
+        if rng.below(2) == 0
+            && let Some(compared) = own.compared.get(name)
+            && let Some(draw) = compared.draw(rng, def_type)
+        {
+            return Some(draw);
+        }
+        self.value(rng, own, def_type)
     }
 
     /// A float: a third of the time one of the called function's constants, a third one of the
@@ -374,7 +649,7 @@ impl<'a, 'p> Drawer<'a, 'p> {
         edicts.sort_unstable();
         edicts.dedup();
         let mut fields = Vec::new();
-        for edict in edicts {
+        for edict in edicts.iter().copied() {
             for (field, def_type) in &self.fields {
                 if rng.below(64) < share
                     && let Some(draw) = self.value(rng, own, *def_type)
@@ -389,6 +664,50 @@ impl<'a, 'p> Drawer<'a, 'p> {
                 && let Some(draw) = self.value(rng, own, *def_type)
             {
                 globals.push((name.clone(), draw));
+            }
+        }
+        // DIFF-12.21: the fields and variables the function's statements name are drawn one
+        // time in two each, after the share's draws, so a call reaches the branches its own
+        // conditions guard.
+        if share > 0 {
+            for edict in &edicts {
+                for name in &own.fields {
+                    if rng.below(2) == 0
+                        && let Some(def_type) = self.fields.get(name)
+                        && let Some(draw) = self.named_value(rng, own, name, *def_type)
+                    {
+                        fields.push((*edict, name.clone(), draw));
+                    }
+                }
+            }
+            for name in &own.variables {
+                if rng.below(2) == 0
+                    && let Some(def_type) = self.variables.get(name)
+                    && let Some(draw) = self.named_value(rng, own, name, *def_type)
+                {
+                    globals.push((name.clone(), draw));
+                }
+            }
+            // DIFF-12.22: a name compared with another takes its value one time in two.
+            for (first, second) in &own.pairs {
+                if rng.below(2) != 0 {
+                    continue;
+                }
+                let found: Vec<(usize, Draw)> = fields
+                    .iter()
+                    .filter(|(_, name, _)| name == first)
+                    .map(|(edict, _, draw)| (*edict, draw.clone()))
+                    .collect();
+                for (edict, draw) in found {
+                    if self.fields.contains_key(second) {
+                        fields.push((edict, second.clone(), draw));
+                    }
+                }
+                if let Some((_, draw)) = globals.iter().rev().find(|(name, _)| name == first)
+                    && self.variables.contains_key(second)
+                {
+                    globals.push((second.clone(), draw.clone()));
+                }
             }
         }
         let server = if round % 8 == 7 {
@@ -422,7 +741,11 @@ impl<'a, 'p> Drawer<'a, 'p> {
                     .copied()
                     .unwrap_or(DefType::Known(Etype::Float)),
             };
-            parms.push(self.value(rng, own, def_type).unwrap_or(Draw::Float(0.0)));
+            let draw = match self.names.get(&ofs) {
+                Some(name) => self.named_value(rng, own, name, def_type),
+                None => self.value(rng, own, def_type),
+            };
+            parms.push(draw.unwrap_or(Draw::Float(0.0)));
             ofs = ofs.saturating_add(u32::from(*size));
         }
         parms
