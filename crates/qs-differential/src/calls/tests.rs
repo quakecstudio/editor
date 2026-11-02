@@ -676,12 +676,30 @@ fn a_report_is_a_row_of_the_results_table() {
 }
 
 // spec DIFF-12.20, DIFF-12.5: a codebase runs every world of the differential scenarios and
-// unions their statements.
+// unions their statements; each scenario reports its progress, the last report every function
 #[test]
 fn a_codebase_runs_every_scenario() {
     let progs = compile(FOLDED, false);
     let folded = compile(FOLDED, true);
-    let report = run_codebase(Oracle::Qcc, &progs, &folded, 2, EngineProfile::Id).unwrap();
+    let reported = std::sync::Mutex::new(Vec::new());
+    let progress = |name: &str, done: usize, of: usize| {
+        reported.lock().unwrap().push((name.to_owned(), done, of));
+    };
+    let report = run_codebase(
+        Oracle::Qcc,
+        &progs,
+        &folded,
+        2,
+        EngineProfile::Id,
+        &progress,
+    )
+    .unwrap();
+    let reported = reported.into_inner().unwrap();
+    for spec in scenarios("") {
+        let last = reported.iter().rfind(|(n, _, _)| n == spec.name).unwrap();
+        assert_eq!(last.1, last.2, "{}: every function called", spec.name);
+        assert!(last.2 > 0);
+    }
     let names: Vec<_> = report.scenarios.iter().map(|(n, _)| *n).collect();
     let expected: Vec<_> = scenarios("").iter().map(|s| s.name).collect();
     assert_eq!(names, expected);
@@ -692,7 +710,17 @@ fn a_codebase_runs_every_scenario() {
         .flat_map(|(_, r)| r.executed.iter().copied())
         .collect();
     assert_eq!(report.executed, union);
-    assert!(run_codebase(Oracle::Qcc, b"", &folded, 1, EngineProfile::Id).is_err());
+    assert!(
+        run_codebase(
+            Oracle::Qcc,
+            b"",
+            &folded,
+            1,
+            EngineProfile::Id,
+            &|_, _, _| {}
+        )
+        .is_err()
+    );
 }
 
 // spec DIFF-12.2: the generator is seeded by the function's name and the round, so a context
