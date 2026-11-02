@@ -2035,6 +2035,165 @@ fn a_constant_condition_makes_no_test() {
     assert_eq!(body(&p, "w"), [store(6.0), store(9.0), st(Done, 0, 0, 0)]);
 }
 
+// spec FTE-3.6: `if` of a constant of any other type keeps a branch by the constant's word,
+// a string immediate, the empty one too, and an initialised global string among them
+#[test]
+fn an_if_on_a_string_constant_keeps_a_branch() {
+    let p = fte_progs(
+        "float x; string S = \"a\"; entity E;\n\
+         void() t = { if (\"a\") x = 1; else x = 2; if (S) x = 3; else x = 4; };\n\
+         void() u = { if (\"\") x = 5; else x = 6; if (E) x = 7; else x = 8; };\n",
+    );
+    let x = global(&p, "x");
+    let store = |f: f32| st(StoreF, immediate(&p, f), x, 0);
+    assert_eq!(body(&p, "t"), [store(1.0), store(3.0), st(Done, 0, 0, 0)]);
+    assert_eq!(
+        body(&p, "u"),
+        [
+            store(5.0),
+            st(IfNot, global(&p, "E"), 3, 0),
+            store(7.0),
+            st(Goto, 2, 0, 0),
+            store(8.0),
+            st(Done, 0, 0, 0)
+        ]
+    );
+}
+
+// spec FTE-18.13: a field argument's entity that is a call's value stays referenced until
+// the field is loaded, so a later call's clobber copies it first, for a store through it too
+#[test]
+fn a_field_references_entity_is_copied_before_a_later_call() {
+    let p = fte_progs(
+        ".vector origin; entity() spawn = #14; float() bar = #5; vector() barv = #6;\n\
+         void(vector a, float b) foo = #7;\n\
+         void() t = { foo(spawn().origin, bar()); spawn().origin = barv(); };\n",
+    );
+    let (spawn, bar, barv, foo) = (
+        global(&p, "spawn"),
+        global(&p, "bar"),
+        global(&p, "barv"),
+        global(&p, "foo"),
+    );
+    let origin = global(&p, "origin");
+    let t = body(&p, "t");
+    assert_eq!(
+        t,
+        [
+            st(Opcode::Call0, spawn, 0, 0),
+            st(StoreF, 1, t[1].b, 0),
+            st(Opcode::Call0, bar, 0, 0),
+            st(Opcode::LoadV, t[1].b, origin, 4),
+            st(StoreF, 1, 7, 0),
+            st(Call2, foo, 0, 0),
+            st(Opcode::Call0, spawn, 0, 0),
+            st(StoreF, 1, t[7].b, 0),
+            st(Opcode::Call0, barv, 0, 0),
+            st(Opcode::Address, t[7].b, origin, t[9].c),
+            st(Opcode::StorepV, 1, t[9].c, 0),
+            st(Done, 0, 0, 0)
+        ]
+    );
+    assert_ne!(t[1].b, 1);
+}
+
+// spec FTEF-26.15: a fold with one constant frees the operand it drops, a call's value
+// among them, so no later clobber copies it
+#[test]
+fn a_fold_frees_the_calls_value_it_drops() {
+    let p = fte_progs(
+        "float() bar = #5; void() g = #8; float x;\n\
+         void() t = { (x = bar()) && 0; g(); x = (0 && bar()); g(); x = (bar() && 0); g();\n\
+         x = (0 & bar()); g(); x = (1 || bar()); g(); };\n",
+    );
+    let (bar, g, x) = (global(&p, "bar"), global(&p, "g"), global(&p, "x"));
+    let (zero, one) = (immediate(&p, 0.0), immediate(&p, 1.0));
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(Opcode::Call0, bar, 0, 0),
+            st(StoreF, 1, x, 0),
+            st(Opcode::Call0, g, 0, 0),
+            st(Opcode::Call0, bar, 0, 0),
+            st(StoreF, zero, x, 0),
+            st(Opcode::Call0, g, 0, 0),
+            st(Opcode::Call0, bar, 0, 0),
+            st(StoreF, zero, x, 0),
+            st(Opcode::Call0, g, 0, 0),
+            st(Opcode::Call0, bar, 0, 0),
+            st(StoreF, zero, x, 0),
+            st(Opcode::Call0, g, 0, 0),
+            st(Opcode::Call0, bar, 0, 0),
+            st(StoreF, one, x, 0),
+            st(Opcode::Call0, g, 0, 0),
+            st(Done, 0, 0, 0)
+        ]
+    );
+}
+
+// spec FTEF-26.3: a float field passed to an `int` parameter is `ftoi`'s field argument,
+// loaded straight into the first slot, the conversion's value then stored to the slot
+#[test]
+fn a_float_field_of_an_int_parameter_is_converted_through_ftoi() {
+    let p = fte_progs(
+        "int(float f) ftoi = #9; void(int n) f = #10; .float cnt; entity e; float x;\n\
+         void() t = { f(e.cnt); f(x); };\n",
+    );
+    let (ftoi, f, e, x) = (
+        global(&p, "ftoi"),
+        global(&p, "f"),
+        global(&p, "e"),
+        global(&p, "x"),
+    );
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(Opcode::LoadF, e, global(&p, "cnt"), 4),
+            st(Call1, ftoi, 0, 0),
+            st(StoreF, 1, 4, 0),
+            st(Call1, f, 0, 0),
+            st(StoreF, x, 4, 0),
+            st(Call1, ftoi, 0, 0),
+            st(StoreF, 1, 4, 0),
+            st(Call1, f, 0, 0),
+            st(Done, 0, 0, 0)
+        ]
+    );
+}
+
+// spec FTEF-23.10: under `ifvector` a vector condition is `NOT_V` and `IF`, and the jump
+// copies no alias a statement has read (FTE-18.13)
+#[test]
+fn an_ifvector_test_is_not_v_then_if() {
+    let p = fte_progs(
+        "#pragma flag enable ifvector\nvector() vecfn = #5; float() f = #6; void() g = #8;\n\
+         float x;\nvoid() t = { if (vecfn()) g(); x = f(); if (vecfn()) g(); };\n",
+    );
+    let (vecfn, f, g, x) = (
+        global(&p, "vecfn"),
+        global(&p, "f"),
+        global(&p, "g"),
+        global(&p, "x"),
+    );
+    let t = body(&p, "t");
+    assert_eq!(
+        t,
+        [
+            st(Opcode::Call0, vecfn, 0, 0),
+            st(NotV, 1, 0, t[1].c),
+            st(If, t[1].c, 2, 0),
+            st(Opcode::Call0, g, 0, 0),
+            st(Opcode::Call0, f, 0, 0),
+            st(StoreF, 1, x, 0),
+            st(Opcode::Call0, vecfn, 0, 0),
+            st(NotV, 1, 0, t[7].c),
+            st(If, t[7].c, 2, 0),
+            st(Opcode::Call0, g, 0, 0),
+            st(Done, 0, 0, 0)
+        ]
+    );
+}
+
 // spec FTE-3.7: no GOTO past a switch's tests after a body ending in a RETURN that no jump
 // targets past, one after a body ending in a `break` another `break` jumps past, and one
 // after an empty body

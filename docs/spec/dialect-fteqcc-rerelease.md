@@ -123,10 +123,13 @@ Vanilla `qcc` has no `switch`; the words `switch`, `case` and `default` are ordi
   (`if ((!eval->_float) != wasuntil) QCC_FreeTemp(QCC_PR_Statement (&pr_opcodes[OP_GOTO], ...,
   &patch1))`), so `while (1)` is its body and `GOTO` back. In `do ... while`, a constant of any
   type that is true by its word (`if (until?!eval->_int:eval->_int)`) is a `GOTO` back and one
-  that is false nothing. In `if`, a float constant keeps the branch it selects and no jump: the
-  other branch's statements are parsed and taken out again (`QCC_UngenerateStatements(oldnumst)`)
-  when no label was made in them, `striptruth` for a false condition and `stripfalse` for a
-  true one, inverted by `if not` and `if !` (FTEF-16.5, FTEF-18.8). Copper's
+  that is false nothing. In `if`, a constant of any type keeps the branch it selects and no jump, a float
+  by its value and any other by its word (`if (e.cast->type == ev_float) striptruth =
+  eval->_float == 0; else striptruth = eval->_int == 0;`), so `if ("a")` and `if (world)` keep
+  a branch each: the other branch's statements are parsed and taken out again
+  (`QCC_UngenerateStatements(oldnumst)`) when no label was made in them, `striptruth` for a
+  false condition and `stripfalse` for a true one, inverted by `if not` and `if !` (FTEF-16.5,
+  FTEF-18.8). Copper's
   `CycleWeaponCommand` loops `while (1)`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseStatement`.
 - **FTE-3.7** After a `switch`'s body, the `GOTO` past the tests is made unless the body's last
   statement is a `RETURN`, `DONE` or `GOTO` (`QCC_StatementIsAJump`) and no jump of the

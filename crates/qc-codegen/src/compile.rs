@@ -119,7 +119,9 @@ struct ArrayMember {
 /// `LOAD_*` row that reads it into a temporary of type `ty` (QC-16.1).
 #[derive(Clone, Debug)]
 struct FieldSlot {
-    entity: u32,
+    /// The entity, read when the slot is used so that a call's value stays referenced until
+    /// then and a clobber in between copies it (FTE-18.13).
+    entity: Value,
     field: u32,
     load: Opcode,
     loaded: Etype,
@@ -1919,6 +1921,8 @@ impl<'a> Compiler<'a> {
                 .program
                 .emit_result(Opcode::NotV, from, 0, Etype::Float)
                 .at(span)?;
+            // FTE-18.13: the jump after the `NOT_V` is the statement asked for.
+            self.clobber_aliases(span)?;
             return Ok((if when { Opcode::IfNot } else { Opcode::If }, not));
         }
         // FTE-18.13: the jump is a statement asked for, so the aliases still to be read are
@@ -2221,9 +2225,10 @@ impl<'a> Compiler<'a> {
             return Err(Abort::Internal(Internal::Unsupported, span));
         };
         let slot = self.field_slot(&base, &field, span)?;
+        let entity = self.operand_of(&slot.entity);
         let ofs = self
             .program
-            .emit_result(Opcode::Address, slot.entity, slot.field, Etype::Pointer)
+            .emit_result(Opcode::Address, entity, slot.field, Etype::Pointer)
             .at(span)?;
         Ok(Value {
             ofs,
@@ -2655,11 +2660,20 @@ impl<'a> Compiler<'a> {
         }))
     }
 
-    /// The program's conversion function `name` (`itof` or `ftoi`, `QCC_PR_EmulationFunc`),
-    /// when it defines one (FTEF-26.3).
-    fn conversion_function(&mut self, name: &str) -> Option<usize> {
+    /// Whether a float value of type `ty` passed to the parameter `param` is converted to an
+    /// integer (FTEF-26.3): `param` is an `int` and the value a float that is not one already.
+    fn converts_to_int(&self, ty: &ValueType, param: Option<&Type>) -> bool {
+        let int = param.is_some_and(|param| param.fteqcc_scalar() == Some(CScalar::Integer));
+        let integer = matches!(ty, ValueType::Of(t) if t.fteqcc_scalar() == Some(CScalar::Integer));
+        int && ty.etype() == Etype::Float && !integer
+    }
+
+    /// The program's conversion function `name` (`itof` or `ftoi`), when it has defined one
+    /// (FTEF-26.3): `QCC_PR_EmulationFunc` is `QCC_PR_GetSRef(NULL, #n, pr_scope, false, 0, 0)`,
+    /// a lookup that makes nothing.
+    fn conversion_function(&self, name: &str) -> Option<usize> {
         let id = self.names.global(name)?;
-        self.program.get_def(self.index, id).ok()
+        self.program.place(id)
     }
 
     /// FTEF-26.15: `QCC_PR_StatementFlags` with one constant float operand, under
@@ -2701,6 +2715,13 @@ impl<'a> Compiler<'a> {
             Opcode::MulF | Opcode::DivF if is(b, 1.0) => Some(left.clone()),
             _ => None,
         };
+        // `QCC_FreeTemp` of the operand the fold drops: a call's value among them is read by
+        // nothing more, so no clobber copies it (FTE-18.13); the operand returned stays live.
+        if let Some(value) = &folded {
+            self.drop_value(left);
+            self.drop_value(right);
+            self.keep_alive(value);
+        }
         Ok(folded)
     }
 
@@ -2876,9 +2897,10 @@ impl<'a> Compiler<'a> {
 
     /// `LOAD_*` of the field `slot` into a temporary of its type (QC-16.1).
     fn read_field(&mut self, slot: &FieldSlot, span: Span) -> Lowered<Value> {
+        let entity = self.operand_of(&slot.entity);
         let ofs = self
             .program
-            .emit_result(slot.load, slot.entity, slot.field, slot.loaded)
+            .emit_result(slot.load, entity, slot.field, slot.loaded)
             .at(span)?;
         Ok(Value {
             ofs,
@@ -2928,7 +2950,7 @@ impl<'a> Compiler<'a> {
             ValueType::simple(row.c)
         };
         Ok(FieldSlot {
-            entity: self.operand_of(base),
+            entity: base.clone(),
             field: selector.ofs,
             load: row.opcode,
             loaded: row.c,
@@ -3065,9 +3087,10 @@ impl<'a> Compiler<'a> {
                 slot,
                 address: None,
             } => {
+                let entity = self.operand_of(&slot.entity);
                 let to = self
                     .program
-                    .emit_result(Opcode::Address, slot.entity, slot.field, Etype::Pointer)
+                    .emit_result(Opcode::Address, entity, slot.field, Etype::Pointer)
                     .at(op_span)?;
                 (to, slot.ty)
             }
@@ -3252,7 +3275,6 @@ impl<'a> Compiler<'a> {
         let component = self.program.get_def(self.index, component).at(span)?;
         let component = self.program.def(component).at(span)?.ofs;
         let entity = self.expr(&field.base().at(span)?)?;
-        let entity = self.operand_of(&entity);
         Ok(Some(FieldSlot {
             entity,
             field: component,
@@ -3417,8 +3439,9 @@ enum Argument {
 fn is_variant(ty: &Type) -> bool {
     match ty {
         Type::Named(name) => matches!(name.as_ref(), "__variant" | "variant"),
-        Type::Unknown => true,
-        Type::Simple(_) | Type::Field(_) | Type::Function(_) | Type::Pointer(_) => false,
+        Type::Unknown | Type::Simple(_) | Type::Field(_) | Type::Function(_) | Type::Pointer(_) => {
+            false
+        }
     }
 }
 
@@ -3489,10 +3512,7 @@ impl Compiler<'_> {
         let Some(param) = param else {
             return Ok(value);
         };
-        if param.fteqcc_scalar() != Some(CScalar::Integer)
-            || self.type_of(&value).etype() != Etype::Float
-            || self.is_integer(&value)
-        {
+        if !self.converts_to_int(&self.type_of(&value), Some(param)) {
             return Ok(value);
         }
         if let Some(Literal::Float(constant)) = self.constant_literal(&value) {
@@ -3508,6 +3528,31 @@ impl Compiler<'_> {
         };
         let from = self.operand_of(&value);
         self.call1(ftoi, from, ValueType::Of(param.clone()), span)
+    }
+
+    /// FTEF-26.3 for a float field passed to the `int` parameter `param`: `QCC_SupplyConversion`
+    /// calls the program's `ftoi` with the field as its argument, which FTE-18.11 loads into the
+    /// slot (`LOAD_F e f` into the first slot, `CALL1 ftoi`); the value is the call's.
+    fn int_field_argument(
+        &mut self,
+        slot: &FieldSlot,
+        param: Option<&Type>,
+        span: Span,
+    ) -> Lowered<Value> {
+        let Some(param) = param else {
+            return self.read_field(slot, span);
+        };
+        let Some(ftoi) = self.conversion_function("ftoi") else {
+            return self.read_field(slot, span);
+        };
+        let entity = self.operand_of(&slot.entity);
+        self.program
+            .emit_into(Opcode::LoadF, entity, slot.field, OFS_PARM0)
+            .at(span)?;
+        let ftoi = self.program.def(ftoi).at(span)?.ofs;
+        self.clobber_aliases(span)?;
+        self.program.emit(Opcode::Call1, operand(ftoi).at(span)?, 0);
+        Ok(self.alias(ValueType::Of(param.clone())))
     }
 
     /// An argument of an FTEQCC call (FTE-18.11): an entity's field, `e.f`, is left a
@@ -3612,12 +3657,21 @@ impl Compiler<'_> {
             let (value, arg_span) = match slots.get(i).cloned().flatten() {
                 Some(arg) => {
                     let value = self.argument(&arg)?;
+                    let param = function.params.get(i);
                     let value = match value {
-                        Argument::Value(value) => Argument::Value(self.int_argument(
-                            value,
-                            function.params.get(i),
-                            arg.syntax().span(),
-                        )?),
+                        Argument::Value(value) => {
+                            Argument::Value(self.int_argument(value, param, arg.syntax().span())?)
+                        }
+                        // A float field of an `int` parameter is `ftoi`'s own field argument
+                        // (FTEF-26.3, FTE-18.11), loaded straight into its slot, and the
+                        // conversion's value the argument.
+                        Argument::Field(slot) if self.converts_to_int(&slot.ty, param) => {
+                            Argument::Value(self.int_field_argument(
+                                &slot,
+                                param,
+                                arg.syntax().span(),
+                            )?)
+                        }
                         Argument::Field(_) => value,
                     };
                     (value, arg.syntax().span())
@@ -3673,8 +3727,9 @@ impl Compiler<'_> {
                 } else {
                     Opcode::LoadF
                 };
+                let entity = self.operand_of(&field.entity);
                 self.program
-                    .emit_into(load, field.entity, field.field, to)
+                    .emit_into(load, entity, field.field, to)
                     .at(*arg_span)?;
             }
         }

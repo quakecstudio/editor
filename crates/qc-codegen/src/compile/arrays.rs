@@ -898,13 +898,21 @@ impl Compiler<'_> {
     /// FTE-18.12 for a word `from`: when it is a temporary the statement before wrote, that
     /// statement writes `to` instead; true when it did.
     fn fold_word_into(&mut self, from: u32, to: u32) -> bool {
+        if !self.dialect.has_fteqcc_extensions() {
+            return false;
+        }
+        // A definition's word, an immediate's among them, is never a temporary.
+        let a_definitions = self.program.defs.iter().any(|def| {
+            let words = type_words(self.index, &def.ty).saturating_mul(def.count.unwrap_or(1));
+            from >= def.ofs && from < def.ofs.saturating_add(words)
+        });
+        if a_definitions {
+            return false;
+        }
         let temp = Value {
             ofs: from,
             kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
         };
-        if !self.dialect.has_fteqcc_extensions() || self.is_definition_word(&temp) {
-            return false;
-        }
         self.fold_into(&temp, to)
     }
 
