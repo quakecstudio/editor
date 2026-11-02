@@ -2,7 +2,7 @@
 
 //! The per-statement trace hook that builds a [`qc_trace::Trace`] (TRACE-4).
 //!
-//! [`Trace`] is an [`Observer`](crate::Observer) that records a run record, a step record per
+//! [`Trace`] is an [`Observer`] that records a run record, a step record per
 //! statement, an exit record and, on failure, an error record (TRACE-4.1 to TRACE-4.8), each
 //! change-carrying record holding the globals and entity fields that changed since the
 //! previous one (TRACE-3). It names globals by slot, edicts by number and fields by field slot

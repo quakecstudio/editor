@@ -1,0 +1,29 @@
+const qs_log::DEFAULT_DIRECTIVES
+const qs_log::LOG_FILE_STEM
+const qs_log::redact::SOURCE_FIELD_NAMES
+enum qs_log::LogError
+field qs_log::LogConfig.clock
+field qs_log::LogConfig.dir
+field qs_log::LogConfig.directives
+field qs_log::LogConfig.file_stem
+field qs_log::LogConfig.max_file_bytes
+field qs_log::LogConfig.max_files
+field qs_log::redact::SourceText.0
+fn qs_log::LogConfig::for_app
+fn qs_log::LogConfig::new
+fn qs_log::directives_from
+fn qs_log::init
+fn qs_log::panic::install_panic_hook
+fn qs_log::subscriber
+impl qs_log::LogError: fmt::Display
+impl qs_log::LogError: std::error::Error
+impl qs_log::redact::SourceText: fmt::Debug
+impl qs_log::redact::SourceText: fmt::Display
+struct qs_log::LogConfig
+struct qs_log::redact::SourceText
+use qs_log::SOURCE_FIELD_NAMES = crate::redact::SOURCE_FIELD_NAMES
+use qs_log::SourceText = crate::redact::SourceText
+use qs_log::install_panic_hook = crate::panic::install_panic_hook
+variant qs_log::LogError::AlreadyInstalled
+variant qs_log::LogError::Directives
+variant qs_log::LogError::Io

@@ -47,7 +47,7 @@ pub const LIMIT_QCC_MAX_NAME: usize = 64;
 
 /// FTEQCC's name buffer, `#define MAX_NAME 256` in FTEQCC's `qcc.h`: under an FTEQCC dialect a
 /// name of `FTEQCC_MAX_NAME - 1` bytes or more is "name too long" (FTEF-15.7).
-pub const FTEQCC_MAX_NAME: usize = 256;
+pub(crate) const FTEQCC_MAX_NAME: usize = 256;
 
 /// The operator priorities an expression is read with (FTEF-21.4, FTEF-21.5): QuakeC's,
 /// `PR_Expression`'s and FTEQCC's without `flag_cpriority`, in id's numbering, one below

@@ -5,8 +5,8 @@
 //!
 //! The model is Zed's and VS Code's: a setting has a default, the user's file may set it, and a
 //! project's file may set it again for that project, which wins. The user's file is
-//! `settings.toml` in the app's config directory ([`user_settings_path`], from `qs-paths`); a
-//! project's is `.quakec-studio/settings.toml` in its directory ([`project_settings_path`]).
+//! `settings.toml` in the app's config directory (`user_settings_path`, from `qs-paths`); a
+//! project's is `.quakec-studio/settings.toml` in its directory (`project_settings_path`).
 //! Every setting is a [`Setting`], documented in `docs/settings.md`, which [`reference`]
 //! writes, and changeable by the commands of [`register`].
 
@@ -28,15 +28,18 @@ use toml_edit::{Decor, DocumentMut, Item, TableLike};
 pub use commands::{Entry, HasSettings, register};
 pub use error::SettingsError;
 
-/// The user's settings file in the app's config directory, `qs_paths::AppDirs::config`.
+/// The user's settings file in the app's config directory, `qs_paths::AppDirs::config`; the
+/// tests read it.
+#[cfg(test)]
 #[must_use]
-pub fn user_settings_path(config_dir: &Path) -> PathBuf {
+pub(crate) fn user_settings_path(config_dir: &Path) -> PathBuf {
     config_dir.join("settings.toml")
 }
 
-/// A project's settings file in the project's directory.
+/// A project's settings file in the project's directory; the tests read it.
+#[cfg(test)]
 #[must_use]
-pub fn project_settings_path(project_dir: &Path) -> PathBuf {
+pub(crate) fn project_settings_path(project_dir: &Path) -> PathBuf {
     project_dir.join(".quakec-studio").join("settings.toml")
 }
 
@@ -74,7 +77,7 @@ pub enum Theme {
 }
 
 /// The log filter's default, `qs_log`'s when `RUST_LOG` is unset.
-pub const DEFAULT_LOG_FILTER: &str = "info";
+pub(crate) const DEFAULT_LOG_FILTER: &str = "info";
 
 /// A setting, named by its key.
 #[derive(
@@ -419,15 +422,17 @@ impl SettingsStore {
         (setting.default_value(), Source::Default)
     }
 
-    /// The colour theme in force.
+    /// The colour theme in force; the tests read it.
+    #[cfg(test)]
     #[must_use]
-    pub fn theme(&self) -> Theme {
+    pub(crate) fn theme(&self) -> Theme {
         serde_json::from_value(self.value(Setting::Theme).0).unwrap_or_default()
     }
 
-    /// The log filter in force.
+    /// The log filter in force; the tests read it.
+    #[cfg(test)]
     #[must_use]
-    pub fn log_filter(&self) -> String {
+    pub(crate) fn log_filter(&self) -> String {
         match self.value(Setting::LogFilter).0 {
             Value::String(filter) => filter,
             _ => DEFAULT_LOG_FILTER.to_owned(),

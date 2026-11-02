@@ -1,0 +1,97 @@
+const qs_install::GOG_QUAKE_ENHANCED_ID
+const qs_install::GOG_QUAKE_ID
+const qs_install::STEAM_APP_ID
+enum qs_install::Edition
+enum qs_install::MissingReason
+enum qs_install::Source
+enum qs_install::known::FileStatus
+enum qs_install::known::Release
+enum qs_install::link::LinkError
+enum qs_install::link::LinkOutcome
+field qs_install::CheckedFile.path
+field qs_install::CheckedFile.status
+field qs_install::GameBase.game_dirs
+field qs_install::GameBase.id1
+field qs_install::GameBase.kpf
+field qs_install::GameBase.pak0
+field qs_install::GameBase.pak1
+field qs_install::GameBase.path
+field qs_install::GameDir.name
+field qs_install::GameDir.pak0
+field qs_install::GameDir.path
+field qs_install::Install.original
+field qs_install::Install.rerelease
+field qs_install::Install.root
+field qs_install::Install.source
+field qs_install::Missing.file
+field qs_install::Missing.reason
+field qs_install::Validation.editions
+field qs_install::Validation.files
+field qs_install::Validation.missing
+field qs_install::known::KnownFile.description
+field qs_install::known::KnownFile.game_dir
+field qs_install::known::KnownFile.md5
+field qs_install::known::KnownFile.name
+field qs_install::known::KnownFile.release
+field qs_install::known::KnownFile.size
+fn qs_install::Finder::examine
+fn qs_install::Finder::find
+fn qs_install::Finder::new
+fn qs_install::Install::validate
+fn qs_install::InstallFs::canonical
+fn qs_install::examine_folder
+fn qs_install::find_installs
+fn qs_install::known::KnownFile::is_original_pak0
+fn qs_install::known::KnownFile::is_registered_pak1
+fn qs_install::known::identify
+fn qs_install::known::size_and_md5
+fn qs_install::link::link_dir
+fn qs_install::registry::Registry::string
+impl qs_install::link::LinkError: fmt::Display
+impl qs_install::link::LinkError: std::error::Error
+impl qs_install::registry::SystemRegistry: Registry
+static qs_install::known::FS_KNOWN_FILES
+struct qs_install::CheckedFile
+struct qs_install::Finder
+struct qs_install::GameBase
+struct qs_install::GameDir
+struct qs_install::Install
+struct qs_install::Missing
+struct qs_install::Validation
+struct qs_install::known::KnownFile
+struct qs_install::registry::SystemRegistry
+trait qs_install::InstallFs
+trait qs_install::registry::Registry
+use qs_install::FS_KNOWN_FILES = known::FS_KNOWN_FILES
+use qs_install::FileStatus = known::FileStatus
+use qs_install::KnownFile = known::KnownFile
+use qs_install::LinkError = link::LinkError
+use qs_install::LinkOutcome = link::LinkOutcome
+use qs_install::Registry = registry::Registry
+use qs_install::Release = known::Release
+use qs_install::SystemRegistry = registry::SystemRegistry
+use qs_install::identify = known::identify
+use qs_install::link_dir = link::link_dir
+use qs_install::size_and_md5 = known::size_and_md5
+variant qs_install::Edition::Registered
+variant qs_install::Edition::Rerelease
+variant qs_install::Edition::Shareware
+variant qs_install::MissingReason::RereleaseOnly
+variant qs_install::MissingReason::SharewareOnly
+variant qs_install::Source::Folder
+variant qs_install::Source::Gog
+variant qs_install::Source::Heroic
+variant qs_install::Source::Innoextract
+variant qs_install::Source::Steam
+variant qs_install::Source::Steamcmd
+variant qs_install::known::FileStatus::Known
+variant qs_install::known::FileStatus::Unrecognised
+variant qs_install::known::FileStatus::Unusable
+variant qs_install::known::Release::Original
+variant qs_install::known::Release::Rerelease
+variant qs_install::link::LinkError::Io
+variant qs_install::link::LinkError::MissingTarget
+variant qs_install::link::LinkError::Occupied
+variant qs_install::link::LinkOutcome::Created
+variant qs_install::link::LinkOutcome::Repaired
+variant qs_install::link::LinkOutcome::Unchanged

@@ -311,7 +311,7 @@ impl Keyword {
 
     /// The keyword `flag` is, if it is one.
     #[must_use]
-    pub fn of_flag(flag: FteFlag) -> Option<Self> {
+    pub(crate) fn of_flag(flag: FteFlag) -> Option<Self> {
         Self::ALL.into_iter().find(|k| k.flag() == flag)
     }
 

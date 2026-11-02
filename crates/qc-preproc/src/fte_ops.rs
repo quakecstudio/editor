@@ -1286,7 +1286,7 @@ impl Op {
 
     /// The first opcode whose `opname` is `name` in any case (`QC_strcasecmp`).
     #[must_use]
-    pub fn named_in_any_case(name: &[u8]) -> Option<Self> {
+    pub(crate) fn named_in_any_case(name: &[u8]) -> Option<Self> {
         Self::ALL
             .into_iter()
             .find(|op| op.name().as_bytes().eq_ignore_ascii_case(name))

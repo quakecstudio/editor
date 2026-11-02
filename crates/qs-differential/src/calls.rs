@@ -289,7 +289,7 @@ impl Oracle {
 /// Runs [`run_calls`] on `theirs` and `ours` from each world of [`crate::runner::scenarios`],
 /// `rounds` rounds each (DIFF-12.20, DIFF-12.5); `oracle` compiled `theirs`. `progress` is
 /// told a scenario's name, the functions it has called so far and the functions it will call,
-/// after every [`PROGRESS_EVERY`] functions and at its end, from the scenario's own thread.
+/// after every `PROGRESS_EVERY` functions and at its end, from the scenario's own thread.
 ///
 /// # Errors
 ///
@@ -407,7 +407,7 @@ pub fn run_calls(
 const PROGRESS_EVERY: usize = 250;
 
 /// [`run_calls`], reporting to `progress` the functions called so far and the functions to
-/// call after every [`PROGRESS_EVERY`] functions and at the end.
+/// call after every `PROGRESS_EVERY` functions and at the end.
 #[expect(
     clippy::too_many_arguments,
     reason = "the run's inputs, each one named; a struct would only rename them"

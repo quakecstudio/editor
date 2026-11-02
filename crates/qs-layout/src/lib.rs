@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 mod tests;
 
 /// The layout file's name in the app's data directory (`qs_paths::AppDirs::data`).
-pub const LAYOUT_FILE: &str = "layout.toml";
+pub(crate) const LAYOUT_FILE: &str = "layout.toml";
 
 /// The layout file in the data directory `data_dir`.
 #[must_use]
@@ -249,7 +249,7 @@ pub struct TogglePanelParams {
 
 /// What `view.toggle_panel` returns.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-pub struct PanelShown {
+pub(crate) struct PanelShown {
     /// The panel.
     pub panel: Panel,
     /// Whether it is shown now.
@@ -294,7 +294,7 @@ pub struct ResizePanelParams {
 
 /// Why `view.resize_panel` refused a size.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct BadPanelSize {
+pub(crate) struct BadPanelSize {
     /// The size asked for.
     pub size: f32,
 }

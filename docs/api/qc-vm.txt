@@ -1,0 +1,129 @@
+const qc_vm::convert::VM_FLOAT_TO_INT_INVALID
+enum qc_vm::error::Divergence
+enum qc_vm::error::ErrorKind
+enum qc_vm::error::FieldFault
+enum qc_vm::exec::ServerState
+enum qc_vm::machine::MachineError
+field qc_vm::error::RunError.function
+field qc_vm::error::RunError.kind
+field qc_vm::error::RunError.statement
+field qc_vm::error::RunError.trace
+field qc_vm::error::StackEntry.file
+field qc_vm::error::StackEntry.function
+field qc_vm::error::StackEntry.name
+field qc_vm::error::StackEntry.statement
+field qc_vm::machine::GlobalAccessError.slot
+fn qc_vm::convert::double_to_float
+fn qc_vm::convert::double_to_int
+fn qc_vm::convert::float_to_int
+fn qc_vm::convert::int_to_float
+fn qc_vm::error::Divergence::statement
+fn qc_vm::error::ErrorKind::is_fatal
+fn qc_vm::error::ErrorKind::resets_depth
+fn qc_vm::error::RunError::message
+fn qc_vm::exec::Builtins::call
+fn qc_vm::exec::Builtins::engine_string
+fn qc_vm::exec::Builtins::limit
+fn qc_vm::exec::Context::execute_program
+fn qc_vm::exec::Context::machine
+fn qc_vm::exec::Context::machine_view
+fn qc_vm::exec::Context::progs
+fn qc_vm::exec::Context::run_error
+fn qc_vm::exec::Context::server
+fn qc_vm::exec::Machine::execute_program
+fn qc_vm::exec::Observer::error
+fn qc_vm::exec::Observer::exit
+fn qc_vm::exec::Observer::run
+fn qc_vm::exec::Observer::step
+fn qc_vm::machine::Machine::argc
+fn qc_vm::machine::Machine::current_statement
+fn qc_vm::machine::Machine::depth
+fn qc_vm::machine::Machine::edicts
+fn qc_vm::machine::Machine::edicts_mut
+fn qc_vm::machine::Machine::global
+fn qc_vm::machine::Machine::global3
+fn qc_vm::machine::Machine::globals
+fn qc_vm::machine::Machine::localstack_used
+fn qc_vm::machine::Machine::new
+fn qc_vm::machine::Machine::set_global
+fn qc_vm::machine::Machine::set_global3
+fn qc_vm::machine::Machine::set_tracing
+fn qc_vm::machine::Machine::tracing
+fn qc_vm::trace::Trace::entityfields
+fn qc_vm::trace::Trace::finish
+fn qc_vm::trace::Trace::new
+fn qc_vm::trace::Trace::records
+impl qc_vm::error::Divergence: fmt::Display
+impl qc_vm::error::ErrorKind: fmt::Display
+impl qc_vm::error::FieldFault: fmt::Display
+impl qc_vm::error::RunError: core::error::Error
+impl qc_vm::error::RunError: fmt::Display
+impl qc_vm::exec::NoObserver: Observer
+impl qc_vm::machine::Machine: Clone
+impl qc_vm::machine::MachineError: From<LayoutError>
+impl qc_vm::machine::MachineError: From<qc_edict::EdictError>
+impl qc_vm::machine::MachineError: core::error::Error
+impl qc_vm::machine::MachineError: core::fmt::Display
+impl qc_vm::trace::Trace: Observer
+mod qc_vm::convert
+mod qc_vm::trace
+struct qc_vm::error::RunError
+struct qc_vm::error::StackEntry
+struct qc_vm::exec::Context
+struct qc_vm::exec::NoObserver
+struct qc_vm::machine::GlobalAccessError
+struct qc_vm::machine::Machine
+struct qc_vm::trace::Trace
+trait qc_vm::exec::Builtins
+trait qc_vm::exec::Observer
+use qc_vm::Builtins = exec::Builtins
+use qc_vm::Context = exec::Context
+use qc_vm::Divergence = error::Divergence
+use qc_vm::ErrorKind = error::ErrorKind
+use qc_vm::FieldFault = error::FieldFault
+use qc_vm::GlobalAccessError = machine::GlobalAccessError
+use qc_vm::LIMIT_LOCALSTACK_SIZE = qc_progs::limits::LIMIT_LOCALSTACK_SIZE
+use qc_vm::LIMIT_MAX_STACK_DEPTH = qc_progs::limits::LIMIT_MAX_STACK_DEPTH
+use qc_vm::LIMIT_NUM_BUILTINS = qc_progs::limits::LIMIT_NUM_BUILTINS
+use qc_vm::LIMIT_RUNAWAY = qc_progs::limits::LIMIT_RUNAWAY
+use qc_vm::Machine = machine::Machine
+use qc_vm::MachineError = machine::MachineError
+use qc_vm::NoObserver = exec::NoObserver
+use qc_vm::Observer = exec::Observer
+use qc_vm::RunError = error::RunError
+use qc_vm::ServerState = exec::ServerState
+use qc_vm::StackEntry = error::StackEntry
+variant qc_vm::error::Divergence::BadString
+variant qc_vm::error::Divergence::CallOutOfRange
+variant qc_vm::error::Divergence::GlobalOffsetOutOfRange
+variant qc_vm::error::Divergence::GlobalOutOfRange
+variant qc_vm::error::Divergence::Load
+variant qc_vm::error::Divergence::NegativeLocals
+variant qc_vm::error::Divergence::Pointer
+variant qc_vm::error::Divergence::RunBuiltin
+variant qc_vm::error::Divergence::StateSelf
+variant qc_vm::error::Divergence::StatementOutOfRange
+variant qc_vm::error::Divergence::UnregisteredBuiltin
+variant qc_vm::error::ErrorKind::AssignmentToWorld
+variant qc_vm::error::ErrorKind::BadBuiltin
+variant qc_vm::error::ErrorKind::BadOpcode
+variant qc_vm::error::ErrorKind::Builtin
+variant qc_vm::error::ErrorKind::Divergence
+variant qc_vm::error::ErrorKind::Fatal
+variant qc_vm::error::ErrorKind::Host
+variant qc_vm::error::ErrorKind::LocalsStackOverflow
+variant qc_vm::error::ErrorKind::NullCallFunction
+variant qc_vm::error::ErrorKind::NullRunFunction
+variant qc_vm::error::ErrorKind::Runaway
+variant qc_vm::error::ErrorKind::StackOverflow
+variant qc_vm::error::FieldFault::FieldOutOfRange
+variant qc_vm::error::FieldFault::FieldSlotMissing
+variant qc_vm::error::FieldFault::NotAnEdict
+variant qc_vm::error::FieldFault::PointerNotAField
+variant qc_vm::error::FieldFault::PointerOutOfRange
+variant qc_vm::error::FieldFault::VectorFieldOutOfRange
+variant qc_vm::error::FieldFault::VectorPointerOutOfRange
+variant qc_vm::exec::ServerState::Active
+variant qc_vm::exec::ServerState::Loading
+variant qc_vm::machine::MachineError::Edict
+variant qc_vm::machine::MachineError::Layout

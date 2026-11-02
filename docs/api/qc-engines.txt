@@ -1,0 +1,45 @@
+const qc_engines::Engine::ALL
+const qc_engines::tables::SOURCES
+enum qc_engines::BuiltinKey
+enum qc_engines::Engine
+enum qc_engines::check::BuiltinRef
+field qc_engines::Builtin.extensions
+field qc_engines::Builtin.key
+field qc_engines::Builtin.name
+field qc_engines::Builtin.signature
+field qc_engines::Source.commit
+field qc_engines::Source.id
+field qc_engines::Source.license
+field qc_engines::Source.license_file
+field qc_engines::Source.license_sha256
+field qc_engines::Source.path
+field qc_engines::Source.repo
+field qc_engines::Source.sha256
+fn qc_engines::Engine::builtin
+fn qc_engines::Engine::extensions
+fn qc_engines::Engine::from_target
+fn qc_engines::Engine::has_table
+fn qc_engines::Engine::id
+fn qc_engines::Engine::name
+fn qc_engines::check::BuiltinRef::lookup
+fn qc_engines::check::declared_builtins
+fn qc_engines::check::missing_builtins
+impl qc_engines::Builtin: From<qc_builtins::Builtin>
+mod qc_engines::check
+struct qc_engines::Builtin
+struct qc_engines::Source
+use qc_engines::BuiltinRef = check::BuiltinRef
+use qc_engines::SOURCES = tables::SOURCES
+use qc_engines::declared_builtins = check::declared_builtins
+use qc_engines::missing_builtins = check::missing_builtins
+variant qc_engines::BuiltinKey::Name
+variant qc_engines::BuiltinKey::Number
+variant qc_engines::Engine::DarkPlaces
+variant qc_engines::Engine::Fteqw
+variant qc_engines::Engine::Ironwail
+variant qc_engines::Engine::Kex
+variant qc_engines::Engine::QuakeSpasm
+variant qc_engines::Engine::Vanilla
+variant qc_engines::Engine::VkQuake
+variant qc_engines::check::BuiltinRef::Name
+variant qc_engines::check::BuiltinRef::Number

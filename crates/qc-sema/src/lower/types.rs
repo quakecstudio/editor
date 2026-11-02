@@ -23,7 +23,7 @@ use super::{Cx, FileDecls, RawAccessor, first_word, token_text};
 
 /// How an enum's name gets its value (FTEF-19.10).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EnumItem {
+pub(crate) struct EnumItem {
     /// Whether the enum is `enumflags`, whose values double.
     pub flags: bool,
     /// The enum's base type: `float` unless `: type` gives another (FTEF-8).
@@ -44,7 +44,7 @@ pub struct EnumItem {
 
 /// The kind of type a type's name names (FTEF-7.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TypeKind {
+pub(crate) enum TypeKind {
     /// A class (FTEF-9).
     Class,
     /// A struct or union (FTEF-6).
@@ -60,7 +60,7 @@ pub enum TypeKind {
 /// How a class member is qualified by `virtual`, `nonvirtual` and `static` (or `const`), which
 /// only a member function's checking reads (FTEF-9.16).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Qualification {
+pub(crate) enum Qualification {
     /// None of the words, and no `virtual:` or `nonvirtual:` label before it.
     Unqualified,
     /// One of the words, or none under a label that set the default.
@@ -71,7 +71,7 @@ pub enum Qualification {
 
 /// Where a class member is kept (FTEF-9.18).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MemberStorage {
+pub(crate) enum MemberStorage {
     /// In each instance: a field, or a function.
     Instance,
     /// `static`: the global `CLASS::NAME`.
@@ -83,14 +83,14 @@ pub enum MemberStorage {
 impl MemberStorage {
     /// Whether `static` or `const` makes it a global of the class's (`isstatic`).
     #[must_use]
-    pub fn is_static(self) -> bool {
+    pub(crate) fn is_static(self) -> bool {
         self != Self::Instance
     }
 }
 
 /// An FTEQCC class's parent and members (FTEF-9).
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct RawClass {
+pub(crate) struct RawClass {
     /// The parent class's name, if any.
     pub parent: Option<String>,
     /// Whether a body was given, `{ ... }`, which may hold no member (FTEF-9.12).
@@ -104,7 +104,7 @@ pub struct RawClass {
 
 /// One member of an FTEQCC class (FTEF-9.2, FTEF-9.3).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RawMember {
+pub(crate) struct RawMember {
     /// The member's name.
     pub name: String,
     /// The byte span of its name.
@@ -144,7 +144,7 @@ pub struct RawMember {
 /// The words of a class member that only a member function takes (FTEF-9.20): `virtual` or
 /// `nonvirtual` as written, not by the class's default, and `inline`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct FunctionWords {
+pub(crate) struct FunctionWords {
     /// Whether `virtual` or `nonvirtual` is written.
     pub virtuality: bool,
     /// Whether `inline` is written.
@@ -153,7 +153,7 @@ pub struct FunctionWords {
 
 /// What a class member is (FTEF-9.2, FTEF-9.3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MemberKind {
+pub(crate) enum MemberKind {
     /// A data member: a field of the entity.
     Field,
     /// A `virtual` member function: a field of function type each instance may override.
@@ -165,7 +165,7 @@ pub enum MemberKind {
 /// A `struct` or `union` as `QCC_PR_ParseStruct` reads it (FTEF-6, FTEF-6.7): its tag, its
 /// parent and its members, wherever the type is written.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RawStruct {
+pub(crate) struct RawStruct {
     /// Where the keyword stands, which orders the struct among the declarations.
     pub at: usize,
     /// The byte offset just after the `}` or the tag, where the type is made.
@@ -189,7 +189,7 @@ pub struct RawStruct {
 
 /// One member of a [`RawStruct`] (FTEF-6.7).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StructMember {
+pub(crate) struct StructMember {
     /// The name; empty for an anonymous member.
     pub name: String,
     /// The name's span, else the member's.
@@ -267,7 +267,7 @@ fn array_sizes(field: &SyntaxNode, cx: Cx<'_>) -> Vec<IntConst> {
 
 /// What `QCC_PR_IntConstExpr` reads of an expression, as far as the model follows it.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum IntConst {
+pub(crate) enum IntConst {
     /// A literal number with no fraction.
     Integer(i64),
     /// A literal that is no integer: a fraction, a vector or a string.

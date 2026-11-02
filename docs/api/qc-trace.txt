@@ -1,0 +1,110 @@
+const qc_trace::TRACE_HEADER_SIZE
+const qc_trace::TRACE_MAGIC
+const qc_trace::TRACE_TAG_ERROR
+const qc_trace::TRACE_TAG_EXIT
+const qc_trace::TRACE_TAG_RUN
+const qc_trace::TRACE_TAG_STEP
+const qc_trace::TRACE_TAG_STRING
+const qc_trace::TRACE_UVAR_MAX_BYTES
+const qc_trace::TRACE_VERSION
+enum qc_trace::JsonFault
+enum qc_trace::Record
+enum qc_trace::StringValue
+enum qc_trace::TraceError
+field qc_trace::FieldChange.bits
+field qc_trace::FieldChange.edict
+field qc_trace::FieldChange.field
+field qc_trace::GlobalChange.bits
+field qc_trace::GlobalChange.slot
+field qc_trace::Step.builtin
+field qc_trace::Step.changes
+field qc_trace::Step.function
+field qc_trace::Step.opcode
+field qc_trace::Step.statement
+field qc_trace::Trace.header
+field qc_trace::Trace.records
+fn qc_trace::Changes::fields
+fn qc_trace::Changes::globals
+fn qc_trace::Changes::is_empty
+fn qc_trace::Changes::new
+fn qc_trace::Header::edict_size
+fn qc_trace::Header::entity_number
+fn qc_trace::Header::entityfields
+fn qc_trace::Header::field_offset
+fn qc_trace::Header::new
+fn qc_trace::Header::numstrings
+fn qc_trace::Header::pointer_target
+fn qc_trace::Header::progs_crc
+fn qc_trace::Record::changes
+fn qc_trace::Text::as_bytes
+fn qc_trace::Text::new
+fn qc_trace::Trace::string_value
+fn qc_trace::binary::decode
+fn qc_trace::binary::encode
+fn qc_trace::binary::encode_header
+fn qc_trace::binary::encode_record
+fn qc_trace::json::from_json
+fn qc_trace::json::header_to_json
+fn qc_trace::json::record_to_json
+fn qc_trace::json::to_json
+impl qc_trace::JsonFault: fmt::Display
+impl qc_trace::TraceError: fmt::Display
+impl qc_trace::TraceError: std::error::Error
+struct qc_trace::Changes
+struct qc_trace::FieldChange
+struct qc_trace::GlobalChange
+struct qc_trace::Header
+struct qc_trace::Step
+struct qc_trace::Text
+struct qc_trace::Trace
+use qc_trace::decode = binary::decode
+use qc_trace::encode = binary::encode
+use qc_trace::encode_header = binary::encode_header
+use qc_trace::encode_record = binary::encode_record
+use qc_trace::from_json = json::from_json
+use qc_trace::header_to_json = json::header_to_json
+use qc_trace::record_to_json = json::record_to_json
+use qc_trace::to_json = json::to_json
+variant qc_trace::JsonFault::BlankLine
+variant qc_trace::JsonFault::EdictOutOfRange
+variant qc_trace::JsonFault::FieldBitsMalformed
+variant qc_trace::JsonFault::FieldNotATriple
+variant qc_trace::JsonFault::FieldSlotOutOfRange
+variant qc_trace::JsonFault::GlobalBitsMalformed
+variant qc_trace::JsonFault::GlobalNotAPair
+variant qc_trace::JsonFault::GlobalSlotOutOfRange
+variant qc_trace::JsonFault::InvalidJson
+variant qc_trace::JsonFault::MissingHeader
+variant qc_trace::JsonFault::MissingKey
+variant qc_trace::JsonFault::NoFinalLineFeed
+variant qc_trace::JsonFault::NotAString
+variant qc_trace::JsonFault::NotAU32
+variant qc_trace::JsonFault::NotAnArray
+variant qc_trace::JsonFault::NotAnI32
+variant qc_trace::JsonFault::NotAnObject
+variant qc_trace::JsonFault::NotBits
+variant qc_trace::JsonFault::NotEscapedText
+variant qc_trace::JsonFault::NotQcTrace
+variant qc_trace::JsonFault::UnknownKey
+variant qc_trace::JsonFault::UnknownRecordType
+variant qc_trace::Record::Error
+variant qc_trace::Record::Exit
+variant qc_trace::Record::Run
+variant qc_trace::Record::Step
+variant qc_trace::Record::String
+variant qc_trace::StringValue::Engine
+variant qc_trace::StringValue::Table
+variant qc_trace::StringValue::Unknown
+variant qc_trace::TraceError::BadBuiltinFlag
+variant qc_trace::TraceError::BadHeader
+variant qc_trace::TraceError::BadMagic
+variant qc_trace::TraceError::BadUvar
+variant qc_trace::TraceError::ChangesOutOfOrder
+variant qc_trace::TraceError::DuplicateChange
+variant qc_trace::TraceError::Json
+variant qc_trace::TraceError::NulInText
+variant qc_trace::TraceError::OpcodeOutOfRange
+variant qc_trace::TraceError::TooLong
+variant qc_trace::TraceError::Truncated
+variant qc_trace::TraceError::UnknownTag
+variant qc_trace::TraceError::UnsupportedVersion

@@ -89,6 +89,7 @@
 )]
 
 mod adr;
+mod api;
 mod attribution;
 mod bench;
 mod ci;
@@ -186,6 +187,7 @@ fn run(root: &Path, args: &[String], ci_steps: &[ci::Step]) -> bool {
 /// The command named `name`, if it takes arguments.
 fn command(name: &str) -> Option<Command> {
     match name {
+        "api" => Some(api::main),
         "assets" => Some(corpus::assets_main),
         "bench" => Some(bench::main),
         "codegen-corpus" => Some(codegen_corpus::main),
@@ -218,6 +220,7 @@ pub(crate) type Check = fn(&Path) -> Result<Report, String>;
 pub(crate) fn in_process_check(command: &str) -> Option<Check> {
     match command {
         "adr" => Some(adr::check),
+        "api" => Some(api::check),
         "conventions" => Some(conventions::check),
         "clippy-fixtures" => Some(|root| fixtures::clippy(root, &exec::System)),
         "deny-fixtures" => Some(|root| fixtures::deny(root, &exec::System)),

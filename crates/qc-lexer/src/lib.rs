@@ -25,7 +25,7 @@ mod tests;
 pub use atof::atof;
 pub use directive::{Directive, Pragma};
 pub use flags::{LexFlag, LexFlags};
-pub use fte_string::{FTEQCC_MAX_STRING, STRING_TOO_LONG, fteqcc_string_bytes};
+pub use fte_string::fteqcc_string_bytes;
 pub use lines::LineIndex;
 // The diagnostic vocabulary lives in `qc-diag`; re-exported here so code written against
 // `qc_lexer::{Code, Diagnostic, Span}` keeps compiling.
@@ -35,14 +35,14 @@ pub use qc_diag::{Code, Diagnostic, Severity, Span};
 ///
 /// `QC_MAX_TOKEN` in QC-3, from `pr_token[2048]` in `qcc/pr_lex.c`. A token of more than
 /// `QC_MAX_TOKEN - 1` bytes is an error (QC-27.4).
-pub const QC_MAX_TOKEN: usize = 2048;
+pub(crate) const QC_MAX_TOKEN: usize = 2048;
 
 /// Longest token FTEQCC holds, including its terminating NUL.
 ///
 /// `FTEQCC_MAX_TOKEN` in FTEF-13, from `char pr_token[8192];` in `qcc_pr_lex.c`: a string of
 /// more than `FTEQCC_MAX_TOKEN - 1` bytes is FTEQCC's "String length exceeds 8191", and a name
 /// or number that long runs past FTEQCC's buffer (FTEF-13.20).
-pub const FTEQCC_MAX_TOKEN: usize = 8192;
+pub(crate) const FTEQCC_MAX_TOKEN: usize = 8192;
 
 /// The most bytes FTEQCC's `QCC_PR_LexMacroName` takes for a frame macro word,
 /// `sizeof(qcc_token)-1`; a 1024th is "token exceeds 1023 chars" (FTEF-14.66).
@@ -51,7 +51,7 @@ pub const FTEQCC_MAX_WORD: usize = 1023;
 /// Longest frame name id's `qcc` can store, without its NUL.
 ///
 /// `QC_MAX_FRAME_NAME` in QC-8, from `pr_framemacros[MAX_FRAMES][16]` in `qcc/pr_lex.c`.
-pub const QC_MAX_FRAME_NAME: usize = 15;
+pub(crate) const QC_MAX_FRAME_NAME: usize = 15;
 
 /// The QuakeC dialect the lexer and parser accept.
 ///
@@ -260,7 +260,7 @@ impl Punct {
     /// tries them, the first that matches the input winning (FTEF-13.24): "longer symbols must
     /// be before a shorter partial match". `->`, `(+)` and `(-)` are read as `.`, `|=` and `&~=`
     /// by `pr_punctuationremap[]`, which the parser does (FTE-19.2).
-    pub const FTEQCC_TABLE: [Self; 56] = [
+    pub(crate) const FTEQCC_TABLE: [Self; 56] = [
         Self::AndAnd,
         Self::OrOr,
         Self::Spaceship,
@@ -466,7 +466,7 @@ pub fn lex(source: &[u8]) -> Lexed {
 ///
 /// With [`Dialect::Vanilla`] the output is byte for byte what [`lex`] produces. A dialect
 /// with FTEQCC extensions ([`Dialect::has_fteqcc_extensions`]) also lexes the FTEQCC
-/// punctuation of [`Punct::FTEQCC_TABLE`] (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-5 to
+/// punctuation of `Punct::FTEQCC_TABLE` (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-5 to
 /// FTE-8, FTE-19.1), a number that starts with `.` or ends with an `f` suffix (FTE-20.1,
 /// FTE-20.2), and the further string escapes of FTE-20.4; and the full dialect's tokens of
 /// `docs/spec/dialect-fteqcc.md`: `::`, line continuations, character constants and
@@ -1745,7 +1745,7 @@ impl Lexer<'_> {
     /// Punctuation (QC-7.1), or an unknown byte (QC-7.2), which is skipped.
     ///
     /// In an FTEQCC dialect the punctuation is FTEQCC's table in its order
-    /// ([`Punct::FTEQCC_TABLE`], FTEF-13.24), so `++`, `+=` and the rest win the longest match
+    /// (`Punct::FTEQCC_TABLE`, FTEF-13.24), so `++`, `+=` and the rest win the longest match
     /// over `+`, `-`, `*` and `/` (FTE-5 to FTE-8).
     fn punctuation(&mut self) {
         let start = self.pos;

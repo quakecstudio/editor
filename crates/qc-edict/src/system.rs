@@ -252,7 +252,8 @@ system_vars! {
 /// inside a vector global (`v_forward_y`, slot 60) names none, since no system global starts
 /// there.
 #[must_use]
-pub fn global_at_slot(slot: usize) -> Option<&'static SysVar> {
+#[cfg(test)]
+pub(crate) fn global_at_slot(slot: usize) -> Option<&'static SysVar> {
     SYSTEM_GLOBALS.iter().find(|var| var.slot == slot)
 }
 
@@ -261,7 +262,8 @@ pub fn global_at_slot(slot: usize) -> Option<&'static SysVar> {
 /// Implements EDICT-3.1: lookup over [`SYSTEM_FIELDS`] by the slot a value starts at. A slot
 /// inside a vector field (`origin_y`, slot 11) names none.
 #[must_use]
-pub fn field_at_slot(slot: usize) -> Option<&'static SysVar> {
+#[cfg(test)]
+pub(crate) fn field_at_slot(slot: usize) -> Option<&'static SysVar> {
     SYSTEM_FIELDS.iter().find(|var| var.slot == slot)
 }
 

@@ -1,0 +1,168 @@
+const qc_builtins::mock::BUILTIN_CHECKCLIENT_INTERVAL
+const qc_builtins::mock::BUILTIN_CMD_TEXT_SIZE
+const qc_builtins::mock::BUILTIN_FL_FLY
+const qc_builtins::mock::BUILTIN_FL_NOTARGET
+const qc_builtins::mock::BUILTIN_FL_ONGROUND
+const qc_builtins::mock::BUILTIN_FL_SWIM
+const qc_builtins::mock::BUILTIN_SIGNON_SIZE
+const qc_builtins::mock::DIFF_RAND_INCREMENT
+const qc_builtins::mock::DIFF_RAND_MULTIPLIER
+const qc_builtins::mock::LIMIT_MAX_DATAGRAM
+const qc_builtins::mock::LIMIT_MAX_LIGHTSTYLES
+const qc_builtins::mock::LIMIT_MAX_MODELS
+const qc_builtins::mock::LIMIT_MAX_MSGLEN
+const qc_builtins::mock::LIMIT_MAX_SOUNDS
+const qc_builtins::mock::VKQUAKE_MAX_MODELS
+const qc_builtins::mock::VKQUAKE_MAX_SOUNDS
+const qc_builtins::table::BUILTINS
+const qc_builtins::table::BUILTIN_MAX_NUMBER
+enum qc_builtins::error::BuiltinError
+enum qc_builtins::error::FatalError
+enum qc_builtins::error::RuntimeError
+enum qc_builtins::mock::EngineProfile
+enum qc_builtins::mock::MessageDest
+enum qc_builtins::mock::Precache
+enum qc_builtins::table::Class
+field qc_builtins::mock::Buffers.reliable
+field qc_builtins::mock::Buffers.signon
+field qc_builtins::mock::Buffers.unreliable
+field qc_builtins::mock::CheckClient.last_check
+field qc_builtins::mock::CheckClient.last_check_time
+field qc_builtins::mock::MockEngine.buffers
+field qc_builtins::mock::MockEngine.changelevel_issued
+field qc_builtins::mock::MockEngine.checkclient
+field qc_builtins::mock::MockEngine.clients_active
+field qc_builtins::mock::MockEngine.clock
+field qc_builtins::mock::MockEngine.command_buffer
+field qc_builtins::mock::MockEngine.cvars
+field qc_builtins::mock::MockEngine.lightstyles
+field qc_builtins::mock::MockEngine.model_bounds
+field qc_builtins::mock::MockEngine.model_precache
+field qc_builtins::mock::MockEngine.profile
+field qc_builtins::mock::MockEngine.rng
+field qc_builtins::mock::MockEngine.server_active
+field qc_builtins::mock::MockEngine.sound_precache
+field qc_builtins::mock::MockEngine.strings
+field qc_builtins::mock::ModelBounds.maxs
+field qc_builtins::mock::ModelBounds.mins
+field qc_builtins::table::Builtin.c_function
+field qc_builtins::table::Builtin.class
+field qc_builtins::table::Builtin.name
+field qc_builtins::table::Builtin.number
+field qc_builtins::table::Builtin.prototype
+fn qc_builtins::dispatch::MockBuiltins::engine
+fn qc_builtins::dispatch::MockBuiltins::engine_mut
+fn qc_builtins::dispatch::MockBuiltins::with_engine
+fn qc_builtins::error::BuiltinError::message
+fn qc_builtins::math::anglemod
+fn qc_builtins::math::ceil
+fn qc_builtins::math::fabs
+fn qc_builtins::math::floor
+fn qc_builtins::math::ftos
+fn qc_builtins::math::makevectors
+fn qc_builtins::math::normalize
+fn qc_builtins::math::random
+fn qc_builtins::math::rint
+fn qc_builtins::math::vectoangles
+fn qc_builtins::math::vectoyaw
+fn qc_builtins::math::vlen
+fn qc_builtins::math::vtos
+fn qc_builtins::mock::Cvars::create
+fn qc_builtins::mock::Cvars::set
+fn qc_builtins::mock::Cvars::text
+fn qc_builtins::mock::EngineProfile::builtin_limit
+fn qc_builtins::mock::EngineProfile::precache_limit
+fn qc_builtins::mock::EngineStrings::make
+fn qc_builtins::mock::EngineStrings::set_temp
+fn qc_builtins::mock::EngineStrings::take_temp_change
+fn qc_builtins::mock::EngineStrings::text
+fn qc_builtins::mock::EngineStrings::unzone
+fn qc_builtins::mock::EngineStrings::zone
+fn qc_builtins::mock::MockEngine::append_command
+fn qc_builtins::mock::MockEngine::append_message
+fn qc_builtins::mock::MockEngine::client_active
+fn qc_builtins::mock::MockEngine::model_bounds_for
+fn qc_builtins::mock::MockEngine::new
+fn qc_builtins::mock::MockEngine::precache
+fn qc_builtins::mock::MockEngine::precache_index
+fn qc_builtins::mock::MockEngine::set_lightstyle
+fn qc_builtins::mock::Rng::new
+fn qc_builtins::mock::Rng::next_rand
+fn qc_builtins::table::lookup
+impl qc_builtins::dispatch::MockBuiltins: Builtins
+impl qc_builtins::dispatch::MockBuiltins: Default
+impl qc_builtins::error::BuiltinError: From<FatalError>
+impl qc_builtins::error::BuiltinError: From<RuntimeError>
+impl qc_builtins::error::BuiltinError: core::error::Error
+impl qc_builtins::error::BuiltinError: fmt::Display
+impl qc_builtins::error::FatalError: fmt::Display
+impl qc_builtins::error::RuntimeError: fmt::Display
+impl qc_builtins::mock::Cvars: Default
+mod qc_builtins::math
+mod qc_builtins::mock
+mod qc_builtins::table
+struct qc_builtins::dispatch::MockBuiltins
+struct qc_builtins::mock::Buffers
+struct qc_builtins::mock::CheckClient
+struct qc_builtins::mock::Cvars
+struct qc_builtins::mock::EngineStrings
+struct qc_builtins::mock::MockEngine
+struct qc_builtins::mock::ModelBounds
+struct qc_builtins::mock::Overflow
+struct qc_builtins::mock::Rng
+struct qc_builtins::table::Builtin
+use qc_builtins::BUILTIN_MAX_NUMBER = table::BUILTIN_MAX_NUMBER
+use qc_builtins::Builtin = table::Builtin
+use qc_builtins::BuiltinError = error::BuiltinError
+use qc_builtins::Class = table::Class
+use qc_builtins::EngineProfile = mock::EngineProfile
+use qc_builtins::FatalError = error::FatalError
+use qc_builtins::MockBuiltins = dispatch::MockBuiltins
+use qc_builtins::MockEngine = mock::MockEngine
+use qc_builtins::RuntimeError = error::RuntimeError
+use qc_builtins::lookup = table::lookup
+variant qc_builtins::error::BuiltinError::Fatal
+variant qc_builtins::error::BuiltinError::Host
+variant qc_builtins::error::BuiltinError::Runtime
+variant qc_builtins::error::FatalError::BadPointer
+variant qc_builtins::error::FatalError::BreakStatement
+variant qc_builtins::error::FatalError::MessageOverflow
+variant qc_builtins::error::FatalError::ModelNotPrecached
+variant qc_builtins::error::FatalError::NoFreeEdicts
+variant qc_builtins::error::FatalError::SoundAttenuation
+variant qc_builtins::error::FatalError::SoundChannel
+variant qc_builtins::error::FatalError::SoundVolume
+variant qc_builtins::error::RuntimeError::BackwardsBounds
+variant qc_builtins::error::RuntimeError::BadString
+variant qc_builtins::error::RuntimeError::EntityNotClient
+variant qc_builtins::error::RuntimeError::InvalidEntity
+variant qc_builtins::error::RuntimeError::InvalidField
+variant qc_builtins::error::RuntimeError::InvalidLightstyle
+variant qc_builtins::error::RuntimeError::InvalidString
+variant qc_builtins::error::RuntimeError::ModelPrecacheOverflow
+variant qc_builtins::error::RuntimeError::NoField
+variant qc_builtins::error::RuntimeError::NoParameter
+variant qc_builtins::error::RuntimeError::NoPrecache
+variant qc_builtins::error::RuntimeError::NoSystemGlobal
+variant qc_builtins::error::RuntimeError::NoVectorField
+variant qc_builtins::error::RuntimeError::ParameterOutOfRange
+variant qc_builtins::error::RuntimeError::ParmNotClient
+variant qc_builtins::error::RuntimeError::PrecacheOutsideSpawn
+variant qc_builtins::error::RuntimeError::ReturnOutOfRange
+variant qc_builtins::error::RuntimeError::SoundPrecacheOverflow
+variant qc_builtins::error::RuntimeError::Unimplemented
+variant qc_builtins::error::RuntimeError::UnimplementedBuiltin
+variant qc_builtins::error::RuntimeError::WriteDestBad
+variant qc_builtins::error::RuntimeError::WriteDestNotClient
+variant qc_builtins::mock::EngineProfile::Id
+variant qc_builtins::mock::EngineProfile::VkQuake
+variant qc_builtins::mock::MessageDest::All
+variant qc_builtins::mock::MessageDest::Broadcast
+variant qc_builtins::mock::MessageDest::Init
+variant qc_builtins::mock::MessageDest::One
+variant qc_builtins::mock::Precache::Model
+variant qc_builtins::mock::Precache::Sound
+variant qc_builtins::table::Class::Output
+variant qc_builtins::table::Class::Pure
+variant qc_builtins::table::Class::State
+variant qc_builtins::table::Class::World

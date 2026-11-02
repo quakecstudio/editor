@@ -74,11 +74,11 @@ pub(crate) struct Prefix {
 
 /// The most bytes an FTEQCC string holds, its parts joined: `pr_token[8192]` less its NUL
 /// (FTEF-13.20).
-pub const FTEQCC_MAX_STRING: usize = crate::FTEQCC_MAX_TOKEN - 1;
+pub(crate) const FTEQCC_MAX_STRING: usize = crate::FTEQCC_MAX_TOKEN - 1;
 
 /// FTEQCC's error for a longer one: `QCC_Error(ERR_INVALIDSTRINGIMMEDIATE, "String length
 /// exceeds %u", (unsigned)sizeof(pr_token)-1);` (FTEF-13.20).
-pub const STRING_TOO_LONG: &str = "String length exceeds 8191";
+pub(crate) const STRING_TOO_LONG: &str = "String length exceeds 8191";
 
 /// `Bronze` toggled by `\s` and `\b`: `QCC_PR_LexString`'s `texttype ^= 0xe080` (FTEF-13.10).
 const BRONZE: u32 = 0xe080;

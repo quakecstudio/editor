@@ -36,12 +36,12 @@ pub enum LayoutError {
         /// The progs' global slot count.
         globals: usize,
     },
-    /// The progs' `entityfields` is below [`EDICT_SYS_FIELDS_END`] (EDICT-3.3).
+    /// The progs' `entityfields` is below `EDICT_SYS_FIELDS_END` (EDICT-3.3).
     FieldsTooFew {
         /// The progs' field slot count.
         fields: usize,
     },
-    /// The progs' `entityfields` is above [`EDICT_MAX_FIELDS`] (EDICT-3.5).
+    /// The progs' `entityfields` is above `EDICT_MAX_FIELDS` (EDICT-3.5).
     FieldsTooMany {
         /// The progs' field slot count.
         fields: usize,

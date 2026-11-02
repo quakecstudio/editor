@@ -156,6 +156,7 @@ there the `cargo xtask ci` job runs fmt and deny itself.
 | `nextest` | `cargo nextest run --locked --workspace --all-features` | `Unit Tests (linux)` (and macOS and Windows) | `Unit Tests (linux)` |
 | `run` | `cargo run --locked -p qs-commands --profile release --example release_guard` | `cargo xtask ci` | `cargo xtask ci` |
 | `commands` | `cargo xtask commands --check` | `cargo xtask ci` | `cargo xtask ci` |
+| `api` | `cargo xtask api --check` | `cargo xtask ci` | `cargo xtask ci` |
 | `clippy-fixtures` | `cargo xtask clippy-fixtures` | `cargo xtask ci` | `cargo xtask ci` |
 | `deny` | `cargo deny --locked --all-features check advisories bans licenses sources` | `cargo-deny` | `cargo xtask ci` |
 | `deny-fixtures` | `cargo xtask deny-fixtures` | `cargo xtask ci` | `cargo xtask ci` |

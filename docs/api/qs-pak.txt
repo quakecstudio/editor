@@ -1,0 +1,42 @@
+const qs_pak::PAK_CRC_INIT
+const qs_pak::PAK_CRC_POLY
+const qs_pak::PAK_ENTRY_SIZE
+const qs_pak::PAK_HEADER_SIZE
+const qs_pak::PAK_MAGIC
+const qs_pak::PAK_MAX_FILES
+const qs_pak::PAK_NAME_SIZE
+const qs_pak::PAK_PAK0_COUNT
+const qs_pak::PAK_PAK0_CRC
+enum qs_pak::PakError
+field qs_pak::Entry.filelen
+field qs_pak::Entry.filepos
+field qs_pak::Header.dirlen
+field qs_pak::Header.dirofs
+fn qs_pak::Entry::name
+fn qs_pak::Entry::range
+fn qs_pak::Header::directory_range
+fn qs_pak::Header::entry_count
+fn qs_pak::Header::parse
+fn qs_pak::Pak::directory_crc
+fn qs_pak::Pak::entries
+fn qs_pak::Pak::entry_data
+fn qs_pak::Pak::file_len
+fn qs_pak::Pak::find
+fn qs_pak::Pak::header
+fn qs_pak::Pak::is_modified
+fn qs_pak::Pak::read
+fn qs_pak::Pak::read_entry
+fn qs_pak::Pak::read_from
+impl qs_pak::PakError: From<io::Error>
+impl qs_pak::PakError: core::error::Error
+impl qs_pak::PakError: fmt::Display
+struct qs_pak::Entry
+struct qs_pak::Header
+struct qs_pak::Pak
+variant qs_pak::PakError::DirectoryOutOfBounds
+variant qs_pak::PakError::DirectoryTooLarge
+variant qs_pak::PakError::EntryOutOfBounds
+variant qs_pak::PakError::Io
+variant qs_pak::PakError::NotAPackfile
+variant qs_pak::PakError::TooManyFiles
+variant qs_pak::PakError::UnterminatedName

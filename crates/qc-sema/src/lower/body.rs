@@ -23,7 +23,7 @@ use super::types::{TypedefScope, typedef_diagnostics};
 
 /// A function body's parameters, locals and the names it uses (QC-13).
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct RawBody {
+pub(crate) struct RawBody {
     /// The parameters, in order, with each one's name span (QC-13.11).
     pub params: Vec<RawParam>,
     /// The `local` declarations, in source order (QC-11.10).
@@ -66,7 +66,7 @@ pub struct RawBody {
 /// One alias a `using` statement makes (FTEF-20.5): `QCC_PR_GetDef (NULL, name, pr_scope,
 /// false, 0, 0)` finds the definition, and `QCC_PR_DummyDef` makes the alias of its type.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RawAlias {
+pub(crate) struct RawAlias {
     /// The name of the definition aliased, and its span.
     pub target: (String, Span),
     /// The alias's name, and its span.
@@ -79,7 +79,7 @@ pub struct RawAlias {
 
 /// A part of a state header `[frame, next]` (QC-13.6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StatePart {
+pub(crate) enum StatePart {
     /// The frame.
     Frame,
     /// The first or last frame of a cycle `[++ first .. last]` (FTEF-18.28), which must be a
@@ -91,7 +91,7 @@ pub enum StatePart {
 
 /// One parameter of a function definition (QC-13.11).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RawParam {
+pub(crate) struct RawParam {
     /// The parameter name.
     pub name: String,
     /// The byte span of the name token.
@@ -102,7 +102,7 @@ pub struct RawParam {
 
 /// One `local` declaration inside a body (QC-11.10).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RawLocal {
+pub(crate) struct RawLocal {
     /// The local's name.
     pub name: String,
     /// The byte span of the name token.
@@ -144,14 +144,14 @@ pub struct RawLocal {
 impl RawLocal {
     /// Whether the qualifier `q` marks it.
     #[must_use]
-    pub fn has(&self, q: &Qualifier) -> bool {
+    pub(crate) fn has(&self, q: &Qualifier) -> bool {
         self.qualifiers.contains(q)
     }
 
     /// Whether it is `static`: written so, or under `#pragma defaultstatic 1`, which
     /// `nonstatic` does not undo in a body (FTEF-21.14).
     #[must_use]
-    pub fn is_static(&self) -> bool {
+    pub(crate) fn is_static(&self) -> bool {
         self.has(&Qualifier::Static) || self.flags.default_on(PragmaDefault::Static)
     }
 }

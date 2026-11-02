@@ -158,7 +158,7 @@ fn encode(code: u32, text: &mut Vec<u8>) -> usize {
 /// one, and leaves any other file as it is; then `QCC_LoadFile` makes every NUL byte of the text
 /// a space (`else if (!mem[check])`, `mem[check] = ' ';`), and writes a line feed after the
 /// text (`mem[len] = '\n';`), so every reader meets a line's end before the text's (FTEF-14.64).
-pub fn qcc_load_file(bytes: Vec<u8>) -> (Vec<u8>, TextOrigin) {
+pub(crate) fn qcc_load_file(bytes: Vec<u8>) -> (Vec<u8>, TextOrigin) {
     let (mut text, origin) = sanitize(bytes);
     for byte in &mut text {
         if *byte == 0 {
@@ -206,7 +206,7 @@ fn sanitize(bytes: Vec<u8>) -> (Vec<u8>, TextOrigin) {
     }
 }
 
-/// [`qcc_load_file`]'s text for a file of `bytes`, kept at the file's own offsets for a reader
+/// `qcc_load_file`'s text for a file of `bytes`, kept at the file's own offsets for a reader
 /// of the file as written, the syntax tree, and where that text starts. Implements FTEF-14.56.
 ///
 /// The bytes of a UTF-8 byte order mark `QCC_SanitizeCharSet` skips stay in front, so the text
@@ -231,7 +231,7 @@ pub fn qcc_load_in_place(bytes: &[u8]) -> Option<(Cow<'_, [u8]>, usize)> {
     Some((Cow::Owned(text), start))
 }
 
-/// [`qcc_load_file`]'s text for a file of `bytes` that starts as `start` says, and where it
+/// `qcc_load_file`'s text for a file of `bytes` that starts as `start` says, and where it
 /// stands in them: for the module's source ([`FileStart::Source`]) past a first line that starts
 /// with `#!`, as `QCC_main` reads it (PRJ-4.10, [`skip_script_line`]), which keeps its offsets.
 #[must_use]
@@ -243,7 +243,7 @@ pub fn qcc_load_as(bytes: Vec<u8>, start: FileStart) -> (Vec<u8>, TextOrigin) {
     (text, origin)
 }
 
-/// `QCC_main`'s pass over the first line of a module's source, `text` as [`qcc_load_file`] gives
+/// `QCC_main`'s pass over the first line of a module's source, `text` as `qcc_load_file` gives
 /// it, when that line starts with `#!`: "ignore the first line if it starts with a #! for unix
 /// scripts" (`if (qccmsrc[0] == '#' && qccmsrc[1] == '!') qccmsrc = strchr(qccmsrc, '\n');`).
 /// Implements PRJ-4.10.

@@ -5,7 +5,7 @@
 //! The editor re-runs the semantic model on every keystroke, so it must recompute only what
 //! an edit changed (GOAL-1, the incremental model; the design doc, "Semantic model"). This
 //! database holds each file's source text as an *input*, and memoizes the *derived* queries
-//! built on top: [`Db::parse`] for one file, [`Db::lower`] for one file's declarations, and
+//! built on top: [`Db::parse`] for one file, `Db::lower` for one file's declarations, and
 //! [`Db::module_index`] for a whole module's resolved symbol table.
 //!
 //! Incrementality follows salsa's model in miniature. Every input carries a *revision*, the
@@ -53,7 +53,7 @@ use crate::symbol::{FileId, Location};
 pub struct QueryCounts {
     /// Times [`Db::parse`] parsed a file from scratch.
     pub parse: u64,
-    /// Times [`Db::lower`] lowered a file from scratch.
+    /// Times `Db::lower` lowered a file from scratch.
     pub lower: u64,
     /// Times [`Db::module_index`] or [`Db::analyze_module`] resolved a module from scratch.
     pub module_index: u64,
@@ -140,7 +140,7 @@ enum Query {
 
 /// The incremental semantic database.
 ///
-/// Set a file's text with [`Db::set_file_text`], then ask for [`Db::parse`], [`Db::lower`]
+/// Set a file's text with [`Db::set_file_text`], then ask for [`Db::parse`], `Db::lower`
 /// or [`Db::module_index`]. The database is single-threaded: the syntax tree it caches is
 /// built on `Rc` (`qc_syntax::SyntaxNode`), matching the editor's analysis thread.
 #[derive(Debug, Default)]
@@ -307,7 +307,7 @@ impl Db {
     /// The lowered declarations of file `file`, memoized.
     ///
     /// Depends only on the file's parse, so it recomputes only when the file changed.
-    pub fn lower(&mut self, file: FileId) -> FileDecls {
+    pub(crate) fn lower(&mut self, file: FileId) -> FileDecls {
         let revision = self.file_revision(file);
         if let Some(value) = fresh(&self.lowerings, file, revision) {
             return value;
@@ -329,7 +329,7 @@ impl Db {
     /// (QC-23.3), memoized.
     ///
     /// Recomputes only when the file list changes or one of its files does. The per-file
-    /// [`Db::lower`] results it reads are themselves cached, so an edit to one file
+    /// `Db::lower` results it reads are themselves cached, so an edit to one file
     /// re-lowers only that file and then re-resolves the module from the cached rest.
     pub fn module_index(&mut self, files: &[FileId]) -> ModuleIndex {
         let max_revision = files

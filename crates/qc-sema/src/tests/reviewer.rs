@@ -39,7 +39,6 @@ fn reviewer_goto_definition_is_per_file() {
     let offset = nth_offset(first, "health", 1);
     assert!(index.definition_at(FileId::new(0), offset).is_some());
     assert!(index.definition_at(FileId::new(1), offset).is_none());
-    assert!(index.references_at(FileId::new(1), offset, true).is_empty());
 }
 
 // spec QC-10.10: function types compare structurally with parameter names excluded, also

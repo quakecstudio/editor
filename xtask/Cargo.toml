@@ -30,6 +30,7 @@ qs-pak = { workspace = true }
 quakec-lsp = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
+syn = { workspace = true, features = ["full", "parsing"] }
 toml = { workspace = true, features = ["display", "parse", "serde", "std"] }
 
 [lints]

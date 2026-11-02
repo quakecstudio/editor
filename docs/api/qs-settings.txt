@@ -1,0 +1,54 @@
+const qs_settings::Setting::ALL
+enum qs_settings::Scope
+enum qs_settings::Setting
+enum qs_settings::Source
+enum qs_settings::Theme
+enum qs_settings::error::SettingsError
+field qs_settings::Appearance.theme
+field qs_settings::Log.filter
+field qs_settings::SettingsFile.appearance
+field qs_settings::SettingsFile.log
+field qs_settings::commands::Entry.default
+field qs_settings::commands::Entry.key
+field qs_settings::commands::Entry.source
+field qs_settings::commands::Entry.summary
+field qs_settings::commands::Entry.value
+fn qs_settings::Setting::default_value
+fn qs_settings::Setting::key
+fn qs_settings::Setting::summary
+fn qs_settings::SettingsFile::get
+fn qs_settings::SettingsFile::load
+fn qs_settings::SettingsFile::put
+fn qs_settings::SettingsStore::file
+fn qs_settings::SettingsStore::open
+fn qs_settings::SettingsStore::put
+fn qs_settings::SettingsStore::value
+fn qs_settings::commands::HasSettings::settings
+fn qs_settings::commands::register
+fn qs_settings::reference
+impl qs_settings::error::SettingsError: Error
+impl qs_settings::error::SettingsError: fmt::Display
+struct qs_settings::Appearance
+struct qs_settings::Log
+struct qs_settings::SettingsFile
+struct qs_settings::SettingsStore
+struct qs_settings::commands::Entry
+trait qs_settings::commands::HasSettings
+use qs_settings::Entry = commands::Entry
+use qs_settings::HasSettings = commands::HasSettings
+use qs_settings::SettingsError = error::SettingsError
+use qs_settings::register = commands::register
+variant qs_settings::Scope::Project
+variant qs_settings::Scope::User
+variant qs_settings::Setting::LogFilter
+variant qs_settings::Setting::Theme
+variant qs_settings::Source::Default
+variant qs_settings::Source::Project
+variant qs_settings::Source::User
+variant qs_settings::Theme::Dark
+variant qs_settings::Theme::Light
+variant qs_settings::error::SettingsError::NoProject
+variant qs_settings::error::SettingsError::Parse
+variant qs_settings::error::SettingsError::Read
+variant qs_settings::error::SettingsError::Value
+variant qs_settings::error::SettingsError::Write

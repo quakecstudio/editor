@@ -113,7 +113,7 @@ impl OriginMap {
     /// [`Self::locate`] of `span`, or `span` in `file` itself, the rendered file, when it has
     /// no origin.
     #[must_use]
-    pub fn locate_or(&self, file: FileId, span: Span) -> Location {
+    pub(crate) fn locate_or(&self, file: FileId, span: Span) -> Location {
         self.locate(span).unwrap_or(Location { file, span })
     }
 

@@ -1,0 +1,43 @@
+const qc_lno::LNO_HEADER_SIZE
+const qc_lno::LNO_MAGIC
+const qc_lno::LNO_MAX_STATEMENTS
+const qc_lno::LNO_VERSION
+enum qc_lno::CountField
+enum qc_lno::read::ReadError
+enum qc_lno::write::WriteError
+field qc_lno::LnoFile.columns
+field qc_lno::LnoFile.lines
+field qc_lno::LnoFile.numfielddefs
+field qc_lno::LnoFile.numglobaldefs
+field qc_lno::LnoFile.numglobals
+field qc_lno::LnoFile.trailing
+field qc_lno::MatchError.field
+field qc_lno::MatchError.lno
+field qc_lno::MatchError.progs
+fn qc_lno::LnoFile::matches
+fn qc_lno::LnoFile::matches_header
+fn qc_lno::LnoFile::numstatements
+fn qc_lno::read::LnoFile::read
+fn qc_lno::write::LnoFile::write
+impl qc_lno::CountField: core::fmt::Display
+impl qc_lno::MatchError: core::error::Error
+impl qc_lno::MatchError: core::fmt::Display
+impl qc_lno::read::ReadError: core::error::Error
+impl qc_lno::read::ReadError: core::fmt::Display
+impl qc_lno::write::WriteError: core::error::Error
+impl qc_lno::write::WriteError: core::fmt::Display
+struct qc_lno::LnoFile
+struct qc_lno::MatchError
+use qc_lno::ReadError = read::ReadError
+use qc_lno::WriteError = write::WriteError
+variant qc_lno::CountField::FieldDefs
+variant qc_lno::CountField::GlobalDefs
+variant qc_lno::CountField::Globals
+variant qc_lno::CountField::Statements
+variant qc_lno::read::ReadError::BadMagic
+variant qc_lno::read::ReadError::LineTableTruncated
+variant qc_lno::read::ReadError::TooShort
+variant qc_lno::read::ReadError::UnsupportedVersion
+variant qc_lno::write::WriteError::ColumnCountMismatch
+variant qc_lno::write::WriteError::ColumnsWithoutLines
+variant qc_lno::write::WriteError::TooManyStatements

@@ -1,0 +1,68 @@
+const qs_vfs::FS_GAMENAME
+const qs_vfs::FS_POP_PATH
+const qs_vfs::FS_POP_SIZE
+const qs_vfs::FS_POP_TABLE
+enum qs_vfs::Element
+enum qs_vfs::Location
+enum qs_vfs::VfsError
+enum qs_vfs::host::EntryKind
+field qs_vfs::host::DirEntry.kind
+field qs_vfs::host::DirEntry.name
+fn qs_vfs::Archive::name
+fn qs_vfs::Archive::pak
+fn qs_vfs::Archive::path
+fn qs_vfs::Directory::host_path
+fn qs_vfs::Directory::name
+fn qs_vfs::Element::name
+fn qs_vfs::FileRef::element
+fn qs_vfs::FileRef::location
+fn qs_vfs::FileRef::name
+fn qs_vfs::LoadedFile::bytes
+fn qs_vfs::LoadedFile::bytes_with_nul
+fn qs_vfs::LoadedFile::into_bytes
+fn qs_vfs::LoadedFile::size
+fn qs_vfs::Vfs::elements
+fn qs_vfs::Vfs::files
+fn qs_vfs::Vfs::find
+fn qs_vfs::Vfs::game_dir
+fn qs_vfs::Vfs::host
+fn qs_vfs::Vfs::is_modified
+fn qs_vfs::Vfs::is_registered
+fn qs_vfs::Vfs::load
+fn qs_vfs::Vfs::load_wad
+fn qs_vfs::Vfs::new
+fn qs_vfs::Vfs::read
+fn qs_vfs::host::HostFs::open
+fn qs_vfs::host::HostFs::read_dir
+fn qs_vfs::host::find_entry
+impl qs_vfs::VfsError: core::error::Error
+impl qs_vfs::VfsError: fmt::Display
+impl qs_vfs::host::StdFs: HostFs
+struct qs_vfs::Archive
+struct qs_vfs::Directory
+struct qs_vfs::FileRef
+struct qs_vfs::LoadedFile
+struct qs_vfs::Vfs
+struct qs_vfs::host::DirEntry
+struct qs_vfs::host::StdFs
+trait qs_vfs::host::HostFs
+type qs_vfs::host::HostFs::File
+use qs_vfs::DirEntry = host::DirEntry
+use qs_vfs::EntryKind = host::EntryKind
+use qs_vfs::HostFs = host::HostFs
+use qs_vfs::StdFs = host::StdFs
+use qs_vfs::find_entry = host::find_entry
+variant qs_vfs::Element::Archive
+variant qs_vfs::Element::Directory
+variant qs_vfs::Location::Entry
+variant qs_vfs::Location::Loose
+variant qs_vfs::VfsError::Archive
+variant qs_vfs::VfsError::CorruptedDataFile
+variant qs_vfs::VfsError::CouldntLoadPackfile
+variant qs_vfs::VfsError::Io
+variant qs_vfs::VfsError::ModifiedShareware
+variant qs_vfs::VfsError::Wad
+variant qs_vfs::VfsError::WadNotFound
+variant qs_vfs::host::EntryKind::Dir
+variant qs_vfs::host::EntryKind::File
+variant qs_vfs::host::EntryKind::Other

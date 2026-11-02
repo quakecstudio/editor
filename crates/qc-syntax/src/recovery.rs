@@ -2,7 +2,7 @@
 
 //! Checks that the parser's error recovery is local (LANG-2).
 //!
-//! [`check_deletions`] deletes each token of a file in turn, parses what is left and checks
+//! `check_deletions` deletes each token of a file in turn, parses what is left and checks
 //! that the damage stays where the token was: the tree still gives back the text, every
 //! declaration before the one that lost the token parses as before, every declaration from
 //! two after it onwards parses as before, and every error is between them. The tests run it
@@ -14,7 +14,7 @@ use std::fmt;
 use crate::ast::{AstNode as _, SourceFile};
 use crate::{Code, Dialect, GreenNode, Parse, Span, SyntaxKind, SyntaxNode, parse_with};
 
-/// What [`check_deletions`] found.
+/// What `check_deletions` found.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DeletionReport {
     /// How many deletions were tried.
@@ -137,13 +137,16 @@ fn deletable(root: &SyntaxNode) -> Vec<Span> {
         .collect()
 }
 
-/// Deletes each token of `source` in turn and checks that the damage is local.
+/// Deletes each token of `source` in turn and checks that the damage is local, in the vanilla
+/// dialect; the tests' form of [`check_deletions_with`].
+#[cfg(test)]
 #[must_use]
-pub fn check_deletions(source: &[u8]) -> DeletionReport {
+pub(crate) fn check_deletions(source: &[u8]) -> DeletionReport {
     check_deletions_with(source, Dialect::Vanilla)
 }
 
-/// [`check_deletions`] with `source` and each edited copy parsed in `dialect`.
+/// Deletes each token of `source` in turn and checks that the damage is local, `source` and
+/// each edited copy parsed in `dialect`.
 #[must_use]
 pub fn check_deletions_with(source: &[u8], dialect: Dialect) -> DeletionReport {
     let original = parse_with(source, dialect);

@@ -1,0 +1,61 @@
+const qc_edict::EDICT_HEADER_SIZE
+const qc_edict::EDICT_SYS_GLOBALS_END
+const qc_edict::number::EdictNumber::WORLD
+enum qc_edict::layout::LayoutError
+enum qc_edict::store::EdictError
+field qc_edict::system::SysVar.etype
+field qc_edict::system::SysVar.name
+field qc_edict::system::SysVar.slot
+fn qc_edict::layout::EdictLayout::edict_number
+fn qc_edict::layout::EdictLayout::edict_size
+fn qc_edict::layout::EdictLayout::entity_value
+fn qc_edict::layout::EdictLayout::entityfields
+fn qc_edict::layout::EdictLayout::for_progs
+fn qc_edict::layout::EdictLayout::new
+fn qc_edict::layout::EdictLayout::pointer_slot
+fn qc_edict::layout::EdictLayout::pointer_value
+fn qc_edict::number::EdictNumber::from_i32
+fn qc_edict::number::EdictNumber::index
+fn qc_edict::number::EdictNumber::new
+fn qc_edict::number::EdictNumber::to_i32
+fn qc_edict::store::EdictStore::alloc
+fn qc_edict::store::EdictStore::clear_edict
+fn qc_edict::store::EdictStore::edict_num
+fn qc_edict::store::EdictStore::field
+fn qc_edict::store::EdictStore::fields
+fn qc_edict::store::EdictStore::fields_mut
+fn qc_edict::store::EdictStore::free
+fn qc_edict::store::EdictStore::is_client
+fn qc_edict::store::EdictStore::is_free
+fn qc_edict::store::EdictStore::layout
+fn qc_edict::store::EdictStore::maxclients
+fn qc_edict::store::EdictStore::new
+fn qc_edict::store::EdictStore::num_edicts
+fn qc_edict::store::EdictStore::num_for_edict
+fn qc_edict::store::EdictStore::set_field
+fn qc_edict::system::field_by_name
+fn qc_edict::system::global_by_name
+impl qc_edict::layout::LayoutError: core::error::Error
+impl qc_edict::layout::LayoutError: fmt::Display
+impl qc_edict::number::EdictNumber: fmt::Display
+impl qc_edict::store::EdictError: core::error::Error
+impl qc_edict::store::EdictError: fmt::Display
+impl qc_edict::store::EdictStore: Clone
+mod qc_edict::system
+struct qc_edict::layout::EdictLayout
+struct qc_edict::number::EdictNumber
+struct qc_edict::store::EdictStore
+struct qc_edict::system::SysVar
+use qc_edict::EdictError = store::EdictError
+use qc_edict::EdictLayout = layout::EdictLayout
+use qc_edict::EdictNumber = number::EdictNumber
+use qc_edict::EdictStore = store::EdictStore
+use qc_edict::LayoutError = layout::LayoutError
+variant qc_edict::layout::LayoutError::FieldsTooFew
+variant qc_edict::layout::LayoutError::FieldsTooMany
+variant qc_edict::layout::LayoutError::GlobalsTooFew
+variant qc_edict::store::EdictError::BadMaxclients
+variant qc_edict::store::EdictError::BadNumber
+variant qc_edict::store::EdictError::BadPointer
+variant qc_edict::store::EdictError::NoField
+variant qc_edict::store::EdictError::NoFreeEdicts

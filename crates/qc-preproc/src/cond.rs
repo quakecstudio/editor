@@ -63,7 +63,7 @@ impl<T> CondStack<T> {
 
     /// The vanilla `#else` (QC-9.6): the innermost block's kept and skipped sides swap, at
     /// each `#else`. False when no block is open, which `qcc` reports (E0109).
-    pub fn flip(&mut self) -> bool {
+    pub(crate) fn flip(&mut self) -> bool {
         let Some((block, _)) = self.blocks.last_mut() else {
             return false;
         };
@@ -106,7 +106,7 @@ impl<T> CondStack<T> {
     }
 
     /// What is kept of each block still open, outermost first.
-    pub fn into_open(self) -> impl Iterator<Item = T> {
+    pub(crate) fn into_open(self) -> impl Iterator<Item = T> {
         self.blocks.into_iter().map(|(_, data)| data)
     }
 }

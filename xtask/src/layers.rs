@@ -49,15 +49,12 @@ struct Member {
 }
 
 pub(crate) fn check(root: &Path) -> Result<Report, String> {
-    let layers = read_toml(root, FILE)?;
-    let Some(crates) = layers.get("crates").and_then(Value::as_table) else {
-        return Err(format!("{FILE} has no [crates] table"));
-    };
+    let crates = crates_table(root)?;
     let members = members(root)?;
     let mut report = Report::default();
 
     let mut assigned = BTreeMap::new();
-    for (name, layer) in crates {
+    for (name, layer) in &crates {
         let Some(layer) = layer.as_str() else {
             report
                 .problems
@@ -220,6 +217,30 @@ fn strings(value: Option<&Value>) -> impl Iterator<Item = &str> {
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
+}
+
+/// The `[crates]` table of `layers.toml`.
+fn crates_table(root: &Path) -> Result<Table, String> {
+    let layers = read_toml(root, FILE)?;
+    layers
+        .get("crates")
+        .and_then(Value::as_table)
+        .cloned()
+        .ok_or_else(|| format!("{FILE} has no [crates] table"))
+}
+
+/// Every crate `layers.toml` names with its layer, in the file's order; a crate mapped to
+/// anything but a layer name is an error.
+pub(crate) fn assignments(root: &Path) -> Result<Vec<(String, String)>, String> {
+    crates_table(root)?
+        .iter()
+        .map(|(name, layer)| {
+            let layer = layer
+                .as_str()
+                .ok_or_else(|| format!("{FILE}: {name} is not a string"))?;
+            Ok((name.clone(), layer.to_owned()))
+        })
+        .collect()
 }
 
 fn read_toml(root: &Path, path: &str) -> Result<Table, String> {

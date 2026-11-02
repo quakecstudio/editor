@@ -29,21 +29,21 @@ pub struct RawDecl {
     /// Its declared type.
     pub ty: Type,
     /// Its initialiser, when it has one (QC-11.5).
-    pub init: Option<RawInit>,
+    pub(crate) init: Option<RawInit>,
     /// For a function definition with a `[frame, next]` header, the next-think name and its
     /// span (QC-13.6): resolution declares it as a global `void()` if new.
     pub next_think: Option<(String, Span)>,
     /// The names its initialiser uses, when that is not a function body, and the names its
     /// parameters' default values use (FTE-10.2, FTE-18.2), in source order; resolved in the
     /// global scope after the declaration.
-    pub uses: Vec<RawUse>,
+    pub(crate) uses: Vec<RawUse>,
     /// For an FTEQCC `Class::member` declarator, the class (FTEF-9.4).
     pub scope: Option<String>,
     /// For an FTEQCC `class`, its parent and members (FTEF-9.1).
-    pub class: Option<RawClass>,
+    pub(crate) class: Option<RawClass>,
     /// For a type's name, the kind of type it names: a class, struct, union, typedef, enum or
     /// accessor, which may be declared more than once (FTEF-7.2).
-    pub type_kind: Option<TypeKind>,
+    pub(crate) type_kind: Option<TypeKind>,
     /// Whether this stands for a type written with no declarator, `float (x);`, which only has
     /// its type names checked (FTEF-20.12).
     pub type_only: bool,
@@ -57,13 +57,13 @@ pub struct RawDecl {
     pub returns_function: bool,
     /// For an accessor, its base type after `:`, `None` inside `Some` when it has none
     /// (FTEF-10.6).
-    pub accessor: Option<Option<Type>>,
+    pub(crate) accessor: Option<Option<Type>>,
     /// The qualifiers written before the type (FTEF-15.1), in order.
     pub qualifiers: Vec<Qualifier>,
     /// A value initialiser, as the checks of QC-11.3 and FTEF-19.31 read it.
-    pub value: Option<RawValue>,
+    pub(crate) value: Option<RawValue>,
     /// The first array dimension, when the declarator has one (FTEF-5, FTEF-19.8).
-    pub array: Option<ArrayDim>,
+    pub(crate) array: Option<ArrayDim>,
     /// How many array suffixes the declarator has (FTEF-19.8).
     pub array_dims: usize,
     /// The first dimension's size when it is an expression the lowering does not read, which
@@ -73,17 +73,17 @@ pub struct RawDecl {
     /// two-dimensional array needs a `{` there (FTEF-19.8).
     pub aggregate_first: Option<(String, Span)>,
     /// A braced initialiser, read against the type (FTEF-19.47).
-    pub aggregate: Option<RawAggregate>,
+    pub(crate) aggregate: Option<RawAggregate>,
     /// The parameters of the function type the declaration gives, as FTEQCC's redeclaration
     /// rules compare them (FTEF-19.6, FTEF-19.7); empty for any other type.
-    pub params: Vec<RawParamInfo>,
+    pub(crate) params: Vec<RawParamInfo>,
     /// For an enum's name, how its value is found (FTEF-19.10).
-    pub enum_item: Option<EnumItem>,
+    pub(crate) enum_item: Option<EnumItem>,
     /// For a `typedef`'s name, the type it names (FTEF-19.9).
     pub typedef: Option<Type>,
     /// For a `typedef` of a function type, its named parameters, which a definition of the
     /// type takes as its own (FTEF-7.5).
-    pub typedef_params: Vec<RawParam>,
+    pub(crate) typedef_params: Vec<RawParam>,
     /// The compiler flags and pragma defaults where the declaration starts, which
     /// `QCC_PR_ParseDefs` reads first (FTEF-21.1, FTEF-21.14).
     pub flags: CompilerFlags,
@@ -99,14 +99,14 @@ pub struct RawDecl {
     pub pointer_var: bool,
     /// For an `extern` declaration at file level, the base type `QCC_PR_ParseDefs` tests it
     /// against, which resolution reads with the typedefs it knows (FTEF-21.10).
-    pub extern_base: Option<ExternBase>,
+    pub(crate) extern_base: Option<ExternBase>,
 }
 
 /// The base type of an `extern` declaration and what `QCC_PR_ParseDefs` reads with it: `if
 /// (externfnc && !pr_scope && basetype->type != ev_function) { if (flag_qcfuncs) ...warning...;
 /// externfnc=false; }` (FTEF-21.10).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ExternBase {
+pub(crate) struct ExternBase {
     /// The declaration's type before its declarators, a left out one's `int`.
     pub ty: Type,
     /// Whether `qcfuncs` was on after the type, which the warning needs.
@@ -188,7 +188,7 @@ impl Qualifier {
 
 /// A value initialiser, as the semantic model reads it.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RawValue {
+pub(crate) struct RawValue {
     /// The initialiser's span.
     pub span: Span,
     /// What it is.
@@ -228,7 +228,7 @@ pub enum ValueKind {
 
 /// The first dimension of an array declarator (FTEF-5.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ArrayDim {
+pub(crate) enum ArrayDim {
     /// A size the model reads: a number literal, or the count of an unsized array's
     /// initialiser.
     Sized(u32),
@@ -242,7 +242,7 @@ pub enum ArrayDim {
 /// A parameter of a declaration's function type, as FTEQCC compares two redeclarations
 /// (FTEF-19.6, FTEF-19.7).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RawParamInfo {
+pub(crate) struct RawParamInfo {
     /// Its name, which a call with too few arguments names (FTEF-32.3).
     pub name: Option<String>,
     /// Its type.
@@ -260,7 +260,7 @@ pub struct RawParamInfo {
 
 /// A declaration's initialiser, as resolution reads it (QC-11.5).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RawInit {
+pub(crate) enum RawInit {
     /// A value or an aggregate; under FTEQCC its value when it is a literal, which FTEQCC
     /// compares when a name is initialised twice (FTE-22.6, FTEF-17.10), and `None` under the
     /// vanilla profile, which compares no two values (QCD-3.6).
@@ -275,7 +275,7 @@ pub enum RawInit {
 impl RawDecl {
     /// Whether the declaration has an initialiser (QC-11.5).
     #[must_use]
-    pub const fn initialized(&self) -> bool {
+    pub(crate) const fn initialized(&self) -> bool {
         self.init.is_some()
     }
 
@@ -290,13 +290,13 @@ impl RawDecl {
 
     /// Whether the initialiser is a builtin number (QC-13.3, FTEF-17.9).
     #[must_use]
-    pub const fn is_builtin(&self) -> bool {
+    pub(crate) const fn is_builtin(&self) -> bool {
         matches!(self.init, Some(RawInit::Builtin(_)))
     }
 
     /// For a function definition, the lowered body.
     #[must_use]
-    pub const fn body(&self) -> Option<&RawBody> {
+    pub(crate) const fn body(&self) -> Option<&RawBody> {
         match &self.init {
             Some(RawInit::Body(body)) => Some(body),
             Some(RawInit::Value(_) | RawInit::Builtin(_)) | None => None,
@@ -379,20 +379,20 @@ impl RawDecl {
     /// Whether it is `static`: written so, or under `#pragma defaultstatic 1` and not
     /// `nonstatic` (FTEF-21.14).
     #[must_use]
-    pub fn is_static(&self) -> bool {
+    pub(crate) fn is_static(&self) -> bool {
         self.has(&Qualifier::Static)
             || (self.flags.default_on(PragmaDefault::Static) && !self.has(&Qualifier::Nonstatic))
     }
 
     /// Whether it is `noref`: written so, or under `#pragma noref 1` (FTEF-12.6).
     #[must_use]
-    pub fn is_noref(&self) -> bool {
+    pub(crate) fn is_noref(&self) -> bool {
         self.has(&Qualifier::Noref) || self.flags.default_on(PragmaDefault::Noref)
     }
 
     /// The name its `alias` attribute gives (FTEF-21.9).
     #[must_use]
-    pub fn alias(&self) -> Option<&str> {
+    pub(crate) fn alias(&self) -> Option<&str> {
         self.qualifiers.iter().find_map(|q| match q {
             Qualifier::Alias(name) => Some(name.as_str()),
             _ => None,
@@ -401,14 +401,14 @@ impl RawDecl {
 
     /// Whether the qualifier `q` marks it.
     #[must_use]
-    pub fn has(&self, q: &Qualifier) -> bool {
+    pub(crate) fn has(&self, q: &Qualifier) -> bool {
         self.qualifiers.contains(q)
     }
 
     /// Whether an FTEQCC `wrap`, `weak` or `accumulate` qualifier lets the definition be given
     /// again (FTEF-15.5).
     #[must_use]
-    pub fn redefinable(&self) -> bool {
+    pub(crate) fn redefinable(&self) -> bool {
         self.accessor_body
             || self.has(&Qualifier::Wrap)
             || self.has(&Qualifier::Weak)
@@ -418,7 +418,7 @@ impl RawDecl {
     /// The reason a `deprecated` qualifier gives, `Some("")` for none; `None` when the
     /// declaration is not deprecated (FTEF-19.13).
     #[must_use]
-    pub fn deprecated(&self) -> Option<&str> {
+    pub(crate) fn deprecated(&self) -> Option<&str> {
         deprecated_of(&self.qualifiers)
     }
 
@@ -555,7 +555,7 @@ fn string_len(literal: &ast::Literal) -> Option<u32> {
 /// A braced initialiser and the sizes of its declarator's array dimensions, each a number or
 /// `None`, which `QCC_PR_ParseInitializerType_Internal` reads against the type (FTEF-19.47).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RawAggregate {
+pub(crate) struct RawAggregate {
     /// The initialiser.
     pub init: RawBraces,
     /// Each dimension's size when it is a number; `None` for `[]` or another expression.
@@ -564,7 +564,7 @@ pub struct RawAggregate {
 
 /// `{ ... }` in an initialiser.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RawBraces {
+pub(crate) struct RawBraces {
     /// Whether it names its members, `{ .a = 1 }`.
     pub designated: bool,
     /// In designated braces, the first element that names no member, which FTEQCC refuses
@@ -581,7 +581,7 @@ pub struct RawBraces {
 
 /// One element of a braced initialiser.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RawElement {
+pub(crate) enum RawElement {
     /// A braced one.
     Braces(RawBraces),
     /// A value, read as a definition's value is.
@@ -591,7 +591,7 @@ pub enum RawElement {
 impl RawElement {
     /// The text and span of its first token.
     #[must_use]
-    pub fn first(&self) -> (String, Span) {
+    pub(crate) fn first(&self) -> (String, Span) {
         match self {
             Self::Braces(braces) => ("{".to_owned(), braces.open),
             Self::Value(value) => (value.first.clone(), value.span),

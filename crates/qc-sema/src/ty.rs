@@ -66,7 +66,7 @@ pub enum SimpleType {
 /// the type's own words: the keywords and `ILP32` the C type words are read with (FTEF-20.9),
 /// and whether `qcfuncs` is on (FTEF-21.8).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TypeContext {
+pub(crate) struct TypeContext {
     /// What the loop over C type words reads.
     pub words: CContext,
     /// Whether `qcfuncs` is on: off, `()` is variadic, a first parameter with no type an
@@ -147,7 +147,7 @@ impl Type {
 
     /// The type `void()`.
     #[must_use]
-    pub fn void_function() -> Self {
+    pub(crate) fn void_function() -> Self {
         Self::function(Self::Simple(SimpleType::Void), Vec::new())
     }
 
@@ -189,7 +189,7 @@ impl Type {
     /// Whether this type is, or holds, a variadic function type, which id's `PR_FindType` never
     /// finds again, so that no other type is ever the same as it (QC-10.10).
     #[must_use]
-    pub fn holds_variadic(&self) -> bool {
+    pub(crate) fn holds_variadic(&self) -> bool {
         match self {
             Type::Function(func) => {
                 func.variadic
@@ -205,7 +205,7 @@ impl Type {
     ///
     /// A vector is three words; every other type, [`Type::Unknown`] included, is one.
     #[must_use]
-    pub fn word_size(&self) -> u32 {
+    pub(crate) fn word_size(&self) -> u32 {
         match self {
             Self::Simple(SimpleType::Vector) => 3,
             Self::Unknown
@@ -219,20 +219,20 @@ impl Type {
 
     /// Whether this is a function type (QC-11.8: a global of function type is a function).
     #[must_use]
-    pub fn is_function(&self) -> bool {
+    pub(crate) fn is_function(&self) -> bool {
         matches!(self, Self::Function(_))
     }
 
     /// Whether this is a field type (QC-11.9: fields can only be global).
     #[must_use]
-    pub fn is_field(&self) -> bool {
+    pub(crate) fn is_field(&self) -> bool {
         matches!(self, Self::Field(_))
     }
 
     /// The class or other type a value of this type names, through one pointer: `Named` or
     /// `Pointer(Named)` (FTEF-17.3).
     #[must_use]
-    pub fn type_name(&self) -> Option<&str> {
+    pub(crate) fn type_name(&self) -> Option<&str> {
         match self {
             Self::Named(name) => Some(name),
             Self::Pointer(inner) => inner.type_name(),
@@ -249,7 +249,7 @@ impl Type {
     /// at the type's offset (FTEF-20.9), name the scalar they make; a parameter list is read
     /// with the `qcfuncs` it gives (FTEF-21.8).
     #[must_use]
-    pub fn from_ast(ty: &ast::Type, context: &dyn Fn(usize) -> TypeContext) -> Self {
+    pub(crate) fn from_ast(ty: &ast::Type, context: &dyn Fn(usize) -> TypeContext) -> Self {
         #[cfg(test)]
         FROM_AST_CALLS.with(|calls| calls.set(calls.get().saturating_add(1)));
         match ty {
@@ -295,7 +295,7 @@ impl Type {
     /// (`if (!flag_qcfuncs) ftype->vargs = true; //'void name()' is vargs/undefined in C89`,
     /// FTEF-21.8).
     #[must_use]
-    pub fn function_of(
+    pub(crate) fn function_of(
         ret: Self,
         list: &ast::ParamList,
         context: &dyn Fn(usize) -> TypeContext,
@@ -372,7 +372,10 @@ impl Type {
     /// parameter that is itself a function type would otherwise be lowered again at every
     /// level of nesting.
     #[must_use]
-    pub fn params_of(list: &ast::ParamList, context: &dyn Fn(usize) -> TypeContext) -> Vec<Self> {
+    pub(crate) fn params_of(
+        list: &ast::ParamList,
+        context: &dyn Fn(usize) -> TypeContext,
+    ) -> Vec<Self> {
         let params: Vec<ast::Param> = list.params().collect();
         let types: Vec<Self> = params.iter().map(|p| Self::param_of(p, context)).collect();
         if let ([only], [ty]) = (params.as_slice(), types.as_slice())
@@ -409,7 +412,7 @@ impl Type {
 impl SimpleType {
     /// The semantic simple type of an AST simple-type kind.
     #[must_use]
-    pub fn from_ast(kind: ast::SimpleTypeKind) -> Self {
+    pub(crate) fn from_ast(kind: ast::SimpleTypeKind) -> Self {
         match kind {
             ast::SimpleTypeKind::Void => Self::Void,
             ast::SimpleTypeKind::Float => Self::Float,

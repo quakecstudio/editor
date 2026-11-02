@@ -175,7 +175,7 @@ pub enum Comparison {
 /// trace with an error record, and DIFF-9.2 compares that record's message, so an agreeing
 /// error record compares equal and nothing after it exists to compare (DIFF-9.5, DIFF-10.1); the
 /// NaN, edict layout and engine string readings of DIFF-10.2 are handled inside
-/// [`equivalent`] (DIFF-9.4). Any divergence this returns is therefore a failure (DIFF-9.6,
+/// `equivalent` (DIFF-9.4). Any divergence this returns is therefore a failure (DIFF-9.6,
 /// DIFF-10.3).
 #[must_use]
 pub fn compare(a: &Trace, b: &Trace, initial_globals: &[u32]) -> Comparison {

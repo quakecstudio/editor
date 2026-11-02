@@ -114,6 +114,7 @@ cargo xtask engines [--check]             # regenerate (or check) the engine-tar
 cargo xtask compiler-diff [--fast]       # the compiler differential's CI subset: qcc against qc-codegen on id 1.01, 32 rounds
 cargo xtask compiler-diff --full <codebase>  # 128 rounds over one codebase (id-1.01, a rerelease codebase or a corpus mod); up to an hour each, so run them one at a time or in parallel
 cargo xtask commands [--check]            # regenerate (or check) docs/commands.md from the command registry
+cargo xtask api [--check]                 # regenerate (or check) docs/api/<crate>.txt, each L0 to L5 crate's public items; the audit is docs/audits/api-surface.md
 
 scripts/refresh-specs.sh --verify         # cached specs match specs/manifest.tsv (offline)
 scripts/refresh-specs.sh                  # refresh specs/ from the origins
@@ -247,7 +248,8 @@ after its `code-review` self-review is recorded in the PR body (`work-issue`), e
 | Rust conventions | `docs/conventions.md` |
 | Testing bar and readiness reports | `docs/testing.md`, `docs/readiness/` |
 | Gate reports | `docs/gates/` |
-| Code audits (CONV-17) | `docs/audits/` |
+| Code audits (CONV-17, the public API boundary) | `docs/audits/` |
+| Public items per library crate (generated) | `docs/api/`, from `cargo xtask api` |
 | Cross-crate tests | `crates/qs-tests/tests/it/` (one module per area) |
 | App directories | `crates/qs-paths/` |
 | Agent rules, skills, subagents, hooks | `.claude/rules/`, `.claude/skills/`, `.claude/agents/`, `.claude/hooks/` |

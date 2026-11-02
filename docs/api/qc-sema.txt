@@ -1,0 +1,269 @@
+enum qc_sema::cast::Cast
+enum qc_sema::cast::Kind
+enum qc_sema::cast::Source
+enum qc_sema::lower::decl::LiteralValue
+enum qc_sema::lower::decl::Qualifier
+enum qc_sema::lower::decl::ValueKind
+enum qc_sema::symbol::DefKind
+enum qc_sema::ty::SimpleType
+enum qc_sema::ty::Type
+field qc_sema::cast::Literal.null
+field qc_sema::db::ModuleAnalysis.index
+field qc_sema::db::ModuleAnalysis.options
+field qc_sema::db::ModuleAnalysis.syntax
+field qc_sema::db::QueryCounts.lower
+field qc_sema::db::QueryCounts.module_index
+field qc_sema::db::QueryCounts.parse
+field qc_sema::db::QueryCounts.preprocess
+field qc_sema::expand::ModuleInput.autoproto
+field qc_sema::expand::ModuleInput.command_line
+field qc_sema::expand::ModuleInput.compiled
+field qc_sema::expand::ModuleInput.defines
+field qc_sema::expand::ModuleInput.dir
+field qc_sema::expand::ModuleInput.include_dirs
+field qc_sema::expand::ModuleInput.names
+field qc_sema::expand::ModuleInput.prelude
+field qc_sema::lower::FileDecls.decls
+field qc_sema::lower::FileDecls.diagnostics
+field qc_sema::lower::FileDecls.members
+field qc_sema::lower::FileDecls.struct_tags
+field qc_sema::lower::decl::BuiltinFunction.name
+field qc_sema::lower::decl::BuiltinFunction.number
+field qc_sema::lower::decl::RawDecl.accessor_body
+field qc_sema::lower::decl::RawDecl.aggregate_first
+field qc_sema::lower::decl::RawDecl.array_dims
+field qc_sema::lower::decl::RawDecl.assumevar
+field qc_sema::lower::decl::RawDecl.flags
+field qc_sema::lower::decl::RawDecl.name
+field qc_sema::lower::decl::RawDecl.next_think
+field qc_sema::lower::decl::RawDecl.pointer_var
+field qc_sema::lower::decl::RawDecl.qualifiers
+field qc_sema::lower::decl::RawDecl.returns_function
+field qc_sema::lower::decl::RawDecl.scope
+field qc_sema::lower::decl::RawDecl.size_expr
+field qc_sema::lower::decl::RawDecl.skipped_init
+field qc_sema::lower::decl::RawDecl.span
+field qc_sema::lower::decl::RawDecl.ty
+field qc_sema::lower::decl::RawDecl.type_only
+field qc_sema::lower::decl::RawDecl.typedef
+field qc_sema::lower::decl::RawDecl.untyped
+field qc_sema::resolve::FileDiagnostic.diagnostic
+field qc_sema::resolve::FileDiagnostic.file
+field qc_sema::resolve::MemberShape.count
+field qc_sema::resolve::MemberShape.name
+field qc_sema::resolve::MemberShape.ty
+field qc_sema::resolve::MemberShape.word
+field qc_sema::resolve::ResolveOptions.autoproto
+field qc_sema::resolve::ResolveOptions.case_insensitive
+field qc_sema::resolve::ResolveOptions.dialect
+field qc_sema::resolve::ResolveOptions.qcfuncs_off
+field qc_sema::resolve::ResolveOptions.target
+field qc_sema::resolve::StructShape.members
+field qc_sema::resolve::StructShape.words
+field qc_sema::symbol::Definition.generated
+field qc_sema::symbol::Definition.initialized
+field qc_sema::symbol::Definition.kind
+field qc_sema::symbol::Definition.location
+field qc_sema::symbol::Definition.member_of
+field qc_sema::symbol::Definition.name
+field qc_sema::symbol::Definition.owner
+field qc_sema::symbol::Definition.ty
+field qc_sema::symbol::Location.file
+field qc_sema::symbol::Location.span
+field qc_sema::symbol::Reference.def
+field qc_sema::symbol::Reference.location
+field qc_sema::ty::FunctionType.labels
+field qc_sema::ty::FunctionType.params
+field qc_sema::ty::FunctionType.ret
+field qc_sema::ty::FunctionType.variadic
+field qc_sema::ty::ParamLabel.default
+field qc_sema::ty::ParamLabel.name
+field qc_sema::ty::ParamLabel.optional
+field qc_sema::ty::ParamLabel.out
+field qc_sema::ty::ParamLabels.0
+fn qc_sema::cast::Kind::name
+fn qc_sema::cast::Source::cast
+fn qc_sema::cast::Source::kind
+fn qc_sema::cast::Source::name
+fn qc_sema::cast::Type::fteqcc_name
+fn qc_sema::cast::Type::fteqcc_scalar
+fn qc_sema::check::TypedBody::type_at
+fn qc_sema::check::fold::fold_builtin_call
+fn qc_sema::check::fold::fold_floats
+fn qc_sema::db::Db::analyze_module
+fn qc_sema::db::Db::counts
+fn qc_sema::db::Db::dialect
+fn qc_sema::db::Db::expanded_decls
+fn qc_sema::db::Db::expanded_origins
+fn qc_sema::db::Db::expanded_parse
+fn qc_sema::db::Db::file_path
+fn qc_sema::db::Db::file_text
+fn qc_sema::db::Db::module_index
+fn qc_sema::db::Db::new
+fn qc_sema::db::Db::parse
+fn qc_sema::db::Db::set_autoproto
+fn qc_sema::db::Db::set_dialect
+fn qc_sema::db::Db::set_file
+fn qc_sema::db::Db::set_file_text
+fn qc_sema::db::ModuleAnalysis::diagnostics
+fn qc_sema::expand::ModuleInput::from_graph
+fn qc_sema::expand::ModuleInput::from_module
+fn qc_sema::expand::OriginMap::locate
+fn qc_sema::lower::decl::LiteralValue::builtin_function
+fn qc_sema::lower::decl::RawDecl::literal
+fn qc_sema::lower::decl::declares
+fn qc_sema::lower::lower_file
+fn qc_sema::nav::ModuleIndex::definition_at
+fn qc_sema::nav::ModuleIndex::references
+fn qc_sema::resolve::FileDiagnostic::new
+fn qc_sema::resolve::InitialValue::words
+fn qc_sema::resolve::ModuleIndex::alias
+fn qc_sema::resolve::ModuleIndex::array_len
+fn qc_sema::resolve::ModuleIndex::body
+fn qc_sema::resolve::ModuleIndex::def
+fn qc_sema::resolve::ModuleIndex::definitions
+fn qc_sema::resolve::ModuleIndex::defs
+fn qc_sema::resolve::ModuleIndex::diagnostics
+fn qc_sema::resolve::ModuleIndex::initial_value
+fn qc_sema::resolve::ModuleIndex::is_constant
+fn qc_sema::resolve::ModuleIndex::redeclarations
+fn qc_sema::resolve::ModuleIndex::refs
+fn qc_sema::resolve::ModuleIndex::struct_shape
+fn qc_sema::resolve::resolve_module
+fn qc_sema::symbol::DefId::index
+fn qc_sema::symbol::DefKind::is_global
+fn qc_sema::symbol::FileId::index
+fn qc_sema::symbol::FileId::new
+fn qc_sema::ty::SimpleType::as_str
+fn qc_sema::ty::Type::function
+fn qc_sema::ty::Type::named
+impl qc_sema::ty::ParamLabels: Eq
+impl qc_sema::ty::ParamLabels: PartialEq
+impl qc_sema::ty::ParamLabels: std::hash::Hash
+mod qc_sema::cast
+mod qc_sema::db
+mod qc_sema::expand
+mod qc_sema::lower
+mod qc_sema::nav
+mod qc_sema::resolve
+mod qc_sema::symbol
+mod qc_sema::ty
+struct qc_sema::cast::Literal
+struct qc_sema::check::TypedBody
+struct qc_sema::db::Db
+struct qc_sema::db::ModuleAnalysis
+struct qc_sema::db::QueryCounts
+struct qc_sema::expand::ModuleInput
+struct qc_sema::expand::OriginMap
+struct qc_sema::lower::FileDecls
+struct qc_sema::lower::decl::BuiltinFunction
+struct qc_sema::lower::decl::RawDecl
+struct qc_sema::resolve::FileDiagnostic
+struct qc_sema::resolve::InitialValue
+struct qc_sema::resolve::MemberShape
+struct qc_sema::resolve::ModuleIndex
+struct qc_sema::resolve::ResolveOptions
+struct qc_sema::resolve::StructShape
+struct qc_sema::symbol::DefId
+struct qc_sema::symbol::Definition
+struct qc_sema::symbol::FileId
+struct qc_sema::symbol::Location
+struct qc_sema::symbol::Reference
+struct qc_sema::ty::FunctionType
+struct qc_sema::ty::ParamLabel
+struct qc_sema::ty::ParamLabels
+use qc_sema::Db = db::Db
+use qc_sema::DefId = symbol::DefId
+use qc_sema::DefKind = symbol::DefKind
+use qc_sema::Definition = symbol::Definition
+use qc_sema::FileDecls = lower::FileDecls
+use qc_sema::FileDiagnostic = resolve::FileDiagnostic
+use qc_sema::FileId = symbol::FileId
+use qc_sema::FunctionType = ty::FunctionType
+use qc_sema::InitialValue = resolve::InitialValue
+use qc_sema::LiteralValue = lower::LiteralValue
+use qc_sema::Location = symbol::Location
+use qc_sema::MemberShape = resolve::MemberShape
+use qc_sema::ModuleAnalysis = db::ModuleAnalysis
+use qc_sema::ModuleIndex = resolve::ModuleIndex
+use qc_sema::ModuleInput = expand::ModuleInput
+use qc_sema::OriginMap = expand::OriginMap
+use qc_sema::QueryCounts = db::QueryCounts
+use qc_sema::Reference = symbol::Reference
+use qc_sema::ResolveOptions = resolve::ResolveOptions
+use qc_sema::SimpleType = ty::SimpleType
+use qc_sema::StructShape = resolve::StructShape
+use qc_sema::Type = ty::Type
+use qc_sema::TypedBody = check::TypedBody
+use qc_sema::fold_builtin_call = check::fold::fold_builtin_call
+use qc_sema::fold_floats = check::fold::fold_floats
+use qc_sema::lower::LiteralValue = decl::LiteralValue
+use qc_sema::lower::Qualifier = decl::Qualifier
+use qc_sema::lower::ValueKind = decl::ValueKind
+use qc_sema::lower::declares = decl::declares
+use qc_sema::resolve_module = resolve::resolve_module
+variant qc_sema::cast::Cast::Implicit
+variant qc_sema::cast::Cast::Lax
+variant qc_sema::cast::Cast::Refused
+variant qc_sema::cast::Cast::Silent
+variant qc_sema::cast::Cast::StringPointerDisabled
+variant qc_sema::cast::Kind::Double
+variant qc_sema::cast::Kind::Entity
+variant qc_sema::cast::Kind::Field
+variant qc_sema::cast::Kind::Float
+variant qc_sema::cast::Kind::Function
+variant qc_sema::cast::Kind::Int64
+variant qc_sema::cast::Kind::Integer
+variant qc_sema::cast::Kind::Opaque
+variant qc_sema::cast::Kind::Pointer
+variant qc_sema::cast::Kind::String
+variant qc_sema::cast::Kind::Uint
+variant qc_sema::cast::Kind::Uint64
+variant qc_sema::cast::Kind::Vector
+variant qc_sema::cast::Kind::Void
+variant qc_sema::cast::Source::Literal
+variant qc_sema::cast::Source::Typed
+variant qc_sema::lower::decl::LiteralValue::Builtin
+variant qc_sema::lower::decl::LiteralValue::Float
+variant qc_sema::lower::decl::LiteralValue::String
+variant qc_sema::lower::decl::LiteralValue::Text
+variant qc_sema::lower::decl::LiteralValue::Vector
+variant qc_sema::lower::decl::Qualifier::Accumulate
+variant qc_sema::lower::decl::Qualifier::Alias
+variant qc_sema::lower::decl::Qualifier::Auto
+variant qc_sema::lower::decl::Qualifier::Const
+variant qc_sema::lower::decl::Qualifier::Deprecated
+variant qc_sema::lower::decl::Qualifier::Extern
+variant qc_sema::lower::decl::Qualifier::Inline
+variant qc_sema::lower::decl::Qualifier::Nonstatic
+variant qc_sema::lower::decl::Qualifier::Noref
+variant qc_sema::lower::decl::Qualifier::Nosave
+variant qc_sema::lower::decl::Qualifier::Shared
+variant qc_sema::lower::decl::Qualifier::Static
+variant qc_sema::lower::decl::Qualifier::Strip
+variant qc_sema::lower::decl::Qualifier::Used
+variant qc_sema::lower::decl::Qualifier::Var
+variant qc_sema::lower::decl::Qualifier::Weak
+variant qc_sema::lower::decl::Qualifier::Wrap
+variant qc_sema::lower::decl::ValueKind::Cast
+variant qc_sema::lower::decl::ValueKind::Indexed
+variant qc_sema::lower::decl::ValueKind::Literal
+variant qc_sema::lower::decl::ValueKind::Name
+variant qc_sema::lower::decl::ValueKind::Other
+variant qc_sema::lower::decl::ValueKind::Translate
+variant qc_sema::symbol::DefKind::Field
+variant qc_sema::symbol::DefKind::Function
+variant qc_sema::symbol::DefKind::Global
+variant qc_sema::symbol::DefKind::Local
+variant qc_sema::symbol::DefKind::Param
+variant qc_sema::ty::SimpleType::Entity
+variant qc_sema::ty::SimpleType::Float
+variant qc_sema::ty::SimpleType::String
+variant qc_sema::ty::SimpleType::Vector
+variant qc_sema::ty::SimpleType::Void
+variant qc_sema::ty::Type::Field
+variant qc_sema::ty::Type::Function
+variant qc_sema::ty::Type::Named
+variant qc_sema::ty::Type::Pointer
+variant qc_sema::ty::Type::Simple
+variant qc_sema::ty::Type::Unknown

@@ -135,7 +135,8 @@ impl ErrorKind {
     /// more statement executed and is listed as the last statement line (TRACE-4.6, and the
     /// vectors' README `steps:`).
     #[must_use]
-    pub fn is_executed_statement(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_executed_statement(&self) -> bool {
         match self {
             Self::Runaway => false,
             Self::Divergence(divergence) => {

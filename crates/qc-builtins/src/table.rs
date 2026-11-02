@@ -52,7 +52,7 @@ pub const BUILTIN_MAX_NUMBER: u32 = 78;
 ///
 /// `BUILTIN_FIXME_MESSAGE` for the runtime error of a call to one of the numbers that hold
 /// `PF_Fixme`.
-pub const BUILTIN_FIXME_MESSAGE: &str = "unimplemented bulitin";
+pub(crate) const BUILTIN_FIXME_MESSAGE: &str = "unimplemented bulitin";
 
 use Class::{Output, Pure, State, World};
 
@@ -358,8 +358,9 @@ pub fn lookup(number: u32) -> Option<&'static Builtin> {
     BUILTINS.iter().find(|entry| entry.number == number)
 }
 
-/// Whether `number` is a `PF_Fixme` gap in 1 to 78 (BUILTIN-1.2).
+/// Whether `number` is a `PF_Fixme` gap in 1 to 78 (BUILTIN-1.2); the tests read it.
+#[cfg(test)]
 #[must_use]
-pub fn is_fixme(number: u32) -> bool {
+pub(crate) fn is_fixme(number: u32) -> bool {
     (1..=BUILTIN_MAX_NUMBER).contains(&number) && lookup(number).is_none()
 }

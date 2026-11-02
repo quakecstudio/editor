@@ -17,9 +17,10 @@ mod manifest;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+pub(crate) use graph::PRJ_MAX_DEPTH;
 pub use graph::{
-    Define, Diagnostic, FileGraph, Form, GraphFile, GraphIndex, PRJ_MAX_DEPTH, PRJ_MAX_FILES, Via,
-    build_graph,
+    Define, Diagnostic, FileGraph, Form, GraphFile, GraphIndex, PRJ_MAX_FILES, Via, build_graph,
 };
 pub use manifest::ManifestError;
 pub use qc_lexer::Code;
@@ -35,13 +36,13 @@ use serde::Deserialize;
 /// The project file's name (PRJ-1.1).
 pub const PRJ_MANIFEST: &str = "quakec.toml";
 /// The server QuakeC output file's name (PRJ-3.2).
-pub const PRJ_SSQC_OUTPUT: &str = "progs.dat";
+pub(crate) const PRJ_SSQC_OUTPUT: &str = "progs.dat";
 /// The client QuakeC output file's name (PRJ-3.2).
-pub const PRJ_CSQC_OUTPUT: &str = "csprogs.dat";
+pub(crate) const PRJ_CSQC_OUTPUT: &str = "csprogs.dat";
 /// The menu QuakeC output file's name (PRJ-3.2).
-pub const PRJ_MENUQC_OUTPUT: &str = "menu.dat";
+pub(crate) const PRJ_MENUQC_OUTPUT: &str = "menu.dat";
 /// The directory, in the project, that build output goes in (PRJ-3.2, ADR-0008).
-pub const PRJ_BUILD_DIR: &str = "build";
+pub(crate) const PRJ_BUILD_DIR: &str = "build";
 
 /// The QuakeC dialect a module is written in (PRJ-2.8).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -136,7 +137,7 @@ impl ModuleKind {
 
     /// The kind a bare project gives a module that declares `output` (PRJ-3.3).
     #[must_use]
-    pub fn from_declared_output(output: Option<&Path>) -> Self {
+    pub(crate) fn from_declared_output(output: Option<&Path>) -> Self {
         let name = output
             .and_then(Path::file_name)
             .map(|n| n.to_string_lossy().to_ascii_lowercase());

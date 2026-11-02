@@ -9,12 +9,12 @@ use serde::Serialize;
 
 /// The longest id, in bytes: the upper bound MCP gives tool names (MCP 2026-07-28, Tools, Tool
 /// Names: "Tool names SHOULD be between 1 and 128 characters in length (inclusive)").
-pub const MAX_ID_LEN: usize = 128;
+pub(crate) const MAX_ID_LEN: usize = 128;
 
 /// A command's stable id, such as `edit.undo` or `compile`.
 ///
 /// One or more segments joined by `.`; each segment is a lowercase ASCII letter followed by
-/// lowercase ASCII letters, digits and `_`; at most [`MAX_ID_LEN`] bytes in all. Every such id
+/// lowercase ASCII letters, digits and `_`; at most `MAX_ID_LEN` bytes in all. Every such id
 /// is also a valid MCP tool name, so the agent and MCP surfaces can use it unchanged.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
@@ -81,7 +81,7 @@ impl Borrow<str> for CommandId {
 pub enum IdError {
     /// The text is empty.
     Empty,
-    /// The text is longer than [`MAX_ID_LEN`] bytes.
+    /// The text is longer than `MAX_ID_LEN` bytes.
     TooLong {
         /// Its length in bytes.
         len: usize,

@@ -50,7 +50,7 @@ pub const EDICT_HEADER_SIZE: i32 = 96;
 ///
 /// `EDICT_SYS_FIELDS_END` in EDICT-3. A progs with fewer field slots cannot hold them
 /// (EDICT-3.3).
-pub const EDICT_SYS_FIELDS_END: usize = 105;
+pub(crate) const EDICT_SYS_FIELDS_END: usize = 105;
 
 /// Global slots id's `progdefs.q1` declares up to and including `end_sys_globals`.
 ///
@@ -62,26 +62,26 @@ pub const EDICT_SYS_GLOBALS_END: usize = 92;
 ///
 /// A real server has 1 to 16 clients; [`EdictStore::new`] also accepts 0, which the VM test
 /// environment uses for a server with no client slots.
-pub const EDICT_MAX_CLIENTS: usize = 16;
+pub(crate) const EDICT_MAX_CLIENTS: usize = 16;
 
 /// Most field slots a progs may declare before an entity value cannot name every edict.
 ///
 /// From EDICT-3.5: `(2147483647 / 600 - 96) / 4` with each division rounded down. A progs
 /// whose `entityfields` is greater than this is refused ([`LayoutError::FieldsTooMany`]).
-pub const EDICT_MAX_FIELDS: usize = 894_760;
+pub(crate) const EDICT_MAX_FIELDS: usize = 894_760;
 
 /// The reuse delay of EDICT-6.1: an edict freed more than this many seconds ago may be reused.
 ///
 /// `EDICT_REUSE_DELAY` in EDICT-6, from id's `ED_Alloc`: `sv.time - e->freetime > 0.5`.
-pub const EDICT_REUSE_DELAY: f64 = 0.5;
+pub(crate) const EDICT_REUSE_DELAY: f64 = 0.5;
 
 /// The reuse grace of EDICT-6.1: an edict whose `freetime` is below this may always be reused.
 ///
 /// `EDICT_REUSE_GRACE` in EDICT-6, from id's `ED_Alloc`: `e->freetime < 2`, relaxing the
 /// policy in the first couple of seconds of a map.
-pub const EDICT_REUSE_GRACE: f32 = 2.0;
+pub(crate) const EDICT_REUSE_GRACE: f32 = 2.0;
 
 /// The `nextthink` value freeing an edict leaves, id's `ED_Free`: `ed->v.nextthink = -1`.
 ///
 /// `EDICT_FREED_NEXTTHINK` in EDICT-7, the field at slot 46.
-pub const EDICT_FREED_NEXTTHINK: f32 = -1.0;
+pub(crate) const EDICT_FREED_NEXTTHINK: f32 = -1.0;

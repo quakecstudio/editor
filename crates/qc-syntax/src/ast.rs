@@ -551,7 +551,8 @@ impl SourceFile {
     }
 
     /// The directive lines between declarations.
-    pub fn directives(&self) -> impl Iterator<Item = Directive> {
+    #[cfg(test)]
+    pub(crate) fn directives(&self) -> impl Iterator<Item = Directive> {
         children(&self.0)
     }
 }
@@ -733,7 +734,7 @@ impl Type {
 impl SimpleType {
     /// The keyword.
     #[must_use]
-    pub fn keyword(&self) -> Option<SyntaxToken> {
+    pub(crate) fn keyword(&self) -> Option<SyntaxToken> {
         self.0.child_tokens().find(|t| t.kind().is_keyword())
     }
 
@@ -1271,8 +1272,9 @@ impl ClassDecl {
     }
 
     /// Whether the class has a body, so it is no forward declaration.
+    #[cfg(test)]
     #[must_use]
-    pub fn has_body(&self) -> bool {
+    pub(crate) fn has_body(&self) -> bool {
         self.0.token_of(K::LBrace).is_some()
     }
 
@@ -1282,7 +1284,8 @@ impl ClassDecl {
     }
 
     /// The `get` and `set` members (FTEF-10.3).
-    pub fn accessor_members(&self) -> impl Iterator<Item = AccessorMember> {
+    #[cfg(test)]
+    pub(crate) fn accessor_members(&self) -> impl Iterator<Item = AccessorMember> {
         children(&self.0)
     }
 

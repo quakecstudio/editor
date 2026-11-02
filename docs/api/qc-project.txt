@@ -1,0 +1,107 @@
+const qc_project::PRJ_MANIFEST
+const qc_project::Target::ALL
+const qc_project::graph::PRJ_MAX_FILES
+enum qc_project::Dialect
+enum qc_project::ModuleKind
+enum qc_project::ProjectError
+enum qc_project::Target
+enum qc_project::graph::Form
+enum qc_project::graph::Via
+enum qc_project::manifest::ManifestError
+field qc_project::Module.defines
+field qc_project::Module.dialect
+field qc_project::Module.graph
+field qc_project::Module.include_dirs
+field qc_project::Module.kind
+field qc_project::Module.name
+field qc_project::Module.output
+field qc_project::Module.src
+field qc_project::Module.target
+field qc_project::Project.dialect
+field qc_project::Project.manifest
+field qc_project::Project.mod_name
+field qc_project::Project.modules
+field qc_project::Project.name
+field qc_project::Project.root
+field qc_project::Project.target
+field qc_project::graph::Define.name
+field qc_project::graph::Define.value
+field qc_project::graph::Diagnostic.code
+field qc_project::graph::Diagnostic.file
+field qc_project::graph::Diagnostic.line
+field qc_project::graph::Diagnostic.message
+field qc_project::graph::FileGraph.autoproto
+field qc_project::graph::FileGraph.declared_output
+field qc_project::graph::FileGraph.diagnostics
+field qc_project::graph::FileGraph.dir
+field qc_project::graph::FileGraph.files
+field qc_project::graph::FileGraph.form
+field qc_project::graph::FileGraph.sourcefiles
+field qc_project::graph::GraphFile.name
+field qc_project::graph::GraphFile.parent
+field qc_project::graph::GraphFile.path
+field qc_project::graph::GraphFile.via
+fn qc_project::ModuleKind::as_str
+fn qc_project::ModuleKind::output_file
+fn qc_project::graph::Define::parse
+fn qc_project::graph::GraphIndex::index
+fn qc_project::graph::build_graph
+fn qc_project::open
+fn qc_project::open_dir
+fn qc_project::open_file
+impl qc_project::ProjectError: fmt::Display
+impl qc_project::ProjectError: std::error::Error
+impl qc_project::manifest::ManifestError: fmt::Display
+impl qc_project::manifest::ManifestError: std::error::Error
+struct qc_project::Module
+struct qc_project::Project
+struct qc_project::graph::Define
+struct qc_project::graph::Diagnostic
+struct qc_project::graph::FileGraph
+struct qc_project::graph::GraphFile
+struct qc_project::graph::GraphIndex
+use qc_project::Code = qc_lexer::Code
+use qc_project::Define = graph::Define
+use qc_project::Diagnostic = graph::Diagnostic
+use qc_project::FileGraph = graph::FileGraph
+use qc_project::Form = graph::Form
+use qc_project::FsLoader = qc_preproc::FsLoader
+use qc_project::GraphFile = graph::GraphFile
+use qc_project::GraphIndex = graph::GraphIndex
+use qc_project::Loader = qc_preproc::Loader
+use qc_project::ManifestError = manifest::ManifestError
+use qc_project::MemoryLoader = qc_preproc::MemoryLoader
+use qc_project::PRJ_MAX_FILES = graph::PRJ_MAX_FILES
+use qc_project::Via = graph::Via
+use qc_project::build_graph = graph::build_graph
+use qc_project::normalize = qc_preproc::normalize
+variant qc_project::Dialect::Fteqcc
+variant qc_project::Dialect::Gmqcc
+variant qc_project::Dialect::Vanilla
+variant qc_project::ModuleKind::Csqc
+variant qc_project::ModuleKind::Menuqc
+variant qc_project::ModuleKind::Ssqc
+variant qc_project::ProjectError::Manifest
+variant qc_project::ProjectError::NoProject
+variant qc_project::ProjectError::Read
+variant qc_project::Target::Dp
+variant qc_project::Target::Fte
+variant qc_project::Target::Ironwail
+variant qc_project::Target::Quake
+variant qc_project::Target::QuakeSpasm
+variant qc_project::Target::Rerelease
+variant qc_project::Target::VkQuake
+variant qc_project::graph::Form::List
+variant qc_project::graph::Form::Source
+variant qc_project::graph::Via::Include
+variant qc_project::graph::Via::IncludeList
+variant qc_project::graph::Via::Listed
+variant qc_project::graph::Via::Root
+variant qc_project::manifest::ManifestError::BadDefine
+variant qc_project::manifest::ManifestError::BadModName
+variant qc_project::manifest::ManifestError::DuplicateModule
+variant qc_project::manifest::ManifestError::NoModule
+variant qc_project::manifest::ManifestError::OutputOutside
+variant qc_project::manifest::ManifestError::RootedIncludeDir
+variant qc_project::manifest::ManifestError::RootedSrc
+variant qc_project::manifest::ManifestError::Toml

@@ -1,0 +1,251 @@
+const qc_progs::crc::PROGS_CRC_INIT
+const qc_progs::crc::PROGS_CRC_POLY
+const qc_progs::crc::PROGS_CRC_XOR
+const qc_progs::limits::LIMIT_LOCALSTACK_SIZE
+const qc_progs::limits::LIMIT_MAX_DATAGRAM
+const qc_progs::limits::LIMIT_MAX_DEF_SLOT
+const qc_progs::limits::LIMIT_MAX_DEF_TYPE
+const qc_progs::limits::LIMIT_MAX_EDICTS
+const qc_progs::limits::LIMIT_MAX_ENT_LEAFS
+const qc_progs::limits::LIMIT_MAX_LIGHTSTYLES
+const qc_progs::limits::LIMIT_MAX_MODELS
+const qc_progs::limits::LIMIT_MAX_MSGLEN
+const qc_progs::limits::LIMIT_MAX_OPERAND_SLOT
+const qc_progs::limits::LIMIT_MAX_QPATH
+const qc_progs::limits::LIMIT_MAX_SOUNDS
+const qc_progs::limits::LIMIT_MAX_STACK_DEPTH
+const qc_progs::limits::LIMIT_NUM_BUILTINS
+const qc_progs::limits::LIMIT_QCC_MAX_DATA_PATH
+const qc_progs::limits::LIMIT_QCC_MAX_ERRORS
+const qc_progs::limits::LIMIT_QCC_MAX_FIELDS
+const qc_progs::limits::LIMIT_QCC_MAX_FRAMES
+const qc_progs::limits::LIMIT_QCC_MAX_FUNCTIONS
+const qc_progs::limits::LIMIT_QCC_MAX_GLOBALS
+const qc_progs::limits::LIMIT_QCC_MAX_NAME
+const qc_progs::limits::LIMIT_QCC_MAX_PRECACHE
+const qc_progs::limits::LIMIT_QCC_MAX_REGS
+const qc_progs::limits::LIMIT_QCC_MAX_STATEMENTS
+const qc_progs::limits::LIMIT_QCC_MAX_STRINGS
+const qc_progs::limits::LIMIT_RUNAWAY
+const qc_progs::opcode::PROGS_OPCODE_COUNT
+const qc_progs::records::PROGS_DEF_SAVEGLOBAL
+const qc_progs::records::PROGS_DEF_SIZE
+const qc_progs::records::PROGS_FTE32_DEF_SIZE
+const qc_progs::records::PROGS_FTE32_STATEMENT_SIZE
+const qc_progs::records::PROGS_FTE_HEADER_SIZE
+const qc_progs::records::PROGS_FTE_LINE_SIZE
+const qc_progs::records::PROGS_FTE_SECONDARY16
+const qc_progs::records::PROGS_FTE_SECONDARY32
+const qc_progs::records::PROGS_FTE_TYPE_SIZE
+const qc_progs::records::PROGS_FUNCTION_SIZE
+const qc_progs::records::PROGS_GLOBAL_SIZE
+const qc_progs::records::PROGS_HEADER_CRC
+const qc_progs::records::PROGS_HEADER_SIZE
+const qc_progs::records::PROGS_STATEMENT_SIZE
+const qc_progs::records::PROGS_STRING_ALIGN
+const qc_progs::records::PROGS_VERSION
+const qc_progs::records::PROGS_VERSION_FTE
+enum qc_progs::TableId
+enum qc_progs::read::ReadError
+enum qc_progs::read::StringSite
+enum qc_progs::records::Format
+enum qc_progs::write::WriteError
+field qc_progs::read::ReadOptions.check_header_crc
+field qc_progs::records::Def.ofs
+field qc_progs::records::Def.s_name
+field qc_progs::records::Def.type_bits
+field qc_progs::records::FteHeader.blockscompressed
+field qc_progs::records::FteHeader.numbodylessfuncs
+field qc_progs::records::FteHeader.numtypes
+field qc_progs::records::FteHeader.ofs_types
+field qc_progs::records::FteHeader.ofsbodylessfuncs
+field qc_progs::records::FteHeader.ofsfiles
+field qc_progs::records::FteHeader.ofslinenums
+field qc_progs::records::FteHeader.secondaryversion
+field qc_progs::records::Function.first_statement
+field qc_progs::records::Function.locals
+field qc_progs::records::Function.numparms
+field qc_progs::records::Function.parm_size
+field qc_progs::records::Function.parm_start
+field qc_progs::records::Function.profile
+field qc_progs::records::Function.s_file
+field qc_progs::records::Function.s_name
+field qc_progs::records::Header.crc
+field qc_progs::records::Header.entityfields
+field qc_progs::records::Header.numfielddefs
+field qc_progs::records::Header.numfunctions
+field qc_progs::records::Header.numglobaldefs
+field qc_progs::records::Header.numglobals
+field qc_progs::records::Header.numstatements
+field qc_progs::records::Header.numstrings
+field qc_progs::records::Header.ofs_fielddefs
+field qc_progs::records::Header.ofs_functions
+field qc_progs::records::Header.ofs_globaldefs
+field qc_progs::records::Header.ofs_globals
+field qc_progs::records::Header.ofs_statements
+field qc_progs::records::Header.ofs_strings
+field qc_progs::records::Header.version
+field qc_progs::records::Statement.a
+field qc_progs::records::Statement.b
+field qc_progs::records::Statement.c
+field qc_progs::records::Statement.op
+field qc_progs::write::FteParts.bodyless_functions
+field qc_progs::write::FteParts.line_numbers
+field qc_progs::write::FteParts.numtypes
+field qc_progs::write::FteParts.ofs_types
+field qc_progs::write::FteParts.ofsfiles
+field qc_progs::write::ProgsFile.crc
+field qc_progs::write::ProgsFile.entityfields
+field qc_progs::write::ProgsFile.field_defs
+field qc_progs::write::ProgsFile.format
+field qc_progs::write::ProgsFile.fte
+field qc_progs::write::ProgsFile.functions
+field qc_progs::write::ProgsFile.global_defs
+field qc_progs::write::ProgsFile.globals
+field qc_progs::write::ProgsFile.layout
+field qc_progs::write::ProgsFile.statements
+field qc_progs::write::ProgsFile.strings
+fn qc_progs::crc::crc_block
+fn qc_progs::crc::crc_init
+fn qc_progs::crc::crc_process_byte
+fn qc_progs::crc::crc_value
+fn qc_progs::read::Progs::bodyless_functions
+fn qc_progs::read::Progs::bytes
+fn qc_progs::read::Progs::ed_field_at_ofs
+fn qc_progs::read::Progs::ed_find_field
+fn qc_progs::read::Progs::ed_find_function
+fn qc_progs::read::Progs::ed_find_global
+fn qc_progs::read::Progs::ed_global_at_ofs
+fn qc_progs::read::Progs::field_defs
+fn qc_progs::read::Progs::file_crc
+fn qc_progs::read::Progs::format
+fn qc_progs::read::Progs::fte_header
+fn qc_progs::read::Progs::functions
+fn qc_progs::read::Progs::global_defs
+fn qc_progs::read::Progs::globals
+fn qc_progs::read::Progs::header
+fn qc_progs::read::Progs::layout
+fn qc_progs::read::Progs::line_numbers
+fn qc_progs::read::Progs::read
+fn qc_progs::read::Progs::read_with
+fn qc_progs::read::Progs::statements
+fn qc_progs::read::Progs::string
+fn qc_progs::read::Progs::strings
+fn qc_progs::read::Table::as_bytes
+fn qc_progs::read::Table::get
+fn qc_progs::read::Table::is_empty
+fn qc_progs::read::Table::iter
+fn qc_progs::read::Table::len
+fn qc_progs::records::Def::def_type
+fn qc_progs::records::Def::is_save_global
+fn qc_progs::records::Format::def_size
+fn qc_progs::records::Format::header_size
+fn qc_progs::records::Format::secondary_version
+fn qc_progs::records::Format::statement_size
+fn qc_progs::records::Format::version
+fn qc_progs::records::Function::builtin_number
+fn qc_progs::records::Record::decode
+fn qc_progs::records::Record::encode
+fn qc_progs::records::Record::size
+fn qc_progs::write::Progs::to_file
+fn qc_progs::write::write
+impl qc_progs::TableId: core::fmt::Display
+impl qc_progs::read::ReadError: core::error::Error
+impl qc_progs::read::ReadError: fmt::Display
+impl qc_progs::read::ReadOptions: Default
+impl qc_progs::read::StringSite: fmt::Display
+impl qc_progs::read::Table: Clone
+impl qc_progs::read::Table: Copy
+impl qc_progs::read::Table: IntoIterator
+impl qc_progs::read::TableIter: ExactSizeIterator
+impl qc_progs::read::TableIter: Iterator
+impl qc_progs::records::Def: Record
+impl qc_progs::records::Function: Record
+impl qc_progs::records::Statement: Record
+impl qc_progs::write::ProgsFile: Default
+impl qc_progs::write::WriteError: core::error::Error
+impl qc_progs::write::WriteError: fmt::Display
+mod qc_progs::crc
+mod qc_progs::limits
+mod qc_progs::opcode
+struct qc_progs::Layout
+struct qc_progs::read::Progs
+struct qc_progs::read::ReadOptions
+struct qc_progs::read::Table
+struct qc_progs::read::TableIter
+struct qc_progs::records::Def
+struct qc_progs::records::FteHeader
+struct qc_progs::records::Function
+struct qc_progs::records::Header
+struct qc_progs::records::Statement
+struct qc_progs::write::FteParts
+struct qc_progs::write::ProgsFile
+trait qc_progs::records::Record
+trait qc_progs::records::sealed::Sealed
+use qc_progs::Def = records::Def
+use qc_progs::Format = records::Format
+use qc_progs::FteHeader = records::FteHeader
+use qc_progs::FteParts = write::FteParts
+use qc_progs::Function = records::Function
+use qc_progs::Header = records::Header
+use qc_progs::PROGS_DEF_SAVEGLOBAL = records::PROGS_DEF_SAVEGLOBAL
+use qc_progs::PROGS_DEF_SIZE = records::PROGS_DEF_SIZE
+use qc_progs::PROGS_FTE32_DEF_SIZE = records::PROGS_FTE32_DEF_SIZE
+use qc_progs::PROGS_FTE32_STATEMENT_SIZE = records::PROGS_FTE32_STATEMENT_SIZE
+use qc_progs::PROGS_FTE_HEADER_SIZE = records::PROGS_FTE_HEADER_SIZE
+use qc_progs::PROGS_FTE_LINE_SIZE = records::PROGS_FTE_LINE_SIZE
+use qc_progs::PROGS_FTE_SECONDARY16 = records::PROGS_FTE_SECONDARY16
+use qc_progs::PROGS_FTE_SECONDARY32 = records::PROGS_FTE_SECONDARY32
+use qc_progs::PROGS_FTE_TYPE_SIZE = records::PROGS_FTE_TYPE_SIZE
+use qc_progs::PROGS_FUNCTION_SIZE = records::PROGS_FUNCTION_SIZE
+use qc_progs::PROGS_GLOBAL_SIZE = records::PROGS_GLOBAL_SIZE
+use qc_progs::PROGS_HEADER_CRC = records::PROGS_HEADER_CRC
+use qc_progs::PROGS_HEADER_SIZE = records::PROGS_HEADER_SIZE
+use qc_progs::PROGS_STATEMENT_SIZE = records::PROGS_STATEMENT_SIZE
+use qc_progs::PROGS_STRING_ALIGN = records::PROGS_STRING_ALIGN
+use qc_progs::PROGS_VERSION = records::PROGS_VERSION
+use qc_progs::PROGS_VERSION_FTE = records::PROGS_VERSION_FTE
+use qc_progs::Progs = read::Progs
+use qc_progs::ProgsFile = write::ProgsFile
+use qc_progs::ReadError = read::ReadError
+use qc_progs::ReadOptions = read::ReadOptions
+use qc_progs::Record = records::Record
+use qc_progs::Statement = records::Statement
+use qc_progs::StringSite = read::StringSite
+use qc_progs::Table = read::Table
+use qc_progs::TableIter = read::TableIter
+use qc_progs::WriteError = write::WriteError
+use qc_progs::limits::LIMIT_MAX_PARMS = qc_types::LIMIT_MAX_PARMS
+use qc_progs::write = write::write
+variant qc_progs::TableId::BodylessFunctions
+variant qc_progs::TableId::FieldDefs
+variant qc_progs::TableId::Functions
+variant qc_progs::TableId::GlobalDefs
+variant qc_progs::TableId::Globals
+variant qc_progs::TableId::LineNumbers
+variant qc_progs::TableId::Statements
+variant qc_progs::TableId::Strings
+variant qc_progs::read::ReadError::Compressed
+variant qc_progs::read::ReadError::FieldDefSaveGlobal
+variant qc_progs::read::ReadError::HeaderCrc
+variant qc_progs::read::ReadError::StringOutOfRange
+variant qc_progs::read::ReadError::TableOutOfBounds
+variant qc_progs::read::ReadError::TooManyParms
+variant qc_progs::read::ReadError::TooShort
+variant qc_progs::read::ReadError::UnsupportedFteLayout
+variant qc_progs::read::ReadError::UnterminatedString
+variant qc_progs::read::ReadError::WrongVersion
+variant qc_progs::read::StringSite::FieldDefName
+variant qc_progs::read::StringSite::FunctionFile
+variant qc_progs::read::StringSite::FunctionName
+variant qc_progs::read::StringSite::GlobalDefName
+variant qc_progs::records::Format::Fte16
+variant qc_progs::records::Format::Fte32
+variant qc_progs::records::Format::V6
+variant qc_progs::write::WriteError::DefOutOfRange
+variant qc_progs::write::WriteError::FtePartsInV6
+variant qc_progs::write::WriteError::LineNumberCount
+variant qc_progs::write::WriteError::NulInBodylessName
+variant qc_progs::write::WriteError::OpaqueTableWithoutLayout
+variant qc_progs::write::WriteError::StatementOutOfRange
+variant qc_progs::write::WriteError::TooLarge

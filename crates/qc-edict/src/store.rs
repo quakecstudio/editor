@@ -25,7 +25,7 @@ use crate::{EDICT_FREED_NEXTTHINK, EDICT_REUSE_DELAY, EDICT_REUSE_GRACE, EdictLa
 ///
 /// `model` (29), `takedamage` (59), `modelindex` (0), `colormap` (77), `skin` (31),
 /// `frame` (30) and `solid` (9) are scalars; `origin` (10, 11, 12) and `angles` (19, 20, 21)
-/// are vectors, each cleared in full. `nextthink` (46) goes to [`EDICT_FREED_NEXTTHINK`]
+/// are vectors, each cleared in full. `nextthink` (46) goes to `EDICT_FREED_NEXTTHINK`
 /// instead. `absmin` and `absmax` are not cleared. From id's `ED_Free` in
 /// `WinQuake/pr_edict.c`.
 const FREE_ZEROED: [SysField; 9] = [
@@ -188,7 +188,7 @@ impl EdictStore {
     /// # Errors
     ///
     /// [`EdictError::BadMaxclients`] when `maxclients` is more than
-    /// [`EDICT_MAX_CLIENTS`](crate::EDICT_MAX_CLIENTS).
+    /// `EDICT_MAX_CLIENTS`.
     pub fn new(layout: EdictLayout, maxclients: usize) -> Result<Self, EdictError> {
         if maxclients > crate::EDICT_MAX_CLIENTS {
             return Err(EdictError::BadMaxclients { maxclients });
@@ -243,7 +243,8 @@ impl EdictStore {
     ///
     /// Returns `None` for a number the array does not hold.
     #[must_use]
-    pub fn freetime(&self, number: EdictNumber) -> Option<f32> {
+    #[cfg(test)]
+    pub(crate) fn freetime(&self, number: EdictNumber) -> Option<f32> {
         self.edicts.get(number.index()).map(|edict| edict.freetime)
     }
 
@@ -354,8 +355,8 @@ impl EdictStore {
     /// the first (EDICT-6).
     ///
     /// Implements EDICT-6.1 to EDICT-6.6: scans edicts `maxclients + 1` to `num_edicts - 1` in
-    /// order and takes the first free one whose `freetime` is below [`EDICT_REUSE_GRACE`] or
-    /// more than [`EDICT_REUSE_DELAY`] seconds before `now`; otherwise takes edict
+    /// order and takes the first free one whose `freetime` is below `EDICT_REUSE_GRACE` or
+    /// more than `EDICT_REUSE_DELAY` seconds before `now`; otherwise takes edict
     /// `num_edicts` and grows `num_edicts` by one. The clock `now` is `sv.time`, a `double`.
     /// Returns the new edict's number; its fields are zeroed and its free flag cleared
     /// (EDICT-6.5).
@@ -395,7 +396,7 @@ impl EdictStore {
     ///
     /// Implements EDICT-7.1, EDICT-7.4: sets the free flag, sets `freetime` to `now` rounded
     /// to `f32`, zeroes `model`, `takedamage`, `modelindex`, `colormap`, `skin`, `frame`,
-    /// `origin`, `angles` and `solid`, and sets `nextthink` to [`EDICT_FREED_NEXTTHINK`].
+    /// `origin`, `angles` and `solid`, and sets `nextthink` to `EDICT_FREED_NEXTTHINK`.
     /// Every other field keeps its value (EDICT-7.2). Freeing an already-free edict does it
     /// all again (EDICT-7.4). The clock `now` is `sv.time`, a `double`. Does nothing for a
     /// number the array does not hold.
