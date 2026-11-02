@@ -116,8 +116,6 @@ jobs:
           - librequake
           - qc-conduit
           - swab
-          - arcane-dimensions
-          - crmod7
     defaults:
       run:
         shell: bash

@@ -722,8 +722,14 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   with `qc-codegen` in the FTEQCC dialect, of a codebase with several modules its server module
   `progs.src`, as FTEQCC compiles that one with no `-srcfile`. Each pair is compared as a
   rerelease codebase is, with the FTEQCC rules of DIFF-12.11, and held to DIFF-12.5's bar. A
-  mod at the bar is in the nightly set, all six since P2-157; one not yet at it is compared
-  when a run names it.
+  mod at the bar is in the nightly set; one not yet at it is compared when a run names it.
+  Arcane Dimensions has no divergence but its calls reach 89.1% of its statements over 128
+  rounds, the rest behind precaches after the spawn functions, which only a loading round
+  admits (DIFF-12.2), and CSQC drawing builtins the mock does not have; crmod7 has no
+  divergence but reaches 69.0%, its `worldspawn` scenario ending in both progs at "Can not
+  find an 'info_player_deathmatch' spawnpoint on this map!" (DIFF-12.20) and its match,
+  team and client paths wanting a connected client and a running match the scenarios do
+  not set up. Both are measured on 2026-11-02 after DIFF-12.23 and the DIFF-12.22 draws.
 - **DIFF-12.15** One time in two, `self` for a call is drawn from the edicts in use whose
   named fields of function type hold the function called, when any does, as the engine calls a
   `think`, `touch` or `use` with its own edict as `self`; otherwise as DIFF-12.2 draws it. The
