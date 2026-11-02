@@ -2089,22 +2089,29 @@ impl<'a> Compiler<'a> {
         })
     }
 
-    /// FTEQCC's store of a null (FTEF-29.2): a float constant whose word is 0, such as
-    /// `__NULL__`, stored to a target of another type is the target's zero, `rhsd =
-    /// QCC_MakeIntConst(0);`, its word read as `ty`.
-    fn null_as(&self, value: Value, ty: &ValueType) -> Value {
+    /// FTEQCC's store of a null (FTEF-29.16): a float constant whose word is 0, such as
+    /// `__NULL__`, stored to a target of another type is the target's zero: for a vector the
+    /// three-word constant `'0 0 0'` (`QCC_MakeVectorConst(0,0,0)`), else its own word read
+    /// as `ty`.
+    fn null_as(&mut self, value: Value, ty: &ValueType, span: Span) -> Lowered<Value> {
         let null = self.dialect.has_fteqcc_extensions()
             && self.type_of(&value).etype() == Etype::Float
             && ty.etype() != Etype::Float
             && self.constant_word(&value) == Some(0);
-        if null {
-            Value {
-                ofs: value.ofs,
-                kind: ValueKind::Cast(ty.clone()),
-            }
-        } else {
-            value
+        if !null {
+            return Ok(value);
         }
+        if ty.etype() == Etype::Vector {
+            let place = self
+                .program
+                .immediate(&Literal::Vector([0.0; 3]))
+                .at(span)?;
+            return self.def_value(place, span);
+        }
+        Ok(Value {
+            ofs: value.ofs,
+            kind: ValueKind::Cast(ty.clone()),
+        })
     }
 
     /// FTEF-23.3, FTEF-23.4: under FTEQCC, with no row for the two types, the row whose operand
@@ -2576,12 +2583,12 @@ impl<'a> Compiler<'a> {
             }
             Target::Pointer { address, ty } => (address, ty),
             Target::Element(store) => {
-                let value = self.null_as(value, &store.ty);
+                let value = self.null_as(value, &store.ty, op_span)?;
                 self.store_element(&store, &value, op_span)?;
                 return Ok(value);
             }
         };
-        let value = self.null_as(value, &inner);
+        let value = self.null_as(value, &inner, op_span)?;
         let inner = inner.etype();
         let b = self.type_of(&value).etype();
         let Some(row) = ops::select(Operator::Assign, Etype::Pointer, b, None) else {
@@ -2736,7 +2743,7 @@ impl<'a> Compiler<'a> {
     /// one first (`OP_STORE_IF`, FTEF-27.4), then folded into the statement that made it
     /// (FTEF-29.13), `None`, or stored by `store_to`, the value stored.
     fn store_value(&mut self, to: &Value, value: Value, span: Span) -> Lowered<Option<Value>> {
-        let mut value = self.null_as(value, &self.type_of(to));
+        let mut value = self.null_as(value, &self.type_of(to), span)?;
         if self.type_of(to).etype() == Etype::Float && self.is_integer(&value) {
             value = self.int_as_float(&value, span)?;
         }

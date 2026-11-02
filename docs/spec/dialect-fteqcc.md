@@ -4859,6 +4859,19 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   and a four-float struct's `gb() = v;` warns twice. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateFunctionCallRef`, `QCC_GetAliasTemp`, `QCC_DefToRef`.
+- **FTEF-29.16** A null stored to a vector is the vector constant `'0 0 0'`, three words.
+  `QCC_StoreSRefToRef` tests the value with `QCC_SRef_IsNull` (an integer, float or pointer
+  constant whose word is 0, `__NULL__` and `0` included) and skips the type check for one;
+  then, for a field or a pointer on id's opcodes (`OP_STOREF_V` is not valid for the target),
+  it takes `OP_ADDRESS` and `QCC_StoreToPointer(t, nullsref, nullsrc?QCC_MakeVectorConst(0,0,0):source,
+  type_vector)`, and for a global `QCC_CollapseStore` the same way, so the `STOREP_V` or
+  `STORE_V` reads three words of a vector constant, which `QCC_MakeVectorConst` shares with any
+  constant of that value (Arcane Dimensions' `targ.velocity = targ.avelocity = 0;` reads
+  `VEC_ORIGIN`). Reading the null's own word with the two after it, as a one-word constant,
+  would store whatever follows it into the vector's other components. A null stored to a
+  target of any other type is its own word read as the target's type. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreSRefToRef`, `QCC_SRef_IsNull`.
 - **FTEF-29.10** An array named bare, its head, is the pointer to its first element to a
   prefix or postfix `++` and `--` (`REF_ARRAYHEAD`): read by its address, which the id target
   refuses (FTEF-31.4), stepped by `OP_ADD_PIW` of its element's size, `--` warning of the

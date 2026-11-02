@@ -1157,6 +1157,41 @@ fn the_address_of_an_entitys_field_is_its_address() {
     assert_eq!(t[1].op, u32::from(Done.number()));
 }
 
+// spec FTEF-29.16: a null stored to a vector field or global is the three-word constant
+// '0 0 0', not the null's own word with the two after it
+#[test]
+fn a_null_stored_to_a_vector_is_the_zero_vector() {
+    let p = fte_progs(
+        "float FALSE = 0; float TRUE = 1; vector v; .vector vel; entity e;\n\
+         void() t = { v = 0; e.vel = FALSE; e.vel = e.vel = 0; };\n",
+    );
+    let t = body(&p, "t");
+    let zero = |a: i32| {
+        let words: Vec<u32> = (0..3)
+            .map(|i| p.globals[usize::try_from(a + i).unwrap()].bits())
+            .collect();
+        assert_eq!(words, [0, 0, 0], "a three-word zero at {a}");
+        assert_ne!(a, global(&p, "FALSE"), "not the null's own word");
+        let def = p
+            .global_defs
+            .iter()
+            .find(|d| i32::try_from(d.ofs) == Ok(a))
+            .unwrap();
+        assert_eq!(def.def_type().number(), 3, "a vector definition at {a}");
+    };
+    assert_eq!(t[0].op, u32::from(Opcode::StoreV.number()));
+    assert_eq!(t[0].b, global(&p, "v"));
+    zero(t[0].a);
+    assert_eq!(t[1].op, u32::from(Opcode::Address.number()));
+    assert_eq!(t[2].op, u32::from(Opcode::StorepV.number()));
+    zero(t[2].a);
+    // The chained store's inner value is the vector stored, so the outer store reads it too.
+    assert_eq!(t[4].op, u32::from(Opcode::StorepV.number()));
+    assert_eq!(t[6].op, u32::from(Opcode::StorepV.number()));
+    zero(t[4].a);
+    zero(t[6].a);
+}
+
 // spec FTEF-6.18: a float or vector stored through a pointer is its OP_STOREP_F or OP_STOREP_V
 // to the pointer
 #[test]
