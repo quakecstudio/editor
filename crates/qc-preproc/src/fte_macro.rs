@@ -1595,7 +1595,16 @@ impl<L: Loader> Preprocessor<L> {
 
     /// Closes the chunk `chunk`, whose last token has been read (`QCC_PR_UnInclude`, and its
     /// `c->inside--`), and reports its lexical errors outside the text a macro used in it took
-    /// as arguments, each where its first byte came from.
+    /// as arguments, each where its first byte came from, a stored body's or a use's, and once
+    /// at that place (FTEF-14.77).
+    ///
+    /// FTEQCC reads the stored body anew at every use (`QCC_PR_IncludeChunkEx`), so a lexical
+    /// error in it is given at every use, located by `s_filen`, the file and line of the use
+    /// and the macro's name (FTEF-14.74). This profile places the error at the byte it came
+    /// from, the stored body's, the same place for every use, and QCD-1.5 makes a rule broken
+    /// at one place one report there: a use whose chunk gives an error already reported at its
+    /// place adds nothing. The same holds for an argument's bytes written twice into one
+    /// expansion.
     pub(crate) fn close_chunk(run: &mut Run, chunk: ChunkReader) {
         run.closed_chunk(&chunk.name);
         for d in &chunk.stream.diagnostics {
@@ -1603,8 +1612,16 @@ impl<L: Loader> Preprocessor<L> {
                 .consumed
                 .iter()
                 .any(|s| s.start <= d.span.start && d.span.start < s.end);
-            if !consumed {
-                let (span, _) = chunk.place(d.span.range());
+            if consumed {
+                continue;
+            }
+            let (span, _) = chunk.place(d.span.range());
+            let reported = run
+                .out
+                .diagnostics
+                .iter()
+                .any(|r| r.code == d.code && r.span == span);
+            if !reported {
                 run.report(d.code, d.message.clone(), span);
             }
         }
