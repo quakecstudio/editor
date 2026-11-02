@@ -296,10 +296,19 @@ fn mine_compared(
                         record(&mut compared, &mut pairs, name.clone(), &Operand::Number(0));
                     }
                     // An ordering with a constant is satisfied strictly on either side of it,
-                    // so the name takes one less and one more too.
-                    if ordered && let Operand::Number(bits) = other {
-                        for neighbour in [-1.0, 1.0] {
-                            let value = f32::from_bits(*bits) + neighbour;
+                    // so the name takes one less and one more too; against a name, a zero
+                    // global such as `FALSE` or a parameter, it takes 0 and its neighbours.
+                    let around = match other {
+                        Operand::Number(bits) if ordered => Some(f32::from_bits(*bits)),
+                        Operand::Named(_) if ordered => Some(0.0),
+                        Operand::Number(_)
+                        | Operand::Named(_)
+                        | Operand::Text(_)
+                        | Operand::Other => None,
+                    };
+                    if let Some(middle) = around {
+                        for neighbour in [-1.0, 0.0, 1.0] {
+                            let value = middle + neighbour;
                             record(
                                 &mut compared,
                                 &mut pairs,

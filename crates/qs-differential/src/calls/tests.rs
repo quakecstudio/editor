@@ -850,7 +850,7 @@ fn a_functions_named_fields_and_variables_are_drawn() {
 fn compared_values_are_mined_and_drawn() {
     const COMPARED: &str = "float x;\nfloat y;\n.float lastteam;\n\
         float(float n, string s) h = { local float t; t = self.frags; \
-        if (t == 3 || self.health > 7) x = 1; \
+        if (t == 3 || self.health > 7) x = 1; if (self.armorvalue > x) y = 1; \
         if (self.netname == \"carrier\") y = 2; \
         if (self.items & 32) y = 3; \
         if (!self.enemy) y = 4; \
@@ -874,6 +874,10 @@ fn compared_values_are_mined_and_drawn() {
         let mut health = numbers(b"health");
         health.sort_by(f32::total_cmp);
         assert_eq!(health, [6.0, 7.0, 8.0]);
+        // An ordering with a name, the zero global `x`: 0 and its neighbours, and the pair.
+        let mut armor = numbers(b"armorvalue");
+        armor.sort_by(f32::total_cmp);
+        assert_eq!(armor, [-1.0, 0.0, 1.0]);
         assert_eq!(
             pools.compared[&b"netname"[..]].texts,
             BTreeSet::from([b"carrier".to_vec()])
