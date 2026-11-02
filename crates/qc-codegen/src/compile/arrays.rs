@@ -205,11 +205,12 @@ impl Compiler<'_> {
             } else {
                 self.float_op(Opcode::AddF, words, w, span)?
             };
-            self.call1(getter, arg, ValueType::simple(Etype::Float), span)?;
+            let word = self.call1(getter, arg, ValueType::simple(Etype::Float), span)?;
             let to = temp.checked_add(w).at(span)?;
+            let from = self.operand_of(&word);
             self.program.emit(
                 Opcode::StoreF,
-                operand(OFS_RETURN).at(span)?,
+                operand(from).at(span)?,
                 operand(to).at(span)?,
             );
         }
@@ -296,7 +297,9 @@ impl Compiler<'_> {
             {
                 Some(f32::from_bits(self.program.word(at.ofs)))
             }
-            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Return | ValueKind::Cast(_) => None,
+            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Return(_) | ValueKind::Cast(_) => {
+                None
+            }
         };
         if let Some(i) = constant {
             let element = element_number(i, array.count).at(span)?;
@@ -350,12 +353,9 @@ impl Compiler<'_> {
             operand(OFS_PARM0).at(span)?,
         );
         let ofs = self.program.def(function).at(span)?.ofs;
+        self.clobber_aliases(span)?;
         self.program.emit(Opcode::Call1, operand(ofs).at(span)?, 0);
-        self.return_type = ret;
-        Ok(Value {
-            ofs: OFS_RETURN,
-            kind: ValueKind::Return,
-        })
+        Ok(self.alias(ret))
     }
 
     /// The getter of `array`, `ArrayGet*NAME` of type `T(float)`, or its setter,
@@ -750,24 +750,24 @@ impl Compiler<'_> {
                 Etype::Float,
                 span,
             )?;
+            self.clobber_aliases(span)?;
             self.program
                 .emit(Opcode::Call2, operand(power).at(span)?, 0);
+            let powered = self.alias(float.clone());
             let scale = match shift {
                 Shift::Left => Opcode::MulF,
                 Shift::Right => Opcode::DivF,
             };
+            let (a, b) = (self.operand_of(left), self.operand_of(&powered));
             let scaled = self
                 .program
-                .emit_result(scale, left.ofs, OFS_RETURN, Etype::Float)
+                .emit_result(scale, a, b, Etype::Float)
                 .at(span)?;
             self.store_word(scaled, OFS_PARM0, Etype::Float, span)?;
+            self.clobber_aliases(span)?;
             self.program
                 .emit(Opcode::Call1, operand(floor).at(span)?, 0);
-            self.return_type = float;
-            return Ok(Value {
-                ofs: OFS_RETURN,
-                kind: ValueKind::Return,
-            });
+            return Ok(self.alias(float));
         }
         let bitshift = self
             .defined("bitshift")
@@ -788,13 +788,10 @@ impl Compiler<'_> {
             Etype::Float,
             span,
         )?;
+        self.clobber_aliases(span)?;
         self.program
             .emit(Opcode::Call2, operand(bitshift).at(span)?, 0);
-        self.return_type = float;
-        Ok(Value {
-            ofs: OFS_RETURN,
-            kind: ValueKind::Return,
-        })
+        Ok(self.alias(float))
     }
 
     /// FTEQCC's `a % b` of floats on the vanilla opcodes (FTE-19.8), `OP_MOD_F`'s emulation:
@@ -813,13 +810,10 @@ impl Compiler<'_> {
             for (slot, arg) in [(OFS_PARM0, left.ofs), (OFS_PARM0 + 3, right.ofs)] {
                 self.store_word(arg, slot, Etype::Float, span)?;
             }
+            self.clobber_aliases(span)?;
             self.program
                 .emit(Opcode::Call2, operand(function).at(span)?, 0);
-            self.return_type = ValueType::simple(Etype::Float);
-            return Ok(Value {
-                ofs: OFS_RETURN,
-                kind: ValueKind::Return,
-            });
+            return Ok(self.alias(ValueType::simple(Etype::Float)));
         }
         let emit = |compiler: &mut Self, op, a, b| {
             compiler

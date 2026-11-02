@@ -17,6 +17,7 @@ qc-progs = { workspace = true }
 qc-sema = { workspace = true }
 qc-syntax = { workspace = true }
 qc-types = { workspace = true }
+qc-vm = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true, features = ["std"] }

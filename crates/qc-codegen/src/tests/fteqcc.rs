@@ -680,9 +680,10 @@ fn extra_arguments_are_read_and_dropped() {
     assert_eq!(t[1], st(StoreF, global(&p, "a"), 4, 0));
 }
 
-// spec FTE-18.4: a call's value is copied out of the return global before a later argument
-// calls again, so neither call overwrites the other's slot
+// spec FTE-18.4: a call's value is copied out of the return global before a later argument's
+// call, after that call's own argument stores, so neither call overwrites the other's slot
 // spec FTE-18.9: a one-word argument is stored to its slot by STORE_F
+// spec FTE-18.13: the copy is made where the later call clobbers the return global
 #[test]
 fn a_call_in_an_argument_is_copied_before_the_next() {
     let p = fte_progs(
@@ -690,6 +691,7 @@ fn a_call_in_an_argument_is_copied_before_the_next() {
          void() t = { f(g(1), g(2)); };\n",
     );
     let g = global(&p, "g");
+    let (one, two) = (immediate(&p, 1.0), immediate(&p, 2.0));
     let t = body(&p, "t");
     assert_eq!(
         opcodes(&t),
@@ -697,9 +699,19 @@ fn a_call_in_an_argument_is_copied_before_the_next() {
             StoreF, Call1, StoreF, StoreF, Call1, StoreF, StoreF, Call2, Done
         ])
     );
+    assert_eq!(t[0], st(StoreF, one, 4, 0));
     assert_eq!(t[1], st(Call1, g, 0, 0));
-    let copy = t[2].b;
-    assert_eq!(t[2], st(StoreF, 1, copy, 0));
+    assert_eq!(
+        t[2],
+        st(StoreF, two, 4, 0),
+        "the second call's argument first"
+    );
+    let copy = t[3].b;
+    assert_eq!(
+        t[3],
+        st(StoreF, 1, copy, 0),
+        "then the first call's value is copied"
+    );
     assert_eq!(t[5], st(StoreF, copy, 4, 0));
     assert_eq!(t[6], st(StoreF, 1, 7, 0));
 }
