@@ -704,10 +704,9 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   is compiled with the pinned FTEQCC as `cargo xtask oracles rerelease` compiles it,
   the oracle progs, and with `qc-codegen` in the FTEQCC dialect, with `--opt fold` off and on,
   and each pair is held to DIFF-12.5's bar: `rerelease`, Scourge of Armagon, Dissolution of
-  Eternity, Dimension of the Past and Dawn of the Machine, the last with `-Fautoproto`'s
-  prototypes as FTEQCC is given it (FTE-1.2). Capture the Flag, which has no divergence but
-  whose calls reach under 90% of its statements, is compared when a run names it, and joins
-  the nightly set once it passes. Every pair compared adds a row to
+  Eternity, Dimension of the Past, Dawn of the Machine, the last with `-Fautoproto`'s
+  prototypes as FTEQCC is given it (FTE-1.2), and Capture the Flag, whose calls reach 90% of
+  its statements with the draws of DIFF-12.21 and DIFF-12.22. Every pair compared adds a row to
   the results table `target/compiler-diff/summary.md`: the codebase, the oracle's progs and
   ours, the divergences, the statements executed, and whether it passes; the nightly
   differential workflow publishes it as the run's summary.
@@ -717,7 +716,8 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   with `qc-codegen` in the FTEQCC dialect, of a codebase with several modules its server module
   `progs.src`, as FTEQCC compiles that one with no `-srcfile`. Each pair is compared as a
   rerelease codebase is, with the FTEQCC rules of DIFF-12.11, and held to DIFF-12.5's bar. A
-  mod at the bar is in the nightly set; one not yet at it is compared when a run names it.
+  mod at the bar is in the nightly set, all six since P2-157; one not yet at it is compared
+  when a run names it.
 - **DIFF-12.15** One time in two, `self` for a call is drawn from the edicts in use whose
   named fields of function type hold the function called, when any does, as the engine calls a
   `think`, `touch` or `use` with its own edict as `self`; otherwise as DIFF-12.2 draws it. The

@@ -34,23 +34,27 @@ use crate::oracles::{self, Oracles, codegen, id101, rerelease};
 /// The vanilla corpus codebases, the ones id's `qcc` compiles (`corpus/manifest.toml`).
 const VANILLA: [&str; 1] = ["id-1.01"];
 
-/// The rerelease codebases the nightly run compares with the pinned FTEQCC's progs
+/// The six rerelease codebases the nightly run compares with the pinned FTEQCC's progs
 /// (`oracles/rerelease.rs`, DIFF-12.14).
-const RERELEASE: [&str; 5] = [
+const RERELEASE: [&str; 6] = [
     "rerelease",
     "rerelease-hipnotic",
     "rerelease-rogue",
     "rerelease-mg1",
     "rerelease-mg3",
+    "rerelease-ctf",
 ];
-
-/// The rerelease codebases with no divergence whose calls do not yet reach DIFF-12.5's 90% of
-/// statements: a run names them, and each joins [`RERELEASE`] once it passes (P2-150).
-const PENDING: [&str; 1] = ["rerelease-ctf"];
 
 /// The corpus mods (`oracles/rerelease.rs`'s `MODS`) at DIFF-12.5's bar, which the nightly run
 /// compares; a run may name the others until each joins (DIFF-12.18).
-const MODS_AT_BAR: [&str; 4] = ["copper", "librequake", "qc-conduit", "swab"];
+const MODS_AT_BAR: [&str; 6] = [
+    "copper",
+    "librequake",
+    "qc-conduit",
+    "swab",
+    "arcane-dimensions",
+    "crmod7",
+];
 
 /// The corpus mods written for an engine with extension builtins, which the mock runs under
 /// vkQuake's rules (BUILTIN-18): crmod7 calls them while it sets up, and Arcane Dimensions
@@ -115,15 +119,14 @@ impl Mode {
         }
     }
 
-    /// The codebases a run of this mode may name: its own, and in the nightly run the rerelease
-    /// codebases not yet at the bar.
+    /// The codebases a run of this mode may name: its own, and in the nightly run the corpus
+    /// mods not yet at the bar.
     fn named(self) -> Vec<&'static str> {
         match self {
             Self::Fast => self.codebases(),
             Self::Full => self
                 .codebases()
                 .into_iter()
-                .chain(PENDING)
                 .chain(
                     rerelease::MODS
                         .into_iter()
@@ -270,7 +273,7 @@ mod tests {
 
     use qc_codegen::Options;
 
-    use super::{MODS_AT_BAR, Mode, PENDING, RERELEASE, VANILLA, engine, parse, write_progs};
+    use super::{MODS_AT_BAR, Mode, RERELEASE, VANILLA, VKQUAKE_MODS, engine, parse, write_progs};
     use crate::exec::{Fake, Reply};
     use crate::oracles::codegen::{self, Profile};
     use crate::oracles::rerelease;
@@ -404,26 +407,16 @@ mod tests {
         let full = Mode::Full.codebases();
         assert_eq!(full.first(), Some(&"id-1.01"));
         assert_eq!(full.len(), 1 + RERELEASE.len() + MODS_AT_BAR.len());
-        assert_eq!(
-            RERELEASE.len() + PENDING.len(),
-            6,
-            "the six rerelease codebases"
-        );
-        assert!(PENDING.iter().all(|id| !full.contains(id)));
+        assert_eq!(RERELEASE.len(), 6, "the six rerelease codebases");
         let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-        for id in RERELEASE.iter().chain(&PENDING).copied() {
+        for id in RERELEASE {
             assert_eq!(
                 parse(&args(&["--full", id])).unwrap(),
                 (Mode::Full, vec![id])
             );
             assert!(parse(&args(&["--fast", id])).is_err());
         }
-        assert!(
-            RERELEASE
-                .iter()
-                .chain(&PENDING)
-                .all(|id| rerelease::compiles(id))
-        );
+        assert!(RERELEASE.iter().all(|id| rerelease::compiles(id)));
         assert!(VANILLA.iter().all(|id| !rerelease::compiles(id)));
     }
 
@@ -459,7 +452,12 @@ mod tests {
         assert_eq!(engine("crmod7"), "vkquake");
         assert_eq!(engine("arcane-dimensions"), "vkquake");
         for id in VANILLA.into_iter().chain(RERELEASE).chain(MODS_AT_BAR) {
-            assert_eq!(engine(id), "id", "{id}");
+            let expected = if VKQUAKE_MODS.contains(&id) {
+                "vkquake"
+            } else {
+                "id"
+            };
+            assert_eq!(engine(id), expected, "{id}");
         }
     }
 }
