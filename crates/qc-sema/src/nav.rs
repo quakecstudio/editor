@@ -63,19 +63,4 @@ impl ModuleIndex {
         );
         out
     }
-
-    /// The definition at byte position `offset`, then every reference to it (the editor's
-    /// combined "find all references" from a cursor).
-    #[must_use]
-    pub fn references_at(
-        &self,
-        file: FileId,
-        offset: usize,
-        include_declaration: bool,
-    ) -> Vec<Location> {
-        match self.definition_at(file, offset) {
-            Some((def, _)) => self.references(def, include_declaration),
-            None => Vec::new(),
-        }
-    }
 }

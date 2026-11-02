@@ -73,13 +73,10 @@ pub use check::TypedBody;
 pub use check::fold::{fold_builtin_call, fold_floats};
 pub use db::{Db, ModuleAnalysis, QueryCounts};
 pub use expand::{ModuleInput, OriginMap};
-pub use lower::{
-    BuiltinFunction, FileDecls, LiteralValue, RawBody, RawDecl, RawInit, RawLocal, RawParam,
-    RawUse, UseKind,
-};
+pub use lower::{FileDecls, LiteralValue};
+pub use resolve::InitialValue;
 pub use resolve::{
-    FileDiagnostic, InitialValue, MemberShape, ModuleIndex, ResolveOptions, StructShape,
-    resolve_module,
+    FileDiagnostic, MemberShape, ModuleIndex, ResolveOptions, StructShape, resolve_module,
 };
 pub use symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 pub use ty::{FunctionType, SimpleType, Type};

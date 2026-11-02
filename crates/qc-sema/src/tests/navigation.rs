@@ -95,11 +95,6 @@ fn position_on_no_symbol() {
             .definition_at(FileId::new(0), source.len() + 100)
             .is_none()
     );
-    assert!(
-        index
-            .references_at(FileId::new(0), source.len() + 100, true)
-            .is_empty()
-    );
 }
 
 // spec QC-12.5: a name covers every byte from its first to its last, and not the byte after
@@ -150,16 +145,6 @@ fn an_empty_span_covers_only_its_position() {
             "at {offset}"
         );
     }
-}
-
-// spec QC-12.5: references_at from a use gathers the definition's references.
-#[test]
-fn references_at_from_use() {
-    let source = "float n;\nvoid() f = { n = 1; };";
-    let index = index_of(source);
-    let use_offset = nth_offset(source, "n", 1);
-    let refs = index.references_at(FileId::new(0), use_offset, true);
-    assert_eq!(refs.len(), 2);
 }
 
 // spec QC-11.5: a function's body after its prototype declares the same definition again, so

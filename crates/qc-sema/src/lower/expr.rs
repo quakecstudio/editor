@@ -11,7 +11,7 @@ use super::Cx;
 
 /// One use of a name (QC-12.5).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RawUse {
+pub(crate) struct RawUse {
     /// The name used.
     pub name: String,
     /// The byte span of the name token.
@@ -39,7 +39,7 @@ impl RawUse {
 
 /// How a name is used.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UseKind {
+pub(crate) enum UseKind {
     /// As a value: a global, a parameter or a local (QC-12.5).
     Value,
     /// In an FTEQCC dialect, as the selector of a member access `e.name`: an entity field, a
@@ -67,7 +67,7 @@ pub enum UseKind {
 
 /// What a member access is made on, as far as the syntax tells (FTEF-17.3).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum MemberBase {
+pub(crate) enum MemberBase {
     /// Something whose type is not known from its shape.
     Unknown,
     /// A name, whose definition's type is the base's.

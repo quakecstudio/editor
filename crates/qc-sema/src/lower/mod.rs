@@ -14,13 +14,14 @@ mod decl;
 mod expr;
 mod types;
 
-pub use body::{RawAlias, RawBody, RawLocal, RawParam, StatePart};
-pub use decl::{
-    ArrayDim, BuiltinFunction, ExternBase, LiteralValue, Qualifier, RawAggregate, RawBraces,
-    RawDecl, RawElement, RawInit, RawParamInfo, RawValue, ValueKind, declares,
+pub(crate) use body::{RawAlias, RawBody, RawLocal, RawParam, StatePart};
+pub(crate) use decl::{
+    ArrayDim, BuiltinFunction, ExternBase, RawAggregate, RawBraces, RawDecl, RawElement,
+    RawParamInfo, RawValue,
 };
-pub use expr::{MemberBase, RawUse, UseKind};
-pub use types::{
+pub use decl::{LiteralValue, Qualifier, ValueKind, declares};
+pub(crate) use expr::{MemberBase, RawUse, UseKind};
+pub(crate) use types::{
     EnumItem, IntConst, MemberKind, MemberStorage, Qualification, RawClass, RawMember, RawStruct,
     StructMember, TypeKind,
 };
@@ -55,15 +56,15 @@ pub struct FileDecls {
     pub struct_tags: Vec<(String, usize)>,
     /// Every `struct` and `union` the file writes, nested ones too, in source order
     /// (FTEF-6.7).
-    pub structs: Vec<RawStruct>,
+    pub(crate) structs: Vec<RawStruct>,
     /// The members of every accessor and class accessor the file writes (FTEF-10.3).
-    pub accessors: Vec<RawAccessor>,
+    pub(crate) accessors: Vec<RawAccessor>,
 }
 
 /// A `get` or `set` member of an accessor or a class (FTEF-10.3): reading or storing the member
 /// calls the function its body or value gives.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RawAccessor {
+pub(crate) struct RawAccessor {
     /// The accessor's or class's name.
     pub owner: String,
     /// The member's name, empty for the indexer `get T[index]`.

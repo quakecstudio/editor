@@ -23,7 +23,7 @@ use crate::ty::{FunctionType, SimpleType, Type};
 
 /// The type FTEQCC gives a literal (FTEF-3.1, FTEF-3.3, QC-4, QC-5, QC-6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ConstType {
+pub(crate) enum ConstType {
     /// `float`: a number with no suffix, an `f` suffix or a fraction, and a frame macro.
     Float,
     /// `__int32`: an `i` suffix.
@@ -46,7 +46,7 @@ pub enum ConstType {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Literal {
     /// Its type.
-    pub ty: ConstType,
+    pub(crate) ty: ConstType,
     /// Whether it is null: `QCC_SRef_IsNull` holds for an integer, unsigned or float constant
     /// whose word is 0 (FTEF-19.31).
     pub null: bool,
@@ -80,7 +80,7 @@ impl Literal {
     /// no digit of the base, and `i`, `u` and `l` in either order an integer of that sign and
     /// width. With none the number is a float (FTEF-3.3, `flag_assume_integer` off).
     #[must_use]
-    pub fn of_fteqcc_number(text: &str, flags: LexFlags) -> Self {
+    pub(crate) fn of_fteqcc_number(text: &str, flags: LexFlags) -> Self {
         let unsigned = text.strip_prefix('-').unwrap_or(text);
         let (base, digits) = if let Some(hex) = unsigned
             .strip_prefix("0x")
@@ -152,7 +152,7 @@ impl Literal {
 
     /// A literal of `ty` that is no null.
     #[must_use]
-    pub fn of(ty: ConstType) -> Self {
+    pub(crate) fn of(ty: ConstType) -> Self {
         Self { ty, null: false }
     }
 }
@@ -247,7 +247,7 @@ impl Kind {
 
     /// Whether a value of this kind is a number: FTEQCC's float, integer and double types.
     #[must_use]
-    pub fn is_numeric(self) -> bool {
+    pub(crate) fn is_numeric(self) -> bool {
         matches!(
             self,
             Self::Float | Self::Integer | Self::Uint | Self::Int64 | Self::Uint64 | Self::Double
@@ -292,7 +292,7 @@ impl Kind {
     /// (FTEF-22.3): `integer`, `uint`, `long`, `ulong`, `double`; `variant` for a type the model
     /// does not follow.
     #[must_use]
-    pub fn basic_name(self) -> &'static str {
+    pub(crate) fn basic_name(self) -> &'static str {
         match self {
             Self::Void => "void",
             Self::String => "string",
@@ -373,7 +373,7 @@ pub enum Cast {
 /// What `QCC_SupplyConversion(var, wanted, true)` makes of an enum's value or a state frame
 /// converted to a number (FTEF-22.3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Supply {
+pub(crate) enum Supply {
     /// The value is converted, or needs no conversion.
     Converted,
     /// The fatal error `E0236` "Automatic type conversions disabled. Needed A, got B." under
@@ -467,7 +467,7 @@ impl Source<'_> {
     /// kind (`!typecmp_lax`) and any type to `void`; under `lax` anything, silently; else
     /// "Cannot cast".
     #[must_use]
-    pub fn cast_explicit(self, to: &Type, flags: CompilerFlags) -> Cast {
+    pub(crate) fn cast_explicit(self, to: &Type, flags: CompilerFlags) -> Cast {
         let (from_kind, to_kind) = (self.kind(), Kind::of(to));
         let entity_float = matches!(
             (from_kind, to_kind),
@@ -582,7 +582,7 @@ impl Source<'_> {
     /// warning and else "Implicit type mismatch"; a type the model does not follow is not
     /// checked. A pointer converts only to an integer or a float by what it points to.
     #[must_use]
-    pub fn supply(self, wanted: Kind, flags: CompilerFlags) -> Supply {
+    pub(crate) fn supply(self, wanted: Kind, flags: CompilerFlags) -> Supply {
         let conversion = match self {
             Source::Literal(literal) => Kind::of_const(literal.ty).conversion_to(wanted),
             Source::Typed(Type::Pointer(inner)) => match (Kind::of(inner), wanted) {
@@ -610,7 +610,7 @@ impl Source<'_> {
     /// `to` (FTEF-29.4): `QCC_TryEvaluateCast` with `implicit` off, which also casts an entity
     /// and a float either way, and else [`Source::supply`].
     #[must_use]
-    pub fn supply_for_assignment(self, to: &Type, flags: CompilerFlags) -> Supply {
+    pub(crate) fn supply_for_assignment(self, to: &Type, flags: CompilerFlags) -> Supply {
         let entity_float = matches!(
             (self.kind(), Kind::of(to)),
             (Kind::Entity, Kind::Float) | (Kind::Float, Kind::Entity)
@@ -657,7 +657,7 @@ impl ConstType {
 
     /// The name FTEQCC's `TypeName` gives this type.
     #[must_use]
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             ConstType::Float => "float",
             ConstType::Integer => "__int32",
@@ -683,7 +683,7 @@ impl Type {
     /// [`Self::fteqcc_name`] with the types this one holds, a field's, a pointer's and a
     /// function's parameters, named by `name_of`.
     #[must_use]
-    pub fn fteqcc_name_with(&self, name_of: &dyn Fn(&Self) -> String) -> String {
+    pub(crate) fn fteqcc_name_with(&self, name_of: &dyn Fn(&Self) -> String) -> String {
         let ty = self;
         match ty {
             Type::Unknown => "__variant".to_owned(),
@@ -770,7 +770,7 @@ impl Type {
     /// `WARN_SAMENAMEASGLOBAL` compares (FTEF-19.1), and an enum's base is numeric by it
     /// (FTEF-19.10).
     #[must_use]
-    pub fn fteqcc_kind(&self) -> Kind {
+    pub(crate) fn fteqcc_kind(&self) -> Kind {
         Kind::of(self)
     }
 
@@ -779,7 +779,7 @@ impl Type {
     /// field, function or pointer compared part by part, and any type the model does not follow
     /// agreeing with any other.
     #[must_use]
-    pub fn fteqcc_same(&self, other: &Self) -> bool {
+    pub(crate) fn fteqcc_same(&self, other: &Self) -> bool {
         if self == other {
             return true;
         }

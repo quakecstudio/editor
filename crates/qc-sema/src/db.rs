@@ -307,7 +307,7 @@ impl Db {
     /// The lowered declarations of file `file`, memoized.
     ///
     /// Depends only on the file's parse, so it recomputes only when the file changed.
-    pub fn lower(&mut self, file: FileId) -> FileDecls {
+    pub(crate) fn lower(&mut self, file: FileId) -> FileDecls {
         let revision = self.file_revision(file);
         if let Some(value) = fresh(&self.lowerings, file, revision) {
             return value;
