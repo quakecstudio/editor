@@ -1105,3 +1105,85 @@ fn a_refused_macro_after_hash_reports_once() {
     assert_eq!(toks, "f = # M ( 1 , 2 , 3 ) ;");
     assert_eq!(fte("#define M(x) x\nf = #M(1\n").1, vec![Code::E0117]);
 }
+
+// spec FTEF-14.39: `#pack N` above 5 is "No more than 5 packs are allowed" (E0121), kept at
+// the number's own text, and its line is still read with `errorifnonwhite`, so trailing junk
+// is a second "unexpected tokens at end of line" (E0121) at the whole line
+// spec QCD-1.5: the two E0121 errors keep distinct spans, so neither is reported twice
+#[test]
+fn pack_above_five_with_junk_reports_two_errors_at_distinct_spans() {
+    // `#pack 1 ` is in range and its line is clean (the space is the byte read after the
+    // number, FTEF-14.39): no error.
+    assert_eq!(fte("#pack 1 \nx\n"), ("x".to_owned(), vec![]));
+    // `#pack 8 ` is above 5: one error at the number, no junk on the line.
+    let (pp, out) = one_fte("#pack 8 \nx\n");
+    assert_eq!(
+        out.diagnostics
+            .iter()
+            .map(|d| (d.code, d.message.as_str()))
+            .collect::<Vec<_>>(),
+        [(Code::E0121, "No more than 5 packs are allowed")]
+    );
+    // The error keeps the place of its own text, the number as `QCC_PR_LexInteger` reads it
+    // (the blank before it included).
+    assert_eq!(super::span_text(&pp, out.diagnostics[0].span), " 8");
+    // `#pack 8 zz` is above 5 and has junk: two E0121 errors, with different spans (QCD-1.5).
+    let (_, out) = one_fte("#pack 8 zz\nx\n");
+    let errs: Vec<(Code, &str)> = out
+        .diagnostics
+        .iter()
+        .map(|d| (d.code, d.message.as_str()))
+        .collect();
+    assert_eq!(
+        errs,
+        [
+            (Code::E0121, "No more than 5 packs are allowed"),
+            (Code::E0121, "unexpected tokens at end of line"),
+        ]
+    );
+    assert_ne!(
+        out.diagnostics[0].span, out.diagnostics[1].span,
+        "the two E0121 errors must not share a span (QCD-1.5)"
+    );
+    assert_eq!(tokens(&out), "x");
+}
+
+// spec QCD-1.5: the preprocessor reports no two diagnostics with one code and span; the nightly
+// fuzz crash crash-0e3e4e65 (`#pack8ea`...) was a `#pack` above 5 whose "No more than 5 packs
+// are allowed" and the line's "unexpected tokens at end of line" both landed on the whole
+// directive line
+#[test]
+fn fuzz_pack_crash_reports_each_diagnostic_once() {
+    let data: &[u8] = &[
+        35, 112, 97, 99, 107, 56, 101, 97, 143, 40, 164, 48, 229, 10, 93, 229, 239, 11, 48, 0, 0,
+        0, 0, 0, 10, 222, 10, 50, 11, 48, 0, 10,
+    ];
+    let mut parts = data.splitn(3, |b| *b == 0);
+    let a = parts.next().unwrap_or_default();
+    let b = parts.next().unwrap_or_default();
+    let c = parts.next().unwrap_or_default();
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", a);
+    loader.insert("b.qh", b);
+    loader.insert("c.qc", c);
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    let run = |pp: &mut Preprocessor<MemoryLoader>| {
+        for path in ["a.qc", "c.qc"] {
+            let out = pp.preprocess_file(Path::new(path)).unwrap();
+            let mut seen = std::collections::HashSet::new();
+            for d in &out.diagnostics {
+                assert!(
+                    pp.sources().text(d.span).is_some(),
+                    "diagnostic outside its file: {d:?}"
+                );
+                assert!(
+                    seen.insert((d.code, d.span)),
+                    "diagnostic reported twice: {d:?}"
+                );
+            }
+        }
+    };
+    run(&mut pp);
+    pp.restart();
+    run(&mut pp);
+}
