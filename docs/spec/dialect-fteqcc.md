@@ -2293,17 +2293,22 @@ profile the preprocessor reads them as FTEQCC does.
   `#if 0`, `#elif` and `#endif` is that error once, as the pinned FTEQCC gives it (QCD-1.5).
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_FalsePreProcessorIf`.
-- **FTEF-14.77** A lexical error the lexer gives in a macro's stored body, not in the text a
-  macro used in it took as its arguments (FTEF-14.22), is located by the use the chunk expands,
-  not by where the body's bytes were stored. `QCC_PR_IncludeChunkEx` reads a chunk with `s_filen`
-  set to `"%s:%i:%s"`, the file and line of the use and the macro's name, and `pr_source_line =
-  1`, so the chunk's errors carry the use's place, not the define's (FTEF-14.27). So a body with
-  a byte that starts no UTF-8 sequence (`E0123`, FTEF-13.16) used twice is two `E0123` reports,
-  one at each use, as the pinned FTEQCC gives them; this profile places each at the span of its
-  use, so no two share a code and a span (QCD-1.5), where placing them at the stored body would
-  give one span for every use. Source:
+- **FTEF-14.77** FTEQCC reads a macro's stored body anew at every use, as the chunk
+  `QCC_PR_IncludeChunkEx` includes, with `s_filen` set to `"%s:%i:%s"`, the file and line of
+  the use and the macro's name, and `pr_source_line = 1` (FTEF-14.74), so a lexical error in
+  the body, such as a byte that starts no UTF-8 sequence (`E0123`, FTEF-13.16), is given at
+  every use, each located by its use; after the error's `longjmp (pr_parse_abort, 1)` the
+  compile skips to the next `;` (`QCC_PR_SkipToSemicolon`) and goes on reading the chunk, so a
+  second bad byte in the body is a second error. This profile places a chunk's lexical error,
+  outside the text a macro used in the chunk took as its arguments (FTEF-14.22), at the byte it
+  came from: the stored body's, the same place for every use, or the use's for an argument's
+  bytes, and reports it once there (QCD-1.5: a rule broken at one place is one report there),
+  however many uses read the body, however deep the use is nested in other macros' expansions,
+  and however many times the expansion writes the argument. Two bad bytes in one body are two
+  reports at the two bytes; a bad byte in a body and one in an argument of the same use are
+  two reports at their two places. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
-  `QCC_PR_IncludeChunkEx`.
+  `QCC_PR_IncludeChunkEx`, `QCC_PR_ParseError`; `qcc_pr_comp.c`, `QCC_PR_CompileFile`.
 
 ## FTEF-15 Declarations
 

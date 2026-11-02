@@ -42,6 +42,10 @@ fn a_define_body_lexical_error_does_not_collide_across_uses() {
             let mut seen = std::collections::HashSet::new();
             for d in &out.diagnostics {
                 assert!(
+                    pp.sources().text(d.span).is_some(),
+                    "diagnostic outside its file: {d:?}"
+                );
+                assert!(
                     seen.insert((d.code, d.span)),
                     "diagnostic reported twice: {d:?}"
                 );
@@ -53,30 +57,105 @@ fn a_define_body_lexical_error_does_not_collide_across_uses() {
     run_pass(&mut pp);
 }
 
-// spec FTEF-14.27: a chunk's line counts from the use, so a lexical error in a macro's body is
-// located by each use; a body with an invalid UTF-8 byte (E0123, QCD-2.9) used twice is two
-// E0123 reports at the two distinct use spans, no two sharing a code and a span (QCD-1.5).
-// spec FTEF-14.77: a chunk's body lexical error is placed at the use the chunk expands, not at
-// the stored body, so repeated uses keep distinct spans.
-#[test]
-fn a_body_lexical_error_is_reported_at_each_use() {
-    // `#define N <0xc3>x` then `N` on two lines: the body byte 0xc3 starts no UTF-8 sequence
-    // (`x` is no continuation byte), so lexing the body is E0123, once for each use.
+/// The `E0123` reports of `files` preprocessed in order under the FTEQCC dialect, as the span
+/// of each and the source bytes it covers, with every diagnostic checked to lie in a file that
+/// was read and no two to share a code and a span (QCD-1.5).
+fn utf8_errors(files: &[(&str, &[u8])]) -> Vec<(crate::FileSpan, Vec<u8>)> {
     let mut loader = MemoryLoader::new();
-    loader.insert("a.qc", b"#define N \xc3x\nN\nN\n");
+    for (name, text) in files {
+        loader.insert(name, *text);
+    }
     let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
-    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
-    let e0123: Vec<_> = out
-        .diagnostics
-        .iter()
-        .filter(|d| d.code == Code::E0123)
-        .collect();
-    assert_eq!(e0123.len(), 2, "{:?}", out.diagnostics);
-    // The two reports are at distinct spans, each the use the chunk expands.
-    assert_ne!(e0123[0].span, e0123[1].span);
-    // Each span is the text of a use of `N`, not the stored body byte.
-    assert_eq!(pp.sources().text(e0123[0].span), Some(&b"N"[..]));
-    assert_eq!(pp.sources().text(e0123[1].span), Some(&b"N"[..]));
+    let mut found = Vec::new();
+    for (name, _) in files {
+        let out = pp.preprocess_file(Path::new(name)).unwrap();
+        let mut seen = std::collections::HashSet::new();
+        for d in &out.diagnostics {
+            let text = pp.sources().text(d.span);
+            assert!(text.is_some(), "diagnostic outside its file: {d:?}");
+            assert!(
+                seen.insert((d.code, d.span)),
+                "diagnostic reported twice: {d:?}"
+            );
+            if d.code == Code::E0123 {
+                found.push((d.span, text.unwrap_or_default().to_vec()));
+            }
+        }
+    }
+    found
+}
+
+// spec FTEF-14.77: a lexical error in a macro's stored body is reported once, at the body's
+// byte, however many uses read the body, where FTEQCC gives it at every use (FTEF-14.74).
+// spec QCD-1.5: a rule broken at one place is one report there.
+#[test]
+fn a_body_lexical_error_is_reported_once_at_its_byte() {
+    // The body byte 0xc3 starts no UTF-8 sequence (`x` is no continuation byte): E0123.
+    let found = utf8_errors(&[("a.qc", b"#define N \xc3x\nN\nN\n")]);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].1, b"\xc3");
+    assert_eq!(found[0].0.span.start, 10, "the stored body's byte");
+}
+
+// spec FTEF-14.77: a body error read through another macro's expansion, however deep, is the
+// one report at the body's byte.
+// spec QCD-1.5: two uses of the outer macro add no second report.
+#[test]
+fn a_nested_body_lexical_error_is_reported_once() {
+    let found = utf8_errors(&[("a.qc", b"#define B \xc3x\n#define A B\nA\nA\n")]);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].1, b"\xc3");
+    assert_eq!(found[0].0.span.start, 10, "the stored body of B");
+}
+
+// spec FTEF-14.77: a body error is one report at its byte when the use is in another file of
+// the run than the definition.
+#[test]
+fn a_body_lexical_error_used_from_another_file_is_reported_at_the_body() {
+    let found = utf8_errors(&[("a.qc", b"#define N \xc3x\nN\n"), ("c.qc", b"N\nN\n")]);
+    // One report in each file's output, both at the body's byte in a.qc.
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert_eq!(found[0].0, found[1].0);
+    assert_eq!(found[0].1, b"\xc3");
+}
+
+// spec FTEF-14.77: two bad bytes in one body are two reports at the two bytes, as FTEQCC's
+// compile skips to the next `;` after the first and goes on reading the chunk.
+#[test]
+fn two_body_lexical_errors_are_two_reports_at_their_bytes() {
+    let found = utf8_errors(&[("a.qc", b"#define N \xc3x \xc3y\nN\n")]);
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert_ne!(found[0].0, found[1].0);
+    assert_eq!(found[0].1, b"\xc3");
+    assert_eq!(found[1].1, b"\xc3");
+}
+
+// spec FTEF-14.77: a bad byte in a body and one in an argument of the same use are two
+// reports at their two places, the body's byte and the byte the use wrote (FTEF-14.22).
+#[test]
+fn a_body_error_and_an_argument_error_of_one_use_are_two_reports() {
+    let found = utf8_errors(&[("a.qc", b"#define F(x) \xc3q x\nF(\xc3y)\n")]);
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert_ne!(found[0].0, found[1].0);
+    let starts: Vec<usize> = found.iter().map(|(s, _)| s.span.start).collect();
+    assert!(starts.contains(&13), "the body's byte: {starts:?}");
+    assert!(
+        starts.contains(&20),
+        "the argument's byte as the use wrote it: {starts:?}"
+    );
+}
+
+// spec FTEF-14.77: an argument's bad byte written twice into one expansion is one report, at
+// the byte the use wrote (FTEF-14.22).
+#[test]
+fn an_argument_lexical_error_written_twice_is_one_report_at_the_use() {
+    let found = utf8_errors(&[("a.qc", b"#define M(x) x x\nM(\xc3y)\n")]);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].1, b"\xc3");
+    assert_eq!(
+        found[0].0.span.start, 19,
+        "the argument's byte as the use wrote it"
+    );
 }
 
 // spec FTEF-14.1: `#if` takes its side by its expression, as the project graph evaluates it,

@@ -1595,16 +1595,16 @@ impl<L: Loader> Preprocessor<L> {
 
     /// Closes the chunk `chunk`, whose last token has been read (`QCC_PR_UnInclude`, and its
     /// `c->inside--`), and reports its lexical errors outside the text a macro used in it took
-    /// as arguments, each at the use the chunk is the expansion of.
+    /// as arguments, each where its first byte came from, a stored body's or a use's, and once
+    /// at that place (FTEF-14.77).
     ///
-    /// FTEF-14.27: `QCC_PR_IncludeChunkEx` reads a chunk with `s_filen` set to
-    /// `"<file>:<line>:<name>"`, the file and line of the use, and `pr_source_line = 1`, so an
-    /// error the lexer gives in the chunk's body (not in the arguments a macro used in it took,
-    /// which FTEF-14.22 reports where the use wrote them) is located by the use, not by where
-    /// the body's bytes were stored. Two uses of one macro with a lexical error in its body are
-    /// then two reports at the two uses, as the pinned FTEQCC gives them, each at its own span,
-    /// so no two share a code and a span (QCD-1.5); placing them at the stored body would give
-    /// one span for every use and report the same diagnostic twice.
+    /// FTEQCC reads the stored body anew at every use (`QCC_PR_IncludeChunkEx`), so a lexical
+    /// error in it is given at every use, located by `s_filen`, the file and line of the use
+    /// and the macro's name (FTEF-14.74). This profile places the error at the byte it came
+    /// from, the stored body's, the same place for every use, and QCD-1.5 makes a rule broken
+    /// at one place one report there: a use whose chunk gives an error already reported at its
+    /// place adds nothing. The same holds for an argument's bytes written twice into one
+    /// expansion.
     pub(crate) fn close_chunk(run: &mut Run, chunk: ChunkReader) {
         run.closed_chunk(&chunk.name);
         for d in &chunk.stream.diagnostics {
@@ -1612,8 +1612,17 @@ impl<L: Loader> Preprocessor<L> {
                 .consumed
                 .iter()
                 .any(|s| s.start <= d.span.start && d.span.start < s.end);
-            if !consumed {
-                run.report(d.code, d.message.clone(), chunk.at);
+            if consumed {
+                continue;
+            }
+            let (span, _) = chunk.place(d.span.range());
+            let reported = run
+                .out
+                .diagnostics
+                .iter()
+                .any(|r| r.code == d.code && r.span == span);
+            if !reported {
+                run.report(d.code, d.message.clone(), span);
             }
         }
     }
