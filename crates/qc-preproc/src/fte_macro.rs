@@ -1595,7 +1595,16 @@ impl<L: Loader> Preprocessor<L> {
 
     /// Closes the chunk `chunk`, whose last token has been read (`QCC_PR_UnInclude`, and its
     /// `c->inside--`), and reports its lexical errors outside the text a macro used in it took
-    /// as arguments, each where its first byte came from.
+    /// as arguments, each at the use the chunk is the expansion of.
+    ///
+    /// FTEF-14.27: `QCC_PR_IncludeChunkEx` reads a chunk with `s_filen` set to
+    /// `"<file>:<line>:<name>"`, the file and line of the use, and `pr_source_line = 1`, so an
+    /// error the lexer gives in the chunk's body (not in the arguments a macro used in it took,
+    /// which FTEF-14.22 reports where the use wrote them) is located by the use, not by where
+    /// the body's bytes were stored. Two uses of one macro with a lexical error in its body are
+    /// then two reports at the two uses, as the pinned FTEQCC gives them, each at its own span,
+    /// so no two share a code and a span (QCD-1.5); placing them at the stored body would give
+    /// one span for every use and report the same diagnostic twice.
     pub(crate) fn close_chunk(run: &mut Run, chunk: ChunkReader) {
         run.closed_chunk(&chunk.name);
         for d in &chunk.stream.diagnostics {
@@ -1604,8 +1613,7 @@ impl<L: Loader> Preprocessor<L> {
                 .iter()
                 .any(|s| s.start <= d.span.start && d.span.start < s.end);
             if !consumed {
-                let (span, _) = chunk.place(d.span.range());
-                run.report(d.code, d.message.clone(), span);
+                run.report(d.code, d.message.clone(), chunk.at);
             }
         }
     }

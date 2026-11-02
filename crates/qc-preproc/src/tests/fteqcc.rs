@@ -14,6 +14,71 @@ fn fte(text: &str) -> (String, Vec<Code>) {
     (tokens(&out), codes(&out))
 }
 
+// spec QCD-1.5: no two preprocessor diagnostics of one input share a code and a span, on the
+// `#define` path. The 107-byte crash input from the nightly Fuzz workflow (a macro whose body
+// holds the byte 0x94, used twice) is fed through the same entry points as the qc-preproc fuzz
+// target (preprocess a.qc then c.qc, restart, again).
+#[test]
+fn a_define_body_lexical_error_does_not_collide_across_uses() {
+    const DATA: &[u8] = &[
+        35, 100, 101, 102, 105, 110, 101, 9, 9, 110, 101, 9, 100, 101, 41, 105, 110, 101, 9, 9,
+        110, 101, 9, 9, 9, 9, 9, 9, 9, 9, 126, 126, 9, 9, 47, 148, 10, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+        9, 9, 126, 126, 9, 9, 47, 148, 10, 9, 9, 9, 9, 9, 9, 9, 9, 126, 126, 9, 9, 9, 110, 101, 9,
+        9, 110, 101, 9, 9, 9, 9, 9, 9, 9, 9, 126, 126, 9, 9, 47, 148, 10, 9, 9, 9, 9, 9, 9, 9, 9,
+        9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+    ];
+    let mut parts = DATA.splitn(3, |b| *b == 0);
+    let a = parts.next().unwrap_or_default();
+    let b = parts.next().unwrap_or_default();
+    let c = parts.next().unwrap_or_default();
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", a);
+    loader.insert("b.qh", b);
+    loader.insert("c.qc", c);
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    let run_pass = |pp: &mut Preprocessor<MemoryLoader>| {
+        for path in ["a.qc", "c.qc"] {
+            let out = pp.preprocess_file(Path::new(path)).unwrap();
+            let mut seen = std::collections::HashSet::new();
+            for d in &out.diagnostics {
+                assert!(
+                    seen.insert((d.code, d.span)),
+                    "diagnostic reported twice: {d:?}"
+                );
+            }
+        }
+    };
+    run_pass(&mut pp);
+    pp.restart();
+    run_pass(&mut pp);
+}
+
+// spec FTEF-14.27: a chunk's line counts from the use, so a lexical error in a macro's body is
+// located by each use; a body with an invalid UTF-8 byte (E0123, QCD-2.9) used twice is two
+// E0123 reports at the two distinct use spans, no two sharing a code and a span (QCD-1.5).
+// spec FTEF-14.77: a chunk's body lexical error is placed at the use the chunk expands, not at
+// the stored body, so repeated uses keep distinct spans.
+#[test]
+fn a_body_lexical_error_is_reported_at_each_use() {
+    // `#define N <0xc3>x` then `N` on two lines: the body byte 0xc3 starts no UTF-8 sequence
+    // (`x` is no continuation byte), so lexing the body is E0123, once for each use.
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", b"#define N \xc3x\nN\nN\n");
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    let e0123: Vec<_> = out
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == Code::E0123)
+        .collect();
+    assert_eq!(e0123.len(), 2, "{:?}", out.diagnostics);
+    // The two reports are at distinct spans, each the use the chunk expands.
+    assert_ne!(e0123[0].span, e0123[1].span);
+    // Each span is the text of a use of `N`, not the stored body byte.
+    assert_eq!(pp.sources().text(e0123[0].span), Some(&b"N"[..]));
+    assert_eq!(pp.sources().text(e0123[1].span), Some(&b"N"[..]));
+}
+
 // spec FTEF-14.1: `#if` takes its side by its expression, as the project graph evaluates it,
 // and an `#if` in a skipped side only nests.
 #[test]

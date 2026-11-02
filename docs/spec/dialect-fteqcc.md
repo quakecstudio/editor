@@ -2293,6 +2293,17 @@ profile the preprocessor reads them as FTEQCC does.
   `#if 0`, `#elif` and `#endif` is that error once, as the pinned FTEQCC gives it (QCD-1.5).
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_FalsePreProcessorIf`.
+- **FTEF-14.77** A lexical error the lexer gives in a macro's stored body, not in the text a
+  macro used in it took as its arguments (FTEF-14.22), is located by the use the chunk expands,
+  not by where the body's bytes were stored. `QCC_PR_IncludeChunkEx` reads a chunk with `s_filen`
+  set to `"%s:%i:%s"`, the file and line of the use and the macro's name, and `pr_source_line =
+  1`, so the chunk's errors carry the use's place, not the define's (FTEF-14.27). So a body with
+  a byte that starts no UTF-8 sequence (`E0123`, FTEF-13.16) used twice is two `E0123` reports,
+  one at each use, as the pinned FTEQCC gives them; this profile places each at the span of its
+  use, so no two share a code and a span (QCD-1.5), where placing them at the stored body would
+  give one span for every use. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_IncludeChunkEx`.
 
 ## FTEF-15 Declarations
 
