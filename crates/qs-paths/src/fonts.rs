@@ -23,7 +23,7 @@ pub fn current_font_dirs() -> Vec<PathBuf> {
 /// The font folders of `platform`, reading variables through `env`, in the order to search:
 /// the user's own fonts last. A folder whose variable is unset, empty or relative is left out.
 #[must_use]
-pub fn font_dirs<F>(platform: Platform, env: F) -> Vec<PathBuf>
+pub(crate) fn font_dirs<F>(platform: Platform, env: F) -> Vec<PathBuf>
 where
     F: Fn(&'static str) -> Option<OsString>,
 {

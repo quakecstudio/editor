@@ -9,7 +9,6 @@ fn qs_paths::AppDirs::logs
 fn qs_paths::Platform::current
 fn qs_paths::current
 fn qs_paths::fonts::current_font_dirs
-fn qs_paths::fonts::font_dirs
 fn qs_paths::resolve
 fn qs_paths::stores::StoreDirs::gog_libraries
 fn qs_paths::stores::StoreDirs::heroic
@@ -23,7 +22,6 @@ struct qs_paths::stores::StoreDirs
 use qs_paths::StoreDirs = stores::StoreDirs
 use qs_paths::current_font_dirs = fonts::current_font_dirs
 use qs_paths::current_store_dirs = stores::current_store_dirs
-use qs_paths::font_dirs = fonts::font_dirs
 use qs_paths::store_dirs = stores::store_dirs
 variant qs_paths::PathsError::MissingVar
 variant qs_paths::PathsError::RelativeVar
