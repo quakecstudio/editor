@@ -155,24 +155,24 @@ fn a_struct_elements_words_are_read_one_at_a_time() {
     let (two, one, g) = (immediate(&p, 2.0), immediate(&p, 1.0), global(&p, "g"));
     let t = body(&p, "t");
     let i = global(&p, "i");
-    assert_eq!(opcodes(&t), ops(&[MulF, AddF, StoreF, Call1, StoreF, Done]));
+    assert_eq!(opcodes(&t), ops(&[MulF, AddF, Call1, StoreF, Done]));
     assert_eq!((t[0].a, t[0].b), (i, two));
-    assert_eq!((t[1].a, t[1].b), (t[0].c, one));
-    assert_eq!(t[2], st(StoreF, t[1].c, 4, 0));
-    assert_eq!(t[3], st(Call1, getter, 0, 0));
-    assert_eq!(t[4], st(StoreF, 1, g, 0));
+    // FTE-18.12: the sum is written straight to the slot.
+    assert_eq!(t[1], st(AddF, t[0].c, one, 4));
+    assert_eq!(t[2], st(Call1, getter, 0, 0));
+    assert_eq!(t[3], st(StoreF, 1, g, 0));
     let u = body(&p, "u");
     assert_eq!(
         opcodes(&u),
         ops(&[
-            MulF, StoreF, Call1, StoreF, AddF, StoreF, Call1, StoreF, StoreF, StoreF, Done
+            MulF, Call1, StoreF, AddF, Call1, StoreF, StoreF, StoreF, Done
         ])
     );
-    let temp = u[3].b;
-    assert_eq!(u[7].b, temp + 1);
+    let temp = u[2].b;
+    assert_eq!(u[5].b, temp + 1);
     let q = global(&p, "q");
-    assert_eq!(u[8], st(StoreF, temp, q, 0));
-    assert_eq!(u[9], st(StoreF, temp + 1, q + 1, 0));
+    assert_eq!(u[6], st(StoreF, temp, q, 0));
+    assert_eq!(u[7], st(StoreF, temp + 1, q + 1, 0));
 }
 
 // spec FTE-13.12: a vector array's index in words is divided by 3 for the getter
@@ -182,10 +182,10 @@ fn a_vector_elements_index_is_divided_by_three() {
         "void(string e) error = #10;\nvector va[2];\nvector r;\nvoid(float i) t = { r = va[i]; };\n",
     );
     let t = body(&p, "t");
-    assert_eq!(opcodes(&t), ops(&[MulF, DivF, StoreF, Call1, StoreV, Done]));
+    assert_eq!(opcodes(&t), ops(&[MulF, DivF, Call1, StoreV, Done]));
     let three = immediate(&p, 3.0);
-    assert_eq!((t[0].b, t[1].a, t[1].b), (three, t[0].c, three));
-    assert_eq!(t[4], st(StoreV, 1, global(&p, "r"), 0));
+    assert_eq!((t[0].b, t[1].a, t[1].b, t[1].c), (three, t[0].c, three, 4));
+    assert_eq!(t[3], st(StoreV, 1, global(&p, "r"), 0));
 }
 
 // spec FTE-13.8: a getter checks the index is not negative, returns the word the ladder finds,
@@ -1430,10 +1430,10 @@ fn a_vector_arrays_setter_takes_the_elements_index() {
         t[0],
         st(Opcode::MulF, global(&p, "i"), immediate(&p, 3.0), t[0].c)
     );
-    assert_eq!(t[1], st(DivF, t[0].c, immediate(&p, 3.0), t[1].c));
-    assert_eq!(t[2], st(StoreF, t[1].c, 4, 0));
+    // FTE-18.12: the index is written straight to the slot.
+    assert_eq!(t[1], st(DivF, t[0].c, immediate(&p, 3.0), 4));
     assert_eq!(
-        t[3],
+        t[2],
         st(StoreV, immediate_vector(&p, [1.0, 2.0, 3.0]), 7, 0)
     );
     let f = function(&p, "ArraySet*a");
@@ -1478,11 +1478,11 @@ fn a_shift_by_a_value_is_floor_of_a_power() {
     assert_eq!(t[0], st(StoreF, immediate(&p, 2.0), 4, 0));
     assert_eq!(t[1], st(StoreF, n, 7, 0));
     assert_eq!(t[2], st(Call2, pow, 0, 0));
-    assert_eq!(t[3], st(MulF, three, 1, t[3].c));
-    assert_eq!(t[4], st(StoreF, t[3].c, 4, 0));
-    assert_eq!(t[5], st(Opcode::Call1, floor, 0, 0));
-    assert_eq!(t[6], st(StoreF, 1, global(&p, "x"), 0));
-    assert_eq!(t[10], st(DivF, three, 1, t[10].c));
+    // FTE-18.12: the product is written straight to the slot, no STORE_F.
+    assert_eq!(t[3], st(MulF, three, 1, 4));
+    assert_eq!(t[4], st(Opcode::Call1, floor, 0, 0));
+    assert_eq!(t[5], st(StoreF, 1, global(&p, "x"), 0));
+    assert_eq!(t[9], st(DivF, three, 1, 4));
 }
 
 // spec FTE-19.11: with no pow, a shift by a value calls bitshift, `>>` with the count negated
@@ -1729,18 +1729,21 @@ fn autoprototyping_drops_a_named_default() {
 }
 
 // spec FTE-18.10: a bare return in a function that returns a value returns its `ret*` local,
-// the same one each time, and in a void function returns 0
+// the same one each time, the body ends with one more RETURN of it before DONE, and in a void
+// function a bare return returns 0
 #[test]
 fn a_bare_return_returns_the_ret_local() {
     let p =
         fte_progs("float x;\nfloat() f = { if (x) return; return; };\nvoid() g = { return; };\n");
     let ret = global(&p, "ret*");
-    let returns: Vec<i32> = body(&p, "f")
+    let f = body(&p, "f");
+    let returns: Vec<i32> = f
         .iter()
         .filter(|s| s.op == u32::from(Return.number()))
         .map(|s| s.a)
         .collect();
-    assert_eq!(returns, [ret, ret]);
+    assert_eq!(returns, [ret, ret, ret]);
+    assert_eq!(opcodes(&f), ops(&[IfNot, Return, Return, Return, Done]));
     assert_eq!(body(&p, "g")[0], st(Return, 0, 0, 0));
 }
 

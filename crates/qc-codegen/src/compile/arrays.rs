@@ -347,11 +347,13 @@ impl Compiler<'_> {
         ret: ValueType,
         span: Span,
     ) -> Lowered<Value> {
-        self.program.emit(
-            Opcode::StoreF,
-            operand(arg).at(span)?,
-            operand(OFS_PARM0).at(span)?,
-        );
+        if !self.fold_word_into(arg, OFS_PARM0) {
+            self.program.emit(
+                Opcode::StoreF,
+                operand(arg).at(span)?,
+                operand(OFS_PARM0).at(span)?,
+            );
+        }
         let ofs = self.program.def(function).at(span)?.ofs;
         self.clobber_aliases(span)?;
         self.program.emit(Opcode::Call1, operand(ofs).at(span)?, 0);
@@ -847,10 +849,28 @@ impl Compiler<'_> {
 
     /// `STORE_*` of the value of basic type `etype` at `from` to `to`.
     fn store_word(&mut self, from: u32, to: u32, etype: Etype, span: Span) -> Lowered<()> {
+        // FTE-18.12: a temporary the statement before made is written to `to` by that
+        // statement instead (`opt_assignments`).
+        if self.fold_word_into(from, to) {
+            return Ok(());
+        }
         let row = ops::select(Operator::Assign, etype, etype, None).at(span)?;
         self.program
             .emit(row.opcode, operand(from).at(span)?, operand(to).at(span)?);
         Ok(())
+    }
+
+    /// FTE-18.12 for a word `from`: when it is a temporary the statement before wrote, that
+    /// statement writes `to` instead; true when it did.
+    fn fold_word_into(&mut self, from: u32, to: u32) -> bool {
+        let temp = Value {
+            ofs: from,
+            kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
+        };
+        if !self.dialect.has_fteqcc_extensions() || self.is_definition_word(&temp) {
+            return false;
+        }
+        self.fold_into(&temp, to)
     }
 
     /// FTE-14.6: a struct value copied to `to`, `STORE_V` for each three words and `STORE_F`

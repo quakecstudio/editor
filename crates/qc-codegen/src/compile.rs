@@ -32,7 +32,9 @@ use crate::ops::{self, Operator};
 use crate::precache::Precaches;
 use qc_vm::convert::{float_to_int, int_to_float};
 
-use crate::program::{self, Literal, OFS_PARM0, OFS_RETURN, Program, ValueType, operand};
+use crate::program::{
+    self, Literal, OFS_PARM0, OFS_RETURN, Program, ValueType, operand, type_words,
+};
 
 mod arrays;
 
@@ -764,6 +766,12 @@ impl<'a> Compiler<'a> {
                     for statement in block.statements() {
                         self.statement(&statement)?;
                     }
+                }
+                // FTE-18.10: a body that made a `ret*` local ends with `RETURN` of it before
+                // `DONE` (`if (f->returndef.cast ...) QCC_PR_Statement(OP_RETURN, f->returndef)`).
+                if let Some(place) = self.ret_local {
+                    let ofs = self.program.def(place).at(span)?.ofs;
+                    self.program.emit(Opcode::Return, operand(ofs).at(span)?, 0);
                 }
                 // QC-13.7: the body ends with `DONE`.
                 self.program.emit(Opcode::Done, 0, 0);
@@ -1680,6 +1688,17 @@ impl<'a> Compiler<'a> {
                 continue;
             };
             let low = self.expr(&case)?;
+            // FTE-3.8: a case whose constant's word is 0 is `IFNOT` of the value itself.
+            if label.range_end().is_none()
+                && self.dialect.has_fteqcc_extensions()
+                && self.constant_word(&low) == Some(0)
+            {
+                let to = branch(self.program.statements.len(), *at).at(label_span)?;
+                let tested = self.operand_of(&value);
+                self.program
+                    .emit(Opcode::IfNot, operand(tested).at(label_span)?, to);
+                continue;
+            }
             let hit = match label.range_end() {
                 Some(end) => {
                     let high = self.expr(&end)?;
@@ -1694,9 +1713,17 @@ impl<'a> Compiler<'a> {
             self.program
                 .emit(Opcode::If, operand(hit.ofs).at(label_span)?, to);
         }
-        let fallback = self.program.emit(Opcode::Goto, 0, 0);
+        // FTE-3.8: a `GOTO` to the default case only when there is one; without one the tests
+        // fall through to the end.
+        let fallback = match default {
+            Some(_) => Some(self.program.emit(Opcode::Goto, 0, 0)),
+            None if self.dialect.has_fteqcc_extensions() => None,
+            None => Some(self.program.emit(Opcode::Goto, 0, 0)),
+        };
         let end = self.program.statements.len();
-        self.set_goto(fallback, default.unwrap_or(end), span)?;
+        if let Some(fallback) = fallback {
+            self.set_goto(fallback, default.unwrap_or(end), span)?;
+        }
         if let Some(past_tests) = past_tests {
             self.set_goto(past_tests, end, span)?;
         }
@@ -2501,6 +2528,12 @@ impl<'a> Compiler<'a> {
         let is = |value: Option<f32>, want: f32| value.is_some_and(|value| value == want);
         let (a, b) = (constant(self, left), constant(self, right));
         let folded = match opcode {
+            // `QCC_Eval_Truth` of a float constant: not 0. `a && b` with a false constant is
+            // the constant 0, `a || b` with a true one the constant 1.
+            Opcode::And if is(a, 0.0) || is(b, 0.0) => Some(self.float_literal(0.0, span)?),
+            Opcode::Or if a.is_some_and(|a| a != 0.0) || b.is_some_and(|b| b != 0.0) => {
+                Some(self.float_literal(1.0, span)?)
+            }
             Opcode::AddF | Opcode::BitOr if is(a, 0.0) => Some(right.clone()),
             Opcode::MulF if is(a, 1.0) => Some(right.clone()),
             Opcode::BitAnd if a.is_some_and(|a| float_to_int(a) == 0) => {
@@ -2876,12 +2909,27 @@ impl<'a> Compiler<'a> {
         Ok(value)
     }
 
+    /// Whether `value` is a definition or a word of one (a local vector's component, a
+    /// struct's member), rather than a temporary: FTEQCC's `sym->temp` is false for it.
+    fn is_definition_word(&self, value: &Value) -> bool {
+        match value.kind {
+            ValueKind::Def(_) | ValueKind::Cast(_) => true,
+            ValueKind::Return(_) => false,
+            ValueKind::Temp(_) => self.program.defs.iter().any(|def| {
+                let words = type_words(self.index, &def.ty).saturating_mul(def.count.unwrap_or(1));
+                def.name != "IMMEDIATE"
+                    && value.ofs >= def.ofs
+                    && value.ofs < def.ofs.saturating_add(words)
+            }),
+        }
+    }
+
     /// FTEF-29.13: under FTEQCC a store of the temporary the statement before made to a
     /// definition is folded into that statement, which then writes the definition, as
     /// `opt_assignments` folds it; true when it was.
     fn fold_store(&mut self, to: &Value, value: &Value) -> bool {
         if self.dialect != Dialect::Fteqcc
-            || !matches!(to.kind, ValueKind::Def(_))
+            || !self.is_definition_word(to)
             || !matches!(value.kind, ValueKind::Temp(_))
             || self.type_of(to) != self.type_of(value)
         {
