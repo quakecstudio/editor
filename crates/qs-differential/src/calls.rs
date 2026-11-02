@@ -488,7 +488,18 @@ fn run_calls_reporting(
             continue;
         }
         // DIFF-12.7: a function the second progs does not have is a divergence, not a skip.
-        let Some(&our_index) = our_world.program.functions.get(name) else {
+        // A name both progs give several functions, FTEQCC's accessors of local arrays named
+        // alike (`ArrayGet*tab`), pairs the function at the same index when that one has the
+        // name, so each accessor meets its own.
+        let same_index = our_progs
+            .functions()
+            .get(index)
+            .filter(|f| f.first_statement > 0)
+            .and_then(|f| our_progs.string(f.s_name))
+            .filter(|our_name| *our_name == name)
+            .map(|_| their_index);
+        let Some(our_index) = same_index.or_else(|| our_world.program.functions.get(name).copied())
+        else {
             report.divergences.push(Divergence {
                 function: Some(name.to_vec()),
                 round: 0,

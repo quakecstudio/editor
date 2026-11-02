@@ -627,7 +627,10 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   entity and a function, and the two agree when any reading does: the same bits, the same text,
   the same edict, or the same function. A vector's other two words are compared only through
   the globals and fields they are stored to. A QuakeC function of the first progs that the
-  second has no QuakeC function of the same name for is a divergence.
+  second has no QuakeC function of the same name for is a divergence. A function is paired
+  with the second progs' function of its name, the one at its own index when that has the
+  name: FTEQCC names the accessor of every local array `tab` `ArrayGet*tab` (FTE-13.8), and
+  crmod7 has seven, each read with its own.
 - **DIFF-12.8** **Withdrawn** 2026-10-30: it compared the five rerelease codebases besides
   `rerelease` only when a run named them, until each passed; four pass and the nightly run
   compares them; replaced by DIFF-12.14. `cargo xtask compiler-diff --full` also compares the rerelease (COMP-8):

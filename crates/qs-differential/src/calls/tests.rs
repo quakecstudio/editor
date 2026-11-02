@@ -1385,3 +1385,14 @@ fn a_va_list_element_agrees_by_any_reading() {
         "{divergences:?}"
     );
 }
+
+// spec DIFF-12.7: functions of one name, the accessors of two local arrays named alike, are
+// paired by their index, each with its own
+#[test]
+fn same_named_functions_are_paired_by_index() {
+    let source = "string(float i) f = { local string tab[2]; tab[0] = \"a\"; tab[1] = \"b\"; \
+                  return tab[i]; };\n\
+                  string(float i) g = { local string tab[2]; tab[0] = \"ccc\"; tab[1] = \"dddd\"; \
+                  return tab[i]; };\n";
+    assert_eq!(against_fteqcc(source, source), []);
+}
