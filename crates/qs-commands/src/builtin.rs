@@ -9,7 +9,9 @@ use crate::id::CommandId;
 use crate::registry::{CommandInfo, schema_of};
 
 /// The ids of the built-in commands, in the order [`crate::Registry::commands`] lists them.
-pub const BUILTIN_IDS: [&str; 3] = [Builtin::List.id(), Builtin::Redo.id(), Builtin::Undo.id()];
+#[cfg(test)]
+pub(crate) const BUILTIN_IDS: [&str; 3] =
+    [Builtin::List.id(), Builtin::Redo.id(), Builtin::Undo.id()];
 
 /// A built-in command. These read or change the session's registry and undo history, which
 /// no [`crate::Command`] can reach, so the session carries them out itself.

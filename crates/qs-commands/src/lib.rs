@@ -29,9 +29,12 @@ mod session;
 #[cfg(test)]
 mod tests;
 
-pub use builtin::BUILTIN_IDS;
+#[cfg(test)]
+pub(crate) use builtin::BUILTIN_IDS;
 pub use command::{BoxError, Command, NoParams, Outcome, UndoStep};
 pub use error::{CommandError, RegisterError};
-pub use id::{CommandId, IdError, MAX_ID_LEN};
+#[cfg(test)]
+pub(crate) use id::MAX_ID_LEN;
+pub use id::{CommandId, IdError};
 pub use registry::{CommandInfo, Registry};
 pub use session::Session;

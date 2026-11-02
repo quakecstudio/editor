@@ -1,4 +1,3 @@
-const qs_settings::DEFAULT_LOG_FILTER
 const qs_settings::Setting::ALL
 enum qs_settings::Scope
 enum qs_settings::Setting
@@ -21,16 +20,12 @@ fn qs_settings::SettingsFile::get
 fn qs_settings::SettingsFile::load
 fn qs_settings::SettingsFile::put
 fn qs_settings::SettingsStore::file
-fn qs_settings::SettingsStore::log_filter
 fn qs_settings::SettingsStore::open
 fn qs_settings::SettingsStore::put
-fn qs_settings::SettingsStore::theme
 fn qs_settings::SettingsStore::value
 fn qs_settings::commands::HasSettings::settings
 fn qs_settings::commands::register
-fn qs_settings::project_settings_path
 fn qs_settings::reference
-fn qs_settings::user_settings_path
 impl qs_settings::commands::Change: UndoStep
 impl qs_settings::commands::Get: Command
 impl qs_settings::commands::List: Command

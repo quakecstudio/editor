@@ -1,16 +1,12 @@
-const qs_layout::LAYOUT_FILE
 const qs_layout::MIN_PANEL_SIZE
 const qs_layout::Panel::ALL
 const qs_layout::RESIZE_PANEL
 const qs_layout::TOGGLE_PANEL
 enum qs_layout::LayoutError
 enum qs_layout::Panel
-field qs_layout::BadPanelSize.size
 field qs_layout::Layout.bottom
 field qs_layout::Layout.left
 field qs_layout::Layout.right
-field qs_layout::PanelShown.panel
-field qs_layout::PanelShown.visible
 field qs_layout::PanelState.size
 field qs_layout::PanelState.visible
 field qs_layout::ResizePanelParams.panel
@@ -31,9 +27,7 @@ impl qs_layout::LayoutError: Error
 impl qs_layout::LayoutError: fmt::Display
 impl qs_layout::ResizePanel: Command
 impl qs_layout::TogglePanel: Command
-struct qs_layout::BadPanelSize
 struct qs_layout::Layout
-struct qs_layout::PanelShown
 struct qs_layout::PanelState
 struct qs_layout::ResizePanelParams
 struct qs_layout::TogglePanelParams

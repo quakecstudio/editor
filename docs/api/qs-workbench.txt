@@ -21,8 +21,6 @@ field qs_workbench::commands::AtParams.path
 field qs_workbench::commands::Candidate.detail
 field qs_workbench::commands::Candidate.kind
 field qs_workbench::commands::Candidate.label
-field qs_workbench::commands::FileOpened.location
-field qs_workbench::commands::FileOpened.path
 field qs_workbench::commands::HoverInfo.declaration
 field qs_workbench::commands::HoverInfo.docs
 field qs_workbench::commands::HoverInfo.place
@@ -33,9 +31,6 @@ field qs_workbench::commands::Place.end
 field qs_workbench::commands::Place.location
 field qs_workbench::commands::Place.path
 field qs_workbench::commands::Place.start
-field qs_workbench::commands::ProjectOpened.files
-field qs_workbench::commands::RenameDone.caution
-field qs_workbench::commands::RenameDone.files
 field qs_workbench::commands::RenameParams.name
 field qs_workbench::commands::RenameParams.offset
 field qs_workbench::commands::RenameParams.path
@@ -100,13 +95,10 @@ struct qs_workbench::TreeEntry
 struct qs_workbench::Workbench
 struct qs_workbench::commands::AtParams
 struct qs_workbench::commands::Candidate
-struct qs_workbench::commands::FileOpened
 struct qs_workbench::commands::HoverInfo
 struct qs_workbench::commands::OpenFileParams
 struct qs_workbench::commands::OpenProjectParams
 struct qs_workbench::commands::Place
-struct qs_workbench::commands::ProjectOpened
-struct qs_workbench::commands::RenameDone
 struct qs_workbench::commands::RenameParams
 struct qs_workbench::commands::SaveFileParams
 struct qs_workbench::commands::UpdateFileParams

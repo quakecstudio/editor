@@ -87,7 +87,7 @@ pub struct OpenProjectParams {
 
 /// What `project.open` returns.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-pub struct ProjectOpened {
+pub(crate) struct ProjectOpened {
     /// How many files the project reads.
     pub files: usize,
 }
@@ -132,7 +132,7 @@ pub struct OpenFileParams {
 
 /// What `file.open` returns.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct FileOpened {
+pub(crate) struct FileOpened {
     /// The file, as the project graph names it.
     pub path: PathBuf,
     /// Where the caret is.
@@ -429,7 +429,7 @@ pub struct RenameParams {
 
 /// What `symbol.rename` returns.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RenameDone {
+pub(crate) struct RenameDone {
     /// The files changed, unsaved.
     pub files: Vec<PathBuf>,
     /// What a map may still name by the old name: a function's or field's name, if any.

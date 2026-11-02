@@ -1,7 +1,5 @@
-const qs_commands::builtin::BUILTIN_IDS
 const qs_commands::command::Command::ID
 const qs_commands::command::Command::SUMMARY
-const qs_commands::id::MAX_ID_LEN
 enum qs_commands::error::CommandError
 enum qs_commands::error::RegisterError
 enum qs_commands::id::IdError
@@ -74,14 +72,12 @@ type qs_commands::command::BoxError
 type qs_commands::command::Command::Error
 type qs_commands::command::Command::Output
 type qs_commands::command::Command::Params
-use qs_commands::BUILTIN_IDS = builtin::BUILTIN_IDS
 use qs_commands::BoxError = command::BoxError
 use qs_commands::Command = command::Command
 use qs_commands::CommandError = error::CommandError
 use qs_commands::CommandId = id::CommandId
 use qs_commands::CommandInfo = registry::CommandInfo
 use qs_commands::IdError = id::IdError
-use qs_commands::MAX_ID_LEN = id::MAX_ID_LEN
 use qs_commands::NoParams = command::NoParams
 use qs_commands::Outcome = command::Outcome
 use qs_commands::RegisterError = error::RegisterError

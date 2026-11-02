@@ -9,7 +9,7 @@ use serde::Serialize;
 
 /// The longest id, in bytes: the upper bound MCP gives tool names (MCP 2026-07-28, Tools, Tool
 /// Names: "Tool names SHOULD be between 1 and 128 characters in length (inclusive)").
-pub const MAX_ID_LEN: usize = 128;
+pub(crate) const MAX_ID_LEN: usize = 128;
 
 /// A command's stable id, such as `edit.undo` or `compile`.
 ///
