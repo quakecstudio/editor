@@ -2329,7 +2329,13 @@ impl<'a> Compiler<'a> {
         let a_only = self.operate(Operator::BitAnd, left, &not_b, spans)?;
         let not_a = self.operate(Operator::Sub, &minus_one, left, spans)?;
         let b_only = self.operate(Operator::BitAnd, right, &not_a, spans)?;
-        self.operate(Operator::BitOr, &a_only, &b_only, spans)
+        let result = self.operate(Operator::BitOr, &a_only, &b_only, spans)?;
+        // The emulation reads each operand twice (`QCC_UnFreeTemp`), and FTEQCC frees only one
+        // of a call's value's references, so the alias stays live for the next clobber to
+        // copy (FTE-18.13).
+        self.keep_alive(left);
+        self.keep_alive(right);
+        Ok(result)
     }
 
     /// The row of `operator` for the two operands' types, folded under `--opt fold`, else
@@ -2572,10 +2578,9 @@ impl<'a> Compiler<'a> {
 
     /// The program's conversion function `name` (`itof` or `ftoi`, `QCC_PR_EmulationFunc`),
     /// when it defines one (FTEF-26.3).
-    fn conversion_function(&self, name: &str) -> Option<usize> {
-        self.names
-            .global(name)
-            .and_then(|id| self.program.place(id))
+    fn conversion_function(&mut self, name: &str) -> Option<usize> {
+        let id = self.names.global(name)?;
+        self.program.get_def(self.index, id).ok()
     }
 
     /// FTEF-26.15: `QCC_PR_StatementFlags` with one constant float operand, under

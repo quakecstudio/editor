@@ -301,7 +301,13 @@ impl Compiler<'_> {
         } else {
             from
         };
-        self.store_word(from, second, b, span)?;
+        // `QCC_PR_GenerateFunctionCall2` stores the value by its size, `STORE_F` for one word.
+        let by_size = if b == Etype::Vector {
+            Etype::Vector
+        } else {
+            Etype::Float
+        };
+        self.store_word(from, second, by_size, span)?;
         // `QCC_StoreToArray` asks for the setter when it stores, after the value is read.
         let array = store.array.clone();
         let setter = self.array_function(&array, Access::Set, span)?;
@@ -790,14 +796,12 @@ impl Compiler<'_> {
                 .emit(Opcode::Call2, operand(power).at(span)?, 0);
             let powered = self.alias(float.clone());
             let scale = match shift {
-                Shift::Left => Opcode::MulF,
-                Shift::Right => Opcode::DivF,
+                Shift::Left => Operator::Mul,
+                Shift::Right => Operator::Div,
             };
-            let (a, b) = (self.operand_of(left), self.operand_of(&powered));
-            let scaled = self
-                .program
-                .emit_result(scale, a, b, Etype::Float)
-                .at(span)?;
+            // `QCC_PR_Statement` of the scale, so `1 << n` is the power itself (FTEF-26.15).
+            let scaled = self.operate(scale, left, &powered, (span, span))?;
+            let scaled = self.operand_of(&scaled);
             self.store_word(scaled, OFS_PARM0, Etype::Float, span)?;
             self.clobber_aliases(span)?;
             self.program
