@@ -1,0 +1,33 @@
+const qs_wav::WAV_CHUNK_HEADER_SIZE
+const qs_wav::WAV_CUE_LOOPSTART_OFFSET
+const qs_wav::WAV_FORMAT_PCM
+const qs_wav::WAV_LIST_LENGTH_OFFSET
+const qs_wav::WAV_LIST_MARK_OFFSET
+const qs_wav::WAV_NO_LOOP
+const qs_wav::WAV_SOUND_DIR
+enum qs_wav::WavError
+field qs_wav::Sound.data
+field qs_wav::Sound.info
+field qs_wav::WavInfo.channels
+field qs_wav::WavInfo.dataofs
+field qs_wav::WavInfo.loopstart
+field qs_wav::WavInfo.rate
+field qs_wav::WavInfo.samples
+field qs_wav::WavInfo.width
+fn qs_wav::Sound::sample
+fn qs_wav::get_wavinfo
+fn qs_wav::s_load_sound
+fn qs_wav::s_load_sound_path
+fn qs_wav::sound_name
+impl qs_wav::WavError: core::error::Error
+impl qs_wav::WavError: fmt::Display
+struct qs_wav::Sound
+struct qs_wav::WavInfo
+variant qs_wav::WavError::BadLoopLength
+variant qs_wav::WavError::BadRate
+variant qs_wav::WavError::BadWidth
+variant qs_wav::WavError::MissingData
+variant qs_wav::WavError::MissingFmt
+variant qs_wav::WavError::MissingRiff
+variant qs_wav::WavError::NotPcm
+variant qs_wav::WavError::Stereo

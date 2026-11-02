@@ -1,0 +1,137 @@
+const qc_ide::highlight::Modifier::ALL
+enum qc_ide::highlight::HighlightKind
+enum qc_ide::highlight::Modifier
+enum qc_ide::highlight::SyntaxClass
+enum qc_ide::rename::Caution
+enum qc_ide::rename::EngineBinding
+enum qc_ide::rename::RenameError
+enum qc_ide::symbols::SymbolKind
+field qc_ide::FileRange.path
+field qc_ide::FileRange.span
+field qc_ide::completion::Completion.detail
+field qc_ide::completion::Completion.kind
+field qc_ide::completion::Completion.label
+field qc_ide::highlight::Highlight.kind
+field qc_ide::highlight::Highlight.modifiers
+field qc_ide::highlight::Highlight.span
+field qc_ide::hints::ParameterHint.name
+field qc_ide::hints::ParameterHint.offset
+field qc_ide::host::Config.autoproto
+field qc_ide::host::Config.dialect
+field qc_ide::host::Config.target
+field qc_ide::hover::BuiltinInfo.engines
+field qc_ide::hover::BuiltinInfo.key
+field qc_ide::hover::BuiltinInfo.kind
+field qc_ide::hover::BuiltinInfo.target
+field qc_ide::hover::Hover.builtin
+field qc_ide::hover::Hover.declaration
+field qc_ide::hover::Hover.docs
+field qc_ide::hover::Hover.kind
+field qc_ide::hover::Hover.name
+field qc_ide::hover::Hover.range
+field qc_ide::rename::FileEdit.edits
+field qc_ide::rename::FileEdit.path
+field qc_ide::rename::Rename.caution
+field qc_ide::rename::Rename.edits
+field qc_ide::symbols::Symbol.kind
+field qc_ide::symbols::Symbol.name
+field qc_ide::symbols::Symbol.range
+fn qc_ide::completion::AnalysisHost::completions
+fn qc_ide::diagnostics::AnalysisHost::all_diagnostics
+fn qc_ide::diagnostics::AnalysisHost::diagnostics
+fn qc_ide::highlight::AnalysisHost::highlights
+fn qc_ide::highlight::AnalysisHost::syntax_classes
+fn qc_ide::highlight::HighlightKind::of
+fn qc_ide::highlight::Modifiers::contains
+fn qc_ide::highlight::Modifiers::iter
+fn qc_ide::highlight::Modifiers::with
+fn qc_ide::highlight::SyntaxClass::of
+fn qc_ide::hints::AnalysisHost::parameter_hints
+fn qc_ide::host::AnalysisHost::files
+fn qc_ide::host::AnalysisHost::new
+fn qc_ide::host::AnalysisHost::open
+fn qc_ide::host::AnalysisHost::reload
+fn qc_ide::host::AnalysisHost::remove_overlay
+fn qc_ide::host::AnalysisHost::set_config
+fn qc_ide::host::AnalysisHost::set_overlay
+fn qc_ide::host::AnalysisHost::text
+fn qc_ide::hover::AnalysisHost::hover
+fn qc_ide::hover::BuiltinInfo::on_target
+fn qc_ide::navigation::AnalysisHost::definition
+fn qc_ide::navigation::AnalysisHost::references
+fn qc_ide::rename::AnalysisHost::prepare_rename
+fn qc_ide::rename::AnalysisHost::rename
+fn qc_ide::rename::Caution::name
+fn qc_ide::symbols::AnalysisHost::document_symbols
+fn qc_ide::symbols::AnalysisHost::workspace_symbols
+impl qc_ide::host::OverlayLoader: Loader
+impl qc_ide::rename::Caution: fmt::Display
+impl qc_ide::rename::RenameError: fmt::Display
+impl qc_ide::rename::RenameError: std::error::Error
+struct qc_ide::FileRange
+struct qc_ide::completion::Completion
+struct qc_ide::highlight::Highlight
+struct qc_ide::highlight::Modifiers
+struct qc_ide::hints::ParameterHint
+struct qc_ide::host::AnalysisHost
+struct qc_ide::host::Config
+struct qc_ide::hover::BuiltinInfo
+struct qc_ide::hover::Hover
+struct qc_ide::rename::FileEdit
+struct qc_ide::rename::Rename
+struct qc_ide::symbols::Symbol
+use qc_ide::AnalysisHost = host::AnalysisHost
+use qc_ide::Builtin = qc_engines::Builtin
+use qc_ide::BuiltinInfo = hover::BuiltinInfo
+use qc_ide::BuiltinRef = qc_engines::BuiltinRef
+use qc_ide::Caution = rename::Caution
+use qc_ide::Code = qc_diag::Code
+use qc_ide::Completion = completion::Completion
+use qc_ide::Config = host::Config
+use qc_ide::DefKind = qc_sema::DefKind
+use qc_ide::Diagnostic = qc_diag::Diagnostic
+use qc_ide::Engine = qc_engines::Engine
+use qc_ide::EngineBinding = rename::EngineBinding
+use qc_ide::FileEdit = rename::FileEdit
+use qc_ide::Highlight = highlight::Highlight
+use qc_ide::HighlightKind = highlight::HighlightKind
+use qc_ide::Hover = hover::Hover
+use qc_ide::Modifier = highlight::Modifier
+use qc_ide::Modifiers = highlight::Modifiers
+use qc_ide::ParameterHint = hints::ParameterHint
+use qc_ide::Rename = rename::Rename
+use qc_ide::RenameError = rename::RenameError
+use qc_ide::Severity = qc_diag::Severity
+use qc_ide::Span = qc_diag::Span
+use qc_ide::Symbol = symbols::Symbol
+use qc_ide::SymbolKind = symbols::SymbolKind
+use qc_ide::SyntaxClass = highlight::SyntaxClass
+variant qc_ide::highlight::HighlightKind::Field
+variant qc_ide::highlight::HighlightKind::Function
+variant qc_ide::highlight::HighlightKind::Global
+variant qc_ide::highlight::HighlightKind::Local
+variant qc_ide::highlight::HighlightKind::Parameter
+variant qc_ide::highlight::Modifier::Declaration
+variant qc_ide::highlight::Modifier::DefaultLibrary
+variant qc_ide::highlight::Modifier::Readonly
+variant qc_ide::highlight::SyntaxClass::Comment
+variant qc_ide::highlight::SyntaxClass::Keyword
+variant qc_ide::highlight::SyntaxClass::Number
+variant qc_ide::highlight::SyntaxClass::String
+variant qc_ide::highlight::SyntaxClass::Type
+variant qc_ide::rename::Caution::MapField
+variant qc_ide::rename::Caution::MapFunction
+variant qc_ide::rename::EngineBinding::FieldByName
+variant qc_ide::rename::EngineBinding::SystemField
+variant qc_ide::rename::EngineBinding::SystemGlobal
+variant qc_ide::rename::RenameError::Component
+variant qc_ide::rename::RenameError::Conflict
+variant qc_ide::rename::RenameError::EngineName
+variant qc_ide::rename::RenameError::Generated
+variant qc_ide::rename::RenameError::InMacro
+variant qc_ide::rename::RenameError::InvalidName
+variant qc_ide::rename::RenameError::NoName
+variant qc_ide::symbols::SymbolKind::Constant
+variant qc_ide::symbols::SymbolKind::Field
+variant qc_ide::symbols::SymbolKind::Function
+variant qc_ide::symbols::SymbolKind::Global

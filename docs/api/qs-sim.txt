@@ -1,0 +1,244 @@
+const qs_sim::collision::area::AREA_DEPTH
+const qs_sim::collision::area::FL_ITEM
+const qs_sim::collision::area::FL_MONSTER
+const qs_sim::collision::area::MAX_ENT_LEAFS
+const qs_sim::collision::hull::CONTENTS_CURRENT_0
+const qs_sim::collision::hull::CONTENTS_CURRENT_DOWN
+const qs_sim::collision::hull::CONTENTS_EMPTY
+const qs_sim::collision::hull::CONTENTS_SOLID
+const qs_sim::collision::hull::CONTENTS_WATER
+const qs_sim::collision::hull::HULL1
+const qs_sim::collision::hull::HULL2
+const qs_sim::collision::trace::DIST_EPSILON
+const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_DEATHMATCH
+const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_EASY
+const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_HARD
+const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_MEDIUM
+const qs_sim::spawn::SPAWNFLAGS_SLOT
+enum qs_sim::collision::CollisionError
+enum qs_sim::collision::Solid
+enum qs_sim::collision::area::MoveKind
+enum qs_sim::collision::hull::EntityHull
+enum qs_sim::spawn::LoadError
+enum qs_sim::spawn::SpawnError
+enum qs_sim::spawn::Token
+enum qs_sim::world::WorldError
+field qs_sim::client::UserCmd.angles
+field qs_sim::client::UserCmd.buttons
+field qs_sim::client::UserCmd.forward
+field qs_sim::client::UserCmd.impulse
+field qs_sim::client::UserCmd.side
+field qs_sim::client::UserCmd.up
+field qs_sim::collision::Body.absmax
+field qs_sim::collision::Body.absmin
+field qs_sim::collision::Body.flags
+field qs_sim::collision::Body.free
+field qs_sim::collision::Body.maxs
+field qs_sim::collision::Body.mins
+field qs_sim::collision::Body.modelindex
+field qs_sim::collision::Body.origin
+field qs_sim::collision::Body.owner
+field qs_sim::collision::Body.pusher
+field qs_sim::collision::Body.size
+field qs_sim::collision::Body.solid
+field qs_sim::collision::Body.touch
+field qs_sim::collision::hull::BrushModel.heads
+field qs_sim::collision::hull::BrushModel.maxs
+field qs_sim::collision::hull::BrushModel.mins
+field qs_sim::collision::hull::BrushModel.set
+field qs_sim::collision::hull::ClipNode.children
+field qs_sim::collision::hull::ClipNode.plane
+field qs_sim::collision::hull::Hull.clip_mins
+field qs_sim::collision::hull::Hull.first
+field qs_sim::collision::hull::Hull.last
+field qs_sim::collision::hull::Plane.dist
+field qs_sim::collision::hull::Plane.kind
+field qs_sim::collision::hull::Plane.normal
+field qs_sim::collision::trace::Trace.allsolid
+field qs_sim::collision::trace::Trace.endpos
+field qs_sim::collision::trace::Trace.ent
+field qs_sim::collision::trace::Trace.fraction
+field qs_sim::collision::trace::Trace.inopen
+field qs_sim::collision::trace::Trace.inwater
+field qs_sim::collision::trace::Trace.plane
+field qs_sim::collision::trace::Trace.startsolid
+field qs_sim::collision::trace::TracePlane.dist
+field qs_sim::collision::trace::TracePlane.normal
+field qs_sim::physics::Sound.entity
+field qs_sim::physics::Sound.sample
+field qs_sim::spawn::FieldDef.etype
+field qs_sim::spawn::FieldDef.slot
+field qs_sim::world::Entity.angles
+field qs_sim::world::Entity.frame
+field qs_sim::world::Entity.model
+field qs_sim::world::Entity.number
+field qs_sim::world::Entity.origin
+field qs_sim::world::Entity.skin
+fn qs_sim::collision::Collision::add_brush
+fn qs_sim::collision::Collision::area
+fn qs_sim::collision::Collision::leafs_of
+fn qs_sim::collision::Collision::model
+fn qs_sim::collision::Collision::new
+fn qs_sim::collision::Collision::point_contents
+fn qs_sim::collision::Collision::sets
+fn qs_sim::collision::Collision::true_point_contents
+fn qs_sim::collision::Collision::unlink
+fn qs_sim::collision::Host::body
+fn qs_sim::collision::Host::collision
+fn qs_sim::collision::Host::collision_mut
+fn qs_sim::collision::Host::set_abs
+fn qs_sim::collision::Host::touch
+fn qs_sim::collision::Solid::from_float
+fn qs_sim::collision::area::Area::insert_at
+fn qs_sim::collision::area::Area::link_of
+fn qs_sim::collision::area::Area::listed
+fn qs_sim::collision::area::Area::new
+fn qs_sim::collision::area::Area::split
+fn qs_sim::collision::area::Area::unlink
+fn qs_sim::collision::area::LeafTree::new
+fn qs_sim::collision::area::LeafTree::touched
+fn qs_sim::collision::area::MoveKind::from_int
+fn qs_sim::collision::area::box_on_plane_side
+fn qs_sim::collision::area::link_edict
+fn qs_sim::collision::area::sv_move
+fn qs_sim::collision::area::test_entity_position
+fn qs_sim::collision::hull::BoxHull::hull
+fn qs_sim::collision::hull::BoxHull::new
+fn qs_sim::collision::hull::EntityHull::hull
+fn qs_sim::collision::hull::Hull::node
+fn qs_sim::collision::hull::Hull::over
+fn qs_sim::collision::hull::Hull::point_contents
+fn qs_sim::collision::hull::Hull::size
+fn qs_sim::collision::hull::HullSet::hull
+fn qs_sim::collision::hull::HullSet::new
+fn qs_sim::collision::hull::Plane::distance
+fn qs_sim::collision::hull::hull_for_entity
+fn qs_sim::collision::trace::Trace::new
+fn qs_sim::collision::trace::clip_move_to_entity
+fn qs_sim::collision::trace::recursive_hull_check
+fn qs_sim::spawn::Parser::new
+fn qs_sim::spawn::Parser::next_token
+fn qs_sim::spawn::SpawnHost::allocate
+fn qs_sim::spawn::SpawnHost::edict_value
+fn qs_sim::spawn::SpawnHost::find_field
+fn qs_sim::spawn::SpawnHost::find_function
+fn qs_sim::spawn::SpawnHost::free
+fn qs_sim::spawn::SpawnHost::global
+fn qs_sim::spawn::SpawnHost::make_string
+fn qs_sim::spawn::SpawnHost::set_field
+fn qs_sim::spawn::SpawnHost::spawn
+fn qs_sim::spawn::SpawnHost::spawnflags
+fn qs_sim::spawn::c_atof
+fn qs_sim::spawn::c_atoi
+fn qs_sim::spawn::inhibited
+fn qs_sim::spawn::load_from_file
+fn qs_sim::world::World::connect
+fn qs_sim::world::World::entities
+fn qs_sim::world::World::frame
+fn qs_sim::world::World::light_style
+fn qs_sim::world::World::load
+fn qs_sim::world::World::player_view
+fn qs_sim::world::World::set_command
+fn qs_sim::world::World::take_set_angle
+fn qs_sim::world::World::take_sounds
+fn qs_sim::world::World::time
+impl qs_sim::builtins::SimBuiltins: Builtins
+impl qs_sim::builtins::SimCall: Host
+impl qs_sim::collision::CollisionError: core::error::Error
+impl qs_sim::collision::CollisionError: core::fmt::Display
+impl qs_sim::spawn::SpawnError: core::error::Error
+impl qs_sim::spawn::SpawnError: core::fmt::Display
+impl qs_sim::world::Spawner: SpawnHost
+impl qs_sim::world::WorldError: core::error::Error
+impl qs_sim::world::WorldError: core::fmt::Display
+mod qs_sim::collision
+mod qs_sim::spawn
+struct qs_sim::builtins::SimBuiltins
+struct qs_sim::client::UserCmd
+struct qs_sim::collision::Body
+struct qs_sim::collision::Collision
+struct qs_sim::collision::area::Area
+struct qs_sim::collision::area::LeafTree
+struct qs_sim::collision::hull::BoxHull
+struct qs_sim::collision::hull::BrushModel
+struct qs_sim::collision::hull::ClipNode
+struct qs_sim::collision::hull::Hull
+struct qs_sim::collision::hull::HullSet
+struct qs_sim::collision::hull::Plane
+struct qs_sim::collision::trace::Trace
+struct qs_sim::collision::trace::TracePlane
+struct qs_sim::physics::Sound
+struct qs_sim::spawn::FieldDef
+struct qs_sim::spawn::Parser
+struct qs_sim::world::Entity
+struct qs_sim::world::World
+trait qs_sim::collision::Host
+trait qs_sim::spawn::SpawnHost
+type qs_sim::builtins::ModelFiles
+use qs_sim::Entity = world::Entity
+use qs_sim::ModelFiles = builtins::ModelFiles
+use qs_sim::SimBuiltins = builtins::SimBuiltins
+use qs_sim::Sound = physics::Sound
+use qs_sim::UserCmd = client::UserCmd
+use qs_sim::World = world::World
+use qs_sim::WorldError = world::WorldError
+use qs_sim::collision::AREA_DEPTH = area::AREA_DEPTH
+use qs_sim::collision::Area = area::Area
+use qs_sim::collision::BoxHull = hull::BoxHull
+use qs_sim::collision::BrushModel = hull::BrushModel
+use qs_sim::collision::CONTENTS_CURRENT_0 = hull::CONTENTS_CURRENT_0
+use qs_sim::collision::CONTENTS_CURRENT_DOWN = hull::CONTENTS_CURRENT_DOWN
+use qs_sim::collision::CONTENTS_EMPTY = hull::CONTENTS_EMPTY
+use qs_sim::collision::CONTENTS_SOLID = hull::CONTENTS_SOLID
+use qs_sim::collision::CONTENTS_WATER = hull::CONTENTS_WATER
+use qs_sim::collision::ClipNode = hull::ClipNode
+use qs_sim::collision::DIST_EPSILON = trace::DIST_EPSILON
+use qs_sim::collision::EntityHull = hull::EntityHull
+use qs_sim::collision::FL_ITEM = area::FL_ITEM
+use qs_sim::collision::FL_MONSTER = area::FL_MONSTER
+use qs_sim::collision::HULL1 = hull::HULL1
+use qs_sim::collision::HULL2 = hull::HULL2
+use qs_sim::collision::Hull = hull::Hull
+use qs_sim::collision::HullSet = hull::HullSet
+use qs_sim::collision::LeafTree = area::LeafTree
+use qs_sim::collision::MAX_ENT_LEAFS = area::MAX_ENT_LEAFS
+use qs_sim::collision::MoveKind = area::MoveKind
+use qs_sim::collision::Plane = hull::Plane
+use qs_sim::collision::Trace = trace::Trace
+use qs_sim::collision::TracePlane = trace::TracePlane
+use qs_sim::collision::box_on_plane_side = area::box_on_plane_side
+use qs_sim::collision::clip_move_to_entity = trace::clip_move_to_entity
+use qs_sim::collision::hull_for_entity = hull::hull_for_entity
+use qs_sim::collision::link_edict = area::link_edict
+use qs_sim::collision::recursive_hull_check = trace::recursive_hull_check
+use qs_sim::collision::sv_move = area::sv_move
+use qs_sim::collision::test_entity_position = area::test_entity_position
+variant qs_sim::collision::CollisionError::BadNode
+variant qs_sim::collision::CollisionError::PushWithoutBsp
+variant qs_sim::collision::CollisionError::SolidBspWithoutPush
+variant qs_sim::collision::CollisionError::Touch
+variant qs_sim::collision::CollisionError::TriggerInClipList
+variant qs_sim::collision::Solid::BBox
+variant qs_sim::collision::Solid::Bsp
+variant qs_sim::collision::Solid::Not
+variant qs_sim::collision::Solid::Other
+variant qs_sim::collision::Solid::SlideBox
+variant qs_sim::collision::Solid::Trigger
+variant qs_sim::collision::area::MoveKind::Missile
+variant qs_sim::collision::area::MoveKind::NoMonsters
+variant qs_sim::collision::area::MoveKind::Normal
+variant qs_sim::collision::hull::EntityHull::Box
+variant qs_sim::collision::hull::EntityHull::Brush
+variant qs_sim::spawn::LoadError::Run
+variant qs_sim::spawn::LoadError::Spawn
+variant qs_sim::spawn::SpawnError::BadEdictNumber
+variant qs_sim::spawn::SpawnError::BraceWithoutData
+variant qs_sim::spawn::SpawnError::EofInEntity
+variant qs_sim::spawn::SpawnError::ExpectedBrace
+variant qs_sim::spawn::SpawnError::NoFreeEdicts
+variant qs_sim::spawn::SpawnError::ParseError
+variant qs_sim::spawn::Token::End
+variant qs_sim::spawn::Token::Word
+variant qs_sim::world::WorldError::Frame
+variant qs_sim::world::WorldError::Progs
+variant qs_sim::world::WorldError::Spawn

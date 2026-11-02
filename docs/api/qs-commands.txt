@@ -1,0 +1,122 @@
+const qs_commands::builtin::BUILTIN_IDS
+const qs_commands::command::Command::ID
+const qs_commands::command::Command::SUMMARY
+const qs_commands::id::MAX_ID_LEN
+enum qs_commands::error::CommandError
+enum qs_commands::error::RegisterError
+enum qs_commands::id::IdError
+enum qs_commands::params::FieldKind
+enum qs_commands::params::Input
+enum qs_commands::params::ParamError
+field qs_commands::palette::PaletteMatch.id_hits
+field qs_commands::palette::PaletteMatch.info
+field qs_commands::palette::PaletteMatch.summary_hits
+field qs_commands::params::Choice.description
+field qs_commands::params::Choice.value
+field qs_commands::params::Field.description
+field qs_commands::params::Field.kind
+field qs_commands::params::Field.name
+field qs_commands::params::Field.required
+fn qs_commands::command::Command::run
+fn qs_commands::command::Outcome::outside_history
+fn qs_commands::command::Outcome::unchanged
+fn qs_commands::command::Outcome::undoable
+fn qs_commands::command::UndoStep::redo
+fn qs_commands::command::UndoStep::undo
+fn qs_commands::id::CommandId::as_str
+fn qs_commands::id::CommandId::new
+fn qs_commands::palette::search
+fn qs_commands::params::Input::empty
+fn qs_commands::params::fields
+fn qs_commands::params::object
+fn qs_commands::registry::CommandInfo::id
+fn qs_commands::registry::CommandInfo::params
+fn qs_commands::registry::CommandInfo::summary
+fn qs_commands::registry::Registry::commands
+fn qs_commands::registry::Registry::get
+fn qs_commands::registry::Registry::markdown
+fn qs_commands::registry::Registry::new
+fn qs_commands::registry::Registry::register
+fn qs_commands::session::Session::context
+fn qs_commands::session::Session::execute
+fn qs_commands::session::Session::new
+fn qs_commands::session::Session::redo
+fn qs_commands::session::Session::redo_depth
+fn qs_commands::session::Session::registry
+fn qs_commands::session::Session::undo
+fn qs_commands::session::Session::undo_depth
+impl qs_commands::error::CommandError: Error
+impl qs_commands::error::CommandError: fmt::Display
+impl qs_commands::error::RegisterError: Error
+impl qs_commands::error::RegisterError: fmt::Display
+impl qs_commands::id::CommandId: Borrow
+impl qs_commands::id::CommandId: fmt::Display
+impl qs_commands::id::IdError: fmt::Display
+impl qs_commands::id::IdError: std::error::Error
+impl qs_commands::params::ParamError: fmt::Display
+impl qs_commands::params::ParamError: std::error::Error
+impl qs_commands::registry::Registry: Default
+impl qs_commands::registry::T: ErasedCommand
+mod qs_commands::palette
+mod qs_commands::params
+struct qs_commands::command::NoParams
+struct qs_commands::command::Outcome
+struct qs_commands::id::CommandId
+struct qs_commands::palette::PaletteMatch
+struct qs_commands::params::Choice
+struct qs_commands::params::Field
+struct qs_commands::registry::CommandInfo
+struct qs_commands::registry::Registry
+struct qs_commands::session::Session
+trait qs_commands::command::Command
+trait qs_commands::command::UndoStep
+type qs_commands::command::BoxError
+type qs_commands::command::Command::Error
+type qs_commands::command::Command::Output
+type qs_commands::command::Command::Params
+use qs_commands::BUILTIN_IDS = builtin::BUILTIN_IDS
+use qs_commands::BoxError = command::BoxError
+use qs_commands::Command = command::Command
+use qs_commands::CommandError = error::CommandError
+use qs_commands::CommandId = id::CommandId
+use qs_commands::CommandInfo = registry::CommandInfo
+use qs_commands::IdError = id::IdError
+use qs_commands::MAX_ID_LEN = id::MAX_ID_LEN
+use qs_commands::NoParams = command::NoParams
+use qs_commands::Outcome = command::Outcome
+use qs_commands::RegisterError = error::RegisterError
+use qs_commands::Registry = registry::Registry
+use qs_commands::Session = session::Session
+use qs_commands::UndoStep = command::UndoStep
+variant qs_commands::error::CommandError::Failed
+variant qs_commands::error::CommandError::InvalidParams
+variant qs_commands::error::CommandError::NothingToRedo
+variant qs_commands::error::CommandError::NothingToUndo
+variant qs_commands::error::CommandError::Output
+variant qs_commands::error::CommandError::Panicked
+variant qs_commands::error::CommandError::ParamsNotObject
+variant qs_commands::error::CommandError::RedoFailed
+variant qs_commands::error::CommandError::UndoFailed
+variant qs_commands::error::CommandError::Unknown
+variant qs_commands::error::RegisterError::Duplicate
+variant qs_commands::error::RegisterError::InvalidId
+variant qs_commands::error::RegisterError::ParamsNotObject
+variant qs_commands::id::IdError::BadCharacter
+variant qs_commands::id::IdError::BadSegmentStart
+variant qs_commands::id::IdError::Empty
+variant qs_commands::id::IdError::EmptySegment
+variant qs_commands::id::IdError::TooLong
+variant qs_commands::params::FieldKind::Boolean
+variant qs_commands::params::FieldKind::Choice
+variant qs_commands::params::FieldKind::Integer
+variant qs_commands::params::FieldKind::Json
+variant qs_commands::params::FieldKind::Number
+variant qs_commands::params::FieldKind::Text
+variant qs_commands::params::Input::Bool
+variant qs_commands::params::Input::Choice
+variant qs_commands::params::Input::Text
+variant qs_commands::params::ParamError::Mismatch
+variant qs_commands::params::ParamError::Missing
+variant qs_commands::params::ParamError::NotInteger
+variant qs_commands::params::ParamError::NotJson
+variant qs_commands::params::ParamError::NotNumber

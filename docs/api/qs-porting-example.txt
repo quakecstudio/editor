@@ -1,0 +1,1 @@
+fn qs_porting_example::ed_new_string

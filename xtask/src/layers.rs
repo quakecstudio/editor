@@ -222,6 +222,23 @@ fn strings(value: Option<&Value>) -> impl Iterator<Item = &str> {
         .filter_map(Value::as_str)
 }
 
+/// Every crate `layers.toml` names with its layer, in the file's order.
+pub(crate) fn assignments(root: &Path) -> Result<Vec<(String, String)>, String> {
+    let layers = read_toml(root, FILE)?;
+    let Some(crates) = layers.get("crates").and_then(Value::as_table) else {
+        return Err(format!("{FILE} has no [crates] table"));
+    };
+    crates
+        .iter()
+        .map(|(name, layer)| {
+            let layer = layer
+                .as_str()
+                .ok_or_else(|| format!("{FILE}: {name} is not a string"))?;
+            Ok((name.clone(), layer.to_owned()))
+        })
+        .collect()
+}
+
 fn read_toml(root: &Path, path: &str) -> Result<Table, String> {
     fs::read_to_string(root.join(path))
         .map_err(|error| format!("{path}: {error}"))?

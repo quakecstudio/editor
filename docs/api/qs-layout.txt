@@ -1,0 +1,47 @@
+const qs_layout::LAYOUT_FILE
+const qs_layout::MIN_PANEL_SIZE
+const qs_layout::Panel::ALL
+const qs_layout::RESIZE_PANEL
+const qs_layout::TOGGLE_PANEL
+enum qs_layout::LayoutError
+enum qs_layout::Panel
+field qs_layout::BadPanelSize.size
+field qs_layout::Layout.bottom
+field qs_layout::Layout.left
+field qs_layout::Layout.right
+field qs_layout::PanelShown.panel
+field qs_layout::PanelShown.visible
+field qs_layout::PanelState.size
+field qs_layout::PanelState.visible
+field qs_layout::ResizePanelParams.panel
+field qs_layout::ResizePanelParams.size
+field qs_layout::TogglePanelParams.panel
+fn qs_layout::HasLayout::layout_mut
+fn qs_layout::Layout::panel
+fn qs_layout::Layout::panel_mut
+fn qs_layout::Layout::read
+fn qs_layout::Layout::write
+fn qs_layout::layout_path
+fn qs_layout::register
+impl qs_layout::BadPanelSize: Error
+impl qs_layout::BadPanelSize: fmt::Display
+impl qs_layout::Layout: Default
+impl qs_layout::Layout: HasLayout
+impl qs_layout::LayoutError: Error
+impl qs_layout::LayoutError: fmt::Display
+impl qs_layout::ResizePanel: Command
+impl qs_layout::TogglePanel: Command
+struct qs_layout::BadPanelSize
+struct qs_layout::Layout
+struct qs_layout::PanelShown
+struct qs_layout::PanelState
+struct qs_layout::ResizePanelParams
+struct qs_layout::TogglePanelParams
+trait qs_layout::HasLayout
+variant qs_layout::LayoutError::Encode
+variant qs_layout::LayoutError::Parse
+variant qs_layout::LayoutError::Read
+variant qs_layout::LayoutError::Write
+variant qs_layout::Panel::Bottom
+variant qs_layout::Panel::Left
+variant qs_layout::Panel::Right
