@@ -1,4 +1,3 @@
-const qc_preproc::FTE_MAX_FRAMES
 const qc_preproc::LIMIT_QCC_MAX_FRAMES
 const qc_preproc::fte_keywords::Keyword::ALL
 const qc_preproc::fte_keywords::Keywords::NONE
@@ -19,10 +18,6 @@ enum qc_preproc::source::TextOrigin
 field qc_preproc::Diagnostic.code
 field qc_preproc::Diagnostic.message
 field qc_preproc::Diagnostic.span
-field qc_preproc::Expansion.definition
-field qc_preproc::Expansion.name
-field qc_preproc::Expansion.parent
-field qc_preproc::Expansion.use_span
 field qc_preproc::FileOutput.autoproto
 field qc_preproc::FileOutput.diagnostics
 field qc_preproc::FileOutput.flags
@@ -42,9 +37,7 @@ field qc_preproc::source::SourceFile.lines
 field qc_preproc::source::SourceFile.origin
 field qc_preproc::source::SourceFile.path
 field qc_preproc::source::SourceFile.text
-fn qc_preproc::ExpansionId::index
 fn qc_preproc::PpToken::touches
-fn qc_preproc::Preprocessor::expansions
 fn qc_preproc::Preprocessor::is_defined
 fn qc_preproc::Preprocessor::new
 fn qc_preproc::Preprocessor::origin
@@ -76,8 +69,6 @@ fn qc_preproc::compiler_flags::FlagEdit::whole
 fn qc_preproc::compiler_flags::PragmaDefault::of_pragma
 fn qc_preproc::cond::CondStack::close
 fn qc_preproc::cond::CondStack::elif
-fn qc_preproc::cond::CondStack::flip
-fn qc_preproc::cond::CondStack::into_open
 fn qc_preproc::cond::CondStack::open
 fn qc_preproc::cond::CondStack::otherwise
 fn qc_preproc::cond::CondStack::taking
@@ -97,12 +88,10 @@ fn qc_preproc::fte_directive::graph::ModuleState::value
 fn qc_preproc::fte_directive::include_dir_name
 fn qc_preproc::fte_directive::join_paths
 fn qc_preproc::fte_directive::load::qcc_load_as
-fn qc_preproc::fte_directive::load::qcc_load_file
 fn qc_preproc::fte_directive::load::qcc_load_in_place
 fn qc_preproc::fte_directive::load::skip_script_line
 fn qc_preproc::fte_directive::pragma_include_dir
 fn qc_preproc::fte_keywords::Keyword::flag
-fn qc_preproc::fte_keywords::Keyword::of_flag
 fn qc_preproc::fte_keywords::Keyword::word
 fn qc_preproc::fte_keywords::KeywordEdit::apply
 fn qc_preproc::fte_keywords::KeywordEdit::is_empty
@@ -130,12 +119,10 @@ fn qc_preproc::fte_opcodes::OpcodeTarget::valid
 fn qc_preproc::fte_ops::Op::is_internal
 fn qc_preproc::fte_ops::Op::name
 fn qc_preproc::fte_ops::Op::named
-fn qc_preproc::fte_ops::Op::named_in_any_case
 fn qc_preproc::fte_ops::Op::number
 fn qc_preproc::fte_options::CommandLine::flags
 fn qc_preproc::fte_options::CommandLine::new
 fn qc_preproc::fte_options::CommandLine::warnings
-fn qc_preproc::fte_pragma::FlagSettings::compiler_flags
 fn qc_preproc::fte_pragma::FlagSettings::is_on
 fn qc_preproc::fte_pragma::FlagSettings::keywords
 fn qc_preproc::fte_pragma::FlagSettings::lex_flags
@@ -143,10 +130,7 @@ fn qc_preproc::fte_pragma::FlagSettings::priorities
 fn qc_preproc::fte_tables::TargetFormat::supports_extern
 fn qc_preproc::fte_tables::is_opcode_name
 fn qc_preproc::fte_warning::FteWarning::default_action
-fn qc_preproc::fte_warning::FteWarning::for_name
 fn qc_preproc::fte_warning::FteWarning::of_code
-fn qc_preproc::fte_warning::WarningSettings::action
-fn qc_preproc::fte_warning::WarningSettings::after_pragma
 fn qc_preproc::fte_warning::WarningSettings::reported_code
 fn qc_preproc::normalize
 fn qc_preproc::source::FileId::index
@@ -174,7 +158,6 @@ impl qc_preproc::source::FsLoader: Loader
 impl qc_preproc::source::MemoryLoader: Loader
 mod qc_preproc::cond
 struct qc_preproc::Diagnostic
-struct qc_preproc::Expansion
 struct qc_preproc::ExpansionId
 struct qc_preproc::FileOutput
 struct qc_preproc::PpToken
@@ -232,7 +215,6 @@ use qc_preproc::fte_directive::FteEvent = graph::FteEvent
 use qc_preproc::fte_directive::FteFileReader = graph::FteFileReader
 use qc_preproc::fte_directive::ModuleState = graph::ModuleState
 use qc_preproc::fte_directive::qcc_load_as = load::qcc_load_as
-use qc_preproc::fte_directive::qcc_load_file = load::qcc_load_file
 use qc_preproc::fte_directive::qcc_load_in_place = load::qcc_load_in_place
 use qc_preproc::fte_directive::skip_script_line = load::skip_script_line
 use qc_preproc::fte_directive_end = fte_line::fte_directive_end
@@ -241,7 +223,6 @@ use qc_preproc::is_opcode_name = fte_tables::is_opcode_name
 use qc_preproc::join_paths = fte_directive::join_paths
 use qc_preproc::pragma_include_dir = fte_directive::pragma_include_dir
 use qc_preproc::qcc_load_as = fte_directive::qcc_load_as
-use qc_preproc::qcc_load_file = fte_directive::qcc_load_file
 use qc_preproc::qcc_load_in_place = fte_directive::qcc_load_in_place
 use qc_preproc::relex_from = fte_line::relex_from
 use qc_preproc::skip_script_line = fte_directive::skip_script_line

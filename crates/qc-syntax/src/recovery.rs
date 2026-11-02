@@ -137,13 +137,16 @@ fn deletable(root: &SyntaxNode) -> Vec<Span> {
         .collect()
 }
 
-/// Deletes each token of `source` in turn and checks that the damage is local.
+/// Deletes each token of `source` in turn and checks that the damage is local, in the vanilla
+/// dialect; the tests' form of [`check_deletions_with`].
+#[cfg(test)]
 #[must_use]
-pub fn check_deletions(source: &[u8]) -> DeletionReport {
+pub(crate) fn check_deletions(source: &[u8]) -> DeletionReport {
     check_deletions_with(source, Dialect::Vanilla)
 }
 
-/// [`check_deletions`] with `source` and each edited copy parsed in `dialect`.
+/// Deletes each token of `source` in turn and checks that the damage is local, `source` and
+/// each edited copy parsed in `dialect`.
 #[must_use]
 pub fn check_deletions_with(source: &[u8], dialect: Dialect) -> DeletionReport {
     let original = parse_with(source, dialect);

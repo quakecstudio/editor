@@ -35,10 +35,15 @@ mod tests;
 
 pub use binum::builtin_binum;
 pub use kind::SyntaxKind;
-pub use parser::{FTEQCC_MAX_NAME, LIMIT_MAX_PARMS, LIMIT_QCC_MAX_NAME, QC_MAX_NESTING};
+#[cfg(test)]
+pub(crate) use parser::FTEQCC_MAX_NAME;
+pub use parser::{LIMIT_MAX_PARMS, LIMIT_QCC_MAX_NAME, QC_MAX_NESTING};
 pub use qc_lexer::{Code, Diagnostic, Dialect, Span};
 pub use qc_preproc::{CompilerFlags, FlagEdit, Keyword, KeywordEdit, Keywords, Priorities};
-pub use tree::{GreenElement, GreenNode, GreenToken, SyntaxElement, SyntaxNode, SyntaxToken};
+pub(crate) use tree::GreenNode;
+#[cfg(test)]
+pub(crate) use tree::{GreenElement, GreenToken};
+pub use tree::{SyntaxElement, SyntaxNode, SyntaxToken};
 
 use ast::AstNode as _;
 
@@ -126,9 +131,10 @@ impl Parse {
         ast::SourceFile::cast(self.syntax())
     }
 
-    /// The green tree.
+    /// The green tree; the tests read it.
+    #[cfg(test)]
     #[must_use]
-    pub fn green(&self) -> &GreenNode {
+    pub(crate) fn green(&self) -> &GreenNode {
         &self.green
     }
 

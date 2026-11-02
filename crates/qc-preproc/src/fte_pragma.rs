@@ -84,7 +84,7 @@ impl FlagSettings {
     /// The flags among these that the lexer, the parser and the semantic model read, with the
     /// operator priorities (FTEF-21.1).
     #[must_use]
-    pub fn compiler_flags(&self) -> CompilerFlags {
+    pub(crate) fn compiler_flags(&self) -> CompilerFlags {
         [
             PragmaDefault::Static,
             PragmaDefault::Noref,

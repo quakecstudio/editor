@@ -342,7 +342,7 @@ const ALL: [FteWarning; 78] = [
 impl FteWarning {
     /// The warning `QCC_WarningForName` finds for `name`, if any.
     #[must_use]
-    pub fn for_name(name: &[u8]) -> Option<Self> {
+    pub(crate) fn for_name(name: &[u8]) -> Option<Self> {
         NAMES
             .iter()
             .find(|(known, _)| known.as_bytes().eq_ignore_ascii_case(name))
@@ -545,7 +545,7 @@ enum PragmaState {
 impl WarningSettings {
     /// FTEQCC's setting of `warning`.
     #[must_use]
-    pub fn action(&self, warning: FteWarning) -> WarningAction {
+    pub(crate) fn action(&self, warning: FteWarning) -> WarningAction {
         self.actions
             .get(warning.index())
             .copied()
@@ -559,7 +559,7 @@ impl WarningSettings {
     /// `QCC_WarningForName` does not know. `toggle` sets `!!` of the setting, so a warning stays
     /// one and an error becomes one (`qccwarningaction[wn] = !!qccwarningaction[wn];`).
     #[must_use]
-    pub fn after_pragma(mut self, message: &[u8]) -> (Self, Vec<(&'static str, Self)>) {
+    pub(crate) fn after_pragma(mut self, message: &[u8]) -> (Self, Vec<(&'static str, Self)>) {
         let mut warnings = Vec::new();
         let state = com_parse(message, 0).and_then(|(state, at)| {
             let state = match state.to_ascii_lowercase().as_slice() {

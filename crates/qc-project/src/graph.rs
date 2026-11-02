@@ -28,7 +28,7 @@ pub const PRJ_MAX_FILES: usize = 65_536;
 ///
 /// `PRJ_MAX_DEPTH` in `docs/spec/project-file.md`: a bound on files that bring themselves in
 /// with no `#pragma once`.
-pub const PRJ_MAX_DEPTH: usize = 200;
+pub(crate) const PRJ_MAX_DEPTH: usize = 200;
 
 /// The UTF-8 byte order mark, skipped at the start of a file (PRJ-5.1).
 const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
@@ -126,7 +126,7 @@ impl FileGraph {
     /// Whether the graph is a list of programs rather than a module (PRJ-1.5): a source file
     /// alone, naming no output and registering other source files.
     #[must_use]
-    pub fn is_program_list(&self) -> bool {
+    pub(crate) fn is_program_list(&self) -> bool {
         self.form == Some(Form::Source)
             && self.files.len() == 1
             && self.declared_output.is_none()

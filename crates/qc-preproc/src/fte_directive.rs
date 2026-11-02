@@ -22,7 +22,9 @@ mod load;
 
 pub use graph::{FileStart, FteEvent, FteFileReader, ModuleState};
 pub(crate) use load::first_nul;
-pub use load::{qcc_load_as, qcc_load_file, qcc_load_in_place, skip_script_line};
+#[cfg(test)]
+pub(crate) use load::qcc_load_file;
+pub use load::{qcc_load_as, qcc_load_in_place, skip_script_line};
 
 use std::ops::Range;
 use std::path::Path;

@@ -1,5 +1,4 @@
 const qc_syntax::c_scalar::REGISTERED_TYPES
-const qc_syntax::parser::FTEQCC_MAX_NAME
 const qc_syntax::parser::LIMIT_MAX_PARMS
 const qc_syntax::parser::LIMIT_QCC_MAX_NAME
 const qc_syntax::parser::QC_MAX_NESTING
@@ -10,10 +9,8 @@ enum qc_syntax::ast::Negation
 enum qc_syntax::ast::SimpleTypeKind
 enum qc_syntax::ast::UnaryOp
 enum qc_syntax::c_scalar::CScalar
-enum qc_syntax::c_scalar::CWord
 enum qc_syntax::kind::SyntaxKind
 enum qc_syntax::recovery::RecoveryFault
-enum qc_syntax::tree::GreenElement
 enum qc_syntax::tree::SyntaxElement
 field qc_syntax::c_scalar::CContext.ilp32
 field qc_syntax::c_scalar::CContext.keywords
@@ -28,7 +25,6 @@ fn qc_syntax::Parse::diagnostics
 fn qc_syntax::Parse::errors
 fn qc_syntax::Parse::flags
 fn qc_syntax::Parse::flags_at
-fn qc_syntax::Parse::green
 fn qc_syntax::Parse::keywords
 fn qc_syntax::Parse::keywords_at
 fn qc_syntax::Parse::lex_flags
@@ -74,9 +70,7 @@ fn qc_syntax::ast::CaseLabel::range_end
 fn qc_syntax::ast::CaseLabel::value
 fn qc_syntax::ast::CastExpr::operand
 fn qc_syntax::ast::CastExpr::ty
-fn qc_syntax::ast::ClassDecl::accessor_members
 fn qc_syntax::ast::ClassDecl::declarators
-fn qc_syntax::ast::ClassDecl::has_body
 fn qc_syntax::ast::ClassDecl::members
 fn qc_syntax::ast::ClassDecl::name
 fn qc_syntax::ast::ClassDecl::parent
@@ -142,13 +136,11 @@ fn qc_syntax::ast::PointerType::inner
 fn qc_syntax::ast::PostfixExpr::operand
 fn qc_syntax::ast::ReturnStmt::sets
 fn qc_syntax::ast::ReturnStmt::value
-fn qc_syntax::ast::SimpleType::keyword
 fn qc_syntax::ast::SimpleType::kind
 fn qc_syntax::ast::SimpleType::text
 fn qc_syntax::ast::SizeofExpr::operand
 fn qc_syntax::ast::SizeofExpr::ty
 fn qc_syntax::ast::SourceFile::declarations
-fn qc_syntax::ast::SourceFile::directives
 fn qc_syntax::ast::SourceFile::items
 fn qc_syntax::ast::State::exprs
 fn qc_syntax::ast::State::frame
@@ -179,8 +171,6 @@ fn qc_syntax::ast::WhileStmt::until
 fn qc_syntax::binum::builtin_binum
 fn qc_syntax::c_scalar::CScalar::name
 fn qc_syntax::c_scalar::CScalar::named
-fn qc_syntax::c_scalar::CType::warnings
-fn qc_syntax::c_scalar::CWord::of
 fn qc_syntax::c_scalar::CWords::read
 fn qc_syntax::kind::SyntaxKind::from_punct
 fn qc_syntax::kind::SyntaxKind::from_token_kind
@@ -191,32 +181,16 @@ fn qc_syntax::parse_module_source
 fn qc_syntax::parse_preprocessed
 fn qc_syntax::parse_preprocessed_flagged
 fn qc_syntax::parse_with
-fn qc_syntax::recovery::check_deletions
 fn qc_syntax::recovery::check_deletions_with
-fn qc_syntax::tree::GreenElement::is_empty
-fn qc_syntax::tree::GreenElement::kind
-fn qc_syntax::tree::GreenElement::len
-fn qc_syntax::tree::GreenNode::children
-fn qc_syntax::tree::GreenNode::is_empty
-fn qc_syntax::tree::GreenNode::kind
-fn qc_syntax::tree::GreenNode::len
-fn qc_syntax::tree::GreenNode::new
-fn qc_syntax::tree::GreenNode::write_text
-fn qc_syntax::tree::GreenToken::kind
-fn qc_syntax::tree::GreenToken::new
-fn qc_syntax::tree::GreenToken::text
 fn qc_syntax::tree::SyntaxElement::kind
 fn qc_syntax::tree::SyntaxElement::span
 fn qc_syntax::tree::SyntaxNode::ancestors
 fn qc_syntax::tree::SyntaxNode::child_tokens
 fn qc_syntax::tree::SyntaxNode::children
 fn qc_syntax::tree::SyntaxNode::children_with_tokens
-fn qc_syntax::tree::SyntaxNode::debug_tree
 fn qc_syntax::tree::SyntaxNode::descendants
 fn qc_syntax::tree::SyntaxNode::descendants_with_tokens
-fn qc_syntax::tree::SyntaxNode::green
 fn qc_syntax::tree::SyntaxNode::kind
-fn qc_syntax::tree::SyntaxNode::new_root
 fn qc_syntax::tree::SyntaxNode::parent
 fn qc_syntax::tree::SyntaxNode::span
 fn qc_syntax::tree::SyntaxNode::text
@@ -246,8 +220,6 @@ struct qc_syntax::c_scalar::CType
 struct qc_syntax::c_scalar::CWords
 struct qc_syntax::recovery::DeletionFailure
 struct qc_syntax::recovery::DeletionReport
-struct qc_syntax::tree::GreenNode
-struct qc_syntax::tree::GreenToken
 struct qc_syntax::tree::SyntaxNode
 struct qc_syntax::tree::SyntaxToken
 trait qc_syntax::ast::AstNode
@@ -255,11 +227,7 @@ use qc_syntax::Code = qc_lexer::Code
 use qc_syntax::CompilerFlags = qc_preproc::CompilerFlags
 use qc_syntax::Diagnostic = qc_lexer::Diagnostic
 use qc_syntax::Dialect = qc_lexer::Dialect
-use qc_syntax::FTEQCC_MAX_NAME = parser::FTEQCC_MAX_NAME
 use qc_syntax::FlagEdit = qc_preproc::FlagEdit
-use qc_syntax::GreenElement = tree::GreenElement
-use qc_syntax::GreenNode = tree::GreenNode
-use qc_syntax::GreenToken = tree::GreenToken
 use qc_syntax::Keyword = qc_preproc::Keyword
 use qc_syntax::KeywordEdit = qc_preproc::KeywordEdit
 use qc_syntax::Keywords = qc_preproc::Keywords
@@ -339,16 +307,6 @@ variant qc_syntax::c_scalar::CScalar::Uint
 variant qc_syntax::c_scalar::CScalar::Uint16
 variant qc_syntax::c_scalar::CScalar::Uint64
 variant qc_syntax::c_scalar::CScalar::Uint8
-variant qc_syntax::c_scalar::CWord::Bool
-variant qc_syntax::c_scalar::CWord::Char
-variant qc_syntax::c_scalar::CWord::Double
-variant qc_syntax::c_scalar::CWord::Float
-variant qc_syntax::c_scalar::CWord::Int
-variant qc_syntax::c_scalar::CWord::Long
-variant qc_syntax::c_scalar::CWord::Register
-variant qc_syntax::c_scalar::CWord::Short
-variant qc_syntax::c_scalar::CWord::Signed
-variant qc_syntax::c_scalar::CWord::Unsigned
 variant qc_syntax::kind::SyntaxKind::AccessLabel
 variant qc_syntax::kind::SyntaxKind::AccessorDecl
 variant qc_syntax::kind::SyntaxKind::AccessorKw
@@ -525,7 +483,5 @@ variant qc_syntax::recovery::RecoveryFault::ErrorOutside
 variant qc_syntax::recovery::RecoveryFault::LaterChanged
 variant qc_syntax::recovery::RecoveryFault::NotLossless
 variant qc_syntax::recovery::RecoveryFault::NotSourceFile
-variant qc_syntax::tree::GreenElement::Node
-variant qc_syntax::tree::GreenElement::Token
 variant qc_syntax::tree::SyntaxElement::Node
 variant qc_syntax::tree::SyntaxElement::Token

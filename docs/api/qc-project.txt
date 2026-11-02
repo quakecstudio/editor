@@ -1,10 +1,5 @@
-const qc_project::PRJ_BUILD_DIR
-const qc_project::PRJ_CSQC_OUTPUT
 const qc_project::PRJ_MANIFEST
-const qc_project::PRJ_MENUQC_OUTPUT
-const qc_project::PRJ_SSQC_OUTPUT
 const qc_project::Target::ALL
-const qc_project::graph::PRJ_MAX_DEPTH
 const qc_project::graph::PRJ_MAX_FILES
 enum qc_project::Dialect
 enum qc_project::ModuleKind
@@ -47,10 +42,8 @@ field qc_project::graph::GraphFile.parent
 field qc_project::graph::GraphFile.path
 field qc_project::graph::GraphFile.via
 fn qc_project::ModuleKind::as_str
-fn qc_project::ModuleKind::from_declared_output
 fn qc_project::ModuleKind::output_file
 fn qc_project::graph::Define::parse
-fn qc_project::graph::FileGraph::is_program_list
 fn qc_project::graph::GraphIndex::index
 fn qc_project::graph::build_graph
 fn qc_project::open
@@ -79,7 +72,6 @@ use qc_project::GraphIndex = graph::GraphIndex
 use qc_project::Loader = qc_preproc::Loader
 use qc_project::ManifestError = manifest::ManifestError
 use qc_project::MemoryLoader = qc_preproc::MemoryLoader
-use qc_project::PRJ_MAX_DEPTH = graph::PRJ_MAX_DEPTH
 use qc_project::PRJ_MAX_FILES = graph::PRJ_MAX_FILES
 use qc_project::Via = graph::Via
 use qc_project::build_graph = graph::build_graph

@@ -158,7 +158,7 @@ fn encode(code: u32, text: &mut Vec<u8>) -> usize {
 /// one, and leaves any other file as it is; then `QCC_LoadFile` makes every NUL byte of the text
 /// a space (`else if (!mem[check])`, `mem[check] = ' ';`), and writes a line feed after the
 /// text (`mem[len] = '\n';`), so every reader meets a line's end before the text's (FTEF-14.64).
-pub fn qcc_load_file(bytes: Vec<u8>) -> (Vec<u8>, TextOrigin) {
+pub(crate) fn qcc_load_file(bytes: Vec<u8>) -> (Vec<u8>, TextOrigin) {
     let (mut text, origin) = sanitize(bytes);
     for byte in &mut text {
         if *byte == 0 {

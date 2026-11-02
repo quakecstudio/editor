@@ -1,12 +1,6 @@
-const qc_lexer::FTEQCC_MAX_TOKEN
 const qc_lexer::FTEQCC_MAX_WORD
 const qc_lexer::Punct::ALL
-const qc_lexer::Punct::FTEQCC_TABLE
-const qc_lexer::QC_MAX_FRAME_NAME
-const qc_lexer::QC_MAX_TOKEN
 const qc_lexer::flags::LexFlags::NONE
-const qc_lexer::fte_string::FTEQCC_MAX_STRING
-const qc_lexer::fte_string::STRING_TOO_LONG
 enum qc_lexer::Dialect
 enum qc_lexer::FrameCommand
 enum qc_lexer::Punct
@@ -55,12 +49,10 @@ struct qc_lexer::lines::LineIndex
 use qc_lexer::Code = qc_diag::Code
 use qc_lexer::Diagnostic = qc_diag::Diagnostic
 use qc_lexer::Directive = directive::Directive
-use qc_lexer::FTEQCC_MAX_STRING = fte_string::FTEQCC_MAX_STRING
 use qc_lexer::LexFlag = flags::LexFlag
 use qc_lexer::LexFlags = flags::LexFlags
 use qc_lexer::LineIndex = lines::LineIndex
 use qc_lexer::Pragma = directive::Pragma
-use qc_lexer::STRING_TOO_LONG = fte_string::STRING_TOO_LONG
 use qc_lexer::Severity = qc_diag::Severity
 use qc_lexer::Span = qc_diag::Span
 use qc_lexer::atof = atof::atof

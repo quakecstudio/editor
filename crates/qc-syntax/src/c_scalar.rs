@@ -15,7 +15,7 @@ use qc_preproc::{Enabled, Keyword, Keywords};
 
 /// A C type word, as `QCC_PR_CheckKeyword` matches it (FTEF-2.7).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CWord {
+pub(crate) enum CWord {
     /// `register`, taken only before the others.
     Register,
     /// `signed`.
@@ -61,7 +61,7 @@ impl CWord {
     /// `compiler_flag[]`: `double`, `long`, `short`, `char`, `signed` and `register` are
     /// `nondefaultkeyword`).
     #[must_use]
-    pub fn of(word: &str, keywords: Keywords) -> Option<Self> {
+    pub(crate) fn of(word: &str, keywords: Keywords) -> Option<Self> {
         WORDS
             .iter()
             .find(|(spelling, enabled, _)| keywords.checks(*enabled, spelling, word))
@@ -164,7 +164,7 @@ pub struct CType {
 
 impl CType {
     /// `WARN_IGNOREDKEYWORD`'s messages for the narrowing, in FTEQCC's order.
-    pub fn warnings(&self) -> impl Iterator<Item = &'static str> {
+    pub(crate) fn warnings(&self) -> impl Iterator<Item = &'static str> {
         let unsigned = self
             .unsigned_float
             .then_some("ignoring unsupported unsigned keyword, type will be signed");

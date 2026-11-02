@@ -35,7 +35,7 @@ mod tests;
 pub use compiler_flags::{CompilerFlags, FlagEdit, PragmaDefault, Priorities};
 pub use fte_directive::{
     FileStart, FteEvent, FteFileReader, ModuleState, com_parse, include_dir_name, join_paths,
-    pragma_include_dir, qcc_load_as, qcc_load_file, qcc_load_in_place, skip_script_line,
+    pragma_include_dir, qcc_load_as, qcc_load_in_place, skip_script_line,
 };
 pub use fte_keywords::{Enabled, Keyword, KeywordEdit, Keywords};
 pub use fte_line::{fte_directive_end, relex_from};
@@ -45,9 +45,8 @@ pub use fte_options::CommandLine;
 pub use fte_pragma::FlagSettings;
 pub use fte_tables::{FteFlag, TargetFormat, is_opcode_name};
 pub use fte_warning::{FteWarning, WarningAction, WarningSettings};
-pub use source::{
-    FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap, TextOrigin,
-};
+pub use source::TextOrigin;
+pub use source::{FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap};
 
 use fte_directive::{Bytes, FteState, Position, Resume, TextStart, first_nul};
 use fte_macro::{ChunkReader, Text, ends_word};
@@ -74,11 +73,11 @@ pub const LIMIT_QCC_MAX_FRAMES: usize = 256;
 ///
 /// `MAX_FRAMES` in FTEQCC's `qcc_pr_lex.c`, `#define MAX_FRAMES 8192`: defining the last
 /// one is "Too many frame macros defined" (FTEF-18.17).
-pub const FTE_MAX_FRAMES: usize = 8192;
+pub(crate) const FTE_MAX_FRAMES: usize = 8192;
 
 /// One macro expansion: which macro, where it was used, and the use it sits inside.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Expansion {
+pub(crate) struct Expansion {
     /// The macro's name.
     pub name: String,
     /// The use: the macro's name, through the closing `)` for a function-like macro.
@@ -99,9 +98,9 @@ impl ExpansionId {
         Self(index)
     }
 
-    /// Its index in [`Preprocessor::expansions`].
+    /// Its index in the preprocessor's table of expansions.
     #[must_use]
-    pub const fn index(self) -> usize {
+    pub(crate) const fn index(self) -> usize {
         self.0
     }
 }
@@ -1370,9 +1369,10 @@ impl<L: Loader> Preprocessor<L> {
         &self.sources
     }
 
-    /// Every expansion made so far, indexed by [`ExpansionId`].
+    /// Every expansion made so far, indexed by [`ExpansionId`]; the tests read it.
+    #[cfg(test)]
     #[must_use]
-    pub fn expansions(&self) -> &[Expansion] {
+    pub(crate) fn expansions(&self) -> &[Expansion] {
         &self.expansions
     }
 

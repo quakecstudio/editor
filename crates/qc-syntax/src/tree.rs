@@ -10,7 +10,9 @@
 //! Tokens hold bytes, not `str`: QuakeC source has no encoding (QC-1.1), and the tree must
 //! give back every byte of it.
 
-use std::fmt::{self, Write as _};
+use std::fmt;
+#[cfg(test)]
+use std::fmt::Write as _;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -26,12 +28,12 @@ struct GreenTokenData {
 
 /// A token of the green tree: a kind and its bytes.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct GreenToken(Arc<GreenTokenData>);
+pub(crate) struct GreenToken(Arc<GreenTokenData>);
 
 impl GreenToken {
     /// A token of `kind` with the bytes `text`.
     #[must_use]
-    pub fn new(kind: SyntaxKind, text: &[u8]) -> Self {
+    pub(crate) fn new(kind: SyntaxKind, text: &[u8]) -> Self {
         Self(Arc::new(GreenTokenData {
             kind,
             text: text.into(),
@@ -40,13 +42,13 @@ impl GreenToken {
 
     /// Its kind.
     #[must_use]
-    pub fn kind(&self) -> SyntaxKind {
+    pub(crate) fn kind(&self) -> SyntaxKind {
         self.0.kind
     }
 
     /// Its bytes.
     #[must_use]
-    pub fn text(&self) -> &[u8] {
+    pub(crate) fn text(&self) -> &[u8] {
         &self.0.text
     }
 }
@@ -60,12 +62,12 @@ struct GreenNodeData {
 
 /// A node of the green tree: a kind, its length in bytes and its children.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct GreenNode(Arc<GreenNodeData>);
+pub(crate) struct GreenNode(Arc<GreenNodeData>);
 
 impl GreenNode {
     /// A node of `kind` holding `children`.
     #[must_use]
-    pub fn new(kind: SyntaxKind, children: Vec<GreenElement>) -> Self {
+    pub(crate) fn new(kind: SyntaxKind, children: Vec<GreenElement>) -> Self {
         let len = children
             .iter()
             .fold(0_usize, |len, child| len.saturating_add(child.len()));
@@ -78,30 +80,31 @@ impl GreenNode {
 
     /// Its kind.
     #[must_use]
-    pub fn kind(&self) -> SyntaxKind {
+    pub(crate) fn kind(&self) -> SyntaxKind {
         self.0.kind
     }
 
     /// Its length in bytes: the sum of its tokens' lengths.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.0.len
     }
 
     /// Whether it holds no bytes.
+    #[cfg(test)]
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.0.len == 0
     }
 
     /// Its children in order.
     #[must_use]
-    pub fn children(&self) -> &[GreenElement] {
+    pub(crate) fn children(&self) -> &[GreenElement] {
         &self.0.children
     }
 
     /// Appends every byte under it to `out`, in order.
-    pub fn write_text(&self, out: &mut Vec<u8>) {
+    pub(crate) fn write_text(&self, out: &mut Vec<u8>) {
         for child in self.children() {
             match child {
                 GreenElement::Node(node) => node.write_text(out),
@@ -113,7 +116,7 @@ impl GreenNode {
 
 /// A child of a green node.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum GreenElement {
+pub(crate) enum GreenElement {
     /// A node.
     Node(GreenNode),
     /// A token.
@@ -123,7 +126,7 @@ pub enum GreenElement {
 impl GreenElement {
     /// Its length in bytes.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         match self {
             Self::Node(node) => node.len(),
             Self::Token(token) => token.text().len(),
@@ -131,14 +134,16 @@ impl GreenElement {
     }
 
     /// Whether it holds no bytes.
+    #[cfg(test)]
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Its kind.
+    #[cfg(test)]
     #[must_use]
-    pub fn kind(&self) -> SyntaxKind {
+    pub(crate) fn kind(&self) -> SyntaxKind {
         match self {
             Self::Node(node) => node.kind(),
             Self::Token(token) => token.kind(),
@@ -261,7 +266,7 @@ impl SyntaxElement {
 impl SyntaxNode {
     /// The root of the tree `green`, at offset 0.
     #[must_use]
-    pub fn new_root(green: GreenNode) -> Self {
+    pub(crate) fn new_root(green: GreenNode) -> Self {
         Self(Rc::new(NodeData {
             green,
             parent: None,
@@ -277,7 +282,7 @@ impl SyntaxNode {
 
     /// Its green node.
     #[must_use]
-    pub fn green(&self) -> &GreenNode {
+    pub(crate) fn green(&self) -> &GreenNode {
         &self.0.green
     }
 
@@ -389,13 +394,15 @@ impl SyntaxNode {
     }
 
     /// The tree under it, one element per line, for tests and debugging.
+    #[cfg(test)]
     #[must_use]
-    pub fn debug_tree(&self) -> String {
+    pub(crate) fn debug_tree(&self) -> String {
         let mut out = String::new();
         self.write_tree(&mut out, 0);
         out
     }
 
+    #[cfg(test)]
     fn write_tree(&self, out: &mut String, depth: usize) {
         let indent = depth.saturating_mul(2);
         let span = self.span();
