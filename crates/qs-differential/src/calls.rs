@@ -644,24 +644,20 @@ fn return_difference(a: &World<'_, '_, '_>, b: &World<'_, '_, '_>) -> Option<Dif
 }
 
 /// DIFF-12.7: whether the word at `their_ofs` of `a` and at `our_ofs` of `b` agree under any
-/// reading: two strings by their text when both are strings, else the same bits, the same
-/// edict or the same function.
+/// reading: the same bits, the same text, the same edict or the same function. Any word reads
+/// as a string when its value is an offset into the string table, so a text reading alone
+/// cannot be trusted over the bits: two different strings at one offset of two tables are
+/// the accepted risk the statement records.
 fn first_word_agrees(
     a: &World<'_, '_, '_>,
     their_ofs: usize,
     b: &World<'_, '_, '_>,
     our_ofs: usize,
 ) -> bool {
-    let (their_text, our_text) = (
-        a.global(DefType::Known(Etype::String), their_ofs),
-        b.global(DefType::Known(Etype::String), our_ofs),
-    );
-    if let (Value::Text(Some(theirs)), Value::Text(Some(ours))) = (&their_text, &our_text) {
-        return theirs == ours;
-    }
     let readings = |world: &World<'_, '_, '_>, ofs: usize| {
         [
             world.global(DefType::Known(Etype::Float), ofs),
+            world.global(DefType::Known(Etype::String), ofs),
             world.global(DefType::Known(Etype::Entity), ofs),
             world.global(DefType::Known(Etype::Function), ofs),
         ]
@@ -669,7 +665,7 @@ fn first_word_agrees(
     readings(a, their_ofs)
         .iter()
         .zip(&readings(b, our_ofs))
-        .any(|(t, o)| t == o && !matches!(t, Value::Function(None)))
+        .any(|(t, o)| t == o && !matches!(t, Value::Text(None) | Value::Function(None)))
 }
 
 /// DIFF-12.23: FTEQCC's variadic buffer, the globals `__va_list[N]` (FTE-18.6), holds an

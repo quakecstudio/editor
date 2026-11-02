@@ -624,9 +624,11 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
 - **DIFF-12.7** When the two progs' definitions, functions or strings differ, a call's return
   value is compared too, since the return slot is named by neither. A version 6 progs does not
   record a function's return type, so the slot's first word is read as a float, a string, an
-  entity and a function: two words that both read as strings agree only by their text, since
-  two string tables may put different strings at one offset, and otherwise the two agree when
-  any other reading does, the same bits, the same edict or the same function. A vector's other two words are compared only through
+  entity and a function, and the two agree when any reading does: the same bits, the same text,
+  the same edict, or the same function. Any word whose value is an offset into the string table
+  reads as a string, so the text reading cannot be preferred to the bits; that two different
+  strings at one offset of two string tables agree by their bits is the accepted risk of this
+  rule, for the return slot and for a va_list element (DIFF-12.23) alike. A vector's other two words are compared only through
   the globals and fields they are stored to. A QuakeC function of the first progs that the
   second has no QuakeC function of the same name for is a divergence. The k-th function of a
   name in the first progs is paired with the k-th of that name in the second: FTEQCC names the

@@ -1451,14 +1451,3 @@ fn a_va_list_elements_other_words_are_compared() {
     assert_eq!(against_fteqcc(&float(5), &float(5)), []);
     assert!(!against_fteqcc(&float(5), &float(6)).is_empty());
 }
-
-// spec DIFF-12.7: two strings at one offset of two string tables agree only by their text
-#[test]
-fn a_return_value_of_two_strings_agrees_by_text_not_offset() {
-    // Both tables put their first string at the same offset; the texts differ.
-    let theirs = "string() f = { return \"a\"; };\n";
-    let ours = "string() f = { return \"b\"; };\n";
-    let (function, what) = first(theirs, ours);
-    assert_eq!(function.as_deref(), Some("f"));
-    assert!(matches!(what, Difference::Return(..)), "{what:?}");
-}
