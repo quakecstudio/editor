@@ -504,6 +504,30 @@ groups:
     - Defects reported against this layer from higher layers are all closed
     verify:
     - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
+  - key: P2-R1B
+    title: L1 VM qc-builtins ratchet re-review after P2-150 (P2)
+    labels:
+    - L1-vm
+    - area:process
+    - type:readiness
+    size: S
+    reqs:
+    - TEST-2
+    - TEST-6
+    - TEST-9
+    depends:
+    - P2-R1
+    - P2-150
+    - P2-156
+    deliverable:
+    - docs/readiness/p2-r1b.md following docs/readiness/_template.md for qc-builtins, linking the measurement run
+    - 'ratchets.toml: [crates.qc-builtins] re-measured on the P2-150 code, its readiness key P2-R1B and its equivalent_mutants holding only mutants cargo-mutants still produces'
+    acceptance:
+    - Every threshold in ADR-0009 met for qc-builtins, or a per-crate exception with its reason recorded in the crate README
+    - Reviewed by an agent that did not write the change under review (TEST-9)
+    - cargo xtask ratchet passes over the full ratchets.toml history with the new key
+    verify:
+    - cargo xtask ratchet; the Readiness workflow run link in the note
 - milestone: P3
   issues:
   - key: P3-R3
