@@ -1850,21 +1850,27 @@ impl<'a> Compiler<'a> {
             (1, Opcode::StoreF)
         };
         let result = self.program.allocate(words).at(span)?;
-        // FTEF-30.13: the first arm's store is a statement asked for (`&truthstore`), so the
-        // aliases still to be read are copied first, the arm's own value among them.
-        self.clobber_aliases(span)?;
-        let from = self.operand_of(&first);
-        self.program
-            .emit(store, operand(from).at(span)?, operand(result).at(span)?);
+        // FTE-18.12: an arm the statement before made is written to the temporary by that
+        // statement (`opt_assignments` returns before any clobber); otherwise, FTEF-30.13: the
+        // first arm's store is a statement asked for (`&truthstore`), so the aliases still to
+        // be read are copied first, the arm's own value among them.
+        if !self.fold_into(&first, result) {
+            self.clobber_aliases(span)?;
+            let from = self.operand_of(&first);
+            self.program
+                .emit(store, operand(from).at(span)?, operand(result).at(span)?);
+        }
         let skip = self.goto(span)?;
         self.patch_b(test, span)?;
         let second = self.expr(&last.at(span)?)?;
         if self.type_of(&second).etype() != ty.etype() {
             return Self::error(Code::E0302, "type mismatch for ?".to_owned(), span);
         }
-        let from = self.operand_of(&second);
-        self.program
-            .emit(store, operand(from).at(span)?, operand(result).at(span)?);
+        if !self.fold_into(&second, result) {
+            let from = self.operand_of(&second);
+            self.program
+                .emit(store, operand(from).at(span)?, operand(result).at(span)?);
+        }
         let past = branch(skip, self.program.statements.len()).at(span)?;
         if let Some(s) = self.program.statements.get_mut(skip) {
             s.a = past;
@@ -3439,11 +3445,23 @@ impl Compiler<'_> {
                 && matches!(param, ValueType::Of(ty) if ty.fteqcc_scalar() == Some(CScalar::Integer))
                 && self.type_of(value).etype() == Etype::Float
                 && !self.is_integer(value)
-                && let Some(ftoi) = self.conversion_function("ftoi")
             {
-                let from = self.operand_of(value);
-                converted = self.call1(ftoi, from, param.clone(), *arg_span)?;
-                &converted
+                if let Some(Literal::Float(constant)) = self.constant_literal(value) {
+                    // A constant converts at compile time, `QCC_MakeIntConst`.
+                    let bits = u32::from_ne_bytes(float_to_int(constant).to_ne_bytes());
+                    let place = self
+                        .program
+                        .immediate(&Literal::Float(f32::from_bits(bits)))
+                        .at(*arg_span)?;
+                    converted = self.def_value(place, *arg_span)?;
+                    &converted
+                } else if let Some(ftoi) = self.conversion_function("ftoi") {
+                    let from = self.operand_of(value);
+                    converted = self.call1(ftoi, from, param.clone(), *arg_span)?;
+                    &converted
+                } else {
+                    value
+                }
             } else {
                 value
             };

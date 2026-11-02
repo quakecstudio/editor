@@ -339,7 +339,7 @@ impl Compiler<'_> {
         if self.type_of(&at).etype() != Etype::Float {
             return Err(Abort::Internal(Internal::Unsupported, span));
         }
-        let mut words = at.ofs;
+        let mut words = self.operand_of(&at);
         if array.words != 1 {
             words = self.float_op(Opcode::MulF, words, array.words, span)?;
         }
@@ -745,7 +745,9 @@ impl Compiler<'_> {
         let error = self
             .defined("error")
             .ok_or(Abort::Internal(Internal::Unsupported, span))?;
-        self.store_word(message, OFS_PARM0, Etype::String, span)?;
+        // `QCC_PR_EmitArrayGetFunction` stores the message with `OP_STORE_F`, whatever its
+        // type, as every one-word argument of the functions it emits.
+        self.store_word(message, OFS_PARM0, Etype::Float, span)?;
         self.program
             .emit(Opcode::Call1, operand(error).at(span)?, 0);
         Ok(())
@@ -781,8 +783,9 @@ impl Compiler<'_> {
         if let (Some(power), Some(floor)) = (power, self.defined("floor")) {
             let two = self.float_immediate(2, span)?;
             self.store_word(two, OFS_PARM0, Etype::Float, span)?;
+            let count = self.operand_of(right);
             self.store_word(
-                right.ofs,
+                count,
                 OFS_PARM0.checked_add(3).at(span)?,
                 Etype::Float,
                 span,
@@ -809,16 +812,18 @@ impl Compiler<'_> {
         let bitshift = self
             .defined("bitshift")
             .ok_or(Abort::Internal(Internal::Unsupported, op_span))?;
+        let right_ofs = self.operand_of(right);
         let count = match shift {
-            Shift::Left => right.ofs,
+            Shift::Left => right_ofs,
             Shift::Right => {
                 let zero = self.float_immediate(0, span)?;
                 self.program
-                    .emit_result(Opcode::SubF, zero, right.ofs, Etype::Float)
+                    .emit_result(Opcode::SubF, zero, right_ofs, Etype::Float)
                     .at(span)?
             }
         };
-        self.store_word(left.ofs, OFS_PARM0, Etype::Float, span)?;
+        let left_ofs = self.operand_of(left);
+        self.store_word(left_ofs, OFS_PARM0, Etype::Float, span)?;
         self.store_word(
             count,
             OFS_PARM0.checked_add(3).at(span)?,
@@ -844,7 +849,8 @@ impl Compiler<'_> {
             return Err(Abort::Internal(Internal::Unsupported, op_span));
         }
         if let Some(function) = self.defined("mod") {
-            for (slot, arg) in [(OFS_PARM0, left.ofs), (OFS_PARM0 + 3, right.ofs)] {
+            let (a, b) = (self.operand_of(left), self.operand_of(right));
+            for (slot, arg) in [(OFS_PARM0, a), (OFS_PARM0 + 3, b)] {
                 self.store_word(arg, slot, Etype::Float, span)?;
             }
             self.clobber_aliases(span)?;
@@ -858,10 +864,11 @@ impl Compiler<'_> {
                 .emit_result(op, a, b, Etype::Float)
                 .at(span)
         };
-        let quotient = emit(self, Opcode::DivF, left.ofs, right.ofs)?;
+        let (a, b) = (self.operand_of(left), self.operand_of(right));
+        let quotient = emit(self, Opcode::DivF, a, b)?;
         let whole = emit(self, Opcode::BitOr, quotient, quotient)?;
-        let product = emit(self, Opcode::MulF, right.ofs, whole)?;
-        let ofs = emit(self, Opcode::SubF, left.ofs, product)?;
+        let product = emit(self, Opcode::MulF, b, whole)?;
+        let ofs = emit(self, Opcode::SubF, a, product)?;
         Ok(Value {
             ofs,
             kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
