@@ -1343,3 +1343,41 @@ fn a_partly_covered_function_gets_one_more_batch() {
     let partly = calls("float x;\nvoid() f = { if (0) x = 2; x = 1; };\n");
     assert_eq!(partly, covered + 2);
 }
+
+/// [`against`] for two programs compiled in the FTEQCC dialect.
+fn against_fteqcc(theirs: &str, ours: &str) -> Vec<Difference> {
+    let (theirs, ours) = (compile_fteqcc(theirs), compile_fteqcc(ours));
+    run_calls(
+        Oracle::Fteqcc,
+        &theirs,
+        &ours,
+        &scenario(),
+        WORLD,
+        4,
+        EngineProfile::Id,
+    )
+    .unwrap()
+    .divergences
+    .into_iter()
+    .map(|d| d.what)
+    .collect()
+}
+
+// spec DIFF-12.23: a `__va_list[N]` element agrees when its first word agrees under any
+// reading, a string by its text though the string tables differ, and differs when none does
+#[test]
+fn a_va_list_element_agrees_by_any_reading() {
+    let theirs = "void(string a, ...) v = { };\nvoid() f = { v(\"x\", \"y\"); };\n";
+    let ours = "string pad = \"zzzz\";\nvoid(string a, ...) v = { };\n\
+                void() f = { v(\"x\", \"y\"); };\n";
+    assert_eq!(against_fteqcc(theirs, ours), []);
+    let other = "string pad = \"zzzz\";\nvoid(string a, ...) v = { };\n\
+                 void() f = { v(\"x\", \"z\"); };\n";
+    let divergences = against_fteqcc(theirs, other);
+    assert!(
+        divergences
+            .iter()
+            .any(|d| matches!(d, Difference::Global(name, _, _) if name == b"__va_list[0]")),
+        "{divergences:?}"
+    );
+}

@@ -641,6 +641,38 @@ fn return_difference(a: &World<'_, '_, '_>, b: &World<'_, '_, '_>) -> Option<Dif
     })
 }
 
+/// DIFF-12.23: FTEQCC's variadic buffer, the globals `__va_list[N]` (FTE-18.6), holds an
+/// argument of any type in each element, typed as a vector; two elements agree when their
+/// first word agrees under any reading, as a return value does (DIFF-12.7), and their other
+/// two words hold the same bits.
+fn variant_agrees(
+    name: &[u8],
+    a: &World<'_, '_, '_>,
+    b: &World<'_, '_, '_>,
+    their_ofs: usize,
+    our_ofs: usize,
+) -> bool {
+    if !name.starts_with(b"__va_list[") {
+        return false;
+    }
+    let first = |world: &World<'_, '_, '_>, ofs: usize| {
+        [
+            world.global(DefType::Known(Etype::Float), ofs),
+            world.global(DefType::Known(Etype::String), ofs),
+            world.global(DefType::Known(Etype::Entity), ofs),
+            world.global(DefType::Known(Etype::Function), ofs),
+        ]
+    };
+    let first_agrees = first(a, their_ofs)
+        .iter()
+        .zip(&first(b, our_ofs))
+        .any(|(t, o)| t == o && !matches!(t, Value::Text(None) | Value::Function(None)));
+    let rest = |world: &World<'_, '_, '_>, ofs: usize| {
+        [1_usize, 2].map(|i| world.global(DefType::Known(Etype::Float), ofs.saturating_add(i)))
+    };
+    first_agrees && rest(a, their_ofs) == rest(b, our_ofs)
+}
+
 /// Whether two machines hold the same bits in every global and in every edict's fields, with
 /// the same edicts free.
 fn same_slots(a: &Machine, b: &Machine) -> bool {
@@ -669,7 +701,7 @@ fn state_difference(
         };
         let theirs = a.global(*their_type, *their_ofs);
         let ours = b.global(*our_type, *our_ofs);
-        if theirs != ours {
+        if theirs != ours && !variant_agrees(name, a, b, *their_ofs, *our_ofs) {
             return Some(Difference::Global(name.clone(), theirs, ours));
         }
     }

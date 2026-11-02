@@ -773,6 +773,14 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   `TeamCaptureFlagTouch` runs with `other.team` equal to `other.lastteam` and `self.cnt` at
   one of the flag states its body names, and `ClientObituary` with `attacker.classname` one
   of the texts it compares it with. The draws stay deterministic (DIFF-1.4).
+- **DIFF-12.23** FTEQCC's variadic buffer, the globals `__va_list[N]` a variadic function
+  copies its unnamed arguments to (FTE-18.6), is typed as vectors in the progs (`ty=3`) and
+  holds an argument of any type in each element, a string's offset among them, which two
+  progs with different string tables never share. Two elements agree when their first word
+  agrees under any of DIFF-12.7's readings, the same bits, the same text, the same edict or
+  the same function, and their other two words hold the same bits. So crmod7's
+  `score_check_sudden_death`, which passes strings on to a variadic, is no divergence by its
+  `__va_list[1]`.
 - **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and
   Arcane Dimensions, are set up and called with the mock engine under vkQuake's profile
   (BUILTIN-18): crmod7 calls extension builtins while it sets up its world, and Arcane
