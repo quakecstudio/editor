@@ -850,7 +850,9 @@ fn a_functions_named_fields_and_variables_are_drawn() {
 fn compared_values_are_mined_and_drawn() {
     const COMPARED: &str = "float x;\nfloat y;\n.float lastteam;\n\
         float(float n, string s) h = { local float t; t = self.frags; \
-        if (t == 3 || self.health > 7) x = 1; \
+        if (t == 3 || self.health > 7) x = 1; if (self.armorvalue > x) y = 1; \
+        if (self.armortype <= 2 || self.waterlevel >= 3 || self.watertype < 4) y = 8; \
+        if (self.ammo_shells < self.ammo_nails) y = 9; \
         if (self.netname == \"carrier\") y = 2; \
         if (self.items & 32) y = 3; \
         if (!self.enemy) y = 4; \
@@ -869,7 +871,37 @@ fn compared_values_are_mined_and_drawn() {
         };
         // A field read into a local, then compared: the constant is the field's.
         assert_eq!(numbers(b"frags"), [3.0]);
-        assert_eq!(numbers(b"health"), [7.0]);
+        // An ordering with a constant: the constant and its two neighbours (the set is by
+        // bits, so the order is 6, 7, 8 by their bit patterns).
+        let mut health = numbers(b"health");
+        health.sort_by(f32::total_cmp);
+        assert_eq!(health, [6.0, 7.0, 8.0]);
+        // An ordering with a zero global, `x`: 0 and its neighbours, and the pair.
+        let mut armor = numbers(b"armorvalue");
+        armor.sort_by(f32::total_cmp);
+        assert_eq!(armor, [-1.0, 0.0, 1.0]);
+        assert!(
+            pools
+                .pairs
+                .contains(&(b"armorvalue".to_vec(), b"x".to_vec()))
+        );
+        // Every ordering opcode draws the neighbours.
+        for (name, want) in [
+            (&b"armortype"[..], [1.0, 2.0, 3.0]),
+            (&b"waterlevel"[..], [2.0, 3.0, 4.0]),
+            (&b"watertype"[..], [3.0, 4.0, 5.0]),
+        ] {
+            let mut got = numbers(name);
+            got.sort_by(f32::total_cmp);
+            assert_eq!(got, want, "{}", String::from_utf8_lossy(name));
+        }
+        // An ordering of two fields pairs them and draws no neighbours.
+        assert!(numbers(b"ammo_shells").is_empty());
+        assert!(
+            pools
+                .pairs
+                .contains(&(b"ammo_shells".to_vec(), b"ammo_nails".to_vec()))
+        );
         assert_eq!(
             pools.compared[&b"netname"[..]].texts,
             BTreeSet::from([b"carrier".to_vec()])
@@ -905,6 +937,13 @@ fn compared_values_are_mined_and_drawn() {
                 .iter()
                 .any(|c| { last_field(c, c.self_edict, b"frags") == Some(Draw::Float(3.0)) })
         );
+        // A neighbour of an ordered constant is drawn, not only mined.
+        assert!(contexts.iter().any(|c| {
+            matches!(
+                last_field(c, c.self_edict, b"health"),
+                Some(Draw::Float(v)) if [6.0_f32, 8.0].contains(&v)
+            )
+        }));
         assert!(contexts.iter().any(|c| {
             last_field(c, c.self_edict, b"netname") == Some(Draw::Text(b"carrier".to_vec()))
         }));
@@ -1342,4 +1381,73 @@ fn a_partly_covered_function_gets_one_more_batch() {
     let covered = calls("float x;\nvoid() f = { x = 1; };\n");
     let partly = calls("float x;\nvoid() f = { if (0) x = 2; x = 1; };\n");
     assert_eq!(partly, covered + 2);
+}
+
+/// [`against`] for two programs compiled in the FTEQCC dialect.
+fn against_fteqcc(theirs: &str, ours: &str) -> Vec<Difference> {
+    let (theirs, ours) = (compile_fteqcc(theirs), compile_fteqcc(ours));
+    run_calls(
+        Oracle::Fteqcc,
+        &theirs,
+        &ours,
+        &scenario(),
+        WORLD,
+        4,
+        EngineProfile::Id,
+    )
+    .unwrap()
+    .divergences
+    .into_iter()
+    .map(|d| d.what)
+    .collect()
+}
+
+// spec DIFF-12.23: a `__va_list[N]` element agrees when its first word agrees under any
+// reading, a string by its text though the string tables differ, and differs when none does
+#[test]
+fn a_va_list_element_agrees_by_any_reading() {
+    let theirs = "void(string a, ...) v = { };\nvoid() f = { v(\"x\", \"y\"); };\n";
+    let ours = "string pad = \"zzzz\";\nvoid(string a, ...) v = { };\n\
+                void() f = { v(\"x\", \"y\"); };\n";
+    assert_eq!(against_fteqcc(theirs, ours), []);
+    let other = "string pad = \"zzzz\";\nvoid(string a, ...) v = { };\n\
+                 void() f = { v(\"x\", \"z\"); };\n";
+    let divergences = against_fteqcc(theirs, other);
+    assert!(
+        divergences
+            .iter()
+            .any(|d| matches!(d, Difference::Global(name, _, _) if name == b"__va_list[0]")),
+        "{divergences:?}"
+    );
+}
+
+// spec DIFF-12.7: functions of one name, the accessors of two local arrays named alike, are
+// paired by their index, each with its own
+#[test]
+fn same_named_functions_are_paired_by_index() {
+    let source = "string(float i) f = { local string tab[2]; tab[0] = \"a\"; tab[1] = \"b\"; \
+                  return tab[i]; };\n\
+                  string(float i) g = { local string tab[2]; tab[0] = \"ccc\"; tab[1] = \"dddd\"; \
+                  return tab[i]; };\n";
+    assert_eq!(against_fteqcc(source, source), []);
+}
+
+// spec DIFF-12.23: an element's other two words must hold the same bits, so a vector argument
+// that differs in a later component is a divergence, and a float argument agrees by its bits
+#[test]
+fn a_va_list_elements_other_words_are_compared() {
+    let vector =
+        |v: &str| format!("void(string a, ...) v = {{ }};\nvoid() f = {{ v(\"x\", '{v}'); }};\n");
+    assert_eq!(against_fteqcc(&vector("1 2 3"), &vector("1 2 3")), []);
+    let divergences = against_fteqcc(&vector("1 2 3"), &vector("1 2 4"));
+    assert!(
+        divergences
+            .iter()
+            .any(|d| matches!(d, Difference::Global(name, _, _) if name == b"__va_list[0]")),
+        "{divergences:?}"
+    );
+    let float =
+        |n: u32| format!("void(string a, ...) v = {{ }};\nvoid() f = {{ v(\"x\", {n}); }};\n");
+    assert_eq!(against_fteqcc(&float(5), &float(5)), []);
+    assert!(!against_fteqcc(&float(5), &float(6)).is_empty());
 }

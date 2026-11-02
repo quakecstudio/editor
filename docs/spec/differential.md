@@ -625,9 +625,15 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   value is compared too, since the return slot is named by neither. A version 6 progs does not
   record a function's return type, so the slot's first word is read as a float, a string, an
   entity and a function, and the two agree when any reading does: the same bits, the same text,
-  the same edict, or the same function. A vector's other two words are compared only through
+  the same edict, or the same function. Any word whose value is an offset into the string table
+  reads as a string, so the text reading cannot be preferred to the bits; that two different
+  strings at one offset of two string tables agree by their bits is the accepted risk of this
+  rule, for the return slot and for a va_list element (DIFF-12.23) alike. A vector's other two words are compared only through
   the globals and fields they are stored to. A QuakeC function of the first progs that the
-  second has no QuakeC function of the same name for is a divergence.
+  second has no QuakeC function of the same name for is a divergence. The k-th function of a
+  name in the first progs is paired with the k-th of that name in the second: FTEQCC names the
+  accessor of every local array `tab` `ArrayGet*tab` (FTE-13.8), and crmod7 has seven, each
+  read with its own; a name the second progs gives fewer functions leaves the rest missing.
 - **DIFF-12.8** **Withdrawn** 2026-10-30: it compared the five rerelease codebases besides
   `rerelease` only when a run named them, until each passed; four pass and the nightly run
   compares them; replaced by DIFF-12.14. `cargo xtask compiler-diff --full` also compares the rerelease (COMP-8):
@@ -719,8 +725,14 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   with `qc-codegen` in the FTEQCC dialect, of a codebase with several modules its server module
   `progs.src`, as FTEQCC compiles that one with no `-srcfile`. Each pair is compared as a
   rerelease codebase is, with the FTEQCC rules of DIFF-12.11, and held to DIFF-12.5's bar. A
-  mod at the bar is in the nightly set, all six since P2-157; one not yet at it is compared
-  when a run names it.
+  mod at the bar is in the nightly set; one not yet at it is compared when a run names it.
+  Arcane Dimensions has no divergence but its calls reach 89.1% of its statements over 128
+  rounds, the rest behind precaches after the spawn functions, which only a loading round
+  admits (DIFF-12.2), and CSQC drawing builtins the mock does not have; crmod7 has no
+  divergence but reaches 69.0%, its `worldspawn` scenario ending in both progs at "Can not
+  find an 'info_player_deathmatch' spawnpoint on this map!" (DIFF-12.20) and its match,
+  team and client paths wanting a connected client and a running match the scenarios do
+  not set up. Both are measured on 2026-11-02 after DIFF-12.23 and the DIFF-12.22 draws.
 - **DIFF-12.15** One time in two, `self` for a call is drawn from the edicts in use whose
   named fields of function type hold the function called, when any does, as the engine calls a
   `think`, `touch` or `use` with its own edict as `self`; otherwise as DIFF-12.2 draws it. The
@@ -764,8 +776,13 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   the body's statements: a field a `LOAD` reads into a slot, a float or string variable, or a
   parameter of the call is a name, and a `STORE` of a name carries it to the slot stored to;
   an `EQ`, `NE`, `LT`, `GT`, `LE` or `GE` of a name and a float or string constant gives the
-  name the constant; a `BITAND` or `BITOR` of a name and a constant gives it the constant and
-  0; an `IF`, `IFNOT` or `NOT` of a name gives it 0 and 1, `""` and `world`; an `EQ_E` or
+  name the constant, and an ordering, `LT`, `GT`, `LE` or `GE`, with a float constant gives it
+  one less and one more as well, since a strict ordering holds on neither side at the constant
+  itself, and an ordering with a zero global such as `FALSE`, a global at 0 that no
+  `IMMEDIATE` names, gives it 0, -1 and 1 (Arcane Dimensions' `breakable_cache` runs only for
+  `self.style > FALSE && self.style < BTYPE_CUSTOM`), while an ordering with a field,
+  variable or parameter pairs the two as any comparison of two names does; a `BITAND` or
+  `BITOR` of a name and a constant gives it the constant and 0; an `IF`, `IFNOT` or `NOT` of a name gives it 0 and 1, `""` and `world`; an `EQ_E` or
   `NE_E` of a name gives it `world`; and an `EQ`, `NE` or ordering of two names pairs them,
   so after the draws the second of a pair takes the first's value one time in two, for each
   edict the first was drawn for, or as a variable. A constant is a global at a slot whose value
@@ -773,6 +790,13 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   `TeamCaptureFlagTouch` runs with `other.team` equal to `other.lastteam` and `self.cnt` at
   one of the flag states its body names, and `ClientObituary` with `attacker.classname` one
   of the texts it compares it with. The draws stay deterministic (DIFF-1.4).
+- **DIFF-12.23** FTEQCC's variadic buffer, the globals `__va_list[N]` a variadic function
+  copies its unnamed arguments to (FTE-18.6), is typed as vectors in the progs (`ty=3`) and
+  holds an argument of any type in each element, a string's offset among them, which two
+  progs with different string tables never share. Two elements agree when their first word
+  agrees under DIFF-12.7's readings and their other two words hold the same bits. So crmod7's
+  `score_check_sudden_death`, which passes strings on to a variadic, is no divergence by its
+  `__va_list[1]`.
 - **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and
   Arcane Dimensions, are set up and called with the mock engine under vkQuake's profile
   (BUILTIN-18): crmod7 calls extension builtins while it sets up its world, and Arcane

@@ -469,6 +469,7 @@ fn run_calls_reporting(
     }
 
     let drawer = Drawer::new(&their_world);
+    let mut seen: BTreeMap<&[u8], usize> = BTreeMap::new();
     let functions = their_progs.functions();
     let of = functions.iter().filter(|f| f.first_statement > 0).count();
     let mut done = 0_usize;
@@ -488,7 +489,20 @@ fn run_calls_reporting(
             continue;
         }
         // DIFF-12.7: a function the second progs does not have is a divergence, not a skip.
-        let Some(&our_index) = our_world.program.functions.get(name) else {
+        // A name both progs give several functions, FTEQCC's accessors of local arrays named
+        // alike (`ArrayGet*tab`), pairs the k-th of the name in the first progs with the k-th
+        // of it in the second, so each accessor meets its own.
+        let occurrence = *seen
+            .entry(name)
+            .and_modify(|n| *n = n.saturating_add(1))
+            .or_insert(0_usize);
+        let Some(our_index) = our_world
+            .program
+            .functions
+            .get(name)
+            .and_then(|indices| indices.get(occurrence))
+            .copied()
+        else {
             report.divergences.push(Divergence {
                 function: Some(name.to_vec()),
                 round: 0,
@@ -621,24 +635,58 @@ impl Pair {
 /// two agree when any reading does: the same bits, the same text, the same edict or the same
 /// function. A vector's other two words are compared only through the state they leave.
 fn return_difference(a: &World<'_, '_, '_>, b: &World<'_, '_, '_>) -> Option<Difference> {
-    let readings = |world: &World<'_, '_, '_>| {
+    (!first_word_agrees(a, OFS_RETURN, b, OFS_RETURN)).then(|| {
+        Difference::Return(
+            a.global(DefType::Known(Etype::Float), OFS_RETURN),
+            b.global(DefType::Known(Etype::Float), OFS_RETURN),
+        )
+    })
+}
+
+/// DIFF-12.7: whether the word at `their_ofs` of `a` and at `our_ofs` of `b` agree under any
+/// reading: the same bits, the same text, the same edict or the same function. Any word reads
+/// as a string when its value is an offset into the string table, so a text reading alone
+/// cannot be trusted over the bits: two different strings at one offset of two tables are
+/// the accepted risk the statement records.
+fn first_word_agrees(
+    a: &World<'_, '_, '_>,
+    their_ofs: usize,
+    b: &World<'_, '_, '_>,
+    our_ofs: usize,
+) -> bool {
+    let readings = |world: &World<'_, '_, '_>, ofs: usize| {
         [
-            world.global(DefType::Known(Etype::Float), OFS_RETURN),
-            world.global(DefType::Known(Etype::String), OFS_RETURN),
-            world.global(DefType::Known(Etype::Entity), OFS_RETURN),
-            world.global(DefType::Known(Etype::Function), OFS_RETURN),
+            world.global(DefType::Known(Etype::Float), ofs),
+            world.global(DefType::Known(Etype::String), ofs),
+            world.global(DefType::Known(Etype::Entity), ofs),
+            world.global(DefType::Known(Etype::Function), ofs),
         ]
     };
-    let (theirs, ours) = (readings(a), readings(b));
-    let agree = theirs
+    readings(a, their_ofs)
         .iter()
-        .zip(&ours)
-        .any(|(t, o)| t == o && !matches!(t, Value::Text(None) | Value::Function(None)));
-    (!agree).then(|| {
-        let [their_bits, ..] = theirs;
-        let [our_bits, ..] = ours;
-        Difference::Return(their_bits, our_bits)
-    })
+        .zip(&readings(b, our_ofs))
+        .any(|(t, o)| t == o && !matches!(t, Value::Text(None) | Value::Function(None)))
+}
+
+/// DIFF-12.23: FTEQCC's variadic buffer, the globals `__va_list[N]` (FTE-18.6), holds an
+/// argument of any type in each element, typed as a vector; two elements agree when their
+/// first word agrees under any reading, as a return value does (DIFF-12.7), and their other
+/// two words hold the same bits.
+fn variant_agrees(
+    name: &[u8],
+    a: &World<'_, '_, '_>,
+    b: &World<'_, '_, '_>,
+    their_ofs: usize,
+    our_ofs: usize,
+) -> bool {
+    if !name.starts_with(b"__va_list[") {
+        return false;
+    }
+    let first_agrees = first_word_agrees(a, their_ofs, b, our_ofs);
+    let rest = |world: &World<'_, '_, '_>, ofs: usize| {
+        [1_usize, 2].map(|i| world.global(DefType::Known(Etype::Float), ofs.saturating_add(i)))
+    };
+    first_agrees && rest(a, their_ofs) == rest(b, our_ofs)
 }
 
 /// Whether two machines hold the same bits in every global and in every edict's fields, with
@@ -669,7 +717,7 @@ fn state_difference(
         };
         let theirs = a.global(*their_type, *their_ofs);
         let ours = b.global(*our_type, *our_ofs);
-        if theirs != ours {
+        if theirs != ours && !variant_agrees(name, a, b, *their_ofs, *our_ofs) {
             return Some(Difference::Global(name.clone(), theirs, ours));
         }
     }
@@ -750,7 +798,7 @@ struct Program<'a, 'p> {
     /// The named fields, by name: the type and slot of the first definition of each.
     fields: BTreeMap<Vec<u8>, (DefType, usize)>,
     /// The QuakeC functions, by name: the index of the first of each name.
-    functions: BTreeMap<Vec<u8>, i32>,
+    functions: BTreeMap<Vec<u8>, Vec<i32>>,
     /// The slots of the QuakeC functions' parameters and locals, from `parm_start` for
     /// `locals` slots, as start and end.
     locals: Vec<(usize, usize)>,
@@ -796,7 +844,10 @@ impl<'a, 'p> Program<'a, 'p> {
             if let (Some(name), Ok(index)) = (progs.string(function.s_name), i32::try_from(index))
                 && function.first_statement > 0
             {
-                functions.entry(name.to_vec()).or_insert(index);
+                functions
+                    .entry(name.to_vec())
+                    .or_insert_with(Vec::new)
+                    .push(index);
             }
         }
         let mut program = Self {

@@ -166,6 +166,9 @@ impl Compared {
 enum Operand {
     /// A field a `LOAD` read into the slot, a variable, or a parameter, by name.
     Named(Vec<u8>),
+    /// A global whose value is 0 and which no `IMMEDIATE` names, `FALSE` or an uninitialised
+    /// variable, by name: compared with as a name, and an ordering against it draws around 0.
+    Zero(Vec<u8>),
     /// A float constant, by its bits.
     Number(u32),
     /// A string constant.
@@ -184,7 +187,7 @@ fn record(compared: &mut ComparedByName, pairs: &mut Pairs, name: Vec<u8>, other
         Operand::Text(text) => {
             entry.texts.insert(text.clone());
         }
-        Operand::Named(second) => {
+        Operand::Named(second) | Operand::Zero(second) => {
             if *second != name {
                 pairs.push((name, second.clone()));
             }
@@ -220,8 +223,10 @@ fn mine_compared(
         let immediate = name.is_some_and(|name| name == b"IMMEDIATE");
         match types.get(&ofs) {
             Some(DefType::Known(Etype::Float)) => {
-                if parms.contains(&slot) || (value.bits() == 0 && !immediate && ofs != 0) {
+                if parms.contains(&slot) {
                     name.cloned().map_or(Operand::Other, Operand::Named)
+                } else if value.bits() == 0 && !immediate && ofs != 0 {
+                    name.cloned().map_or(Operand::Other, Operand::Zero)
                 } else {
                     Operand::Number(value.bits())
                 }
@@ -267,7 +272,7 @@ fn mine_compared(
                 }
             }
             Opcode::StoreF | Opcode::StoreS | Opcode::StoreEnt => match operand(&loaded, a) {
-                Operand::Named(name) => {
+                Operand::Named(name) | Operand::Zero(name) => {
                     loaded.insert(b, name);
                 }
                 Operand::Number(_) | Operand::Text(_) | Operand::Other => {
@@ -286,22 +291,43 @@ fn mine_compared(
             | Opcode::BitOr => {
                 let (first, second) = (operand(&loaded, a), operand(&loaded, b));
                 let masked = matches!(op, Opcode::BitAnd | Opcode::BitOr);
-                if let Operand::Named(name) = &first {
-                    record(&mut compared, &mut pairs, name.clone(), &second);
+                let ordered = matches!(op, Opcode::Le | Opcode::Ge | Opcode::Lt | Opcode::Gt);
+                for (name, other) in [(&first, &second), (&second, &first)] {
+                    let (Operand::Named(name) | Operand::Zero(name)) = name else {
+                        continue;
+                    };
+                    record(&mut compared, &mut pairs, name.clone(), other);
                     if masked {
                         record(&mut compared, &mut pairs, name.clone(), &Operand::Number(0));
                     }
-                }
-                if let Operand::Named(name) = &second {
-                    record(&mut compared, &mut pairs, name.clone(), &first);
-                    if masked {
-                        record(&mut compared, &mut pairs, name.clone(), &Operand::Number(0));
+                    // An ordering with a constant is satisfied strictly on either side of it,
+                    // so the name takes one less and one more too; against a zero global such
+                    // as `FALSE`, it takes 0 and its neighbours.
+                    let around: &[f32] = match other {
+                        Operand::Number(bits) if ordered => {
+                            let middle = f32::from_bits(*bits);
+                            &[middle - 1.0, middle + 1.0]
+                        }
+                        Operand::Zero(_) if ordered => &[-1.0, 0.0, 1.0],
+                        Operand::Number(_)
+                        | Operand::Named(_)
+                        | Operand::Zero(_)
+                        | Operand::Text(_)
+                        | Operand::Other => &[],
+                    };
+                    for value in around {
+                        record(
+                            &mut compared,
+                            &mut pairs,
+                            name.clone(),
+                            &Operand::Number(value.to_bits()),
+                        );
                     }
                 }
                 loaded.remove(&c);
             }
             Opcode::If | Opcode::IfNot | Opcode::NotF | Opcode::NotS | Opcode::NotEnt => {
-                if let Operand::Named(name) = operand(&loaded, a) {
+                if let Operand::Named(name) | Operand::Zero(name) = operand(&loaded, a) {
                     let entry = compared.entry(name).or_default();
                     entry.numbers.insert(0);
                     entry.numbers.insert(1.0_f32.to_bits());
@@ -313,10 +339,10 @@ fn mine_compared(
                 }
             }
             Opcode::EqE | Opcode::NeE => {
-                if let Operand::Named(name) = operand(&loaded, a) {
+                if let Operand::Named(name) | Operand::Zero(name) = operand(&loaded, a) {
                     compared.entry(name).or_default().world = true;
                 }
-                if let Operand::Named(name) = operand(&loaded, b) {
+                if let Operand::Named(name) | Operand::Zero(name) = operand(&loaded, b) {
                     compared.entry(name).or_default().world = true;
                 }
                 loaded.remove(&c);
