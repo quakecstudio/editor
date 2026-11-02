@@ -114,6 +114,69 @@ fn compile(source: &str, fold: bool) -> Vec<u8> {
     qc_progs::write(&compiled.progs).unwrap()
 }
 
+/// The progs `qc-codegen` writes for `source` in the FTEQCC dialect, after the system defs
+/// and the entry points.
+fn compile_fteqcc(source: &str) -> Vec<u8> {
+    let files = [
+        ("defs.qc", system_defs()),
+        ("entry.qc", entry_points(source)),
+        ("t.qc", format!("{source}{PADDING}")),
+    ];
+    let mut db = Db::new();
+    db.set_dialect(qc_syntax::Dialect::Fteqcc);
+    let mut input = ModuleInput::default();
+    for (i, (name, text)) in files.iter().enumerate() {
+        db.set_file(
+            FileId::new(i),
+            PathBuf::from(name),
+            text.as_bytes().to_vec(),
+        );
+        input.compiled.push(FileId::new(i));
+    }
+    let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
+    let compiled = compile_module(
+        &mut db,
+        &input,
+        |id| names[id.index()].clone(),
+        Options { fold: false },
+    )
+    .unwrap_or_else(|e| panic!("{source:?} did not compile: {e:?}"));
+    qc_progs::write(&compiled.progs).unwrap()
+}
+
+// spec DIFF-12.11: a function definition whose value is a QuakeC function of its name is no
+// local, whichever of the functions sharing the name it holds: FTEQCC makes an `ArrayGet*a`
+// for each `for` statement that subscripts a local array (FTEF-19.78), and ours gives the
+// second its slot among the body's locals when a local is declared after it (QC-21.4).
+#[test]
+fn an_array_function_made_in_a_body_is_not_a_local() {
+    let bytes = compile_fteqcc(
+        "float() f = { local float a[4]; local float i, s; \
+         for (i = 0; i < 4; i = i + 1) a[i] = a[i] + 1; \
+         for (i = 0; i < 4; i = i + 1) s = s + a[i]; local float t = s; return t; };\n",
+    );
+    let progs = Progs::read(&bytes).unwrap();
+    let program = super::Program::new(&progs);
+    let getters: Vec<&super::Global> = program
+        .globals
+        .iter()
+        .filter(|(name, ..)| name == b"ArrayGet*a")
+        .collect();
+    assert_eq!(getters.len(), 2, "{:?}", program.globals);
+    let (_, _, second) = getters[1];
+    assert!(
+        program
+            .locals
+            .iter()
+            .any(|(start, end)| (*start..*end).contains(second)),
+        "the second getter's slot {second} lies among f's locals {:?}",
+        program.locals
+    );
+    for getter in getters {
+        assert!(!program.is_local(getter), "{getter:?}");
+    }
+}
+
 /// One client in the world of [`WORLD`].
 fn scenario() -> Scenario {
     scenario::read(b"progs progs.dat\nclients 1\n", Path::new(".")).unwrap()

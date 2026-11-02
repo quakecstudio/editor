@@ -777,15 +777,22 @@ impl<'a, 'p> Program<'a, 'p> {
     }
 
     /// Whether `global` is a parameter or local of a QuakeC function: a global in its locals
-    /// that is not the definition of the QuakeC function of its name, as a state's
-    /// `[frame, next]` declares `next` while the body is compiled (QC-13.9).
+    /// that is not the definition of a QuakeC function of its name, as a state's
+    /// `[frame, next]` declares `next` while the body is compiled (QC-13.9), and as
+    /// `qc-codegen` gives an `ArrayGet*NAME` made inside a body its slot among the body's
+    /// locals; several functions may share the name, one for each `for` statement that
+    /// subscripts a local array (FTEF-19.78), so the slot's own function is the one looked at
+    /// (DIFF-12.11).
     fn is_local(&self, (name, def_type, ofs): &Global) -> bool {
         let declares_function = *def_type == DefType::Known(Etype::Function)
-            && self.functions.get(name).is_some_and(|index| {
-                self.progs
-                    .globals()
-                    .get(*ofs)
-                    .is_some_and(|slot| u32::try_from(*index) == Ok(slot.bits()))
+            && self.progs.globals().get(*ofs).is_some_and(|slot| {
+                usize::try_from(slot.bits())
+                    .ok()
+                    .and_then(|index| self.progs.functions().get(index))
+                    .is_some_and(|function| {
+                        function.first_statement > 0
+                            && self.progs.string(function.s_name) == Some(name.as_slice())
+                    })
             });
         !declares_function
             && self
