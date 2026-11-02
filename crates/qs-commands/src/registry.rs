@@ -113,7 +113,7 @@ pub(crate) struct Entry<C> {
 
 /// Every command a session can run, keyed by id (PRIN-3).
 ///
-/// A new registry holds the built-in commands ([`crate::BUILTIN_IDS`]); [`Registry::register`]
+/// A new registry holds the built-in commands (`BUILTIN_IDS`); [`Registry::register`]
 /// adds the rest. Listing is in id order, so the generated reference and `commands.list` are
 /// stable.
 pub struct Registry<C> {

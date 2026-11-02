@@ -143,12 +143,10 @@ fn qs_sim::world::World::take_set_angle
 fn qs_sim::world::World::take_sounds
 fn qs_sim::world::World::time
 impl qs_sim::builtins::SimBuiltins: Builtins
-impl qs_sim::builtins::SimCall: Host
 impl qs_sim::collision::CollisionError: core::error::Error
 impl qs_sim::collision::CollisionError: core::fmt::Display
 impl qs_sim::spawn::SpawnError: core::error::Error
 impl qs_sim::spawn::SpawnError: core::fmt::Display
-impl qs_sim::world::Spawner: SpawnHost
 impl qs_sim::world::WorldError: core::error::Error
 impl qs_sim::world::WorldError: core::fmt::Display
 mod qs_sim::collision

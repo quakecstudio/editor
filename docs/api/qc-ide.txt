@@ -64,7 +64,6 @@ fn qc_ide::rename::AnalysisHost::rename
 fn qc_ide::rename::Caution::name
 fn qc_ide::symbols::AnalysisHost::document_symbols
 fn qc_ide::symbols::AnalysisHost::workspace_symbols
-impl qc_ide::host::OverlayLoader: Loader
 impl qc_ide::rename::Caution: fmt::Display
 impl qc_ide::rename::RenameError: fmt::Display
 impl qc_ide::rename::RenameError: std::error::Error

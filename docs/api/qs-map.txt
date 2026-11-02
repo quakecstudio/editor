@@ -124,17 +124,13 @@ fn qs_map::qbsp::is_special
 fn qs_map::qbsp::load_map_file
 impl qs_map::check::DiagnosticKind: fmt::Display
 impl qs_map::document::Entity: Default
-impl qs_map::document::MapError: From
+impl qs_map::document::MapError: From<LexError>
 impl qs_map::document::MapError: core::error::Error
 impl qs_map::document::MapError: fmt::Display
 impl qs_map::document::MapFile: Default
-impl qs_map::geometry::f32: MapFloat
-impl qs_map::geometry::f64: MapFloat
-impl qs_map::geometry::sealed::f32: Sealed
-impl qs_map::geometry::sealed::f64: Sealed
 impl qs_map::lexer::LexError: core::error::Error
 impl qs_map::lexer::LexError: fmt::Display
-impl qs_map::qbsp::QbspError: From
+impl qs_map::qbsp::QbspError: From<LexError>
 impl qs_map::qbsp::QbspError: core::error::Error
 impl qs_map::qbsp::QbspError: fmt::Display
 impl qs_map::qbsp::QbspWarning: fmt::Display

@@ -60,7 +60,8 @@ impl qc_vm::error::RunError: core::error::Error
 impl qc_vm::error::RunError: fmt::Display
 impl qc_vm::exec::NoObserver: Observer
 impl qc_vm::machine::Machine: Clone
-impl qc_vm::machine::MachineError: From
+impl qc_vm::machine::MachineError: From<LayoutError>
+impl qc_vm::machine::MachineError: From<qc_edict::EdictError>
 impl qc_vm::machine::MachineError: core::error::Error
 impl qc_vm::machine::MachineError: core::fmt::Display
 impl qc_vm::trace::Trace: Observer

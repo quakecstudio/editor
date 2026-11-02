@@ -24,7 +24,7 @@ fn qc_engines::Engine::name
 fn qc_engines::check::BuiltinRef::lookup
 fn qc_engines::check::declared_builtins
 fn qc_engines::check::missing_builtins
-impl qc_engines::Builtin: From
+impl qc_engines::Builtin: From<qc_builtins::Builtin>
 mod qc_engines::check
 struct qc_engines::Builtin
 struct qc_engines::Source

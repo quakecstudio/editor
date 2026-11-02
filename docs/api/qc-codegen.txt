@@ -16,8 +16,6 @@ field qc_codegen::precache::Precaches.models
 field qc_codegen::precache::Precaches.sounds
 fn qc_codegen::compile
 fn qc_codegen::compile_module
-impl qc_codegen::compile::Option: At
-impl qc_codegen::compile::Result: At
 struct qc_codegen::Compiled
 struct qc_codegen::Options
 struct qc_codegen::Unit

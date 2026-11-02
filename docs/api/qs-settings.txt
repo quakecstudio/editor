@@ -26,12 +26,6 @@ fn qs_settings::SettingsStore::value
 fn qs_settings::commands::HasSettings::settings
 fn qs_settings::commands::register
 fn qs_settings::reference
-impl qs_settings::commands::Change: UndoStep
-impl qs_settings::commands::Get: Command
-impl qs_settings::commands::List: Command
-impl qs_settings::commands::Reset: Command
-impl qs_settings::commands::Set: Command
-impl qs_settings::commands::SettingsStore: HasSettings
 impl qs_settings::error::SettingsError: Error
 impl qs_settings::error::SettingsError: fmt::Display
 struct qs_settings::Appearance

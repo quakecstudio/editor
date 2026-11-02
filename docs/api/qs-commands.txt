@@ -47,14 +47,13 @@ impl qs_commands::error::CommandError: Error
 impl qs_commands::error::CommandError: fmt::Display
 impl qs_commands::error::RegisterError: Error
 impl qs_commands::error::RegisterError: fmt::Display
-impl qs_commands::id::CommandId: Borrow
+impl qs_commands::id::CommandId: Borrow<str>
 impl qs_commands::id::CommandId: fmt::Display
 impl qs_commands::id::IdError: fmt::Display
 impl qs_commands::id::IdError: std::error::Error
 impl qs_commands::params::ParamError: fmt::Display
 impl qs_commands::params::ParamError: std::error::Error
 impl qs_commands::registry::Registry: Default
-impl qs_commands::registry::T: ErasedCommand
 mod qs_commands::palette
 mod qs_commands::params
 struct qs_commands::command::NoParams

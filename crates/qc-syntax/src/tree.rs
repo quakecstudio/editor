@@ -222,7 +222,7 @@ struct NodeData {
     offset: usize,
 }
 
-/// A node of the tree with its position: a cursor over a [`GreenNode`].
+/// A node of the tree with its position: a cursor over a `GreenNode`.
 #[derive(Clone)]
 pub struct SyntaxNode(Rc<NodeData>);
 

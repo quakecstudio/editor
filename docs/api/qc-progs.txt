@@ -161,14 +161,7 @@ impl qc_progs::read::TableIter: ExactSizeIterator
 impl qc_progs::read::TableIter: Iterator
 impl qc_progs::records::Def: Record
 impl qc_progs::records::Function: Record
-impl qc_progs::records::Slot: Record
 impl qc_progs::records::Statement: Record
-impl qc_progs::records::i32: Record
-impl qc_progs::records::sealed::i32: Sealed
-impl qc_progs::records::sealed::qc_types::Slot: Sealed
-impl qc_progs::records::sealed::super::Def: Sealed
-impl qc_progs::records::sealed::super::Function: Sealed
-impl qc_progs::records::sealed::super::Statement: Sealed
 impl qc_progs::write::ProgsFile: Default
 impl qc_progs::write::WriteError: core::error::Error
 impl qc_progs::write::WriteError: fmt::Display

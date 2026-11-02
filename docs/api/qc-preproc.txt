@@ -145,9 +145,6 @@ fn qc_preproc::source::SourceMap::file
 fn qc_preproc::source::SourceMap::files
 fn qc_preproc::source::SourceMap::line
 fn qc_preproc::source::SourceMap::text
-impl qc_preproc::FrameMacros: Default
-impl qc_preproc::Guard: Default
-impl qc_preproc::HideNode: Drop
 impl qc_preproc::compiler_flags::CompilerFlags: Default
 impl qc_preproc::cond::CondStack: Default
 impl qc_preproc::fte_keywords::Keywords: Default

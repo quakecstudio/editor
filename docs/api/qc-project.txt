@@ -53,7 +53,6 @@ impl qc_project::ProjectError: fmt::Display
 impl qc_project::ProjectError: std::error::Error
 impl qc_project::manifest::ManifestError: fmt::Display
 impl qc_project::manifest::ManifestError: std::error::Error
-impl qc_project::qc_lexer::Dialect: From
 struct qc_project::Module
 struct qc_project::Project
 struct qc_project::graph::Define

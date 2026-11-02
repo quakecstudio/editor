@@ -17,8 +17,6 @@ fn qs_log::panic::install_panic_hook
 fn qs_log::subscriber
 impl qs_log::LogError: fmt::Display
 impl qs_log::LogError: std::error::Error
-impl qs_log::layer::Fields: Visit
-impl qs_log::layer::FileLayer: Layer
 impl qs_log::redact::SourceText: fmt::Debug
 impl qs_log::redact::SourceText: fmt::Display
 struct qs_log::LogConfig

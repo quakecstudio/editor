@@ -466,7 +466,7 @@ pub fn lex(source: &[u8]) -> Lexed {
 ///
 /// With [`Dialect::Vanilla`] the output is byte for byte what [`lex`] produces. A dialect
 /// with FTEQCC extensions ([`Dialect::has_fteqcc_extensions`]) also lexes the FTEQCC
-/// punctuation of [`Punct::FTEQCC_TABLE`] (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-5 to
+/// punctuation of `Punct::FTEQCC_TABLE` (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-5 to
 /// FTE-8, FTE-19.1), a number that starts with `.` or ends with an `f` suffix (FTE-20.1,
 /// FTE-20.2), and the further string escapes of FTE-20.4; and the full dialect's tokens of
 /// `docs/spec/dialect-fteqcc.md`: `::`, line continuations, character constants and
@@ -1745,7 +1745,7 @@ impl Lexer<'_> {
     /// Punctuation (QC-7.1), or an unknown byte (QC-7.2), which is skipped.
     ///
     /// In an FTEQCC dialect the punctuation is FTEQCC's table in its order
-    /// ([`Punct::FTEQCC_TABLE`], FTEF-13.24), so `++`, `+=` and the rest win the longest match
+    /// (`Punct::FTEQCC_TABLE`, FTEF-13.24), so `++`, `+=` and the rest win the longest match
     /// over `+`, `-`, `*` and `/` (FTE-5 to FTE-8).
     fn punctuation(&mut self) {
         let start = self.pos;

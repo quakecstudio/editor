@@ -8,7 +8,7 @@
 //! recursive descent over the grammar of id's `qcc` (`docs/spec/language.md`, QC-10 to
 //! QC-15), and it never fails: an error becomes a diagnostic and an error node, and parsing
 //! resumes at the next statement or declaration (QCD-1.4). The tree is in the two layers of
-//! rust-analyzer's `rowan` ([`GreenNode`], [`SyntaxNode`]), with a typed view in [`ast`].
+//! rust-analyzer's `rowan` (`GreenNode`, [`SyntaxNode`]), with a typed view in [`ast`].
 //!
 //! The tree is of the file as written: macros are not expanded and both sides of a
 //! conditional are parsed. Directive lines (QC-9.1; under an FTEQCC dialect FTEF-14.51) and

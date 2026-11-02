@@ -36,7 +36,13 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
         [] => {
             let dir = root.join(DIR);
             fs::create_dir_all(&dir).map_err(|e| format!("{DIR}: {e}"))?;
-            for krate in library_crates(root)? {
+            let crates = library_crates(root)?;
+            for stale in stale_lists(root, &crates)? {
+                let path = dir.join(&stale);
+                fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+                eprintln!("api: removed {DIR}/{stale}");
+            }
+            for krate in crates {
                 let path = dir.join(format!("{}.txt", krate.name));
                 fs::write(&path, krate.listing()?)
                     .map_err(|e| format!("{}: {e}", path.display()))?;
@@ -49,10 +55,18 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     }
 }
 
-/// Checks that each library crate's list in `docs/api/` is what its source gives.
+/// Checks that each library crate's list in `docs/api/` is what its source gives, and that
+/// no list is left for a crate that is no library crate any more.
 pub(crate) fn check(root: &Path) -> Result<Report, String> {
     let mut report = Report::default();
-    for krate in library_crates(root)? {
+    let crates = library_crates(root)?;
+    for stale in stale_lists(root, &crates)? {
+        report.record(
+            false,
+            format!("{DIR}/{stale} lists no library crate; run cargo xtask api"),
+        );
+    }
+    for krate in crates {
         let file = format!("{DIR}/{}.txt", krate.name);
         let current = fs::read_to_string(root.join(&file)).unwrap_or_default();
         let listing = krate.listing()?;
@@ -67,6 +81,27 @@ pub(crate) fn check(root: &Path) -> Result<Report, String> {
         );
     }
     Ok(report)
+}
+
+/// The files in `docs/api/` that list no crate in `crates`.
+fn stale_lists(root: &Path, crates: &[Crate]) -> Result<Vec<String>, String> {
+    let dir = root.join(DIR);
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return Ok(Vec::new());
+    };
+    let mut stale = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("{DIR}: {e}"))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let listed = name
+            .strip_suffix(".txt")
+            .is_some_and(|stem| crates.iter().any(|c| c.name == stem));
+        if !listed {
+            stale.push(name);
+        }
+    }
+    stale.sort();
+    Ok(stale)
 }
 
 /// A library crate: its name and the directory its `Cargo.toml` is in.
@@ -100,6 +135,20 @@ impl Crate {
         let lib = self.dir.join("src").join("lib.rs");
         let mut items = BTreeSet::new();
         read_module(&lib, &root_name, &mut items)?;
+        // An `impl` counts only on a type the crate itself makes public.
+        let types: BTreeSet<String> = items
+            .iter()
+            .filter_map(|item| {
+                item.split_once(' ')
+                    .filter(|(kind, _)| matches!(*kind, "struct" | "enum" | "type" | "union"))
+                    .map(|(_, path)| path.to_owned())
+            })
+            .collect();
+        items.retain(|item| {
+            item.strip_prefix("impl ")
+                .and_then(|rest| rest.split_once(": "))
+                .is_none_or(|(self_type, _)| types.contains(self_type))
+        });
         let mut out = String::new();
         for item in items {
             out.push_str(&item);
@@ -129,18 +178,19 @@ fn read_module(file: &Path, path: &str, items: &mut BTreeSet<String>) -> Result<
         path: path.to_owned(),
         items,
         pending: Vec::new(),
+        dir: own_dir,
     };
     visitor.items_of(&parsed.items);
-    for (name, module_path) in visitor.pending {
+    for (dir, name, module_path) in visitor.pending {
         let candidates = [
-            own_dir.join(format!("{name}.rs")),
-            own_dir.join(&name).join("mod.rs"),
+            dir.join(format!("{name}.rs")),
+            dir.join(&name).join("mod.rs"),
         ];
         let Some(child) = candidates.iter().find(|c| c.is_file()) else {
             return Err(format!(
                 "{}: module {name} has no file under {}",
                 file.display(),
-                own_dir.display()
+                dir.display()
             ));
         };
         read_module(child, &module_path, items)?;
@@ -153,17 +203,24 @@ struct Items<'a> {
     /// The module's path from the crate root.
     path: String,
     items: &'a mut BTreeSet<String>,
-    /// Out-of-line `mod` declarations to read: the module's name and path.
-    pending: Vec<(String, String)>,
+    /// Out-of-line `mod` declarations to read: the directory the file is looked for in, the
+    /// module's name and its path.
+    pending: Vec<(PathBuf, String, String)>,
+    /// The directory an out-of-line module declared here is looked for in.
+    dir: PathBuf,
 }
 
-/// Whether an attribute list carries `#[cfg(test)]`.
+/// Whether an attribute list carries a `#[cfg(...)]` whose predicate names `test`:
+/// `#[cfg(test)]`, `#[cfg(all(test))]` or `#[cfg(any(test, feature = "x"))]`.
 fn is_test(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|attr| {
         attr.path().is_ident("cfg")
-            && attr
-                .parse_args::<syn::Ident>()
-                .is_ok_and(|ident| ident == "test")
+            && attr.meta.require_list().is_ok_and(|list| {
+                list.tokens
+                    .to_string()
+                    .split(|c: char| !c.is_alphanumeric() && c != '_')
+                    .any(|word| word == "test")
+            })
     })
 }
 
@@ -200,12 +257,13 @@ impl Items<'_> {
                             path: module_path,
                             items: self.items,
                             pending: Vec::new(),
+                            dir: self.dir.join(&name),
                         };
                         inner.items_of(content);
                         let pending = inner.pending;
                         self.pending.extend(pending);
                     }
-                    None => self.pending.push((name, module_path)),
+                    None => self.pending.push((self.dir.clone(), name, module_path)),
                 }
             }
             Item::Struct(s) if is_pub(&s.vis) && !is_test(&s.attrs) => {
@@ -250,9 +308,15 @@ impl Items<'_> {
                     }
                 }
             }
-            Item::Type(t) if is_pub(&t.vis) => self.add("type", &t.ident.to_string()),
-            Item::Const(c) if is_pub(&c.vis) => self.add("const", &c.ident.to_string()),
-            Item::Static(s) if is_pub(&s.vis) => self.add("static", &s.ident.to_string()),
+            Item::Type(t) if is_pub(&t.vis) && !is_test(&t.attrs) => {
+                self.add("type", &t.ident.to_string());
+            }
+            Item::Const(c) if is_pub(&c.vis) && !is_test(&c.attrs) => {
+                self.add("const", &c.ident.to_string());
+            }
+            Item::Static(s) if is_pub(&s.vis) && !is_test(&s.attrs) => {
+                self.add("static", &s.ident.to_string());
+            }
             Item::Macro(m) if m.attrs.iter().any(|a| a.path().is_ident("macro_export")) => {
                 if let Some(ident) = &m.ident {
                     self.add("macro", &ident.to_string());
@@ -341,10 +405,17 @@ impl ReExports<'_> {
     }
 }
 
-/// The last segment of a type path, with its generics dropped: `Vec<T>` is `Vec`.
+/// A type's path with its generics dropped, `Vec<T>` is `Vec` and `Bsp<'a>` is `Bsp`, so a
+/// method or an implementation keys on the type itself.
 fn type_name(ty: &syn::Type) -> String {
     match ty {
-        syn::Type::Path(p) => path_name(&p.path),
+        syn::Type::Path(p) => p
+            .path
+            .segments
+            .iter()
+            .map(|s| s.ident.to_string())
+            .collect::<Vec<_>>()
+            .join("::"),
         syn::Type::Reference(r) => type_name(&r.elem),
         syn::Type::Tuple(t) => format!(
             "({})",
@@ -356,11 +427,26 @@ fn type_name(ty: &syn::Type) -> String {
     }
 }
 
-/// A path's segments with their generics dropped: `std::fmt::Display` stays, `Foo<T>` is `Foo`.
+/// A path's segments, each with its type arguments: `std::fmt::Display` stays, `From<Foo>`
+/// keeps its `Foo` so two implementations of one generic trait stay two lines.
 fn path_name(path: &syn::Path) -> String {
     path.segments
         .iter()
-        .map(|s| s.ident.to_string())
+        .map(|s| match &s.arguments {
+            syn::PathArguments::None | syn::PathArguments::Parenthesized(_) => s.ident.to_string(),
+            syn::PathArguments::AngleBracketed(args) => {
+                let inner: Vec<String> = args
+                    .args
+                    .iter()
+                    .map(|arg| match arg {
+                        syn::GenericArgument::Type(ty) => type_name(ty),
+                        syn::GenericArgument::Lifetime(l) => format!("'{}", l.ident),
+                        _ => "_".to_owned(),
+                    })
+                    .collect();
+                format!("{}<{}>", s.ident, inner.join(", "))
+            }
+        })
         .collect::<Vec<_>>()
         .join("::")
 }
@@ -396,8 +482,13 @@ mod tests {
                           pub struct S { pub a: u32, b: u32 }\npub enum E { A, B(u8) }\n\
                           impl S { pub fn new() -> Self { S { a: 0, b: 0 } } fn secret() {} }\n\
                           impl Clone for S { fn clone(&self) -> Self { S { a: 0, b: 0 } } }\n\
+                          impl From<u8> for S { fn from(_: u8) -> Self { S::new() } }\n\
+                          impl From<u16> for S { fn from(_: u16) -> Self { S::new() } }\n\
+                          struct P;\nimpl Default for P { fn default() -> Self { P } }\n\
                           pub trait T { fn t(&self); type Out; }\npub type A = u32;\n\
                           pub(crate) fn crate_only() {}\npub fn free() {}\n\
+                          #[cfg(any(test, feature = \"x\"))]\npub const N: u32 = 1;\n\
+                          pub mod outer { pub mod deep; }\n\
                           #[cfg(test)]\nmod tests { pub fn in_test() {} }\n";
 
     // P2-154: the list has every public item of every module the root reaches, by kind, and
@@ -413,6 +504,8 @@ mod tests {
         )
         .unwrap();
         fs::write(src.join("private.rs"), "pub struct Hidden(pub u8);\n").unwrap();
+        fs::create_dir_all(src.join("outer")).unwrap();
+        fs::write(src.join("outer").join("deep.rs"), "pub fn bottom() {}\n").unwrap();
         assert!(main(&dir, &[]).unwrap());
         let listing = fs::read_to_string(dir.join(DIR).join("lib.txt")).unwrap();
         let expected = "\
@@ -423,8 +516,13 @@ mod tests {
             fn lib::T::t\n\
             fn lib::free\n\
             fn lib::inner::deep\n\
+            fn lib::outer::deep::bottom\n\
             impl lib::S: Clone\n\
+            impl lib::S: From<u16>\n\
+            impl lib::S: From<u8>\n\
             mod lib::inner\n\
+            mod lib::outer\n\
+            mod lib::outer::deep\n\
             struct lib::S\n\
             struct lib::private::Hidden\n\
             trait lib::T\n\
@@ -452,6 +550,26 @@ mod tests {
         assert!(report.problems[0].contains("docs/api/lib.txt differs"));
         assert!(main(&dir, &["--check".to_owned()]).is_ok());
         assert!(main(&dir, &["--other".to_owned()]).is_err());
+    }
+
+    // P2-154: a list left for a crate that is no library crate fails the check, and the
+    // write removes it
+    #[test]
+    fn a_stale_list_fails_the_check_and_is_removed() {
+        let dir = fresh_dir("api-stale");
+        workspace(&dir, "pub fn one() {}\n");
+        assert!(main(&dir, &[]).unwrap());
+        fs::write(dir.join(DIR).join("gone.txt"), "fn gone::f\n").unwrap();
+        let report = check(&dir).unwrap();
+        assert!(
+            report
+                .problems
+                .iter()
+                .any(|p| p.contains("docs/api/gone.txt lists no library crate"))
+        );
+        assert!(main(&dir, &[]).unwrap());
+        assert!(!dir.join(DIR).join("gone.txt").exists());
+        assert!(check(&dir).unwrap().problems.is_empty());
     }
 
     // P2-154: a module declaration with no file is an error, not a silent gap

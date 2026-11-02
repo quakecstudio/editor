@@ -76,18 +76,7 @@ fn qs_workbench::editing::Workbench::text
 fn qs_workbench::editing::Workbench::update
 impl qs_workbench::WorkbenchError: Error
 impl qs_workbench::WorkbenchError: fmt::Display
-impl qs_workbench::commands::CandidateKind: From
-impl qs_workbench::commands::Complete: Command
-impl qs_workbench::commands::Definition: Command
-impl qs_workbench::commands::HoverCommand: Command
-impl qs_workbench::commands::OpenFileCommand: Command
-impl qs_workbench::commands::OpenProject: Command
-impl qs_workbench::commands::References: Command
-impl qs_workbench::commands::RenameCommand: Command
-impl qs_workbench::commands::RenameStep: UndoStep
-impl qs_workbench::commands::SaveFile: Command
-impl qs_workbench::commands::UpdateFile: Command
-impl qs_workbench::commands::Workbench: HasWorkbench
+impl qs_workbench::commands::CandidateKind: From<DefKind>
 struct qs_workbench::Location
 struct qs_workbench::OpenFile
 struct qs_workbench::Problem

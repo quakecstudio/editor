@@ -38,7 +38,6 @@ fn qc_edict::system::global_by_name
 impl qc_edict::layout::LayoutError: core::error::Error
 impl qc_edict::layout::LayoutError: fmt::Display
 impl qc_edict::number::EdictNumber: fmt::Display
-impl qc_edict::store::Edict: Clone
 impl qc_edict::store::EdictError: core::error::Error
 impl qc_edict::store::EdictError: fmt::Display
 impl qc_edict::store::EdictStore: Clone

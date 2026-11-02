@@ -19,14 +19,10 @@ fn qs_layout::Layout::read
 fn qs_layout::Layout::write
 fn qs_layout::layout_path
 fn qs_layout::register
-impl qs_layout::BadPanelSize: Error
-impl qs_layout::BadPanelSize: fmt::Display
 impl qs_layout::Layout: Default
 impl qs_layout::Layout: HasLayout
 impl qs_layout::LayoutError: Error
 impl qs_layout::LayoutError: fmt::Display
-impl qs_layout::ResizePanel: Command
-impl qs_layout::TogglePanel: Command
 struct qs_layout::Layout
 struct qs_layout::PanelState
 struct qs_layout::ResizePanelParams

@@ -6,7 +6,7 @@
 - **Tool:** `cargo xtask api` lists every public item of each crate in `docs/api/<crate>.txt`;
   `cargo xtask api --check` in `cargo xtask ci` fails when a list differs from the source
 
-Every library crate in layers `L0` to `L5` of `layers.toml` (34 crates; the `tests` and
+Every library crate in layers `L0` to `L5` of `layers.toml` (32 crates; the `tests` and
 `tooling` layers and `apps` excluded) had its public items listed by `cargo xtask api` and each
 item's dependents found by name over every other workspace crate's source (`crates/*`,
 `apps/*`, `xtask`, `fuzz`, their tests included). An item with a dependent is kept public. An
@@ -35,7 +35,6 @@ keeps, and no public constructor that forges an ID the crate hands out.
 
 | Field or constructor | Disposition |
 | --- | --- |
-
 | `qc-edict` `qc_edict::system::SysVar.slot: usize` | kept public: a slot of the system table (EDICT-*), a constant of the spec, not a handle the store hands out |
 | `qc-preproc` `qc_preproc::Expansion.parent: Option<ExpansionId>` | the struct is now `pub(crate)` |
 | `qc-preproc` `qc_preproc::PpToken.expansion: Option<ExpansionId>` | kept public and read-only in effect: an `ExpansionId` has a private field and no public constructor, so a dependent can copy one from a token but not make one; the preprocessor never reads an id back from a dependent |
@@ -64,6 +63,7 @@ keeps, and no public constructor that forges an ID the crate hands out.
 | `qs-workbench` `qs_workbench::commands::Place.start: usize` | kept public: a byte offset or count the command carries, checked by the workbench where it reads it |
 | `qs-workbench` `qs_workbench::commands::ProjectOpened.files: usize` | kept public: a byte offset or count the command carries, checked by the workbench where it reads it |
 | `qs-workbench` `qs_workbench::commands::RenameParams.offset: usize` | kept public: a byte offset or count the command carries, checked by the workbench where it reads it |
+| `qc_edict::EdictNumber::new(index: usize)` | kept public: an edict number is an index into the store the dependent itself built from the progs, and every store method answers `None` or an error for a number outside it (EDICT-*); qc-builtins, qc-vm, qs-sim and the differential make them from the engine's own counts |
 | `qc_sema::FileId::new`, `qc_preproc::source::FileId` | kept public: the file id is a key the dependent chooses when it gives the `Db` a file (`set_file`), not an id the crate hands out; a lookup of an unknown id answers `None` |
 | `qs_commands::CommandId::new` | kept public: an id is a name the dependent registers, validated by `IdError` |
 | `qc_lexer::LineIndex::new` | kept public: built from the dependent's own text |
@@ -74,7 +74,6 @@ keeps, and no public constructor that forges an ID the crate hands out.
 
 | Crate | Policy for an item no dependent names |
 | --- | --- |
-
 | `qc-builtins` (L1) | kept public: the builtins and the mock engine the differentials drive (BUILTIN-*) |
 | `qc-diag` (L0) | kept public: the diagnostic vocabulary every language crate and the IDE share |
 | `qc-edict` (L1) | kept public: the edict store the VM and the preview host share (EDICT-*) |

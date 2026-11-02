@@ -47,7 +47,6 @@ fn qs_install::known::identify
 fn qs_install::known::size_and_md5
 fn qs_install::link::link_dir
 fn qs_install::registry::Registry::string
-impl qs_install::StdFs: InstallFs
 impl qs_install::link::LinkError: fmt::Display
 impl qs_install::link::LinkError: std::error::Error
 impl qs_install::registry::SystemRegistry: Registry

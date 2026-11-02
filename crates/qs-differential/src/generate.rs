@@ -78,7 +78,7 @@ const FRAMES: u32 = 4;
 pub struct Generated {
     /// The progs.dat bytes, a version 6 file both VMs accept (PROGS-2 to PROGS-13).
     pub progs: Vec<u8>,
-    /// The scenario that runs it: [`FRAMES`] server frames, each calling `StartFrame`
+    /// The scenario that runs it: `FRAMES` server frames, each calling `StartFrame`
     /// (DIFF-2, DIFF-5).
     pub scenario: Scenario,
 }

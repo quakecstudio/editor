@@ -91,8 +91,8 @@ fn qc_builtins::mock::Rng::next_rand
 fn qc_builtins::table::lookup
 impl qc_builtins::dispatch::MockBuiltins: Builtins
 impl qc_builtins::dispatch::MockBuiltins: Default
-impl qc_builtins::dispatch::ParmArgs: printf::Args
-impl qc_builtins::error::BuiltinError: From
+impl qc_builtins::error::BuiltinError: From<FatalError>
+impl qc_builtins::error::BuiltinError: From<RuntimeError>
 impl qc_builtins::error::BuiltinError: core::error::Error
 impl qc_builtins::error::BuiltinError: fmt::Display
 impl qc_builtins::error::FatalError: fmt::Display

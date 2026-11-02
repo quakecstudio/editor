@@ -27,7 +27,7 @@ use qc_vm::{Builtins, Context, Machine, Observer, RunError};
 ///
 /// Created after the progs is loaded and before the first run (TRACE-1.3), then passed to
 /// every [`Machine::execute_program`](qc_vm::Machine::execute_program) call as the observer,
-/// inside a [`StringObserver`]. The host calls [`TraceBuilder::string_set`] for each engine
+/// inside a `StringObserver`. The host calls [`TraceBuilder::string_set`] for each engine
 /// string whose text is set, by the host or by a builtin (DIFF-3.9), and
 /// [`TraceBuilder::host_error`] for a host error outside a run. [`TraceBuilder::finish`]
 /// returns the header and records.
@@ -47,7 +47,7 @@ pub struct TraceBuilder {
 /// The `ftos`/`vtos` buffer's new value and text after a builtin call, waiting for the observer
 /// to record it before the `CALL`'s step record (TRACE-4.10, DIFF-3.9).
 ///
-/// [`StringBuiltins`] sets it after each builtin call and [`StringObserver`] takes it before
+/// [`StringBuiltins`] sets it after each builtin call and `StringObserver` takes it before
 /// each record; the VM holds the two as separate borrows, so they share it. No mock builtin
 /// starts a nested run, so a builtin call is always followed by its own step record.
 pub(crate) type StringQueue = Cell<Option<(i32, Vec<u8>)>>;

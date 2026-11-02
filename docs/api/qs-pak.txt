@@ -27,7 +27,7 @@ fn qs_pak::Pak::is_modified
 fn qs_pak::Pak::read
 fn qs_pak::Pak::read_entry
 fn qs_pak::Pak::read_from
-impl qs_pak::PakError: From
+impl qs_pak::PakError: From<io::Error>
 impl qs_pak::PakError: core::error::Error
 impl qs_pak::PakError: fmt::Display
 struct qs_pak::Entry

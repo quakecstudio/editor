@@ -88,12 +88,12 @@ pub(crate) struct Expansion {
     pub parent: Option<ExpansionId>,
 }
 
-/// Index of an [`Expansion`] in [`Preprocessor::expansions`].
+/// Index of an `Expansion` in `Preprocessor::expansions`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ExpansionId(usize);
 
 impl ExpansionId {
-    /// The id of the expansion at `index` in [`Preprocessor::expansions`].
+    /// The id of the expansion at `index` in `Preprocessor::expansions`.
     pub(crate) const fn new(index: usize) -> Self {
         Self(index)
     }

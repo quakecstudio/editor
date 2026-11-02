@@ -5,8 +5,8 @@
 //!
 //! The model is Zed's and VS Code's: a setting has a default, the user's file may set it, and a
 //! project's file may set it again for that project, which wins. The user's file is
-//! `settings.toml` in the app's config directory ([`user_settings_path`], from `qs-paths`); a
-//! project's is `.quakec-studio/settings.toml` in its directory ([`project_settings_path`]).
+//! `settings.toml` in the app's config directory (`user_settings_path`, from `qs-paths`); a
+//! project's is `.quakec-studio/settings.toml` in its directory (`project_settings_path`).
 //! Every setting is a [`Setting`], documented in `docs/settings.md`, which [`reference`]
 //! writes, and changeable by the commands of [`register`].
 

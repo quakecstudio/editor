@@ -14,7 +14,7 @@ pub(crate) const MAX_ID_LEN: usize = 128;
 /// A command's stable id, such as `edit.undo` or `compile`.
 ///
 /// One or more segments joined by `.`; each segment is a lowercase ASCII letter followed by
-/// lowercase ASCII letters, digits and `_`; at most [`MAX_ID_LEN`] bytes in all. Every such id
+/// lowercase ASCII letters, digits and `_`; at most `MAX_ID_LEN` bytes in all. Every such id
 /// is also a valid MCP tool name, so the agent and MCP surfaces can use it unchanged.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
@@ -81,7 +81,7 @@ impl Borrow<str> for CommandId {
 pub enum IdError {
     /// The text is empty.
     Empty,
-    /// The text is longer than [`MAX_ID_LEN`] bytes.
+    /// The text is longer than `MAX_ID_LEN` bytes.
     TooLong {
         /// Its length in bytes.
         len: usize,

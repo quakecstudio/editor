@@ -105,7 +105,7 @@ pub(crate) fn builtin_call(
     }
 }
 
-/// FTEF-32.14: [`builtin_call`] for a compiler, each argument the first word of its constant,
+/// FTEF-32.14: `builtin_call` for a compiler, each argument the first word of its constant,
 /// if it is one; the float the call folds to, or `None` when the call is made.
 #[must_use]
 pub fn fold_builtin_call(name: &str, words: &[Option<u32>], floats: bool) -> Option<f32> {

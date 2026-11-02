@@ -2,7 +2,7 @@
 
 //! Checks that the parser's error recovery is local (LANG-2).
 //!
-//! [`check_deletions`] deletes each token of a file in turn, parses what is left and checks
+//! `check_deletions` deletes each token of a file in turn, parses what is left and checks
 //! that the damage stays where the token was: the tree still gives back the text, every
 //! declaration before the one that lost the token parses as before, every declaration from
 //! two after it onwards parses as before, and every error is between them. The tests run it
@@ -14,7 +14,7 @@ use std::fmt;
 use crate::ast::{AstNode as _, SourceFile};
 use crate::{Code, Dialect, GreenNode, Parse, Span, SyntaxKind, SyntaxNode, parse_with};
 
-/// What [`check_deletions`] found.
+/// What `check_deletions` found.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DeletionReport {
     /// How many deletions were tried.

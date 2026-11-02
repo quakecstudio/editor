@@ -50,7 +50,6 @@ fn qc_trace::json::to_json
 impl qc_trace::JsonFault: fmt::Display
 impl qc_trace::TraceError: fmt::Display
 impl qc_trace::TraceError: std::error::Error
-impl qc_trace::json::LineError: From
 struct qc_trace::Changes
 struct qc_trace::FieldChange
 struct qc_trace::GlobalChange

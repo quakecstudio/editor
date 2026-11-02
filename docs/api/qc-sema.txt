@@ -137,12 +137,9 @@ fn qc_sema::symbol::FileId::new
 fn qc_sema::ty::SimpleType::as_str
 fn qc_sema::ty::Type::function
 fn qc_sema::ty::Type::named
-impl qc_sema::expand::DbLoader: Loader
-impl qc_sema::resolve::check_env::BodyEnv: Env
 impl qc_sema::ty::ParamLabels: Eq
 impl qc_sema::ty::ParamLabels: PartialEq
 impl qc_sema::ty::ParamLabels: std::hash::Hash
-impl qc_sema::ty::TypeContext: Default
 mod qc_sema::cast
 mod qc_sema::db
 mod qc_sema::expand
