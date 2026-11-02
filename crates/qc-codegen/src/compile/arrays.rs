@@ -201,11 +201,22 @@ impl Compiler<'_> {
         let temp = self.program.allocate(size).at(span)?;
         for w in 0..size {
             let arg = if w == 0 {
-                words
+                // The index is read again for the next words (its refcount is above 1 in
+                // FTEQCC), so its store is not folded into the statement that made it.
+                let to = OFS_PARM0;
+                self.program.emit(
+                    Opcode::StoreF,
+                    operand(words).at(span)?,
+                    operand(to).at(span)?,
+                );
+                None
             } else {
-                self.float_op(Opcode::AddF, words, w, span)?
+                Some(self.float_op(Opcode::AddF, words, w, span)?)
             };
-            let word = self.call1(getter, arg, ValueType::simple(Etype::Float), span)?;
+            let word = match arg {
+                Some(arg) => self.call1(getter, arg, ValueType::simple(Etype::Float), span)?,
+                None => self.call_stored(getter, ValueType::simple(Etype::Float), span)?,
+            };
             let to = temp.checked_add(w).at(span)?;
             let from = self.operand_of(&word);
             self.program.emit(
@@ -351,6 +362,15 @@ impl Compiler<'_> {
             .immediate(&Literal::Float(f32_of(n).at(span)?))
             .at(span)?;
         Ok(self.program.def(place).at(span)?.ofs)
+    }
+
+    /// `CALL1` of the function at `function` with its argument already in the first slot, the
+    /// value the return global as `ret`.
+    fn call_stored(&mut self, function: usize, ret: ValueType, span: Span) -> Lowered<Value> {
+        let ofs = self.program.def(function).at(span)?.ofs;
+        self.clobber_aliases(span)?;
+        self.program.emit(Opcode::Call1, operand(ofs).at(span)?, 0);
+        Ok(self.alias(ret))
     }
 
     /// `QCC_PR_GenerateFunctionCall1`: the argument at `arg` stored to the first parameter by

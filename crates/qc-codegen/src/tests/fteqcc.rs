@@ -162,17 +162,21 @@ fn a_struct_elements_words_are_read_one_at_a_time() {
     assert_eq!(t[2], st(Call1, getter, 0, 0));
     assert_eq!(t[3], st(StoreF, 1, g, 0));
     let u = body(&p, "u");
+    // The index is read again for the second word, so its first store is not folded; the
+    // sum for the second word is (FTE-18.12).
     assert_eq!(
         opcodes(&u),
         ops(&[
-            MulF, Call1, StoreF, AddF, Call1, StoreF, StoreF, StoreF, Done
+            MulF, StoreF, Call1, StoreF, AddF, Call1, StoreF, StoreF, StoreF, Done
         ])
     );
-    let temp = u[2].b;
-    assert_eq!(u[5].b, temp + 1);
+    assert_eq!(u[1], st(StoreF, u[0].c, 4, 0));
+    assert_eq!(u[4], st(AddF, u[0].c, one, 4));
+    let temp = u[3].b;
+    assert_eq!(u[6].b, temp + 1);
     let q = global(&p, "q");
-    assert_eq!(u[6], st(StoreF, temp, q, 0));
-    assert_eq!(u[7], st(StoreF, temp + 1, q + 1, 0));
+    assert_eq!(u[7], st(StoreF, temp, q, 0));
+    assert_eq!(u[8], st(StoreF, temp + 1, q + 1, 0));
 }
 
 // spec FTE-13.12: a vector array's index in words is divided by 3 for the getter

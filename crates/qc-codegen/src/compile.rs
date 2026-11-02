@@ -2576,7 +2576,7 @@ impl<'a> Compiler<'a> {
                     def.name != "IMMEDIATE"
                         && def.count.is_none()
                         && def.ty.etype() == Etype::Vector
-                        && value.ofs > def.ofs
+                        && value.ofs >= def.ofs
                         && value.ofs < def.ofs.saturating_add(3)
                 })?;
                 if !self.constant(place) {
@@ -2785,7 +2785,7 @@ impl<'a> Compiler<'a> {
             ValueType::simple(row.c)
         };
         Ok(FieldSlot {
-            entity: base.ofs,
+            entity: self.operand_of(base),
             field: selector.ofs,
             load: row.opcode,
             loaded: row.c,
@@ -2797,9 +2797,14 @@ impl<'a> Compiler<'a> {
     /// QC-27.11), then the value, then `STORE_*` or `STOREP_*` by the two basic types. The
     /// value of the assignment is the value stored (QC-17.6, QC-17.7).
     fn assign(&mut self, lhs: &ast::Expr, rhs: &ast::Expr, op_span: Span) -> Lowered<Value> {
-        self.store(lhs, op_span, Current::Unread, |compiler, _| {
+        let value = self.store(lhs, op_span, Current::Unread, |compiler, _| {
             compiler.expr(rhs)
-        })
+        })?;
+        // FTE-18.13: an assignment's value is readable (`QCC_StoreSRefToRef` with `readable`
+        // keeps the source's reference), so a call's value stays live for a jump or call that
+        // follows to copy; a statement that discards it frees it.
+        self.keep_alive(&value);
+        Ok(value)
     }
 
     /// FTEQCC's `x OP= e` (FTE-8.1): `x = x OP e`, the operator's row chosen as for `x OP e`;
@@ -3125,6 +3130,15 @@ impl<'a> Compiler<'a> {
         }
         self.store_to(to, &value, span)?;
         Ok(Some(value))
+    }
+
+    /// Marks a call's value live again after a statement read it, as a readable store does.
+    fn keep_alive(&mut self, value: &Value) {
+        if let ValueKind::Return(alias) = value.kind
+            && let Some(alias) = self.aliases.get_mut(alias.0)
+        {
+            alias.live = true;
+        }
     }
 
     /// Stores `value` in the definition or temporary `to` by the `STORE_*` row of their types.
