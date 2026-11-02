@@ -405,7 +405,7 @@ impl Host<'_> {
     /// with the mock builtins and the trace observer.
     ///
     /// The VM is given the server state the mock keys its loading-only builtins on
-    /// (`precache_sound`, `precache_model`, BUILTIN-10.1, and the entity-0 write of VM-14.4):
+    /// (`precache_sound`, `precache_model`, BUILTIN-10.1, and the entity-0 write of VM-14.7):
     /// `Loading` while the map is still spawning its entities (DIFF-3.2, DIFF-3.5) and `Active`
     /// once the server is active (DIFF-3.6). id's `sv.state` is `ss_loading` through
     /// `SV_SpawnServer` until the map has spawned, then `ss_active`, so a spawn function may

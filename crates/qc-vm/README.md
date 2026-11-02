@@ -21,7 +21,7 @@ and the argument count of the last call. `Machine::execute_program` is id's
   `STATE` (VM-4 to VM-13, VM-17);
 - calls, entering and leaving QC functions with the call and local stacks, parameter and
   return slots, and the stack-depth and local-stack limits (VM-14 to VM-16, LIMIT-2, LIMIT-3);
-- builtin dispatch through the `Builtins` trait (VM-14.4, LIMIT-5);
+- builtin dispatch through the `Builtins` trait (VM-14.7, LIMIT-5);
 - nested runs a builtin starts (VM-18);
 - structured errors with a QuakeC stack trace, returned as `RunError` values, never panics
   (VM-19); each divergence where id's C is undefined is a `Divergence` variant (VM-19.7).

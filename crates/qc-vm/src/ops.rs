@@ -865,10 +865,11 @@ fn call(
 
     match function.builtin_number() {
         Some(number) => {
-            // VM-14.4: a builtin; its number is -first_statement, below LIMIT_NUM_BUILTINS.
+            // VM-14.7: a builtin; its number is -first_statement, below the table's limit.
+            let limit = builtins.limit();
             let number = u32::try_from(number)
                 .ok()
-                .filter(|n| *n < crate::LIMIT_NUM_BUILTINS);
+                .filter(|n| limit.is_none_or(|limit| *n < limit));
             let Some(number) = number else {
                 return Err(machine.run_error(progs, ErrorKind::BadBuiltin));
             };
@@ -877,7 +878,7 @@ fn call(
                 // negative, so builtin_number never returns 0. Reject defensively.
                 return Err(machine.run_error(progs, ErrorKind::BadBuiltin));
             }
-            // VM-14.4: call the builtin directly; no frame, no locals, no parameter copy.
+            // VM-14.7: call the builtin directly; no frame, no locals, no parameter copy.
             let mut context = Context {
                 machine,
                 progs,

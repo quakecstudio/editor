@@ -6,7 +6,7 @@
 //!
 //! Two progs compiled from one codebase, id's `qcc`'s and `qc-codegen`'s, are each loaded in
 //! `qc-vm` with the mock engine and set up as one scenario's world: the map spawned, the
-//! clients entered and the scenario's frames run (DIFF-12.17). Every QuakeC function of the first progs is then called, in
+//! clients entered and the scenario's frames run (DIFF-12.20). Every QuakeC function of the first progs is then called, in
 //! several rounds, from that world with a drawn context (DIFF-12.2), applied to both progs by
 //! name so the two calls take the same input. What each call did is compared (DIFF-12.3): how
 //! it ended, the builtins it called, the named globals and every edict's named fields read
@@ -14,13 +14,13 @@
 //! statements, the statements each call executed must be the same too (DIFF-12.4). The
 //! statements the first progs executed are its coverage (DIFF-12.5).
 //!
-//! Implements `docs/spec/differential.md` DIFF-12.2 to DIFF-12.5 and DIFF-12.17.
+//! Implements `docs/spec/differential.md` DIFF-12.2 to DIFF-12.5 and DIFF-12.20.
 
 use qc_edict::EdictNumber;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use qc_builtins::MockBuiltins;
+use qc_builtins::{EngineProfile, MockBuiltins};
 use qc_progs::{Def, Progs};
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::{ErrorKind, Machine, Observer, RunError};
@@ -108,6 +108,8 @@ pub struct Report {
     pub executed: BTreeSet<i32>,
     /// The first progs' statement count less the dummy statement 0 (DIFF-11.1).
     pub total_statements: u32,
+    /// The error both progs ended their setup in, when they did (DIFF-12.20).
+    pub setup_error: Option<String>,
 }
 
 impl Report {
@@ -281,7 +283,7 @@ impl Oracle {
 }
 
 /// Runs [`run_calls`] on `theirs` and `ours` from each world of [`crate::runner::scenarios`],
-/// `rounds` rounds each (DIFF-12.17, DIFF-12.5); `oracle` compiled `theirs`.
+/// `rounds` rounds each (DIFF-12.20, DIFF-12.5); `oracle` compiled `theirs`.
 ///
 /// # Errors
 ///
@@ -291,6 +293,7 @@ pub fn run_codebase(
     theirs: &[u8],
     ours: &[u8],
     rounds: u32,
+    profile: EngineProfile,
 ) -> Result<CodebaseReport, CallsError> {
     let mut worlds = Vec::new();
     for spec in scenarios("") {
@@ -305,8 +308,9 @@ pub fn run_codebase(
         let handles: Vec<_> = worlds
             .iter()
             .map(|(name, scenario, entities)| {
-                let handle = scope
-                    .spawn(move || run_calls(oracle, theirs, ours, scenario, entities, rounds));
+                let handle = scope.spawn(move || {
+                    run_calls(oracle, theirs, ours, scenario, entities, rounds, profile)
+                });
                 (*name, handle)
             })
             .collect();
@@ -334,7 +338,7 @@ pub fn run_codebase(
     Ok(result)
 }
 
-/// Why a run could not start (DIFF-12.17).
+/// Why a run could not start (DIFF-12.20).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CallsError {
     /// A scenario of [`crate::runner::scenarios`] could not be read.
@@ -342,7 +346,7 @@ pub enum CallsError {
     /// A progs was refused by the reader or the VM (DIFF-3.1).
     Refused(RunRefused),
     /// The world's setup ended in an error in a progs, so there is no world to call functions
-    /// in (DIFF-12.17).
+    /// in (DIFF-12.20).
     Setup(String),
     /// The run of the scenario named here stopped before it gave a report.
     Stopped(String),
@@ -375,21 +379,39 @@ pub fn run_calls(
     scenario: &Scenario,
     entities: &[u8],
     rounds: u32,
+    profile: EngineProfile,
 ) -> Result<Report, CallsError> {
     let refused = |e: qc_progs::ReadError| CallsError::Refused(RunRefused::Progs(e.to_string()));
     let their_progs = Progs::read(theirs).map_err(refused)?;
     let our_progs = Progs::read(ours).map_err(refused)?;
-    let mut their_world = World::new(&their_progs, scenario, entities)?;
-    let mut our_world = World::new(&our_progs, scenario, entities)?;
-    let pair = Pair::new(oracle, &their_world, &our_world);
     let total = u32::try_from(their_progs.statements().len())
         .unwrap_or(u32::MAX)
         .saturating_sub(1);
+    // DIFF-12.20: a setup both progs end in the same error is compared as two calls are, and
+    // agrees; one that only one ends, or that they end differently, stops the run.
+    let (mut their_world, mut our_world) = match (
+        World::new(&their_progs, scenario, entities, profile),
+        World::new(&our_progs, scenario, entities, profile),
+    ) {
+        (Ok(theirs), Ok(ours)) => (theirs, ours),
+        (Err(CallsError::Setup(a)), Err(CallsError::Setup(b))) if a == b => {
+            return Ok(Report {
+                calls: 0,
+                divergences: Vec::new(),
+                executed: BTreeSet::new(),
+                total_statements: total,
+                setup_error: Some(a),
+            });
+        }
+        (Err(error), _) | (_, Err(error)) => return Err(error),
+    };
+    let pair = Pair::new(oracle, &their_world, &our_world);
     let mut report = Report {
         calls: 0,
         divergences: Vec::new(),
         executed: their_world.setup_executed.clone(),
         total_statements: total,
+        setup_error: None,
     };
     if let Some(what) = pair.differ(
         &their_world,
@@ -784,7 +806,7 @@ struct Outcome {
     executed: Vec<Executed>,
 }
 
-/// One progs' world after the setup, kept to restore before each call (DIFF-12.17).
+/// One progs' world after the setup, kept to restore before each call (DIFF-12.20).
 struct World<'a, 'p, 's> {
     program: Program<'a, 'p>,
     host: Host<'s>,
@@ -793,19 +815,21 @@ struct World<'a, 'p, 's> {
     /// The statements the setup executed (DIFF-12.5).
     setup_executed: BTreeSet<i32>,
     /// How the setup went: the statements and builtins it executed, compared with the other
-    /// progs' setup as two calls are (DIFF-12.17).
+    /// progs' setup as two calls are (DIFF-12.20).
     setup: Outcome,
 }
 
 impl<'a, 'p, 's> World<'a, 'p, 's> {
     /// Loads `progs` and sets up the world of `scenario` and `entities`: the map spawned, the
-    /// clients entered and the scenario's frames run with its inputs (DIFF-12.17).
+    /// clients entered and the scenario's frames run with its inputs (DIFF-12.20).
     fn new(
         progs: &'a Progs<'p>,
         scenario: &'s Scenario,
         entities: &[u8],
+        profile: EngineProfile,
     ) -> Result<Self, CallsError> {
         let mut host = Host::new(scenario, progs).map_err(CallsError::Refused)?;
+        host.builtins.engine_mut().profile = profile;
         host.start_map(progs, entities)
             .map_err(|e| CallsError::Setup(format!("{e:?}")))?;
         for slot in 0..scenario.clients {

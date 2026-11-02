@@ -116,7 +116,7 @@ runtime error), and the engine strings of PROGS-11.6.
   statement stores it (PROGS-7.1); the builtin number when there is one (TRACE-4.3); and a
   change set.
 - **TRACE-4.3** A step record has a builtin number exactly when its statement is a `CALL0` to
-  `CALL8` that called a builtin (VM-14.4): the number `-first_statement` of the function it
+  `CALL8` that called a builtin (VM-14.7): the number `-first_statement` of the function it
   called. The step's change set includes what the builtin wrote, `OFS_RETURN` among it.
 - **TRACE-4.4** When a builtin starts nested runs, each run's records (its run record, its
   statements' records and its exit or error record) are written while the builtin is running,

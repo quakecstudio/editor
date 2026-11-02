@@ -26,10 +26,15 @@
 //! L1 VM. It depends on [`qc_vm`], [`qc_edict`] (both L1) and [`qc_progs`], [`qc_types`] (both
 //! L0), and nothing higher.
 
+mod atof;
+mod cstring;
 mod dispatch;
 mod error;
 pub mod math;
 pub mod mock;
+mod printf;
+mod strconv;
+mod strftime;
 pub mod table;
 
 #[cfg(test)]
@@ -37,5 +42,5 @@ mod tests;
 
 pub use dispatch::MockBuiltins;
 pub use error::{BuiltinError, FatalError, RuntimeError};
-pub use mock::MockEngine;
+pub use mock::{EngineProfile, MockEngine};
 pub use table::{BUILTIN_MAX_NUMBER, Builtin, Class, lookup};

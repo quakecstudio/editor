@@ -1769,6 +1769,7 @@ issues:
   - P2-153
   - P2-154
   - P2-155
+  - P2-156
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -3190,3 +3191,26 @@ issues:
   - 'A qc-preproc test shows `#pack 8 zz` reports two E0121 errors with distinct spans, the too-many error at the number and the junk error at the line, each citing FTEF-14.39 and QCD-1.5'
   verify:
   - cargo test -p qc-preproc
+- key: P2-156
+  title: Re-bless the qc-builtins ratchet after the dispatch mutant was dropped
+  labels:
+  - L1-vm
+  - area:vm
+  - type:bug
+  size: S
+  reqs:
+  - TEST-6
+  summary: |
+    Found while doing P2-150 (#639). That work replaced VM-14.4 with VM-14.7: `Builtins::limit` now decides which builtin numbers exist, and `MockBuiltins<MockEngine>::dispatch` grew a vkQuake branch, so the recorded equivalent mutant "crates/qc-builtins/src/dispatch.rs: replace || with && in MockBuiltins<MockEngine>::dispatch" (whose reason cited VM-14.4's "the VM only dispatches 1..=78") no longer matches any mutant. The P2-150 branch dropped that key from `ratchets.toml`'s `[crates.qc-builtins]` with `readiness = "P2-R1"` unchanged. `cargo xtask ratchet` (run in the on-demand Readiness workflow with full history, `fetch-depth: 0`) flags the change as "qc-builtins: minimums changed without naming the readiness issue that set them (readiness is still P2-R1)": `check_change` (xtask/src/ratchet.rs) treats any change to a recorded crate's `equivalent_mutants` as needing a readiness re-review, not an implementer edit. It does not fail the PR's merge-gating CI, whose Unit Tests job checks out shallow (`fetch-depth: 1`), so the ratchet history has only one version and no transition to judge; it fails the next qc-builtins readiness run. A reviewer must re-measure qc-builtins' mutation on the P2-150 code and record the new minimums under a P2-R readiness key, as `.claude/rules/testing.md` requires (readiness is reviewed by an agent that did not write the code).
+  environment: |
+    feat/639-extension-builtins; found while running `cargo test -p xtask` on the P2-150 branch, which fails `tests::a_command_with_arguments_reports_its_outcome` over the full ratchets.toml history after commit 976a98b8 dropped the dispatch equivalent mutant
+  depends:
+  - P2-150
+  deliverable:
+  - 'ratchets.toml: `[crates.qc-builtins]` with the mutation minimum re-measured on the P2-150 dispatch code and the `readiness` key naming the P2-R review that set it, and its `equivalent_mutants` holding only mutants that still exist in `crates/qc-builtins/src/dispatch.rs` and `math.rs`'
+  - 'docs/readiness/: the re-review note for qc-builtins, linking the measurement run'
+  acceptance:
+  - '`cargo xtask ratchet` passes over the full ratchets.toml history (the Readiness workflow, `fetch-depth: 0`), with no "minimums changed without naming the readiness issue" problem for qc-builtins'
+  - 'Every `equivalent_mutants` key under `[crates.qc-builtins]` names a mutant cargo-mutants still produces on the current code, and the measured mutation score is at or above the recorded minimum'
+  verify:
+  - cargo xtask ratchet

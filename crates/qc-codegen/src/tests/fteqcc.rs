@@ -1001,6 +1001,48 @@ fn a_calls_value_as_a_left_operand_survives_the_next_call() {
     );
 }
 
+// spec FTEF-19.78: a local array's getter made inside a `for` is forgotten at its end, so the
+// next subscript makes another; one made before the loop is used in and after it, and a global
+// array's is never forgotten
+#[test]
+fn a_for_forgets_a_local_array_s_getter() {
+    let count = |source: &str| {
+        let p = fte_progs(source);
+        p.functions
+            .iter()
+            .filter(|f| super::string(&p, f.s_name) == "ArrayGet*a")
+            .count()
+    };
+    let inside = "void(string e) error = #10;\nvoid() f = { local float a[4]; local float i, x; \
+                  for (i = 0; i < 4; i++) x = a[i]; x = a[i]; };\n";
+    assert_eq!(count(inside), 2);
+    let before = "void(string e) error = #10;\nvoid() f = { local float a[4]; local float i, x; x = a[i]; \
+                  for (i = 0; i < 4; i++) x = a[i]; x = a[i]; };\n";
+    assert_eq!(count(before), 1);
+    let global = "void(string e) error = #10;\nfloat a[4];\nvoid() f = { local float i, x; \
+                  for (i = 0; i < 4; i++) x = a[i]; x = a[i]; };\n";
+    assert_eq!(count(global), 1);
+}
+
+// spec FTEF-32.16: a body's static locals and initialised constant ones take storage before its
+// parameters, outside the locals its record names; its other locals are among them
+#[test]
+fn static_and_constant_locals_are_outside_the_record() {
+    let source = "void(float d) f = { const string tab[] = {\"a\", \"b\"}; static float s; \
+                  local float x; const float c; x = d + s + c; };\n";
+    let p = fte_progs(source);
+    let f = function(&p, "f");
+    let range = f.parm_start..f.parm_start + f.locals;
+    for name in ["tab[0]", "tab[1]", "s"] {
+        let at = global(&p, name);
+        assert!(!range.contains(&at), "{name} at {at} in {range:?}");
+        assert!(at < f.parm_start, "{name}");
+    }
+    for name in ["d", "x", "c"] {
+        assert!(range.contains(&global(&p, name)), "{name}");
+    }
+}
+
 // spec FTE-21.6: under FTEQCC a function's record counts its parameters among its locals, so a
 // nested call restores them; id's qcc counts none for a function with no `local` (QC-21.4)
 #[test]

@@ -383,18 +383,26 @@ qcc compiles an assignment to an entity field, `e.f = x`, as `ADDRESS` followed 
 - **VM-14.3** id reads `pr_functions[index]` without checking, so a negative index or one not
   less than `numfunctions` is undefined in C. This spec fixes the answer: it fails with a
   runtime error (VM-19.7).
-- **VM-14.4** When the function is a builtin (`first_statement` below 0, PROGS-10.2), its
-  number is `-first_statement`; a number of `LIMIT_NUM_BUILTINS` or more fails with
-  `Bad builtin call number` (LIMIT-5.1, LIMIT-5.3). Otherwise the builtin is called directly:
-  no frame is pushed, the call depth does not change (LIMIT-2.3), no locals are saved and no
-  parameters are copied. A builtin returns a value by writing `OFS_RETURN`. When it returns,
-  execution continues with the statement after the call.
+- **VM-14.4** **Withdrawn** 2026-10-31: it fixed the builtin numbers at id's table, below
+  `LIMIT_NUM_BUILTINS`, but an engine with extension builtins calls more (P2-150). Replaced by
+  VM-14.7.
 - **VM-14.5** When the function is a QC function it is entered as VM-15 says, and execution
   continues at its `first_statement`. The statement after the call runs when it returns
   (VM-16.4).
 - **VM-14.6** The number in the opcode is not checked against the callee's `numparms`: the
   callee copies `numparms` parameters from the parameter slots whatever they hold, including
   values left there by earlier calls.
+- **VM-14.7** When the function is a builtin (`first_statement` below 0, PROGS-10.2), its
+  number is `-first_statement`, and the engine's builtin table decides which numbers it has.
+  id's table has `LIMIT_NUM_BUILTINS` entries, and a number of that or more fails with
+  `Bad builtin call number` (LIMIT-5.1, LIMIT-5.3). vkQuake's sends a number past its table
+  to its `PF_Fixme`, which looks the number up among its extension builtins
+  (`Novum/vkQuake@27789d7333a46674474d871137bb71e056719628`, `Quake/pr_exec.c`,
+  `PR_ExecuteProgram`: "if (i >= qcvm->numbuiltins) i = 0; // just invoke the fixme
+  builtin."), so every number reaches its builtins. Otherwise the builtin is called directly:
+  no frame is pushed, the call depth does not change (LIMIT-2.3), no locals are saved and no
+  parameters are copied. A builtin returns a value by writing `OFS_RETURN`. When it returns,
+  execution continues with the statement after the call.
 
 ## VM-15 Entering a function
 

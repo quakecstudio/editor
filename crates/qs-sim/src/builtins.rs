@@ -137,6 +137,10 @@ const fn f32_of(value: i32) -> f32 {
 }
 
 impl Builtins for SimBuiltins {
+    fn limit(&self) -> Option<u32> {
+        self.mock.limit()
+    }
+
     fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
         match number {
             // WORLD-8.1: the mock sets the fields; the world links.

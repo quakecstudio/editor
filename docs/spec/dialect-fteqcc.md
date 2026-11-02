@@ -3170,6 +3170,17 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   any type: `for (float i = 0;;) {} for (string i = "";;) {}` is two locals. A local the
   statement found again (`float i; for (float i = 0;;) {}`, FTEF-19.1) was not made there and
   stays. Only `for` does this: a block, `while`, `do`, `if` and `switch` keep their locals.
+- **FTEF-19.78** The getter and setter of an array declared in a function, `ArrayGet*NAME` and
+  `ArraySet*NAME`, are locals too: `QCC_PR_GetSRef (..., base.sym->scope, ...,
+  GDF_CONST|(base.sym->scope?GDF_STATIC:0))` makes them in the array's scope, so one made inside
+  a `for` statement leaves `localstable` at its end (FTEF-19.19), and the next subscript that
+  needs it finds none and makes another definition, which `QCC_PR_EmitArrayGetFunction` or
+  `QCC_PR_EmitArraySetFunction` gives a function of its own. One made before the statement is
+  found inside it and after it, and a global array's are never forgotten. So `void() f = {
+  float a[4]; float i, x; for (i = 0; i < 4; i++) x = a[i]; x = a[i]; };` has two `ArrayGet*a`
+  functions, and one when `x = a[i];` also comes before the loop.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_LoadFromArray`, `QCC_PR_ParseStatement_For`.
 - **FTEF-19.20** A name that is a definition's type, or part of it (a field's, a pointer's, a
   function's return or parameter type), must be a type at that point: C type words
   (FTEF-2.8), a name `QCC_PR_NewType` registers (`variant`, `__variant`, `__string`,
@@ -5258,6 +5269,16 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   self.f };` is `STORE_F Q a[0]`, `STORE_F 2 a[1]`, `LOAD_F self f a[2]`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseInitializerType_Internal`, `QCC_PR_GenerateInitializerType`.
+- **FTEF-32.16** A function's `static` locals and its initialised constant ones are not among
+  the locals its record names: `QCC_UnmarshalLocals` finalises them before it lays out any
+  function's locals ("first, finalize all static locals that shouldn't form part of the local
+  defs. ... if (d->isstatic || (d->constant && d->initialized)) QCC_FinaliseDef(d);"), so their
+  slots lie outside every record's `parm_start` to `parm_start + locals`. qc-codegen gives them
+  their storage before the function's parameters, in declaration order, so `void() f = { const
+  string tab[] = {"a", "b"}; };` has `tab[0]` and `tab[1]` outside `f`'s locals; a local
+  function given a body is a function of its own (FTEF-18.2). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
+  `QCC_UnmarshalLocals`.
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,

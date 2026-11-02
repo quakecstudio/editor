@@ -785,14 +785,14 @@ mod bodies {
         reason = "test code: a failed unwrap, index, expect or overflow is a failed test"
     )]
 
-    use crate::mock::{MessageDest, MockEngine, Precache};
+    use crate::mock::{EngineProfile, MessageDest, MockEngine, Precache};
     use crate::{MockBuiltins, math};
     use qc_edict::system::{SYSTEM_GLOBALS, field_by_name, global_by_name};
     use qc_edict::{EDICT_SYS_GLOBALS_END, EdictNumber};
     use qc_progs::opcode::Opcode;
     use qc_progs::{Function, Progs, ProgsFile, Statement, write};
     use qc_types::{Etype, PROGS_OFS_PARM0, PROGS_OFS_RETURN, PROGS_PARM_SLOTS, Slot};
-    use qc_vm::{ErrorKind, Machine, NoObserver, RunError, ServerState};
+    use qc_vm::{Builtins as _, ErrorKind, Machine, NoObserver, RunError, ServerState};
 
     /// A global slot holding the function value the entry's `CALL` calls: the first slot past
     /// the system globals (EDICT-2.1), so no builtin that writes one, such as `makevectors`
@@ -812,6 +812,11 @@ mod bodies {
     /// then is done. Function 2 is the builtin (`first_statement = -number`). `strings` is the
     /// string table bytes (a leading NUL for the empty string); `numglobals` is at least 92.
     fn build_progs(number: u32, argc: u16, strings: Vec<u8>) -> Vec<u8> {
+        build_named_progs(number, argc, strings, 0)
+    }
+
+    /// [`build_progs`] with the builtin's function named by the string at `s_name`.
+    fn build_named_progs(number: u32, argc: u16, strings: Vec<u8>, s_name: i32) -> Vec<u8> {
         let mut globals = vec![Slot::ZERO; 128];
         globals[usize::try_from(CALL_TARGET_SLOT).unwrap()] = Slot::from_i32(2);
 
@@ -840,6 +845,7 @@ mod bodies {
             },
             Function {
                 first_statement: builtin_first,
+                s_name,
                 ..Function::default()
             },
         ];
@@ -1962,6 +1968,575 @@ mod bodies {
         let value = 10 * past.machine.edicts().layout().edict_size();
         past.set_parm_i(0, value);
         past.run_err(ServerState::Active, "NUM_FOR_EDICT: bad pointer");
+    }
+
+    /// A run of builtin `number`, called through a function named `name`, in a mock engine under
+    /// `profile`.
+    fn run_profiled(number: u32, name: &str, profile: EngineProfile) -> Result<(), RunError> {
+        let (strings, offsets) = string_table(&[name]);
+        let bytes = build_named_progs(number, 0, strings, offsets[0]);
+        let progs = Progs::read(&bytes).unwrap();
+        let mut machine = Machine::new(&progs, 0).unwrap();
+        let mut engine = MockEngine::new("test", 0, 1);
+        engine.profile = profile;
+        let mut builtins = MockBuiltins::with_engine(engine);
+        machine.execute_program(
+            &progs,
+            ServerState::Active,
+            &mut builtins,
+            &mut NoObserver,
+            1,
+        )
+    }
+
+    // spec BUILTIN-18.1: under vkQuake's profile every number reaches the dispatch; under
+    // id's the table ends at LIMIT_NUM_BUILTINS
+    #[test]
+    fn the_profile_decides_which_numbers_exist() {
+        let mut id = MockBuiltins::default();
+        assert_eq!(id.limit(), Some(qc_vm::LIMIT_NUM_BUILTINS));
+        id.engine_mut().profile = EngineProfile::VkQuake;
+        assert_eq!(id.limit(), None);
+        let bad = run_profiled(500, "ext", EngineProfile::Id).unwrap_err();
+        assert_eq!(bad.kind, ErrorKind::BadBuiltin);
+        // An id builtin keeps id's behaviour: `random` returns a value in [0, 1).
+        assert!(run_profiled(7, "random", EngineProfile::VkQuake).is_ok());
+    }
+
+    // spec BUILTIN-18.2: a number with no builtin is PF_Fixme's error, naming the number and
+    // the function called, id's gaps included
+    #[test]
+    fn vkquake_names_an_unimplemented_builtin() {
+        let far = run_profiled(500, "frobnicate", EngineProfile::VkQuake).unwrap_err();
+        assert_eq!(far.message(), "unimplemented builtin #500 - frobnicate");
+        let gap = run_profiled(5, "gap", EngineProfile::VkQuake).unwrap_err();
+        assert_eq!(gap.message(), "unimplemented builtin #5 - gap");
+        let id = run_profiled(5, "gap", EngineProfile::Id).unwrap_err();
+        assert_eq!(id.message(), "unimplemented bulitin");
+    }
+
+    // spec BUILTIN-18.4: forceinfokey on the world sets a serverinfo cvar and no other; on a
+    // player it sets none, and a bad player is NUM_FOR_EDICT's error
+    #[test]
+    fn forceinfokey_sets_serverinfo_cvars_on_the_world() {
+        let (strings, offsets) = string_table(&["teamplay", "3", "skill"]);
+        let run = |player: i32, key: i32| {
+            let mut f = Fixture::new(213, 3, strings.clone(), 1);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, player);
+            f.set_parm_i(1, key);
+            f.set_parm_i(2, offsets[1]);
+            let result = f.run(ServerState::Active);
+            (result, f)
+        };
+        let (result, world) = run(0, offsets[0]);
+        result.unwrap();
+        assert_eq!(world.engine().cvars.text("teamplay"), Some("3"));
+        let (result, other) = run(0, offsets[2]);
+        result.unwrap();
+        assert_eq!(other.engine().cvars.text("skill"), Some("1"));
+        let edict = other.machine.edicts().layout().edict_size();
+        let (result, player) = run(edict, offsets[0]);
+        result.unwrap();
+        assert_eq!(player.engine().cvars.text("teamplay"), Some("0"));
+        let (result, _) = run(edict * 1000, offsets[0]);
+        assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
+    }
+
+    // spec BUILTIN-18.22: strncmp and strcasecmp answer C's differences; strstrofs finds an
+    // offset from firstofs
+    #[test]
+    fn string_comparisons() {
+        let (strings, offsets) = string_table(&["Hello", "help", "hello", "é", "a", "l"]);
+        let run = |number: u32, args: &[(bool, usize, f32)]| {
+            let argc = u16::try_from(args.len()).unwrap();
+            let mut f = Fixture::new(number, argc, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            for (n, (is_string, index, value)) in args.iter().enumerate() {
+                let n = u16::try_from(n).unwrap();
+                if *is_string {
+                    f.set_parm_i(n, offsets[*index]);
+                } else {
+                    f.set_parm_f(n, *value);
+                }
+            }
+            f.run_ok(ServerState::Active);
+            f.return_f()
+        };
+        let s = |i: usize| (true, i, 0.0);
+        let n = |v: f32| (false, 0, v);
+        assert_eq!(run(228, &[s(0), s(2)]), f32::from(b'H') - f32::from(b'h'));
+        assert_eq!(run(228, &[s(1), s(2), n(3.0)]), 0.0);
+        assert_eq!(
+            run(228, &[s(1), s(2), n(4.0)]),
+            f32::from(b'p') - f32::from(b'l')
+        );
+        assert_eq!(run(228, &[s(2), s(5), n(1.0), n(2.0)]), 0.0);
+        assert_eq!(run(228, &[s(2), s(5), n(1.0), n(99.0)]), -f32::from(b'l'));
+        assert_eq!(run(229, &[s(0), s(2)]), 0.0);
+        assert_eq!(run(230, &[s(0), s(1), n(3.0)]), 0.0);
+        assert_eq!(run(230, &[s(0), s(1), n(0.0)]), 0.0);
+        assert!(run(229, &[s(3), s(4)]) < 0.0);
+        assert!(run(228, &[s(3), s(4)]) > 0.0);
+        assert_eq!(run(221, &[s(2), s(5)]), 2.0);
+        assert_eq!(run(221, &[s(2), s(5), n(3.0)]), 3.0);
+        assert_eq!(run(221, &[s(2), s(5), n(4.0)]), -1.0);
+        assert_eq!(run(221, &[s(2), s(5), n(9.0)]), -1.0);
+        assert_eq!(run(221, &[s(2), s(4)]), -1.0);
+    }
+
+    // spec BUILTIN-18.21: strlen counts bytes; strcat joins up to 1023 bytes and reads no
+    // argument after the one that fills it; substring counts negative start and length from
+    // the end
+    #[test]
+    fn strlen_strcat_and_substring() {
+        let long = "x".repeat(1020);
+        let (strings, offsets) = string_table(&["hello", "ab", &long]);
+        let text = |f: &Fixture| f.engine().strings.text(f.return_i()).unwrap().to_vec();
+        let mut f = Fixture::new(114, 1, strings.clone(), 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.set_parm_i(0, offsets[0]);
+        f.run_ok(ServerState::Active);
+        assert_eq!(f.return_f(), 5.0);
+
+        let mut f = Fixture::new(115, 3, strings.clone(), 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.set_parm_i(0, offsets[0]);
+        f.set_parm_i(1, offsets[1]);
+        f.set_parm_i(2, offsets[0]);
+        f.run_ok(ServerState::Active);
+        assert_eq!(text(&f), b"helloabhello");
+        let mut f = Fixture::new(115, 3, strings.clone(), 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.set_parm_i(0, offsets[2]);
+        f.set_parm_i(1, offsets[0]);
+        f.set_parm_i(2, 999_999);
+        f.run_ok(ServerState::Active);
+        assert_eq!(text(&f).len(), 1023);
+
+        for (start, length, expected) in [
+            (1.0, 3.0, &b"ell"[..]),
+            (-3.0, 2.0, b"ll"),
+            (1.0, -2.0, b"ell"),
+            (-10.0, 2.0, b"he"),
+            (5.0, 1.0, b""),
+            (0.0, 0.0, b""),
+            (2.0, 100.0, b"llo"),
+        ] {
+            let mut f = Fixture::new(116, 3, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, offsets[0]);
+            f.set_parm_f(1, start);
+            f.set_parm_f(2, length);
+            f.run_ok(ServerState::Active);
+            assert_eq!(text(&f), expected, "{start} {length}");
+        }
+    }
+
+    // spec BUILTIN-18.20: clienttype is 3 for no client slot, 1 for an active client, 0 for an
+    // empty slot
+    #[test]
+    fn clienttype_of_slots() {
+        for (n, active, expected) in [(0, true, 3.0), (1, true, 1.0), (1, false, 0.0)] {
+            let mut f = Fixture::new(455, 1, vec![0], 1);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.builtins.engine_mut().clients_active = vec![active];
+            let value = n * f.machine.edicts().layout().edict_size();
+            f.set_parm_i(0, value);
+            f.run_ok(ServerState::Active);
+            assert_eq!(f.return_f(), expected, "{n} {active}");
+        }
+    }
+
+    // spec BUILTIN-18.19: stof is C's atof of the longest numeric prefix
+    #[test]
+    fn stof_is_c_atof() {
+        let texts = [
+            "  1.5e2xyz",
+            "-0x1Fp1",
+            ".5",
+            "e5",
+            "1e",
+            "INF",
+            "abc",
+            "1.2.3",
+            "+.e1",
+            "0x",
+            "-nan",
+            "1e-2",
+        ];
+        let (strings, offsets) = string_table(&texts);
+        for (text, expected) in [
+            (0, 150.0),
+            (1, -62.0),
+            (2, 0.5),
+            (3, 0.0),
+            (4, 1.0),
+            (5, f32::INFINITY),
+            (6, 0.0),
+            (7, 1.2),
+            (8, 0.0),
+            (9, 0.0),
+            (11, 0.01),
+        ] {
+            let mut f = Fixture::new(81, 1, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, offsets[text]);
+            f.run_ok(ServerState::Active);
+            assert_eq!(
+                f.return_f().to_bits(),
+                f32::to_bits(expected),
+                "{}",
+                texts[text]
+            );
+        }
+        let mut f = Fixture::new(81, 1, strings, 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.set_parm_i(0, offsets[10]);
+        f.run_ok(ServerState::Active);
+        assert!(f.return_f().is_nan());
+    }
+
+    // spec BUILTIN-18.18: num_for_edict is an edict's number; a bad value is NUM_FOR_EDICT's
+    // error
+    #[test]
+    fn num_for_edict_is_the_number() {
+        for (n, ok) in [(0, true), (1, true), (5000, false)] {
+            let mut f = Fixture::new(512, 1, vec![0], 1);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            let value = n * f.machine.edicts().layout().edict_size();
+            f.set_parm_i(0, value);
+            let result = f.run(ServerState::Active);
+            if ok {
+                result.unwrap();
+                assert_eq!(f.return_f(), f32::from(u16::try_from(n).unwrap()));
+            } else {
+                assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
+            }
+        }
+    }
+
+    // spec BUILTIN-18.17: strconv moves digits, letters and punctuation between Quake's white
+    // and red rows and changes case
+    #[test]
+    fn strconv_converts_case_and_colour() {
+        let (strings, offsets) = string_table(&["Ab1!", "x"]);
+        for (args, expected) in [
+            (
+                [0.0, 2.0, 2.0],
+                vec![b'A' + 128, b'b' + 128, b'1' + 128, b'!' + 128, b'x' + 128],
+            ),
+            ([1.0, 0.0, 0.0], b"ab1!x".to_vec()),
+            ([2.0, 1.0, 1.0], b"AB1!X".to_vec()),
+            (
+                [0.0, 5.0, 0.0],
+                vec![b'A' + 128, b'b', b'1', b'!', b'x' + 128],
+            ),
+            (
+                [0.0, 6.0, 3.0],
+                vec![b'A', b'b' + 128, b'1' - 30, b'!', b'x'],
+            ),
+        ] {
+            let mut f = Fixture::new(224, 5, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            for (n, value) in args.iter().enumerate() {
+                f.set_parm_f(u16::try_from(n).unwrap(), *value);
+            }
+            f.set_parm_i(3, offsets[0]);
+            f.set_parm_i(4, offsets[1]);
+            f.run_ok(ServerState::Active);
+            let value = f.return_i();
+            assert_eq!(
+                f.engine().strings.text(value),
+                Some(expected.as_slice()),
+                "{args:?}"
+            );
+        }
+    }
+
+    // spec BUILTIN-18.16: strtolower and strtoupper change ASCII letters only, cut to 1023
+    // bytes
+    #[test]
+    fn string_case() {
+        let long = "a".repeat(1100);
+        let (strings, offsets) = string_table(&["MiXeD 1é", &long]);
+        for (number, text, expected) in [
+            (480, 0, "mixed 1é".as_bytes().to_vec()),
+            (481, 0, "MIXED 1é".as_bytes().to_vec()),
+            (481, 1, vec![b'A'; 1023]),
+        ] {
+            let mut f = Fixture::new(number, 1, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, offsets[text]);
+            f.run_ok(ServerState::Active);
+            let value = f.return_i();
+            assert_eq!(f.engine().strings.text(value), Some(expected.as_slice()));
+        }
+    }
+
+    // spec BUILTIN-18.15: min and max over every argument passed, a NaN kept only when first;
+    // bound lowers to max then raises to min
+    #[test]
+    fn min_max_and_bound() {
+        let run = |number: u32, args: &[f32]| {
+            let mut f = Fixture::new(number, u16::try_from(args.len()).unwrap(), vec![0], 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            for (n, value) in args.iter().enumerate() {
+                f.set_parm_f(u16::try_from(n).unwrap(), *value);
+            }
+            f.run_ok(ServerState::Active);
+            f.return_f()
+        };
+        assert_eq!(run(94, &[3.0, 1.0, 2.0]), 1.0);
+        assert_eq!(run(95, &[3.0, 1.0, 7.0]), 7.0);
+        assert_eq!(run(95, &[3.0]), 3.0);
+        assert!(run(94, &[f32::NAN, 1.0]).is_nan());
+        assert_eq!(run(94, &[1.0, f32::NAN]), 1.0);
+        assert_eq!(run(96, &[0.0, 5.0, 10.0]), 5.0);
+        assert_eq!(run(96, &[0.0, 15.0, 10.0]), 10.0);
+        assert_eq!(run(96, &[0.0, -5.0, 10.0]), 0.0);
+        assert_eq!(run(96, &[10.0, 5.0, 0.0]), 10.0);
+    }
+
+    // spec BUILTIN-18.14: checkextension is 1 for a listed extension, making its pr_ext_
+    // setting, 0 when that setting is 0, and 0 for any other name
+    #[test]
+    fn checkextension_answers_vkquake_s_list() {
+        let (strings, offsets) = string_table(&["FRIK_FILE", "DP_QC_SPRINTF", "NOT_A_THING"]);
+        let run = |name: i32, blocked: bool| {
+            let mut f = Fixture::new(99, 1, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            if blocked {
+                f.builtins
+                    .engine_mut()
+                    .cvars
+                    .create("pr_ext_dp_qc_sprintf", "0");
+            }
+            f.set_parm_i(0, name);
+            f.run_ok(ServerState::Active);
+            (f.return_f(), f)
+        };
+        let (found, f) = run(offsets[0], false);
+        assert_eq!(found, 1.0);
+        assert_eq!(f.engine().cvars.text("pr_ext_frik_file"), Some("1"));
+        assert_eq!(run(offsets[1], true).0, 0.0);
+        let (missing, f) = run(offsets[2], false);
+        assert_eq!(missing, 0.0);
+        assert_eq!(f.engine().cvars.text("pr_ext_not_a_thing"), None);
+    }
+
+    // spec BUILTIN-18.13: print reads every string it is passed and changes nothing
+    #[test]
+    fn print_reads_its_strings() {
+        let (strings, offsets) = string_table(&["a", "b"]);
+        for (second, ok) in [(offsets[1], true), (999_999, false)] {
+            let mut f = Fixture::new(339, 2, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            let before = f.engine().clone();
+            f.set_parm_i(0, offsets[0]);
+            f.set_parm_i(1, second);
+            assert_eq!(f.run(ServerState::Active).is_ok(), ok);
+            assert_eq!(f.engine(), &before);
+        }
+    }
+
+    // spec BUILTIN-18.12: infokey answers the world's *version and an active client's fixed
+    // keys, and 0 for anything else
+    #[test]
+    fn infokey_answers_fixed_keys() {
+        let keys = [
+            "*version",
+            "name",
+            "team",
+            "ping",
+            "ip",
+            "*spectator",
+            "hostname",
+        ];
+        let (strings, offsets) = string_table(&keys);
+        let client = |f: &Fixture| f.machine.edicts().layout().edict_size();
+        for (on_client, key, expected) in [
+            (false, 0, Some(&b"vkQuake 1.37.1"[..])),
+            (false, 6, None),
+            (true, 1, Some(&b"player"[..])),
+            (true, 2, Some(&b"t1"[..])),
+            (true, 3, Some(&b"0.000000"[..])),
+            (true, 4, Some(&b"LOCAL"[..])),
+            (true, 5, Some(&b""[..])),
+            (true, 6, None),
+            (true, 0, None),
+        ] {
+            let mut f = Fixture::new(80, 2, strings.clone(), 1);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            let e = if on_client { client(&f) } else { 0 };
+            f.set_parm_i(0, e);
+            f.set_parm_i(1, offsets[key]);
+            f.run_ok(ServerState::Active);
+            let value = f.return_i();
+            match expected {
+                Some(text) => assert_eq!(f.engine().strings.text(value), Some(text), "{key}"),
+                None => assert_eq!(value, 0, "{key}"),
+            }
+        }
+        let mut inactive = Fixture::new(80, 2, strings, 1);
+        inactive.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        inactive.builtins.engine_mut().clients_active = vec![false];
+        let e = client(&inactive);
+        inactive.set_parm_i(0, e);
+        inactive.set_parm_i(1, offsets[1]);
+        inactive.run_ok(ServerState::Active);
+        assert_eq!(inactive.return_i(), 0);
+    }
+
+    // spec BUILTIN-18.11: cvar_string is a setting's text, `id1` for game, and 0 for an unknown
+    // name
+    #[test]
+    fn cvar_string_reads_a_setting() {
+        let (strings, offsets) = string_table(&["skill", "game", "nothing"]);
+        for (name, expected) in [(0, Some(&b"1"[..])), (1, Some(&b"id1"[..])), (2, None)] {
+            let mut f = Fixture::new(448, 1, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, offsets[name]);
+            f.run_ok(ServerState::Active);
+            let value = f.return_i();
+            match expected {
+                Some(text) => assert_eq!(f.engine().strings.text(value), Some(text)),
+                None => assert_eq!(value, 0),
+            }
+        }
+    }
+
+    // spec BUILTIN-18.10: fopen opens nothing in any mode, after reading its name as a string
+    #[test]
+    fn fopen_opens_nothing() {
+        let (strings, offsets) = string_table(&["configs/levels.cfg"]);
+        for (name, mode, ok) in [
+            (offsets[0], 0.0, true),
+            (offsets[0], 2.0, true),
+            (999_999, 0.0, false),
+        ] {
+            let mut f = Fixture::new(110, 2, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, name);
+            f.set_parm_f(1, mode);
+            let result = f.run(ServerState::Active);
+            assert_eq!(result.is_ok(), ok, "{mode}");
+            if ok {
+                assert_eq!(f.return_f(), -1.0);
+            }
+        }
+    }
+
+    // spec BUILTIN-18.9: strzone joins its arguments into a new string that strunzone frees,
+    // after which it is no string; strunzone of 0 or of another string changes nothing
+    #[test]
+    fn strzone_and_strunzone() {
+        let (strings, offsets) = string_table(&["ab", "cd"]);
+        let mut f = Fixture::new(118, 2, strings.clone(), 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.set_parm_i(0, offsets[0]);
+        f.set_parm_i(1, offsets[1]);
+        f.run_ok(ServerState::Active);
+        let zoned = f.return_i();
+        assert_eq!(f.engine().strings.text(zoned), Some(&b"abcd"[..]));
+        let mut engine = f.engine().clone();
+        let made = engine.strings.make(b"kept".to_vec());
+        for (value, freed) in [(0, false), (made, false), (zoned, true), (zoned, false)] {
+            let mut u = Fixture::new(119, 1, strings.clone(), 0);
+            u.builtins = MockBuiltins::with_engine(engine.clone());
+            u.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            u.set_parm_i(0, value);
+            let result = u.run(ServerState::Active);
+            if value == zoned && !freed {
+                assert_eq!(result.unwrap_err().message(), "invalid string");
+                continue;
+            }
+            result.unwrap();
+            assert_eq!(u.engine().strings.text(zoned).is_none(), freed, "{value}");
+            assert_eq!(u.engine().strings.text(made), Some(&b"kept"[..]));
+            engine = u.engine().clone();
+        }
+    }
+
+    // spec BUILTIN-18.7: strftime writes the mock's fixed instant, keeps an unknown conversion,
+    // and gives an empty string for a text past STRINGTEMP_LENGTH
+    #[test]
+    fn strftime_writes_the_fixed_instant() {
+        let long = "x".repeat(1100);
+        let formats = ["%Y-%m-%dT%H:%M:%S%z", "%a %b %e %% %Q %", &long];
+        let (strings, offsets) = string_table(&formats);
+        for (format, expected) in [
+            (0, "1970-01-01T00:00:00+0000"),
+            (1, "Thu Jan  1 % %Q %"),
+            (2, ""),
+        ] {
+            let mut f = Fixture::new(478, 2, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_f(0, 1.0);
+            f.set_parm_i(1, offsets[format]);
+            f.run_ok(ServerState::Active);
+            let value = f.return_i();
+            assert_eq!(f.engine().strings.text(value), Some(expected.as_bytes()));
+        }
+    }
+
+    // spec BUILTIN-18.6: registercvar makes a setting whose text is its name again (vkQuake
+    // reads OFS_PARM0 twice), empty with one argument, and leaves an existing one
+    #[test]
+    fn registercvar_makes_a_setting_once() {
+        let (strings, offsets) = string_table(&["mine", "5", "skill"]);
+        for (argc, name, expected) in [(2, 0, "mine"), (1, 0, ""), (2, 2, "1")] {
+            let mut f = Fixture::new(93, argc, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, offsets[name]);
+            f.set_parm_i(1, offsets[1]);
+            f.run_ok(ServerState::Active);
+            let key = ["mine", "5", "skill"][name];
+            assert_eq!(f.engine().cvars.text(key), Some(expected), "{argc} {key}");
+        }
+    }
+
+    // spec BUILTIN-18.5: clientstat and globalstat change nothing; globalstat's name must be a
+    // string
+    #[test]
+    fn stats_change_nothing() {
+        let (strings, offsets) = string_table(&["frags"]);
+        for (number, name, ok) in [
+            (232, 7, true),
+            (233, offsets[0], true),
+            (233, 999_999, false),
+        ] {
+            let mut f = Fixture::new(number, 3, strings.clone(), 1);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            let before = f.engine().clone();
+            f.set_parm_f(0, 40.0);
+            f.set_parm_f(1, 2.0);
+            f.set_parm_i(2, name);
+            let result = f.run(ServerState::Active);
+            assert_eq!(result.is_ok(), ok, "{number}: {result:?}");
+            assert_eq!(f.engine(), &before, "{number}");
+        }
+    }
+
+    // spec BUILTIN-18.3: vkQuake's precache lists hold 2048 sounds and 8192 models, id's 256
+    // each
+    #[test]
+    fn vkquake_precaches_more() {
+        assert_eq!(EngineProfile::VkQuake.precache_limit(Precache::Sound), 2048);
+        assert_eq!(EngineProfile::VkQuake.precache_limit(Precache::Model), 8192);
+        assert_eq!(EngineProfile::Id.precache_limit(Precache::Sound), 256);
+        assert_eq!(EngineProfile::Id.precache_limit(Precache::Model), 256);
+        for (profile, limit) in [(EngineProfile::Id, 256), (EngineProfile::VkQuake, 2048)] {
+            let mut engine = MockEngine::new("test", 0, 1);
+            engine.profile = profile;
+            for n in 1..limit {
+                engine
+                    .precache(Precache::Sound, &format!("s{n}.wav"))
+                    .unwrap();
+            }
+            assert_eq!(engine.sound_precache.len(), limit);
+            assert!(engine.precache(Precache::Sound, "full.wav").is_err());
+        }
     }
 
     // spec BUILTIN-1.2: a PF_Fixme gap number is the runtime error with id's spelling.

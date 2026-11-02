@@ -52,6 +52,21 @@ const PENDING: [&str; 1] = ["rerelease-ctf"];
 /// compares; a run may name the others until each joins (DIFF-12.18).
 const MODS_AT_BAR: [&str; 4] = ["copper", "librequake", "qc-conduit", "swab"];
 
+/// The corpus mods written for an engine with extension builtins, which the mock runs under
+/// vkQuake's rules (BUILTIN-18): crmod7 calls them while it sets up, and Arcane Dimensions
+/// precaches more sounds than id's engine holds.
+const VKQUAKE_MODS: [&str; 2] = ["arcane-dimensions", "crmod7"];
+
+/// The binary's `--engine` for codebase `id`: vkQuake's for [`VKQUAKE_MODS`], id's for the
+/// rest (DIFF-12.19).
+fn engine(id: &str) -> &'static str {
+    if VKQUAKE_MODS.contains(&id) {
+        "vkquake"
+    } else {
+        "id"
+    }
+}
+
 const USAGE: &str = "usage: cargo xtask compiler-diff [--fast | --full] [<codebase>...]";
 
 /// Runs `cargo xtask compiler-diff [--fast | --full] [<codebase>...]`.
@@ -226,6 +241,8 @@ fn run_suite(
             } else {
                 "qcc"
             },
+            "--engine",
+            engine(id),
             "--summary",
         ])
         .arg(summary)
@@ -253,7 +270,7 @@ mod tests {
 
     use qc_codegen::Options;
 
-    use super::{MODS_AT_BAR, Mode, PENDING, RERELEASE, VANILLA, parse, write_progs};
+    use super::{MODS_AT_BAR, Mode, PENDING, RERELEASE, VANILLA, engine, parse, write_progs};
     use crate::exec::{Fake, Reply};
     use crate::oracles::codegen::{self, Profile};
     use crate::oracles::rerelease;
@@ -433,5 +450,16 @@ mod tests {
             .filter(|id| !MODS_AT_BAR.contains(id))
             .collect();
         assert!(pending.iter().all(|id| !full.contains(id)));
+    }
+
+    // spec DIFF-12.19: crmod7 and Arcane Dimensions run under vkQuake's profile, every other
+    // codebase under id's
+    #[test]
+    fn the_extension_mods_run_under_vkquake() {
+        assert_eq!(engine("crmod7"), "vkquake");
+        assert_eq!(engine("arcane-dimensions"), "vkquake");
+        for id in VANILLA.into_iter().chain(RERELEASE).chain(MODS_AT_BAR) {
+            assert_eq!(engine(id), "id", "{id}");
+        }
     }
 }

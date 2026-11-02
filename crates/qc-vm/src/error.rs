@@ -68,7 +68,7 @@ impl core::error::Error for RunError {}
 
 /// Which runtime error ended the run, with id's message or this spec's for a divergence.
 ///
-/// Implements VM-19.1 (the messages id's VM raises), VM-3.4 (`Bad opcode`), VM-14.4
+/// Implements VM-19.1 (the messages id's VM raises), VM-3.4 (`Bad opcode`), VM-14.7
 /// (`Bad builtin call number`) and VM-19.7 (the divergences, each with the implementation's
 /// own message, since id has none).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -85,7 +85,7 @@ pub enum ErrorKind {
     LocalsStackOverflow,
     /// `runaway loop error` (VM-3.1): the run's runaway counter reached 0.
     Runaway,
-    /// `Bad builtin call number` (VM-14.4, LIMIT-5.3): the builtin number is
+    /// `Bad builtin call number` (VM-14.7, LIMIT-5.3): the builtin number is
     /// `LIMIT_NUM_BUILTINS` or more, or has no positive value.
     BadBuiltin,
     /// `Bad opcode <op>` (VM-3.4): the opcode is above 65 (`OP_BITOR`).
@@ -248,7 +248,7 @@ pub enum Divergence {
         /// The function index.
         index: i32,
     },
-    /// VM-14.4: a builtin number the host has no builtin for.
+    /// VM-14.7: a builtin number the host has no builtin for.
     UnregisteredBuiltin {
         /// The builtin number.
         number: u32,
@@ -274,7 +274,7 @@ impl Divergence {
             Self::Load(_) => "VM-11.4",
             Self::Pointer(_) => "VM-12.5",
             Self::CallOutOfRange { .. } => "VM-14.3",
-            Self::UnregisteredBuiltin { .. } => "VM-14.4",
+            Self::UnregisteredBuiltin { .. } => "VM-14.7",
             Self::NegativeLocals { .. } => "VM-15.6",
             Self::StateSelf => "VM-17.4",
         }

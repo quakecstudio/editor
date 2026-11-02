@@ -63,7 +63,7 @@ engine never looks at the function's name or parameter list.
   a vector). A builtin that returns nothing leaves the return slots unchanged unless a statement
   below says otherwise; unlike a QuakeC function (VM-16.2), it does not clear them.
 - **BUILTIN-1.5** A builtin runs to completion within the call statement: no frame is pushed
-  (VM-14.4). The builtins that call back into QuakeC (`walkmove` and `movetogoal`, through
+  (VM-14.7). The builtins that call back into QuakeC (`walkmove` and `movetogoal`, through
   touch functions) do so as nested runs (VM-18).
 - **BUILTIN-1.6** A builtin that fails may already have written globals, fields or engine
   state; where it has, the statement below says what is written before the check.
@@ -767,6 +767,167 @@ statements give each expression as id writes it, because that decides the last b
   variadic extension builtins the rerelease's engine finds by name. Its other `#0:ex_*`
   builtins and `checkextension` (`#99`) are not vanilla and are not in this spec; the engine
   target database (P2-04) covers them.
+
+## BUILTIN-18 vkQuake's profile
+
+**Source:** [Novum/vkQuake](https://github.com/Novum/vkQuake) at commit
+`27789d7333a46674474d871137bb71e056719628`: `Quake/pr_exec.c` (`PR_ExecuteProgram`),
+`Quake/pr_ext.c` (`PF_Fixme`, `PR_EnableExtensions`, `extensionbuiltins`) and
+`Quake/quakedef.h` (`MAX_SOUNDS`, `MAX_MODELS`). Ported under ADR-0018; each file's header
+grants "version 2 of the License, or (at your option) any later version".
+
+The compiler differential runs a mod written for an engine with extension builtins under this
+profile (DIFF-12.19); everything else runs under id's.
+
+### Behaviour
+
+- **BUILTIN-18.1** Every builtin number reaches the dispatch (VM-14.7): `PR_ExecuteProgram`
+  calls builtin 0, `PF_Fixme`, for a number past its table ("if (i >= qcvm->numbuiltins) i =
+  0; // just invoke the fixme builtin."), and `PF_Fixme` looks the number up among the
+  extension builtins. id's numbers keep id's builtins (BUILTIN-6 to BUILTIN-16): the profile
+  changes which numbers exist and the precache limits, not what id's builtins do.
+- **BUILTIN-18.2** A number that has no builtin fails as `PF_Fixme` does when no extension has
+  the number: `PR_RunError ("unimplemented builtin #%i - %s", binum, funcname)`, where
+  `funcname` is the name of the function the `CALL` called. This holds for id's gaps
+  (BUILTIN-1.2) too, which vkQuake's table fills with `PF_Fixme`.
+- **BUILTIN-18.3** The precache lists hold `MAX_SOUNDS` 2048 sounds and `MAX_MODELS` 8192
+  models ("#define MAX_MODELS 8192 // johnfitz -- was 256", "#define MAX_SOUNDS 2048 //
+  johnfitz -- was 256"), in place of LIMIT-6.2's 256 each.
+- **BUILTIN-18.4** `forceinfokey(player, key, value)` (#213) is `PF_sv_forceinfokey`: the
+  player through `G_EDICTNUM`, so a bad one is `NUM_FOR_EDICT`'s error (BUILTIN-2.7), then the
+  key and value strings, then `SV_UpdateInfo`. On the world (`if (!edict)`) a cvar registered
+  with `CVAR_SERVERINFO` (`fraglimit`, `timelimit`, `teamplay` and `noexit` in `Quake/host.c`) is
+  set with `Cvar_Set`, which `cvar` reads back. Every other key goes to the server's or the
+  player's info string and the network, which the mock does not keep: no builtin it ports reads
+  an info string back.
+- **BUILTIN-18.5** `clientstat(num, type, fld)` (#232) and `globalstat(num, type, name)` (#233)
+  are `PF_clientstat` and `PF_globalstat`: they choose what the server sends a client as stat
+  `num` (`PR_CustomStat`), which no builtin reads back, so they change nothing QuakeC sees.
+  `globalstat` reads `name` with `G_STRING`, so a value that is no string is the mock's
+  string error (BUILTIN-2.8); `clientstat` reads `fld` with `G_INT`.
+- **BUILTIN-18.6** `registercvar(name, value)` (#93) is `PF_registercvar`, which makes the
+  setting `name` with `Cvar_Create` unless it exists, so `cvar` then reads it. The value it
+  gives a new setting is read from the first parameter again: "const char *value =
+  (qcvm->argc > 1) ? G_STRING (OFS_PARM0) : \"\";", so `registercvar("x", "5")` makes `x`
+  with the text `x`, and a call with one argument makes it empty. An existing setting is
+  unchanged.
+- **BUILTIN-18.7** `strftime(uselocaltime, format, ...)` (#478) is `PF_strftime`, which writes
+  `format` with C's `strftime` at `time (NULL)` into a new temporary string. The wall clock
+  would make two runs differ, so the mock's time is fixed, as its random source is (DIFF-6.2):
+  1970-01-01 00:00:00 UTC, a Thursday, for local and UTC time alike. Each conversion is its
+  text at that instant (`%Y` `1970`, `%m` `01`, `%d` `01`, `%H` `00`, `%z` `+0000`, `%Z` `GMT`,
+  `%a` `Thu` and so on, the C and POSIX conversions), `%%` is `%`, and any other `%` sequence is
+  kept as written. A text that does not fit vkQuake's `STRINGTEMP_LENGTH` (1024 bytes) with its
+  terminator is empty, as `strftime` then returns 0. The result is a new engine string
+  (EDICT-13.1).
+- **BUILTIN-18.8** `sprintf(format, ...)` (#627) is `PF_sprintf`, `PF_sprintf_internal (format,
+  1, ...)` into a 1024-byte temporary string, the result a new engine string. It reads each
+  directive as vkQuake does: an argument position `N$`, the flags `#0- +` (a width written
+  with a leading `0` also sets `0`), a width and a precision that `*` or `*N$` take from a
+  float argument (a negative width left-justifies), and the letters `h` (a float argument),
+  `l` and `L` (an integer one) and `q` (64 bits). An argument is a float unless a letter, `%i`
+  or `%p` makes it an integer, and one not passed is 0 or the empty string. `%d`, `%i`, `%o`,
+  `%u`, `%x`, `%X`, `%e`, `%E`, `%f`, `%F`, `%g`, `%G`, `%c` and `%s` are written as glibc's
+  `printf` writes them (a negative NaN as `-nan`); `%p` and `%P` are `%x` and `%X` zero-padded
+  to 8; `%v` and `%V` are a vector's three components as `%g` or `%G` with spaces between; `%S`
+  is the string in double quotes, with a leading `\` and `\n`, `\r` and `\"` escaped when it
+  has a line break or quote. A float converted to an integer is truncated as x86-64's
+  `cvttsd2si` does, `INT64_MIN` out of range. `%%` is `%`. A `.` with no number or `*` after it,
+  a `*N` with no `$`, and any other letter (`%I` among them) end the text there. The text stops
+  at 1023 bytes, and a `%c` of 0 ends its own directive's text at the NUL. A string argument
+  that is no string is the mock's string error (BUILTIN-2.8).
+- **BUILTIN-18.9** `strzone(s, ...)` (#118) is `PF_strzone`: every argument the call passed,
+  read with `G_STRING`, joined into a new engine string that it remembers as zoned.
+  `strunzone(s)` (#119) is `PF_strunzone`: it reads `s` with `G_STRING`, does nothing for 0
+  ("don't bug out if they gave a null string"), and frees a zoned string with
+  `PR_ClearEngineString`, after which the value is no string, as vkQuake's `PR_GetString` then
+  refuses it ("attempt to get a non-existant string"): the mock's string error (BUILTIN-2.8). A
+  string `strzone` did not make, or one already freed, is left as it is ("string wasn't
+  strzoned" is only a console warning). A freed value is not reused.
+- **BUILTIN-18.10** `fopen(name, mode)` (#110) is `PF_fopen`, which reads `name` with `G_STRING`
+  and returns -1 when it opens nothing ("G_FLOAT (OFS_RETURN) = -1; // assume failure"). The
+  mock's game directory is empty and cannot be written, so every `fopen` returns -1: a file to
+  read is not there, as in a game directory without it, and one to write or append is not
+  made, where vkQuake would create it. A file is no input the two progs could share, so the
+  mock keeps none.
+- **BUILTIN-18.11** `cvar_string(name)` (#448) is `PF_cvar_string`: for a known setting a new
+  temporary string holding its text (`var->string` for server QuakeC), cut to 1023 bytes; for
+  `game`, when no setting has the name, the game's directory names (`COM_GetGameNames`), which
+  for the mock's game is `id1`; for any other name 0, the null string.
+- **BUILTIN-18.12** `infokey(e, key)` (#80) is `PF_infokey_s`, which reads `e` with
+  `G_EDICTNUM` (BUILTIN-2.7) and `key` with `G_STRING` and answers from fixed sources, not from
+  the info strings `forceinfokey` sets (BUILTIN-18.4). On the world, `*version` is
+  `ENGINE_NAME_AND_VER`, `vkQuake 1.37.1` (`Quake/quakever.h`). On an active client: `ip` is its
+  socket's address, `LOCAL` for the local loop (`Quake/net_loop.c`), which every client of the
+  mock is; `ping` is `%f` of its average ping, `0.000000`, as the mock's clients never ping;
+  `protocol` is `rmq999`, vkQuake's default protocol ("int sv_protocol = PROTOCOL_RMQ;"); `name` is `player` and `topcolor`,
+  `bottomcolor` and `csqcactive` are `0`, the name and colours a client enters with (DIFF-4.1);
+  `team` is `t1`, `t` and the bottom colour plus 1; `*VIP` and `*spectator` are empty. Any other
+  key, and any key on an edict that is no active client, is 0, the null string. A text is a new
+  temporary string.
+- **BUILTIN-18.13** `print(s, ...)` (#339) is `PF_print`, which writes each argument the call
+  passed, read with `G_STRING`, to the console. The mock has no console, so it reads and checks
+  them, as `dprint` does (BUILTIN-11.3).
+- **BUILTIN-18.14** `checkextension(name)` (#99) is `PF_checkextension`: 0 for a name not in
+  vkQuake's `qcextensions` list; for one in it, the setting `pr_ext_NAME` in lower case is made
+  with `1` unless it exists (`Cvar_Create`), and the answer is 1 unless that setting is 0. The
+  entries with a support check (`DP_ENT_ALPHA`, `DP_ENT_COLORMOD`, `DP_ENT_SCALE`, the
+  particle ones) pass it under the server's defaults: protocol RMQ, `PEXT2_SUPPORTED_SERVER`
+  with `PEXT2_REPLACEMENTDELTAS` (`Quake/protocol.h`), `r_fteparticles` 1 and `cl_nopext` 0, so
+  every name in the list is supported.
+- **BUILTIN-18.15** `min(a, b, ...)` (#94) and `max(a, b, ...)` (#95) are `PF_min` and `PF_max`:
+  the first argument, replaced by each later one the call passed for which `r > v` (`r < v`)
+  holds, so a NaN is the answer only when it comes first. `bound(min, value, max)` (#96) is
+  `PF_bound`: `value` set to `max` when above it, then to `min` when below it, so `min` wins
+  when the two cross.
+- **BUILTIN-18.16** `strtolower(s)` (#480) and `strtoupper(s)` (#481) are `PF_strtolower` and
+  `PF_strtoupper`: a new temporary string of `s`'s bytes through `q_tolower` (`q_toupper`),
+  which change only ASCII letters, up to 1023 of them.
+- **BUILTIN-18.17** `strconv(ccase, redalpha, rednum, s, ...)` (#224) is `PF_strconv`: the
+  strings from the fourth argument on, joined (`PF_VarString (3)`; the mock has no
+  localisation file, so each is itself), up to 1023 bytes, each byte converted as
+  `chrconv_number`, `chrchar_alpha` and `chrconv_punct` convert it. A digit in one of the four
+  digit rows (`0` to `9` plus 0, 128, 98 or -30) moves to the row `rednum` names: 1 white, 2
+  red, 3 the special row at -30, 4 the one at 98, any other its own. A letter keeps its place
+  in the alphabet; `ccase` 1 makes it lower case and 2 upper; `redalpha` 1 makes it white, 2
+  red, 5 red on even positions and 6 red on odd ones, any other its own colour. Any other byte
+  is kept when `redalpha` is 0 or its low 7 bits are below 16, else moved to the white or red
+  half by `redalpha` 1 or 2. The arguments are read as `G_FLOAT` and `(int)` (BUILTIN-2.2).
+- **BUILTIN-18.18** `num_for_edict(e)` (#512) is `PF_num_for_edict`: "G_FLOAT (OFS_RETURN) =
+  G_EDICTNUM (OFS_PARM0);", the edict's number, and `NUM_FOR_EDICT`'s error for a value that
+  is no edict (BUILTIN-2.7).
+- **BUILTIN-18.19** `stof(s)` (#81) is `PF_stof`, "G_FLOAT (OFS_RETURN) = atof (G_STRING
+  (OFS_PARM0));": C's `atof`, `strtod` of the longest prefix that is a number, rounded to a
+  float. After white space and an optional sign it reads a decimal number with an optional
+  point and an exponent taken only when a digit follows its `e` and sign, a hexadecimal one
+  after `0x` with an optional `p` exponent, or `inf`, `infinity` or `nan` in any case; with
+  none it is 0. A decimal number is rounded correctly, as glibc's `strtod` does; a hexadecimal
+  one is exact up to 13 digits. This is not `Q_atof` (BUILTIN-11.7), which `cvar` uses.
+- **BUILTIN-18.20** `clienttype(e)` (#455) is `PF_clienttype`: `e` through `G_EDICT` and
+  `NUM_FOR_EDICT` (BUILTIN-2.7); an edict that is no client slot (`i >= svs.maxclients`, the
+  world among them, as `NUM_FOR_EDICT (ed) - 1` wraps) is 3, `CLIENTTYPE_NOTACLIENT`; an active
+  client with a connection is 1, `CLIENTTYPE_REAL`, which every client of the mock is (DIFF-4.1);
+  an empty slot is 0, `CLIENTTYPE_DISCONNECTED`.
+- **BUILTIN-18.21** `strlen(s)` (#114) is `PF_strlen`, `s`'s length in bytes. `strcat(s, ...)`
+  (#115) is `PF_strcat`: each argument the call passed, read with `G_STRING`, appended with
+  `q_strlcat` into a 1024-byte temporary string, which stops after the first that does not fit
+  ("if (s >= STRINGTEMP_LENGTH) ... break;"), so the text is cut to 1023 bytes and no later
+  argument is read. `substring(s, start, length)` (#116) is `PF_substring`, with `start` and
+  `length` read as `G_FLOAT` and `(int)` (BUILTIN-2.2): a negative `start` counts from the end
+  (`slen + start`), a negative `length` ends that far from the end (`slen - start + (length +
+  1)`), a `start` still negative becomes 0, and a `start` at or past the end or a `length` of
+  0 or less gives the empty string; otherwise up to `length` bytes from `start`, at most 1023.
+- **BUILTIN-18.22** `strncmp(a, b, len, aofs, bofs)` (#228) is `PF_strncmp`: with two arguments
+  glibc's `strcmp (a, b)`; with more, `strncmp (a + aofs, b, len)`, where `aofs` defaults to 0
+  and becomes `strlen (a)` when negative or past it, and `bofs` is read but not used ("bofs =
+  strlen (b);" changes nothing compared). The answer is the difference of the first bytes that
+  differ, as unsigned chars, or 0. `strcasecmp(a, b)` (#229) and `strncasecmp(a, b, len, aofs,
+  bofs)` (#230) are both `PF_strncasecmp`, the same with QuakeSpasm's `q_strcasecmp` and
+  `q_strncasecmp` (`Quake/common.c`): ASCII letters lowered, and the answer `c1 - c2` of the
+  first `char`s that differ or where `a` ends, which x86 signs, so a byte from 128 up counts
+  as negative. A negative `len` is past any string. `strstrofs(s, sub, firstofs)` (#221) is
+  `PF_strstrofs`: -1 when `firstofs` is not 0 and is negative or past `strlen (s)`; else the
+  offset in `s` of `sub` found from `firstofs` (an empty `sub` at `firstofs`), or -1.
 
 ## Test vectors
 

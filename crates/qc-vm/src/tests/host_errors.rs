@@ -44,6 +44,10 @@ enum Raise {
 }
 
 impl Builtins for Raise {
+    fn limit(&self) -> Option<u32> {
+        Some(crate::LIMIT_NUM_BUILTINS)
+    }
+
     /// The progs calls only builtin 1, so the number is not looked at.
     fn call(&mut self, _number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
         match *self {
@@ -284,7 +288,7 @@ fn divergence_messages_name_their_statement() {
         ),
         (
             Divergence::UnregisteredBuiltin { number: 3 },
-            "no builtin 3 is registered (VM-14.4)",
+            "no builtin 3 is registered (VM-14.7)",
         ),
         (
             Divergence::NegativeLocals { locals: -2 },

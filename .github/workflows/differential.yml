@@ -74,11 +74,14 @@ jobs:
           key: oracles-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**') }}
       - name: Build and check the oracles
         run: cargo xtask oracles
-      # id 1.01 (compiled by id's qcc) and the six rerelease codebases (compiled by FTEQCC).
-      - name: Write id 1.01 and the rerelease codebases to the asset cache
+      # id 1.01 (compiled by id's qcc), the six rerelease codebases (compiled by FTEQCC), and
+      # the corpus mods at the bar that `compiler-diff --full` compares (DIFF-12.18: Copper,
+      # librequake, QC Conduit and SWAB); the mods' sources (their `progs.src` included) must be
+      # in the asset cache for the compiler differential to compile them.
+      - name: Write id 1.01, the rerelease codebases and the mods at the bar to the asset cache
         run: |
           cargo xtask corpus fetch id-1.01 rerelease rerelease-hipnotic rerelease-rogue \
-            rerelease-mg1 rerelease-ctf rerelease-mg3
+            rerelease-mg1 rerelease-ctf rerelease-mg3 copper librequake qc-conduit swab
       - name: Compile the rerelease with FTEQCC
         run: cargo xtask oracles rerelease "$QS_TEST_ASSETS/codebase"
       # P1-14: every corpus progs.dat round-trips through qc-progs; it also writes the progs the

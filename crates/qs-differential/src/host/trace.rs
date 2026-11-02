@@ -71,6 +71,10 @@ impl Builtins for StringBuiltins<'_> {
         result
     }
 
+    fn limit(&self) -> Option<u32> {
+        self.builtins.limit()
+    }
+
     fn engine_string(&self, value: i32) -> Option<&[u8]> {
         self.builtins.engine_string(value)
     }
