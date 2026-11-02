@@ -869,7 +869,11 @@ fn compared_values_are_mined_and_drawn() {
         };
         // A field read into a local, then compared: the constant is the field's.
         assert_eq!(numbers(b"frags"), [3.0]);
-        assert_eq!(numbers(b"health"), [7.0]);
+        // An ordering with a constant: the constant and its two neighbours (the set is by
+        // bits, so the order is 6, 7, 8 by their bit patterns).
+        let mut health = numbers(b"health");
+        health.sort_by(f32::total_cmp);
+        assert_eq!(health, [6.0, 7.0, 8.0]);
         assert_eq!(
             pools.compared[&b"netname"[..]].texts,
             BTreeSet::from([b"carrier".to_vec()])

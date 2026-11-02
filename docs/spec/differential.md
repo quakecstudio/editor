@@ -764,7 +764,10 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   the body's statements: a field a `LOAD` reads into a slot, a float or string variable, or a
   parameter of the call is a name, and a `STORE` of a name carries it to the slot stored to;
   an `EQ`, `NE`, `LT`, `GT`, `LE` or `GE` of a name and a float or string constant gives the
-  name the constant; a `BITAND` or `BITOR` of a name and a constant gives it the constant and
+  name the constant, and an ordering, `LT`, `GT`, `LE` or `GE`, with a float constant gives it
+  one less and one more as well, since a strict ordering holds on neither side at the constant
+  itself (Arcane Dimensions' `breakable_cache` runs only for `self.style > 0 && self.style <
+  BTYPE_CUSTOM`); a `BITAND` or `BITOR` of a name and a constant gives it the constant and
   0; an `IF`, `IFNOT` or `NOT` of a name gives it 0 and 1, `""` and `world`; an `EQ_E` or
   `NE_E` of a name gives it `world`; and an `EQ`, `NE` or ordering of two names pairs them,
   so after the draws the second of a pair takes the first's value one time in two, for each

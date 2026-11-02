@@ -286,16 +286,27 @@ fn mine_compared(
             | Opcode::BitOr => {
                 let (first, second) = (operand(&loaded, a), operand(&loaded, b));
                 let masked = matches!(op, Opcode::BitAnd | Opcode::BitOr);
-                if let Operand::Named(name) = &first {
-                    record(&mut compared, &mut pairs, name.clone(), &second);
+                let ordered = matches!(op, Opcode::Le | Opcode::Ge | Opcode::Lt | Opcode::Gt);
+                for (name, other) in [(&first, &second), (&second, &first)] {
+                    let Operand::Named(name) = name else {
+                        continue;
+                    };
+                    record(&mut compared, &mut pairs, name.clone(), other);
                     if masked {
                         record(&mut compared, &mut pairs, name.clone(), &Operand::Number(0));
                     }
-                }
-                if let Operand::Named(name) = &second {
-                    record(&mut compared, &mut pairs, name.clone(), &first);
-                    if masked {
-                        record(&mut compared, &mut pairs, name.clone(), &Operand::Number(0));
+                    // An ordering with a constant is satisfied strictly on either side of it,
+                    // so the name takes one less and one more too.
+                    if ordered && let Operand::Number(bits) = other {
+                        for neighbour in [-1.0, 1.0] {
+                            let value = f32::from_bits(*bits) + neighbour;
+                            record(
+                                &mut compared,
+                                &mut pairs,
+                                name.clone(),
+                                &Operand::Number(value.to_bits()),
+                            );
+                        }
                     }
                 }
                 loaded.remove(&c);
