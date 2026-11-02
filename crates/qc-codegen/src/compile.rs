@@ -603,6 +603,14 @@ impl<'a> Compiler<'a> {
                 None => {}
                 Some(ast::Initializer::Value(expr)) => {
                     let span = expr.syntax().span();
+                    // FTEF-19.80: under FTEQCC a definition already initialised keeps its value
+                    // when initialised again: the model has judged a differing value (FTE-22.6),
+                    // and one of a `#pragma noref 1` definition is dropped without a word.
+                    if self.dialect.has_fteqcc_extensions()
+                        && self.program.def(place).is_some_and(|def| def.initialized)
+                    {
+                        continue;
+                    }
                     // A literal is stored as it is (QC-20); under FTEQCC an expression is the
                     // value the semantic model folded it to (FTEF-34.9).
                     if let Some(other) = self.field_alias(place, &expr)? {
