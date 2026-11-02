@@ -624,13 +624,14 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
 - **DIFF-12.7** When the two progs' definitions, functions or strings differ, a call's return
   value is compared too, since the return slot is named by neither. A version 6 progs does not
   record a function's return type, so the slot's first word is read as a float, a string, an
-  entity and a function, and the two agree when any reading does: the same bits, the same text,
-  the same edict, or the same function. A vector's other two words are compared only through
+  entity and a function: two words that both read as strings agree only by their text, since
+  two string tables may put different strings at one offset, and otherwise the two agree when
+  any other reading does, the same bits, the same edict or the same function. A vector's other two words are compared only through
   the globals and fields they are stored to. A QuakeC function of the first progs that the
-  second has no QuakeC function of the same name for is a divergence. A function is paired
-  with the second progs' function of its name, the one at its own index when that has the
-  name: FTEQCC names the accessor of every local array `tab` `ArrayGet*tab` (FTE-13.8), and
-  crmod7 has seven, each read with its own.
+  second has no QuakeC function of the same name for is a divergence. The k-th function of a
+  name in the first progs is paired with the k-th of that name in the second: FTEQCC names the
+  accessor of every local array `tab` `ArrayGet*tab` (FTE-13.8), and crmod7 has seven, each
+  read with its own; a name the second progs gives fewer functions leaves the rest missing.
 - **DIFF-12.8** **Withdrawn** 2026-10-30: it compared the five rerelease codebases besides
   `rerelease` only when a run named them, until each passed; four pass and the nightly run
   compares them; replaced by DIFF-12.14. `cargo xtask compiler-diff --full` also compares the rerelease (COMP-8):
@@ -775,10 +776,11 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   an `EQ`, `NE`, `LT`, `GT`, `LE` or `GE` of a name and a float or string constant gives the
   name the constant, and an ordering, `LT`, `GT`, `LE` or `GE`, with a float constant gives it
   one less and one more as well, since a strict ordering holds on neither side at the constant
-  itself, and an ordering with a name, a zero global such as `FALSE` or a parameter, gives it
-  0, -1 and 1 (Arcane Dimensions' `breakable_cache` runs only for `self.style > FALSE &&
-  self.style < BTYPE_CUSTOM`); a `BITAND` or `BITOR` of a name and a constant gives it the
-  constant and 0; an `IF`, `IFNOT` or `NOT` of a name gives it 0 and 1, `""` and `world`; an `EQ_E` or
+  itself, and an ordering with a zero global such as `FALSE`, a global at 0 that no
+  `IMMEDIATE` names, gives it 0, -1 and 1 (Arcane Dimensions' `breakable_cache` runs only for
+  `self.style > FALSE && self.style < BTYPE_CUSTOM`), while an ordering with a field,
+  variable or parameter pairs the two as any comparison of two names does; a `BITAND` or
+  `BITOR` of a name and a constant gives it the constant and 0; an `IF`, `IFNOT` or `NOT` of a name gives it 0 and 1, `""` and `world`; an `EQ_E` or
   `NE_E` of a name gives it `world`; and an `EQ`, `NE` or ordering of two names pairs them,
   so after the draws the second of a pair takes the first's value one time in two, for each
   edict the first was drawn for, or as a variable. A constant is a global at a slot whose value
@@ -790,8 +792,7 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   copies its unnamed arguments to (FTE-18.6), is typed as vectors in the progs (`ty=3`) and
   holds an argument of any type in each element, a string's offset among them, which two
   progs with different string tables never share. Two elements agree when their first word
-  agrees under any of DIFF-12.7's readings, the same bits, the same text, the same edict or
-  the same function, and their other two words hold the same bits. So crmod7's
+  agrees under DIFF-12.7's readings and their other two words hold the same bits. So crmod7's
   `score_check_sudden_death`, which passes strings on to a variadic, is no divergence by its
   `__va_list[1]`.
 - **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and

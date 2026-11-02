@@ -851,6 +851,8 @@ fn compared_values_are_mined_and_drawn() {
     const COMPARED: &str = "float x;\nfloat y;\n.float lastteam;\n\
         float(float n, string s) h = { local float t; t = self.frags; \
         if (t == 3 || self.health > 7) x = 1; if (self.armorvalue > x) y = 1; \
+        if (self.armortype <= 2 || self.waterlevel >= 3 || self.watertype < 4) y = 8; \
+        if (self.ammo_shells < self.ammo_nails) y = 9; \
         if (self.netname == \"carrier\") y = 2; \
         if (self.items & 32) y = 3; \
         if (!self.enemy) y = 4; \
@@ -874,10 +876,32 @@ fn compared_values_are_mined_and_drawn() {
         let mut health = numbers(b"health");
         health.sort_by(f32::total_cmp);
         assert_eq!(health, [6.0, 7.0, 8.0]);
-        // An ordering with a name, the zero global `x`: 0 and its neighbours, and the pair.
+        // An ordering with a zero global, `x`: 0 and its neighbours, and the pair.
         let mut armor = numbers(b"armorvalue");
         armor.sort_by(f32::total_cmp);
         assert_eq!(armor, [-1.0, 0.0, 1.0]);
+        assert!(
+            pools
+                .pairs
+                .contains(&(b"armorvalue".to_vec(), b"x".to_vec()))
+        );
+        // Every ordering opcode draws the neighbours.
+        for (name, want) in [
+            (&b"armortype"[..], [1.0, 2.0, 3.0]),
+            (&b"waterlevel"[..], [2.0, 3.0, 4.0]),
+            (&b"watertype"[..], [3.0, 4.0, 5.0]),
+        ] {
+            let mut got = numbers(name);
+            got.sort_by(f32::total_cmp);
+            assert_eq!(got, want, "{}", String::from_utf8_lossy(name));
+        }
+        // An ordering of two fields pairs them and draws no neighbours.
+        assert!(numbers(b"ammo_shells").is_empty());
+        assert!(
+            pools
+                .pairs
+                .contains(&(b"ammo_shells".to_vec(), b"ammo_nails".to_vec()))
+        );
         assert_eq!(
             pools.compared[&b"netname"[..]].texts,
             BTreeSet::from([b"carrier".to_vec()])
@@ -913,6 +937,13 @@ fn compared_values_are_mined_and_drawn() {
                 .iter()
                 .any(|c| { last_field(c, c.self_edict, b"frags") == Some(Draw::Float(3.0)) })
         );
+        // A neighbour of an ordered constant is drawn, not only mined.
+        assert!(contexts.iter().any(|c| {
+            matches!(
+                last_field(c, c.self_edict, b"health"),
+                Some(Draw::Float(v)) if [6.0_f32, 8.0].contains(&v)
+            )
+        }));
         assert!(contexts.iter().any(|c| {
             last_field(c, c.self_edict, b"netname") == Some(Draw::Text(b"carrier".to_vec()))
         }));
@@ -1399,4 +1430,35 @@ fn same_named_functions_are_paired_by_index() {
                   string(float i) g = { local string tab[2]; tab[0] = \"ccc\"; tab[1] = \"dddd\"; \
                   return tab[i]; };\n";
     assert_eq!(against_fteqcc(source, source), []);
+}
+
+// spec DIFF-12.23: an element's other two words must hold the same bits, so a vector argument
+// that differs in a later component is a divergence, and a float argument agrees by its bits
+#[test]
+fn a_va_list_elements_other_words_are_compared() {
+    let vector =
+        |v: &str| format!("void(string a, ...) v = {{ }};\nvoid() f = {{ v(\"x\", '{v}'); }};\n");
+    assert_eq!(against_fteqcc(&vector("1 2 3"), &vector("1 2 3")), []);
+    let divergences = against_fteqcc(&vector("1 2 3"), &vector("1 2 4"));
+    assert!(
+        divergences
+            .iter()
+            .any(|d| matches!(d, Difference::Global(name, _, _) if name == b"__va_list[0]")),
+        "{divergences:?}"
+    );
+    let float =
+        |n: u32| format!("void(string a, ...) v = {{ }};\nvoid() f = {{ v(\"x\", {n}); }};\n");
+    assert_eq!(against_fteqcc(&float(5), &float(5)), []);
+    assert!(!against_fteqcc(&float(5), &float(6)).is_empty());
+}
+
+// spec DIFF-12.7: two strings at one offset of two string tables agree only by their text
+#[test]
+fn a_return_value_of_two_strings_agrees_by_text_not_offset() {
+    // Both tables put their first string at the same offset; the texts differ.
+    let theirs = "string() f = { return \"a\"; };\n";
+    let ours = "string() f = { return \"b\"; };\n";
+    let (function, what) = first(theirs, ours);
+    assert_eq!(function.as_deref(), Some("f"));
+    assert!(matches!(what, Difference::Return(..)), "{what:?}");
 }

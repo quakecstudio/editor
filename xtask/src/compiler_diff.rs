@@ -278,7 +278,7 @@ mod tests {
     use crate::exec::{Fake, Reply};
     use crate::oracles::codegen::{self, Profile};
     use crate::oracles::rerelease;
-    use crate::oracles::testing::{fake_oracles, fresh_dir};
+    use crate::oracles::testing::{fake_oracles, fresh_dir, root};
 
     /// Writes a codebase `id` of one file, `world.qc`, under `codebases`.
     fn codebase(codebases: &Path, id: &str, source: &str) -> std::path::PathBuf {
@@ -449,6 +449,22 @@ mod tests {
             .filter(|id| !MODS_AT_BAR.contains(id))
             .collect();
         assert!(pending.iter().all(|id| !full.contains(id)));
+    }
+
+    // spec DIFF-12.14, DIFF-12.18: the nightly workflow runs one job per codebase of the full
+    // run's set, the matrix in .github/workflows/differential.yml naming exactly that set
+    #[test]
+    fn the_nightly_matrix_names_the_full_runs_codebases() {
+        let workflow =
+            fs::read_to_string(root().join(".github/workflows/differential.yml")).unwrap();
+        let matrix: Vec<&str> = workflow
+            .lines()
+            .skip_while(|line| line.trim() != "codebase:")
+            .skip(1)
+            .take_while(|line| line.trim_start().starts_with("- "))
+            .map(|line| line.trim().trim_start_matches("- "))
+            .collect();
+        assert_eq!(matrix, Mode::Full.codebases());
     }
 
     // spec DIFF-12.19: crmod7 and Arcane Dimensions run under vkQuake's profile, every other
