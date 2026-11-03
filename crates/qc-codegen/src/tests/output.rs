@@ -2,14 +2,17 @@
 
 //! Program output and precache lists: QC-22.3, QC-25, QC-26 and QC-27.13.
 
+use std::path::PathBuf;
+
 use qc_progs::crc::crc_block;
 use qc_progs::opcode::Opcode;
 use qc_progs::{Def, Function, ProgsFile, Statement};
+use qc_sema::{Db, FileId, ModuleInput};
 use qc_types::Slot;
 
 use super::{compile_files, compile_source, global, progs, string};
-use crate::Precache;
 use crate::write::{needs_fte32, wrap_short_operands};
+use crate::{Options, Precache, compile_module};
 
 // spec QC-25.1: statement 0, function 0, global and field definition 0 and string 0 are
 // placeholders.
@@ -269,6 +272,43 @@ fn a_semantic_error_stops_the_build() {
 }
 
 // spec QC-27.19: every statement has the line of the source statement it was emitted for, a
+// LNO-3.1: a statement from an included file has the line in that file, counted from that
+// file's own text, not the including file's; statements from the two files interleave.
+#[test]
+fn an_included_files_statements_map_to_its_own_lines() {
+    let mut db = Db::new();
+    db.set_dialect(qc_syntax::Dialect::Fteqcc);
+    let main = "#include \"defs.qc\"\nvoid() h =\n{\n\ta = 2;\n};\n";
+    let defs = "float a;\n\nvoid() f =\n{\n\ta = 1;\n\n\ta = 3;\n};\n";
+    for (i, (name, text)) in [("t.qc", main), ("defs.qc", defs)].into_iter().enumerate() {
+        db.set_file(
+            FileId::new(i),
+            PathBuf::from(name),
+            text.as_bytes().to_vec(),
+        );
+    }
+    let input = ModuleInput {
+        compiled: vec![FileId::new(0)],
+        ..ModuleInput::default()
+    };
+    let compiled =
+        compile_module(&mut db, &input, |_| "t.qc".to_owned(), Options::default()).unwrap();
+    let p = &compiled.progs;
+    let lno = &compiled.lno;
+    let first = |name: &str| {
+        let f = p
+            .functions
+            .iter()
+            .find(|f| string(p, f.s_name) == name)
+            .unwrap();
+        usize::try_from(f.first_statement).unwrap()
+    };
+    let f = first("f");
+    assert_eq!(&lno.lines[f..f + 3], [5, 7, 7], "defs.qc's own lines");
+    let h = first("h");
+    assert_eq!(&lno.lines[h..h + 2], [4, 4], "t.qc's own lines");
+}
+
 // state header's and an empty body's the line of the function's name; statement 0 has none;
 // the map's counts are the progs'
 #[test]
