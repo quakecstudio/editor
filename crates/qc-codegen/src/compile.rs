@@ -2649,8 +2649,11 @@ impl<'a> Compiler<'a> {
     /// an integer operand of a float operator made a float first, as [`Compiler::operate`]
     /// makes it (FTEF-27.8). An emulation (FTEF-27) is written as lowered; a plain operator
     /// after this code generator's own folds, which follow FTEQCC's constants further than the
-    /// checker does (a vector literal's component, FTEF-26.13). `None`, for
-    /// [`Compiler::operate`] to lower it, for a fragment the model did not keep or [`Compiler::plan_fragment`] refuses.
+    /// checker does (a vector literal's component, FTEF-26.13). `None` for a fragment the
+    /// model did not keep, one whose recorded input constants these inputs are not, or one
+    /// [`Compiler::plan_fragment`] refuses: [`Compiler::operate`] lowers a plain operator then,
+    /// and an emulation the model lowers (FTE-19.7, FTE-19.9, FTE-19.10, FTE-19.12) is an
+    /// internal error.
     fn lowered_binary(
         &mut self,
         operator: Operator,
@@ -2664,6 +2667,12 @@ impl<'a> Compiler<'a> {
         let Some(fragment) = body.fragment_at(op_span) else {
             return Ok(None);
         };
+        // The fragment's folds read its inputs as the constants it records; an input that is
+        // another value here, such as a call the model folded, leaves it to `operate`.
+        let [assumed_left, assumed_right] = fragment.inputs;
+        if !self.is_immediate(left, assumed_left) || !self.is_immediate(right, assumed_right) {
+            return Ok(None);
+        }
         let types = self.converted_types(operator, left, right);
         let chosen = body.opcode_at(op_span);
         let Some(rows) = self.plan_fragment(fragment, chosen, types) else {
@@ -2694,6 +2703,25 @@ impl<'a> Compiler<'a> {
             self.keep_alive(&value);
         }
         Ok(Some(value))
+    }
+
+    /// Whether `value` is the constant `assumed` names, or `assumed` names none.
+    fn is_immediate(&self, value: &Value, assumed: Option<ir::Immediate>) -> bool {
+        let Some(assumed) = assumed else {
+            return true;
+        };
+        match (assumed.kind, self.constant_literal(value)) {
+            (ir::ImmediateKind::Float, Some(Literal::Float(f))) => {
+                assumed.words.first() == Some(&f.to_bits())
+            }
+            (ir::ImmediateKind::Vector, Some(Literal::Vector(v))) => {
+                assumed.words == v.map(f32::to_bits)
+            }
+            (ir::ImmediateKind::Integer, _) => {
+                self.constant_word(value) == assumed.words.first().copied()
+            }
+            (ir::ImmediateKind::Float | ir::ImmediateKind::Vector, _) => false,
+        }
     }
 
     /// The basic types `left` and `right` have once [`Compiler::floats_of`] has made an integer
@@ -2730,8 +2758,10 @@ impl<'a> Compiler<'a> {
 
     /// The rows of `fragment`'s statements, when this code generator can write it with inputs of
     /// the basic types `types`: every statement writes a value or a word of a vector temporary
-    /// by an opcode of id's table whose inputs have the types it reads, no immediate is an
-    /// integer, and its value is a temporary, an input or an immediate.
+    /// by an opcode of id's table whose inputs have the types it reads (any type for FTEQCC's
+    /// `AND` and `OR`, FTE-19.10), no immediate is an integer but the truth `AND_F` and `OR_F`
+    /// of two float constants fold to (FTEF-26.14), and its value is a temporary, an input or
+    /// an immediate.
     fn plan_fragment(
         &self,
         fragment: &ir::Fragment,
@@ -2758,8 +2788,7 @@ impl<'a> Compiler<'a> {
             ir::Input::Right => types.1,
         };
         // An input must have the type the row reads, a vector's when a word of it is read: the
-        // model does not yet lower every operand conversion the code generator does (a
-        // vector's truth, FTE-19.10).
+        // model does not yet lower every operand conversion the code generator does.
         let fits = |operand: Option<ir::Operand>, wanted: Etype| match operand {
             Some(ir::Operand::Input(n)) => input(n) == wanted,
             Some(ir::Operand::Word(ir::Whole::Input(n), _)) => input(n) == Etype::Vector,
@@ -2782,7 +2811,8 @@ impl<'a> Compiler<'a> {
                 .all(|o| !integer(o));
             // FTE-19.10: `AND` and `OR` read any operand's word as it is, as `OP_AND_ANY` and
             // `OP_OR_ANY` do on the vanilla opcodes.
-            let any = matches!(row.opcode, Opcode::And | Opcode::Or);
+            let any = self.dialect.has_fteqcc_extensions()
+                && matches!(row.opcode, Opcode::And | Opcode::Or);
             if statement.c == ir::Destination::Nothing
                 || !operands_ok
                 || (!any && !(fits(statement.a, row.a) && fits(statement.b, row.b)))

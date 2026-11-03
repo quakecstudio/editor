@@ -3363,3 +3363,30 @@ fn a_part_of_a_wider_result_is_stored_not_folded() {
     );
     assert_eq!(f[2].c, a, "a whole float result is folded into a");
 }
+
+// spec FTEF-32.17: a call of a constant vector's component, `v[0]` or `v.x`, is made, not
+// folded, so an operator of its value is a statement reading the call's value
+// spec FTEF-31.9: the component at a constant index is still a constant an operator folds
+#[test]
+fn a_call_of_a_vector_component_is_made() {
+    let p = fte_progs(
+        "float(float f) floor = #37; float a;\n\
+         void() t = { a = floor(('3 0 0')[0]) + 1; a = floor(('4 0 0').x) & 1; \
+         a = ('3 0 0')[0] + 1; };\n",
+    );
+    let a = global(&p, "a");
+    let f = body(&p, "t");
+    assert_eq!(
+        opcodes(&f),
+        ops(&[StoreF, Call1, AddF, StoreF, Call1, BitAnd, StoreF, Done])
+    );
+    assert_eq!(f[2].a, 1, "the call's value is added");
+    assert_eq!(f[2].c, a);
+    assert_eq!(f[5].a, 1, "the call's value is masked");
+    assert_eq!(
+        words(&p, f[6].a, 1),
+        [4.0_f32.to_bits()],
+        "3 + 1 folds to 4"
+    );
+    assert_eq!(f[6].b, a);
+}

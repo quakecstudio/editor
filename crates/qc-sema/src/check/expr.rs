@@ -402,6 +402,7 @@ impl<'e> Checker<'e> {
         rhs: &Value,
         lower: impl FnOnce(&mut Self, &Value, &Value) -> Result<Option<Value>, Fatal>,
     ) -> Result<Option<Value>, Fatal> {
+        let inputs = [lhs, rhs].map(|value| value.known().and_then(Constant::immediate));
         let lhs = Value {
             ir: Some(ir::Operand::Input(ir::Input::Left)),
             ..lhs.clone()
@@ -416,7 +417,8 @@ impl<'e> Checker<'e> {
         let Ok(Some(value)) = checked else {
             return checked;
         };
-        if let Some(fragment) = builder.and_then(|builder| builder.finish(value.operand())) {
+        if let Some(fragment) = builder.and_then(|builder| builder.finish(value.operand(), inputs))
+        {
             self.fragments.insert(span, fragment);
         }
         Ok(Some(value))

@@ -319,7 +319,7 @@ impl Vanilla<'_> {
                 let inputs =
                     [ir::Input::Left, ir::Input::Right].map(|n| Some(Some(ir::Operand::Input(n))));
                 let made = fragment.push(opcode, inputs, ir::Destination::Value);
-                if let Some(fragment) = fragment.finish(made) {
+                if let Some(fragment) = fragment.finish(made, [None, None]) {
                     self.fragments.insert(span, fragment);
                 }
                 Ok(Some(match result {

@@ -9,7 +9,7 @@ use qc_syntax::ast;
 use qc_syntax::{Dialect, QC_MAX_NESTING};
 
 use crate::db::Db;
-use crate::ir::Fragment;
+use crate::ir::{Fragment, Immediate, ImmediateKind};
 use crate::symbol::{DefId, FileId};
 use crate::ty::{FROM_AST_CALLS, FunctionType, ParamLabels, SimpleType, Type, TypeContext};
 use qc_diag::Span;
@@ -314,8 +314,17 @@ fn a_vanilla_operator_keeps_its_row_and_lowers_to_its_statement() {
             immediates: Vec::new(),
             temps: vec![Temp::Made(0)],
             value: Some(Operand::Temp(TempId::new(0))),
+            inputs: [None, None],
         };
         assert_eq!(body.fragment_at(span(text)), Some(&fragment), "{text}");
+    }
+}
+
+/// The float immediate of `value`.
+fn float_immediate(value: f32) -> Immediate {
+    Immediate {
+        kind: ImmediateKind::Float,
+        words: [value.to_bits(), 0, 0],
     }
 }
 
@@ -352,7 +361,8 @@ fn a_binary_operator_lowers_to_a_fragment() {
             words: [value.to_bits(), 0, 0],
         })
     };
-    let one = |op: Op, a: Operand, b: Operand| Fragment {
+    let constant = |value| Some(float_immediate(value));
+    let one = |op: Op, a: Operand, b: Operand, inputs| Fragment {
         statements: vec![Statement {
             op,
             a: Some(a),
@@ -362,13 +372,15 @@ fn a_binary_operator_lowers_to_a_fragment() {
         immediates: Vec::new(),
         temps: vec![Temp::Made(0)],
         value: Some(Operand::Temp(TempId::new(0))),
+        inputs,
     };
     assert_eq!(
         at("a + 1", "+"),
         Some(&one(
             Op::AddF,
             Operand::Input(Input::Left),
-            Operand::Input(Input::Right)
+            Operand::Input(Input::Right),
+            [None, constant(1.0)]
         )),
         "ADD_F: a literal operand is an input too"
     );
@@ -377,7 +389,8 @@ fn a_binary_operator_lowers_to_a_fragment() {
         Some(&one(
             Op::MulVf,
             Operand::Input(Input::Left),
-            Operand::Input(Input::Right)
+            Operand::Input(Input::Right),
+            [None, None]
         )),
         "MUL_VF"
     );
@@ -391,6 +404,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
             }],
             temps: Vec::new(),
             value: Some(float(5.0)),
+            inputs: [constant(2.0), constant(3.0)],
         }),
         "the folded value is an immediate the lowering made"
     );
@@ -430,6 +444,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
             immediates: Vec::new(),
             temps: (0..4).map(Temp::Made).collect(),
             value: Some(Operand::Temp(TempId::new(3))),
+            inputs: [None, constant(2.0)],
         }),
         "DIV_F, BITOR, MUL_F, SUB_F"
     );
@@ -451,6 +466,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
             }],
             temps: vec![Temp::Made(0), Temp::Made(1)],
             value: Some(Operand::Temp(TempId::new(1))),
+            inputs: [None, None],
         }),
         "DIV_F of 1, MUL_VF"
     );
@@ -468,6 +484,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
             immediates: Vec::new(),
             temps: vec![Temp::Vector(0)],
             value: Some(Operand::Temp(TempId::new(0))),
+            inputs: [None, None],
         }),
         "three BITAND_F"
     );
@@ -597,9 +614,12 @@ fn fte_fragment_at(source: &str, text: &str, operator: &str) -> Fragment {
 #[test]
 fn a_call_of_a_vector_component_is_not_folded() {
     let source = "float(float f) floor = #37; float a; vector v; \
-                  void() t = { a = floor(('4 0 0').x) & 1; a = floor(4) & 1; };";
+                  void() t = { a = floor(('4 0 0').x) & 1; a = floor(4) & 1; \
+                  a = floor(('4 0 0')[0]) | 1; };";
     let component = fte_fragment_at(source, ") & 1", "&");
     assert_eq!(component.statements.len(), 1, "{component:?}");
+    let indexed = fte_fragment_at(source, ") | 1", "|");
+    assert_eq!(indexed.statements.len(), 1, "{indexed:?}");
     let direct = fte_fragment_at(source, "(4) & 1", "&");
     assert!(direct.statements.is_empty(), "{direct:?}");
 }

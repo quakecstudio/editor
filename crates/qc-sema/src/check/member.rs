@@ -19,7 +19,7 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::pointer;
 use crate::check::reference::expected_after;
-use crate::check::{Bitfield, Constness, ElementRef, MemberArray, Reference, Value};
+use crate::check::{Bitfield, Constness, MemberArray, Reference, Value};
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -337,11 +337,11 @@ impl Checker<'_> {
             (Constness::Known(constant), Some(word)) if constant.is_vector() => {
                 let value = constant.v().get(word).copied().unwrap_or_default();
                 Value {
-                    reference: Reference::Element(Box::new(ElementRef {
-                        base: base.label(),
-                        index: pointer::int(i32::try_from(word).unwrap_or_default()),
-                        vector: true,
-                    })),
+                    reference: Reference::element(
+                        base.label(),
+                        pointer::int(i32::try_from(word).unwrap_or_default()),
+                        true,
+                    ),
                     ..Value::constant(Constant::float(value))
                 }
             }

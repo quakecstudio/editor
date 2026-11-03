@@ -149,6 +149,9 @@ pub struct Fragment {
     pub temps: Vec<Temp>,
     /// The construct's value: an input, a temporary, or a constant.
     pub value: Option<Operand>,
+    /// The constant each input was when the fragment was lowered, left then right: what its
+    /// folds read. A writer whose inputs are other values does not hold the fragment.
+    pub inputs: [Option<Immediate>; 2],
 }
 
 /// A function body's fragments, by the span of the token each was lowered at.
@@ -249,13 +252,19 @@ impl Builder {
         self.held = false;
     }
 
-    /// The fragment, valued `value`, if every step was held.
-    pub(crate) fn finish(self, value: Option<Operand>) -> Option<Fragment> {
+    /// The fragment, valued `value`, its inputs the constants `inputs`, if every step was
+    /// held.
+    pub(crate) fn finish(
+        self,
+        value: Option<Operand>,
+        inputs: [Option<Immediate>; 2],
+    ) -> Option<Fragment> {
         self.held.then_some(Fragment {
             statements: self.statements,
             immediates: self.immediates,
             temps: self.temps,
             value,
+            inputs,
         })
     }
 }
@@ -297,7 +306,9 @@ mod tests {
             c,
         };
         assert_eq!(
-            builder.clone().finish(Some(Operand::Temp(TempId(1)))),
+            builder
+                .clone()
+                .finish(Some(Operand::Temp(TempId(1))), [None, None]),
             Some(Fragment {
                 statements: vec![
                     statement(
@@ -322,16 +333,17 @@ mod tests {
                 immediates: Vec::new(),
                 temps: vec![Temp::Made(0), Temp::Vector(1)],
                 value: Some(Operand::Temp(TempId(1))),
+                inputs: [None, None],
             })
         );
         for reads in [[Some(None), None], [None, Some(None)]] {
             let mut unnamed = builder.clone();
             assert_eq!(unnamed.push(Op::MulF, reads, Destination::Value), None);
-            assert_eq!(unnamed.finish(None), None);
+            assert_eq!(unnamed.finish(None, [None, None]), None);
         }
         let mut given_up = Builder::new();
         given_up.give_up();
-        assert_eq!(given_up.finish(None), None);
+        assert_eq!(given_up.finish(None, [None, None]), None);
     }
 
     // A word of an input, a temporary or an immediate is named; a word of a word is not.
