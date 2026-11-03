@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The archive formats the corpus arrives in: a repository at a commit as a gzipped tar (RFC
-//! 1952 around POSIX ustar, with pax and GNU long names, which `git archive` writes), and a
-//! release as a zip (PKWARE APPNOTE, stored or deflated members). Inflating is `miniz_oxide`'s;
-//! the containers are read here. Every malformed input is an error, never a panic.
+//! 1952 around POSIX ustar, with pax and GNU long names, which `git archive` writes), read
+//! here, and a release as a zip, read with `qs_vfs::zip` (FS-5.5). Inflating is `miniz_oxide`'s.
+//! Every malformed input is an error, never a panic.
 
-use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read};
 
 use miniz_oxide::inflate::stream::{InflateState, inflate};
-use miniz_oxide::inflate::{TINFLStatus, decompress_to_vec_with_limit};
 use miniz_oxide::{DataFormat, MZError, MZFlush, MZStatus};
+pub(crate) use qs_vfs::zip::Zip;
 
 /// RFC 1952's magic, and its only compression method (deflate).
 const GZIP_MAGIC: [u8; 3] = [0x1f, 0x8b, 8];
@@ -296,146 +295,6 @@ fn pax_path(data: &[u8]) -> Option<String> {
         rest = rest.get(len..)?;
     }
     path
-}
-
-/// One member of a zip's central directory.
-pub(crate) struct ZipMember {
-    pub(crate) name: String,
-    method: u16,
-    flags: u16,
-    compressed: u64,
-    size: u64,
-    offset: u64,
-}
-
-/// A zip archive on disk: its central directory, read once, and the file to read members from.
-pub(crate) struct Zip {
-    file: File,
-    members: Vec<ZipMember>,
-}
-
-const EOCD: u32 = 0x0605_4b50;
-const CENTRAL: u32 = 0x0201_4b50;
-const LOCAL: u32 = 0x0403_4b50;
-/// The end-of-central-directory record, without its comment.
-const EOCD_SIZE: usize = 22;
-const MAX_COMMENT: usize = 0xffff;
-
-impl Zip {
-    /// Reads the central directory of the zip in `file`.
-    pub(crate) fn open(mut file: File) -> io::Result<Self> {
-        let len = file.seek(SeekFrom::End(0))?;
-        let tail_len = len.min(u64::try_from(EOCD_SIZE.saturating_add(MAX_COMMENT)).unwrap_or(len));
-        file.seek(SeekFrom::Start(len.saturating_sub(tail_len)))?;
-        let mut tail = Vec::new();
-        (&mut file).take(tail_len).read_to_end(&mut tail)?;
-        let at = (0..=tail.len().saturating_sub(EOCD_SIZE))
-            .rev()
-            .find(|&i| u32_at(&tail, i) == Some(EOCD))
-            .ok_or_else(|| invalid("not a zip file: no end of central directory"))?;
-        let count = u16_at(&tail, at.saturating_add(10)).unwrap_or_default();
-        let cd_size = u32_at(&tail, at.saturating_add(12)).unwrap_or_default();
-        let cd_offset = u32_at(&tail, at.saturating_add(16)).unwrap_or_default();
-        if count == 0xffff || cd_size == u32::MAX || cd_offset == u32::MAX {
-            return Err(invalid("zip64 archives are not supported"));
-        }
-        if u64::from(cd_offset).saturating_add(u64::from(cd_size)) > len {
-            return Err(invalid("zip central directory lies outside the file"));
-        }
-        file.seek(SeekFrom::Start(u64::from(cd_offset)))?;
-        let mut cd = Vec::new();
-        (&mut file).take(u64::from(cd_size)).read_to_end(&mut cd)?;
-        let mut members = Vec::new();
-        let mut at = 0_usize;
-        for _ in 0..count {
-            let bad = || invalid("truncated zip central directory");
-            if u32_at(&cd, at) != Some(CENTRAL) {
-                return Err(bad());
-            }
-            let flags = u16_at(&cd, at.saturating_add(8)).ok_or_else(bad)?;
-            let method = u16_at(&cd, at.saturating_add(10)).ok_or_else(bad)?;
-            let compressed = u32_at(&cd, at.saturating_add(20)).ok_or_else(bad)?;
-            let size = u32_at(&cd, at.saturating_add(24)).ok_or_else(bad)?;
-            let name_len = usize::from(u16_at(&cd, at.saturating_add(28)).ok_or_else(bad)?);
-            let extra_len = usize::from(u16_at(&cd, at.saturating_add(30)).ok_or_else(bad)?);
-            let comment_len = usize::from(u16_at(&cd, at.saturating_add(32)).ok_or_else(bad)?);
-            let offset = u32_at(&cd, at.saturating_add(42)).ok_or_else(bad)?;
-            let name_at = at.saturating_add(46);
-            let name = cd
-                .get(name_at..name_at.saturating_add(name_len))
-                .ok_or_else(bad)?;
-            if [compressed, size, offset].contains(&u32::MAX) {
-                return Err(invalid("zip64 members are not supported"));
-            }
-            members.push(ZipMember {
-                name: String::from_utf8_lossy(name).into_owned(),
-                method,
-                flags,
-                compressed: u64::from(compressed),
-                size: u64::from(size),
-                offset: u64::from(offset),
-            });
-            at = name_at
-                .saturating_add(name_len)
-                .saturating_add(extra_len)
-                .saturating_add(comment_len);
-        }
-        Ok(Self { file, members })
-    }
-
-    /// The bytes of the member called `name`, or `None` when the archive has no such member.
-    pub(crate) fn read(&mut self, name: &str) -> io::Result<Option<Vec<u8>>> {
-        let Some(member) = self.members.iter().find(|m| m.name == name) else {
-            return Ok(None);
-        };
-        if member.flags & 1 != 0 {
-            return Err(invalid("encrypted zip members are not supported"));
-        }
-        self.file.seek(SeekFrom::Start(member.offset))?;
-        let mut local = [0_u8; 30];
-        self.file.read_exact(&mut local)?;
-        if u32_at(&local, 0) != Some(LOCAL) {
-            return Err(invalid("bad zip local header"));
-        }
-        let skip = u16_at(&local, 26)
-            .zip(u16_at(&local, 28))
-            .map(|(n, e)| u64::from(n).saturating_add(u64::from(e)))
-            .unwrap_or_default();
-        self.file
-            .seek(SeekFrom::Current(i64::try_from(skip).unwrap_or_default()))?;
-        let mut data = Vec::new();
-        (&mut self.file)
-            .take(member.compressed)
-            .read_to_end(&mut data)?;
-        if u64::try_from(data.len()).ok() != Some(member.compressed) {
-            return Err(invalid("truncated zip member"));
-        }
-        let size = usize::try_from(member.size).map_err(|_| invalid("zip member too large"))?;
-        let bytes = match member.method {
-            0 => data,
-            8 => decompress_to_vec_with_limit(&data, size).map_err(|e| {
-                invalid(match e.status {
-                    TINFLStatus::HasMoreOutput => "zip member is larger than its stated size",
-                    _ => "corrupt deflate data in zip member",
-                })
-            })?,
-            _ => return Err(invalid("zip member uses an unsupported compression method")),
-        };
-        if bytes.len() != size {
-            return Err(invalid("zip member is not its stated size"));
-        }
-        Ok(Some(bytes))
-    }
-}
-
-fn u16_at(bytes: &[u8], at: usize) -> Option<u16> {
-    let b: [u8; 2] = bytes.get(at..at.checked_add(2)?)?.try_into().ok()?;
-    Some(u16::from_le_bytes(b))
-}
-
-fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
-    let b: [u8; 4] = bytes.get(at..at.checked_add(4)?)?.try_into().ok()?;
-    Some(u32::from_le_bytes(b))
 }
 
 #[cfg(test)]

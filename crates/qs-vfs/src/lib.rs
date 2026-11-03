@@ -17,6 +17,7 @@
 //! `qs-pak` (`docs/spec/pak.md`) and `gfx.wad` is checked with `qs-wad` (WAD-1.4).
 
 mod host;
+pub mod zip;
 
 #[cfg(test)]
 mod fixtures;

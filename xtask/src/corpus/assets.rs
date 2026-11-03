@@ -25,6 +25,7 @@ use super::manifest::{Entry, Manifest};
 use super::safe_member;
 use crate::download::Net;
 use crate::oracles::sha256::hex_digest;
+use qs_vfs::zip::ZipError;
 
 /// Files an engine needs to start a map with no id data: the palette and colormap, the HUD
 /// wad, and the map a scenario loads first.
@@ -108,7 +109,7 @@ fn fetch_archive(e: &Entry, dest: &Path, net: &dyn Net) -> Result<PathBuf, Strin
 fn extract(e: &Entry, archive: &Path, dest: &Path) -> Result<PathBuf, String> {
     let out = dest.join(&e.id);
     // Opened only when a member is not already extracted.
-    let mut zip: Option<Zip> = None;
+    let mut zip: Option<Zip<File>> = None;
     for (name, want) in &e.members {
         let rel = name
             .strip_prefix(e.strip.as_str())
@@ -122,6 +123,7 @@ fn extract(e: &Entry, archive: &Path, dest: &Path) -> Result<PathBuf, String> {
             Some(zip) => zip,
             None => zip.insert(
                 File::open(archive)
+                    .map_err(ZipError::from)
                     .and_then(Zip::open)
                     .map_err(|x| format!("{}: {x}", archive.display()))?,
             ),

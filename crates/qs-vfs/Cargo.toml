@@ -9,6 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+miniz_oxide = { workspace = true, features = ["with-alloc"] }
 qs-pak = { workspace = true }
 qs-wad = { workspace = true }
 

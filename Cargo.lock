@@ -3213,6 +3213,7 @@ dependencies = [
 name = "qs-vfs"
 version = "2026.10.0"
 dependencies = [
+ "miniz_oxide 0.9.1",
  "qc-progs",
  "qs-bsp",
  "qs-map",
@@ -5019,6 +5020,7 @@ dependencies = [
  "qs-map",
  "qs-pak",
  "qs-settings",
+ "qs-vfs",
  "qs-workbench",
  "quakec-lsp",
  "serde",
