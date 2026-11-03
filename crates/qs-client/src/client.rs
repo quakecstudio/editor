@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
 // Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2007-2008 Kristian Duske
 // Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/cl_main.c, CL_ClearState, CL_AllocDlight, CL_DecayLights, CL_LerpPoint, CL_RelinkEntities, CL_ReadFromServer
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/cl_parse.c, CL_EntityNum, CL_ParseStartSoundPacket, CL_ParseServerInfo, CL_ParseUpdate, CL_ParseBaseline, CL_ParseClientdata, CL_NewTranslation, CL_ParseStatic, CL_ParseStaticSound, CL_ParseServerMessage
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/cl_tent.c, CL_InitTEnts, CL_ParseBeam, CL_ParseTEnt, CL_NewTempEntity, CL_UpdateTEnts
-// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/cl_parse.c, CL_ParseUpdate
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/cl_parse.c, CL_ParseUpdate, CL_ParseLocalSound, CL_ParseServerMessage
 // Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/r_alias.c, R_SetupAliasFrame, R_SetupEntityTransform
 
 //! The client's state and frame (`docs/spec/engine/client.md`, CLIENT-1 to CLIENT-7): the

@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_cmds.c, PF_setorigin, PF_setsize, PF_setmodel, PF_traceline, PF_droptofloor, PF_walkmove, PF_checkbottom, PF_pointcontents
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_edict.c, ED_Free
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/pr_cmds.c, PF_finalefinished, PF_CheckPlayerEXFlags, PF_walkpathtogoal, PF_Fixme
 
 //! The server's builtins: `qc-builtins`' for the engine state it keeps, and the world builtins
 //! on this crate's collision (WORLD-8) and movement (MOVE).
@@ -24,7 +27,7 @@ use crate::collision::{
 };
 use crate::messages::{SVC_CENTERPRINT, SVC_PRINT, ServerMessages};
 use crate::physics::Sound;
-use crate::rerelease::RRE_NUM_BUILTINS;
+use crate::rerelease::{BuiltinTable, RRE_NUM_BUILTINS};
 
 /// `setorigin`.
 const SETORIGIN: u32 = 2;
@@ -92,9 +95,8 @@ pub struct SimBuiltins {
     pub(crate) sounds: Vec<Sound>,
     /// The messages to the client (NET-1 to NET-5).
     pub(crate) messages: ServerMessages,
-    /// Whether the rerelease's builtins 79 to 92 are in the table, for a progs whose names
-    /// were patched to them (RRE-4.2).
-    pub(crate) rerelease: bool,
+    /// id's table, or the rerelease's with its builtins 79 to 92 (RRE-4.2).
+    table: BuiltinTable,
     files: ModelFiles,
 }
 
@@ -107,6 +109,7 @@ impl SimBuiltins {
         map: &Bsp<'_>,
         files: ModelFiles,
         crc: i32,
+        table: BuiltinTable,
     ) -> Self {
         let mut mock = MockBuiltins::with_engine(engine);
         let bounds = &mut mock.engine_mut().model_bounds;
@@ -129,7 +132,7 @@ impl SimBuiltins {
             collision: Collision::new(map),
             sounds: Vec::new(),
             messages: ServerMessages::new(map, crc),
-            rerelease: false,
+            table,
             files,
         }
     }
@@ -192,10 +195,7 @@ impl SimBuiltins {
         let mut call = SimCall::new(context, self);
         match number {
             FINALE_FINISHED | CHECK_PLAYER_EX_FLAGS | WALK_PATH_TO_GOAL => call.set_return(0.0),
-            LOCALSOUND => {
-                call.local_sound();
-                Ok(())
-            }
+            LOCALSOUND => call.local_sound(),
             _ => Err(call.context.run_error(ErrorKind::Builtin {
                 message: "unimplemented builtin".to_owned(),
             })),
@@ -205,14 +205,14 @@ impl SimBuiltins {
 
 impl Builtins for SimBuiltins {
     fn limit(&self) -> Option<u32> {
-        if self.rerelease {
-            return Some(RRE_NUM_BUILTINS);
+        match self.table {
+            BuiltinTable::Id => self.mock.limit(),
+            BuiltinTable::Rerelease => Some(RRE_NUM_BUILTINS),
         }
-        self.mock.limit()
     }
 
     fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
-        if self.rerelease && number >= FINALE_FINISHED {
+        if self.table == BuiltinTable::Rerelease && number >= FINALE_FINISHED {
             return self.rerelease_call(number, context);
         }
         match number {

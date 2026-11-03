@@ -43,46 +43,56 @@ const EX_BUILTINS: [(&str, i32, i32); 21] = [
 /// `PF_Fixme` (92) after id's 78 (RRE-4.2).
 pub const RRE_NUM_BUILTINS: u32 = 93;
 
+/// The builtin table a progs runs with (RRE-4.2).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BuiltinTable {
+    /// id's 79 builtins (LIMIT-5.1), for a progs [`patch_builtins`] did not change.
+    #[default]
+    Id,
+    /// The rerelease's, to 92, for a progs whose named functions [`patch_builtins`] gave
+    /// builtins.
+    Rerelease,
+}
+
 /// The size of a function record, `dfunction_t` (PROGS-6).
 const FUNCTION_SIZE: usize = 36;
 
 /// `PR_PatchRereleaseBuiltins` on the bytes of a progs (RRE-4.1): for each row of the table,
 /// the first function of the name, `ED_FindFunction`'s, is given the row's builtin when its
-/// `first_statement` is the row's; returns how many were patched. A progs whose header or
-/// function table cannot be read is left as it is, and none is counted.
-pub fn patch_builtins(bytes: &mut [u8]) -> usize {
+/// `first_statement` is the row's. Returns the table the progs then runs with: the
+/// rerelease's when any function was patched, else id's. A progs whose header or function
+/// table cannot be read is left as it is.
+pub fn patch_builtins(bytes: &mut [u8]) -> BuiltinTable {
     let (table, patches) = {
         let Ok(progs) = qc_progs::Progs::read(bytes) else {
-            return 0;
+            return BuiltinTable::Id;
         };
         let Ok(table) = usize::try_from(progs.header().ofs_functions) else {
-            return 0;
+            return BuiltinTable::Id;
         };
         let mut patches = Vec::new();
         for (name, first, patch) in EX_BUILTINS {
             let found = progs
                 .functions()
                 .iter()
-                .position(|f| progs.string(f.s_name) == Some(name.as_bytes()));
-            if let Some(index) = found
-                && progs
-                    .functions()
-                    .get(index)
-                    .is_some_and(|f| f.first_statement == first)
+                .enumerate()
+                .find(|(_, f)| progs.string(f.s_name) == Some(name.as_bytes()));
+            if let Some((index, f)) = found
+                && f.first_statement == first
             {
                 patches.push((index, patch));
             }
         }
         (table, patches)
     };
-    let mut patched: usize = 0;
+    let mut patched = BuiltinTable::Id;
     for (index, patch) in patches {
         let at = index
             .checked_mul(FUNCTION_SIZE)
             .and_then(|offset| table.checked_add(offset));
         if let Some(cell) = at.and_then(|at| bytes.get_mut(at..at.saturating_add(4))) {
             cell.copy_from_slice(&patch.to_le_bytes());
-            patched = patched.saturating_add(1);
+            patched = BuiltinTable::Rerelease;
         }
     }
     patched

@@ -27,6 +27,7 @@ use crate::messages::ClientMessages;
 #[cfg(test)]
 use crate::messages::ServerMessages;
 use crate::physics::Sound;
+use crate::rerelease::BuiltinTable;
 use qc_builtins::localization::Localization;
 
 use crate::spawn::{self, FieldDef, LoadError, SPAWNFLAGS_SLOT, SpawnError, SpawnHost};
@@ -102,9 +103,9 @@ pub struct LoadOptions {
     /// The rerelease's localized strings, from `localization/loc_english.txt`; with none the
     /// builtins send their text as id's engine does (RRE-1.6).
     pub localization: Localization,
-    /// Whether the rerelease's builtins 79 to 92 are in the table (RRE-4.2), for a progs whose
-    /// names [`crate::rerelease::patch_builtins`] gave them builtins.
-    pub rerelease_builtins: bool,
+    /// The builtin table, as [`crate::rerelease::patch_builtins`] chose it for the progs
+    /// (RRE-4.2).
+    pub builtins: BuiltinTable,
 }
 
 impl World {
@@ -134,13 +135,18 @@ impl World {
         engine.clients_active = vec![false; MAXCLIENTS];
         // RRE-1.6: QuakeSpasm loads the file when the host starts, before any map spawns.
         engine.localization = options.localization;
-        let rerelease_builtins = options.rerelease_builtins;
         let mut world = Self {
             machine,
-            builtins: SimBuiltins::new(engine, map, bsp, files, progs.header().crc),
+            builtins: SimBuiltins::new(
+                engine,
+                map,
+                bsp,
+                files,
+                progs.header().crc,
+                options.builtins,
+            ),
             player: None,
         };
-        world.builtins.rerelease = rerelease_builtins;
         let entities = bsp.entities();
         // EDICT-4.1: the world's fields.
         let model = world.make_string(format!("maps/{map}.bsp").into_bytes());

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/common.c, MSG_WriteChar, MSG_WriteByte, MSG_WriteShort, MSG_WriteLong, MSG_WriteFloat, MSG_WriteString, MSG_WriteCoord, MSG_WriteAngle, SZ_GetSpace
@@ -7,6 +9,9 @@
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/host_cmd.c, Host_PreSpawn_f, Host_Spawn_f, Host_Begin_f
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/sv_user.c, SV_SetIdealPitch
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_cmds.c, PF_bprint, PF_sprint, PF_centerprint, PF_stuffcmd, PF_sound, PF_ambientsound, PF_particle, PF_lightstyle, PF_makestatic, PF_WriteByte, PF_WriteChar, PF_WriteShort, PF_WriteLong, PF_WriteCoord, PF_WriteAngle, PF_WriteString, PF_WriteEntity
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/pr_cmds.c, PF_localsound
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/sv_main.c, SV_LocalSound
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/pr_edict.c, NUM_FOR_EDICT
 
 //! The messages the server sends its client (`docs/spec/engine/net.md`, NET-1 to NET-5):
 //! the writers and buffers, the baselines and the signon sequence, each frame's datagram of
@@ -510,12 +515,17 @@ impl SimCall<'_, '_, '_> {
     /// client, `svc_localsound`, a field byte and the sample's precache index as a byte; an
     /// edict that is no client, a sample not precached, an index of 256 or more under
     /// protocol 15, or a message with fewer than 4 bytes free sends nothing.
-    pub(crate) fn local_sound(&mut self) {
-        let n = self.edict_of(parm_raw(&self.context, 0));
+    ///
+    /// # Errors
+    ///
+    /// The host error `NUM_FOR_EDICT: bad pointer` for an entity outside the edicts in use
+    /// (RRE-2.4).
+    pub(crate) fn local_sound(&mut self) -> Result<(), RunError> {
+        let n = self.num_for_edict(parm_raw(&self.context, 0))?;
         let sample = self.string_text(parm_raw(&self.context, 1));
-        if n < 1 || !self.is_client_slot(n) {
+        if !self.is_client_slot(n) {
             // "tried to localsound to a non-client"
-            return;
+            return Ok(());
         }
         let name = String::from_utf8_lossy(&sample).into_owned();
         let Some(index) = self
@@ -526,19 +536,36 @@ impl SimCall<'_, '_, '_> {
             .filter(|&i| i >= 1)
         else {
             // "SV_LocalSound: <sample> not precached"
-            return;
+            return Ok(());
         };
         // PROTOCOL_NETQUAKE has no SND_LARGESOUND.
         let Ok(index) = u8::try_from(index) else {
-            return;
+            return Ok(());
         };
         let message = &mut self.sim.messages.client.message;
         if message.len() > message.max().saturating_sub(4) {
-            return;
+            return Ok(());
         }
         message.write_byte(SVC_LOCALSOUND);
         message.write_byte(0);
         message.write_byte(i32::from(index));
+        Ok(())
+    }
+
+    /// QuakeSpasm's `G_EDICTNUM` (RRE-2.4): the entity's byte offset divided by the edict size,
+    /// truncated as C's `/` is, with no check that it falls on an edict; a number below 0 or at
+    /// or past `num_edicts` is the host error `NUM_FOR_EDICT: bad pointer`.
+    fn num_for_edict(&self, value: i32) -> Result<usize, RunError> {
+        let edicts = self.context.machine_view().edicts();
+        value
+            .checked_div(edicts.layout().edict_size())
+            .and_then(|n| usize::try_from(n).ok())
+            .filter(|&n| n < edicts.num_edicts())
+            .ok_or_else(|| {
+                self.context.run_error(qc_vm::ErrorKind::Host {
+                    message: "NUM_FOR_EDICT: bad pointer".to_owned(),
+                })
+            })
     }
 
     /// `stuffcmd`: `svc_stufftext` and PARM1 to the client (BUILTIN-11.4).

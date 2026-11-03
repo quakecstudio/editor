@@ -192,7 +192,7 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     let mut progs_bytes = read("progs.dat")?;
     // RRE-4.1: QuakeSpasm gives the rerelease's named functions their builtins as it loads the
     // progs, and RRE-4.2 its table then runs to 92.
-    let rerelease_builtins = patch_builtins(&mut progs_bytes) > 0;
+    let builtins = patch_builtins(&mut progs_bytes);
     let progs_bytes: &'static [u8] = Vec::leak(progs_bytes);
     let progs = Progs::read(progs_bytes).map_err(|e| format!("progs.dat: {e}"))?;
     // The world reads the other models the progs precaches, such as the health boxes, from the
@@ -226,7 +226,7 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
         localization: text
             .map(|text| Localization::loc_load_file(&text))
             .unwrap_or_default(),
-        rerelease_builtins,
+        builtins,
     };
     let mut world =
         World::load(&progs, &map, &bsp, reader()?, options).map_err(|e| e.to_string())?;

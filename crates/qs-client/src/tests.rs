@@ -560,6 +560,7 @@ fn every_command_is_read() {
 // spec RRE-2.2: svc_localsound's index is a byte, a short under SND_LARGESOUND, and one at or
 // past MAX_SOUNDS is the error
 // spec RRE-2.3: svc_achievement's string is read and ignored
+// spec RRE-2.5: the bound is id's 256, and a negative index is the same error
 #[test]
 fn the_rereleases_local_sound_and_achievement() {
     let mut client = connected();

@@ -9,7 +9,7 @@
 
 use qc_progs::{Function, Progs, ProgsFile};
 
-use super::patch_builtins;
+use super::{BuiltinTable, patch_builtins};
 
 /// A progs whose functions are each name with its `first_statement`.
 fn progs(functions: &[(&str, i32)]) -> Vec<u8> {
@@ -52,7 +52,7 @@ fn named_builtins_are_patched_to_their_numbers() {
         ("ex_bot_followentity", 0),
         ("other", 0),
     ]);
-    assert_eq!(patch_builtins(&mut bytes), 4);
+    assert_eq!(patch_builtins(&mut bytes), BuiltinTable::Rerelease);
     assert_eq!(first_statements(&bytes), [0, -23, -80, -23, -24, 5, -92, 0]);
 }
 
@@ -60,7 +60,7 @@ fn named_builtins_are_patched_to_their_numbers() {
 #[test]
 fn only_the_first_function_of_a_name_is_patched() {
     let mut bytes = progs(&[("", 0), ("ex_sprint", 7), ("ex_sprint", 0)]);
-    assert_eq!(patch_builtins(&mut bytes), 0);
+    assert_eq!(patch_builtins(&mut bytes), BuiltinTable::Id);
     assert_eq!(first_statements(&bytes), [0, 7, 0]);
 }
 
@@ -68,6 +68,6 @@ fn only_the_first_function_of_a_name_is_patched() {
 #[test]
 fn bytes_that_are_no_progs_are_left_alone() {
     let mut bytes = vec![1, 2, 3];
-    assert_eq!(patch_builtins(&mut bytes), 0);
+    assert_eq!(patch_builtins(&mut bytes), BuiltinTable::Id);
     assert_eq!(bytes, [1, 2, 3]);
 }

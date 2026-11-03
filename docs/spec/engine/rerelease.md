@@ -107,6 +107,17 @@ them up in `localization/loc_english.txt`, read from the game directory or from
   at full volume.
 - **RRE-2.3** `svc_achievement` (52) carries a string; the client reads and ignores it
   (`Ignoring svc_achievement (<id>)`), since achievements are the rerelease platform's.
+- **RRE-2.4** `PF_localsound` reads its client with `G_EDICTNUM(OFS_PARM0)`, QuakeSpasm's
+  `NUM_FOR_EDICT(G_EDICT(o))`: the value is a byte offset from the first edict, divided by
+  `pr_edict_size` with C's truncating `/` and not checked to fall on an edict, so an offset
+  inside an edict is that edict and -1 is the world; a number below 0 or at or past
+  `num_edicts` is `Host_Error ("NUM_FOR_EDICT: bad pointer")`.
+- **RRE-2.5** The preview host's client holds id's 256 sound precaches (`CLIENT_MAX_SOUNDS`,
+  CLIENT-1.1), not QuakeSpasm's 2048, so its RRE-2.2 bound is 256. A negative index, from a short
+  under `SND_LARGESOUND`, passes QuakeSpasm's `sound_num >= MAX_SOUNDS` check and reads
+  `cl.sound_precache[sound_num]` before the array, which is undefined; the client makes it
+  the same error, `CL_ParseLocalSound: <n> > MAX_SOUNDS`. The client does not check that
+  the index has a precache: it passes the index on in its event, as it does `svc_sound`'s.
 
 ## RRE-3 Music
 

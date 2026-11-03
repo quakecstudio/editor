@@ -481,6 +481,7 @@ use qs_client::status_bar = hud::status_bar
 variant qs_client::client::Event::CdTrack
 variant qs_client::client::Event::CenterPrint
 variant qs_client::client::Event::Disconnect
+variant qs_client::client::Event::LocalSound
 variant qs_client::client::Event::NewMap
 variant qs_client::client::Event::Pause
 variant qs_client::client::Event::Print
@@ -498,6 +499,7 @@ variant qs_client::client::ParseError::BadModel
 variant qs_client::client::ParseError::EntityNumber
 variant qs_client::client::ParseError::Illegible
 variant qs_client::client::ParseError::LightStyle
+variant qs_client::client::ParseError::LocalSound
 variant qs_client::client::ParseError::MaxClients
 variant qs_client::client::ParseError::ModelNotFound
 variant qs_client::client::ParseError::Scoreboard

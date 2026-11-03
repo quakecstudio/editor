@@ -8,7 +8,8 @@
 )]
 
 use crate::LoadOptions;
-use crate::world::tests::player_with_options;
+use crate::rerelease::{BuiltinTable, patch_builtins};
+use crate::world::tests::{player_from, player_progs, player_with_options};
 use qc_builtins::localization::Localization;
 use qc_progs::Progs;
 use qc_vm::convert::{double_to_float, float_to_int};
@@ -892,7 +893,7 @@ fn cleanup_truncates_every_edicts_effects() {
     );
 }
 
-/// The rerelease's builtins, as its progs gets them once patched (RRE-4.1).
+/// The rerelease's builtins by number, as its progs has them once patched (RRE-4.1).
 const RERELEASE_BUILTINS: &str = "float() finaleFinished = #79;\n\
     void(entity e, string s) localsound = #80;\n\
     void() draw_point = #81;\n\
@@ -902,15 +903,16 @@ const RERELEASE_BUILTINS: &str = "float() finaleFinished = #79;\n\
     void() bot_movetopoint = #92;\n\
     void() past = #93;\n";
 
-/// A player whose progs has the rerelease's builtins, in the rerelease's table or not, and
-/// precaches `misc/a.wav`; `PlayerPreThink` runs `pre`.
-fn rerelease_player(pre: &str, rerelease_builtins: bool) -> Running {
-    let more = format!(
-        "{RERELEASE_BUILTINS}void() worldspawn = {{ precache_sound(\"misc/b.wav\"); \
-         precache_sound(\"misc/a.wav\"); }};\n"
-    );
+/// A worldspawn precaching `misc/b.wav` then `misc/a.wav`, so `misc/a.wav` is sound 2.
+const TWO_SOUNDS: &str = "void() worldspawn = { precache_sound(\"misc/b.wav\"); \
+    precache_sound(\"misc/a.wav\"); };\n";
+
+/// A player whose progs has the rerelease's builtins, with `table`, and [`TWO_SOUNDS`];
+/// `PlayerPreThink` runs `pre`.
+fn rerelease_player(pre: &str, table: BuiltinTable) -> Running {
+    let more = format!("{RERELEASE_BUILTINS}{TWO_SOUNDS}");
     let options = LoadOptions {
-        rerelease_builtins,
+        builtins: table,
         ..LoadOptions::default()
     };
     player_with_options(&ledge(), "", pre, &more, options)
@@ -922,38 +924,67 @@ fn rerelease_player(pre: &str, rerelease_builtins: bool) -> Running {
 fn localsound_sends_the_sound_to_the_client() {
     let pre = "localsound(world, \"misc/a.wav\"); localsound(self, \"misc/nope.wav\"); \
         localsound(self, \"misc/a.wav\");";
-    let mut run = rerelease_player(pre, true);
+    let mut run = rerelease_player(pre, BuiltinTable::Rerelease);
     run.packets();
     run.frames(1, 0.1).unwrap();
     let packets = run.packets();
     assert_eq!(packets[1], [56, 0, 2]);
 }
 
+// spec RRE-2.4: localsound's entity is the byte offset divided by the edict size, truncated,
+// so an offset inside the client's edict is the client and -1 is the world; a number past the
+// edicts in use, or below 0, is the host error NUM_FOR_EDICT: bad pointer
+#[test]
+fn localsound_reads_its_entity_as_quakespasm_does() {
+    let run_with = |value: fn(i32, i32) -> i32| {
+        let mut run = rerelease_player(
+            "localsound(msg_entity, \"misc/a.wav\");",
+            BuiltinTable::Rerelease,
+        );
+        run.packets();
+        let raw = value(run.edict_size(), run.num_edicts());
+        run.set_raw_global("msg_entity", raw);
+        let result = run.frames(1, 0.1).map_err(|e| e.to_string());
+        (result, run.packets())
+    };
+    let (result, packets) = run_with(|size, _| size + 1);
+    assert_eq!(result, Ok(()));
+    assert_eq!(
+        packets[1],
+        [56, 0, 2],
+        "an offset inside edict 1 is edict 1"
+    );
+    let (result, packets) = run_with(|_, _| -1);
+    assert_eq!(result, Ok(()));
+    assert_eq!(packets.len(), 1, "-1 is the world, no client: no message");
+    for value in [|size: i32, n: i32| size * n, |size: i32, _| -size] {
+        let (result, _) = run_with(value);
+        let error = result.unwrap_err();
+        assert!(error.contains("NUM_FOR_EDICT: bad pointer"), "{error}");
+    }
+    let (result, _) = run_with(|size, n| size * n - 1);
+    assert_eq!(result, Ok(()), "the last edict in use is no error");
+}
+
 // spec RRE-2.1: a client message with fewer than 4 bytes free drops the sound
 #[test]
 fn localsound_is_dropped_from_a_full_message() {
-    let mut run = rerelease_player("localsound(self, \"misc/a.wav\");", true);
-    run.packets();
-    let message = &mut run.world.builtins.messages.client.message;
-    let room = message.max() - message.len();
-    for _ in 0..room - 3 {
-        message.write_byte(1);
-    }
-    let full = message.len();
-    run.frames(1, 0.1).unwrap();
-    assert_eq!(run.packets()[1].len(), full, "3 bytes free: dropped");
-    let mut run = rerelease_player("localsound(self, \"misc/a.wav\");", true);
-    run.packets();
-    let message = &mut run.world.builtins.messages.client.message;
-    let room = message.max() - message.len();
-    for _ in 0..room - 4 {
-        message.write_byte(1);
-    }
-    run.frames(1, 0.1).unwrap();
-    assert!(
-        run.packets()[1].ends_with(&[56, 0, 2]),
-        "4 bytes free: sent"
-    );
+    let fill = |free: usize| {
+        let mut run =
+            rerelease_player("localsound(self, \"misc/a.wav\");", BuiltinTable::Rerelease);
+        run.packets();
+        let message = &mut run.world.builtins.messages.client.message;
+        while message.max() - message.len() > free {
+            message.write_byte(1);
+        }
+        let before = message.len();
+        run.frames(1, 0.1).unwrap();
+        (before, run.packets()[1].clone())
+    };
+    let (before, sent) = fill(3);
+    assert_eq!(sent.len(), before, "3 bytes free: dropped");
+    let (_, sent) = fill(4);
+    assert!(sent.ends_with(&[56, 0, 2]), "4 bytes free: sent");
 }
 
 // spec RRE-4.2: in the rerelease's table finaleFinished, CheckPlayerEXFlags and
@@ -961,24 +992,57 @@ fn localsound_is_dropped_from_a_full_message() {
 #[test]
 fn the_rereleases_table_runs_to_92() {
     let pre = "self.frags = 5 + finaleFinished() + CheckPlayerEXFlags() + walkpathtogoal();";
-    let mut run = rerelease_player(pre, true);
+    let mut run = rerelease_player(pre, BuiltinTable::Rerelease);
     run.frames(1, 0.1).unwrap();
     assert_eq!(run.world.float(1, "frags"), 5.0);
     for call in ["draw_point();", "draw_cylinder();", "bot_movetopoint();"] {
-        let mut run = rerelease_player(call, true);
+        let mut run = rerelease_player(call, BuiltinTable::Rerelease);
         let error = run.frames(1, 0.1).unwrap_err().to_string();
         assert!(error.contains("unimplemented builtin"), "{call} {error}");
     }
 }
 
-// spec RRE-4.2: past 92 the rerelease's table has no builtin, and without it 79 is past id's
+// spec RRE-4.2: past 92 the rerelease's table has no builtin, and in id's 79 is past its end
 #[test]
 fn the_rereleases_table_ends_at_92() {
-    let mut run = rerelease_player("past();", true);
+    let mut run = rerelease_player("past();", BuiltinTable::Rerelease);
     let past = run.frames(1, 0.1).unwrap_err().to_string();
     assert!(!past.contains("unimplemented builtin"), "{past}");
-    let mut run = rerelease_player("finaleFinished();", false);
+    let mut run = rerelease_player("finaleFinished();", BuiltinTable::Id);
     let id = run.frames(1, 0.1).unwrap_err().to_string();
     assert!(!id.contains("unimplemented builtin"), "{id}");
     assert_eq!(past.replace("93", "79"), id);
+}
+
+/// `progs` with function `name`'s `first_statement` set to 0, as FTEQCC writes a builtin
+/// declared `#0:name`, the rerelease's form.
+fn as_named_builtin(progs: &mut [u8], name: &str) {
+    let read = Progs::read(progs).unwrap();
+    let index = read
+        .functions()
+        .iter()
+        .position(|f| read.string(f.s_name) == Some(name.as_bytes()))
+        .unwrap();
+    let at = usize::try_from(read.header().ofs_functions).unwrap() + 36 * index;
+    progs[at..at + 4].copy_from_slice(&0_i32.to_le_bytes());
+}
+
+// spec RRE-4.1: a compiled progs naming ex_localsound as a builtin #0 is patched to builtin
+// 80, and the table patch_builtins returns runs it
+// spec RRE-4.2: the patched progs gets the rerelease's table
+#[test]
+fn a_patched_progs_runs_the_rereleases_builtins() {
+    let more = format!("void(entity e, string s) ex_localsound = #80;\n{TWO_SOUNDS}");
+    let mut progs = player_progs("", "ex_localsound(self, \"misc/a.wav\");", &more);
+    as_named_builtin(&mut progs, "ex_localsound");
+    let builtins = patch_builtins(&mut progs);
+    assert_eq!(builtins, BuiltinTable::Rerelease);
+    let options = LoadOptions {
+        builtins,
+        ..LoadOptions::default()
+    };
+    let mut run = player_from(&ledge(), progs, options);
+    run.packets();
+    run.frames(1, 0.1).unwrap();
+    assert_eq!(run.packets()[1], [56, 0, 2]);
 }

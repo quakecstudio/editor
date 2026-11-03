@@ -220,7 +220,17 @@ pub(crate) fn running_with(
     files: Vec<(String, Vec<u8>)>,
     options: LoadOptions,
 ) -> Running {
-    let progs_bytes = compile(source);
+    running_from(spec, compile(source), entities, files, options)
+}
+
+/// [`running_with`] on a progs already compiled.
+pub(crate) fn running_from(
+    spec: &MapSpec,
+    progs_bytes: Vec<u8>,
+    entities: &str,
+    files: Vec<(String, Vec<u8>)>,
+    options: LoadOptions,
+) -> Running {
     let progs = Progs::read(&progs_bytes).unwrap();
     let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{entities}");
     let mut map = bsp(spec);
@@ -1483,6 +1493,21 @@ fn client_slots_and_none() {
 
 impl Running {
     /// The player enters the game.
+    /// Sets system global `name` to `value`'s bits, whatever its type.
+    pub(crate) fn set_raw_global(&mut self, name: &str, value: i32) {
+        self.world.set_global(name, Slot::from_i32(value));
+    }
+
+    /// The size of an edict in bytes, the step between entity values (EDICT-1.5).
+    pub(crate) fn edict_size(&self) -> i32 {
+        self.world.machine.edicts().layout().edict_size()
+    }
+
+    /// The edicts in use.
+    pub(crate) fn num_edicts(&self) -> i32 {
+        i32::try_from(self.world.machine.edicts().num_edicts()).unwrap()
+    }
+
     pub(crate) fn connect(&mut self) {
         let progs = Progs::read(&self.progs).unwrap();
         self.world.connect(&progs).unwrap();
@@ -1503,12 +1528,21 @@ pub(crate) fn player_with_options(
     more: &str,
     options: LoadOptions,
 ) -> Running {
-    let source = format!(
+    player_from(spec, player_progs(put, pre, more), options)
+}
+
+/// The progs of [`player`], compiled.
+pub(crate) fn player_progs(put: &str, pre: &str, more: &str) -> Vec<u8> {
+    compile(&format!(
         "{more}void() PutClientInServer = {{ self.health = 100; self.solid = 3; \
          self.movetype = 3; self.view_ofs = '0 0 22'; {PLAYER_SIZE} {put} }};\n\
          void() PlayerPreThink = {{ {pre} }};\n"
-    );
-    let mut run = running_with(spec, &source, "", Vec::new(), options);
+    ))
+}
+
+/// [`player_with_options`] on a progs already compiled, such as [`player_progs`]'.
+pub(crate) fn player_from(spec: &MapSpec, progs: Vec<u8>, options: LoadOptions) -> Running {
+    let mut run = running_from(spec, progs, "", Vec::new(), options);
     run.connect();
     run
 }
