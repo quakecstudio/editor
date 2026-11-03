@@ -830,8 +830,8 @@ mod tests {
     // spec BUILTIN-18.8: the reader's corners: a `0` width is no width, so the flags still
     // follow it; a `0` among the flags zero-pads; `h`, `q` and the C length letters choose the
     // argument's kind without ending the directive; a wide integer is two argument slots; a
-    // `*` width of 0 leaves `%p` at no width; a precision of 0 clears only a zero; and `%S`
-    // escapes a carriage return
+    // `*` width of 0 leaves `%p` at no width; a precision of 0 clears only a zero; `%v` is
+    // three `%g` and `%V` three `%G`; and `%S` escapes a carriage return
     #[test]
     fn the_reader_s_corners() {
         use Arg::{F, I, S, V};
@@ -850,6 +850,16 @@ mod tests {
             ("%.0x", vec![F(0.0)], ""),
             ("%#x", vec![F(0.0)], "0"),
             ("%u", vec![F(1e19)], "9999999980506447872"),
+            (
+                "%v",
+                vec![V([1e-10, f32::NAN, f32::INFINITY])],
+                "1e-10 nan inf",
+            ),
+            (
+                "%V",
+                vec![V([1e-10, f32::NAN, f32::INFINITY])],
+                "1E-10 NAN INF",
+            ),
             ("%S", vec![S("a\rb")], "\\\"a\\rb\""),
         ] {
             assert_eq!(print(format, &args), expected, "{format}");
