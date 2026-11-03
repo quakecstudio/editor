@@ -2789,6 +2789,20 @@ impl<'a> Compiler<'a> {
             let ofs = self.program.emit_result(row.opcode, a, b, row.c).at(span)?;
             made.push((ofs, row.c));
         }
+        // An input read more than once is kept by the emulation (`STFL_PRESERVEA`,
+        // `QCC_UnFreeTemp`), and FTEQCC frees only one of a call's value's references, so its
+        // alias stays live for the next clobber to copy (FTE-18.13).
+        for (n, input) in [(0, left), (1, right)] {
+            let reads = fragment
+                .statements
+                .iter()
+                .flat_map(|statement| [statement.a, statement.b])
+                .filter(|operand| *operand == Some(ir::Operand::Input(n)))
+                .count();
+            if reads > 1 {
+                self.keep_alive(input);
+            }
+        }
         match fragment.value {
             Some(ir::Operand::Temp(n)) => {
                 let (ofs, c) = made.get(usize::from(n)).copied().at(span)?;
@@ -2847,24 +2861,29 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    /// FTEQCC's `a ^ b` on the vanilla opcodes (FTE-19.7, FTE-19.12), `OP_BITXOR_F`'s and
-    /// `OP_BITXOR_V`'s emulation: `(a & ~b) | (b & ~a)`, each `~` as `-1 - x`, a vector's
-    /// `'-1 -1 -1' - x`.
+    /// FTEQCC's `a ^ b` (FTE-19.7): `OP_BITXOR_F`'s emulation, `(a & ~b) | (b & ~a)`, as the
+    /// semantic model lowered it; of vectors, whose `&` and `|` are emulated a word at a time,
+    /// which the intermediate layer does not name yet, [`Compiler::vector_xor`].
     fn xor(&mut self, left: &Value, right: &Value, spans: (Span, Span)) -> Lowered<Value> {
+        match self.lowered_binary(Operator::BitAnd, left, right, spans)? {
+            Some(value) => Ok(value),
+            None => self.vector_xor(left, right, spans),
+        }
+    }
+
+    /// `v ^ w` of vectors (FTE-19.7, FTE-19.12): `OP_BITXOR_V`'s emulation, each `~` a `SUB_V`
+    /// from `'-1 -1 -1'` and each `&` and `|` a word at a time.
+    fn vector_xor(&mut self, left: &Value, right: &Value, spans: (Span, Span)) -> Lowered<Value> {
         let span = spans.1;
         let etype = self.type_of(left).etype();
-        if !matches!(etype, Etype::Float | Etype::Vector) || self.type_of(right).etype() != etype {
+        if etype != Etype::Vector || self.type_of(right).etype() != etype {
             return Err(Abort::Internal(Internal::Unsupported, spans.0));
         }
-        let minus_one = if etype == Etype::Vector {
-            let place = self
-                .program
-                .immediate(&Literal::Vector([-1.0; 3]))
-                .at(span)?;
-            self.def_value(place, span)?
-        } else {
-            self.float_literal(-1.0, span)?
-        };
+        let place = self
+            .program
+            .immediate(&Literal::Vector([-1.0; 3]))
+            .at(span)?;
+        let minus_one = self.def_value(place, span)?;
         let not_b = self.operate(Operator::Sub, &minus_one, right, spans)?;
         let a_only = self.operate(Operator::BitAnd, left, &not_b, spans)?;
         let not_a = self.operate(Operator::Sub, &minus_one, left, spans)?;
