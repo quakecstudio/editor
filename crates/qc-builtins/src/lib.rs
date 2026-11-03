@@ -36,6 +36,7 @@ mod printf;
 mod strconv;
 mod strftime;
 pub mod table;
+pub mod tokenize;
 
 #[cfg(test)]
 mod tests;

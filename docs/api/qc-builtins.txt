@@ -16,6 +16,8 @@ const qc_builtins::mock::VKQUAKE_MAX_MODELS
 const qc_builtins::mock::VKQUAKE_MAX_SOUNDS
 const qc_builtins::table::BUILTINS
 const qc_builtins::table::BUILTIN_MAX_NUMBER
+const qc_builtins::tokenize::MAX_QC_TOKENS
+const qc_builtins::tokenize::MAX_SEPARATORS
 enum qc_builtins::error::BuiltinError
 enum qc_builtins::error::FatalError
 enum qc_builtins::error::RuntimeError
@@ -44,6 +46,7 @@ field qc_builtins::mock::MockEngine.rng
 field qc_builtins::mock::MockEngine.server_active
 field qc_builtins::mock::MockEngine.sound_precache
 field qc_builtins::mock::MockEngine.strings
+field qc_builtins::mock::MockEngine.tokens
 field qc_builtins::mock::MockEngine.unimplemented
 field qc_builtins::mock::ModelBounds.maxs
 field qc_builtins::mock::ModelBounds.mins
@@ -92,6 +95,11 @@ fn qc_builtins::mock::MockEngine::set_lightstyle
 fn qc_builtins::mock::Rng::new
 fn qc_builtins::mock::Rng::next_rand
 fn qc_builtins::table::lookup
+fn qc_builtins::tokenize::Tokens::argv
+fn qc_builtins::tokenize::Tokens::end
+fn qc_builtins::tokenize::Tokens::split
+fn qc_builtins::tokenize::Tokens::start
+fn qc_builtins::tokenize::Tokens::tokenize
 impl qc_builtins::dispatch::MockBuiltins: Builtins
 impl qc_builtins::dispatch::MockBuiltins: Default
 impl qc_builtins::error::BuiltinError: From<FatalError>
@@ -104,6 +112,7 @@ impl qc_builtins::mock::Cvars: Default
 mod qc_builtins::math
 mod qc_builtins::mock
 mod qc_builtins::table
+mod qc_builtins::tokenize
 struct qc_builtins::dispatch::MockBuiltins
 struct qc_builtins::mock::Buffers
 struct qc_builtins::mock::CheckClient
@@ -114,6 +123,7 @@ struct qc_builtins::mock::ModelBounds
 struct qc_builtins::mock::Overflow
 struct qc_builtins::mock::Rng
 struct qc_builtins::table::Builtin
+struct qc_builtins::tokenize::Tokens
 use qc_builtins::BUILTIN_MAX_NUMBER = table::BUILTIN_MAX_NUMBER
 use qc_builtins::Builtin = table::Builtin
 use qc_builtins::BuiltinError = error::BuiltinError

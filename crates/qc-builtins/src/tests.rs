@@ -2185,6 +2185,50 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.23: tokenize counts the words, argv returns each as an engine string and
+    // 0 past the end, and argv_start_index and argv_end_index their bytes or -1
+    #[test]
+    fn tokenize_and_argv_through_the_dispatch() {
+        let (strings, offsets) = string_table(&["vote map \"e1m1\""]);
+        // Each call runs in a fixture of its own number, on the engine the last one left.
+        let call = |engine: &mut MockEngine, number: u32, parm: Result<i32, f32>| {
+            let mut f = Fixture::new(number, 1, strings.clone(), 0);
+            *f.builtins.engine_mut() = engine.clone();
+            match parm {
+                Ok(string) => f.set_parm_i(0, string),
+                Err(float) => f.set_parm_f(0, float),
+            }
+            f.run_ok(ServerState::Active);
+            *engine = f.builtins.engine().clone();
+            (f.return_f(), f.return_i())
+        };
+        let mut engine = MockEngine::new("test", 0, 1);
+        engine.profile = EngineProfile::VkQuake;
+        assert_eq!(call(&mut engine, 441, Ok(offsets[0])).0, 3.0);
+        let value = call(&mut engine, 442, Err(2.0)).1;
+        assert_eq!(engine.strings.text(value), Some(&b"e1m1"[..]));
+        assert_eq!(call(&mut engine, 442, Err(3.0)).1, 0);
+        assert_eq!(call(&mut engine, 515, Err(-1.0)).0, 9.0);
+        assert_eq!(call(&mut engine, 516, Err(-1.0)).0, 15.0);
+        assert_eq!(call(&mut engine, 515, Err(5.0)).0, -1.0);
+        assert_eq!(call(&mut engine, 514, Ok(offsets[0])).0, 3.0);
+    }
+
+    // spec BUILTIN-18.24: tokenizebyseparator reads the separators from the arguments after
+    // the text
+    #[test]
+    fn tokenizebyseparator_through_the_dispatch() {
+        let (strings, offsets) = string_table(&["a;b,c", ";", ","]);
+        let mut f = Fixture::new(479, 3, strings, 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.set_parm_i(0, offsets[0]);
+        f.set_parm_i(1, offsets[1]);
+        f.set_parm_i(2, offsets[2]);
+        f.run_ok(ServerState::Active);
+        assert_eq!(f.return_f(), 3.0);
+        assert_eq!(f.builtins.engine().tokens.argv(2), Some(b"c".to_vec()));
+    }
+
     // spec BUILTIN-18.22: strncmp and strcasecmp answer C's differences; strstrofs finds an
     // offset from firstofs
     #[test]

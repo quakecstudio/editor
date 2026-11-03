@@ -20,6 +20,8 @@
 /// `skill`, `deathmatch`, `coop` and `teamplay` start at `1`, `0`, `0`, `0`; a scenario's
 /// `cvar` line replaces a text. Any other name reads as 0 and `cvar_set` of it changes nothing
 /// (BUILTIN-11.8, DIFF-2.4).
+use crate::tokenize::Tokens;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cvars {
     entries: Vec<(String, String)>,
@@ -258,6 +260,8 @@ pub struct MockEngine {
     /// What a builtin number with no implementation does; the engine's error unless the
     /// caller chooses otherwise (DIFF-12.26).
     pub unimplemented: Unimplemented,
+    /// The token list vkQuake's tokenize builtins fill and `argv` reads (BUILTIN-18.23).
+    pub tokens: Tokens,
     /// The server clock `sv.time`, a `double` (DIFF-3.2): 1.0 at map start.
     ///
     /// `spawn` and `remove` read it for the edict reuse policy and `freetime` (EDICT-6,
@@ -440,6 +444,7 @@ impl MockEngine {
             server_active: false,
             profile: EngineProfile::Id,
             unimplemented: Unimplemented::Error,
+            tokens: Tokens::default(),
             clock: 1.0,
         }
     }
