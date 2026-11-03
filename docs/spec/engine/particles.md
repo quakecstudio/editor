@@ -61,7 +61,7 @@ In each statement `r` is a fresh `rand ()` and `t` is `cl.time`.
 - **PART-2.4** `R_RunParticleEffect (org, dir, color, count)` with `count` 1024 is PART-2.1
   ("rocket explosion"). Otherwise `count` particles: `die = t + 0.1 * (r % 5)`, colour
   `(color & ~7) + (r & 7)`, type `pt_slowgrav`, each origin component `org + (r & 15) - 8`
-  and velocity `dir * 15`. `svc_particle` (CLIENT-4) reads the origin, a direction of three
+  and velocity `dir * 15`. `svc_particle` (CLIENT-1.4) reads the origin, a direction of three
   signed bytes over 16, a count byte and a colour byte, and a count of 255 means 1024.
 - **PART-2.5** `R_LavaSplash (org)`: for `i` and `j` from -16 to 15, one particle with
   `die = t + 2 + (r & 31) * 0.02`, colour `224 + (r & 7)`, type `pt_slowgrav`,
@@ -86,7 +86,10 @@ In each statement `r` is a fresh `rand ()` and `t` is `cl.time`.
 - **PART-2.8** `R_EntityParticles (ent)` (`EF_BRIGHTFIELD`): 162 particles, one per vertex
   normal of the MDL table (MDL-5), `die = t + 0.01`, colour 0x6f, `pt_explode`, at `origin +
   normal * 64 + forward * 16` where `forward` is the direction of the angles `t *
-  avelocities[i]`, and `avelocities` are 162 triples drawn once as `(r & 255) * 0.01`.
+  avelocities[i]`, and `avelocities` are 162 triples drawn once as `(r & 255) * 0.01`. id
+  sets no velocity, so each particle keeps whatever its pool slot last held and PART-3.1
+  moves it by that for its one frame of life; the preview host gives it velocity zero, a
+  deliberate divergence from reading a dead particle's state.
 
 ## PART-3 Movement and drawing
 

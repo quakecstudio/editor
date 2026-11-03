@@ -71,8 +71,12 @@ them up in `localization/loc_english.txt`, read from the game directory or from
 
 - **RRE-2.1** `localsound (client, sample)` (builtin 80 under the rerelease's table,
   BUILTIN-18) writes `svc_localsound` (56) to that client alone: a field byte, then the
-  sound's precache index as a byte, or a short when `SND_LARGESOUND` (bit 4) is set; a
-  non-client entity prints `tried to localsound to a non-client` and sends nothing.
+  sound's precache index as a byte, or a short when `SND_LARGESOUND` (bit 4) is set. A
+  non-client entity prints `tried to localsound to a non-client` and sends nothing; a sample
+  not in the server's precache list prints `SV_LocalSound: <sample> not precached` and sends
+  nothing; an index of 256 or more sends nothing under protocol 15 (`PROTOCOL_NETQUAKE`,
+  CLIENT-1.1) and sets `SND_LARGESOUND` under the FitzQuake protocols; and a client message
+  within 4 bytes of full drops it.
 - **RRE-2.2** The client reads the index (at or past `MAX_SOUNDS` is the error
   `CL_ParseLocalSound: <n> > MAX_SOUNDS`) and plays the sound as SND-2.7, on the view entity
   at full volume.

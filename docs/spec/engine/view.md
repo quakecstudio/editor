@@ -54,7 +54,7 @@ which the preview host uses unless a scenario sets it (DIFF-2.4).
 **Source:** `WinQuake/view.c`, `V_StartPitchDrift`, `V_StopPitchDrift`, `V_DriftPitch`.
 
 The view pitch drifts back toward `cl.idealpitch`, the pitch the server sends with the client
-data (CLIENT-4), when the player runs forward without looking up or down.
+data (CLIENT-3), when the player runs forward without looking up or down.
 
 ### Behaviour
 
@@ -162,7 +162,7 @@ The client keeps `NUM_CSHIFTS` shifts, each a colour and a percent: `CSHIFT_CONT
 
 ### Behaviour
 
-- **VIEW-4.1** `svc_damage` (CLIENT-4) carries `armor` and `blood` bytes and a `from` point.
+- **VIEW-4.1** `svc_damage` (CLIENT-1.4) carries `armor` and `blood` bytes and a `from` point.
   `count = blood * 0.5 + armor * 0.5`, at least 10; `cl.faceanimtime = cl.time + 0.2`; the
   damage shift's percent grows by `3 * count`, clamped to 0 to 150, and its colour is
   (200, 100, 100) when `armor > blood`, (220, 50, 50) when `armor` is not 0, else
