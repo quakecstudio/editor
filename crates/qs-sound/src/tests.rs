@@ -915,3 +915,54 @@ fn accessors_and_the_null_output() {
     output.write(&[1, 2, 3, 4, 5, 6]);
     assert_eq!(output.frames(), 3);
 }
+
+// spec SND-3.2: each axis of the offset weighs in the pan through the listener's right
+// vector, scaled by the offset's length
+#[test]
+fn every_axis_pans() {
+    let (mut mixer, table, _, beep, _, _) = fixture();
+    let mut rand = Fixed(vec![]);
+    // The listener turned 36.87 degrees: right is (0.6, -0.8, 0).
+    let turned = Listener {
+        right: [0.6, -0.8, 0.0],
+        ..Listener::default()
+    };
+    mixer.update(&table, turned, None, 0.0);
+    // Offset (500, 0, 0): dist 0.5, dot 0.6: right (int) (255 * 0.5 * 1.6), left
+    // (int) (255 * 0.5 * 0.4), the latter just under 51 in single precision.
+    let x = mixer
+        .start_sound(&table, &mut rand, start(2, 1, beep, [500.0, 0.0, 0.0]))
+        .unwrap();
+    assert_eq!(
+        (mixer.channels()[x].leftvol, mixer.channels()[x].rightvol),
+        (50, 204)
+    );
+    // The listener looking straight down: right is (0, 0, -1); an offset (0, 0, -500) is to
+    // the right, dist 0.5, dot 1.
+    let down = Listener {
+        right: [0.0, 0.0, -1.0],
+        ..Listener::default()
+    };
+    mixer.update(&table, down, None, 0.0);
+    let z = mixer
+        .start_sound(&table, &mut rand, start(3, 1, beep, [0.0, 0.0, -500.0]))
+        .unwrap();
+    assert_eq!(
+        (mixer.channels()[z].leftvol, mixer.channels()[z].rightvol),
+        (0, 255)
+    );
+    // Off axis on every component: offset (300, 0, 400), length 500, dot 0.6 with the turned
+    // listener's right applies to x only.
+    mixer.update(&table, turned, None, 0.0);
+    let xyz = mixer
+        .start_sound(&table, &mut rand, start(4, 1, beep, [300.0, 0.0, 400.0]))
+        .unwrap();
+    // dot = 0.6 * 0.6 = 0.36: right (int) (127.5 * 1.36) = 173, left (int) (127.5 * 0.64) = 81.
+    assert_eq!(
+        (
+            mixer.channels()[xyz].leftvol,
+            mixer.channels()[xyz].rightvol
+        ),
+        (81, 173)
+    );
+}
