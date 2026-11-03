@@ -1658,3 +1658,27 @@ fn debug_replay() {
     }
     eprintln!("differ: {:?}", pair.differ(&tw, &t, &ow, &o));
 }
+
+#[test]
+#[ignore = "debug: GEN_FILE names a generated t.qc to compile to ours-dbg.dat beside it"]
+fn debug_compile_file() {
+    let Ok(file) = std::env::var("GEN_FILE") else {
+        return;
+    };
+    let text = std::fs::read(&file).unwrap();
+    let mut db = Db::new();
+    db.set_dialect(qc_syntax::Dialect::Fteqcc);
+    let mut input = ModuleInput::default();
+    db.set_file(FileId::new(0), PathBuf::from("t.qc"), text);
+    input.compiled.push(FileId::new(0));
+    let compiled = compile_module(
+        &mut db,
+        &input,
+        |_| "t.qc".to_owned(),
+        Options { fold: false },
+    )
+    .unwrap_or_else(|e| panic!("did not compile: {e:?}"));
+    let out = std::path::Path::new(&file).with_file_name("ours-dbg.dat");
+    std::fs::write(&out, qc_progs::write(&compiled.progs).unwrap()).unwrap();
+    eprintln!("wrote {}", out.display());
+}

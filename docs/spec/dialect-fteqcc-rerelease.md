@@ -514,6 +514,14 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   writes past an element, such as `MUL_FV` into `arr[3]` (FTE-13.15), reaches those
   neighbours. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_IntConstExpr`.
+- **FTE-13.18** A field access as a statement of its own, `self.ff;` or `e.v.y;`
+  (parenthesised or not), reads its entity, and a computed field `e.(f);` its field, and loads
+  nothing: the statement's expression is a reference that nothing converts to a value, and
+  `QCC_PR_DiscardRef` frees its base and index (`QCC_FreeTemp(ref->base); if
+  (ref->index.cast) QCC_FreeTemp(ref->index);`). A parenthesised field with a component,
+  `(e.v).y;`, loads the vector first, as FTE-9.3 converts the parenthesised field. The
+  warning is FTEF-18.25's. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_DiscardExpression`, `QCC_PR_DiscardRef`.
 - **FTE-13.17** A subscript by a value as a statement of its own, `arr[i];` (parenthesised or
   not), computes its index (FTE-13.12: `BITAND` for `i & 3`, and `MUL_F` by the element's
   words for a vector array) and calls no getter: the statement's expression is a reference

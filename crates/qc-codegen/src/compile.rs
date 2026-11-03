@@ -14,7 +14,7 @@
 //! (QC-16 to QC-19): an operator's operands select its opcode by their basic types, a call's
 //! arguments must have its parameters' types.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use qc_diag::{Code, Diagnostic, Span};
 use qc_progs::Function;
@@ -235,9 +235,10 @@ pub(crate) struct Compiler<'a> {
     aliases: Vec<Alias>,
     /// The alias a statement read last, which a dropped `NOT` gives back to an `IF`.
     last_read: Option<AliasId>,
-    /// The temporaries both arms of a `?:` write (FTEF-30.3), which no store folds into the
-    /// statement that wrote them last, since the other arm wrote them too.
-    joined: HashSet<u32>,
+    /// The temporaries both arms of a `?:` write (FTEF-30.3), each with the index of the
+    /// `?:`'s last statement: no store folds into that statement, since the other arm wrote
+    /// the temporary too; a later statement that reuses the temporary is folded into as any.
+    joined: HashMap<u32, usize>,
     /// The first statement of the body being compiled, `pr_scope->code`.
     body_first: usize,
     /// Each file's `s_file`, which a getter's function record takes from its array's file.
@@ -289,7 +290,7 @@ impl<'a> Compiler<'a> {
             array_functions: Vec::new(),
             aliases: Vec::new(),
             last_read: None,
-            joined: HashSet::new(),
+            joined: HashMap::new(),
             body_first: 0,
             prior: None,
             extra_parms: HashMap::new(),
@@ -1466,6 +1467,18 @@ impl<'a> Compiler<'a> {
                 if self.is_integer(&value) {
                     return self.not_integer(&value, span);
                 }
+                // FTEF-26.3: `NOT_F` and `NOT_V` of a constant fold to the float
+                // (`QCC_MakeFloatConst(!eval_a->_float)`, `!x && !y && !z`); `NOT_S` does not.
+                if self.dialect.has_fteqcc_extensions() {
+                    let folded = match self.constant_literal(&value) {
+                        Some(Literal::Float(x)) => Some(x == 0.0),
+                        Some(Literal::Vector([x, y, z])) => Some(x == 0.0 && y == 0.0 && z == 0.0),
+                        Some(Literal::String(_)) | None => None,
+                    };
+                    if let Some(truth) = folded {
+                        return self.float_literal(if truth { 1.0 } else { 0.0 }, span);
+                    }
+                }
                 let ty = self.type_of(&value).etype();
                 let Some(op) = ops::not_opcode(ty) else {
                     return Self::error(Code::E0302, "type mismatch for !".to_owned(), span);
@@ -1795,6 +1808,32 @@ impl<'a> Compiler<'a> {
             // nothing, as a reference nothing converts to a value (`QCC_FreeTemp` of the
             // reference's index).
             self.slot(&array, &index.index().at(span)?, 0)?;
+        } else if self.dialect.has_fteqcc_extensions()
+            && let ast::Expr::Field(field) = &inner
+        {
+            // FTE-13.18: a field access as a statement of its own reads its entity (and a
+            // computed field) and loads nothing: `QCC_PR_DiscardRef` frees the reference's
+            // base and index and converts it to no value. `e.v.y` names the component field
+            // (FTE-9.5), read through its entity alone.
+            if let Some(which) = self.component_selector(field)
+                && let Some(base) = field.base()
+                && self.entity_component_slot(&base, which, span)?.is_some()
+            {
+                return Ok(());
+            }
+            match self.member(field, span)? {
+                Member::Done(value) => self.drop_value(&value),
+                Member::Base(base) => {
+                    self.drop_value(&base);
+                    if self.type_of(&base).etype() == Etype::Entity
+                        && let Some(selector) = field.field()
+                        && !matches!(selector, ast::Expr::Name(_))
+                    {
+                        let selector = self.expr(&selector)?;
+                        self.drop_value(&selector);
+                    }
+                }
+            }
         } else {
             let value = self.expr(expr)?;
             // FTE-18.13: a value nothing reads is freed (`QCC_FreeTemp(e)`), so no clobber
@@ -2161,7 +2200,6 @@ impl<'a> Compiler<'a> {
         let store_last = ops::select(Operator::Assign, ty.etype(), ty.etype(), None)
             .map_or(Opcode::StoreF, |row| row.opcode);
         let result = self.program.allocate(words).at(span)?;
-        self.joined.insert(result);
         // FTE-18.12: an arm the statement before made is written to the temporary by that
         // statement (`opt_assignments` returns before any clobber); otherwise, FTEF-30.13: the
         // first arm's store is a statement asked for (`&truthstore`), so the aliases still to
@@ -2195,10 +2233,18 @@ impl<'a> Compiler<'a> {
         if let Some(s) = self.program.statements.get_mut(skip) {
             s.a = past;
         }
+        self.joined
+            .insert(result, self.program.statements.len().saturating_sub(1));
         Ok(Value {
             ofs: result,
             kind: ValueKind::Temp(ty),
         })
+    }
+
+    /// Whether `value` is a `?:`'s temporary whose last arm's statement is the last one made,
+    /// which no store folds into (FTEF-30.3).
+    fn is_joined(&self, value: &Value) -> bool {
+        self.joined.get(&value.ofs) == Some(&self.program.statements.len().saturating_sub(1))
     }
 
     /// The float literal `value`'s global (QC-20).
@@ -3367,7 +3413,7 @@ impl<'a> Compiler<'a> {
         if self.dialect != Dialect::Fteqcc
             || !self.is_definition_word(to)
             || !matches!(value.kind, ValueKind::Temp(_))
-            || self.joined.contains(&value.ofs)
+            || self.is_joined(value)
             || self.is_definition_word(value)
             || self.type_of(to) != self.type_of(value)
         {
@@ -3713,6 +3759,51 @@ impl Compiler<'_> {
     /// (FTE-19.13): the arguments read, then `random()` called and its value scaled, `MUL_F`
     /// of it and `a`, or `min + (max-min)*random()` as `SUB_F b a`, `MUL_F` and `ADD_F`.
     /// `None` for any other call.
+    /// FTEF-18.36: `floor`, `ceil`, `sin`, `cos`, `log` and `sqrt` of one constant float
+    /// argument, a literal or a constant's name, fold to the float constant of C's function
+    /// (`QCC_PR_GenerateFunctionCallRef` under `opt_constantarithmatic`).
+    fn folded_call(
+        &mut self,
+        name: Option<&str>,
+        slots: &[Option<ast::Expr>],
+        span: Span,
+    ) -> Lowered<Option<Value>> {
+        let Some(name) = name else {
+            return Ok(None);
+        };
+        if !self.dialect.has_fteqcc_extensions() || !FOLDED_BUILTINS.contains(&name) {
+            return Ok(None);
+        }
+        let [Some(argument)] = slots else {
+            return Ok(None);
+        };
+        let mut inner = argument.clone();
+        while let ast::Expr::Paren(paren) = &inner {
+            inner = paren.expr().at(span)?;
+        }
+        // A literal or a constant's name makes no statement, so reading it twice makes none.
+        let constant = match &inner {
+            ast::Expr::Literal(_) => literal_of(&inner, self.dialect),
+            ast::Expr::Name(_) => {
+                let value = self.expr(&inner)?;
+                self.constant_literal(&value)
+            }
+            _ => None,
+        };
+        let Some(Literal::Float(x)) = constant else {
+            return Ok(None);
+        };
+        let folded = match name {
+            "floor" => x.floor(),
+            "ceil" => x.ceil(),
+            "sin" => x.sin(),
+            "cos" => x.cos(),
+            "log" => x.ln(),
+            _ => x.sqrt(),
+        };
+        Ok(Some(self.float_literal(folded, span)?))
+    }
+
     fn random_call(
         &mut self,
         callee: &Value,
@@ -3841,7 +3932,7 @@ impl Compiler<'_> {
     fn fold_into(&mut self, value: &Value, to: u32) -> bool {
         if !self.dialect.has_fteqcc_extensions()
             || !matches!(value.kind, ValueKind::Temp(_))
-            || self.joined.contains(&value.ofs)
+            || self.is_joined(value)
             || self.is_definition_word(value)
         {
             return false;
@@ -3865,6 +3956,10 @@ impl Compiler<'_> {
     /// out of the return global (FTE-18.13), and `CALLn` made. The semantic model
     /// has judged the call (FTEF-32.3): fewer arguments than parameters leave the rest as the
     /// slots hold them, and an argument past the last parameter is read and ignored.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one call's lowering reads best in the order FTEQCC makes it: the folds, the arguments, the clobber, the call"
+    )]
     fn fteqcc_call(
         &mut self,
         callee: &Value,
@@ -3874,6 +3969,9 @@ impl Compiler<'_> {
         span: Span,
     ) -> Lowered<Value> {
         if let Some(value) = self.random_call(callee, name, slots, span)? {
+            return Ok(value);
+        }
+        if let Some(value) = self.folded_call(name, slots, span)? {
             return Ok(value);
         }
         let fixed = (!function.variadic).then_some(function.params.len());
@@ -4125,6 +4223,9 @@ fn postfix_step(postfix: &ast::PostfixExpr) -> f32 {
 fn operand_index(index: usize) -> Result<i32, Internal> {
     i32::try_from(index).map_err(|_| Internal::TooLarge)
 }
+
+/// The functions FTEQCC folds when called with one constant float (FTEF-18.36).
+const FOLDED_BUILTINS: [&str; 6] = ["floor", "ceil", "sin", "cos", "log", "sqrt"];
 
 /// The literal an initialiser is (QC-11.3; QC-27.8 refuses any other).
 fn literal_of(expr: &ast::Expr, dialect: Dialect) -> Option<Literal> {

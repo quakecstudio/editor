@@ -2983,6 +2983,16 @@ against FTEQCC.
   declaration after the next, and a body that has its `}` is read whole whatever its columns.
   Under the vanilla profile a function's statements end at a declaration line as before, where a
   declaration needs `local`.
+- **FTEF-18.36** `QCC_PR_GenerateFunctionCallRef` folds a call of one argument that is a
+  constant global (`arglist[0]->type == REF_GLOBAL` with `QCC_SRef_EvalConst`) under
+  `opt_constantarithmatic`, a default optimisation, by the function's name whatever its
+  number: `floor`, `ceil`, `sin`, `cos`, `log` and `sqrt` to the float constant of the C
+  function, `stof` of a string constant to `atof` of it, and `strlen` of a string constant to
+  its length; `pow` of two float constants too. So `ceil(0.4)` makes no `CALL1`, and
+  `world.ff = ceil(!0.117);` is `ADDRESS` and `STOREP_F` of the constant 1. This compiler folds
+  the six float functions; `stof`, `strlen` and `pow` are not folded here. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`.
 - **FTEF-18.35** A duplicate C-style label (FTEF-18.23) is warned of and its name read, but not
   its `:` (`QCC_PR_ParseWarning(WARN_DUPLICATELABEL, ...); QCC_PR_Lex(); return;`), so the `:`
   starts a FrikQCC-style label: `l: ; l: x;` defines `x`, and `l: ; l: ;` is the error `E0201`

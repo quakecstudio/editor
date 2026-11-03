@@ -3125,6 +3125,94 @@ fn an_int_constant_stored_to_a_field_or_passed_to_a_float_parameter_is_a_float()
     );
 }
 
+// spec FTE-13.18: a field access as a statement reads the entity and loads nothing; a
+// parenthesised field with a component loads the vector
+#[test]
+fn a_field_access_as_a_statement_loads_nothing() {
+    let p = fte_progs(
+        "entity self; entity ge0; .float ff; .vector fv; .entity fe;\nvoid() t = { self.ff; \
+         (self.fe).ff; self.fv.y; (self.fv).y; ge0 = self; };\n",
+    );
+    let (this, fe, fv, ge0) = (
+        global(&p, "self"),
+        global(&p, "fe"),
+        global(&p, "fv"),
+        global(&p, "ge0"),
+    );
+    let t = body(&p, "t");
+    assert_eq!(
+        t,
+        [
+            st(Opcode::LoadEnt, this, fe, t[0].c),
+            st(Opcode::LoadV, this, fv, t[1].c),
+            st(Opcode::StoreEnt, this, ge0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-30.3: a `?:`'s temporary is written by both arms, so no store folds into its
+// last arm's statement; a later statement that reuses the temporary is folded into as any
+#[test]
+fn a_store_folds_into_a_statement_that_reuses_a_ternarys_temporary() {
+    let p = fte_progs(
+        "float x; vector gv2;\nvoid() t = { local float n; n = 0; x = n ? 1 : 2; \
+         while (n < 1 && gv2.y) { n = n + 1; } };\n",
+    );
+    let t = body(&p, "t");
+    let adds: Vec<&Statement> = t
+        .iter()
+        .filter(|s| s.op == u32::from(AddF.number()))
+        .collect();
+    assert_eq!(adds.len(), 1, "{t:?}");
+    assert_eq!(adds[0].a, adds[0].c, "ADD_F n 1 n, the store folded");
+    assert_eq!(
+        t.iter()
+            .filter(|s| s.op == u32::from(StoreF.number()))
+            .count(),
+        4,
+        "n = 0, the two arms and x: {t:?}"
+    );
+}
+
+// spec FTEF-26.3: `!` of a float or vector constant folds to the float, `!` of a string
+// constant does not
+#[test]
+fn not_of_a_constant_folds() {
+    let p = fte_progs(
+        "float f; string s;\nvoid() t = { f = !0.117; f = !0; f = !'1 0 0'; f = !'0 0 0'; \
+         f = !\"x\"; };\n",
+    );
+    let f = global(&p, "f");
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, immediate(&p, 0.0), f, 0));
+    assert_eq!(t[1], st(StoreF, immediate(&p, 1.0), f, 0));
+    assert_eq!(t[2], st(StoreF, immediate(&p, 0.0), f, 0));
+    assert_eq!(t[3], st(StoreF, immediate(&p, 1.0), f, 0));
+    assert_eq!(t[4].op, u32::from(Opcode::NotS.number()));
+    assert_eq!(t[4].c, f);
+}
+
+// spec FTEF-18.36: `floor`, `ceil`, `sin`, `cos`, `log` and `sqrt` of a constant float fold to
+// the constant; of a value, or by another name, they are called
+#[test]
+fn some_builtins_of_a_constant_fold() {
+    let p = fte_progs(
+        "float f; const float K = 2.5; float(float v) ceil = #38; float(float v) floor = #37; \
+         float(float v) sqrt = #99; float(float v) rint = #36;\n\
+         void() t = { f = ceil(0.4); f = floor(K); f = sqrt((16)); f = rint(0.4); f = ceil(f); };\n",
+    );
+    let (f, rint, ceil) = (global(&p, "f"), global(&p, "rint"), global(&p, "ceil"));
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, immediate(&p, 1.0), f, 0));
+    assert_eq!(t[1], st(StoreF, immediate(&p, 2.0), f, 0));
+    assert_eq!(t[2], st(StoreF, immediate(&p, 4.0), f, 0));
+    assert_eq!(t[3], st(StoreF, immediate(&p, 0.4), 4, 0));
+    assert_eq!(t[4], st(Opcode::Call1, rint, 0, 0));
+    assert_eq!(t[6], st(StoreF, f, 4, 0));
+    assert_eq!(t[7], st(Opcode::Call1, ceil, 0, 0));
+}
+
 // spec FTEF-27.17: `!` of an int constant folds to the int, stored as the float; `!` of an
 // int value is `EQ_FNC` with the int 0; a vector times an int constant is `MUL_VF` or `MUL_FV`
 // of the float
