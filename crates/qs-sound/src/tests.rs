@@ -1215,3 +1215,81 @@ fn a_sound_is_loaded_when_first_played() {
     mixer.paint_channels(&mut table, 2, &mut out);
     assert_eq!(&out[..2], [696, 696]);
 }
+
+// spec SND-4.3: an ambient_level of 0 silences the ambient channels even inside a leaf
+#[test]
+fn ambient_level_zero_silences() {
+    let (mut mixer, mut table, _, _, _) = fixture_with(&ambient_files());
+    let mut out = Vec::new();
+    mixer.precache_ambients(&mut table);
+    let listener = Listener::default();
+    mixer.update(
+        &mut table,
+        listener,
+        ListenerLeaf::In([255; 4]),
+        0.1,
+        &mut out,
+    );
+    assert!(mixer.channels()[0].sfx.is_some());
+    let mut settings = *mixer.settings();
+    settings.ambient_level = 0.0;
+    mixer.set_settings(settings);
+    mixer.update(
+        &mut table,
+        listener,
+        ListenerLeaf::In([255; 4]),
+        0.1,
+        &mut out,
+    );
+    assert!(
+        mixer.channels()[..SND_NUM_AMBIENTS]
+            .iter()
+            .all(|c| c.sfx.is_none())
+    );
+}
+
+// spec SND-3.2: the offset is the sound's origin less the listener's on every axis
+#[test]
+fn the_offset_is_from_the_listener_on_z() {
+    let (mut mixer, mut table, beep, _, _) = fixture();
+    let mut rand = Fixed(vec![]);
+    let mut out = Vec::new();
+    // Looking straight down from z 100: right is (0, 0, -1); a sound 500 below is to the
+    // right at dist 0.5 (its offset's z is -500, not -400).
+    let down = Listener {
+        origin: [0.0, 0.0, 100.0],
+        right: [0.0, 0.0, -1.0],
+        ..Listener::default()
+    };
+    mixer.update(&mut table, down, OUT, 0.0, &mut out);
+    let z = mixer
+        .start_sound(&mut table, &mut rand, start(3, 1, beep, [0.0, 0.0, -400.0]))
+        .unwrap();
+    assert_eq!(
+        (mixer.channels()[z].leftvol, mixer.channels()[z].rightvol),
+        (0, 255)
+    );
+}
+
+// spec SND-5.2: a channel silent on the right alone is still painted on the left
+#[test]
+fn a_channel_silent_on_the_right_is_painted() {
+    let (mut mixer, mut table, _, looped, _) = fixture();
+    let mut out = Vec::new();
+    mixer.update(&mut table, Listener::default(), OUT, 0.0, &mut out);
+    // 500 units to the left at attenuation 64: left 255, right 0.
+    let index = mixer
+        .static_sound(&mut table, looped, [0.0, 500.0, 0.0], 255.0, 64.0)
+        .unwrap();
+    assert_eq!(
+        (
+            mixer.channels()[index].leftvol,
+            mixer.channels()[index].rightvol
+        ),
+        (255, 0)
+    );
+    let from = mixer.painted();
+    out.clear();
+    mixer.paint_channels(&mut table, from + 1, &mut out);
+    assert_eq!(out, [12485, 0]);
+}
