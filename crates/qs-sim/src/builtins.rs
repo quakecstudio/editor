@@ -22,6 +22,7 @@ use qs_mdl::Sprite;
 use crate::collision::{
     Body, Collision, CollisionError, Host, MoveKind, Solid, Trace, link_edict, sv_move,
 };
+use crate::messages::{SVC_CENTERPRINT, SVC_PRINT, ServerMessages};
 use crate::physics::Sound;
 
 /// `setorigin`.
@@ -48,6 +49,26 @@ const POINTCONTENTS: u32 = 41;
 const MOVETOGOAL: u32 = 67;
 /// `makestatic`.
 const MAKESTATIC: u32 = 69;
+/// `sound` (BUILTIN-12.1).
+const SOUND: u32 = 8;
+/// `stuffcmd` (BUILTIN-11.4).
+const STUFFCMD: u32 = 21;
+/// `bprint` (BUILTIN-11.1).
+const BPRINT: u32 = 23;
+/// `sprint` (BUILTIN-11.2).
+const SPRINT: u32 = 24;
+/// `lightstyle` (BUILTIN-12.6).
+const LIGHTSTYLE: u32 = 35;
+/// `particle` (BUILTIN-12.5).
+const PARTICLE: u32 = 48;
+/// `WriteByte`, the first of the `Write*` builtins (BUILTIN-13).
+const WRITEBYTE: u32 = 52;
+/// `WriteEntity`, the last of them.
+const WRITEENTITY: u32 = 59;
+/// `centerprint` (BUILTIN-11.2).
+const CENTERPRINT: u32 = 73;
+/// `ambientsound` (BUILTIN-12.4).
+const AMBIENTSOUND: u32 = 74;
 /// `precache_model2`.
 const PRECACHE_MODEL2: u32 = 75;
 /// `end[2] -= 256` in `PF_droptofloor` (WORLD-8.5).
@@ -68,13 +89,21 @@ pub struct SimBuiltins {
     pub(crate) collision: Collision,
     /// The sounds the server started, oldest first (PHYS-4.4, PHYS-5.1).
     pub(crate) sounds: Vec<Sound>,
+    /// The messages to the client (NET-1 to NET-5).
+    pub(crate) messages: ServerMessages,
     files: ModelFiles,
 }
 
 impl SimBuiltins {
     /// The builtins of the map `map`, named `name`, with its brush models' bounds for
     /// `setmodel` (WORLD-8.2), reading other models with `files`.
-    pub(crate) fn new(engine: MockEngine, name: &str, map: &Bsp<'_>, files: ModelFiles) -> Self {
+    pub(crate) fn new(
+        engine: MockEngine,
+        name: &str,
+        map: &Bsp<'_>,
+        files: ModelFiles,
+        crc: i32,
+    ) -> Self {
         let mut mock = MockBuiltins::with_engine(engine);
         let bounds = &mut mock.engine_mut().model_bounds;
         for (n, model) in map.models.iter().enumerate() {
@@ -95,6 +124,7 @@ impl SimBuiltins {
             mock,
             collision: Collision::new(map),
             sounds: Vec::new(),
+            messages: ServerMessages::new(map, crc),
             files,
         }
     }
@@ -150,8 +180,20 @@ impl Builtins for SimBuiltins {
                 SimCall::new(context, self).link(ent, false)
             }
             // WORLD-8.3: ED_Free unlinks.
-            REMOVE | MAKESTATIC => {
+            REMOVE => {
                 self.mock.call(number, context)?;
+                let ent = parm_edict(&Vm::Builtin(context), 0)?;
+                self.collision.unlink(ent);
+                Ok(())
+            }
+            MAKESTATIC => {
+                // NET-5.1: the static's bytes are read before the mock frees the edict.
+                let bytes = SimCall::new(context, self).static_bytes()?;
+                let before = self.mock.engine().buffers.signon;
+                self.mock.call(number, context)?;
+                if self.mock.engine().buffers.signon > before {
+                    self.messages.signon.write_bytes(&bytes);
+                }
                 let ent = parm_edict(&Vm::Builtin(context), 0)?;
                 self.collision.unlink(ent);
                 Ok(())
@@ -162,6 +204,67 @@ impl Builtins for SimBuiltins {
                 // A name not precached before is the new last entry.
                 if let Some(name) = self.mock.engine().model_precache.get(before).cloned() {
                     self.loaded(before, &name);
+                }
+                Ok(())
+            }
+            // NET-5.1: the bytes of the builtins that write to the client, beside the
+            // mock's counts; a buffer that did not grow had the write dropped or refused.
+            SOUND => {
+                let before = self.mock.engine().buffers.unreliable;
+                self.mock.call(number, context)?;
+                if self.mock.engine().buffers.unreliable > before {
+                    SimCall::new(context, self).mirror_sound();
+                }
+                Ok(())
+            }
+            AMBIENTSOUND => {
+                let before = self.mock.engine().buffers.signon;
+                self.mock.call(number, context)?;
+                if self.mock.engine().buffers.signon > before {
+                    SimCall::new(context, self).mirror_ambientsound();
+                }
+                Ok(())
+            }
+            PARTICLE => {
+                let before = self.mock.engine().buffers.unreliable;
+                self.mock.call(number, context)?;
+                if self.mock.engine().buffers.unreliable > before {
+                    SimCall::new(context, self).mirror_particle();
+                }
+                Ok(())
+            }
+            LIGHTSTYLE => {
+                self.mock.call(number, context)?;
+                SimCall::new(context, self).mirror_lightstyle();
+                Ok(())
+            }
+            BPRINT => {
+                self.mock.call(number, context)?;
+                SimCall::new(context, self).mirror_bprint();
+                Ok(())
+            }
+            SPRINT => {
+                self.mock.call(number, context)?;
+                SimCall::new(context, self).mirror_client_print(SVC_PRINT);
+                Ok(())
+            }
+            CENTERPRINT => {
+                self.mock.call(number, context)?;
+                SimCall::new(context, self).mirror_client_print(SVC_CENTERPRINT);
+                Ok(())
+            }
+            STUFFCMD => {
+                self.mock.call(number, context)?;
+                SimCall::new(context, self).mirror_stuffcmd();
+                Ok(())
+            }
+            WRITEBYTE..=WRITEENTITY => {
+                let before = self.mock.engine().buffers;
+                self.mock.call(number, context)?;
+                // A MSG_ONE write is not counted by the mock: mirror it on success.
+                let to = float_to_int(parm_float(&Vm::Builtin(context), 0));
+                if to == 1 || self.mock.engine().buffers != before {
+                    SimCall::new(context, self).mirror_write(number);
                 }
                 Ok(())
             }
@@ -586,6 +689,11 @@ fn field(vm: &Vm<'_, '_, '_>, n: usize, name: &str) -> Option<Slot> {
     vm.machine_view()
         .edicts()
         .field(EdictNumber::new(n), field_slot(name))
+}
+
+/// Parameter `n`'s raw bits.
+pub(crate) fn parm_raw(context: &Vm<'_, '_, '_>, n: u16) -> i32 {
+    parm(context, n).as_i32()
 }
 
 fn parm(context: &Vm<'_, '_, '_>, n: u16) -> Slot {

@@ -268,7 +268,8 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
             .flatten()
             .map(LoadedFile::into_bytes)
     });
-    let world = World::load(&progs, &map, &bsp, read_file).map_err(|e| e.to_string())?;
+    let mut world = World::load(&progs, &map, &bsp, read_file).map_err(|e| e.to_string())?;
+    world.settle(&progs).map_err(|e| e.to_string())?;
     // The world, then each brush entity: a submodel `*n` of the map at its entity's origin,
     // or model 0 of a BSP of its own, such as a health box.
     let mut placements = vec![Placement::WORLD];

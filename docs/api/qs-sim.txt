@@ -10,6 +10,17 @@ const qs_sim::collision::hull::CONTENTS_WATER
 const qs_sim::collision::hull::HULL1
 const qs_sim::collision::hull::HULL2
 const qs_sim::collision::trace::DIST_EPSILON
+const qs_sim::messages::NET_FAT_PVS_DISTANCE
+const qs_sim::messages::NET_GAME_COOP
+const qs_sim::messages::NET_GAME_DEATHMATCH
+const qs_sim::messages::NET_IDEALPITCH_SCALE
+const qs_sim::messages::NET_MAX_DATAGRAM
+const qs_sim::messages::NET_MAX_FORWARD
+const qs_sim::messages::NET_MAX_MSGLEN
+const qs_sim::messages::NET_PACKET_SLACK
+const qs_sim::messages::NET_PROTOCOL_VERSION
+const qs_sim::messages::NET_SIGNON_SIZE
+const qs_sim::messages::NET_VERSION
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_DEATHMATCH
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_EASY
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_HARD
@@ -64,6 +75,7 @@ field qs_sim::collision::trace::Trace.plane
 field qs_sim::collision::trace::Trace.startsolid
 field qs_sim::collision::trace::TracePlane.dist
 field qs_sim::collision::trace::TracePlane.normal
+field qs_sim::messages::ClientMessages.packets
 field qs_sim::physics::Sound.entity
 field qs_sim::physics::Sound.sample
 field qs_sim::spawn::FieldDef.etype
@@ -116,6 +128,22 @@ fn qs_sim::collision::hull::hull_for_entity
 fn qs_sim::collision::trace::Trace::new
 fn qs_sim::collision::trace::clip_move_to_entity
 fn qs_sim::collision::trace::recursive_hull_check
+fn qs_sim::messages::Message::bytes
+fn qs_sim::messages::Message::clear
+fn qs_sim::messages::Message::is_empty
+fn qs_sim::messages::Message::len
+fn qs_sim::messages::Message::max
+fn qs_sim::messages::Message::new
+fn qs_sim::messages::Message::overflowed
+fn qs_sim::messages::Message::take
+fn qs_sim::messages::Message::write_angle
+fn qs_sim::messages::Message::write_byte
+fn qs_sim::messages::Message::write_bytes
+fn qs_sim::messages::Message::write_coord
+fn qs_sim::messages::Message::write_float
+fn qs_sim::messages::Message::write_long
+fn qs_sim::messages::Message::write_short
+fn qs_sim::messages::Message::write_string
 fn qs_sim::spawn::Parser::new
 fn qs_sim::spawn::Parser::next_token
 fn qs_sim::spawn::SpawnHost::allocate
@@ -139,6 +167,9 @@ fn qs_sim::world::World::light_style
 fn qs_sim::world::World::load
 fn qs_sim::world::World::player_view
 fn qs_sim::world::World::set_command
+fn qs_sim::world::World::set_standard_quake
+fn qs_sim::world::World::settle
+fn qs_sim::world::World::take_messages
 fn qs_sim::world::World::take_set_angle
 fn qs_sim::world::World::take_sounds
 fn qs_sim::world::World::time
@@ -165,6 +196,8 @@ struct qs_sim::collision::hull::HullSet
 struct qs_sim::collision::hull::Plane
 struct qs_sim::collision::trace::Trace
 struct qs_sim::collision::trace::TracePlane
+struct qs_sim::messages::ClientMessages
+struct qs_sim::messages::Message
 struct qs_sim::physics::Sound
 struct qs_sim::spawn::FieldDef
 struct qs_sim::spawn::Parser
@@ -173,8 +206,21 @@ struct qs_sim::world::World
 trait qs_sim::collision::Host
 trait qs_sim::spawn::SpawnHost
 type qs_sim::builtins::ModelFiles
+use qs_sim::ClientMessages = messages::ClientMessages
 use qs_sim::Entity = world::Entity
+use qs_sim::Message = messages::Message
 use qs_sim::ModelFiles = builtins::ModelFiles
+use qs_sim::NET_FAT_PVS_DISTANCE = messages::NET_FAT_PVS_DISTANCE
+use qs_sim::NET_GAME_COOP = messages::NET_GAME_COOP
+use qs_sim::NET_GAME_DEATHMATCH = messages::NET_GAME_DEATHMATCH
+use qs_sim::NET_IDEALPITCH_SCALE = messages::NET_IDEALPITCH_SCALE
+use qs_sim::NET_MAX_DATAGRAM = messages::NET_MAX_DATAGRAM
+use qs_sim::NET_MAX_FORWARD = messages::NET_MAX_FORWARD
+use qs_sim::NET_MAX_MSGLEN = messages::NET_MAX_MSGLEN
+use qs_sim::NET_PACKET_SLACK = messages::NET_PACKET_SLACK
+use qs_sim::NET_PROTOCOL_VERSION = messages::NET_PROTOCOL_VERSION
+use qs_sim::NET_SIGNON_SIZE = messages::NET_SIGNON_SIZE
+use qs_sim::NET_VERSION = messages::NET_VERSION
 use qs_sim::SimBuiltins = builtins::SimBuiltins
 use qs_sim::Sound = physics::Sound
 use qs_sim::UserCmd = client::UserCmd

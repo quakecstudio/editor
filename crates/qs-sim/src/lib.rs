@@ -10,6 +10,7 @@ mod client;
 pub mod collision;
 #[cfg(test)]
 mod fixtures;
+mod messages;
 mod movement;
 mod physics;
 pub mod spawn;
@@ -17,5 +18,10 @@ mod world;
 
 pub use builtins::{ModelFiles, SimBuiltins};
 pub use client::UserCmd;
+pub use messages::{
+    ClientMessages, Message, NET_FAT_PVS_DISTANCE, NET_GAME_COOP, NET_GAME_DEATHMATCH,
+    NET_IDEALPITCH_SCALE, NET_MAX_DATAGRAM, NET_MAX_FORWARD, NET_MAX_MSGLEN, NET_PACKET_SLACK,
+    NET_PROTOCOL_VERSION, NET_SIGNON_SIZE, NET_VERSION,
+};
 pub use physics::Sound;
 pub use world::{Entity, World, WorldError};

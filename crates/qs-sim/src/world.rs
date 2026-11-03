@@ -22,7 +22,10 @@ use qc_vm::{Machine, NoObserver, RunError, ServerState};
 use qs_bsp::Bsp;
 
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
-use crate::client::{UserCmd, wire_angle};
+use crate::client::UserCmd;
+use crate::messages::ClientMessages;
+#[cfg(test)]
+use crate::messages::ServerMessages;
 use crate::physics::Sound;
 
 use crate::spawn::{self, FieldDef, LoadError, SPAWNFLAGS_SLOT, SpawnError, SpawnHost};
@@ -37,6 +40,8 @@ const MOVETYPE_PUSH: f32 = 7.0;
 const MAXCLIENTS: usize = 1;
 /// The single player's edict.
 const CLIENT: usize = 1;
+/// `EDICT_SETTLE_FRAMETIME`: the two frames the server runs before play (EDICT-8.9).
+const SETTLE_FRAMETIME: f64 = 0.1;
 
 /// Why a world could not be made.
 #[derive(Debug)]
@@ -88,8 +93,6 @@ pub struct World {
     builtins: SimBuiltins,
     /// The client's command, once it has entered the game (PHYS-9.6, PHYS-10).
     player: Option<UserCmd>,
-    /// Angles the server set the client's view to, not yet taken.
-    set_angle: Option<[f32; 3]>,
 }
 
 impl World {
@@ -118,9 +121,8 @@ impl World {
         engine.clients_active = vec![false; MAXCLIENTS];
         let mut world = Self {
             machine,
-            builtins: SimBuiltins::new(engine, map, bsp, files),
+            builtins: SimBuiltins::new(engine, map, bsp, files, progs.header().crc),
             player: None,
-            set_angle: None,
         };
         let entities = bsp.entities();
         // EDICT-4.1: the world's fields.
@@ -144,6 +146,44 @@ impl World {
         Ok(world)
     }
 
+    /// The rest of `SV_SpawnServer`: the two settle frames, run without the `frametime`
+    /// global (EDICT-8.9), then the entity baselines (NET-2.1). A host calls it once after
+    /// [`World::load`], before the player enters; the baselines are made at
+    /// [`World::connect`] if it did not.
+    ///
+    /// # Errors
+    ///
+    /// [`WorldError::Frame`] when a settle frame fails, or a model is not precached.
+    pub fn settle(&mut self, progs: &Progs<'_>) -> Result<(), WorldError> {
+        let clients = self.builtins.mock.engine().clients_active.clone();
+        let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+        for _ in 0..2 {
+            call.physics(SETTLE_FRAMETIME, &clients)
+                .map_err(WorldError::Frame)?;
+        }
+        call.create_baselines().map_err(WorldError::Frame)
+    }
+
+    /// The view angles the server told the client to take since the last call,
+    /// `svc_setangle` as the client reads it (PHYS-10.2, NET-4.3).
+    pub fn take_set_angle(&mut self) -> Option<[f32; 3]> {
+        self.builtins.messages.set_angle.take()
+    }
+
+    /// Whether the game is standard Quake, not `-rogue` or `-hipnotic`, which changes how the
+    /// weapon is sent (NET-4.4); standard by default.
+    pub fn set_standard_quake(&mut self, standard: bool) {
+        self.builtins.messages.standard_quake = standard;
+    }
+
+    /// The messages sent to the client since the last call (NET-1.3): each packet a reliable
+    /// message or a datagram, in sending order.
+    pub fn take_messages(&mut self) -> ClientMessages {
+        ClientMessages {
+            packets: core::mem::take(&mut self.builtins.messages.outbox),
+        }
+    }
+
     /// Runs one server frame of `frametime` seconds through `progs`, the progs the world was
     /// loaded with (PHYS-1).
     ///
@@ -155,8 +195,10 @@ impl World {
         let player = self.player;
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         let t = double_to_float(frametime);
-        // Host_ServerFrame: frametime, then the clients' moves, then the physics.
+        // Host_ServerFrame (NET-1.2): frametime, the datagram cleared, then the clients'
+        // moves, then the physics, then the messages.
         call.set_global("frametime", Slot::from_f32(t));
+        call.sim.messages.datagram.clear();
         if let Some(cmd) = player {
             let cmd = call.read_move(CLIENT, &cmd);
             call.client_think(CLIENT, &cmd, t)
@@ -164,18 +206,8 @@ impl World {
         }
         call.physics(frametime, &clients)
             .map_err(WorldError::Frame)?;
-        // SV_WriteClientdataToMessage: a fixangle goes to the client, once.
-        if player.is_some() && call.float(CLIENT, "fixangle") != 0.0 {
-            self.set_angle = Some(call.vector(CLIENT, "angles").map(wire_angle));
-            call.set_float(CLIENT, "fixangle", 0.0);
-        }
+        call.send_client_messages().map_err(WorldError::Frame)?;
         Ok(())
-    }
-
-    /// The view angles the server told the client to take since the last call, `svc_setangle`
-    /// (PHYS-10.2).
-    pub fn take_set_angle(&mut self) -> Option<[f32; 3]> {
-        self.set_angle.take()
     }
 
     /// The player enters the game, as `SV_ConnectClient` and `Host_Spawn_f` bring a client in
@@ -189,8 +221,15 @@ impl World {
         if let Some(active) = self.builtins.mock.engine_mut().clients_active.first_mut() {
             *active = true;
         }
+        self.builtins.messages.client.active = true;
         let name = self.make_string(b"player".to_vec());
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+        if call.sim.messages.baselines.is_empty() {
+            call.create_baselines().map_err(WorldError::Frame)?;
+        }
+        // NET-2.2, NET-2.3: the serverinfo and the prespawn answer.
+        call.send_serverinfo(CLIENT);
+        call.prespawn();
         let new_parms = call.global("SetNewParms").as_i32();
         call.run(new_parms).map_err(WorldError::Frame)?;
         let parms: Vec<Slot> = (1..=16).map(|n| call.global(&format!("parm{n}"))).collect();
@@ -216,6 +255,9 @@ impl World {
             let function = call.global(entry).as_i32();
             call.run(function).map_err(WorldError::Frame)?;
         }
+        // NET-2.4, NET-2.5: the spawn message and the begin, then the message is sent.
+        call.spawn_message(CLIENT).map_err(WorldError::Frame)?;
+        call.begin();
         self.player = Some(UserCmd::default());
         Ok(())
     }
@@ -302,6 +344,16 @@ impl World {
                 })
             })
             .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn messages(&self) -> &ServerMessages {
+        &self.builtins.messages
+    }
+
+    #[cfg(test)]
+    pub(crate) fn engine(&self) -> &MockEngine {
+        self.builtins.mock.engine()
     }
 
     fn make_string(&mut self, text: Vec<u8>) -> i32 {
@@ -439,4 +491,4 @@ impl SpawnHost for Spawner<'_, '_> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
