@@ -48,7 +48,13 @@ const RERELEASE: [&str; 6] = [
 
 /// The corpus mods (`oracles/rerelease.rs`'s `MODS`) at DIFF-12.5's bar, which the nightly run
 /// compares; a run may name the others until each joins (DIFF-12.18).
-const MODS_AT_BAR: [&str; 4] = ["copper", "librequake", "qc-conduit", "swab"];
+const MODS_AT_BAR: [&str; 5] = [
+    "arcane-dimensions",
+    "copper",
+    "librequake",
+    "qc-conduit",
+    "swab",
+];
 
 /// The corpus mods written for an engine with extension builtins, which the mock runs under
 /// vkQuake's rules (BUILTIN-18): crmod7 calls them while it sets up, and Arcane Dimensions
