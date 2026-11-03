@@ -1628,6 +1628,7 @@ issues:
   - MVP-2
   - OPEN-5
   depends:
+  - L-14
   - P5-05
   - P2-01
   - P2-02
@@ -3066,6 +3067,7 @@ issues:
   size: M
   reqs:
   - COMP-8
+  - COMP-10
   summary: |
     Found while working P2-150 (#639). The FTEQCC differential (DIFF-12) compares behaviour on real codebases only, whose calls reach about 90% of their statements from one set-up world, so a lowering no corpus uses, or uses only in code the calls do not reach, is never compared. A generator of well-formed QuakeC source, typed and in the dialect the semantic model accepts, makes many small programs that combine the language's forms (expressions of every operator and type, assignments and compound assignments, calls with defaults and varargs, arrays, structs, fields, vectors and their components, control flow, nested functions, wrap and accumulate); each is compiled by the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `-Tid`) and by qc-codegen, and run through the DIFF-12 call comparison. The existing generator, `crates/qs-differential/src/generate.rs`, builds progs for the VM fuzz target (FND-10), not source, so this is a new source generator. Real code is the second input: each function of each corpus codebase (corpus/manifest.toml, fetched at its pinned commit and checksum with its license recorded, never committed) is cut out with the declarations it depends on into a program of its own and compared the same way with more rounds than a whole-codebase run gives one function, reaching the code those runs leave unexecuted; and the corpus is widened with further public QuakeC projects that FTEQCC compiles, each added through the manifest's license and checksum checks.
   depends:
@@ -3239,6 +3241,35 @@ issues:
   - 'Every `equivalent_mutants` key under `[crates.qc-builtins]` names a mutant cargo-mutants still produces on the current code, and the measured mutation score is at or above the recorded minimum'
   verify:
   - cargo xtask ratchet
+- key: L-14
+  title: Generate code through an intermediate layer with back-end passes
+  labels:
+  - L4-bridges
+  - area:compiler
+  - type:feature
+  size: L
+  reqs:
+  - COMP-3
+  - COMP-5
+  - COMP-6
+  - COMP-11
+  summary: |
+    ADR-0020; moved from the post-MVP backlog to Phase 2 by Justin on 2026-11-03, to clean up the boundary between the semantic model and the code generator next. qc-codegen walks each file's syntax tree and emits statements as it goes, works out types again rather than reading the semantic model's `TypedBody` per function, and carries FTEQCC's behaviour as dialect branches through `compile.rs`. This issue lowers each checked body into an intermediate layer whose values and their lifetimes are explicit, and moves temporary allocation and memory layout into back-end passes chosen by each dialect's profile, where optimizations (L-04), an FTEQCC-exact allocation mode if a mod ever needs one, and GMQCC's code generation can be added as passes.
+  depends:
+  - P2-07
+  - P2-08
+  deliverable:
+  - 'crates/qc-codegen: an intermediate layer lowered from the semantic model''s typed bodies, with explicit values, their lifetimes and the statements that read and write them, and the progs written from it'
+  - 'crates/qc-codegen: temporary allocation and the layout of locals and temporaries as passes over the layer, selected by the dialect profile, each pass with its spec statements in docs/spec/'
+  - 'docs/design/: the back end''s design (the layer, its passes and how a dialect profile chooses them), beside docs/design/semantic-model.md'
+  acceptance:
+  - 'The vanilla and FTEQCC differentials (DIFF-12, DIFF-13) and the corpus runs find no divergence beyond the oracle defects ADR-0020 lets the harness prove, before and after the change'
+  - 'qc-codegen reads each function''s types from the semantic model''s typed body, and no type is worked out a second time in the code generator'
+  - 'A test per pass shows its effect on the layer for a program of its own'
+  verify:
+  - cargo xtask compiler-diff --fast
+  - cargo xtask compiler-diff --generated 10000 --seed 1
+  - cargo test -p qc-codegen
 - key: P2-158
   title: "Report a #define body lexical error at its use, not the stored body, so repeated uses do not collide"
   labels:

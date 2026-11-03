@@ -82,8 +82,9 @@ and gives the later requirements somewhere to live.
   deliverable adds the proof to `cargo xtask compiler-diff` and a spec statement in
   `docs/spec/differential.md`. Program 555 is the first case. 1108 and 1230 are diagnosed and
   fixed, or proved, under the same rule.
-- A new issue, L-14, builds the intermediate layer and moves temporary allocation and layout
-  into its passes; L-04 (dead-code removal and deduplication) depends on it.
+- A new issue, L-14 ([#685](https://github.com/quakecstudio/editor/issues/685)), builds the
+  intermediate layer and moves temporary allocation and layout into its passes. Justin placed
+  it in Phase 2, to be worked next; L-04 (dead-code removal and deduplication) depends on it.
 - The rule of 2026-10-30, zero divergences with quirks ported rather than excused, keeps its
   force for tiers 1 and 2. Tier 3 is the only exception, and only with proof.
 - FTE-21.7 and FTEF-27.16 describe this compiler's temporaries; where they state FTEQCC's
