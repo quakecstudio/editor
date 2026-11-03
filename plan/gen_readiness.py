@@ -28,6 +28,15 @@ NAMES = {"L0-formats": "L0 formats", "L1-vm": "L1 VM", "L2-syntax": "L2 syntax",
 BUILD_TYPES = {"type:feature", "type:test"}
 PHASES = ["P1", "P2", "P3", "P4", "P5", "P6", "P7"]
 
+# Re-reviews: a crate's ratchets re-measured after a later change to its layer, recorded under a
+# key of their own, since `cargo xtask ratchet` holds a recorded crate's minimums and equivalent
+# mutants to the review that set them (xtask/src/ratchet.rs, check_change). Each names the
+# phase, the layer, the crates, the work that changed them and the review it follows.
+REREVIEWS = [
+    {"key": "P2-R1B", "phase": "P2", "layer": "L1-vm", "crates": "qc-builtins", "after": "P2-150",
+     "follows": "P2-R1", "work": "P2-156"},
+]
+
 all_issues = [(g["milestone"], i) for d in files.values() for g in groups(d) for i in g["issues"]]
 out_groups = []
 seen_layers = {}
@@ -58,6 +67,26 @@ for ph in PHASES:
             "verify": ["CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue"],
         })
         seen_layers[layer] = key
+    for rr in REREVIEWS:
+        if rr["phase"] != ph:
+            continue
+        note = rr["key"].lower()
+        rs.append({
+            "key": rr["key"],
+            "title": f"{NAMES[rr['layer']]} {rr['crates']} ratchet re-review after {rr['after']} ({ph})",
+            "labels": [rr["layer"], "area:process", "type:readiness"],
+            "size": "S",
+            "reqs": ["TEST-2", "TEST-6", "TEST-9"],
+            "depends": [rr["follows"], rr["after"], rr["work"]],
+            "deliverable": [f"docs/readiness/{note}.md following docs/readiness/_template.md for {rr['crates']}, linking the measurement run",
+                            f"ratchets.toml: [crates.{rr['crates']}] re-measured on the {rr['after']} code, its readiness key {rr['key']} and its equivalent_mutants holding only mutants cargo-mutants still produces"],
+            "acceptance": [
+                f"Every threshold in ADR-0009 met for {rr['crates']}, or a per-crate exception with its reason recorded in the crate README",
+                "Reviewed by an agent that did not write the change under review (TEST-9)",
+                "cargo xtask ratchet passes over the full ratchets.toml history with the new key",
+            ],
+            "verify": ["cargo xtask ratchet; the Readiness workflow run link in the note"],
+        })
     if rs:
         out_groups.append({"milestone": ph, "issues": rs})
 (BL / "readiness.yaml").write_text(

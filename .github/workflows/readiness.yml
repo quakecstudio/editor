@@ -107,7 +107,7 @@ jobs:
       - id: list
         run: |
           matrix=$(jq -cn --arg crates "$CRATES" '
-            {"qc-preproc": 10, "qc-sema": 10, "qc-syntax": 4} as $shards
+            {"qc-builtins": 4, "qc-preproc": 10, "qc-sema": 10, "qc-syntax": 4} as $shards
             | [$crates | splits("\\s+") | select(. != "")]
             | map(. as $crate
                   | ($shards[$crate | sub("/+$"; "") | sub(".*/"; "")] // 1) as $count
