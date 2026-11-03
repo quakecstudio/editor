@@ -159,6 +159,11 @@ impl Constant {
         f64::from_bits(self.u64())
     }
 
+    /// Whether it was made as a vector.
+    pub(crate) const fn is_vector(self) -> bool {
+        matches!(self.ty, ConstType::Vector)
+    }
+
     /// `eval->vector`.
     pub(crate) const fn v(self) -> [f32; 3] {
         [

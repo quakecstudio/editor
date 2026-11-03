@@ -106,7 +106,7 @@ impl Checker<'_> {
                 }
                 value
             }
-            Etype::Vector => self.swizzle(&selector, Type::Simple(SimpleType::Float))?,
+            Etype::Vector => self.vector_component(&base, &selector)?,
             Etype::Field if shape.holds == Some(Etype::Vector) => self.swizzle(
                 &selector,
                 Type::Field(Type::Simple(SimpleType::Float).into()),
@@ -320,6 +320,25 @@ impl Checker<'_> {
             self.env.report(Code::E0319, span, message);
         }
         Value::field_of(base, name.to_owned(), Type::Named("__variant".into()), None)
+    }
+
+    /// A vector's component, `v.x` (FTEF-24.2): of a constant vector, a constant, its float
+    /// (FTEF-26.13; `QCC_SRef_EvalConst` reads the word the reference names).
+    fn vector_component(&mut self, base: &Value, selector: &ast::Expr) -> Checked {
+        let component = self.swizzle(selector, Type::Simple(SimpleType::Float))?;
+        let word = selector_name(selector).and_then(|(name, _)| match name.as_str() {
+            "x" | "r" => Some(0),
+            "y" | "g" => Some(1),
+            "z" | "b" => Some(2),
+            _ => None,
+        });
+        Ok(match (base.constness, word) {
+            (Constness::Known(constant), Some(word)) if constant.is_vector() => {
+                let value = constant.v().get(word).copied().unwrap_or_default();
+                Value::constant(Constant::float(value))
+            }
+            _ => component,
+        })
     }
 
     /// FTEF-24.2: a vector's single-channel swizzle, `x`, `y` or `z` (or `r`, `g`, `b`), is a
