@@ -31,7 +31,8 @@
 //! `--generate` writes program `n` of the seed to `<dir>/<n>/t.qc` with a `progs.src` that
 //! lists it, and the forms every program used, with their counts, to `<dir>/forms.tsv`.
 //! `--pairs` compares each line's pair, `name`, the oracle's progs and ours separated by tabs,
-//! in one process, printing one line per pair, and exits 0 when no pair diverges: a generated
+//! and optionally the oracle with its defects fixed (DIFF-14.5), in one process,
+//! printing one line per pair, and exits 0 when no pair diverges: a generated
 //! program's calls need not reach 90% of its statements, since every function of it is
 //! called and a bounded loop is left early by its counter.
 
@@ -100,7 +101,7 @@ enum Run {
     Suite(Options),
     /// Programs of a seed written out (DIFF-14.1).
     Generate(Generate),
-    /// The pairs a file lists, each compared (DIFF-14.2).
+    /// The pairs a file lists, each compared (DIFF-14.8).
     Pairs {
         file: PathBuf,
         rounds: u32,
@@ -213,7 +214,7 @@ fn generate(generate: &Generate) -> Result<bool, String> {
             .map_err(|e| format!("{}: {e}", dir.display()))?;
         std::fs::write(dir.join("t.qc"), &program.source)
             .map_err(|e| format!("{}: {e}", dir.display()))?;
-        // DIFF-14.2: how many programs use each form, however often each uses it.
+        // DIFF-14.8: how many programs use each form, however often each uses it.
         for form in program.forms.keys() {
             let entry = forms.entry(form).or_insert(0);
             *entry = entry.saturating_add(1);
@@ -235,8 +236,11 @@ fn generate(generate: &Generate) -> Result<bool, String> {
     Ok(true)
 }
 
-/// DIFF-14.2: compares every pair `file` lists, one per line as `name`, the oracle's progs and
-/// ours separated by tabs; a pair passes when no call diverges.
+/// DIFF-14.8: compares every pair `file` lists, one per line as `name`, the oracle's progs and
+/// ours separated by tabs; a pair passes when no call diverges. DIFF-14.5: a line may name a
+/// fourth progs, the oracle with its known defects fixed, and then a pair whose oracle
+/// diverges passes when the fixed oracle agrees with ours, as an oracle defect proved; it
+/// fails when the fixed oracle diverges from ours, whatever the oracle did.
 fn pairs(
     file: &PathBuf,
     rounds: u32,
@@ -246,6 +250,7 @@ fn pairs(
     let text = std::fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
     let mut all_ok = true;
     let mut compared = 0_usize;
+    let mut proved = 0_usize;
     let quiet = |_: &str, _: usize, _: usize| {};
     for line in text.lines().filter(|line| !line.trim().is_empty()) {
         let mut fields = line.split('\t');
@@ -256,51 +261,109 @@ fn pairs(
                 file.display()
             ));
         };
+        let fixed = fields.next();
         let read = |path: &str| std::fs::read(path).map_err(|e| format!("{path}: {e}"));
         let (theirs, ours) = (read(theirs)?, read(ours)?);
         let report = run_codebase(oracle, &theirs, &ours, rounds, engine, &quiet)
             .map_err(|e| format!("{name}: {e}"))?;
         compared = compared.saturating_add(1);
+        let fixed_report = fixed
+            .map(|path| {
+                run_codebase(oracle, &read(path)?, &ours, rounds, engine, &quiet)
+                    .map_err(|e| format!("{name}, the fixed oracle: {e}"))
+            })
+            .transpose()?;
         let divergences = report.divergences();
-        if divergences == 0 {
-            println!(
+        let fixed_divergences = fixed_report.as_ref().map(CodebaseReport::divergences);
+        match Outcome::of(divergences, fixed_divergences) {
+            Outcome::Agrees => println!(
                 "ok    {name}: {} of {} statements ({:.1}%)",
                 report.executed.len(),
                 report.total_statements,
                 report.coverage() * 100.0
-            );
-        } else {
-            all_ok = false;
-            println!("FAIL  {name}: {divergences} divergences");
-            let mut printed = 0_usize;
-            for (scenario, scenario_report) in &report.scenarios {
-                for divergence in scenario_report
-                    .divergences
-                    .iter()
-                    .take(PRINTED.saturating_sub(printed))
-                {
-                    let function = divergence.function.as_deref().map_or_else(
-                        || "the setup".to_owned(),
-                        |f| String::from_utf8_lossy(f).into_owned(),
-                    );
-                    println!(
-                        "      {scenario}: {function}, round {}: {:?}",
-                        divergence.round, divergence.what
-                    );
-                    printed = printed.saturating_add(1);
+            ),
+            Outcome::OracleDefect => {
+                proved = proved.saturating_add(1);
+                println!(
+                    "ok    {name}: {divergences} divergences, an oracle defect: the fixed \
+                     oracle agrees (DIFF-14.5)"
+                );
+            }
+            Outcome::FixTooWide => {
+                all_ok = false;
+                println!(
+                    "FAIL  {name}: the fixed oracle diverges where the oracle agrees: a fix \
+                     changed more than its defect"
+                );
+                if let Some(fixed_report) = &fixed_report {
+                    print_divergences(fixed_report);
                 }
+            }
+            Outcome::Diverges => {
+                all_ok = false;
+                println!("FAIL  {name}: {divergences} divergences");
+                print_divergences(&report);
             }
         }
     }
     println!(
-        "compiler-diff: {compared} pairs compared, {}",
+        "compiler-diff: {compared} pairs compared, {proved} oracle defects proved, {}",
         if all_ok {
-            "none diverged"
+            "no other divergence"
         } else {
             "some diverged"
         }
     );
     Ok(all_ok)
+}
+
+/// What a pair's comparisons say (DIFF-14.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Outcome {
+    /// Ours agrees with the oracle, and with the fixed oracle when there is one.
+    Agrees,
+    /// Ours diverges from the oracle and agrees with the fixed one: an oracle defect proved.
+    OracleDefect,
+    /// The fixed oracle diverges from ours where the oracle agrees.
+    FixTooWide,
+    /// Ours diverges from the oracle, and from the fixed one when there is one.
+    Diverges,
+}
+
+impl Outcome {
+    /// The outcome of `divergences` from the oracle and, when a fixed oracle was compared,
+    /// `fixed` from it.
+    const fn of(divergences: usize, fixed: Option<usize>) -> Self {
+        match (divergences, fixed) {
+            (0, None | Some(0)) => Self::Agrees,
+            (_, Some(0)) => Self::OracleDefect,
+            (0, Some(_)) => Self::FixTooWide,
+            (_, _) => Self::Diverges,
+        }
+    }
+}
+
+/// Prints the first [`PRINTED`] divergences of `report`, each with its scenario, function and
+/// round.
+fn print_divergences(report: &CodebaseReport) {
+    let mut printed = 0_usize;
+    for (scenario, scenario_report) in &report.scenarios {
+        for divergence in scenario_report
+            .divergences
+            .iter()
+            .take(PRINTED.saturating_sub(printed))
+        {
+            let function = divergence.function.as_deref().map_or_else(
+                || "the setup".to_owned(),
+                |f| String::from_utf8_lossy(f).into_owned(),
+            );
+            println!(
+                "      {scenario}: {function}, round {}: {:?}",
+                divergence.round, divergence.what
+            );
+            printed = printed.saturating_add(1);
+        }
+    }
 }
 
 fn run(args: &[String]) -> Result<bool, String> {
@@ -441,7 +504,7 @@ mod tests {
     use qc_builtins::EngineProfile;
     use qs_differential::calls::{CodebaseReport, FULL_ROUNDS, Oracle};
 
-    use super::{Generate, Options, Run, add_row, parse};
+    use super::{Generate, Options, Outcome, Run, add_row, parse};
 
     // spec DIFF-12.14: each pair compared adds its row to the results table, after the rows
     // already there.
@@ -482,7 +545,7 @@ mod tests {
         assert!(add_row(&dir.join("no/such/dir.md"), &options, &summary, &report).is_err());
     }
 
-    // spec DIFF-14.2: `--generate` names the directory, the seed and the count, `--pairs` the
+    // spec DIFF-14.8: `--generate` names the directory, the seed and the count, `--pairs` the
     // file, with the rounds, the oracle and the engine of a suite run; either leaves the
     // suite's own arguments unrequired
     #[test]
@@ -513,5 +576,18 @@ mod tests {
             }
             Run::Suite(_) | Run::Generate(_) => unreachable!("not a pairs run"),
         }
+    }
+
+    // spec DIFF-14.5: a divergence from the oracle passes only when the fixed oracle agrees with
+    // ours; the fixed oracle diverging fails, where the oracle agrees too, and with no fixed
+    // oracle every divergence fails
+    #[test]
+    fn a_divergence_passes_only_when_the_fixed_oracle_agrees() {
+        assert_eq!(Outcome::of(0, None), Outcome::Agrees);
+        assert_eq!(Outcome::of(0, Some(0)), Outcome::Agrees);
+        assert_eq!(Outcome::of(3, Some(0)), Outcome::OracleDefect);
+        assert_eq!(Outcome::of(0, Some(2)), Outcome::FixTooWide);
+        assert_eq!(Outcome::of(3, Some(2)), Outcome::Diverges);
+        assert_eq!(Outcome::of(3, None), Outcome::Diverges);
     }
 }
