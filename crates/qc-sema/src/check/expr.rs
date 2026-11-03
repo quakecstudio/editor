@@ -30,6 +30,7 @@ use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
 pub(super) struct Checker<'e> {
     pub(super) env: &'e mut dyn Env,
     types: HashMap<(usize, usize), Type>,
+    opcodes: HashMap<(usize, usize), u16>,
     /// Whether the checker is in a condition of `if`, `while` or `do`, outside parentheses
     /// (FTEQCC's `conditional`).
     pub(super) in_condition: bool,
@@ -81,6 +82,7 @@ impl<'e> Checker<'e> {
             function: env.function(),
             env,
             types: HashMap::new(),
+            opcodes: HashMap::new(),
             in_condition: false,
             addressed: HashSet::new(),
             returned: false,
@@ -107,7 +109,10 @@ impl<'e> Checker<'e> {
     }
 
     pub(super) fn finish(self) -> TypedBody {
-        TypedBody { types: self.types }
+        TypedBody {
+            types: self.types,
+            opcodes: self.opcodes,
+        }
     }
 
     pub(super) fn block(&mut self, block: &ast::Block) {
@@ -380,6 +385,9 @@ impl<'e> Checker<'e> {
         };
         if let Choice::Mismatch(_) = choice {
             self.mismatch(spelling, lhs, rhs, span);
+        }
+        if let Ok(number) = u16::try_from(choice.op().number()) {
+            self.opcodes.insert((span.start, span.end), number);
         }
         let [a, b, _] = opcode.types;
         let mut folded = [None, None];

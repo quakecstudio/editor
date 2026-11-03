@@ -115,6 +115,7 @@ pub(super) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
     }
     TypedBody {
         types: checker.types,
+        opcodes: HashMap::new(),
     }
 }
 

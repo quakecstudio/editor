@@ -87,6 +87,7 @@ fn qc_sema::cast::Source::kind
 fn qc_sema::cast::Source::name
 fn qc_sema::cast::Type::fteqcc_name
 fn qc_sema::cast::Type::fteqcc_scalar
+fn qc_sema::check::TypedBody::opcode_at
 fn qc_sema::check::TypedBody::type_at
 fn qc_sema::check::fold::fold_builtin_call
 fn qc_sema::check::fold::fold_floats

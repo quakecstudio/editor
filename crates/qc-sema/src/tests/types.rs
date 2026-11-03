@@ -233,3 +233,35 @@ fn a_checked_body_keeps_its_expression_types() {
     assert_eq!(at("\"x\""), Some(&Type::Simple(SimpleType::String)));
     assert_eq!(at("g = {"), None);
 }
+
+// spec FTEF-23.4: the check stage keeps the opcode `QCC_PR_ChooseOpcode` picks for each binary
+// operator, by the operator's span, the row FTEQCC chose even when the target emulates it
+#[test]
+fn a_checked_body_keeps_its_operators_opcodes() {
+    let source = "float a; vector v; void() g = { a = a + 1; v = v * a; v = v / a; a = a < 2; };";
+    let index = super::fte_index_of(source);
+    let g = index
+        .defs
+        .iter()
+        .position(|d| d.name == "g")
+        .map(DefId::new)
+        .unwrap();
+    let body = &index.bodies[&g];
+    let at = |text: &str, operator: &str| {
+        let start = source.find(text).unwrap() + text.find(operator).unwrap();
+        body.opcode_at(Span::new(start, start + operator.len()))
+    };
+    assert_eq!(at("a + 1", "+"), Some(6), "ADD_F");
+    assert_eq!(at("v * a", "*"), Some(4), "MUL_VF");
+    assert_eq!(
+        at("v / a", "/"),
+        Some(139),
+        "DIV_VF, emulated on the id target"
+    );
+    assert_eq!(at("a < 2", "<"), Some(22), "LT_F");
+    assert_eq!(
+        at("a = a + 1", "="),
+        None,
+        "an assignment is chosen elsewhere"
+    );
+}

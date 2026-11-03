@@ -668,6 +668,7 @@ impl CvarValue {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TypedBody {
     types: HashMap<(usize, usize), Type>,
+    opcodes: HashMap<(usize, usize), u16>,
 }
 
 impl TypedBody {
@@ -675,6 +676,13 @@ impl TypedBody {
     #[must_use]
     pub fn type_at(&self, span: Span) -> Option<&Type> {
         self.types.get(&(span.start, span.end))
+    }
+
+    /// The number of the opcode `QCC_PR_ChooseOpcode` chose for the binary operator whose
+    /// token is at `span`, if the check chose one (FTEF-23.4).
+    #[must_use]
+    pub fn opcode_at(&self, span: Span) -> Option<u16> {
+        self.opcodes.get(&(span.start, span.end)).copied()
     }
 }
 
