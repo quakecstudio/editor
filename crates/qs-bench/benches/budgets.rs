@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use criterion::measurement::WallTime;
 use criterion::{BenchmarkGroup, Criterion, criterion_group, criterion_main};
-use qc_codegen::{Options, compile_module};
+use qc_codegen::compile_module;
 use qc_sema::{Db, FileId, ModuleInput};
 
 /// The criterion group every budget benchmark belongs to.
@@ -88,14 +88,14 @@ fn id1_recompile(group: &mut BenchmarkGroup<'_, WallTime>) {
     let variants = [original.replacen(EDITED_LINE, EDITED_TO, 1), original];
     let input = ModuleInput::from_module(module);
     let name = |id: FileId| format!("{}.qc", id.index());
-    compile_module(&mut db, &input, name, Options::default()).expect("id 1.01 compiles");
+    compile_module(&mut db, &input, name).expect("id 1.01 compiles");
     let mut turns = variants.iter().cycle();
     group.bench_function("id1_recompile", |bencher| {
         bencher.iter(|| {
             let text = turns.next().expect("a cycle never ends");
             db.set_file_text(file, text.as_bytes().to_vec());
-            let compiled = compile_module(&mut db, &input, name, Options::default())
-                .expect("the edited id 1.01 compiles");
+            let compiled =
+                compile_module(&mut db, &input, name).expect("the edited id 1.01 compiles");
             black_box(qc_progs::write(&compiled.progs).expect("the progs writes"))
         });
     });

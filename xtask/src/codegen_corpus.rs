@@ -8,7 +8,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use qc_codegen::{CompileError, Options, compile_module};
+use qc_codegen::{CompileError, compile_module};
 use qc_lexer::LineIndex;
 use qc_project::{Dialect, Module, open};
 use qc_sema::{Db, FileId, ModuleInput};
@@ -71,12 +71,9 @@ fn compile(module: &Module, autoproto: bool) -> Result<Result<usize, String>, St
         .map(|f| f.path.display().to_string())
         .collect();
     let input = ModuleInput::from_module(module);
-    let result = compile_module(
-        &mut db,
-        &input,
-        |id| names.get(id.index()).cloned().unwrap_or_default(),
-        Options::default(),
-    );
+    let result = compile_module(&mut db, &input, |id| {
+        names.get(id.index()).cloned().unwrap_or_default()
+    });
     Ok(match result {
         Ok(compiled) => Ok(compiled.progs.statements.len()),
         Err(error) => Err(describe(&db, &error)),

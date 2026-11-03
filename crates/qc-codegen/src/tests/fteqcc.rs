@@ -218,15 +218,15 @@ fn a_constant_index_is_the_elements_global() {
     );
 }
 
-// spec FTEF-26.2: with both operands constant the arithmetic opcodes fold even without
-// `--opt fold`, as FTEQCC's default `opt_constantarithmatic` does, reading a named constant
+// spec FTEF-26.2: with both operands constant the arithmetic opcodes fold, as FTEQCC's
+// default `opt_constantarithmatic` does, reading a named constant
 // with QCC_SRef_EvalConst
 // spec FTEF-31.10: the folded constant index is the element's global, so no ArrayGet* is made
 #[test]
 fn a_constant_arithmetic_index_folds_and_needs_no_accessor() {
     // `base` has a float index 0 (a file-level initialised non-var is a constant, FTEF-19.3),
     // so `s[base + 2]` folds to `s[2]` and reads the element directly, as FTEQCC does with
-    // `opt_constantarithmatic` on, its default, even though `--opt fold` is off here.
+    // `opt_constantarithmatic` on, its default.
     let p = fte_progs(
         "float base = 0;\nstring s[] = { \"a\", \"b\", \"c\", \"d\" };\nstring r;\n\
          void() t = { r = s[base + 2]; };\n",

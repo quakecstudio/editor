@@ -4,14 +4,13 @@
 //! COMP-8, `docs/spec/differential.md` DIFF-12).
 //!
 //! For each codebase, this compiles it with its oracle compiler, id's `qcc` for id 1.01 and the
-//! pinned FTEQCC for the rerelease, and with `qc-codegen` in the same dialect, once with
-//! `--opt fold` off and once on (QC-27.20), writes the three progs under
-//! `target/compiler-diff/<id>/`, and runs the `compiler-diff` binary of `qs-differential`,
-//! which calls every function of the oracle's progs and of each of ours in `qc-vm` and compares
+//! pinned FTEQCC for the rerelease, and with `qc-codegen` in the same dialect, writes the two
+//! progs under `target/compiler-diff/<id>/`, and runs the `compiler-diff` binary of
+//! `qs-differential`, which calls every function of the two progs in `qc-vm` and compares
 //! them (DIFF-12, DIFF-12.9). It runs that binary with `cargo run`, as `cargo xtask
 //! differential` does, because `qs-differential` is a `tests`-layer crate nothing may depend on
 //! (`layers.toml`). Each pair adds a row to `target/compiler-diff/<id>/summary.md`
-//! (DIFF-12.14).
+//! (DIFF-12.30).
 //!
 //! - `cargo xtask compiler-diff` and `--fast`: the CI subset, id 1.01, fewer rounds of calls.
 //! - `cargo xtask compiler-diff --full <codebase>`: the nightly run's 128 rounds over one
@@ -26,8 +25,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use qc_codegen::Options;
-
 use crate::differential::asset_root;
 use crate::oracles::codegen::Profile;
 use crate::oracles::{self, Oracles, codegen, id101, rerelease};
@@ -36,7 +33,7 @@ use crate::oracles::{self, Oracles, codegen, id101, rerelease};
 const VANILLA: [&str; 1] = ["id-1.01"];
 
 /// The six rerelease codebases the nightly run compares with the pinned FTEQCC's progs
-/// (`oracles/rerelease.rs`, DIFF-12.14).
+/// (`oracles/rerelease.rs`, DIFF-12.30).
 const RERELEASE: [&str; 6] = [
     "rerelease",
     "rerelease-hipnotic",
@@ -77,7 +74,7 @@ const USAGE: &str = "usage: cargo xtask compiler-diff [--fast [<codebase>...] | 
 /// Runs `cargo xtask compiler-diff [--fast [<codebase>...] | --full <codebase>]`: the CI
 /// subset over id 1.01, or 128 rounds over the one codebase named, which runs for up to an
 /// hour on its own, so that the codebases run one at a time or in parallel, each in its own
-/// directory under `target/compiler-diff/<id>/` with its own results table (DIFF-12.6); or
+/// directory under `target/compiler-diff/<id>/` with its own results table (DIFF-12.29); or
 /// `--generated <count> [--seed <n>]`, the generated-program differential (DIFF-14).
 pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     if args.first().is_some_and(|flag| flag == "--generated") {
@@ -148,8 +145,8 @@ fn fteqcc_in(oracles: &Oracles, fteqcc: &Path, dir: &Path) -> Result<String, Str
 
 /// The generated-program differential (DIFF-14): the `compiler-diff` binary writes `count`
 /// programs of `seed` under `target/compiler-diff/generated/<seed>/`, each is compiled with
-/// the pinned FTEQCC, the fixed FTEQCC (DIFF-14.4) and `qc-codegen` in the FTEQCC dialect with `--opt fold` off and
-/// on, and the binary compares every pair in one process. A program FTEQCC rejects is a
+/// the pinned FTEQCC, the fixed FTEQCC (DIFF-14.4) and `qc-codegen` in the FTEQCC dialect, and the
+/// binary compares every pair in one process. A program FTEQCC rejects is a
 /// defect of the generator and fails the run; each divergence names the program's directory,
 /// whose `t.qc` is the case to keep. The forms every program used are totalled in
 /// `forms.tsv`, and the run prints any form DIFF-14.1 names that fewer than one program in a
@@ -198,31 +195,29 @@ fn generated(root: &Path, count: u64, seed: u64) -> Result<bool, String> {
             rejected.push((n, log));
             continue;
         }
-        // DIFF-14.8: a program the pinned FTEQCC compiles and the fixed one does not is a
+        // DIFF-14.9: a program the pinned FTEQCC compiles and the fixed one does not is a
         // defect of a fix, reported on its own.
         if !fixed.is_file() {
             fixed_rejected.push((n, fixed_log));
             continue;
         }
         let profile = Profile::Fteqcc { autoproto: false };
-        for (name, fold) in [("ours.dat", false), ("ours-fold.dat", true)] {
-            // A program FTEQCC accepted and qc-codegen refuses is a divergence of its own.
-            let compiled = match codegen::compile_codebase(&program, profile, Options { fold }) {
-                Ok(compiled) => compiled,
-                Err(error) => {
-                    refused.push((n, error));
-                    break;
-                }
-            };
-            write(&program.join(name), &codegen::bytes(&compiled)?)?;
-            pairs.push_str(&format!(
-                "generated-{seed}-{n}{}\t{}\t{}\t{}\n",
-                if fold { "-fold" } else { "" },
-                theirs.display(),
-                program.join(name).display(),
-                fixed.display()
-            ));
-        }
+        // A program FTEQCC accepted and qc-codegen refuses is a divergence of its own.
+        let compiled = match codegen::compile_codebase(&program, profile) {
+            Ok(compiled) => compiled,
+            Err(error) => {
+                refused.push((n, error));
+                continue;
+            }
+        };
+        let ours = program.join("ours.dat");
+        write(&ours, &codegen::bytes(&compiled)?)?;
+        pairs.push_str(&format!(
+            "generated-{seed}-{n}\t{}\t{}\t{}\n",
+            theirs.display(),
+            ours.display(),
+            fixed.display()
+        ));
     }
     let pairs_path = dir.join("pairs.tsv");
     write(&pairs_path, pairs.as_bytes())?;
@@ -316,11 +311,11 @@ fn run_binary(root: &Path, args: &[&str]) -> Result<bool, String> {
 }
 
 /// The head of a codebase's results table, `target/compiler-diff/<id>/summary.md`; the
-/// binary adds a row for each pair it compares (DIFF-12.14).
+/// binary adds a row for each pair it compares (DIFF-12.30).
 const SUMMARY_HEADER: &str = "| Codebase | Oracle | Ours | Divergences | Statements | Result |\n\
                               | --- | --- | --- | ---: | ---: | --- |\n";
 
-/// How many rounds of calls the binary makes (DIFF-12.6).
+/// How many rounds of calls the binary makes (DIFF-12.29).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
     /// The CI subset, 32 rounds.
@@ -331,7 +326,7 @@ enum Mode {
 
 impl Mode {
     /// The codebases this mode compares: id 1.01 for the CI subset, and the rerelease
-    /// codebases at the bar too for the nightly run (DIFF-12.6, DIFF-12.14).
+    /// codebases at the bar too for the nightly run (DIFF-12.29, DIFF-12.30).
     fn codebases(self) -> Vec<&'static str> {
         match self {
             Self::Fast => VANILLA.to_vec(),
@@ -399,15 +394,14 @@ fn parse(args: &[String]) -> Result<(Mode, Vec<&'static str>), String> {
 }
 
 /// Compiles the codebase `id`, in `codebases/<id>`, with its oracle compiler (`qcc` for id
-/// 1.01, the pinned FTEQCC for the rerelease) and with `qc-codegen` in the same dialect with
-/// `--opt fold` off and on, writes the three progs in `work` and returns their paths, the
-/// oracle's first.
+/// 1.01, the pinned FTEQCC for the rerelease) and with `qc-codegen` in the same dialect, writes
+/// the two progs in `work` and returns their paths, the oracle's first.
 fn write_progs(
     oracles: &Oracles,
     codebases: &Path,
     id: &str,
     work: &Path,
-) -> Result<[PathBuf; 3], String> {
+) -> Result<[PathBuf; 2], String> {
     fs::create_dir_all(work).map_err(|e| format!("{}: {e}", work.display()))?;
     let codebase = codebases.join(id);
     let (theirs, profile) = if rerelease::MODS.contains(&id) {
@@ -423,17 +417,11 @@ fn write_progs(
     } else {
         (id101::compile(oracles, &codebase)?.0, Profile::Vanilla)
     };
-    let paths = [
-        work.join("oracle.dat"),
-        work.join("ours.dat"),
-        work.join("ours-fold.dat"),
-    ];
-    let [oracle, ours, folded] = &paths;
+    let paths = [work.join("oracle.dat"), work.join("ours.dat")];
+    let [oracle, ours] = &paths;
     write(oracle, &theirs)?;
-    for (path, fold) in [(ours, false), (folded, true)] {
-        let compiled = codegen::compile_codebase(&codebase, profile, Options { fold })?;
-        write(path, &codegen::bytes(&compiled)?)?;
-    }
+    let compiled = codegen::compile_codebase(&codebase, profile)?;
+    write(ours, &codegen::bytes(&compiled)?)?;
     Ok(paths)
 }
 
@@ -441,16 +429,16 @@ fn write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// Runs the `compiler-diff` binary on the oracle's progs against each of ours, adding its rows
-/// to `summary`.
+/// Runs the `compiler-diff` binary on the oracle's progs against ours, adding its row to
+/// `summary`.
 fn run_suite(
     root: &Path,
     mode: Mode,
     id: &str,
-    progs: &[PathBuf; 3],
+    progs: &[PathBuf; 2],
     summary: &Path,
 ) -> Result<bool, String> {
-    let [oracle, ours, folded] = progs;
+    let [oracle, ours] = progs;
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let status = Command::new(cargo)
         .current_dir(root)
@@ -482,8 +470,6 @@ fn run_suite(
         .arg(oracle)
         .arg("--ours")
         .arg(ours)
-        .arg("--ours")
-        .arg(folded)
         .status()
         .map_err(|e| format!("cannot run the compiler differential: {e}"))?;
     Ok(status.success())
@@ -499,8 +485,6 @@ mod tests {
     use std::fs;
     use std::path::Path;
     use std::process::Command;
-
-    use qc_codegen::Options;
 
     use super::{
         MODS_AT_BAR, Mode, RERELEASE, VANILLA, VKQUAKE_MODS, engine, parse, parse_generated,
@@ -535,15 +519,13 @@ mod tests {
         })
     }
 
-    fn compiled(codebase: &Path, profile: Profile, fold: bool) -> Vec<u8> {
-        codegen::bytes(&codegen::compile_codebase(codebase, profile, Options { fold }).unwrap())
-            .unwrap()
+    fn compiled(codebase: &Path, profile: Profile) -> Vec<u8> {
+        codegen::bytes(&codegen::compile_codebase(codebase, profile).unwrap()).unwrap()
     }
 
-    // spec DIFF-12.6: the codebase is compiled with qcc and with qc-codegen with `--opt fold`
-    // off and on, qcc's progs first.
+    // spec DIFF-12.29: the codebase is compiled with qcc and with qc-codegen, qcc's progs first.
     #[test]
-    fn a_codebase_is_compiled_three_ways() {
+    fn a_codebase_is_compiled_both_ways() {
         let dir = fresh_dir("compiler-diff");
         let codebases = dir.join("codebases");
         let id101 = codebase(
@@ -553,26 +535,13 @@ mod tests {
         );
         let fake = oracle();
         let oracles = fake_oracles(&dir.join("work"), &fake);
-        let [qcc, ours, folded] =
-            write_progs(&oracles, &codebases, "id-1.01", &dir.join("out")).unwrap();
+        let [qcc, ours] = write_progs(&oracles, &codebases, "id-1.01", &dir.join("out")).unwrap();
         assert_eq!(fs::read(qcc).unwrap(), b"oracle's");
-        assert_eq!(
-            fs::read(&ours).unwrap(),
-            compiled(&id101, Profile::Vanilla, false)
-        );
-        assert_eq!(
-            fs::read(&folded).unwrap(),
-            compiled(&id101, Profile::Vanilla, true)
-        );
-        assert_ne!(
-            compiled(&id101, Profile::Vanilla, false),
-            compiled(&id101, Profile::Vanilla, true),
-            "1 + 2 folds"
-        );
+        assert_eq!(fs::read(&ours).unwrap(), compiled(&id101, Profile::Vanilla));
         assert!(write_progs(&oracles, &codebases, "nowhere", &dir.join("out2")).is_err());
     }
 
-    // spec DIFF-12.14: a rerelease codebase is compiled with the pinned FTEQCC, the oracle, and
+    // spec DIFF-12.30: a rerelease codebase is compiled with the pinned FTEQCC, the oracle, and
     // with qc-codegen in the FTEQCC dialect, with Dawn of the Machine's prototypes collected
     // first as `-Fautoproto` collects them.
     #[test]
@@ -585,15 +554,14 @@ mod tests {
         let mg3 = codebase(&codebases, "rerelease-mg3", source);
         let fake = oracle();
         let oracles = fake_oracles(&dir.join("work"), &fake);
-        let [fteqcc, ours, folded] =
+        let [fteqcc, ours] =
             write_progs(&oracles, &codebases, "rerelease-mg3", &dir.join("out")).unwrap();
         assert_eq!(fs::read(fteqcc).unwrap(), b"oracle's");
         let fte = Profile::Fteqcc { autoproto: true };
-        assert_eq!(fs::read(ours).unwrap(), compiled(&mg3, fte, false));
-        assert_eq!(fs::read(folded).unwrap(), compiled(&mg3, fte, true));
+        assert_eq!(fs::read(ours).unwrap(), compiled(&mg3, fte));
         let without = Profile::Fteqcc { autoproto: false };
-        assert!(codegen::compile_codebase(&mg3, without, Options::default()).is_err());
-        assert!(codegen::compile_codebase(&mg3, Profile::Vanilla, Options::default()).is_err());
+        assert!(codegen::compile_codebase(&mg3, without).is_err());
+        assert!(codegen::compile_codebase(&mg3, Profile::Vanilla).is_err());
 
         let rerelease = codebase(
             &codebases,
@@ -603,11 +571,11 @@ mod tests {
         write_progs(&oracles, &codebases, "rerelease", &dir.join("out-rr")).unwrap();
         assert_eq!(
             fs::read(dir.join("out-rr").join("ours.dat")).unwrap(),
-            compiled(&rerelease, without, false)
+            compiled(&rerelease, without)
         );
     }
 
-    // spec DIFF-12.6: `--fast` and no argument are the CI subset, `--full` the nightly run of
+    // spec DIFF-12.29: `--fast` and no argument are the CI subset, `--full` the nightly run of
     // exactly one codebase, named; codebases named after the mode are the ones compared, each
     // one the mode compares.
     #[test]
@@ -635,7 +603,7 @@ mod tests {
         assert!(parse(&args(&["--fast", "--full"])).is_err());
     }
 
-    // spec DIFF-12.14: the CI subset compares id 1.01; the nightly run adds the rerelease
+    // spec DIFF-12.30: the CI subset compares id 1.01; the nightly run adds the rerelease
     // codebases at the bar, and a run may name any of the six, each one the FTEQCC oracle
     // compiles
     #[test]
@@ -682,7 +650,7 @@ mod tests {
         assert!(pending.iter().all(|id| !full.contains(id)));
     }
 
-    // spec DIFF-12.14, DIFF-12.18: the nightly workflow runs one job per codebase of the full
+    // spec DIFF-12.30, DIFF-12.18: the nightly workflow runs one job per codebase of the full
     // run's set, the matrix in .github/workflows/differential.yml naming exactly that set
     #[test]
     fn the_nightly_matrix_names_the_full_runs_codebases() {
@@ -698,7 +666,7 @@ mod tests {
         assert_eq!(matrix, Mode::Full.codebases());
     }
 
-    // spec DIFF-14.8: `--generated <count> [--seed <n>]` names how many programs and the seed,
+    // spec DIFF-14.9: `--generated <count> [--seed <n>]` names how many programs and the seed,
     // 1 unless given
     #[test]
     fn the_generated_run_takes_a_count_and_a_seed() {

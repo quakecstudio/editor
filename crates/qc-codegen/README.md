@@ -21,7 +21,7 @@ QCD-4.7). The precache lists `qcc -copy` reads are kept beside the progs (QC-26)
 - **Layer:** L4 bridges. It depends on `qc-sema` (L3), `qc-syntax` and `qc-lexer` (L2), and
   `qc-progs`, `qc-lno`, `qc-types` and `qc-diag` (L0).
 - **Spec sections:** QC-13 to QC-22, QC-25, QC-26 and the code-generation divergences of QC-27
-  (QC-27.11 to QC-27.13, QC-27.17 to QC-27.20) of
+  (QC-27.11 to QC-27.13, QC-27.17 to QC-27.19) of
   [`language.md`](../../docs/spec/language.md); QCD-4.2 to QCD-4.7 of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md); under the FTEQCC
   profile the rerelease subset of
@@ -41,15 +41,12 @@ QCD-4.7). The precache lists `qcc -copy` reads are kept beside the progs (QC-26)
 
 ## Public shape
 
-- `compile_module(db, input, name_of, options)`: compiles a module of a `qc_sema::Db` under its
+- `compile_module(db, input, name_of)`: compiles a module of a `qc_sema::Db` under its
   dialect, vanilla or FTEQCC, each file named in the progs as `name_of` says (the name `progs.src` lists it by,
   QC-27.17); a preprocessor, parser, semantic or compiler error stops it, with every
   diagnostic at a span of its source file.
-- `compile(units, options)`: the same for files already preprocessed, each a `Unit` of a name
+- `compile(units)`: the same for files already preprocessed, each a `Unit` of a name
   and a parse.
-- `Options`: the optimisations (COMP-5), each off by default, where the output is `qcc`'s:
-  `fold`, `--opt fold`, makes an arithmetic operator of two literals the literal of its value
-  (QC-27.20).
 - `Compiled`: the `qc_progs::ProgsFile`, the text of `progdefs.h`, its CRC, the precache lists,
   the `.lno` line map (`qc_lno::LnoFile`, QC-27.19) and the warnings. `qc_progs::write` writes
   the progs and `LnoFile::write` the line map.
@@ -75,10 +72,10 @@ types.
   id's `qcc`'s, byte for byte (410,616 bytes), and the scenarios the VM oracle runs on it leave
   the records `qcc`'s does.
 - `cargo xtask compiler-diff` (P2-09, `docs/spec/differential.md` DIFF-12) compiles id 1.01
-  with id's `qcc` and with this crate, `--opt fold` off and on, and calls every function of
+  with id's `qcc` and with this crate, and calls every function of
   each progs in `qc-vm` from the differential scenarios' worlds: no divergence, and at least
   90% of `qcc`'s statements executed. `--full` also compiles the rerelease with the pinned
-  FTEQCC and with this crate in the FTEQCC dialect, held to the same bar (DIFF-12.14, DIFF-12.11);
+  FTEQCC and with this crate in the FTEQCC dialect, held to the same bar (DIFF-12.30, DIFF-12.11);
   the mission packs and CTF are compared when named, until they pass (P2-150).
 - `cargo xtask oracles codegen` compiles the hand-written programs of
   `xtask/src/oracles/codegen/cases.rs` and 300 generated ones with both compilers: the two

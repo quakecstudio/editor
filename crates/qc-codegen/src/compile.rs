@@ -196,9 +196,6 @@ pub(crate) struct Compiler<'a> {
     locals_end: u32,
     /// The type of the last call's value, `def_ret.type` (QC-18.4).
     return_type: ValueType,
-    /// Whether an operator of two literals is folded into the literal of its value
-    /// (`--opt fold`, COMP-5).
-    pub(crate) fold: bool,
     /// The dialect the files are read in, whose lexer reads each literal and builtin number.
     pub(crate) dialect: Dialect,
     /// The compiler flags of the file being compiled, each from the byte it holds from
@@ -282,7 +279,6 @@ impl<'a> Compiler<'a> {
             scope: None,
             locals_end: 0,
             return_type: ValueType::simple(Etype::Void),
-            fold: false,
             dialect: Dialect::Vanilla,
             flags: Vec::new(),
             lex_flags: Vec::new(),
@@ -2653,7 +2649,7 @@ impl<'a> Compiler<'a> {
     /// makes it (FTEF-27.8). An emulation (FTEF-27) is written as lowered; a plain operator
     /// after this code generator's own folds, which follow FTEQCC's constants further than the
     /// checker does (a vector literal's component, FTEF-26.13). `None`, for
-    /// [`Compiler::operate`] to lower it, under the vanilla profile, with `--opt fold`, and for
+    /// [`Compiler::operate`] to lower it, under the vanilla profile, and for
     /// a fragment the model did not keep or [`Compiler::plan_fragment`] refuses.
     fn lowered_binary(
         &mut self,
@@ -2662,7 +2658,7 @@ impl<'a> Compiler<'a> {
         right: &Value,
         (op_span, span): (Span, Span),
     ) -> Lowered<Option<Value>> {
-        if self.fold || !self.dialect.has_fteqcc_extensions() {
+        if !self.dialect.has_fteqcc_extensions() {
             return Ok(None);
         }
         let Some(body) = self.typed_body() else {
@@ -2917,8 +2913,7 @@ impl<'a> Compiler<'a> {
 
     /// FTEQCC's `a ^ b` (FTE-19.7): `OP_BITXOR_F`'s or `OP_BITXOR_V`'s emulation,
     /// `(a & ~b) | (b & ~a)`, as the semantic model lowered it, else [`Compiler::xor_inline`]
-    /// when it holds no fragment: an operand whose constant it does not follow, or
-    /// `--opt fold`.
+    /// when it holds no fragment: an operand whose constant it does not follow.
     fn xor(&mut self, left: &Value, right: &Value, spans: (Span, Span)) -> Lowered<Value> {
         match self.lowered_binary(Operator::BitAnd, left, right, spans)? {
             Some(value) => Ok(value),
@@ -2957,8 +2952,8 @@ impl<'a> Compiler<'a> {
         Ok(result)
     }
 
-    /// The row of `operator` for the two operands' types, folded under `--opt fold`, else
-    /// emitted into a temporary (QC-16.1).
+    /// The row of `operator` for the two operands' types, folded when both are constants,
+    /// else emitted into a temporary (QC-16.1).
     fn operate(
         &mut self,
         operator: Operator,
@@ -3004,8 +2999,8 @@ impl<'a> Compiler<'a> {
         // default optimisation, so on for the pinned FTEQCC's `-Tid`) or outside a function
         // (`!pr_scope`), reading each operand with `QCC_SRef_EvalConst`, which takes a named
         // constant as well as an immediate, so `named[CONST + 3]` folds to `named[3]` and
-        // needs no `ArrayGet*` (FTEF-31.10). `--opt fold` (COMP-5, QC-27.20) folds the rest.
-        if (self.fold || self.both_constant(left, right))
+        // needs no `ArrayGet*` (FTEF-31.10).
+        if self.both_constant(left, right)
             && let Some(value) = self.folded(row.opcode, left, right).at(span)?
         {
             return Ok(value);
@@ -3134,7 +3129,7 @@ impl<'a> Compiler<'a> {
         })
     }
 
-    /// `--opt fold` (COMP-5): the operator `opcode` of two literals as the literal of its value,
+    /// The operator `opcode` of two constants as the constant of its value (FTEF-26.2),
     /// computed as the VM computes it (VM-5): each product and sum an `f32` rounded in turn, the
     /// dot product `(a0*b0 + a1*b1) + a2*b2`. `None` for any other operator or operand, which is
     /// emitted as it is.

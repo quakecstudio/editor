@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use qc_builtins::mock::Rng;
-use qc_codegen::{Options, compile_module};
+use qc_codegen::compile_module;
 use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
 use qc_progs::Progs;
 use qc_sema::{Db, FileId, ModuleInput};
@@ -129,13 +129,8 @@ pub(crate) fn compile(source: &str) -> Vec<u8> {
         input.compiled.push(FileId::new(i));
     }
     let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
-    let compiled = compile_module(
-        &mut db,
-        &input,
-        |id| names[id.index()].clone(),
-        Options::default(),
-    )
-    .unwrap_or_else(|e| panic!("{source:?} did not compile: {e:?}"));
+    let compiled = compile_module(&mut db, &input, |id| names[id.index()].clone())
+        .unwrap_or_else(|e| panic!("{source:?} did not compile: {e:?}"));
     qc_progs::write(&compiled.progs).unwrap()
 }
 
