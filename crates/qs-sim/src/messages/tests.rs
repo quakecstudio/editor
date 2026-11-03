@@ -7,6 +7,9 @@
     reason = "test code: a failed unwrap, index or overflow is a failed test"
 )]
 
+use crate::LoadOptions;
+use crate::world::tests::player_with_options;
+use qc_builtins::localization::Localization;
 use qc_progs::Progs;
 use qc_vm::convert::{double_to_float, float_to_int};
 
@@ -258,6 +261,35 @@ fn a_frame_sends_the_datagram_then_the_reliable_message() {
     let packets = run.packets();
     let (_, _, rest) = datagram(&packets[0]);
     assert_eq!(rest.len(), 12, "the last frame's particle is gone");
+}
+
+// spec RRE-1.9: with a localization loaded, bprint's text is its localized format with the
+// placeholders filled, and WriteString writes its string localized
+// spec RRE-1.6: with none, the text and the string are written as they are; the file is the
+// host's from before the map, so a spawn function's write is localized too
+#[test]
+fn printed_and_written_strings_are_localized_with_a_file_loaded() {
+    let each = "bprint(\"$qc_hi\"); WriteString(2, \"$qc_hi\");";
+    let more = format!("void() StartFrame = {{ {each} }};\n");
+    let read = |run: &mut Running| {
+        run.packets();
+        run.frames(1, 0.1).unwrap();
+        let packets = run.packets();
+        let mut r = Reader::new(&packets[1]);
+        assert_eq!(r.byte(), 8, "svc_print");
+        let printed = r.string();
+        (printed, r.string())
+    };
+    let mut plain = player_with_options(&ledge(), "", "", &more, LoadOptions::default());
+    assert_eq!(read(&mut plain), ("$qc_hi".to_owned(), "$qc_hi".to_owned()));
+    let options = LoadOptions {
+        localization: Localization::loc_load_file(b"qc_hi = \"Hi {}!\"\n"),
+    };
+    let mut localized = player_with_options(&ledge(), "", "", &more, options);
+    assert_eq!(
+        read(&mut localized),
+        ("Hi !".to_owned(), "Hi {}!".to_owned())
+    );
 }
 
 // spec NET-1.4: a change of frags sends svc_updatefrags to every active client, once, and

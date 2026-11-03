@@ -15,6 +15,7 @@
 //! `changelevel` flag, the command buffer and the sizes of the three message buffers
 //! (DIFF-6.5), and the DIFF-6.2 random source.
 
+use crate::localization::Localization;
 /// The settings the mock keeps, with the texts of DIFF-2.4.
 ///
 /// `skill`, `deathmatch`, `coop` and `teamplay` start at `1`, `0`, `0`, `0`; a scenario's
@@ -262,6 +263,8 @@ pub struct MockEngine {
     pub unimplemented: Unimplemented,
     /// The token list vkQuake's tokenize builtins fill and `argv` reads (BUILTIN-18.23).
     pub tokens: Tokens,
+    /// The rerelease's localized strings, none unless the host loads them (RRE-1.6).
+    pub localization: Localization,
     /// The server clock `sv.time`, a `double` (DIFF-3.2): 1.0 at map start.
     ///
     /// `spawn` and `remove` read it for the edict reuse policy and `freetime` (EDICT-6,
@@ -445,6 +448,7 @@ impl MockEngine {
             profile: EngineProfile::Id,
             unimplemented: Unimplemented::Error,
             tokens: Tokens::default(),
+            localization: Localization::default(),
             clock: 1.0,
         }
     }

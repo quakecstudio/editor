@@ -25,14 +25,8 @@ them up in `localization/loc_english.txt`, read from the game directory or from
 
 ### Behaviour
 
-- **RRE-1.1** The file is read in full, a UTF-8 byte order mark skipped; each line has its
-  leading blanks skipped, and a line starting with `/` is a comment (`//`; a lone `/` is
-  reported and skipped). A line with `=` is an entry: the key is the text before the first
-  `=` with trailing whitespace trimmed, and the value the text after it with leading
-  whitespace skipped, an opening `"` dropped, and ending at the next unescaped `"` or, without
-  one, at the line's end with trailing blanks trimmed. In the value `\n`, `\t`, `\v`, `\b`
-  and `\f` are the control characters, `\"` and `\'` the quotes, and any other `\c` is `c`
-  with a warning. A line with neither is ignored.
+- **RRE-1.1** **Withdrawn** 2026-11-03: it said an unquoted value has its trailing blanks
+  trimmed, which `LOC_LoadFile`'s in-place parse does not quite do. Replaced by RRE-1.7.
 - **RRE-1.2** Entries are kept by the FNV-1a hash of the key (`0x811c9dc5`, multiplied by
   `0x01000193` after each byte) in an open-addressed table of twice the entry count; a key
   listed twice keeps the first entry found by probing, which is the first in the file.
@@ -45,12 +39,43 @@ them up in `localization/loc_english.txt`, read from the game directory or from
   caller's getter, itself localized by RRE-1.3), into a buffer of `len` bytes, truncating an
   argument that does not fit (`LOC_Format: overflow at argument #n`) and the rest
   (`LOC_Format: overflow`); the output is always terminated.
-- **RRE-1.5** `PF_VarString (first)`, which `bprint`, `sprint`, `centerprint`, `dprint`,
-  `error`, `objerror` and `print` read their text with: the first argument is localized; when
-  it has placeholders the result is `LOC_Format` of it with argument `N` taken from parameter
-  `first + 1 + N` (empty past `argc`); otherwise every parameter from `first` is localized and
-  appended, into 1024 bytes (`PF_VarString: overflow (string truncated)`), with a warning
-  past 255. `WriteString` localizes the one string it writes.
+- **RRE-1.5** **Withdrawn** 2026-11-03: it listed `print` among the builtins that read their
+  text with `PF_VarString`; QuakeSpasm has no `print` builtin. Replaced by RRE-1.9.
+- **RRE-1.6** The preview host localizes as RRE-1.9 says only with a file loaded (one that
+  holds an entry); with none, the print builtins' text is id's joined text (BUILTIN-7.3,
+  BUILTIN-11) and `WriteString` writes its string as it is, so a progs that is not the
+  rerelease's runs exactly as on id's engine. QuakeSpasm with no file still cuts the joined text
+  to 1023 bytes; id's engine has no such cut, and this is ours to choose, as the server
+  simulation follows id's engine (ADR-0018).
+- **RRE-1.7** `LOC_LoadFile` reads the file's text up to its first zero, skips a UTF-8 byte
+  order mark, and parses each line in place: the blanks (space, tab) that start it are skipped;
+  a line starting with `/` holds nothing (`//` a comment, a lone `/` "malformed comment"); a
+  line with an `=` is an entry whose key is the text from the line's start to the first `=`,
+  the white space before it (`q_isspace`: space, `\t`, `\n`, `\v`, `\f`, `\r`) trimmed by
+  writing a zero; its value starts after the `=` and the white space after it, an opening `"`
+  dropped, and is copied onto itself: `\n`, `\t`, `\v`, `\b`, `\f` are those control characters,
+  `\"` and `\'` the quote, any other `\c` is `c` ("unrecognized escape sequence"), a `\` that is
+  the line's last byte is itself, and an unescaped `"` writes a zero and ends it. A line with
+  neither is passed over. Each line's end, its `\n`, is then overwritten with a zero and the
+  parse goes on after it. The copy is not terminated where it ends, so an unquoted value an
+  escape shortened keeps the source's last bytes up to the line's end: `b = x\ny` is `x`, a line
+  feed, `yy`. An unquoted value has its trailing blanks trimmed by `while (value_dst != value &&
+  q_isblank(value_dst[-1])) { *value_dst = 0; value_dst--; }`, which zeroes the byte after each
+  blank and so keeps the last blank (`ab` with two trailing spaces reads as `ab` with one);
+  and when no escape shortened the value
+  its first write is the line's own `\n`, after which `if (*cursor)` does not advance and the
+  file is read no further. A `\r` before the line feed stays in an unquoted value.
+- **RRE-1.9** `PF_VarString (first)`, which `error`, `objerror`, `bprint`, `sprint`,
+  `centerprint` and `dprint` read their text with (its six callers in `pr_cmds.c`): the first
+  argument is localized; when it has placeholders the result is `LOC_Format` of it with
+  argument `N` taken from parameter `first + 1 + N` (empty past `argc`); otherwise every
+  parameter from `first` is localized and appended, into 1024 bytes (`PF_VarString: overflow
+  (string truncated)`), with a warning past 255. `WriteString` writes the one string it is
+  given localized (`MSG_WriteString (WriteDest(), LOC_GetString (G_STRING (OFS_PARM1)))`),
+  so its bytes, and the message's count of them, are the localized string's and its zero.
+- **RRE-1.8** `COM_HashString` XORs each byte of the key as a `char`, `hash ^= *str++`, which
+  x86 signs, so a byte from 0x80 up is XORed sign-extended (`0xFFFFFFE9` for 0xE9) before the
+  multiply.
 
 ### Constants
 
