@@ -113,11 +113,26 @@ turbulent surfaces ripple, and the sky's two layers scroll.
   `t = (speedscale + dir[1]*length) / 128`, where `speedscale` is `realtime*8` for the solid
   layer and `realtime*16` for the alpha layer, less `(int)speedscale & ~127`. The alpha layer
   is blended over the solid one (`EmitSkyPolys`, `R_DrawSkyChain`).
-- **REND-2.4** GLQuake computes REND-2.2 and REND-2.3 at the vertices of faces it cuts at
-  64-unit boundaries (`GL_SubdivideSurface`), with `turbsin` indexed in 256 steps. This
+- **REND-2.4** **Withdrawn** 2026-11-03: it said GLQuake cuts the faces at 64-unit
+  boundaries; the size is `gl_subdivide_size`, 128 by default (`gl_model.c`). Replaced by
+  REND-2.5.
+- **REND-2.5** GLQuake computes REND-2.2 and REND-2.3 at the vertices of faces it cuts at
+  multiples of `gl_subdivide_size` (`REND_SUBDIVIDE_SIZE`, 128 by default) on each axis
+  (`GL_SubdivideSurface`, `SubdividePolygon`), with `turbsin` indexed in 256 steps. This
   renderer computes the same formulas for each pixel, with `8 sin` of the angle itself: a
   deliberate divergence, which draws the warp and the sky without the subdivision and gives
   each pixel the value GLQuake gives the vertices near it.
+
+### Constants
+
+| Constant | Value | Source |
+| --- | --- | --- |
+| `REND_SUBDIVIDE_SIZE` | 128 | `gl_model.c`, `gl_subdivide_size` default |
+| `REND_TURBSCALE` | 256 / (2 pi) | `gl_warp.c`, `TURBSCALE` |
+| `REND_TURB_AMPLITUDE` | 8 | `gl_warp_sin.h` |
+| `REND_SKY_SOLID_SPEED` | 8 | `gl_warp.c`, `EmitBothSkyLayers` |
+| `REND_SKY_CLOUD_SPEED` | 16 | `gl_warp.c`, `EmitBothSkyLayers` |
+| `REND_SKY_SCALE` | 378 | `gl_warp.c`, `EmitSkyPolys` (`6 * 63`) |
 
 ## REND-3 Colour, filtering and the view
 
@@ -350,73 +365,43 @@ The client's dynamic lights (CLIENT-5.5, CLIENT-5.7) light the faces near them f
 | `REND_MAX_DLIGHTS` | 32 | `client.h`, `MAX_DLIGHTS` |
 | `REND_FLASHBLEND_SCALE` | 0.35 | `gl_rlight.c`, `R_RenderDlight` |
 
-## REND-8 Sky
+## REND-8 Skyboxes
 
-**Source:** `WinQuake/gl_warp.c`, `R_InitSky`, `EmitBothSkyLayers`, `EmitSkyPolys`
-(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`); `Quake/gl_sky.c`,
-`Sky_NewMap`, `Sky_LoadSkyBox` (sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`).
-
-A sky texture (`sky*`, BSP-9) is 256 by 128: the right half is the solid back layer and the
-left half the cloud layer, whose index 0 is transparent.
+**Source:** `Quake/gl_sky.c`, `Sky_NewMap`, `Sky_LoadSkyBox`, `Sky_DrawSkyBox`
+(sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`). The two scrolling layers of
+id's sky are REND-2.3.
 
 ### Behaviour
 
-- **REND-8.1** `R_InitSky` makes two 128 by 128 textures: the solid one from the right half,
-  and the alpha one from the left half with index 0 replaced by the average colour of the
-  right half (each channel the integer average over the 128 by 128 texels), alpha 0 there.
-- **REND-8.2** A sky face is drawn twice, the solid layer then the cloud layer blended over
-  it: for each vertex, `dir = vertex - eye` with `dir.z` tripled ("flatten the sphere"),
-  scaled by `6 * 63 / |dir|`, and the texture coordinates `s = (speedscale + dir.x) / 128`,
-  `t = (speedscale + dir.y) / 128`, where `speedscale` is `realtime * 8` for the solid layer
-  and `realtime * 16` for the clouds, each reduced modulo 128 (`speedscale -= (int) speedscale
-  & ~127`). The preview host uses `cl.time` for `realtime` so a scripted run draws the same
-  sky.
-- **REND-8.3** QuakeSpasm reads the worldspawn's `sky` key (also `skyname` and `qlsky`) as a
+- **REND-8.1** QuakeSpasm reads the worldspawn's `sky` key (also `skyname` and `qlsky`) as a
   skybox name and loads the six faces `gfx/env/<name><side>` for the sides `rt`, `bk`, `lf`,
-  `ft`, `up`, `dn`; a map with one draws the box instead of the layers, and its `skyfog` key
-  (default `r_skyfog` 0.5) is the fraction of the fog colour blended over the sky. The preview
-  host draws a skybox when the map names one, under ADR-0012.
+  `ft`, `up`, `dn`; a map with one draws the box where its sky faces are instead of the
+  layers, and its `skyfog` key (the `r_skyfog` setting, 0.5, when absent) is the fraction of
+  the fog colour (REND-10) blended over the sky. The preview host draws a skybox when the map
+  names one, under ADR-0012.
 
 ### Constants
 
 | Constant | Value | Source |
 | --- | --- | --- |
-| `REND_SKY_SOLID_SPEED` | 8 | `gl_warp.c`, `EmitBothSkyLayers` |
-| `REND_SKY_CLOUD_SPEED` | 16 | `gl_warp.c`, `EmitBothSkyLayers` |
-| `REND_SKY_SCALE` | 378 | `gl_warp.c`, `EmitSkyPolys` (`6 * 63`) |
 | `REND_SKYFOG` | 0.5 | `gl_sky.c`, `r_skyfog` default |
 
-## REND-9 Liquids
+## REND-9 Liquid alpha
 
-**Source:** `WinQuake/gl_warp.c`, `EmitWaterPolys`, `GL_SubdivideSurface`, `turbsin`;
-`WinQuake/gl_rsurf.c`, `R_DrawWaterSurfaces`
-(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
-
-A liquid face (a texture named `*...`, BSP-9, flagged `SURF_DRAWTURB`) is subdivided and its
-texture coordinates warped by time.
+**Source:** `WinQuake/gl_rsurf.c`, `R_DrawWaterSurfaces`
+(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`). The warp is REND-2.2.
 
 ### Behaviour
 
-- **REND-9.1** A liquid face is subdivided into polygons at most `gl_subdivide_size` (128)
-  units across on each axis, cutting along the planes at multiples of that size through the
-  face's bounds, so the warp bends the surface rather than only its edges.
-- **REND-9.2** Each vertex's texture coordinates are `s = (os + turbsin[(int) ((ot * 0.125 +
-  time) * TURBSCALE) & 255]) / 64` and `t = (ot + turbsin[(int) ((os * 0.125 + time) *
-  TURBSCALE) & 255]) / 64`, where `os` and `ot` are the vertex's texture coordinates in
-  texels (REND-1.2), `TURBSCALE = 256 / (2 pi)` and `turbsin` is the 256-entry table of
-  `8 * sin (i * 2 pi / 256)` from `gl_warp_sin.h`. `time` is `realtime`; the preview host
-  uses `cl.time` (REND-8.2).
-- **REND-9.3** Water is drawn after the world, opaque in GLQuake; the FitzQuake lineage draws
-  it with `r_wateralpha` (1 by default, so opaque) and the preview host does the same, the
-  alpha a setting.
+- **REND-9.1** Water is drawn after the world's other faces with `r_wateralpha` (1 by
+  default, so opaque): below 1 the faces are blended over the scene with that alpha. The
+  preview host does the same, the alpha a setting.
 
 ### Constants
 
 | Constant | Value | Source |
 | --- | --- | --- |
-| `REND_SUBDIVIDE_SIZE` | 128 | `gl_warp.c`, `gl_subdivide_size` default |
-| `REND_TURBSCALE` | 256 / (2 pi) | `gl_warp.c`, `TURBSCALE` |
-| `REND_TURB_AMPLITUDE` | 8 | `gl_warp_sin.h` |
+| `REND_WATERALPHA` | 1 | `gl_rmain.c`, `r_wateralpha` default |
 
 ## REND-10 Fog
 
