@@ -239,14 +239,22 @@ impl MapMesh {
     /// marks a face this frame, or when one did last frame and must be taken off.
     pub fn relight_with(&mut self, styles: &LightStyles, lights: &[DynamicLight]) -> bool {
         let marks = self.lightmaps.mark_lights(lights);
-        let lit = marks.iter().any(|&m| m != 0);
-        if !self.lightmaps.stale(styles) && !lit && !self.lightmaps.lit {
-            return false;
+        let mut changed = false;
+        // Only the faces whose light changed are made again, as `R_RenderDynamicLightmaps`
+        // rebuilds only a stale or lit face.
+        for (index, face) in self.lightmaps.faces.iter().enumerate() {
+            let bits = marks.get(index).copied().unwrap_or(0);
+            let before = self.lightmaps.marks.get(index).copied().unwrap_or(0);
+            if bits == 0 && before == 0 && !face.stale(styles, &self.lightmaps.applied) {
+                continue;
+            }
+            let texels = face.texels(styles, lights, bits);
+            face.blit(&texels, &mut self.lightmap.rgba);
+            changed = true;
         }
-        self.lightmap = self.lightmaps.image_with(styles, lights, &marks);
         self.lightmaps.applied = *styles;
-        self.lightmaps.lit = lit;
-        true
+        self.lightmaps.marks = marks;
+        changed
     }
 }
 
@@ -746,8 +754,8 @@ pub struct Lightmaps {
     applied: LightStyles,
     /// Each BSP's nodes, which the dynamic lights are pushed through (REND-7.1).
     trees: Vec<Tree>,
-    /// Whether a dynamic light lit the image last made.
-    lit: bool,
+    /// Each face's light bits in the image last made (REND-7.1).
+    marks: Vec<u32>,
 }
 
 /// The tallest atlas, the height every GPU wgpu supports.
@@ -761,7 +769,7 @@ impl Lightmaps {
             height: 1,
             applied: LightStyles::unset(),
             trees: Vec::new(),
-            lit: false,
+            marks: Vec::new(),
         }
     }
 
@@ -848,26 +856,8 @@ impl Lightmaps {
             corner.copy_from_slice(&[255; 4]);
         }
         for (index, face) in self.faces.iter().enumerate() {
-            let [smax, tmax] = face.size;
             let bits = marks.get(index).copied().unwrap_or(0);
-            let texels = face.texels(styles, lights, bits);
-            for t in 0..tmax {
-                for s in 0..smax {
-                    let [r, g, b] = texels
-                        .get(t.saturating_mul(smax).saturating_add(s))
-                        .copied()
-                        .unwrap_or_default();
-                    let at = face.at[1]
-                        .saturating_add(t)
-                        .saturating_mul(ATLAS_WIDTH)
-                        .saturating_add(face.at[0])
-                        .saturating_add(s)
-                        .saturating_mul(4);
-                    if let Some(texel) = rgba.get_mut(at..at.saturating_add(4)) {
-                        texel.copy_from_slice(&[r, g, b, 255]);
-                    }
-                }
-            }
+            face.blit(&face.texels(styles, lights, bits), &mut rgba);
         }
         Image {
             width: u32_of(ATLAS_WIDTH),
@@ -875,20 +865,42 @@ impl Lightmaps {
             rgba,
         }
     }
-
-    /// Whether `styles` differ from the styles the image was made for in a style some face
-    /// reads, as `R_RenderDynamicLightmaps` compares `cached_light` (REND-5.5).
-    fn stale(&self, styles: &LightStyles) -> bool {
-        self.faces.iter().any(|face| match &face.light {
-            FaceLight::Samples { styles: used, .. } => used
-                .iter()
-                .any(|&style| styles.value(style) != self.applied.value(style)),
-            FaceLight::Full | FaceLight::Dark => false,
-        })
-    }
 }
 
 impl PlacedLight {
+    /// Whether `styles` differ from `applied` in a style the face reads, as
+    /// `R_RenderDynamicLightmaps` compares `cached_light` (REND-5.5).
+    fn stale(&self, styles: &LightStyles, applied: &LightStyles) -> bool {
+        match &self.light {
+            FaceLight::Samples { styles: used, .. } => used
+                .iter()
+                .any(|&style| styles.value(style) != applied.value(style)),
+            FaceLight::Full | FaceLight::Dark => false,
+        }
+    }
+
+    /// Writes `texels`, the face's, where it sits in the atlas `rgba`.
+    fn blit(&self, texels: &[[u8; 3]], rgba: &mut [u8]) {
+        let [smax, tmax] = self.size;
+        for t in 0..tmax {
+            for s in 0..smax {
+                let [r, g, b] = texels
+                    .get(t.saturating_mul(smax).saturating_add(s))
+                    .copied()
+                    .unwrap_or_default();
+                let at = self.at[1]
+                    .saturating_add(t)
+                    .saturating_mul(ATLAS_WIDTH)
+                    .saturating_add(self.at[0])
+                    .saturating_add(s)
+                    .saturating_mul(4);
+                if let Some(texel) = rgba.get_mut(at..at.saturating_add(4)) {
+                    texel.copy_from_slice(&[r, g, b, 255]);
+                }
+            }
+        }
+    }
+
     /// The face's texels for `styles`, with the lights whose bits are in `bits` added
     /// (REND-7.2): `R_BuildLightMap`'s `blocklights`, then the shift and cap.
     fn texels(&self, styles: &LightStyles, lights: &[DynamicLight], bits: u32) -> Vec<[u8; 3]> {

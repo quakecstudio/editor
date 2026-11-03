@@ -96,7 +96,8 @@ impl ModelInfo {
                     frames, intervals, ..
                 } => (
                     frames.len().max(1),
-                    intervals.last().copied().unwrap_or(0.0),
+                    // `Mod_LoadAliasGroup`: the group's first interval (REND-4.4).
+                    intervals.first().copied().unwrap_or(0.0),
                 ),
             };
             frames.push(FrameInfo {

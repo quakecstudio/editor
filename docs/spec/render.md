@@ -260,8 +260,9 @@ world's light below the entity.
 - **REND-4.11** Before REND-4.7's caps, `R_DrawAliasModel` raises the view model's
   (`cl.viewent`) `ambientlight` and `shadelight` to 24 when below it; then for every live
   dynamic light (`die >= cl.time`) adds `add = radius - |origin - light origin|` to both when
-  `add > 0` (`ambientlight += add` converts the float to `int`, toward zero); then raises a
-  player's (entity 1 to `cl.maxclients`) to 8 when below it. `R_DrawViewModel` draws nothing
+  `add > 0`; `ambientlight` and `shadelight` are `gl_rmain.c`'s file-scope floats (the `int`
+  pair in `R_DrawViewModel` is unused), so nothing is truncated; then raises a player's
+  (entity 1 to `cl.maxclients`) to 8 when below it. `R_DrawViewModel` draws nothing
   while `cl.items & IT_INVISIBILITY` or `cl.stats[STAT_HEALTH] <= 0`, and draws the view model
   with `glDepthRange (gldepthmin, gldepthmin + 0.3*(gldepthmax-gldepthmin))`, the nearest 0.3
   of the depth range, after the scene and before the water ("hack the depth range to prevent
@@ -319,8 +320,8 @@ style every frame and rebuilds the lightmaps of the faces whose styles changed.
   so the light drawn is the low byte of `t` when `t` is below 256, and 255 above it.
 - **REND-5.5** GLQuake rebuilds a face's lightmap when one of its styles' values differs from
   the value it was built with (`R_RenderBrushPoly`: `d_lightstylevalue[fa->styles[maps]] !=
-  fa->cached_light[maps]`). This renderer builds the whole atlas again in that case; the
-  texels are the same.
+  fa->cached_light[maps]`). This renderer builds the faces whose styles changed again in the
+  atlas; the texels are the same.
 - **REND-5.6** `R_LightPoint` sums `sample * scale` with the same style values into the `int r`,
   so its products wrap the same way, and shifts it right by 8 (`RecursiveLightPoint`).
 

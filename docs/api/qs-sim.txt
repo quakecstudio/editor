@@ -135,6 +135,7 @@ fn qs_sim::messages::Message::len
 fn qs_sim::messages::Message::max
 fn qs_sim::messages::Message::new
 fn qs_sim::messages::Message::overflowed
+fn qs_sim::messages::Message::reset_overflow
 fn qs_sim::messages::Message::take
 fn qs_sim::messages::Message::write_angle
 fn qs_sim::messages::Message::write_byte

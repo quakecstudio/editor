@@ -12,6 +12,7 @@
     reason = "test code: a failed unwrap or index is a failed test; the numbers are the spec's"
 )]
 
+use qs_mdl::mdl::{MDL_MAGIC, MDL_VERSION, Mdl};
 use qs_sim::Message;
 
 use crate::{
@@ -2055,49 +2056,49 @@ fn roll_and_bob() {
 fn pitch_drift() {
     let mut view = ViewState::default();
     let mut angles = [20.0, 0.0, 0.0];
-    view.drift_pitch(0.1, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, true, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], 20.0, "nodrift by default");
-    view.drift_pitch(0.1, true, 200.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, true, 200.0, 0.0, &mut angles);
     assert!(view.nodrift, "0.1 of running is short of 0.15");
-    view.drift_pitch(0.1, true, 200.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, true, 200.0, 0.0, &mut angles);
     assert!(
         !view.nodrift,
         "0.2 of running is past 0.15: the drift starts"
     );
     assert_eq!(angles[0], 20.0, "nothing moves the frame it starts");
-    view.drift_pitch(0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
     assert!(
         (angles[0] - 15.0).abs() < 1e-3,
         "move 0.01 * 500: {}",
         angles[0]
     );
-    view.drift_pitch(0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
     assert!(
         (angles[0] - 9.95).abs() < 1e-3,
         "the velocity grew by 5 to 505: {}",
         angles[0]
     );
-    view.drift_pitch(0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
     assert!((angles[0] - 4.85).abs() < 1e-3, "{}", angles[0]);
-    view.drift_pitch(0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
     assert_eq!(
         angles[0], 0.0,
         "5.15 would overshoot: it lands on the ideal"
     );
-    view.drift_pitch(0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], 0.0);
     let mut angles = [-10.0, 0.0, 0.0];
-    view.drift_pitch(0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], -10.0, "the velocity starts from 0 again");
-    view.drift_pitch(0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
     assert!(
         angles[0] > -10.0 && angles[0] <= 0.0,
         "upward too: {}",
         angles[0]
     );
-    view.drift_pitch(0.1, false, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, false, 0.0, 0.0, &mut angles);
     let held = angles[0];
-    view.drift_pitch(0.1, false, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, false, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], held, "not on the ground");
     view.stop_pitch_drift(5.0);
     assert!(view.nodrift);
@@ -2106,7 +2107,7 @@ fn pitch_drift() {
     view.start_pitch_drift(5.1);
     assert!(!view.nodrift);
     let mut angles = [0.0; 3];
-    view.drift_pitch(0.1, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, true, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], 0.0, "no delta");
 }
 
@@ -2276,10 +2277,7 @@ fn colour_shifts_and_the_blend() {
     let mut view = ViewState::default();
     view.damage(1.0, 10, 2, [1.0, 0.0, 0.0], [0.0; 3], [0.0; 3]);
     assert_eq!(view.shifts[1].color, [200, 100, 100]);
-    assert_eq!(
-        view.shifts[1].percent, 30.0,
-        "count 6 raised to 10, times 3"
-    );
+    assert_eq!(view.shifts[1].percent, 30, "count 6 raised to 10, times 3");
     assert_eq!(view.faceanimtime, 1.2);
     view.damage(1.0, 2, 3, [1.0, 0.0, 0.0], [0.0; 3], [0.0; 3]);
     assert_eq!(
@@ -2289,39 +2287,39 @@ fn colour_shifts_and_the_blend() {
     );
     view.damage(1.0, 0, 100, [1.0, 0.0, 0.0], [0.0; 3], [0.0; 3]);
     assert_eq!(view.shifts[1].color, [255, 0, 0]);
-    assert_eq!(view.shifts[1].percent, 150.0, "capped");
+    assert_eq!(view.shifts[1].percent, 150, "capped");
     view.bonus_flash();
     assert_eq!(
         (view.shifts[2].color, view.shifts[2].percent),
-        ([215, 186, 69], 50.0)
+        ([215, 186, 69], 50)
     );
     view.set_contents(Contents::Lava);
-    assert_eq!(view.shifts[0].percent, 150.0);
+    assert_eq!(view.shifts[0].percent, 150);
     view.set_contents(Contents::Slime);
     assert_eq!(view.shifts[0].color, [0, 25, 5]);
     view.set_contents(Contents::Water);
-    assert_eq!(view.shifts[0].percent, 128.0);
+    assert_eq!(view.shifts[0].percent, 128);
     view.set_contents(Contents::Empty);
-    assert_eq!(view.shifts[0].percent, 0.0);
+    assert_eq!(view.shifts[0].percent, 0);
     view.powerup_shift(4_194_304 | 2_097_152);
     assert_eq!(
         (view.shifts[3].color, view.shifts[3].percent),
-        ([0, 0, 255], 30.0),
+        ([0, 0, 255], 30),
         "quad first"
     );
     view.powerup_shift(2_097_152);
     assert_eq!(view.shifts[3].color, [0, 255, 0]);
     view.powerup_shift(524_288);
-    assert_eq!(view.shifts[3].percent, 100.0);
+    assert_eq!(view.shifts[3].percent, 100);
     view.powerup_shift(1_048_576);
     assert_eq!(view.shifts[3].color, [255, 255, 0]);
     view.powerup_shift(0);
-    assert_eq!(view.shifts[3].percent, 0.0);
+    assert_eq!(view.shifts[3].percent, 0);
     view.fade(0.5);
-    assert_eq!(view.shifts[1].percent, 75.0);
-    assert_eq!(view.shifts[2].percent, 0.0);
+    assert_eq!(view.shifts[1].percent, 75);
+    assert_eq!(view.shifts[2].percent, 0);
     view.fade(1.0);
-    assert_eq!(view.shifts[1].percent, 0.0);
+    assert_eq!(view.shifts[1].percent, 0);
     let mut only = ViewState::default();
     only.bonus_flash();
     let [r, g, b, a] = only.blend(100.0);
@@ -2957,4 +2955,120 @@ fn the_client_builds_its_hud() {
     frame(&mut client, 0.0, &[m.take()]);
     let hud = client.hud();
     assert!(hud.bar.is_empty() && !hud.overlay.is_empty());
+}
+
+/// An `.mdl` with one vertex, one triangle, a 1 by 1 skin and one frame group of
+/// `intervals.len()` poses ending at `intervals`.
+fn group_mdl(intervals: &[f32]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let int = |out: &mut Vec<u8>, v: i32| out.extend(v.to_le_bytes());
+    let float = |out: &mut Vec<u8>, v: f32| out.extend(v.to_le_bytes());
+    out.extend(MDL_MAGIC);
+    int(&mut out, MDL_VERSION);
+    for v in [1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0] {
+        float(&mut out, v);
+    }
+    // One 4 by 4 skin (the width a multiple of 4), one vertex, one triangle, one frame.
+    for v in [1, 4, 4, 1, 1, 1, 0, 0] {
+        int(&mut out, v);
+    }
+    float(&mut out, 1.0);
+    int(&mut out, 0);
+    out.extend([0; 16]);
+    for v in [0, 0, 0] {
+        int(&mut out, v);
+    }
+    for v in [1, 0, 0, 0] {
+        int(&mut out, v);
+    }
+    int(&mut out, 1);
+    int(&mut out, i32::try_from(intervals.len()).unwrap());
+    out.extend([0, 0, 0, 0, 255, 255, 255, 0]);
+    for interval in intervals {
+        float(&mut out, *interval);
+    }
+    for _ in intervals {
+        out.extend([0, 0, 0, 0, 255, 255, 255, 0]);
+        out.extend([b'f'; 16]);
+        out.extend([1, 2, 3, 0]);
+    }
+    out
+}
+
+// spec REND-4.4: a frame group's interval is the group's first interval
+#[test]
+fn a_frame_groups_interval_is_its_first() {
+    let bytes = group_mdl(&[0.1, 0.3, 0.6]);
+    let mdl = Mdl::read(&bytes).unwrap();
+    let info = ModelInfo::alias(&mdl);
+    let ModelKind::Alias { frames } = info.kind else {
+        panic!("an alias model");
+    };
+    assert_eq!(
+        frames[0],
+        FrameInfo {
+            first_pose: 0,
+            poses: 3,
+            interval: 0.1,
+        }
+    );
+}
+
+// spec VIEW-3.5: the weapon's angles come from the view angles as the roll, the damage kick
+// and the idle have left them, before the punch
+#[test]
+fn the_weapon_follows_the_kicked_view() {
+    let mut view = ViewState::default();
+    let settings = ViewSettings::default();
+    let input = ViewInput {
+        time: 1.0,
+        frametime: 0.01,
+        origin: [0.0; 3],
+        entity_angles: [0.0; 3],
+        viewangles: [5.0, 90.0, 0.0],
+        velocity: [0.0; 3],
+        viewheight: 22.0,
+        punchangle: [0.0; 3],
+        onground: true,
+        health: 100,
+        intermission: false,
+        weapon: (3, 2),
+    };
+    // Hit from behind: a pitch kick.
+    view.damage(1.0, 0, 20, [-100.0, 0.0, 0.0], [0.0; 3], [0.0, 0.0, 0.0]);
+    let r = view.render(&input, &settings);
+    assert_ne!(r.angles[0], 5.0, "the kick moved the view's pitch");
+    assert_eq!(r.weapon.angles[0], -r.angles[0]);
+    assert_eq!(r.weapon.angles[1], r.angles[1]);
+}
+
+// spec VIEW-4.8: the shift percents are ints: the damage's `3*count` and the fades truncate
+// toward zero
+#[test]
+fn shift_percents_are_ints() {
+    let mut view = ViewState::default();
+    // blood 25: count 12.5, times 3 is 37.5, stored as 37.
+    view.damage(1.0, 0, 25, [1.0, 0.0, 0.0], [0.0; 3], [0.0; 3]);
+    assert_eq!(view.shifts[1].percent, 37);
+    view.damage(1.0, 0, 100, [1.0, 0.0, 0.0], [0.0; 3], [0.0; 3]);
+    assert_eq!(view.shifts[1].percent, 150);
+    // At 72 Hz: 150 - 2.083 is 147.9, stored as 147.
+    view.fade(1.0 / 72.0);
+    assert_eq!(view.shifts[1].percent, 147);
+    view.bonus_flash();
+    view.fade(0.499);
+    assert_eq!(view.shifts[2].percent, 0, "50 - 49.9 is 0.1, stored as 0");
+}
+
+// spec VIEW-2.1: the drift does not start on the frame the drift was stopped, from
+// V_CalcRefdef's own start as well
+#[test]
+fn the_drift_waits_for_a_frame_after_a_stop() {
+    let mut view = ViewState::default();
+    let mut angles = [20.0, 0.0, 0.0];
+    view.stop_pitch_drift(5.0);
+    view.drift_pitch(5.0, 0.2, true, 200.0, 0.0, &mut angles);
+    assert!(view.nodrift, "stopped at this very time");
+    view.drift_pitch(5.1, 0.2, true, 200.0, 0.0, &mut angles);
+    assert!(!view.nodrift);
 }

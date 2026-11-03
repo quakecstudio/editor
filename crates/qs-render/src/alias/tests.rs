@@ -150,7 +150,7 @@ fn read(spec: &MdlSpec, name: &str) -> AliasModel {
 }
 
 fn entity() -> AliasEntity {
-    AliasEntity::new([0.0; 3], [0.0; 3], 0, 0, 100)
+    AliasEntity::new([0.0; 3], [0.0; 3], 0, 0, 100.0)
 }
 
 fn draw(model: &AliasModel, entity: &AliasEntity, time: f64) -> (Vec<AliasVertex>, usize) {
@@ -391,19 +391,19 @@ fn vertices_are_scaled_turned_and_moved() {
 // the shade is over 200
 #[test]
 fn shade_light_caps_as_r_draw_alias_model() {
-    assert_eq!(shade_light(50, false), 0.25);
-    assert_eq!(shade_light(100, false), 0.46);
-    assert_eq!(shade_light(300, false), 0.32);
-    assert_eq!(shade_light(96, false), 0.48);
-    assert_eq!(shade_light(97, false), 0.475);
-    assert_eq!(shade_light(0, true), 1.28);
+    assert_eq!(shade_light(50.0, false), 0.25);
+    assert_eq!(shade_light(100.0, false), 0.46);
+    assert_eq!(shade_light(300.0, false), 0.32);
+    assert_eq!(shade_light(96.0, false), 0.48);
+    assert_eq!(shade_light(97.0, false), 0.475);
+    assert_eq!(shade_light(0.0, true), 1.28);
     let torch = read(&MdlSpec::default(), "progs/flame2.mdl");
     let plain = read(&MdlSpec::default(), "progs/flame3.mdl");
     let shade = |m: &AliasModel| {
         draw(
             m,
             &AliasEntity {
-                light: 0,
+                light: 0.0,
                 ..entity()
             },
             0.0,
@@ -429,7 +429,7 @@ fn shade_dots_follow_the_yaw_and_clamp() {
     let shade = draw(
         &model,
         &AliasEntity {
-            light: 50,
+            light: 50.0,
             ..entity()
         },
         0.0,
@@ -455,7 +455,7 @@ fn poses_blend_by_the_fraction() {
     );
     let blended = |previous, current, blend| {
         let e = AliasEntity {
-            light: 50,
+            light: 50.0,
             blend: Some(PoseBlend {
                 previous,
                 current,
@@ -487,7 +487,7 @@ fn poses_blend_by_the_fraction() {
 }
 
 // spec REND-4.11: the view model's floor of 24, then each live light's radius less its
-// distance when positive, truncated, then a player's floor of 8
+// distance when positive, in float, then a player's floor of 8
 #[test]
 fn entity_light_adds_the_floors_and_the_lights() {
     let light = |origin, radius| DynamicLight {
@@ -495,23 +495,26 @@ fn entity_light_adds_the_floors_and_the_lights() {
         radius,
         minlight: 0.0,
     };
-    assert_eq!(entity_light(10, AliasKind::ViewModel, [0.0; 3], &[]), 24);
-    assert_eq!(entity_light(30, AliasKind::ViewModel, [0.0; 3], &[]), 30);
-    assert_eq!(entity_light(0, AliasKind::Player, [0.0; 3], &[]), 8);
-    assert_eq!(entity_light(0, AliasKind::Other, [0.0; 3], &[]), 0);
-    // 100 away from a light of radius 150.5: 50.5 added, as an int 50.
+    assert_eq!(entity_light(10, AliasKind::ViewModel, [0.0; 3], &[]), 24.0);
+    assert_eq!(entity_light(30, AliasKind::ViewModel, [0.0; 3], &[]), 30.0);
+    assert_eq!(entity_light(0, AliasKind::Player, [0.0; 3], &[]), 8.0);
+    assert_eq!(entity_light(0, AliasKind::Other, [0.0; 3], &[]), 0.0);
+    // 100 away from a light of radius 150.5: 50.5 added, kept as a float.
     let lights = [
         light([100.0, 0.0, 0.0], 150.5),
         light([0.0, 300.0, 0.0], 100.0),
     ];
-    assert_eq!(entity_light(10, AliasKind::Other, [0.0; 3], &lights), 60);
+    assert_eq!(entity_light(10, AliasKind::Other, [0.0; 3], &lights), 60.5);
     // The floors come in order: the view model's before the lights, the player's after.
     assert_eq!(
         entity_light(10, AliasKind::ViewModel, [0.0; 3], &lights),
-        74
+        74.5
     );
-    assert_eq!(entity_light(0, AliasKind::Player, [0.0; 3], &lights), 50);
-    assert_eq!(entity_light(-100, AliasKind::Player, [0.0; 3], &lights), 8);
+    assert_eq!(entity_light(0, AliasKind::Player, [0.0; 3], &lights), 50.5);
+    assert_eq!(
+        entity_light(-100, AliasKind::Player, [0.0; 3], &lights),
+        8.0
+    );
 }
 
 // spec REND-4.9: an EF_ROTATE model's yaw is anglemod(100*time), in steps of 360/65536

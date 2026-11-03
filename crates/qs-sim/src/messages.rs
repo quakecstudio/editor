@@ -160,10 +160,16 @@ impl Message {
         self.max
     }
 
-    /// Whether a write overflowed since the last clear (BUILTIN-13.4).
+    /// Whether a write overflowed since the flag was last reset (BUILTIN-13.4); `SZ_Clear`
+    /// leaves it, [`Message::reset_overflow`] clears it.
     #[must_use]
     pub const fn overflowed(&self) -> bool {
         self.overflowed
+    }
+
+    /// `overflowed = false`, as `SV_SendClientMessages` does after dropping the client.
+    pub const fn reset_overflow(&mut self) {
+        self.overflowed = false;
     }
 
     /// `SZ_Clear`.
@@ -789,6 +795,17 @@ impl SimCall<'_, '_, '_> {
         slot.sendsignon = true;
     }
 
+    /// A signon stage's message sent, as `SV_SendClientMessages` sends it at the end of the
+    /// stage's frame when `sendsignon` is set (NET-1.3).
+    pub(crate) fn flush_signon(&mut self) {
+        let slot = &mut self.sim.messages.client;
+        if slot.sendsignon && !slot.message.is_empty() {
+            let packet = slot.message.take();
+            self.sim.messages.outbox.push(packet);
+        }
+        slot.sendsignon = false;
+    }
+
     /// `Host_Spawn_f`'s message, after the client has entered (NET-2.4).
     pub(crate) fn spawn_message(&mut self, client: usize) -> Result<(), RunError> {
         let time = double_to_float(self.clock());
@@ -817,6 +834,9 @@ impl SimCall<'_, '_, '_> {
             let slot = &mut self.sim.messages.client;
             let (name, colors, old_frags) = (slot.name.clone(), slot.colors, slot.old_frags);
             let message = &mut slot.message;
+            // "send all current names, colors, and frag counts": `SZ_Clear` first, so what
+            // `ClientConnect` and `PutClientInServer` wrote to the client is dropped.
+            message.clear();
             message.write_byte(SVC_TIME);
             message.write_float(time);
             for i in 0..maxclients {
@@ -885,7 +905,10 @@ impl SimCall<'_, '_, '_> {
             let slot = &mut self.sim.messages.client;
             if slot.spawned || slot.sendsignon {
                 if slot.message.overflowed() {
+                    // `SV_DropClient` and `overflowed = false`: the one client stays, its
+                    // message starts over.
                     slot.message.clear();
+                    slot.message.reset_overflow();
                 } else if !slot.message.is_empty() {
                     let packet = slot.message.take();
                     self.sim.messages.outbox.push(packet);
@@ -895,10 +918,13 @@ impl SimCall<'_, '_, '_> {
         }
         // SV_CleanupEnts.
         let count = self.context.machine_view().edicts().num_edicts();
+        // `ent->v.effects = (int)ent->v.effects & ~EF_MUZZLEFLASH` for every edict: a
+        // fractional `effects` is truncated whether or not the flash is set.
         for n in 1..count {
-            let effects = float_to_int(self.float(n, "effects"));
-            if effects & EF_MUZZLEFLASH != 0 {
-                self.set_float(n, "effects", int_to_float(effects & !EF_MUZZLEFLASH));
+            let effects = self.float(n, "effects");
+            let cleaned = int_to_float(float_to_int(effects) & !EF_MUZZLEFLASH);
+            if cleaned.to_bits() != effects.to_bits() {
+                self.set_float(n, "effects", cleaned);
             }
         }
         Ok(())
@@ -1194,15 +1220,20 @@ impl SimCall<'_, '_, '_> {
         let cosval = double_to_float(f64::from(angleval).cos());
         let mut z = [0.0_f32; NET_MAX_FORWARD];
         for (i, zi) in z.iter_mut().enumerate() {
-            let reach = i32::try_from(i)
-                .unwrap_or(0)
-                .saturating_add(3)
-                .saturating_mul(12);
-            let reach = int_to_float(reach);
+            // `cosval*(i+3)*12`: the float times the int, then times 12, left to right.
+            let steps = int_to_float(i32::try_from(i).unwrap_or(0).saturating_add(3));
             let top_z = oz + view_z;
-            let top = [ox + cosval * reach, oy + sinval * reach, top_z];
+            let top = [
+                ox + cosval * steps * 12.0,
+                oy + sinval * steps * 12.0,
+                top_z,
+            ];
             let bottom_z = top_z - 160.0;
-            let bottom = [ox + cosval * reach, oy + sinval * reach, bottom_z];
+            let bottom = [
+                ox + cosval * steps * 12.0,
+                oy + sinval * steps * 12.0,
+                bottom_z,
+            ];
             let trace = self.trace((top, [0.0; 3], [0.0; 3], bottom), MoveKind::NoMonsters, ent)?;
             if trace.allsolid {
                 return Ok(());

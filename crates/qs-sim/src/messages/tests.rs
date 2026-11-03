@@ -315,8 +315,13 @@ fn baselines_describe_the_spawn_state() {
     run.settle();
     run.connect();
     let packets = run.packets();
-    assert_eq!(packets.len(), 1);
-    let mut r = Reader::new(&packets[0]);
+    assert_eq!(
+        packets.len(),
+        3,
+        "the serverinfo, the prespawn, the spawn and begin"
+    );
+    let all = packets.concat();
+    let mut r = Reader::new(&all);
     // Past the serverinfo (NET-2.2) to the signon buffer.
     while r.byte() != 25 {}
     assert_eq!(r.byte(), 1, "signon 1");
@@ -392,8 +397,9 @@ fn the_spawn_message_lists_the_client_state() {
     let mut run = player(&ledge(), "self.angles = '10 20 30';", "", more);
     let packets = run.packets();
     let _ = Progs::read(&run.progs).unwrap();
-    assert_eq!(packets.len(), 1, "no datagram before the first frame");
-    let mut r = Reader::new(&packets[0]);
+    assert_eq!(packets.len(), 3, "no datagram before the first frame");
+    let all = packets.concat();
+    let mut r = Reader::new(&all);
     while r.byte() != 25 {}
     r.byte();
     while r.byte() != 25 {}
@@ -728,7 +734,10 @@ fn the_builtins_bytes_match_the_mocks_counts() {
     assert_eq!(baselines, 2, "the world and the client");
     assert_eq!(m.signon.len(), e.buffers.signon + 16 * baselines);
     assert_eq!(m.datagram.len(), e.buffers.unreliable);
-    assert_eq!(e.buffers.reliable, 1, "the mock counts the MSG_ALL byte");
+    assert_eq!(
+        e.buffers.reliable, 0,
+        "the MSG_ALL byte the mock counted went out with the reliable datagram (NET-1.4)"
+    );
     let packets = m.outbox.clone();
     let (_, _, rest) = datagram(&packets[0]);
     let mut r = Reader::new(&rest);
@@ -779,4 +788,73 @@ fn the_builtins_bytes_match_the_mocks_counts() {
     assert_eq!(r.byte(), 9, "the MSG_ALL write, appended last");
     assert!(r.done());
     assert_eq!(m.client.message.max(), NET_MAX_MSGLEN);
+}
+
+// spec NET-5.1: the mock's byte counts empty with the sim's buffers each frame, so a sound
+// is written on every frame of a long game, not only while the mock's count is under its
+// limit
+#[test]
+fn the_mocks_counts_follow_the_buffers_every_frame() {
+    let more = "void() worldspawn = { precache_sound(\"a.wav\"); };\n";
+    let mut run = player(&ledge(), "", "sound(self, 3, \"a.wav\", 1, 1);", more);
+    run.packets();
+    for _ in 0..3 {
+        run.frames(1, 0.1).unwrap();
+        let m = run.world.messages();
+        let e = run.world.engine();
+        assert_eq!(m.datagram.len(), e.buffers.unreliable);
+        assert_eq!(e.buffers.reliable, 0);
+        let (_, _, rest) = datagram(&run.packets()[0]);
+        assert_eq!(rest.first(), Some(&6), "svc_sound every frame");
+    }
+}
+
+// spec NET-2.4: the spawn message starts with a clear, so what PutClientInServer wrote to
+// the client is dropped
+#[test]
+fn the_spawn_message_drops_what_put_client_in_server_wrote() {
+    let mut run = player(&ledge(), "sprint(self, \"hello\");", "", "");
+    let packets = run.packets();
+    assert_eq!(packets.len(), 3);
+    assert_eq!(packets[2][0], 7, "svc_time first");
+    let all = packets.concat();
+    assert!(
+        !all.windows(5).any(|w| w == b"hello"),
+        "the sprint was cleared"
+    );
+}
+
+// spec NET-1.3: an overflowed message is cleared and its flag reset, so the client's later
+// messages go out
+#[test]
+fn an_overflowed_message_starts_over() {
+    let mut message = Message::new(4, true);
+    message.write_bytes(&[1, 2, 3]);
+    message.write_bytes(&[4, 5]);
+    assert!(message.overflowed());
+    assert_eq!(
+        message.bytes(),
+        [4, 5],
+        "emptied, then the write that overflowed"
+    );
+    message.clear();
+    assert!(message.overflowed(), "SZ_Clear keeps the flag");
+    message.reset_overflow();
+    assert!(!message.overflowed());
+    message.write_byte(9);
+    assert_eq!(message.bytes(), [9]);
+}
+
+// spec NET-1.3: SV_CleanupEnts stores `(int)effects & ~EF_MUZZLEFLASH` for every edict, so a
+// fractional effects is truncated whether or not it flashes
+#[test]
+fn cleanup_truncates_every_edicts_effects() {
+    let mut run = player(&ledge(), "self.effects = 7.5;", "", "");
+    run.packets();
+    run.frames(1, 0.1).unwrap();
+    assert_eq!(
+        run.world.float(1, "effects"),
+        5.0,
+        "7.5 as an int is 7, less the flash"
+    );
 }

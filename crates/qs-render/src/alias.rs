@@ -22,19 +22,19 @@ use crate::anorm_dots::{R_AVERTEXNORMAL_DOTS, SHADEDOT_QUANT};
 use crate::mesh::{Image, Palette};
 
 /// `ambientlight > 128` in `R_DrawAliasModel` (REND-4.7).
-const AMBIENT_CAP: i32 = 128;
+const AMBIENT_CAP: f32 = 128.0;
 /// `ambientlight + shadelight > 192` (REND-4.7).
-const SHADE_CAP: i32 = 192;
+const SHADE_CAP: f32 = 192.0;
 /// The light the torches are given, "make torches full light" (REND-4.7).
-const TORCH_LIGHT: i32 = 256;
+const TORCH_LIGHT: f32 = 256.0;
 /// `shadelight = shadelight / 200.0` (REND-4.7).
 const SHADE_SCALE: f32 = 200.0;
 /// The models given full light (REND-4.7).
 const TORCHES: [&str; 2] = ["progs/flame2.mdl", "progs/flame.mdl"];
 /// `if (e == &cl.viewent && ambientlight < 24)`: the view model's floor (REND-4.11).
-const VIEW_MODEL_FLOOR: i32 = 24;
+const VIEW_MODEL_FLOOR: f32 = 24.0;
 /// `if (ambientlight < 8)` for a player: the players' floor (REND-4.11).
-const PLAYER_FLOOR: i32 = 8;
+const PLAYER_FLOOR: f32 = 8.0;
 /// `(int)(cl.time*10) & 3`: a skin group's frames step ten times a second, over four slots
 /// (REND-4.2).
 const SKIN_RATE: f64 = 10.0;
@@ -90,8 +90,9 @@ pub struct AliasEntity {
     pub frame: usize,
     /// `skinnum`.
     pub skin: usize,
-    /// `R_LightPoint` at its origin (REND-4.10).
-    pub light: i32,
+    /// `R_LightPoint` at its origin (REND-4.10), with the floors and the dynamic lights
+    /// (REND-4.11), as the float `ambientlight`.
+    pub light: f32,
     /// The poses it blends between (CLIENT-7.3), `None` to draw `frame` at the time as
     /// GLQuake does (REND-4.4).
     pub blend: Option<PoseBlend>,
@@ -120,7 +121,7 @@ impl AliasEntity {
         angles: [f32; 3],
         frame: usize,
         skin: usize,
-        light: i32,
+        light: f32,
     ) -> Self {
         Self {
             origin,
@@ -314,27 +315,27 @@ impl AliasModel {
 /// `R_DrawAliasModel`'s `shadelight`: the light at the entity, capped as GLQuake caps it, the
 /// torches full light, over 200 (REND-4.7).
 #[must_use]
-pub fn shade_light(light: i32, torch: bool) -> f32 {
+pub fn shade_light(light: f32, torch: bool) -> f32 {
     let ambient = light.min(AMBIENT_CAP);
     // "if (ambientlight + shadelight > 192) shadelight = 192 - ambientlight"
     let shade = if torch {
         TORCH_LIGHT
     } else {
-        light.min(SHADE_CAP.saturating_sub(ambient))
+        light.min(SHADE_CAP - ambient)
     };
-    f32_of_i32(shade) / SHADE_SCALE
+    shade / SHADE_SCALE
 }
 
 /// `R_DrawAliasModel`'s light before the caps: `R_LightPoint` at `origin`, `light`, raised
 /// to the view model's floor of 24, then each dynamic light's `radius - distance` when above
-/// 0 added, then a player's floor of 8 (REND-4.11). The caps and the torches are
-/// [`shade_light`].
+/// 0 added, then a player's floor of 8, all in the float `ambientlight` (REND-4.11). The
+/// caps and the torches are [`shade_light`].
 #[must_use]
-pub fn entity_light(light: i32, kind: AliasKind, origin: [f32; 3], lights: &[DynamicLight]) -> i32 {
-    let mut light = match kind {
-        AliasKind::ViewModel => light.max(VIEW_MODEL_FLOOR),
-        AliasKind::Other | AliasKind::Player => light,
-    };
+pub fn entity_light(light: i32, kind: AliasKind, origin: [f32; 3], lights: &[DynamicLight]) -> f32 {
+    let mut light = f32_of_i32(light);
+    if kind == AliasKind::ViewModel {
+        light = light.max(VIEW_MODEL_FLOOR);
+    }
     for dlight in lights {
         let [dx, dy, dz] = [
             origin[0] - dlight.origin[0],
@@ -343,23 +344,13 @@ pub fn entity_light(light: i32, kind: AliasKind, origin: [f32; 3], lights: &[Dyn
         ];
         let add = dlight.radius - (dx * dx + dy * dy + dz * dz).sqrt();
         if add > 0.0 {
-            // `ambientlight += add` adds the float to an int: truncated toward zero.
-            light = light.saturating_add(truncate_i32(add));
+            light += add;
         }
     }
-    match kind {
-        AliasKind::Player => light.max(PLAYER_FLOOR),
-        AliasKind::Other | AliasKind::ViewModel => light,
+    if kind == AliasKind::Player {
+        light = light.max(PLAYER_FLOOR);
     }
-}
-
-/// C's float to int conversion toward zero, of a light's addition (REND-4.11).
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "spec REND-4.11: `ambientlight += add` converts the float to an int toward zero"
-)]
-fn truncate_i32(value: f32) -> i32 {
-    value as i32
+    light
 }
 
 /// The row of `r_avertexnormal_dots` for a yaw of `yaw` degrees,

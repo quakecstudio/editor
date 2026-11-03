@@ -42,7 +42,9 @@ compares with ours. `sv.time` is a `double`; every edict field is a `float`.
   each active client: a spawned one is sent a datagram (NET-1.5); one not yet spawned is sent
   its message only when a signon stage asked for it (`sendsignon`), and otherwise a datagram
   of one `svc_nop` once `NET_NOP_SECONDS` have passed since its last message; an overflowed
-  message drops the client; a message with any bytes is then sent and cleared, and
+  message drops the client and clears `overflowed` (the preview host keeps its one client:
+  the message is cleared and the flag reset); a message with any bytes is then sent and
+  cleared, and
   `sendsignon` cleared. Last, `SV_CleanupEnts` clears `EF_MUZZLEFLASH` (2) from every edict's
   `effects`, so a muzzle flash is sent in one datagram only.
 - **NET-1.4** `SV_UpdateToReliableMessages`: for each client slot `i` whose edict's `frags`
@@ -95,7 +97,8 @@ compares with ours. `sv.time` is a `double`; every edict field is a `float`.
 - **NET-2.3** The `prespawn` command appends the signon buffer to the client's message, then
   `svc_signonnum` 2, and marks `sendsignon`.
 - **NET-2.4** The `spawn` command brings the client in (PHYS-10.1, unless a game is being
-  loaded) and then appends to its message: `svc_time` (7) and `sv.time` as a float; for each
+  loaded), then clears its message (`SZ_Clear`, so what `ClientConnect` and
+  `PutClientInServer` wrote to the client is dropped) and appends: `svc_time` (7) and `sv.time` as a float; for each
   client slot `i` from 0, `svc_updatename` (13), the byte `i` and the slot's name,
   `svc_updatefrags` (14), `i` and its `old_frags` as a short, and `svc_updatecolors` (17),
   `i` and its colours byte; for each of the `MAX_LIGHTSTYLES` (64) styles `svc_lightstyle`

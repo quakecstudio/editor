@@ -961,6 +961,7 @@ impl Client {
             return Refdef::default();
         };
         self.view.drift_pitch(
+            self.time,
             self.time - self.oldtime,
             self.onground,
             self.forwardmove,

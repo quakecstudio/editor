@@ -11,7 +11,7 @@
 //! Implements VIEW-1 to VIEW-4.
 
 use qc_builtins::math::{anglemod, makevectors, vector_normalize};
-use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
+use qc_vm::convert::{double_to_float, double_to_int, float_to_int, int_to_float};
 
 /// `cl_rollspeed` (VIEW-1.1).
 pub const VIEW_ROLLSPEED: f32 = 200.0;
@@ -63,12 +63,12 @@ const IT_QUAD: i32 = 4_194_304;
 pub struct Shift {
     /// `destcolor`.
     pub color: [i32; 3],
-    /// `percent`.
-    pub percent: f32,
+    /// `percent`, an `int` (VIEW-4.7).
+    pub percent: i32,
 }
 
 impl Shift {
-    const fn new(color: [i32; 3], percent: f32) -> Self {
+    const fn new(color: [i32; 3], percent: i32) -> Self {
         Self { color, percent }
     }
 }
@@ -297,6 +297,7 @@ impl ViewState {
     /// `forwardmove` is the command's, `onground` the client's.
     pub fn drift_pitch(
         &mut self,
+        time: f32,
         frametime: f32,
         onground: bool,
         forwardmove: f32,
@@ -315,12 +316,7 @@ impl ViewState {
                 self.driftmove += frametime;
             }
             if self.driftmove > VIEW_CENTERMOVE {
-                // V_StartPitchDrift, with laststop never this frame's time here.
-                if self.nodrift || self.pitchvel == 0.0 {
-                    self.pitchvel = VIEW_CENTERSPEED;
-                    self.nodrift = false;
-                    self.driftmove = 0.0;
-                }
+                self.start_pitch_drift(time);
             }
             return;
         }
@@ -361,7 +357,8 @@ impl ViewState {
         let count = count.max(10.0);
         self.faceanimtime = time + 0.2;
         let damage = &mut self.shifts[CSHIFT_DAMAGE];
-        damage.percent = (damage.percent + 3.0 * count).clamp(0.0, 150.0);
+        // `percent += 3*count`: the int plus the float, truncated back into the int (VIEW-4.7).
+        damage.percent = float_to_int(int_to_float(damage.percent) + 3.0 * count).clamp(0, 150);
         damage.color = if armor > blood {
             [200, 100, 100]
         } else if armor != 0 {
@@ -382,16 +379,16 @@ impl ViewState {
 
     /// `V_BonusFlash_f` (VIEW-4.2).
     pub fn bonus_flash(&mut self) {
-        self.shifts[CSHIFT_BONUS] = Shift::new([215, 186, 69], 50.0);
+        self.shifts[CSHIFT_BONUS] = Shift::new([215, 186, 69], 50);
     }
 
     /// `V_SetContentsColor` (VIEW-4.3).
     pub fn set_contents(&mut self, contents: Contents) {
         self.shifts[CSHIFT_CONTENTS] = match contents {
-            Contents::Empty => Shift::new([130, 80, 50], 0.0),
-            Contents::Lava => Shift::new([255, 80, 0], 150.0),
-            Contents::Slime => Shift::new([0, 25, 5], 150.0),
-            Contents::Water => Shift::new([130, 80, 50], 128.0),
+            Contents::Empty => Shift::new([130, 80, 50], 0),
+            Contents::Lava => Shift::new([255, 80, 0], 150),
+            Contents::Slime => Shift::new([0, 25, 5], 150),
+            Contents::Water => Shift::new([130, 80, 50], 128),
         };
     }
 
@@ -399,24 +396,30 @@ impl ViewState {
     pub fn powerup_shift(&mut self, items: i32) {
         let shift = &mut self.shifts[CSHIFT_POWERUP];
         if items & IT_QUAD != 0 {
-            *shift = Shift::new([0, 0, 255], 30.0);
+            *shift = Shift::new([0, 0, 255], 30);
         } else if items & IT_SUIT != 0 {
-            *shift = Shift::new([0, 255, 0], 20.0);
+            *shift = Shift::new([0, 255, 0], 20);
         } else if items & IT_INVISIBILITY != 0 {
-            *shift = Shift::new([100, 100, 100], 100.0);
+            *shift = Shift::new([100, 100, 100], 100);
         } else if items & IT_INVULNERABILITY != 0 {
-            *shift = Shift::new([255, 255, 0], 30.0);
+            *shift = Shift::new([255, 255, 0], 30);
         } else {
-            shift.percent = 0.0;
+            shift.percent = 0;
         }
     }
 
-    /// `V_UpdatePalette`'s fades (VIEW-4.5): the damage and bonus percents lose their rates.
+    /// `V_UpdatePalette`'s fades (VIEW-4.5): the damage and bonus percents lose their rates,
+    /// each `percent -= host_frametime*rate` truncating the float result back into the int
+    /// (VIEW-4.7).
     pub fn fade(&mut self, frametime: f32) {
+        let fade = |percent: i32, rate: f64| {
+            let faded = double_to_int(f64::from(percent) - f64::from(frametime) * rate);
+            if faded <= 0 { 0 } else { faded }
+        };
         let damage = &mut self.shifts[CSHIFT_DAMAGE];
-        damage.percent = (damage.percent - frametime * 150.0).max(0.0);
+        damage.percent = fade(damage.percent, 150.0);
         let bonus = &mut self.shifts[CSHIFT_BONUS];
-        bonus.percent = (bonus.percent - frametime * 100.0).max(0.0);
+        bonus.percent = fade(bonus.percent, 100.0);
     }
 
     /// `V_CalcBlend` (VIEW-4.6): the shifts folded into one RGBA, colours over 255.
@@ -427,7 +430,7 @@ impl ViewState {
             if cshiftpercent == 0.0 {
                 continue;
             }
-            let mut a2 = ((shift.percent * cshiftpercent) / 100.0) / 255.0;
+            let mut a2 = ((int_to_float(shift.percent) * cshiftpercent) / 100.0) / 255.0;
             if a2 == 0.0 {
                 continue;
             }
@@ -498,9 +501,10 @@ impl ViewState {
         vieworg[0] = vieworg[0].clamp(ox - 14.0, ox + 14.0);
         vieworg[1] = vieworg[1].clamp(oy - 14.0, oy + 14.0);
         vieworg[2] = vieworg[2].clamp(oz - 22.0, oz + 30.0);
-        // VIEW-3.5: the weapon's angles.
+        // VIEW-3.5: the weapon's angles, from `r_refdef.viewangles` as the roll, the kick
+        // and the idle have left them.
         let mut weapon_angles = input.viewangles;
-        self.gun_angle(input, &mut weapon_angles, settings.idlescale);
+        self.gun_angle(input, viewangles, &mut weapon_angles, settings.idlescale);
         // VIEW-3.6: the weapon's origin.
         let mut weapon_origin = [ox, oy, oz + input.viewheight];
         for (o, f) in weapon_origin.iter_mut().zip(forward) {
@@ -542,8 +546,14 @@ impl ViewState {
 
     /// `CalcGunAngle` (VIEW-3.5): the weapon's yaw and pitch from the view angles with the
     /// smoothed lag, less the idle terms.
-    fn gun_angle(&mut self, input: &ViewInput, angles: &mut [f32; 3], idlescale: f32) {
-        let [view_pitch, view_yaw, _] = input.viewangles;
+    fn gun_angle(
+        &mut self,
+        input: &ViewInput,
+        refdef_angles: [f32; 3],
+        angles: &mut [f32; 3],
+        idlescale: f32,
+    ) {
+        let [view_pitch, view_yaw, _] = refdef_angles;
         let yaw = view_yaw;
         let pitch = -view_pitch;
         let mut yaw = (angledelta(yaw - view_yaw) * 0.4).clamp(-10.0, 10.0);

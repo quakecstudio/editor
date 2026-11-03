@@ -199,6 +199,9 @@ impl World {
         // moves, then the physics, then the messages.
         call.set_global("frametime", Slot::from_f32(t));
         call.sim.messages.datagram.clear();
+        // The mock engine counts the datagram's bytes beside the sim's (NET-5.1): it empties
+        // with it.
+        call.sim.mock.engine_mut().buffers.unreliable = 0;
         if let Some(cmd) = player {
             let cmd = call.read_move(CLIENT, &cmd);
             call.client_think(CLIENT, &cmd, t)
@@ -207,6 +210,8 @@ impl World {
         call.physics(frametime, &clients)
             .map_err(WorldError::Frame)?;
         call.send_client_messages().map_err(WorldError::Frame)?;
+        // The reliable datagram went out with the messages (NET-1.4).
+        call.sim.mock.engine_mut().buffers.reliable = 0;
         Ok(())
     }
 
@@ -227,9 +232,12 @@ impl World {
         if call.sim.messages.baselines.is_empty() {
             call.create_baselines().map_err(WorldError::Frame)?;
         }
-        // NET-2.2, NET-2.3: the serverinfo and the prespawn answer.
+        // NET-2.2, NET-2.3: the serverinfo and the prespawn answer, each sent as id sends it
+        // at the end of the frame the stage ran in.
         call.send_serverinfo(CLIENT);
+        call.flush_signon();
         call.prespawn();
+        call.flush_signon();
         let new_parms = call.global("SetNewParms").as_i32();
         call.run(new_parms).map_err(WorldError::Frame)?;
         let parms: Vec<Slot> = (1..=16).map(|n| call.global(&format!("parm{n}"))).collect();
