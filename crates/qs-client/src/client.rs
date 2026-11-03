@@ -21,12 +21,17 @@ use qc_builtins::math::{anglemod, makevectors, vector_normalize};
 use qc_vm::convert::{double_to_float, double_to_int, int_to_float};
 
 use crate::entity::{Baseline, Entity};
-use crate::hud::{CenterPrint, HudInput, HudItem, Placed, intermission_overlay, status_bar};
+use crate::hud::{
+    CenterPrint, HUD_GAME_DEATHMATCH, HudInput, HudItem, Placed, intermission_overlay, status_bar,
+};
 use crate::message::Reader;
 use crate::models::{FrameInfo, ModelInfo, ModelKind, Models, Random, flags};
 use crate::particles::{PART_GRAVITY, Particles};
 use crate::scene::{DynamicLight, PoseBlend, Scene, SceneEntity, SceneParticle};
 use crate::view::{Contents, Refdef, ViewInput, ViewSettings, ViewState};
+
+/// `IT_INVISIBILITY`, which hides the view model (REND-4.11).
+const IT_INVISIBILITY: i32 = 524_288;
 
 /// `PROTOCOL_VERSION` (CLIENT-1.1).
 pub const CLIENT_PROTOCOL_VERSION: i32 = 15;
@@ -368,6 +373,9 @@ pub struct Hud {
     pub overlay: Vec<Placed>,
     /// The centre print's characters, on the screen (HUD-3).
     pub center: Vec<HudItem>,
+    /// Whether the game is deathmatch, which draws the bar from the screen's left instead of
+    /// centred (HUD-1).
+    pub deathmatch: bool,
 }
 
 /// One scoreboard entry, `scoreboard_t` (CLIENT-1.4).
@@ -656,6 +664,7 @@ impl Client {
             bar,
             overlay,
             center: self.center_items.clone(),
+            deathmatch: self.gametype == HUD_GAME_DEATHMATCH,
         }
     }
 
@@ -800,6 +809,18 @@ impl Client {
         self.models.get(index).and_then(Option::as_ref)
     }
 
+    /// The name of precached model `index`, such as `progs/soldier.mdl` (CLIENT-1.5).
+    #[must_use]
+    pub fn model_name(&self, index: usize) -> Option<&str> {
+        self.model_names.get(index).map(String::as_str)
+    }
+
+    /// Every precached model's name, index 0 empty (CLIENT-1.5).
+    #[must_use]
+    pub fn model_names(&self) -> &[String] {
+        &self.model_names
+    }
+
     /// The light styles' strings (CLIENT-1.4).
     #[must_use]
     pub fn lightstyles(&self) -> &[Vec<u8>] {
@@ -876,7 +897,11 @@ impl Client {
     /// The scene after [`Client::frame`]: what the renderer draws.
     #[must_use]
     pub fn scene(&mut self) -> Scene {
-        let refdef = self.render_view();
+        let mut refdef = self.render_view();
+        // `R_DrawViewModel`: no weapon while invisible or dead (REND-4.11).
+        if self.items & IT_INVISIBILITY != 0 || self.stats[stat::HEALTH] <= 0 {
+            refdef.weapon.model = 0;
+        }
         let weapon_poses = if refdef.weapon.model == 0 {
             None
         } else {
@@ -888,6 +913,7 @@ impl Client {
             .statics
             .iter()
             .map(|e| SceneEntity {
+                entity: 0,
                 model: e.model,
                 origin: e.origin,
                 angles: e.angles,
@@ -900,6 +926,7 @@ impl Client {
             .collect();
         Scene {
             time: self.time,
+            maxclients: self.maxclients,
             entities: self.visedicts.clone(),
             statics,
             view: refdef,
@@ -1838,6 +1865,7 @@ impl Client {
             .filter(|m| matches!(m.kind, ModelKind::Alias { .. }))
             .map(|m| setup_alias_frame(ent, m, time, lerp.models));
         SceneEntity {
+            entity: i,
             model: ent.model,
             origin,
             angles,
@@ -1913,6 +1941,7 @@ impl Client {
                 count = count.saturating_add(1);
                 let roll = int_to_float(rand.rand().checked_rem(360).unwrap_or(0));
                 self.visedicts.push(SceneEntity {
+                    entity: 0,
                     model,
                     origin: org,
                     angles: [pitch, yaw, roll],

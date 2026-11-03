@@ -182,12 +182,14 @@ decide how bright and how smooth a frame looks.
 ## REND-4 Alias models
 
 **Source:** `WinQuake/gl_rmain.c`, `R_DrawAliasModel`, `R_SetupAliasFrame`,
-`GL_DrawAliasFrame` and `R_RotateForEntity`; `WinQuake/gl_model.c`, `Mod_FloodFillSkin`,
-`Mod_LoadAllSkins` and `Mod_LoadAliasGroup`; `WinQuake/gl_mesh.c`, `BuildTris`;
-`WinQuake/gl_rlight.c`, `R_LightPoint` and `RecursiveLightPoint`; `WinQuake/anorm_dots.h`;
-`WinQuake/cl_main.c`, `CL_RelinkEntities`; `WinQuake/mathlib.c`, `anglemod`; `WinQuake/gl_vidnt.c`,
-`VID_SetPalette` (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`). The colour clamp
-is OpenGL 1.1, section 2.13.6.
+`GL_DrawAliasFrame`, `R_DrawViewModel` and `R_RotateForEntity`; `WinQuake/gl_model.c`,
+`Mod_FloodFillSkin`, `Mod_LoadAllSkins` and `Mod_LoadAliasGroup`; `WinQuake/gl_mesh.c`,
+`BuildTris`; `WinQuake/gl_rlight.c`, `R_LightPoint` and `RecursiveLightPoint`;
+`WinQuake/anorm_dots.h`; `WinQuake/cl_main.c`, `CL_RelinkEntities`; `WinQuake/mathlib.c`,
+`anglemod`; `WinQuake/gl_vidnt.c`, `VID_SetPalette`
+(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`). The colour clamp is OpenGL 1.1,
+section 2.13.6. The pose blend is `Quake/r_alias.c`, `GL_DrawAliasFrame`
+(sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`).
 
 GLQuake draws an alias model (`.mdl`: monsters, weapons, items, torches) as one pose of
 triangles, turned and moved to its entity, its skin modulated by a shade per vertex from the
@@ -245,7 +247,7 @@ world's light below the entity.
   is capped at 128, and when `ambientlight + shadelight > 192`, `shadelight` becomes
   `192 - ambientlight`. Then `progs/flame2.mdl` and `progs/flame.mdl` are set to 256 ("make
   torches full light"), and `shadelight` is divided by 200. The view model's floor of 24, the
-  players' floor of 8 and dynamic lights are not drawn yet.
+  players' floor of 8 and the dynamic lights come before the caps: REND-4.11.
 - **REND-4.8** The shade of a vertex is `shadedots[lightnormalindex] * shadelight`, with
   `shadedots` the row `((int)(angles[1] * (SHADEDOT_QUANT / 360.0))) & (SHADEDOT_QUANT - 1)` of
   `r_avertexnormal_dots`, 16 rows of 256 entries. It is given to `glColor3f`, so it is clamped
@@ -255,6 +257,20 @@ world's light below the entity.
 - **REND-4.9** A model whose header has `EF_ROTATE` (items and weapons) is drawn with yaw
   `bobjrotate = anglemod(100*cl.time)` (`CL_RelinkEntities`), with `anglemod (a)` of the float
   `a` being `(360.0/65536) * ((int)(a*(65536/360.0)) & 65535)`.
+- **REND-4.11** Before REND-4.7's caps, `R_DrawAliasModel` raises the view model's
+  (`cl.viewent`) `ambientlight` and `shadelight` to 24 when below it; then for every live
+  dynamic light (`die >= cl.time`) adds `add = radius - |origin - light origin|` to both when
+  `add > 0` (`ambientlight += add` converts the float to `int`, toward zero); then raises a
+  player's (entity 1 to `cl.maxclients`) to 8 when below it. `R_DrawViewModel` draws nothing
+  while `cl.items & IT_INVISIBILITY` or `cl.stats[STAT_HEALTH] <= 0`, and draws the view model
+  with `glDepthRange (gldepthmin, gldepthmin + 0.3*(gldepthmax-gldepthmin))`, the nearest 0.3
+  of the depth range, after the scene and before the water ("hack the depth range to prevent
+  view model from poking into walls").
+- **REND-4.12** QuakeSpasm's `GL_DrawAliasFrame` blends two poses when they differ: a vertex
+  is `verts1->v * iblend + verts2->v * blend` with `blend` the entity's lerp fraction
+  (CLIENT-7.3) and `iblend = 1 - blend`, and its shade dot `shadedots[n1] * iblend +
+  shadedots[n2] * blend` from the two poses' normals; equal poses draw the first with no
+  blend. The preview host draws the blend; GLQuake (REND-4.4) is the `blend` 0 case.
 
 - **REND-4.10** `R_LightPoint (p)` is 255 in a map with no lighting lump. Otherwise it follows
   the line from `p` to 2048 units below it through the world's nodes from node 0: on a node it
@@ -329,8 +345,8 @@ beside it: a red, green and blue sample for each byte of the lighting lump.
 ## REND-7 Dynamic lights
 
 **Source:** `WinQuake/gl_rlight.c`, `R_PushDlights`, `R_MarkLights`, `R_RenderDlights`,
-`R_RenderDlight`, `AddLightBlend`; `WinQuake/gl_rsurf.c`, `R_AddDynamicLights`
-(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
+`R_RenderDlight`, `AddLightBlend`; `WinQuake/gl_rsurf.c`, `R_AddDynamicLights`,
+`R_BuildLightMap`, `R_DrawBrushModel` (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
 
 The client's dynamic lights (CLIENT-5.5, CLIENT-5.7) light the faces near them for a frame.
 
@@ -357,6 +373,10 @@ The client's dynamic lights (CLIENT-5.5, CLIENT-5.7) light the faces near them f
   drawn as a fan of 16 triangles of radius `radius * 0.35` facing the view, additive, with
   the centre `(0.2, 0.1, 0)` and the rim black, and no face is marked; a light the eye is
   inside adds `(1, 0.5, 0)` at `radius * 0.0003` to the view blend (VIEW-4.6).
+- **REND-7.5** `R_DrawBrushModel` marks a brush entity's own faces the same way (REND-7.1)
+  from its model's `hulls[0].firstclipnode`, the model's first node, when the model's
+  `firstmodelsurface` is not 0, with the light's origin as it is in the world: the planes are
+  the model's own, so a moved entity is lit as if it stood where its model was built.
 
 ### Constants
 

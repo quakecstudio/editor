@@ -12,7 +12,9 @@ publish.workspace = true
 egui-wgpu = { workspace = true }
 epaint = { workspace = true }
 qs-bsp = { workspace = true }
+qs-client = { workspace = true }
 qs-mdl = { workspace = true }
+qs-wad = { workspace = true }
 
 [dev-dependencies]
 # A headless wgpu device for the GPU tests.

@@ -96,6 +96,7 @@ enum qs_client::particles::ParticleType
 enum qs_client::view::Contents
 field qs_client::client::Hud.bar
 field qs_client::client::Hud.center
+field qs_client::client::Hud.deathmatch
 field qs_client::client::Hud.overlay
 field qs_client::client::LerpSettings.models
 field qs_client::client::LerpSettings.moves
@@ -182,6 +183,7 @@ field qs_client::scene::Scene.blend
 field qs_client::scene::Scene.entities
 field qs_client::scene::Scene.lights
 field qs_client::scene::Scene.lightstyles
+field qs_client::scene::Scene.maxclients
 field qs_client::scene::Scene.particles
 field qs_client::scene::Scene.statics
 field qs_client::scene::Scene.time
@@ -189,6 +191,7 @@ field qs_client::scene::Scene.view
 field qs_client::scene::Scene.weapon_poses
 field qs_client::scene::SceneEntity.angles
 field qs_client::scene::SceneEntity.colormap
+field qs_client::scene::SceneEntity.entity
 field qs_client::scene::SceneEntity.frame
 field qs_client::scene::SceneEntity.model
 field qs_client::scene::SceneEntity.origin
@@ -243,6 +246,8 @@ fn qs_client::client::Client::lightstyles
 fn qs_client::client::Client::maxclients
 fn qs_client::client::Client::message_time
 fn qs_client::client::Client::model
+fn qs_client::client::Client::model_name
+fn qs_client::client::Client::model_names
 fn qs_client::client::Client::new
 fn qs_client::client::Client::onground
 fn qs_client::client::Client::particles

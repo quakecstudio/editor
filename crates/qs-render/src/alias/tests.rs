@@ -8,9 +8,11 @@
 
 use qs_mdl::mdl::{MDL_EF_ROTATE, MDL_MAGIC, MDL_VERSION};
 
+use qs_client::{DynamicLight, PoseBlend};
+
 use super::{
-    AliasEntity, AliasModel, AliasVertex, bob_rotate, flood_fill_skin, rotate_for_entity,
-    shade_dots, shade_light,
+    AliasEntity, AliasKind, AliasModel, AliasVertex, bob_rotate, entity_light, flood_fill_skin,
+    rotate_for_entity, shade_dots, shade_light,
 };
 use crate::mesh::Palette;
 
@@ -36,6 +38,8 @@ struct MdlSpec {
     flags: i32,
     /// The normal index of every vertex.
     normal: u8,
+    /// The normal index of every vertex of each frame, where set, else `normal`.
+    frame_normals: Vec<u8>,
 }
 
 impl Default for MdlSpec {
@@ -47,6 +51,7 @@ impl Default for MdlSpec {
             facesfront: 1,
             flags: 0,
             normal: 0,
+            frame_normals: Vec::new(),
         }
     }
 }
@@ -103,19 +108,20 @@ fn mdl(spec: &MdlSpec) -> Vec<u8> {
     for v in [0, 1, 2] {
         int(&mut out, v);
     }
-    let pose = |out: &mut Vec<u8>, v: [u8; 3]| {
+    let pose = |out: &mut Vec<u8>, v: [u8; 3], normal: u8| {
         out.extend([0, 0, 0, 0, 255, 255, 255, 0]);
         out.extend([b'f'; 16]);
         for _ in 0..3 {
             out.extend(v);
-            out.push(spec.normal);
+            out.push(normal);
         }
     };
-    for frame in &spec.frames {
+    for (i, frame) in spec.frames.iter().enumerate() {
+        let normal = spec.frame_normals.get(i).copied().unwrap_or(spec.normal);
         match frame {
             FrameSpec::Single(v) => {
                 int(&mut out, 0);
-                pose(&mut out, *v);
+                pose(&mut out, *v, normal);
             }
             FrameSpec::Group(poses, intervals) => {
                 int(&mut out, 1);
@@ -125,7 +131,7 @@ fn mdl(spec: &MdlSpec) -> Vec<u8> {
                     float(&mut out, *interval);
                 }
                 for v in poses {
-                    pose(&mut out, *v);
+                    pose(&mut out, *v, normal);
                 }
             }
         }
@@ -144,13 +150,7 @@ fn read(spec: &MdlSpec, name: &str) -> AliasModel {
 }
 
 fn entity() -> AliasEntity {
-    AliasEntity {
-        origin: [0.0; 3],
-        angles: [0.0; 3],
-        frame: 0,
-        skin: 0,
-        light: 100,
-    }
+    AliasEntity::new([0.0; 3], [0.0; 3], 0, 0, 100)
 }
 
 fn draw(model: &AliasModel, entity: &AliasEntity, time: f64) -> (Vec<AliasVertex>, usize) {
@@ -439,6 +439,79 @@ fn shade_dots_follow_the_yaw_and_clamp() {
     assert_eq!(shade, 1.23 * 0.25);
     let bright = read(&MdlSpec::default(), "progs/flame.mdl");
     assert_eq!(draw(&bright, &entity(), 0.0).0[0].shade, 1.0);
+}
+
+// spec REND-4.12: two poses blend by the lerp fraction, positions and shade dots alike;
+// equal poses draw the first
+#[test]
+fn poses_blend_by_the_fraction() {
+    let model = read(
+        &MdlSpec {
+            frames: vec![FrameSpec::Single([1, 2, 3]), FrameSpec::Single([3, 6, 9])],
+            frame_normals: vec![0, 1],
+            ..MdlSpec::default()
+        },
+        "progs/x.mdl",
+    );
+    let blended = |previous, current, blend| {
+        let e = AliasEntity {
+            light: 50,
+            blend: Some(PoseBlend {
+                previous,
+                current,
+                blend,
+            }),
+            ..entity()
+        };
+        let vertex = draw(&model, &e, 0.0).0[0];
+        (vertex.position, vertex.shade)
+    };
+    // Scale 2 and origin (10, 20, 30): (1, 2, 3) is (12, 24, 36) and (3, 6, 9) is (16, 32, 48).
+    assert_eq!(blended(0, 1, 0.0), ([12.0, 24.0, 36.0], 1.23 * 0.25));
+    assert_eq!(blended(0, 1, 1.0), ([16.0, 32.0, 48.0], 1.30 * 0.25));
+    let (position, shade) = blended(0, 1, 0.5);
+    assert_eq!(position, [14.0, 28.0, 42.0]);
+    assert!(
+        (shade - (1.23 * 0.5 + 1.30 * 0.5) * 0.25).abs() < 1e-6,
+        "{shade}"
+    );
+    assert_eq!(blended(1, 1, 0.5), ([16.0, 32.0, 48.0], 1.30 * 0.25));
+    // A pose the model does not have draws the other.
+    assert_eq!(blended(0, 9, 0.5), ([12.0, 24.0, 36.0], 1.23 * 0.25));
+    // No blend: the frame at the time, as GLQuake draws it (REND-4.4).
+    let e = AliasEntity {
+        frame: 1,
+        ..entity()
+    };
+    assert_eq!(draw(&model, &e, 0.0).0[0].position, [16.0, 32.0, 48.0]);
+}
+
+// spec REND-4.11: the view model's floor of 24, then each live light's radius less its
+// distance when positive, truncated, then a player's floor of 8
+#[test]
+fn entity_light_adds_the_floors_and_the_lights() {
+    let light = |origin, radius| DynamicLight {
+        origin,
+        radius,
+        minlight: 0.0,
+    };
+    assert_eq!(entity_light(10, AliasKind::ViewModel, [0.0; 3], &[]), 24);
+    assert_eq!(entity_light(30, AliasKind::ViewModel, [0.0; 3], &[]), 30);
+    assert_eq!(entity_light(0, AliasKind::Player, [0.0; 3], &[]), 8);
+    assert_eq!(entity_light(0, AliasKind::Other, [0.0; 3], &[]), 0);
+    // 100 away from a light of radius 150.5: 50.5 added, as an int 50.
+    let lights = [
+        light([100.0, 0.0, 0.0], 150.5),
+        light([0.0, 300.0, 0.0], 100.0),
+    ];
+    assert_eq!(entity_light(10, AliasKind::Other, [0.0; 3], &lights), 60);
+    // The floors come in order: the view model's before the lights, the player's after.
+    assert_eq!(
+        entity_light(10, AliasKind::ViewModel, [0.0; 3], &lights),
+        74
+    );
+    assert_eq!(entity_light(0, AliasKind::Player, [0.0; 3], &lights), 50);
+    assert_eq!(entity_light(-100, AliasKind::Player, [0.0; 3], &lights), 8);
 }
 
 // spec REND-4.9: an EF_ROTATE model's yaw is anglemod(100*time), in steps of 360/65536

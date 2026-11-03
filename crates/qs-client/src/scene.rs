@@ -20,6 +20,8 @@ pub struct PoseBlend {
 /// One entity to draw.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SceneEntity {
+    /// Its slot, `cl_entities`' index; 0 for a temporary or a static entity.
+    pub entity: usize,
     /// Its model precache index.
     pub model: usize,
     /// Where it is drawn, interpolated (CLIENT-5.4, CLIENT-7.4).
@@ -63,6 +65,8 @@ pub struct SceneParticle {
 pub struct Scene {
     /// The client's clock.
     pub time: f32,
+    /// `cl.maxclients`: entities 1 to this are players (REND-4.11).
+    pub maxclients: usize,
     /// The entities in the visible list, the temporary entities last (CLIENT-5.6, CLIENT-6.4).
     pub entities: Vec<SceneEntity>,
     /// The static entities (CLIENT-1.3).

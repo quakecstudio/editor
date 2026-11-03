@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_rmain.c, R_DrawAliasModel, R_SetupAliasFrame, GL_DrawAliasFrame, R_RotateForEntity
@@ -7,11 +9,13 @@
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_mesh.c, BuildTris
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/cl_main.c, CL_RelinkEntities
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/mathlib.c, anglemod
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/r_alias.c, GL_DrawAliasFrame
 
 //! Alias models, the `.mdl` monsters, weapons, items and torches, as GLQuake draws them
 //! (REND-4): each skin through the palette, each frame's vertices turned and moved to the
 //! entity and shaded by the light below it.
 
+use qs_client::{DynamicLight, PoseBlend};
 use qs_mdl::mdl::{MDL_EF_ROTATE, MDL_HEADER_SIZE, Mdl, MdlFrameEntry};
 
 use crate::anorm_dots::{R_AVERTEXNORMAL_DOTS, SHADEDOT_QUANT};
@@ -27,6 +31,10 @@ const TORCH_LIGHT: i32 = 256;
 const SHADE_SCALE: f32 = 200.0;
 /// The models given full light (REND-4.7).
 const TORCHES: [&str; 2] = ["progs/flame2.mdl", "progs/flame.mdl"];
+/// `if (e == &cl.viewent && ambientlight < 24)`: the view model's floor (REND-4.11).
+const VIEW_MODEL_FLOOR: i32 = 24;
+/// `if (ambientlight < 8)` for a player: the players' floor (REND-4.11).
+const PLAYER_FLOOR: i32 = 8;
 /// `(int)(cl.time*10) & 3`: a skin group's frames step ten times a second, over four slots
 /// (REND-4.2).
 const SKIN_RATE: f64 = 10.0;
@@ -84,6 +92,46 @@ pub struct AliasEntity {
     pub skin: usize,
     /// `R_LightPoint` at its origin (REND-4.10).
     pub light: i32,
+    /// The poses it blends between (CLIENT-7.3), `None` to draw `frame` at the time as
+    /// GLQuake does (REND-4.4).
+    pub blend: Option<PoseBlend>,
+    /// What floor its light has (REND-4.11).
+    pub kind: AliasKind,
+}
+
+/// Which entity an alias model is drawn for, which sets its light's floor (REND-4.11).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AliasKind {
+    /// Any other entity: no floor.
+    #[default]
+    Other,
+    /// The weapon in the player's hands, `cl.viewent`: a floor of 24.
+    ViewModel,
+    /// A player, entity 1 to `maxclients`: a floor of 8.
+    Player,
+}
+
+impl AliasEntity {
+    /// An entity at `origin` turned by `angles`, showing `frame` with `skin`, lit by `light`,
+    /// drawn as GLQuake draws one.
+    #[must_use]
+    pub const fn new(
+        origin: [f32; 3],
+        angles: [f32; 3],
+        frame: usize,
+        skin: usize,
+        light: i32,
+    ) -> Self {
+        Self {
+            origin,
+            angles,
+            frame,
+            skin,
+            light,
+            blend: None,
+            kind: AliasKind::Other,
+        }
+    }
 }
 
 /// A frame's poses, `maliasframedesc_t` (REND-4.4).
@@ -197,18 +245,41 @@ impl AliasModel {
     pub fn draw(&self, entity: &AliasEntity, time: f64, out: &mut Vec<AliasVertex>) -> usize {
         let shadelight = shade_light(entity.light, self.torch);
         let dots = shade_dots(entity.angles[1]);
-        let pose = self.pose(entity.frame, time);
-        let vertices = self.poses.get(pose).map_or(&[][..], Vec::as_slice);
+        // REND-4.4 or, blending, CLIENT-7.3: the two poses and how far between them.
+        let (from, to, blend) = match entity.blend {
+            Some(PoseBlend {
+                previous,
+                current,
+                blend,
+            }) => (previous, current, blend),
+            None => {
+                let pose = self.pose(entity.frame, time);
+                (pose, pose, 0.0)
+            }
+        };
+        let from = self.poses.get(from).map_or(&[][..], Vec::as_slice);
+        let to = self.poses.get(to).map_or(from, Vec::as_slice);
         let [pitch, yaw, roll] = entity.angles;
         // R_RotateForEntity turns an alias model by -angles[0] about y (REND-4.5).
         let turn = [-pitch, yaw, roll];
+        let iblend = 1.0 - blend;
         out.extend(self.corners.iter().filter_map(|corner| {
-            let &(position, normal) = vertices.get(corner.vertex)?;
-            let dot = dots.get(usize::from(normal)).copied().unwrap_or(0.0);
+            let &(position1, normal1) = from.get(corner.vertex)?;
+            let &(position2, normal2) = to.get(corner.vertex).unwrap_or(&(position1, normal1));
+            let dot = |normal: u8| dots.get(usize::from(normal)).copied().unwrap_or(0.0);
+            // REND-4.12: `verts1->v * iblend + verts2->v * blend`, and the shade dots the same.
+            let mut position = position1;
+            for (p, (a, b)) in position
+                .iter_mut()
+                .zip(position1.into_iter().zip(position2))
+            {
+                *p = a * iblend + b * blend;
+            }
+            let shade = dot(normal1) * iblend + dot(normal2) * blend;
             Some(AliasVertex {
                 position: rotate_for_entity(entity.origin, turn, position),
                 texture: corner.texture,
-                shade: (dot * shadelight).clamp(0.0, 1.0),
+                shade: (shade * shadelight).clamp(0.0, 1.0),
             })
         }));
         self.skin(entity.skin, time)
@@ -252,6 +323,43 @@ pub fn shade_light(light: i32, torch: bool) -> f32 {
         light.min(SHADE_CAP.saturating_sub(ambient))
     };
     f32_of_i32(shade) / SHADE_SCALE
+}
+
+/// `R_DrawAliasModel`'s light before the caps: `R_LightPoint` at `origin`, `light`, raised
+/// to the view model's floor of 24, then each dynamic light's `radius - distance` when above
+/// 0 added, then a player's floor of 8 (REND-4.11). The caps and the torches are
+/// [`shade_light`].
+#[must_use]
+pub fn entity_light(light: i32, kind: AliasKind, origin: [f32; 3], lights: &[DynamicLight]) -> i32 {
+    let mut light = match kind {
+        AliasKind::ViewModel => light.max(VIEW_MODEL_FLOOR),
+        AliasKind::Other | AliasKind::Player => light,
+    };
+    for dlight in lights {
+        let [dx, dy, dz] = [
+            origin[0] - dlight.origin[0],
+            origin[1] - dlight.origin[1],
+            origin[2] - dlight.origin[2],
+        ];
+        let add = dlight.radius - (dx * dx + dy * dy + dz * dz).sqrt();
+        if add > 0.0 {
+            // `ambientlight += add` adds the float to an int: truncated toward zero.
+            light = light.saturating_add(truncate_i32(add));
+        }
+    }
+    match kind {
+        AliasKind::Player => light.max(PLAYER_FLOOR),
+        AliasKind::Other | AliasKind::ViewModel => light,
+    }
+}
+
+/// C's float to int conversion toward zero, of a light's addition (REND-4.11).
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "spec REND-4.11: `ambientlight += add` converts the float to an int toward zero"
+)]
+fn truncate_i32(value: f32) -> i32 {
+    value as i32
 }
 
 /// The row of `r_avertexnormal_dots` for a yaw of `yaw` degrees,

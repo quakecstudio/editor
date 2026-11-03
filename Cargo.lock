@@ -3145,9 +3145,11 @@ dependencies = [
  "epaint",
  "qc-progs",
  "qs-bsp",
+ "qs-client",
  "qs-mdl",
  "qs-sim",
  "qs-vfs",
+ "qs-wad",
 ]
 
 [[package]]

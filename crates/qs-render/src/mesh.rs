@@ -2,6 +2,7 @@
 // Copyright (C) 1996-1997 Id Software, Inc.
 // Copyright (C) 2026 QuakeC Studio contributors
 //
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_rlight.c, R_PushDlights, R_MarkLights
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_rsurf.c, BuildSurfaceDisplayList, GL_CreateSurfaceLightmap, R_BuildLightMap
 
 //! A BSP's world surfaces as the GPU draws them (REND-1): each face a fan of triangles with its
@@ -13,6 +14,7 @@
 //! ported.
 
 use qs_bsp::{Bsp, Face, Lit, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo};
+use qs_client::DynamicLight;
 
 use crate::alias::rotate_for_entity;
 use crate::styles::LightStyles;
@@ -25,6 +27,15 @@ pub const GAMMA: f32 = 0.7;
 const PALETTE_BYTES: usize = 768;
 /// `t >>= 7` in `R_BuildLightMap` (REND-1.13).
 const LIGHT_SHIFT: u32 = 7;
+/// `blocklights[t*smax + s] += (rad - dist)*256`: a dynamic light's share of a texel is in
+/// the same 8.8 units as a style's (REND-7.2).
+const DLIGHT_SCALE: f32 = 256.0;
+/// `blocklights[i] = 255*256` for a map with no light data (REND-1.5).
+const FULL_BRIGHT_SUM: u32 = 255 * 256;
+/// The world units of one lightmap texel, `s*16` (REND-7.2).
+const TEXEL_UNITS: f32 = 16.0;
+/// `MAX_DLIGHTS`: the lights `R_PushDlights` marks, one bit each (REND-7.1).
+pub const REND_MAX_DLIGHTS: usize = 32;
 /// QuakeSpasm's `DIST_EPSILON`, `(0.03125)`, by which `gl_zfix` moves a brush entity
 /// (REND-1.12).
 const ZFIX: f32 = 0.031_25;
@@ -220,11 +231,21 @@ impl MapMesh {
     /// Makes [`MapMesh::lightmap`] again for `styles` when a style some face reads changed
     /// since it was made; whether it did (REND-5.5).
     pub fn relight(&mut self, styles: &LightStyles) -> bool {
-        if !self.lightmaps.stale(styles) {
+        self.relight_with(styles, &[])
+    }
+
+    /// [`MapMesh::relight`] with the frame's dynamic lights added to the faces they reach
+    /// (REND-7.1, REND-7.2): the atlas is made again when a style changed, when a light
+    /// marks a face this frame, or when one did last frame and must be taken off.
+    pub fn relight_with(&mut self, styles: &LightStyles, lights: &[DynamicLight]) -> bool {
+        let marks = self.lightmaps.mark_lights(lights);
+        let lit = marks.iter().any(|&m| m != 0);
+        if !self.lightmaps.stale(styles) && !lit && !self.lightmaps.lit {
             return false;
         }
-        self.lightmap = self.lightmaps.image(styles);
+        self.lightmap = self.lightmaps.image_with(styles, lights, &marks);
         self.lightmaps.applied = *styles;
+        self.lightmaps.lit = lit;
         true
     }
 }
@@ -365,8 +386,16 @@ impl<'p> MeshBuilder<'p> {
         let mut by_texture: Vec<Vec<Polygon>> = vec![Vec::new(); bsp.textures.len()];
         // A surface has one lightmap, shared by every entity drawing its model.
         let mut placed = vec![None; bsp.faces.len()];
+        // Each face's slot in the atlas, for the lights to mark (REND-7.1).
+        let mut slots = vec![None; bsp.faces.len()];
+        let mut roots = Vec::new();
         for placement in placements {
             let model = bsp.models.get(placement.model).ok_or(MeshError::NoWorld)?;
+            // REND-7.1 and REND-7.5: the lights walk the world's nodes and a brush model's
+            // own, but not an instanced model's (`firstmodelsurface` of 0).
+            if self.bounds.is_none() || model.firstface != 0 {
+                roots.push(model.headnode.first().copied().unwrap_or(0));
+            }
             // The first model added is the world, drawn before every entity (REND-1.11).
             if self.bounds.is_none() {
                 self.bounds = Some((model.mins, model.maxs));
@@ -396,7 +425,13 @@ impl<'p> MeshBuilder<'p> {
                 };
                 let place = match placed.get(number).copied().flatten() {
                     Some(place) => place,
-                    None if surface == Surface::Lit => self.atlas.place(face, bsp, lit)?,
+                    None if surface == Surface::Lit => {
+                        let place = self.atlas.place(face, bsp, lit)?;
+                        if let Some(slot) = slots.get_mut(number) {
+                            *slot = Some(self.atlas.faces.len().saturating_sub(1));
+                        }
+                        place
+                    }
                     None => self.atlas.full_bright(),
                 };
                 if let Some(slot) = placed.get_mut(number) {
@@ -418,6 +453,7 @@ impl<'p> MeshBuilder<'p> {
                 }
             }
         }
+        self.atlas.trees.push(Tree::new(bsp, &slots, roots));
         // A texture with a palette of its own is read through it; the others through the
         // mesh's (MAP-24).
         let palette_of = |slot: usize| extras.palette(slot).unwrap_or(self.palette);
@@ -609,17 +645,98 @@ enum Colour {
 }
 
 /// One face's light and where it is in the atlas.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 struct PlacedLight {
     at: [usize; 2],
     size: [usize; 2],
     light: FaceLight,
+    /// The face's plane, for the lights' distance (REND-7.2).
+    plane: ([f32; 3], f32),
+    /// The texinfo's vectors, for a light's impact in texture coordinates (REND-7.2).
+    vecs: [[f32; 4]; 2],
+    texturemins: [i16; 2],
+}
+
+/// One node of a model's tree as `R_MarkLights` walks it: its plane, its children (a leaf
+/// when negative) and the atlas slots of its faces (REND-7.1).
+#[derive(Clone, Debug, PartialEq)]
+struct LightNode {
+    plane: ([f32; 3], f32),
+    children: [i32; 2],
+    faces: Vec<usize>,
+}
+
+/// The nodes of one BSP added to the mesh, and the root of each of its models drawn: the
+/// world's, and each brush model's `hulls[0].firstclipnode` (REND-7.1, REND-7.5).
+#[derive(Clone, Debug, PartialEq)]
+struct Tree {
+    nodes: Vec<LightNode>,
+    roots: Vec<i32>,
+}
+
+impl Tree {
+    fn new(bsp: &Bsp<'_>, slots: &[Option<usize>], roots: Vec<i32>) -> Self {
+        let nodes = bsp
+            .nodes
+            .iter()
+            .map(|node| {
+                let plane = bsp
+                    .planes
+                    .get(node.planenum)
+                    .map_or(([0.0; 3], 0.0), |p| (p.normal, p.dist));
+                let faces = (node.firstface..node.firstface.saturating_add(node.numfaces))
+                    .filter_map(|n| slots.get(n).copied().flatten())
+                    .collect();
+                LightNode {
+                    plane,
+                    children: node.children,
+                    faces,
+                }
+            })
+            .collect();
+        Self { nodes, roots }
+    }
+
+    /// `R_MarkLights`: sets `bit` in `marks` for every face of a node the light's sphere
+    /// straddles, down from `root` (REND-7.1). A tree is never deeper than its node count;
+    /// a cycle in a damaged one ends there.
+    fn mark(&self, light: &DynamicLight, bit: u32, root: i32, marks: &mut [u32], depth: usize) {
+        // "if (node->contents < 0) return": a leaf.
+        let Some(node) = usize::try_from(root).ok().and_then(|n| self.nodes.get(n)) else {
+            return;
+        };
+        let Some(depth) = depth.checked_sub(1) else {
+            return;
+        };
+        let (normal, dist) = node.plane;
+        let dist = dot3(light.origin, normal) - dist;
+        let [front, back] = node.children;
+        if dist > light.radius {
+            self.mark(light, bit, front, marks, depth);
+            return;
+        }
+        if dist < -light.radius {
+            self.mark(light, bit, back, marks, depth);
+            return;
+        }
+        for &face in &node.faces {
+            if let Some(mark) = marks.get_mut(face) {
+                *mark |= bit;
+            }
+        }
+        self.mark(light, bit, front, marks, depth);
+        self.mark(light, bit, back, marks, depth);
+    }
+}
+
+fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
 /// Every face's light, packed into rows of one texture with a full-bright texel at its corner
 /// for the faces that have no lightmap, and made into an image for the light styles' values
 /// at a time (REND-1.3 to REND-1.6, REND-5, REND-6).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Lightmaps {
     faces: Vec<PlacedLight>,
     /// The next free column of the current row, the row's top and its height.
@@ -627,6 +744,10 @@ pub struct Lightmaps {
     height: usize,
     /// The styles the image was last made for.
     applied: LightStyles,
+    /// Each BSP's nodes, which the dynamic lights are pushed through (REND-7.1).
+    trees: Vec<Tree>,
+    /// Whether a dynamic light lit the image last made.
+    lit: bool,
 }
 
 /// The tallest atlas, the height every GPU wgpu supports.
@@ -639,7 +760,28 @@ impl Lightmaps {
             cursor: [1, 0, 1],
             height: 1,
             applied: LightStyles::unset(),
+            trees: Vec::new(),
+            lit: false,
         }
+    }
+
+    /// `R_PushDlights`: each live light (radius not 0) pushed through every model's nodes;
+    /// each face's bits, one per light, in the lights' order, the first 32 (REND-7.1,
+    /// REND-7.5).
+    fn mark_lights(&self, lights: &[DynamicLight]) -> Vec<u32> {
+        let mut marks = vec![0_u32; self.faces.len()];
+        for (i, light) in lights.iter().take(REND_MAX_DLIGHTS).enumerate() {
+            if light.radius == 0.0 {
+                continue;
+            }
+            let bit = 1_u32 << u32::try_from(i).unwrap_or(0);
+            for tree in &self.trees {
+                for &root in &tree.roots {
+                    tree.mark(light, bit, root, &mut marks, tree.nodes.len());
+                }
+            }
+        }
+        marks
     }
 
     /// The texel that is always 255 (REND-1.6).
@@ -669,10 +811,21 @@ impl Lightmaps {
         }
         self.height = self.height.max(bottom);
         self.cursor = [column.saturating_add(smax), top, row_height];
+        let plane = bsp
+            .planes
+            .get(face.planenum)
+            .map_or(([0.0; 3], 0.0), |p| (p.normal, p.dist));
+        let vecs = bsp
+            .texinfo
+            .get(face.texinfo)
+            .map_or([[0.0; 4]; 2], |t| t.vecs);
         self.faces.push(PlacedLight {
             at: [column, top],
             size: [smax, tmax],
             light: face_light(face, bsp, lit),
+            plane,
+            vecs,
+            texturemins: face.texturemins,
         });
         Ok([column, top])
     }
@@ -684,13 +837,20 @@ impl Lightmaps {
     /// The atlas for `styles`: each texel's light in red, green and blue.
     #[must_use]
     pub fn image(&self, styles: &LightStyles) -> Image {
+        self.image_with(styles, &[], &[])
+    }
+
+    /// The atlas for `styles` with `lights` added to the faces `marks` give bits for
+    /// (REND-7.2).
+    fn image_with(&self, styles: &LightStyles, lights: &[DynamicLight], marks: &[u32]) -> Image {
         let mut rgba = vec![0_u8; ATLAS_WIDTH.saturating_mul(self.height).saturating_mul(4)];
         if let Some(corner) = rgba.get_mut(..4) {
             corner.copy_from_slice(&[255; 4]);
         }
-        for face in &self.faces {
+        for (index, face) in self.faces.iter().enumerate() {
             let [smax, tmax] = face.size;
-            let texels = face.light.texels(smax.saturating_mul(tmax), styles);
+            let bits = marks.get(index).copied().unwrap_or(0);
+            let texels = face.texels(styles, lights, bits);
             for t in 0..tmax {
                 for s in 0..smax {
                     let [r, g, b] = texels
@@ -728,12 +888,81 @@ impl Lightmaps {
     }
 }
 
+impl PlacedLight {
+    /// The face's texels for `styles`, with the lights whose bits are in `bits` added
+    /// (REND-7.2): `R_BuildLightMap`'s `blocklights`, then the shift and cap.
+    fn texels(&self, styles: &LightStyles, lights: &[DynamicLight], bits: u32) -> Vec<[u8; 3]> {
+        let [smax, tmax] = self.size;
+        let size = smax.saturating_mul(tmax);
+        // "set to full bright if no light data" skips the dynamic lights too.
+        if self.light == FaceLight::Full {
+            return vec![[255; 3]; size];
+        }
+        let (mut sums, colour) = self.light.sums(size, styles);
+        for (i, light) in lights.iter().take(REND_MAX_DLIGHTS).enumerate() {
+            if bits & (1_u32 << u32::try_from(i).unwrap_or(0)) == 0 {
+                continue;
+            }
+            self.add_dynamic_light(light, &mut sums);
+        }
+        sums.iter()
+            .map(|sum| sum.map(|channel| colour.texel(channel)))
+            .collect()
+    }
+
+    /// `R_AddDynamicLights` for one light (REND-7.2).
+    fn add_dynamic_light(&self, light: &DynamicLight, sums: &mut [[u32; 3]]) {
+        let (normal, plane_dist) = self.plane;
+        let dist = dot3(light.origin, normal) - plane_dist;
+        let rad = light.radius - dist.abs();
+        if rad < light.minlight {
+            return;
+        }
+        let minlight = rad - light.minlight;
+        let impact = [
+            light.origin[0] - normal[0] * dist,
+            light.origin[1] - normal[1] * dist,
+            light.origin[2] - normal[2] * dist,
+        ];
+        let [svec, tvec] = self.vecs;
+        let local = [
+            dot3(impact, [svec[0], svec[1], svec[2]]) + svec[3] - f32::from(self.texturemins[0]),
+            dot3(impact, [tvec[0], tvec[1], tvec[2]]) + tvec[3] - f32::from(self.texturemins[1]),
+        ];
+        let [smax, tmax] = self.size;
+        for t in 0..tmax {
+            // `td = local[1] - t*16`: the float assigned to an int, toward zero.
+            let td = truncate_i32(local[1] - f32_of_usize(t) * TEXEL_UNITS).wrapping_abs();
+            for s in 0..smax {
+                let sd = truncate_i32(local[0] - f32_of_usize(s) * TEXEL_UNITS).wrapping_abs();
+                let dist = if sd > td {
+                    sd.wrapping_add(td >> 1)
+                } else {
+                    td.wrapping_add(sd >> 1)
+                };
+                let dist = f32_of_i32(dist);
+                if dist < minlight
+                    && let Some(sum) = sums.get_mut(t.saturating_mul(smax).saturating_add(s))
+                {
+                    // `blocklights` is unsigned: the float product is converted toward zero.
+                    let add = truncate_u32((rad - dist) * DLIGHT_SCALE);
+                    for channel in sum {
+                        *channel = channel.wrapping_add(add);
+                    }
+                }
+            }
+        }
+    }
+}
+
 impl FaceLight {
-    /// The face's `size` texels for `styles`.
-    fn texels(&self, size: usize, styles: &LightStyles) -> Vec<[u8; 3]> {
+    /// `R_BuildLightMap`'s `blocklights` for `styles` before the dynamic lights, and how
+    /// they are read into texels: 0 for a face with no samples (REND-1.5), else the styles'
+    /// sums (REND-1.13).
+    fn sums(&self, size: usize, styles: &LightStyles) -> (Vec<[u32; 3]>, Colour) {
         match self {
-            Self::Full => vec![[255; 3]; size],
-            Self::Dark => vec![[0; 3]; size],
+            Self::Full => (vec![[FULL_BRIGHT_SUM; 3]; size], Colour::Grey),
+            Self::Dark => (vec![[0_u32; 3]; size], Colour::Grey),
             Self::Samples {
                 styles: used,
                 maps,
@@ -748,12 +977,38 @@ impl FaceLight {
                         }
                     }
                 }
-                sums.iter()
-                    .map(|sum| sum.map(|channel| colour.texel(channel)))
-                    .collect()
+                (sums, *colour)
             }
         }
     }
+}
+
+/// C's float to int conversion toward zero, of a texel distance (REND-7.2).
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "spec REND-7.2: `td = local[1] - t*16` assigns the float to an int, toward zero"
+)]
+fn truncate_i32(value: f32) -> i32 {
+    value as i32
+}
+
+/// C's float to unsigned conversion of a light's addition to `blocklights` (REND-7.2); the
+/// value is never negative, since `dist < minlight <= rad`.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "spec REND-7.2: `blocklights[...] += (rad - dist)*256` converts the float to unsigned"
+)]
+fn truncate_u32(value: f32) -> u32 {
+    value as u32
+}
+
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a texel distance in units, far below f32's exact range"
+)]
+const fn f32_of_i32(value: i32) -> f32 {
+    value as f32
 }
 
 impl Colour {

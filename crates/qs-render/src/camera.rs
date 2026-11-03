@@ -3,6 +3,8 @@
 //! A free camera in Quake's axes: x forward at yaw 0, y left, z up; yaw turns about z and
 //! pitch looks down when positive, as Quake's `angles` do.
 
+use crate::sprite::angle_vectors;
+
 /// Where the camera is and where it looks.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Camera {
@@ -85,30 +87,46 @@ impl Camera {
     /// `aspect` wide per unit of height, column-major as WGSL reads it.
     #[must_use]
     pub fn clip_from_world(&self, aspect: f32) -> [[f32; 4]; 4] {
-        let [f, r, u] = self.axes();
-        let o = self.origin;
-        // The view's rows: x right, y up, z backwards, as a right-handed view space looks
-        // down -z.
-        let view = [
-            [r[0], u[0], -f[0], 0.0],
-            [r[1], u[1], -f[1], 0.0],
-            [r[2], u[2], -f[2], 0.0],
-            [-dot(r, o), -dot(u, o), dot(f, o), 1.0],
-        ];
-        // REND-3.4: `CalcFov`: `x = width/tan(fov_x/360*M_PI)`, `fov_y = 2 atan(height/x)`.
-        let half_x = (self.fov_x.to_radians() / 2.0).tan();
-        let half_y = half_x / aspect.max(f32::EPSILON);
-        let x = 1.0 / half_x;
-        let y = 1.0 / half_y;
-        let range = FAR / (NEAR - FAR);
-        let projection = [
-            [x, 0.0, 0.0, 0.0],
-            [0.0, y, 0.0, 0.0],
-            [0.0, 0.0, range, -1.0],
-            [0.0, 0.0, range * NEAR, 0.0],
-        ];
-        multiply(&projection, &view)
+        clip_from_axes(self.origin, self.axes(), self.fov_x, aspect)
     }
+
+    /// The matrix of a view from `origin` along `angles` (pitch, yaw and roll, as
+    /// `r_refdef.viewangles`) with a field of view of `fov_x` degrees across (REND-3.4).
+    #[must_use]
+    pub fn clip_from_view(
+        origin: [f32; 3],
+        angles: [f32; 3],
+        fov_x: f32,
+        aspect: f32,
+    ) -> [[f32; 4]; 4] {
+        let (forward, right, up) = angle_vectors(angles);
+        clip_from_axes(origin, [forward, right, up], fov_x, aspect)
+    }
+}
+
+/// The matrix of a view from `o` along the axes `f`, `r` and `u` with `fov_x` across.
+fn clip_from_axes(o: [f32; 3], [f, r, u]: [[f32; 3]; 3], fov_x: f32, aspect: f32) -> [[f32; 4]; 4] {
+    // The view's rows: x right, y up, z backwards, as a right-handed view space looks
+    // down -z.
+    let view = [
+        [r[0], u[0], -f[0], 0.0],
+        [r[1], u[1], -f[1], 0.0],
+        [r[2], u[2], -f[2], 0.0],
+        [-dot(r, o), -dot(u, o), dot(f, o), 1.0],
+    ];
+    // REND-3.4: `CalcFov`: `x = width/tan(fov_x/360*M_PI)`, `fov_y = 2 atan(height/x)`.
+    let half_x = (fov_x.to_radians() / 2.0).tan();
+    let half_y = half_x / aspect.max(f32::EPSILON);
+    let x = 1.0 / half_x;
+    let y = 1.0 / half_y;
+    let range = FAR / (NEAR - FAR);
+    let projection = [
+        [x, 0.0, 0.0, 0.0],
+        [0.0, y, 0.0, 0.0],
+        [0.0, 0.0, range, -1.0],
+        [0.0, 0.0, range * NEAR, 0.0],
+    ];
+    multiply(&projection, &view)
 }
 
 fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
