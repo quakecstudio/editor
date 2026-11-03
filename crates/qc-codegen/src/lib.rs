@@ -156,18 +156,20 @@ pub fn compile(units: &[Unit<'_>], options: Options) -> Result<Compiled, Compile
         .iter()
         .map(|u| lower_file(u.parse, Dialect::Vanilla))
         .collect();
-    let lines: Vec<LineIndex> = units
-        .iter()
-        .map(|u| LineIndex::new(&u.parse.syntax().text()))
-        .collect();
     let vanilla = ResolveOptions {
         dialect: Dialect::Vanilla,
         ..ResolveOptions::default()
     };
+    // Each unit is indexed by line once, the first time a statement comes from it.
+    let mut lines: HashMap<FileId, LineIndex> = HashMap::new();
     compile_lowered(units, &decls, vanilla, options, |file, at| {
-        lines
-            .get(file.index())
-            .map_or(0, |index| line_at(index, at))
+        let Some(unit) = units.get(file.index()) else {
+            return 0;
+        };
+        let index = lines
+            .entry(file)
+            .or_insert_with(|| LineIndex::new(&unit.parse.syntax().text()));
+        line_at(index, at)
     })
 }
 
