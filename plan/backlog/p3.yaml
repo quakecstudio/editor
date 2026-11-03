@@ -390,6 +390,7 @@ issues:
   depends:
   - P3-31
   - P3-32
+  - P3-33
   - P3-22
   - P3-23
   - P3-24
@@ -627,3 +628,26 @@ issues:
   - 'A test citing PRJ-5.1: typing `#include "b.qh"` in an open file makes a name `b.qh` declares resolve, and deleting the line makes it unknown again, with no save between'
   verify:
   - cargo test -p qc-ide
+- key: P3-33
+  title: Drive client commands in the differential to bring crmod7 to the bar
+  labels:
+  - L4-bridges
+  - area:compiler
+  - type:test
+  size: M
+  reqs:
+  - COMP-8
+  summary: |
+    Left from P2-157 (#661), where Justin accepted crmod7 below the bar on 2026-11-03: `cargo xtask compiler-diff --full crmod7` finds 0 divergences but executes 87.7% of statements (195160 of 222549), short of DIFF-12.5's 90%. Its largest unexecuted functions are reached through the commands a client types, which vkQuake hands to the progs' `SV_ParseClientCommand` (Novum/vkQuake@27789d7333a46674474d871137bb71e056719628, Quake/sv_user.c, `SV_ReadClientMessage`: for a `clc_stringcmd` not starting `spawn`, `begin` or `prespawn`, PARM0 is the string, `time` the server's and `self` the client), and through a match's end: `webhook_stats_info` (2803 of 2911 statements unexecuted), `SV_ParseClientCommand` (1330 of 1505), `ClientObituary` (785 of 976), `json_append_lastscores`, `match_log_score` and `json_emit_match_document`. Its `worldspawn` scenario also stops at setup, the minimal map having no `info_player_deathmatch`.
+  depends:
+  - P2-157
+  deliverable:
+  - 'crates/qs-differential and oracles/vm/scenario.c: a scenario directive that sends a client a string command at a frame, run as vkQuake runs it, with its statement in docs/spec/differential.md (DIFF-2) and the scenario vectors updated'
+  - 'crates/qs-differential/src/runner/fixtures.rs: crmod7 scenarios that connect a client fully, type the commands its `SV_ParseClientCommand` dispatches and play a match to its end, and an `info_player_deathmatch` in the minimal map'
+  - 'xtask/src/compiler_diff.rs and .github/workflows/differential.yml: crmod7 added to `MODS_AT_BAR` and the nightly compiler differential'
+  acceptance:
+  - '`cargo xtask compiler-diff --full crmod7` passes: no divergence and at least 90% of statements executed'
+  - 'The codebases already at the bar stay there: `cargo xtask compiler-diff --full` passes on each'
+  verify:
+  - cargo xtask compiler-diff --full crmod7
+  - cargo test -p qs-differential
