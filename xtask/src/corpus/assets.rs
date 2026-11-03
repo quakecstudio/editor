@@ -18,8 +18,8 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
 use qs_pak::Pak;
+use qs_vfs::zip::{Zip, ZipError};
 
-use super::archive::Zip;
 use super::fetch::{base_dir, codebase_files, remove_partial, write_file};
 use super::manifest::{Entry, Manifest};
 use super::safe_member;
@@ -108,7 +108,7 @@ fn fetch_archive(e: &Entry, dest: &Path, net: &dyn Net) -> Result<PathBuf, Strin
 fn extract(e: &Entry, archive: &Path, dest: &Path) -> Result<PathBuf, String> {
     let out = dest.join(&e.id);
     // Opened only when a member is not already extracted.
-    let mut zip: Option<Zip> = None;
+    let mut zip: Option<Zip<File>> = None;
     for (name, want) in &e.members {
         let rel = name
             .strip_prefix(e.strip.as_str())
@@ -122,6 +122,7 @@ fn extract(e: &Entry, archive: &Path, dest: &Path) -> Result<PathBuf, String> {
             Some(zip) => zip,
             None => zip.insert(
                 File::open(archive)
+                    .map_err(ZipError::from)
                     .and_then(Zip::open)
                     .map_err(|x| format!("{}: {x}", archive.display()))?,
             ),

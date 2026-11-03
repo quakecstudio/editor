@@ -17,6 +17,7 @@
 //! `qs-pak` (`docs/spec/pak.md`) and `gfx.wad` is checked with `qs-wad` (WAD-1.4).
 
 mod host;
+pub mod zip;
 
 #[cfg(test)]
 mod fixtures;
@@ -29,6 +30,7 @@ use std::path::{Path, PathBuf};
 
 use qs_pak::{Pak, PakError};
 use qs_wad::{Wad, WadError};
+use zip::Zip;
 
 pub use host::{DirEntry, EntryKind, HostFs, StdFs, find_entry};
 use host::{components, resolve};
@@ -63,6 +65,10 @@ pub const FS_POP_TABLE: [u16; 128] = [
     0x0000, 0x0000, 0x0000, 0x0000, 0x6500, 0x0000, 0x0000, 0x0000, //
     0x0000, 0x0000, 0x0000, 0x0000, 0x6400, 0x0000, 0x0000, 0x0000, //
 ];
+
+/// The rerelease's archive of the files it keeps beside its game directories, in its base
+/// directory (FS-5.3).
+pub const RRE_KPF: &str = "QuakeEX.kpf";
 
 /// Why the search path could not be built or a file could not be read. The messages are
 /// id's where id has one.
@@ -277,6 +283,8 @@ impl LoadedFile {
 #[derive(Debug)]
 pub struct Vfs<H> {
     host: H,
+    /// The base directory, `com_basedir`, without a trailing separator (FS-1.2).
+    basedir: PathBuf,
     elements: Vec<Element>,
     game_dir: String,
     modified: bool,
@@ -307,6 +315,7 @@ impl<H: HostFs> Vfs<H> {
             host,
             elements: Vec::new(),
             game_dir: String::new(),
+            basedir: PathBuf::new(),
             modified: false,
             proghack: false,
             registered: true,
@@ -329,6 +338,7 @@ impl<H: HostFs> Vfs<H> {
         if basedir.ends_with(['/', '\\']) {
             basedir.pop();
         }
+        self.basedir = PathBuf::from(&basedir);
         self.com_add_game_directory(&basedir, FS_GAMENAME)?;
         if com_check_parm(args, "-rogue").is_some() {
             self.com_add_game_directory(&basedir, "rogue")?;
@@ -584,6 +594,45 @@ impl<H: HostFs> Vfs<H> {
             return Ok(None);
         };
         self.read(&file).map(|bytes| Some(LoadedFile::new(bytes)))
+    }
+
+    /// Finds and reads `name` as the rerelease's engine reads a file it keeps beside its game
+    /// directories, QuakeSpasm's `LOC_LoadFile`: on the search path (FS-3), else as
+    /// `<basedir>/<name>`, else as the member `name` of `<basedir>/QuakeEX.kpf` (FS-5.5), each
+    /// path found as FS-3.7 finds a name in a directory. `None` when none has it, and wherever
+    /// `LOC_LoadFile` goes to `fail`: a base directory file that is empty or cannot be read, and
+    /// an archive that is no zip this reads or whose member cannot be read.
+    ///
+    /// Implements RRE-1.10.
+    ///
+    /// # Errors
+    ///
+    /// As [`Vfs::read`], for a file on the search path.
+    pub fn load_rerelease(&self, name: &str) -> Result<Option<Vec<u8>>, VfsError> {
+        if let Some(file) = self.load(name.as_bytes())? {
+            return Ok(Some(file.into_bytes()));
+        }
+        let parts: Vec<&str> = name.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
+        // A file that does not open is `rw == NULL`, and the archive is tried; one that opens
+        // and is empty is `sz <= 0`, `goto fail`; one whose read fails leaves `calloc`'s
+        // zeros, no text.
+        let loose = resolve(&self.host, &self.basedir, &parts, EntryKind::File)
+            .and_then(|path| self.host.open(&path).ok());
+        if let Some(mut file) = loose {
+            let mut bytes = Vec::new();
+            let read = file.read_to_end(&mut bytes);
+            return Ok((read.is_ok() && !bytes.is_empty()).then_some(bytes));
+        }
+        let Some(kpf) = resolve(&self.host, &self.basedir, &[RRE_KPF], EntryKind::File) else {
+            return Ok(None);
+        };
+        let Ok(file) = self.host.open(&kpf) else {
+            return Ok(None);
+        };
+        Ok(Zip::open(file)
+            .and_then(|mut archive| archive.read(name))
+            .ok()
+            .flatten())
     }
 
     /// Loads the WAD2 file `name` through the search path and checks that it loads, as id's

@@ -295,6 +295,22 @@ checked.
   localization strings, such as `localization/loc_english.txt`, that the rerelease's
   progs and maps refer to). It is not an element of the search path: FS-3 never finds a
   file inside it.
+- **FS-5.5** A member of `QuakeEX.kpf` is read as QuakeSpasm's miniz reads it
+  (`mz_zip_reader_init`, `mz_zip_reader_extract_file_to_heap` with flags 0, PKWARE APPNOTE
+  6.3.3): the end of central directory record is found in the file's last 22 bytes plus its
+  comment, at most 65535, a file shorter than the record being no zip; an archive on another
+  disk than 0, unless both disk numbers are 1, or with entries on other disks is refused
+  (`MZ_ZIP_UNSUPPORTED_MULTIDISK`), as is one whose central directory is smaller than its
+  records; the central directory lists each member's name, flags, method, CRC-32, sizes and
+  local header offset; a member is found by its exact name, else the first whose name matches
+  ignoring ASCII case (`MZ_TOLOWER`, no `MZ_ZIP_FLAG_CASE_SENSITIVE`). A member of no
+  compressed bytes is empty, before any other check ("A directory or zero length file"); an
+  encrypted (flag bit 0 or 6) or patch (bit 5) member is refused; otherwise it is read past
+  its local header, stored (method 0) or deflated (8), to its stated size, and its bytes must
+  have its stated CRC-32 (`MZ_ZIP_CRC_CHECK_FAILED`). A zip64 archive or member, another
+  method, a central directory outside the file or ending early, a bad local header, or a
+  member shorter than its compressed size or inflating to another size is an error. QuakeC
+  Studio's reader is `qs_vfs::zip`, which the corpus tooling's zip downloads share.
 - **FS-5.4** QuakeC Studio does not model the KEX engine's per-user game directories
   (`Saved Games\Nightdive Studios\Quake`); the rerelease engine is a compile target only
   (ENG-8), and the search path is the one id's engine builds.
