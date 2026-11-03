@@ -29,7 +29,7 @@ use crate::math;
 use crate::mock::{
     BUILTIN_CHECKCLIENT_INTERVAL, BUILTIN_FL_FLY, BUILTIN_FL_NOTARGET, BUILTIN_FL_ONGROUND,
     BUILTIN_FL_SWIM, EngineProfile, LIMIT_MAX_DATAGRAM, LIMIT_MAX_LIGHTSTYLES, MessageDest,
-    MockEngine, Overflow, Precache,
+    MockEngine, Overflow, Precache, Unimplemented,
 };
 use crate::{atof, cstring, printf, strconv, strftime};
 
@@ -170,14 +170,20 @@ impl MockBuiltins {
             // 49 ChangeYaw is a pure movement builtin handled with movement.
             49 => self.b_changeyaw(context),
             // A number with no builtin is a PF_Fixme gap (BUILTIN-1.2); vkQuake's names the
-            // number and the function (BUILTIN-18.2).
-            _ => Err(BuiltinError::from(match self.engine.profile {
-                EngineProfile::Id => RuntimeError::Unimplemented,
-                EngineProfile::VkQuake => RuntimeError::UnimplementedBuiltin {
-                    number,
-                    name: called_name(context),
-                },
-            })),
+            // number and the function (BUILTIN-18.2). The compiler differential has it do
+            // nothing and return 0 (DIFF-12.26).
+            _ => match (self.engine.unimplemented, self.engine.profile) {
+                (Unimplemented::ReturnsZero, _) => write_return_vector(context, [0.0; 3]),
+                (Unimplemented::Error, EngineProfile::Id) => {
+                    Err(BuiltinError::from(RuntimeError::Unimplemented))
+                }
+                (Unimplemented::Error, EngineProfile::VkQuake) => {
+                    Err(BuiltinError::from(RuntimeError::UnimplementedBuiltin {
+                        number,
+                        name: called_name(context),
+                    }))
+                }
+            },
         }
     }
 }

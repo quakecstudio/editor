@@ -113,6 +113,9 @@ fn write_globals(host: &mut Host<'_>, ofs: usize, draw: &Draw) {
 pub(super) struct Pools {
     pub(super) numbers: Vec<u32>,
     pub(super) texts: Vec<Vec<u8>>,
+    /// Whether the statements call a precache builtin, so the function is a spawn function
+    /// that runs only while the server loads (DIFF-12.25).
+    pub(super) precaches: bool,
     /// The names of the fields whose field globals the statements name (DIFF-12.21).
     pub(super) fields: Vec<Vec<u8>>,
     /// The names of the float and string variables the statements name: globals whose value
@@ -130,6 +133,10 @@ pub(super) struct Pools {
 type ComparedByName = BTreeMap<Vec<u8>, Compared>;
 /// The pairs of names a function's statements compare with each other (DIFF-12.22).
 type Pairs = Vec<(Vec<u8>, Vec<u8>)>;
+
+/// The precache builtins' numbers (BUILTIN-10): a function calling one is a spawn function
+/// (DIFF-12.25).
+const PRECACHE_BUILTINS: [i32; 6] = [19, 20, 68, 75, 76, 77];
 
 /// The most indexes an accessor is called with (DIFF-12.24): past this an array is larger
 /// than any FTEQCC progs holds.
@@ -414,6 +421,7 @@ impl Pools {
             variables: variables.into_iter().collect(),
             compared: BTreeMap::new(),
             pairs: Vec::new(),
+            precaches: false,
         }
     }
 }
@@ -560,6 +568,7 @@ impl<'a, 'p> Drawer<'a, 'p> {
         let body = || (first..end).filter_map(|n| statements.get(usize::try_from(n).ok()?));
         let slots = body().flat_map(|s| [s.a, s.b, s.c]);
         let mut pools = Pools::of(self.progs, (&self.types, &self.names), slots);
+        pools.precaches = body().any(|s| self.calls_precache(&s));
         let parm_words: i32 = function
             .parm_size
             .iter()
@@ -605,6 +614,38 @@ impl<'a, 'p> Drawer<'a, 'p> {
                 .chain((0..count).map(f32_of_usize))
                 .collect(),
         )
+    }
+
+    /// Whether `statement` calls a precache builtin: `precache_sound` (19), `precache_model`
+    /// (20), `precache_file` (68) or their `2` forms (75, 76, 77) (DIFF-12.25).
+    fn calls_precache(&self, statement: &Statement) -> bool {
+        let Some(op) = Opcode::from_number(statement.op) else {
+            return false;
+        };
+        if !matches!(
+            op,
+            Opcode::Call0
+                | Opcode::Call1
+                | Opcode::Call2
+                | Opcode::Call3
+                | Opcode::Call4
+                | Opcode::Call5
+                | Opcode::Call6
+                | Opcode::Call7
+                | Opcode::Call8
+        ) {
+            return false;
+        }
+        let Some(function) = usize::try_from(statement.a)
+            .ok()
+            .and_then(|slot| self.progs.globals().get(slot))
+            .and_then(|value| usize::try_from(value.as_i32()).ok())
+            .and_then(|index| self.progs.functions().get(index))
+        else {
+            return false;
+        };
+        let number = function.first_statement.checked_neg().unwrap_or(0);
+        function.first_statement <= 0 && PRECACHE_BUILTINS.contains(&number)
     }
 
     /// An edict in use.
@@ -775,7 +816,9 @@ impl<'a, 'p> Drawer<'a, 'p> {
                 }
             }
         }
-        let server = if round % 8 == 7 {
+        // DIFF-12.25: a function that precaches runs while the server loads, as the game
+        // only ever runs it.
+        let server = if round % 8 == 7 || own.precaches {
             ServerState::Loading
         } else {
             ServerState::Active

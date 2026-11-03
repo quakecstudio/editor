@@ -874,7 +874,7 @@ mod bodies {
         reason = "test code: a failed unwrap, index, expect or overflow is a failed test"
     )]
 
-    use crate::mock::{EngineProfile, MessageDest, MockEngine, Precache};
+    use crate::mock::{EngineProfile, MessageDest, MockEngine, Precache, Unimplemented};
     use crate::{MockBuiltins, math};
     use qc_edict::system::{SYSTEM_GLOBALS, field_by_name, global_by_name};
     use qc_edict::{EDICT_SYS_GLOBALS_END, EdictNumber};
@@ -2090,6 +2090,32 @@ mod bodies {
         assert_eq!(bad.kind, ErrorKind::BadBuiltin);
         // An id builtin keeps id's behaviour: `random` returns a value in [0, 1).
         assert!(run_profiled(7, "random", EngineProfile::VkQuake).is_ok());
+    }
+
+    // spec DIFF-12.26: with `Unimplemented::ReturnsZero` a number with no builtin does nothing
+    // and returns 0, under either profile
+    #[test]
+    fn an_unimplemented_builtin_may_return_zero() {
+        for profile in [EngineProfile::Id, EngineProfile::VkQuake] {
+            let (strings, offsets) = string_table(&["gap"]);
+            let bytes = build_named_progs(5, 0, strings, offsets[0]);
+            let progs = Progs::read(&bytes).unwrap();
+            let mut machine = Machine::new(&progs, 0).unwrap();
+            let mut engine = MockEngine::new("test", 0, 1);
+            engine.profile = profile;
+            engine.unimplemented = Unimplemented::ReturnsZero;
+            let mut builtins = MockBuiltins::with_engine(engine);
+            machine
+                .execute_program(
+                    &progs,
+                    ServerState::Active,
+                    &mut builtins,
+                    &mut NoObserver,
+                    1,
+                )
+                .unwrap();
+            assert_eq!(machine.global(1).unwrap().as_i32(), 0, "OFS_RETURN is 0");
+        }
     }
 
     // spec BUILTIN-18.2: a number with no builtin is PF_Fixme's error, naming the number and

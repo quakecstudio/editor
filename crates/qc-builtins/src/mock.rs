@@ -139,6 +139,17 @@ pub const VKQUAKE_MAX_SOUNDS: usize = 2048;
 /// vkQuake's `MAX_MODELS` (BUILTIN-18.3).
 pub const VKQUAKE_MAX_MODELS: usize = 8192;
 
+/// What a builtin number the profile's dispatch does not implement does.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Unimplemented {
+    /// The engine's error: `PF_Fixme` (BUILTIN-1.2, BUILTIN-18.2).
+    #[default]
+    Error,
+    /// Nothing, returning 0: the compiler differential's choice, so a function a mod compiles
+    /// for another engine runs to its end in both progs (DIFF-12.26).
+    ReturnsZero,
+}
+
 /// Whose rules the mock follows where engines differ (BUILTIN-18).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum EngineProfile {
@@ -244,6 +255,9 @@ pub struct MockEngine {
     pub server_active: bool,
     /// Whose rules the mock follows (BUILTIN-18); id's unless the caller chooses another.
     pub profile: EngineProfile,
+    /// What a builtin number with no implementation does; the engine's error unless the
+    /// caller chooses otherwise (DIFF-12.26).
+    pub unimplemented: Unimplemented,
     /// The server clock `sv.time`, a `double` (DIFF-3.2): 1.0 at map start.
     ///
     /// `spawn` and `remove` read it for the edict reuse policy and `freetime` (EDICT-6,
@@ -425,6 +439,7 @@ impl MockEngine {
             clients_active: Vec::new(),
             server_active: false,
             profile: EngineProfile::Id,
+            unimplemented: Unimplemented::Error,
             clock: 1.0,
         }
     }

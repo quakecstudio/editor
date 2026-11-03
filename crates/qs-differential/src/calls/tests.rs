@@ -1490,3 +1490,46 @@ fn accessors_are_called_for_every_index() {
     assert!(super::draw::is_accessor(b"ArraySet*tab"));
     assert!(!super::draw::is_accessor(b"get"));
 }
+
+// spec DIFF-12.25: a function that precaches runs with the server loading in every round,
+// so its statements past the precache execute
+#[test]
+fn precaching_functions_run_loading() {
+    let source = "float x;\nvoid() worldspawn = { x = 1; };\n\
+        void(string s) precache_model = #20;\n\
+        void() spawn_thing = { precache_model(\"progs/t.mdl\"); x = 2; x = 3; x = 4; };\n";
+    let bytes = compile(source, false);
+    let progs = Progs::read(&bytes).unwrap();
+    let report = run(&bytes, &bytes, 4);
+    assert!(report.divergences.is_empty(), "{:?}", report.divergences);
+    let f = progs
+        .functions()
+        .iter()
+        .find(|f| progs.string(f.s_name) == Some(b"spawn_thing"))
+        .unwrap();
+    // Every statement of the body ran in rounds 0 to 3, none of which is an eighth round.
+    let body = f.first_statement..f.first_statement + 6;
+    let missed: Vec<i32> = body.filter(|s| !report.executed.contains(s)).collect();
+    assert!(missed.is_empty(), "{missed:?}");
+}
+
+// spec DIFF-12.26: a builtin number the profile does not implement does nothing and returns
+// 0 in the compiler differential, so the call runs on
+#[test]
+fn unimplemented_builtins_return_zero() {
+    let source = "float x;\nvoid() worldspawn = { x = 1; };\n\
+        float(float a) mystery = #5;\n\
+        void() f = { x = mystery(2) + 5; x = x + 1; };\n";
+    let bytes = compile(source, false);
+    let progs = Progs::read(&bytes).unwrap();
+    let report = run(&bytes, &bytes, 1);
+    assert!(report.divergences.is_empty(), "{:?}", report.divergences);
+    let f = progs
+        .functions()
+        .iter()
+        .find(|f| progs.string(f.s_name) == Some(b"f"))
+        .unwrap();
+    let body = f.first_statement..f.first_statement + 4;
+    let missed: Vec<i32> = body.filter(|s| !report.executed.contains(s)).collect();
+    assert!(missed.is_empty(), "{missed:?}");
+}

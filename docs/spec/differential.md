@@ -815,6 +815,19 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   `QCC_PR_EmitArrayGetFunction`, `QCC_PR_ArrayRecurseDivideRegular`,
   `QCC_PR_EmitArraySetFunction`, `QCC_PR_ArraySetRecurseDivide`; `engine/qclib/qccmain.c`,
   the `boundchecks` entry of `compiler_flag`.
+- **DIFF-12.25** A function whose statements call a precache builtin (`precache_sound`,
+  `precache_model`, `precache_file` or their `2` forms, BUILTIN-10) runs with the server
+  loading in every round, not only the eighth (DIFF-12.2): the game runs a spawn function
+  only while it loads, and the mock refuses a precache outside it (BUILTIN-10.1), which ended
+  seven calls in eight at the function's first precache, leaving what follows, Arcane
+  Dimensions' spawn functions among them, unexecuted.
+- **DIFF-12.26** In the compiler differential the mock engine runs a builtin number its
+  profile's dispatch does not implement as a call that does nothing and returns 0, counted
+  among the builtins called (DIFF-12.3), instead of the engine's `PF_Fixme` error
+  (BUILTIN-1.2, BUILTIN-18.2): the differential compares two compilers, and a mod's function
+  written for another engine's builtins, such as the CSQC drawing of Arcane Dimensions'
+  `Hud_Draw*` compiled into its server module, then runs to its end in both progs. The VM
+  differential (DIFF-1 to DIFF-11) keeps the error.
 - **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and
   Arcane Dimensions, are set up and called with the mock engine under vkQuake's profile
   (BUILTIN-18): crmod7 calls extension builtins while it sets up its world, and Arcane

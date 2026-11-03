@@ -20,7 +20,7 @@ use qc_edict::EdictNumber;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use qc_builtins::{EngineProfile, MockBuiltins};
+use qc_builtins::{EngineProfile, MockBuiltins, Unimplemented};
 use qc_progs::{Def, Progs};
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::{ErrorKind, Machine, Observer, RunError};
@@ -957,6 +957,9 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
     ) -> Result<Self, CallsError> {
         let mut host = Host::new(scenario, progs).map_err(CallsError::Refused)?;
         host.builtins.engine_mut().profile = profile;
+        // DIFF-12.26: a builtin the profile lacks does nothing here, so a function a mod
+        // compiles for another engine runs to its end.
+        host.builtins.engine_mut().unimplemented = Unimplemented::ReturnsZero;
         host.start_map(progs, entities)
             .map_err(|e| CallsError::Setup(format!("{e:?}")))?;
         for slot in 0..scenario.clients {
