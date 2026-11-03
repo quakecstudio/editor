@@ -1,0 +1,113 @@
+--- crates/qc-builtins/src/dispatch.rs
++++ replace MockBuiltins::dispatch -> Result<(), BuiltinError> with Ok(())
+@@ -87,109 +87,17 @@
+     fn engine_string(&self, value: i32) -> Option<&[u8]> {
+         self.engine.strings.text(value)
+     }
+ }
+ 
+ impl MockBuiltins {
+     /// Dispatches one builtin, returning a [`BuiltinError`] the caller maps to a [`RunError`].
+     fn dispatch(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+-        if self.engine.profile == EngineProfile::VkQuake
+-            && let Some(result) = self.vkquake_extension(number, context)
+-        {
+-            return result;
+-        }
+-        match number {
+-            // --- class pure: math and strings (BUILTIN-6, BUILTIN-7) ---
+-            1 => self.b_makevectors(context),
+-            7 => self.b_random(context),
+-            9 => self.b_normalize(context),
+-            12 => self.b_vlen(context),
+-            13 => self.b_vectoyaw(context),
+-            51 => self.b_vectoangles(context),
+-            36 => self.b_rint(context),
+-            37 => self.b_floor(context),
+-            38 => self.b_ceil(context),
+-            43 => self.b_fabs(context),
+-            26 => self.b_ftos(context),
+-            27 => self.b_vtos(context),
+-            // --- class pure: entities (BUILTIN-8) ---
+-            14 => self.b_spawn(context),
+-            15 => self.b_remove(context),
+-            18 => self.b_find(context),
+-            22 => self.b_findradius(context),
+-            47 => self.b_nextent(context),
+-            78 => self.b_setspawnparms(context),
+-            // --- class state: placing (BUILTIN-9) ---
+-            2 => self.b_setorigin(context),
+-            3 => self.b_setmodel(context),
+-            4 => self.b_setsize(context),
+-            // --- class state: precaching (BUILTIN-10) ---
+-            19 | 76 => self.b_precache(context, Precache::Sound),
+-            20 | 75 => self.b_precache(context, Precache::Model),
+-            68 | 77 => self.b_precache_file(context),
+-            // --- class output: printing, commands (BUILTIN-11) ---
+-            23 => self.b_bprint(context),
+-            24 => self.b_sprint(context),
+-            73 => self.b_centerprint(context),
+-            25 => self.b_dprint(context),
+-            21 => self.b_stuffcmd(context),
+-            46 => self.b_localcmd(context),
+-            70 => self.b_changelevel(context),
+-            45 => self.b_cvar(context),
+-            72 => self.b_cvar_set(context),
+-            // --- class output: sounds, particles, lightstyles, statics (BUILTIN-12) ---
+-            8 => self.b_sound(context),
+-            74 => self.b_ambientsound(context),
+-            48 => self.b_particle(context),
+-            35 => self.b_lightstyle(context),
+-            69 => self.b_makestatic(context),
+-            // --- class output: network messages (BUILTIN-13) ---
+-            // WriteByte, WriteChar, WriteShort, WriteLong, WriteCoord, WriteAngle.
+-            52 | 53 | 57 => self.b_write(context, 1),
+-            54 | 56 => self.b_write(context, 2),
+-            55 => self.b_write(context, 4),
+-            58 => self.b_write_string(context),
+-            59 => self.b_write_entity(context),
+-            // --- class world: answered by DIFF-7 ---
+-            16 => self.b_traceline(context),
+-            17 => self.b_checkclient(context),
+-            41 => self.b_pointcontents(context),
+-            40 => self.b_checkbottom(context),
+-            44 => self.b_aim(context),
+-            34 => self.b_droptofloor(context),
+-            32 => self.b_walkmove(context),
+-            67 => self.b_movetogoal(context),
+-            // --- class pure: errors and debugging (BUILTIN-16) ---
+-            6 => Err(BuiltinError::from(FatalError::BreakStatement)),
+-            10 => self.b_error(context),
+-            11 => self.b_objerror(context),
+-            // coredump, eprint: console only; eprint's e goes through NUM_FOR_EDICT (BUILTIN-16.5).
+-            28 => Ok(()),
+-            31 => read_parm_edictnum(context, 0).map(|_| ()),
+-            29 => self.b_traceon(context),
+-            30 => self.b_traceoff(context),
+-            // 49 ChangeYaw is a pure movement builtin handled with movement.
+-            49 => self.b_changeyaw(context),
+-            // A number with no builtin is a PF_Fixme gap (BUILTIN-1.2); vkQuake's names the
+-            // number and the function (BUILTIN-18.2). The compiler differential has it do
+-            // nothing and return 0 (DIFF-12.26).
+-            _ => match (self.engine.unimplemented, self.engine.profile) {
+-                (Unimplemented::ReturnsZero, _) => write_return_vector(context, [0.0; 3]),
+-                (Unimplemented::Error, EngineProfile::Id) => {
+-                    Err(BuiltinError::from(RuntimeError::Unimplemented))
+-                }
+-                (Unimplemented::Error, EngineProfile::VkQuake) => {
+-                    Err(BuiltinError::from(RuntimeError::UnimplementedBuiltin {
+-                        number,
+-                        name: called_name(context),
+-                    }))
+-                }
+-            },
+-        }
++        Ok(()) /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ // ===== class pure: math and strings (BUILTIN-6, BUILTIN-7) =====
+ 
+ impl MockBuiltins {
+     fn b_makevectors(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+         let ang = read_parm_vector(context, 0)?;

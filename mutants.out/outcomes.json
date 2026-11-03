@@ -1,0 +1,117 @@
+{
+  "outcomes": [
+    {
+      "scenario": "Baseline",
+      "summary": "Success",
+      "log_path": "log/baseline.log",
+      "diff_path": null,
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.353611916,
+          "process_status": "Success",
+          "argv": [
+            "/Users/jplock/.rustup/toolchains/1.99.0-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--cargo-profile=mutants",
+            "--verbose",
+            "--package=qc-builtins@2026.10.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.513774916,
+          "process_status": "Success",
+          "argv": [
+            "/Users/jplock/.rustup/toolchains/1.99.0-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--cargo-profile=mutants",
+            "--verbose",
+            "--package=qc-builtins@2026.10.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "crates/qc-builtins/src/dispatch.rs:95:9: replace MockBuiltins::dispatch -> Result<(), BuiltinError> with Ok(())",
+          "package": "qc-builtins",
+          "file": "crates/qc-builtins/src/dispatch.rs",
+          "function": {
+            "function_name": "MockBuiltins::dispatch",
+            "return_type": "-> Result<(), BuiltinError>",
+            "span": {
+              "start": {
+                "line": 93,
+                "column": 5
+              },
+              "end": {
+                "line": 188,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 95,
+              "column": 9
+            },
+            "end": {
+              "line": 187,
+              "column": 10
+            }
+          },
+          "replacement": "Ok(())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/crates__qc-builtins__src__dispatch.rs_line_95_col_9.log",
+      "diff_path": "diff/crates__qc-builtins__src__dispatch.rs_line_95_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.125846084,
+          "process_status": "Success",
+          "argv": [
+            "/Users/jplock/.rustup/toolchains/1.99.0-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--cargo-profile=mutants",
+            "--verbose",
+            "--package=qc-builtins@2026.10.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.34614225,
+          "process_status": {
+            "Failure": 100
+          },
+          "argv": [
+            "/Users/jplock/.rustup/toolchains/1.99.0-aarch64-apple-darwin/bin/cargo",
+            "nextest",
+            "run",
+            "--cargo-profile=mutants",
+            "--verbose",
+            "--package=qc-builtins@2026.10.0"
+          ]
+        }
+      ]
+    }
+  ],
+  "total_mutants": 1,
+  "missed": 0,
+  "caught": 1,
+  "timeout": 0,
+  "unviable": 0,
+  "success": 0,
+  "start_time": "2026-11-03T10:54:03.852707Z",
+  "end_time": "2026-11-03T10:54:09.456302Z",
+  "cargo_mutants_version": "27.1.0"
+}

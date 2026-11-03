@@ -1513,6 +1513,34 @@ fn precaching_functions_run_loading() {
     assert!(missed.is_empty(), "{missed:?}");
 }
 
+// spec DIFF-12.25: a function that precaches through another function it calls runs with the
+// server loading in every round too
+#[test]
+fn precaching_through_a_wrapper_runs_loading() {
+    let source = "float x;\nvoid() worldspawn = { x = 1; };\n\
+        void(string s) precache_model = #20;\n\
+        void(string s) precache_safe = { precache_model(s); };\n\
+        void(string s) precache_twice = { precache_safe(s); };\n\
+        void() spawn_thing = { precache_twice(\"progs/t.mdl\"); x = 2; x = 3; x = 4; };\n";
+    let bytes = compile(source, false);
+    let progs = Progs::read(&bytes).unwrap();
+    let report = run(&bytes, &bytes, 4);
+    assert!(report.divergences.is_empty(), "{:?}", report.divergences);
+    with_drawer_of(source, |drawer, progs| {
+        assert!(drawer.pools(function(progs, b"spawn_thing")).precaches);
+        assert!(drawer.pools(function(progs, b"precache_twice")).precaches);
+        assert!(!drawer.pools(function(progs, b"worldspawn")).precaches);
+    });
+    let f = progs
+        .functions()
+        .iter()
+        .find(|f| progs.string(f.s_name) == Some(b"spawn_thing"))
+        .unwrap();
+    let body = f.first_statement..f.first_statement + 6;
+    let missed: Vec<i32> = body.filter(|s| !report.executed.contains(s)).collect();
+    assert!(missed.is_empty(), "{missed:?}");
+}
+
 // spec DIFF-12.26: a builtin number the profile does not implement does nothing and returns
 // 0 in the compiler differential, so the call runs on
 #[test]
@@ -1548,6 +1576,8 @@ fn entity_variables_are_drawn() {
         let f = function(progs, b"f");
         let pools = drawer.pools(f);
         assert_eq!(pools.variables, [b"keeper".to_vec(), b"x".to_vec()]);
+        // Its comparison with the world marks the world among its values.
+        assert!(pools.compared[&b"keeper".to_vec()].world);
         let drawn = (1..8).filter(|&round| {
             let c = drawer.draw(&mut Rng::new(b"f", round), (f, &pools), round);
             c.globals.iter().any(|(name, _)| name == b"keeper")

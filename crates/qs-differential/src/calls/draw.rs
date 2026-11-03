@@ -144,6 +144,64 @@ fn is_entity_system_global(name: &[u8]) -> bool {
 /// (DIFF-12.25).
 const PRECACHE_BUILTINS: [i32; 6] = [19, 20, 68, 75, 76, 77];
 
+/// The function `statement` calls, when it is a `CALL` of a function global.
+fn called_function(progs: &Progs<'_>, statement: &Statement) -> Option<Function> {
+    let op = Opcode::from_number(statement.op)?;
+    if !matches!(
+        op,
+        Opcode::Call0
+            | Opcode::Call1
+            | Opcode::Call2
+            | Opcode::Call3
+            | Opcode::Call4
+            | Opcode::Call5
+            | Opcode::Call6
+            | Opcode::Call7
+            | Opcode::Call8
+    ) {
+        return None;
+    }
+    let slot = usize::try_from(statement.a).ok()?;
+    let index = usize::try_from(progs.globals().get(slot)?.as_i32()).ok()?;
+    progs.functions().get(index)
+}
+
+/// Whether `function` is a precache builtin: `precache_sound` (19), `precache_model` (20),
+/// `precache_file` (68) or their `2` forms (75, 76, 77) (DIFF-12.25).
+fn is_precache_builtin(function: Function) -> bool {
+    let number = function.first_statement.checked_neg().unwrap_or(0);
+    function.first_statement <= 0 && PRECACHE_BUILTINS.contains(&number)
+}
+
+/// DIFF-12.25: the first statement of every QuakeC function that calls a precache builtin,
+/// itself or through the functions it calls, to any depth; `bodies` is [`bodies`]'s.
+fn precaching(progs: &Progs<'_>, bodies: &BTreeMap<i32, i32>) -> BTreeSet<i32> {
+    let statements = progs.statements();
+    let calls = |first: i32| {
+        let end = bodies.get(&first).copied().unwrap_or(first);
+        (first..end)
+            .filter_map(move |n| statements.get(usize::try_from(n).ok()?))
+            .filter_map(|s| called_function(progs, &s))
+    };
+    let mut set: BTreeSet<i32> = bodies
+        .keys()
+        .copied()
+        .filter(|&first| calls(first).any(is_precache_builtin))
+        .collect();
+    loop {
+        let more: Vec<i32> = bodies
+            .keys()
+            .copied()
+            .filter(|first| !set.contains(first))
+            .filter(|&first| calls(first).any(|f| set.contains(&f.first_statement)))
+            .collect();
+        if more.is_empty() {
+            return set;
+        }
+        set.extend(more);
+    }
+}
+
 /// The most indexes an accessor is called with (DIFF-12.24): past this an array is larger
 /// than any FTEQCC progs holds.
 const MAX_ACCESSOR_INDEXES: usize = 65536;
@@ -223,6 +281,10 @@ fn record(compared: &mut ComparedByName, pairs: &mut Pairs, name: Vec<u8>, other
 /// a `LOAD` into a slot, a float or string variable, or a parameter in `parms`, compared with
 /// a constant by `EQ`, `NE`, `LT`, `GT`, `LE` or `GE`, masked by `BITAND` or `BITOR`, or
 /// tested by `IF`, `IFNOT` or `NOT`; a `STORE` carries the name to the slot stored to.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one pass over the statements: the operand reading and each opcode's recording"
+)]
 fn mine_compared(
     progs: &Progs<'_>,
     (types, names): (&BTreeMap<u32, DefType>, &BTreeMap<u32, Vec<u8>>),
@@ -263,8 +325,18 @@ fn mine_compared(
                         .map_or(Operand::Other, |text| Operand::Text(text.to_vec()))
                 }
             }
-            Some(DefType::Known(Etype::Entity)) if parms.contains(&slot) => {
-                name.cloned().map_or(Operand::Other, Operand::Named)
+            Some(DefType::Known(Etype::Entity)) => {
+                // DIFF-12.27: an entity variable, as a parameter, is a name whose compared
+                // values are drawn.
+                let variable = value.bits() == 0
+                    && !immediate
+                    && ofs != 0
+                    && name.is_some_and(|name| !is_entity_system_global(name));
+                if parms.contains(&slot) || variable {
+                    name.cloned().map_or(Operand::Other, Operand::Named)
+                } else {
+                    Operand::Other
+                }
             }
             _ => Operand::Other,
         }
@@ -362,11 +434,13 @@ fn mine_compared(
                 }
             }
             Opcode::EqE | Opcode::NeE => {
-                if let Operand::Named(name) | Operand::Zero(name) = operand(&loaded, a) {
-                    compared.entry(name).or_default().world = true;
-                }
-                if let Operand::Named(name) | Operand::Zero(name) = operand(&loaded, b) {
-                    compared.entry(name).or_default().world = true;
+                let (first, second) = (operand(&loaded, a), operand(&loaded, b));
+                for (name, other) in [(&first, &second), (&second, &first)] {
+                    let (Operand::Named(name) | Operand::Zero(name)) = name else {
+                        continue;
+                    };
+                    record(&mut compared, &mut pairs, name.clone(), other);
+                    compared.entry(name.clone()).or_default().world = true;
                 }
                 loaded.remove(&c);
             }
@@ -459,6 +533,9 @@ pub(super) struct Drawer<'a, 'p> {
     variables: BTreeMap<Vec<u8>, DefType>,
     /// The named fields of a type a value is drawn for.
     fields: BTreeMap<Vec<u8>, DefType>,
+    /// The first statement of each QuakeC function that calls a precache builtin, itself or
+    /// through the functions it calls (DIFF-12.25).
+    precaching: BTreeSet<i32>,
     /// For each QuakeC function by its first statement, the edicts in use whose function
     /// fields (`think`, `touch`, `use` and the rest) hold it (DIFF-12.15).
     owners: BTreeMap<i32, Vec<usize>>,
@@ -559,17 +636,20 @@ impl<'a, 'p> Drawer<'a, 'p> {
             .filter_map(|def| i32::try_from(def.ofs).ok());
         let mut all = Pools::of(progs, (&types, &names), slots);
         all.texts.extend(TEXTS.iter().map(|text| text.to_vec()));
+        let bodies = bodies(progs);
+        let precaching = precaching(progs, &bodies);
         Self {
             progs,
             all,
             types,
             names,
-            bodies: bodies(progs),
+            bodies,
             edicts: world.in_use(),
             owners,
             clients: u64::from(world.host.scenario.clients),
             variables,
             fields,
+            precaching,
         }
     }
 
@@ -586,7 +666,7 @@ impl<'a, 'p> Drawer<'a, 'p> {
         let body = || (first..end).filter_map(|n| statements.get(usize::try_from(n).ok()?));
         let slots = body().flat_map(|s| [s.a, s.b, s.c]);
         let mut pools = Pools::of(self.progs, (&self.types, &self.names), slots);
-        pools.precaches = body().any(|s| self.calls_precache(&s));
+        pools.precaches = self.precaching.contains(&first);
         let parm_words: i32 = function
             .parm_size
             .iter()
@@ -609,14 +689,46 @@ impl<'a, 'p> Drawer<'a, 'p> {
     /// then 0 up to the largest float constant its statements compare its index parameter,
     /// the first, with (the array's size, `QCC_PR_ArrayRecurseDivideRegular`'s last `min+1`
     /// or the bound check's `numslots`); `None` when it compares the index with nothing.
-    pub(super) fn accessor_indexes(&self, function: Function, own: &Pools) -> Option<Vec<f32>> {
-        let ofs = u32::try_from(function.parm_start).ok()?;
-        let name = self.names.get(&ofs)?;
-        let compared = own.compared.get(name)?;
-        let largest = compared
-            .numbers
-            .iter()
-            .map(|bits| f32::from_bits(*bits))
+    pub(super) fn accessor_indexes(&self, function: Function) -> Option<Vec<f32>> {
+        let index = function.parm_start;
+        let end = self.body_end(function.first_statement);
+        let statements = self.progs.statements();
+        let immediate = |slot: i32| {
+            let ofs = u32::try_from(slot).ok()?;
+            let named = self
+                .names
+                .get(&ofs)
+                .is_some_and(|name| name == b"IMMEDIATE");
+            let float = self.types.get(&ofs) == Some(&DefType::Known(Etype::Float));
+            (named && float)
+                .then(|| self.progs.globals().get(usize::try_from(slot).ok()?))
+                .flatten()
+                .map(|value| f32::from_bits(value.bits()))
+        };
+        let largest = (function.first_statement..end)
+            .filter_map(|n| statements.get(usize::try_from(n).ok()?))
+            .filter(|s| {
+                matches!(
+                    Opcode::from_number(s.op),
+                    Some(
+                        Opcode::Lt
+                            | Opcode::Gt
+                            | Opcode::Le
+                            | Opcode::Ge
+                            | Opcode::EqF
+                            | Opcode::NeF
+                    )
+                )
+            })
+            .filter_map(|s| {
+                if s.a == index {
+                    immediate(s.b)
+                } else if s.b == index {
+                    immediate(s.a)
+                } else {
+                    None
+                }
+            })
             .filter(|value| value.is_finite() && *value >= 0.0)
             .fold(None, |most: Option<f32>, value| {
                 Some(most.map_or(value, |m| m.max(value)))
@@ -632,38 +744,6 @@ impl<'a, 'p> Drawer<'a, 'p> {
                 .chain((0..count).map(f32_of_usize))
                 .collect(),
         )
-    }
-
-    /// Whether `statement` calls a precache builtin: `precache_sound` (19), `precache_model`
-    /// (20), `precache_file` (68) or their `2` forms (75, 76, 77) (DIFF-12.25).
-    fn calls_precache(&self, statement: &Statement) -> bool {
-        let Some(op) = Opcode::from_number(statement.op) else {
-            return false;
-        };
-        if !matches!(
-            op,
-            Opcode::Call0
-                | Opcode::Call1
-                | Opcode::Call2
-                | Opcode::Call3
-                | Opcode::Call4
-                | Opcode::Call5
-                | Opcode::Call6
-                | Opcode::Call7
-                | Opcode::Call8
-        ) {
-            return false;
-        }
-        let Some(function) = usize::try_from(statement.a)
-            .ok()
-            .and_then(|slot| self.progs.globals().get(slot))
-            .and_then(|value| usize::try_from(value.as_i32()).ok())
-            .and_then(|index| self.progs.functions().get(index))
-        else {
-            return false;
-        };
-        let number = function.first_statement.checked_neg().unwrap_or(0);
-        function.first_statement <= 0 && PRECACHE_BUILTINS.contains(&number)
     }
 
     /// An edict in use.

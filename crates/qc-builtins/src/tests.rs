@@ -2092,6 +2092,33 @@ mod bodies {
         assert!(run_profiled(7, "random", EngineProfile::VkQuake).is_ok());
     }
 
+    // spec DIFF-12.26: with `Unimplemented::ReturnsZero` a number past id's table stays the
+    // VM's error under id's profile; under vkQuake's it returns 0
+    #[test]
+    fn a_number_past_ids_table_stays_the_vms_error() {
+        for (profile, ok) in [(EngineProfile::Id, false), (EngineProfile::VkQuake, true)] {
+            let (strings, offsets) = string_table(&["ext"]);
+            let bytes = build_named_progs(500, 0, strings, offsets[0]);
+            let progs = Progs::read(&bytes).unwrap();
+            let mut machine = Machine::new(&progs, 0).unwrap();
+            let mut engine = MockEngine::new("test", 0, 1);
+            engine.profile = profile;
+            engine.unimplemented = Unimplemented::ReturnsZero;
+            let mut builtins = MockBuiltins::with_engine(engine);
+            let result = machine.execute_program(
+                &progs,
+                ServerState::Active,
+                &mut builtins,
+                &mut NoObserver,
+                1,
+            );
+            assert_eq!(result.is_ok(), ok, "{profile:?}: {result:?}");
+            if !ok {
+                assert_eq!(result.unwrap_err().kind, ErrorKind::BadBuiltin);
+            }
+        }
+    }
+
     // spec DIFF-12.26: with `Unimplemented::ReturnsZero` a number with no builtin does nothing
     // and returns 0, under either profile
     #[test]

@@ -1,0 +1,2267 @@
+
+*** crates/qc-builtins/src/dispatch.rs:95:9: replace MockBuiltins::dispatch -> Result<(), BuiltinError> with Ok(())
+
+*** mutation diff:
+--- crates/qc-builtins/src/dispatch.rs
++++ replace MockBuiltins::dispatch -> Result<(), BuiltinError> with Ok(())
+@@ -87,109 +87,17 @@
+     fn engine_string(&self, value: i32) -> Option<&[u8]> {
+         self.engine.strings.text(value)
+     }
+ }
+ 
+ impl MockBuiltins {
+     /// Dispatches one builtin, returning a [`BuiltinError`] the caller maps to a [`RunError`].
+     fn dispatch(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+-        if self.engine.profile == EngineProfile::VkQuake
+-            && let Some(result) = self.vkquake_extension(number, context)
+-        {
+-            return result;
+-        }
+-        match number {
+-            // --- class pure: math and strings (BUILTIN-6, BUILTIN-7) ---
+-            1 => self.b_makevectors(context),
+-            7 => self.b_random(context),
+-            9 => self.b_normalize(context),
+-            12 => self.b_vlen(context),
+-            13 => self.b_vectoyaw(context),
+-            51 => self.b_vectoangles(context),
+-            36 => self.b_rint(context),
+-            37 => self.b_floor(context),
+-            38 => self.b_ceil(context),
+-            43 => self.b_fabs(context),
+-            26 => self.b_ftos(context),
+-            27 => self.b_vtos(context),
+-            // --- class pure: entities (BUILTIN-8) ---
+-            14 => self.b_spawn(context),
+-            15 => self.b_remove(context),
+-            18 => self.b_find(context),
+-            22 => self.b_findradius(context),
+-            47 => self.b_nextent(context),
+-            78 => self.b_setspawnparms(context),
+-            // --- class state: placing (BUILTIN-9) ---
+-            2 => self.b_setorigin(context),
+-            3 => self.b_setmodel(context),
+-            4 => self.b_setsize(context),
+-            // --- class state: precaching (BUILTIN-10) ---
+-            19 | 76 => self.b_precache(context, Precache::Sound),
+-            20 | 75 => self.b_precache(context, Precache::Model),
+-            68 | 77 => self.b_precache_file(context),
+-            // --- class output: printing, commands (BUILTIN-11) ---
+-            23 => self.b_bprint(context),
+-            24 => self.b_sprint(context),
+-            73 => self.b_centerprint(context),
+-            25 => self.b_dprint(context),
+-            21 => self.b_stuffcmd(context),
+-            46 => self.b_localcmd(context),
+-            70 => self.b_changelevel(context),
+-            45 => self.b_cvar(context),
+-            72 => self.b_cvar_set(context),
+-            // --- class output: sounds, particles, lightstyles, statics (BUILTIN-12) ---
+-            8 => self.b_sound(context),
+-            74 => self.b_ambientsound(context),
+-            48 => self.b_particle(context),
+-            35 => self.b_lightstyle(context),
+-            69 => self.b_makestatic(context),
+-            // --- class output: network messages (BUILTIN-13) ---
+-            // WriteByte, WriteChar, WriteShort, WriteLong, WriteCoord, WriteAngle.
+-            52 | 53 | 57 => self.b_write(context, 1),
+-            54 | 56 => self.b_write(context, 2),
+-            55 => self.b_write(context, 4),
+-            58 => self.b_write_string(context),
+-            59 => self.b_write_entity(context),
+-            // --- class world: answered by DIFF-7 ---
+-            16 => self.b_traceline(context),
+-            17 => self.b_checkclient(context),
+-            41 => self.b_pointcontents(context),
+-            40 => self.b_checkbottom(context),
+-            44 => self.b_aim(context),
+-            34 => self.b_droptofloor(context),
+-            32 => self.b_walkmove(context),
+-            67 => self.b_movetogoal(context),
+-            // --- class pure: errors and debugging (BUILTIN-16) ---
+-            6 => Err(BuiltinError::from(FatalError::BreakStatement)),
+-            10 => self.b_error(context),
+-            11 => self.b_objerror(context),
+-            // coredump, eprint: console only; eprint's e goes through NUM_FOR_EDICT (BUILTIN-16.5).
+-            28 => Ok(()),
+-            31 => read_parm_edictnum(context, 0).map(|_| ()),
+-            29 => self.b_traceon(context),
+-            30 => self.b_traceoff(context),
+-            // 49 ChangeYaw is a pure movement builtin handled with movement.
+-            49 => self.b_changeyaw(context),
+-            // A number with no builtin is a PF_Fixme gap (BUILTIN-1.2); vkQuake's names the
+-            // number and the function (BUILTIN-18.2). The compiler differential has it do
+-            // nothing and return 0 (DIFF-12.26).
+-            _ => match (self.engine.unimplemented, self.engine.profile) {
+-                (Unimplemented::ReturnsZero, _) => write_return_vector(context, [0.0; 3]),
+-                (Unimplemented::Error, EngineProfile::Id) => {
+-                    Err(BuiltinError::from(RuntimeError::Unimplemented))
+-                }
+-                (Unimplemented::Error, EngineProfile::VkQuake) => {
+-                    Err(BuiltinError::from(RuntimeError::UnimplementedBuiltin {
+-                        number,
+-                        name: called_name(context),
+-                    }))
+-                }
+-            },
+-        }
++        Ok(()) /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ // ===== class pure: math and strings (BUILTIN-6, BUILTIN-7) =====
+ 
+ impl MockBuiltins {
+     fn b_makevectors(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+         let ang = read_parm_vector(context, 0)?;
+
+
+*** /Users/jplock/.rustup/toolchains/1.99.0-aarch64-apple-darwin/bin/cargo nextest run --no-run --cargo-profile=mutants --verbose --package=qc-builtins@2026.10.0
+   Compiling qc-builtins v2026.10.0 (/private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-661-iHFpGQ.tmp/crates/qc-builtins)
+warning: unused imports: `EngineProfile` and `Unimplemented`
+  --> crates/qc-builtins/src/dispatch.rs:31:22
+   |
+31 |     BUILTIN_FL_SWIM, EngineProfile, LIMIT_MAX_DATAGRAM, LIMIT_MAX_LIGHTSTYLES, MessageDest,
+   |                      ^^^^^^^^^^^^^
+32 |     MockEngine, Overflow, Precache, Unimplemented,
+   |                                     ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `number`
+  --> crates/qc-builtins/src/dispatch.rs:94:28
+   |
+94 |     fn dispatch(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+   |                            ^^^^^^ help: if this is intentional, prefix it with an underscore: `_number`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `context`
+  --> crates/qc-builtins/src/dispatch.rs:94:41
+   |
+94 |     fn dispatch(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+   |                                         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_context`
+
+warning: function `atof` is never used
+  --> crates/qc-builtins/src/atof.rs:10:15
+   |
+10 | pub(crate) fn atof(text: &[u8]) -> f64 {
+   |               ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `special` is never used
+  --> crates/qc-builtins/src/atof.rs:28:4
+   |
+28 | fn special(text: &[u8]) -> Option<f64> {
+   |    ^^^^^^^
+
+warning: function `decimal` is never used
+  --> crates/qc-builtins/src/atof.rs:39:4
+   |
+39 | fn decimal(text: &[u8]) -> f64 {
+   |    ^^^^^^^
+
+warning: function `hexadecimal` is never used
+  --> crates/qc-builtins/src/atof.rs:73:4
+   |
+73 | fn hexadecimal(text: &[u8]) -> Option<f64> {
+   |    ^^^^^^^^^^^
+
+warning: function `at` is never used
+  --> crates/qc-builtins/src/cstring.rs:13:4
+   |
+13 | fn at(text: &[u8], i: usize) -> u8 {
+   |    ^^
+
+warning: function `strncmp` is never used
+  --> crates/qc-builtins/src/cstring.rs:19:15
+   |
+19 | pub(crate) fn strncmp(a: &[u8], b: &[u8], n: Option<usize>) -> i32 {
+   |               ^^^^^^^
+
+warning: function `lower` is never used
+  --> crates/qc-builtins/src/cstring.rs:35:4
+   |
+35 | fn lower(byte: u8) -> i32 {
+   |    ^^^^^
+
+warning: function `strncasecmp` is never used
+  --> crates/qc-builtins/src/cstring.rs:41:15
+   |
+41 | pub(crate) fn strncasecmp(a: &[u8], b: &[u8], n: Option<usize>) -> i32 {
+   |               ^^^^^^^^^^^
+
+warning: function `strstr` is never used
+  --> crates/qc-builtins/src/cstring.rs:63:15
+   |
+63 | pub(crate) fn strstr(text: &[u8], needle: &[u8]) -> Option<usize> {
+   |               ^^^^^^
+
+warning: multiple methods are never used
+   --> crates/qc-builtins/src/dispatch.rs:102:8
+    |
+101 | impl MockBuiltins {
+    | ----------------- methods in this implementation
+102 |     fn b_makevectors(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^^
+...
+111 |     fn b_random(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^
+...
+116 |     fn b_normalize(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^
+...
+121 |     fn b_vlen(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+126 |     fn b_vectoyaw(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^
+...
+131 |     fn b_vectoangles(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^^
+...
+136 |     fn b_rint(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+141 |     fn b_floor(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^
+...
+146 |     fn b_ceil(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+151 |     fn b_fabs(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+157 |     fn b_ftos(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+164 |     fn b_vtos(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+172 |     fn b_traceon(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^
+...
+178 |     fn b_traceoff(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^
+
+warning: function `read_parm` is never used
+   --> crates/qc-builtins/src/dispatch.rs:187:4
+    |
+187 | fn read_parm(context: &mut Context<'_, '_>, n: u16) -> Result<Slot, BuiltinError> {
+    |    ^^^^^^^^^
+
+warning: function `read_parm_float` is never used
+   --> crates/qc-builtins/src/dispatch.rs:196:4
+    |
+196 | fn read_parm_float(context: &mut Context<'_, '_>, n: u16) -> Result<f32, BuiltinError> {
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `read_parm_int` is never used
+   --> crates/qc-builtins/src/dispatch.rs:201:4
+    |
+201 | fn read_parm_int(context: &mut Context<'_, '_>, n: u16) -> Result<i32, BuiltinError> {
+    |    ^^^^^^^^^^^^^
+
+warning: function `read_parm_vector` is never used
+   --> crates/qc-builtins/src/dispatch.rs:206:4
+    |
+206 | fn read_parm_vector(context: &mut Context<'_, '_>, n: u16) -> Result<[f32; 3], BuiltinError> {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `read_parm_raw` is never used
+   --> crates/qc-builtins/src/dispatch.rs:216:4
+    |
+216 | fn read_parm_raw(context: &mut Context<'_, '_>, n: u16) -> Result<i32, BuiltinError> {
+    |    ^^^^^^^^^^^^^
+
+warning: function `invalid_entity` is never used
+   --> crates/qc-builtins/src/dispatch.rs:221:4
+    |
+221 | fn invalid_entity() -> BuiltinError {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `invalid_string` is never used
+   --> crates/qc-builtins/src/dispatch.rs:227:4
+    |
+227 | fn invalid_string() -> BuiltinError {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `invalid_field` is never used
+   --> crates/qc-builtins/src/dispatch.rs:232:4
+    |
+232 | fn invalid_field() -> BuiltinError {
+    |    ^^^^^^^^^^^^^
+
+warning: function `num_for_edict_bad` is never used
+   --> crates/qc-builtins/src/dispatch.rs:238:4
+    |
+238 | fn num_for_edict_bad() -> BuiltinError {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `checked_edict` is never used
+   --> crates/qc-builtins/src/dispatch.rs:247:4
+    |
+247 | fn checked_edict(context: &mut Context<'_, '_>, value: i32) -> Result<EdictNumber, BuiltinError> {
+    |    ^^^^^^^^^^^^^
+
+warning: function `read_parm_edict` is never used
+   --> crates/qc-builtins/src/dispatch.rs:256:4
+    |
+256 | fn read_parm_edict(context: &mut Context<'_, '_>, n: u16) -> Result<EdictNumber, BuiltinError> {
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `entity_num_for` is never used
+   --> crates/qc-builtins/src/dispatch.rs:264:4
+    |
+264 | fn entity_num_for(context: &mut Context<'_, '_>, value: i32) -> Result<EdictNumber, BuiltinError> {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `read_parm_edictnum` is never used
+   --> crates/qc-builtins/src/dispatch.rs:273:4
+    |
+273 | fn read_parm_edictnum(context: &mut Context<'_, '_>, n: u16) -> Result<EdictNumber, BuiltinError> {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `resolve_string` is never used
+   --> crates/qc-builtins/src/dispatch.rs:282:4
+    |
+282 | fn resolve_string(
+    |    ^^^^^^^^^^^^^^
+
+warning: function `read_parm_string` is never used
+   --> crates/qc-builtins/src/dispatch.rs:304:4
+    |
+304 | fn read_parm_string(
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `joined_string` is never used
+   --> crates/qc-builtins/src/dispatch.rs:315:4
+    |
+315 | fn joined_string(
+    |    ^^^^^^^^^^^^^
+
+warning: function `checked_field` is never used
+   --> crates/qc-builtins/src/dispatch.rs:333:4
+    |
+333 | fn checked_field(context: &mut Context<'_, '_>, value: i32) -> Result<usize, BuiltinError> {
+    |    ^^^^^^^^^^^^^
+
+warning: function `write_return` is never used
+   --> crates/qc-builtins/src/dispatch.rs:342:4
+    |
+342 | fn write_return(context: &mut Context<'_, '_>, value: Slot) -> Result<(), BuiltinError> {
+    |    ^^^^^^^^^^^^
+
+warning: function `write_return_float` is never used
+   --> crates/qc-builtins/src/dispatch.rs:350:4
+    |
+350 | fn write_return_float(context: &mut Context<'_, '_>, value: f32) -> Result<(), BuiltinError> {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `write_return_int` is never used
+   --> crates/qc-builtins/src/dispatch.rs:355:4
+    |
+355 | fn write_return_int(context: &mut Context<'_, '_>, value: i32) -> Result<(), BuiltinError> {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `write_return_string` is never used
+   --> crates/qc-builtins/src/dispatch.rs:360:4
+    |
+360 | fn write_return_string(context: &mut Context<'_, '_>, value: i32) -> Result<(), BuiltinError> {
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `write_return_edict` is never used
+   --> crates/qc-builtins/src/dispatch.rs:365:4
+    |
+365 | fn write_return_edict(context: &mut Context<'_, '_>, number: i32) -> Result<(), BuiltinError> {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `write_return_vector` is never used
+   --> crates/qc-builtins/src/dispatch.rs:375:4
+    |
+375 | fn write_return_vector(context: &mut Context<'_, '_>, value: [f32; 3]) -> Result<(), BuiltinError> {
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `read_system_global` is never used
+   --> crates/qc-builtins/src/dispatch.rs:383:4
+    |
+383 | fn read_system_global(
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `write_system_global` is never used
+   --> crates/qc-builtins/src/dispatch.rs:394:4
+    |
+394 | fn write_system_global(
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `write_system_global_float` is never used
+   --> crates/qc-builtins/src/dispatch.rs:406:4
+    |
+406 | fn write_system_global_float(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `read_system_global_entity` is never used
+   --> crates/qc-builtins/src/dispatch.rs:415:4
+    |
+415 | fn read_system_global_entity(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `read_system_vector` is never used
+   --> crates/qc-builtins/src/dispatch.rs:423:4
+    |
+423 | fn read_system_vector(
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `write_system_vector` is never used
+   --> crates/qc-builtins/src/dispatch.rs:435:4
+    |
+435 | fn write_system_vector(
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `read_field` is never used
+   --> crates/qc-builtins/src/dispatch.rs:447:4
+    |
+447 | fn read_field(
+    |    ^^^^^^^^^^
+
+warning: function `read_field_float` is never used
+   --> crates/qc-builtins/src/dispatch.rs:460:4
+    |
+460 | fn read_field_float(
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `read_field_int` is never used
+   --> crates/qc-builtins/src/dispatch.rs:469:4
+    |
+469 | fn read_field_int(
+    |    ^^^^^^^^^^^^^^
+
+warning: function `read_field_vector` is never used
+   --> crates/qc-builtins/src/dispatch.rs:478:4
+    |
+478 | fn read_field_vector(
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `write_field` is never used
+   --> crates/qc-builtins/src/dispatch.rs:497:4
+    |
+497 | fn write_field(
+    |    ^^^^^^^^^^^
+
+warning: function `write_field_float` is never used
+   --> crates/qc-builtins/src/dispatch.rs:511:4
+    |
+511 | fn write_field_float(
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `write_field_int` is never used
+   --> crates/qc-builtins/src/dispatch.rs:521:4
+    |
+521 | fn write_field_int(
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `write_field_vector` is never used
+   --> crates/qc-builtins/src/dispatch.rs:532:4
+    |
+532 | fn write_field_vector(
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `parm_slot` is never used
+   --> crates/qc-builtins/src/dispatch.rs:556:4
+    |
+556 | fn parm_slot(n: u16) -> Result<i32, BuiltinError> {
+    |    ^^^^^^^^^
+
+warning: function `called_name` is never used
+   --> crates/qc-builtins/src/dispatch.rs:572:4
+    |
+572 | fn called_name(context: &Context<'_, '_>) -> String {
+    |    ^^^^^^^^^^^
+
+warning: methods `b_spawn`, `b_remove`, `b_find`, `b_nextent`, `b_findradius`, and `b_setspawnparms` are never used
+   --> crates/qc-builtins/src/dispatch.rs:602:8
+    |
+600 | impl MockBuiltins {
+    | ----------------- methods in this implementation
+601 |     /// `spawn()` (BUILTIN-8.1): id's `ED_Alloc`, failing fatally when none is left (EDICT-6.2).
+602 |     fn b_spawn(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^
+...
+615 |     fn b_remove(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^
+...
+624 |     fn b_find(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+656 |     fn b_nextent(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^
+...
+671 |     fn b_findradius(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^
+...
+705 |     fn b_setspawnparms(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `radius_delta` is never used
+   --> crates/qc-builtins/src/dispatch.rs:718:4
+    |
+718 | fn radius_delta(org: [f32; 3], origin: [f32; 3], mins: [f32; 3], maxs: [f32; 3]) -> [f32; 3] {
+    |    ^^^^^^^^^^^^
+
+warning: constant `BUILTIN_FL_ITEM` is never used
+   --> crates/qc-builtins/src/dispatch.rs:733:7
+    |
+733 | const BUILTIN_FL_ITEM: i32 = 256;
+    |       ^^^^^^^^^^^^^^^
+
+warning: methods `link_edict`, `b_setorigin`, `b_setsize`, and `b_setmodel` are never used
+   --> crates/qc-builtins/src/dispatch.rs:738:8
+    |
+735 | impl MockBuiltins {
+    | ----------------- methods in this implementation
+...
+738 |     fn link_edict(
+    |        ^^^^^^^^^^
+...
+774 |     fn b_setorigin(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^
+...
+783 |     fn b_setsize(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^
+...
+797 |     fn b_setmodel(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^
+
+warning: associated items `bad_precache_string`, `b_precache`, and `b_precache_file` are never used
+   --> crates/qc-builtins/src/dispatch.rs:821:8
+    |
+819 | impl MockBuiltins {
+    | ----------------- associated items in this implementation
+820 |     /// Whether the first byte of `text`, read as a signed char, is a space or below (BUILTIN-10.2).
+821 |     fn bad_precache_string(text: &[u8]) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^
+...
+831 |     fn b_precache(
+    |        ^^^^^^^^^^
+...
+855 |     fn b_precache_file(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^^^^
+
+warning: multiple methods are never used
+   --> crates/qc-builtins/src/dispatch.rs:867:8
+    |
+864 | impl MockBuiltins {
+    | ----------------- methods in this implementation
+...
+867 |     fn b_bprint(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^
+...
+875 |     fn b_sprint(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^
+...
+880 |     fn b_centerprint(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^^
+...
+885 |     fn print_to_client(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^^^^
+...
+898 |     fn b_dprint(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^
+...
+905 |     fn b_stuffcmd(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^
+...
+916 |     fn b_localcmd(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^
+...
+924 |     fn b_changelevel(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^^
+...
+939 |     fn b_cvar(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+948 |     fn b_cvar_set(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^
+
+warning: function `c_str` is never used
+   --> crates/qc-builtins/src/dispatch.rs:962:4
+    |
+962 | fn c_str(text: &[u8]) -> &[u8] {
+    |    ^^^^^
+
+warning: enum `Case` is never used
+   --> crates/qc-builtins/src/dispatch.rs:968:6
+    |
+968 | enum Case {
+    |      ^^^^
+
+warning: enum `Extreme` is never used
+   --> crates/qc-builtins/src/dispatch.rs:975:6
+    |
+975 | enum Extreme {
+    |      ^^^^^^^
+
+warning: struct `ParmArgs` is never constructed
+   --> crates/qc-builtins/src/dispatch.rs:981:8
+    |
+981 | struct ParmArgs<'c, 'm, 'p, 'e> {
+    |        ^^^^^^^^
+
+warning: constant `VKQUAKE_STRINGTEMP_LENGTH` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1012:7
+     |
+1012 | const VKQUAKE_STRINGTEMP_LENGTH: usize = 1024;
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `VKQUAKE_EXTENSIONS` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1016:7
+     |
+1016 | const VKQUAKE_EXTENSIONS: [&str; 71] = [
+     |       ^^^^^^^^^^^^^^^^^^
+
+warning: constant `VKQUAKE_SERVERINFO_CVARS` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1092:7
+     |
+1092 | const VKQUAKE_SERVERINFO_CVARS: [&str; 4] = ["fraglimit", "timelimit", "teamplay", "noexit"];
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+    --> crates/qc-builtins/src/dispatch.rs:1100:8
+     |
+1094 | impl MockBuiltins {
+     | ----------------- associated items in this implementation
+...
+1100 |     fn vkquake_extension(
+     |        ^^^^^^^^^^^^^^^^^
+...
+1141 |     fn b_registercvar(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^
+...
+1157 |     fn b_strftime(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^
+...
+1165 |     fn b_sprintf(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^
+...
+1180 |     fn b_infokey(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^
+...
+1211 |     fn b_cvar_string(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^
+...
+1232 |     fn b_extreme(context: &mut Context<'_, '_>, extreme: Extreme) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^
+...
+1250 |     fn b_bound(context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^
+...
+1266 |     fn b_strcase(&mut self, context: &mut Context<'_, '_>, case: Case) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^
+...
+1279 |     fn b_strconv(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^
+...
+1293 |     fn b_clienttype(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^
+...
+1309 |     fn b_strlen(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^
+...
+1322 |     fn b_strcat(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^
+...
+1339 |     fn b_substring(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^
+...
+1369 |     fn b_strncmp(&mut self, context: &mut Context<'_, '_>, case: Case) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^
+...
+1407 |     fn b_strstrofs(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^
+...
+1431 |     fn b_num_for_edict(context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^^
+...
+1438 |     fn b_stof(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^
+...
+1450 |     fn b_checkextension(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^^^
+...
+1465 |     fn b_fopen(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^
+...
+1472 |     fn b_strzone(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^
+...
+1484 |     fn b_strunzone(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^
+...
+1496 |     fn b_forceinfokey(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^
+
+warning: constant `BUILTIN_DATAGRAM_SLACK` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1514:7
+     |
+1514 | const BUILTIN_DATAGRAM_SLACK: usize = 16;
+     |       ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BUILTIN_SOUND_MAX_BYTES` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1517:7
+     |
+1517 | const BUILTIN_SOUND_MAX_BYTES: usize = 1 + 1 + 1 + 1 + 2 + 1 + 6;
+     |       ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BUILTIN_PARTICLE_BYTES` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1520:7
+     |
+1520 | const BUILTIN_PARTICLE_BYTES: usize = 1 + 6 + 3 + 1 + 1;
+     |       ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BUILTIN_AMBIENTSOUND_BYTES` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1523:7
+     |
+1523 | const BUILTIN_AMBIENTSOUND_BYTES: usize = 1 + 6 + 1 + 1 + 1;
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BUILTIN_MAKESTATIC_BYTES` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1526:7
+     |
+1526 | const BUILTIN_MAKESTATIC_BYTES: usize = 1 + 1 + 1 + 1 + 1 + 3 * (2 + 1);
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BUILTIN_DEFAULT_SOUND_VOLUME` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1528:7
+     |
+1528 | const BUILTIN_DEFAULT_SOUND_VOLUME: i32 = 255;
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `b_sound`, `b_ambientsound`, `b_particle`, `b_lightstyle`, and `b_makestatic` are never used
+    --> crates/qc-builtins/src/dispatch.rs:1532:8
+     |
+1530 | impl MockBuiltins {
+     | ----------------- methods in this implementation
+1531 |     /// `sound(e, chan, samp, vol, atten)` (BUILTIN-12.1 to BUILTIN-12.3).
+1532 |     fn b_sound(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^
+...
+1577 |     fn b_ambientsound(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^
+...
+1591 |     fn b_particle(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^
+...
+1606 |     fn b_lightstyle(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^
+...
+1620 |     fn b_makestatic(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^
+
+warning: function `sound_flag_savings` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1644:4
+     |
+1644 | fn sound_flag_savings(volume: i32, atten: f32) -> usize {
+     |    ^^^^^^^^^^^^^^^^^^
+
+warning: methods `write_dest`, `write_bytes`, `b_write`, `b_write_string`, and `b_write_entity` are never used
+    --> crates/qc-builtins/src/dispatch.rs:1664:8
+     |
+1661 | impl MockBuiltins {
+     | ----------------- methods in this implementation
+...
+1664 |     fn write_dest(&mut self, context: &mut Context<'_, '_>) -> Result<MessageDest, BuiltinError> {
+     |        ^^^^^^^^^^
+...
+1683 |     fn write_bytes(&mut self, dest: MessageDest, len: usize) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^
+...
+1691 |     fn b_write(&mut self, context: &mut Context<'_, '_>, len: usize) -> Result<(), BuiltinError> {
+     |        ^^^^^^^
+...
+1699 |     fn b_write_string(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^
+...
+1707 |     fn b_write_entity(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^
+
+warning: multiple methods are never used
+    --> crates/qc-builtins/src/dispatch.rs:1720:8
+     |
+1717 | impl MockBuiltins {
+     | ----------------- methods in this implementation
+...
+1720 |     fn b_traceline(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^
+...
+1743 |     fn b_pointcontents(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^^
+...
+1749 |     fn b_checkbottom(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^
+...
+1755 |     fn b_aim(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^
+...
+1764 |     fn b_checkclient(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^
+...
+1790 |     fn pick_client(
+     |        ^^^^^^^^^^^
+...
+1821 |     fn b_droptofloor(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^
+...
+1832 |     fn b_walkmove(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^
+...
+1846 |     fn b_changeyaw(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^
+...
+1853 |     fn b_movetogoal(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^
+...
+1876 |     fn step_self(
+     |        ^^^^^^^^^
+...
+1894 |     fn change_yaw(
+     |        ^^^^^^^^^^
+
+warning: function `set_size` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1936:4
+     |
+1936 | fn set_size(
+     |    ^^^^^^^^
+
+warning: function `can_move` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1950:4
+     |
+1950 | fn can_move(context: &mut Context<'_, '_>, number: EdictNumber) -> Result<bool, BuiltinError> {
+     |    ^^^^^^^^
+
+warning: function `checked_self` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1959:4
+     |
+1959 | fn checked_self(context: &mut Context<'_, '_>) -> Result<EdictNumber, BuiltinError> {
+     |    ^^^^^^^^^^^^
+
+warning: methods `b_error` and `b_objerror` are never used
+    --> crates/qc-builtins/src/dispatch.rs:1968:8
+     |
+1966 | impl MockBuiltins {
+     | ----------------- methods in this implementation
+1967 |     /// `error(s)` (BUILTIN-16.1): a host error carrying the joined text (DIFF-8.2).
+1968 |     fn b_error(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^
+...
+1976 |     fn b_objerror(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^
+
+warning: function `q_atof` is never used
+   --> crates/qc-builtins/src/math.rs:247:15
+    |
+247 | pub(crate) fn q_atof(text: &str) -> f32 {
+    |               ^^^^^^
+
+warning: constant `STRINGTEMP_LENGTH` is never used
+  --> crates/qc-builtins/src/printf.rs:19:7
+   |
+19 | const STRINGTEMP_LENGTH: usize = 1024;
+   |       ^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_PRECISION` is never used
+  --> crates/qc-builtins/src/printf.rs:24:7
+   |
+24 | const MAX_PRECISION: usize = 2000;
+   |       ^^^^^^^^^^^^^
+
+warning: trait `Args` is never used
+  --> crates/qc-builtins/src/printf.rs:27:18
+   |
+27 | pub(crate) trait Args {
+   |                  ^^^^
+
+warning: struct `Flags` is never constructed
+  --> crates/qc-builtins/src/printf.rs:42:8
+   |
+42 | struct Flags {
+   |        ^^^^^
+
+warning: enum `Kind` is never used
+  --> crates/qc-builtins/src/printf.rs:52:6
+   |
+52 | enum Kind {
+   |      ^^^^
+
+warning: struct `Directive` is never constructed
+  --> crates/qc-builtins/src/printf.rs:58:8
+   |
+58 | struct Directive {
+   |        ^^^^^^^^^
+
+warning: struct `Out` is never constructed
+  --> crates/qc-builtins/src/printf.rs:70:8
+   |
+70 | struct Out {
+   |        ^^^
+
+warning: methods `has_room` and `write` are never used
+  --> crates/qc-builtins/src/printf.rs:76:8
+   |
+74 | impl Out {
+   | -------- methods in this implementation
+75 |     /// Whether a directive is written: `if (o < end - 1)`.
+76 |     fn has_room(&self) -> bool {
+   |        ^^^^^^^^
+...
+82 |     fn write(&mut self, text: &[u8]) {
+   |        ^^^^^
+
+warning: function `sprintf` is never used
+  --> crates/qc-builtins/src/printf.rs:98:15
+   |
+98 | pub(crate) fn sprintf(
+   |               ^^^^^^^
+
+warning: struct `Reader` is never constructed
+   --> crates/qc-builtins/src/printf.rs:142:8
+    |
+142 | struct Reader<'f> {
+    |        ^^^^^^
+
+warning: methods `peek`, `number`, `long`, `star_arg`, and `directive` are never used
+   --> crates/qc-builtins/src/printf.rs:151:8
+    |
+149 | impl Reader<'_> {
+    | --------------- methods in this implementation
+150 |     /// The byte at the reader, 0 past the end, as the C string's terminator.
+151 |     fn peek(&self) -> u8 {
+    |        ^^^^
+...
+157 |     fn number(&mut self) -> i64 {
+    |        ^^^^^^
+...
+162 |     fn long(&mut self) -> i64 {
+    |        ^^^^
+...
+174 |     fn star_arg(&mut self) -> Option<usize> {
+    |        ^^^^^^^^
+...
+191 |     fn directive(&mut self, args: &mut dyn Args) -> Option<Directive> {
+    |        ^^^^^^^^^
+
+warning: function `c_int` is never used
+   --> crates/qc-builtins/src/printf.rs:291:4
+    |
+291 | fn c_int(value: i64) -> i32 {
+    |    ^^^^^
+
+warning: function `arg_position` is never used
+   --> crates/qc-builtins/src/printf.rs:297:4
+    |
+297 | fn arg_position(n: i64, first: usize) -> usize {
+    |    ^^^^^^^^^^^^
+
+warning: function `present` is never used
+   --> crates/qc-builtins/src/printf.rs:305:4
+    |
+305 | fn present(args: &dyn Args, first: usize, arg: usize) -> bool {
+    |    ^^^^^^^
+
+warning: function `float_arg` is never used
+   --> crates/qc-builtins/src/printf.rs:310:4
+    |
+310 | fn float_arg(args: &dyn Args, first: usize, arg: usize) -> f32 {
+    |    ^^^^^^^^^
+
+warning: function `wide_bits` is never used
+   --> crates/qc-builtins/src/printf.rs:319:4
+    |
+319 | fn wide_bits(args: &dyn Args, first: usize, arg: usize) -> u64 {
+    |    ^^^^^^^^^
+
+warning: function `int_arg` is never used
+   --> crates/qc-builtins/src/printf.rs:328:4
+    |
+328 | fn int_arg(args: &dyn Args, first: usize, arg: usize) -> i32 {
+    |    ^^^^^^^
+
+warning: constant `TWO_63` is never used
+   --> crates/qc-builtins/src/printf.rs:337:7
+    |
+337 | const TWO_63: f64 = f64::from_bits(0x43E0_0000_0000_0000);
+    |       ^^^^^^
+
+warning: function `to_i64` is never used
+   --> crates/qc-builtins/src/printf.rs:341:4
+    |
+341 | fn to_i64(value: f64) -> i64 {
+    |    ^^^^^^
+
+warning: function `to_u64` is never used
+   --> crates/qc-builtins/src/printf.rs:356:4
+    |
+356 | fn to_u64(value: f64) -> u64 {
+    |    ^^^^^^
+
+warning: function `float_to_i32` is never used
+   --> crates/qc-builtins/src/printf.rs:365:4
+    |
+365 | fn float_to_i32(value: f32) -> i32 {
+    |    ^^^^^^^^^^^^
+
+warning: function `signed_arg` is never used
+   --> crates/qc-builtins/src/printf.rs:370:4
+    |
+370 | fn signed_arg(d: &Directive, args: &dyn Args, first: usize) -> i64 {
+    |    ^^^^^^^^^^
+
+warning: function `unsigned_arg` is never used
+   --> crates/qc-builtins/src/printf.rs:380:4
+    |
+380 | fn unsigned_arg(d: &Directive, args: &dyn Args, first: usize) -> u64 {
+    |    ^^^^^^^^^^^^
+
+warning: function `double_arg` is never used
+   --> crates/qc-builtins/src/printf.rs:392:4
+    |
+392 | fn double_arg(d: &Directive, args: &dyn Args, first: usize) -> f64 {
+    |    ^^^^^^^^^^
+
+warning: function `convert` is never used
+   --> crates/qc-builtins/src/printf.rs:409:4
+    |
+409 | fn convert(
+    |    ^^^^^^^
+
+warning: function `string_arg` is never used
+   --> crates/qc-builtins/src/printf.rs:491:4
+    |
+491 | fn string_arg(d: &Directive, args: &mut dyn Args, first: usize) -> Result<Vec<u8>, BuiltinError> {
+    |    ^^^^^^^^^^
+
+warning: function `quoted` is never used
+   --> crates/qc-builtins/src/printf.rs:501:4
+    |
+501 | fn quoted(text: &[u8]) -> Vec<u8> {
+    |    ^^^^^^
+
+warning: function `cut` is never used
+   --> crates/qc-builtins/src/printf.rs:536:4
+    |
+536 | fn cut(text: &[u8], precision: Option<usize>) -> Vec<u8> {
+    |    ^^^
+
+warning: function `integer` is never used
+   --> crates/qc-builtins/src/printf.rs:543:4
+    |
+543 | fn integer(d: &Directive, sign: &str, digits: String, prefix: &str, zero: bool) -> Vec<u8> {
+    |    ^^^^^^^
+
+warning: function `pad` is never used
+   --> crates/qc-builtins/src/printf.rs:565:4
+    |
+565 | fn pad(flags: &Flags, width: i64, head: Vec<u8>, body: Vec<u8>, zeros: bool) -> Vec<u8> {
+    |    ^^^
+
+warning: function `floating` is never used
+   --> crates/qc-builtins/src/printf.rs:587:4
+    |
+587 | fn floating(d: &Directive, conversion: u8, value: f64) -> Vec<u8> {
+    |    ^^^^^^^^
+
+warning: function `fixed` is never used
+   --> crates/qc-builtins/src/printf.rs:626:4
+    |
+626 | fn fixed(value: f64, precision: usize, alternate: bool) -> String {
+    |    ^^^^^
+
+warning: function `exponent` is never used
+   --> crates/qc-builtins/src/printf.rs:635:4
+    |
+635 | fn exponent(value: f64, precision: usize, alternate: bool) -> String {
+    |    ^^^^^^^^
+
+warning: function `split_exponent` is never used
+   --> crates/qc-builtins/src/printf.rs:649:4
+    |
+649 | fn split_exponent(value: f64, precision: usize) -> (String, i32) {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `general` is never used
+   --> crates/qc-builtins/src/printf.rs:659:4
+    |
+659 | fn general(value: f64, precision: usize, alternate: bool) -> String {
+    |    ^^^^^^^
+
+warning: function `number` is never used
+  --> crates/qc-builtins/src/strconv.rs:13:4
+   |
+13 | fn number(byte: u8, base: u8, conv: i32) -> u8 {
+   |    ^^^^^^
+
+warning: function `punct` is never used
+  --> crates/qc-builtins/src/strconv.rs:26:4
+   |
+26 | fn punct(byte: u8, base: u8, conv: i32) -> u8 {
+   |    ^^^^^
+
+warning: function `alpha` is never used
+  --> crates/qc-builtins/src/strconv.rs:38:4
+   |
+38 | fn alpha(byte: u8, case_base: u8, half: u8, convc: i32, convt: i32, at: usize) -> u8 {
+   |    ^^^^^
+
+warning: function `strconv` is never used
+  --> crates/qc-builtins/src/strconv.rs:58:15
+   |
+58 | pub(crate) fn strconv(ccase: i32, redalpha: i32, rednum: i32, text: &[u8]) -> Vec<u8> {
+   |               ^^^^^^^
+
+warning: constant `CONVERSIONS` is never used
+ --> crates/qc-builtins/src/strftime.rs:8:7
+  |
+8 | const CONVERSIONS: [(u8, &str); 39] = [
+  |       ^^^^^^^^^^^
+
+warning: constant `STRINGTEMP_LENGTH` is never used
+  --> crates/qc-builtins/src/strftime.rs:51:7
+   |
+51 | const STRINGTEMP_LENGTH: usize = 1024;
+   |       ^^^^^^^^^^^^^^^^^
+
+warning: function `strftime` is never used
+  --> crates/qc-builtins/src/strftime.rs:56:15
+   |
+56 | pub(crate) fn strftime(format: &[u8]) -> Vec<u8> {
+   |               ^^^^^^^^
+
+warning: function `strncmp` is never used
+  --> crates/qc-builtins/src/cstring.rs:19:15
+   |
+19 | pub(crate) fn strncmp(a: &[u8], b: &[u8], n: Option<usize>) -> i32 {
+   |               ^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `qc-builtins` (lib) generated 123 warnings (run `cargo fix --lib -p qc-builtins` to apply 3 suggestions)
+warning: `qc-builtins` (lib test) generated 76 warnings (75 duplicates)
+    Finished `mutants` profile [optimized] target(s) in 0.77s
+
+*** result: Success
+
+*** /Users/jplock/.rustup/toolchains/1.99.0-aarch64-apple-darwin/bin/cargo nextest run --cargo-profile=mutants --verbose --package=qc-builtins@2026.10.0
+warning: unused imports: `EngineProfile` and `Unimplemented`
+  --> crates/qc-builtins/src/dispatch.rs:31:22
+   |
+31 |     BUILTIN_FL_SWIM, EngineProfile, LIMIT_MAX_DATAGRAM, LIMIT_MAX_LIGHTSTYLES, MessageDest,
+   |                      ^^^^^^^^^^^^^
+32 |     MockEngine, Overflow, Precache, Unimplemented,
+   |                                     ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `number`
+  --> crates/qc-builtins/src/dispatch.rs:94:28
+   |
+94 |     fn dispatch(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+   |                            ^^^^^^ help: if this is intentional, prefix it with an underscore: `_number`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `context`
+  --> crates/qc-builtins/src/dispatch.rs:94:41
+   |
+94 |     fn dispatch(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+   |                                         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_context`
+
+warning: function `atof` is never used
+  --> crates/qc-builtins/src/atof.rs:10:15
+   |
+10 | pub(crate) fn atof(text: &[u8]) -> f64 {
+   |               ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `special` is never used
+  --> crates/qc-builtins/src/atof.rs:28:4
+   |
+28 | fn special(text: &[u8]) -> Option<f64> {
+   |    ^^^^^^^
+
+warning: function `decimal` is never used
+  --> crates/qc-builtins/src/atof.rs:39:4
+   |
+39 | fn decimal(text: &[u8]) -> f64 {
+   |    ^^^^^^^
+
+warning: function `hexadecimal` is never used
+  --> crates/qc-builtins/src/atof.rs:73:4
+   |
+73 | fn hexadecimal(text: &[u8]) -> Option<f64> {
+   |    ^^^^^^^^^^^
+
+warning: function `at` is never used
+  --> crates/qc-builtins/src/cstring.rs:13:4
+   |
+13 | fn at(text: &[u8], i: usize) -> u8 {
+   |    ^^
+
+warning: function `strncmp` is never used
+  --> crates/qc-builtins/src/cstring.rs:19:15
+   |
+19 | pub(crate) fn strncmp(a: &[u8], b: &[u8], n: Option<usize>) -> i32 {
+   |               ^^^^^^^
+
+warning: function `lower` is never used
+  --> crates/qc-builtins/src/cstring.rs:35:4
+   |
+35 | fn lower(byte: u8) -> i32 {
+   |    ^^^^^
+
+warning: function `strncasecmp` is never used
+  --> crates/qc-builtins/src/cstring.rs:41:15
+   |
+41 | pub(crate) fn strncasecmp(a: &[u8], b: &[u8], n: Option<usize>) -> i32 {
+   |               ^^^^^^^^^^^
+
+warning: function `strstr` is never used
+  --> crates/qc-builtins/src/cstring.rs:63:15
+   |
+63 | pub(crate) fn strstr(text: &[u8], needle: &[u8]) -> Option<usize> {
+   |               ^^^^^^
+
+warning: multiple methods are never used
+   --> crates/qc-builtins/src/dispatch.rs:102:8
+    |
+101 | impl MockBuiltins {
+    | ----------------- methods in this implementation
+102 |     fn b_makevectors(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^^
+...
+111 |     fn b_random(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^
+...
+116 |     fn b_normalize(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^
+...
+121 |     fn b_vlen(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+126 |     fn b_vectoyaw(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^
+...
+131 |     fn b_vectoangles(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^^
+...
+136 |     fn b_rint(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+141 |     fn b_floor(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^
+...
+146 |     fn b_ceil(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+151 |     fn b_fabs(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+157 |     fn b_ftos(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+164 |     fn b_vtos(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+172 |     fn b_traceon(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^
+...
+178 |     fn b_traceoff(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^
+
+warning: function `read_parm` is never used
+   --> crates/qc-builtins/src/dispatch.rs:187:4
+    |
+187 | fn read_parm(context: &mut Context<'_, '_>, n: u16) -> Result<Slot, BuiltinError> {
+    |    ^^^^^^^^^
+
+warning: function `read_parm_float` is never used
+   --> crates/qc-builtins/src/dispatch.rs:196:4
+    |
+196 | fn read_parm_float(context: &mut Context<'_, '_>, n: u16) -> Result<f32, BuiltinError> {
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `read_parm_int` is never used
+   --> crates/qc-builtins/src/dispatch.rs:201:4
+    |
+201 | fn read_parm_int(context: &mut Context<'_, '_>, n: u16) -> Result<i32, BuiltinError> {
+    |    ^^^^^^^^^^^^^
+
+warning: function `read_parm_vector` is never used
+   --> crates/qc-builtins/src/dispatch.rs:206:4
+    |
+206 | fn read_parm_vector(context: &mut Context<'_, '_>, n: u16) -> Result<[f32; 3], BuiltinError> {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `read_parm_raw` is never used
+   --> crates/qc-builtins/src/dispatch.rs:216:4
+    |
+216 | fn read_parm_raw(context: &mut Context<'_, '_>, n: u16) -> Result<i32, BuiltinError> {
+    |    ^^^^^^^^^^^^^
+
+warning: function `invalid_entity` is never used
+   --> crates/qc-builtins/src/dispatch.rs:221:4
+    |
+221 | fn invalid_entity() -> BuiltinError {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `invalid_string` is never used
+   --> crates/qc-builtins/src/dispatch.rs:227:4
+    |
+227 | fn invalid_string() -> BuiltinError {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `invalid_field` is never used
+   --> crates/qc-builtins/src/dispatch.rs:232:4
+    |
+232 | fn invalid_field() -> BuiltinError {
+    |    ^^^^^^^^^^^^^
+
+warning: function `num_for_edict_bad` is never used
+   --> crates/qc-builtins/src/dispatch.rs:238:4
+    |
+238 | fn num_for_edict_bad() -> BuiltinError {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `checked_edict` is never used
+   --> crates/qc-builtins/src/dispatch.rs:247:4
+    |
+247 | fn checked_edict(context: &mut Context<'_, '_>, value: i32) -> Result<EdictNumber, BuiltinError> {
+    |    ^^^^^^^^^^^^^
+
+warning: function `read_parm_edict` is never used
+   --> crates/qc-builtins/src/dispatch.rs:256:4
+    |
+256 | fn read_parm_edict(context: &mut Context<'_, '_>, n: u16) -> Result<EdictNumber, BuiltinError> {
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `entity_num_for` is never used
+   --> crates/qc-builtins/src/dispatch.rs:264:4
+    |
+264 | fn entity_num_for(context: &mut Context<'_, '_>, value: i32) -> Result<EdictNumber, BuiltinError> {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `read_parm_edictnum` is never used
+   --> crates/qc-builtins/src/dispatch.rs:273:4
+    |
+273 | fn read_parm_edictnum(context: &mut Context<'_, '_>, n: u16) -> Result<EdictNumber, BuiltinError> {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `resolve_string` is never used
+   --> crates/qc-builtins/src/dispatch.rs:282:4
+    |
+282 | fn resolve_string(
+    |    ^^^^^^^^^^^^^^
+
+warning: function `read_parm_string` is never used
+   --> crates/qc-builtins/src/dispatch.rs:304:4
+    |
+304 | fn read_parm_string(
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `joined_string` is never used
+   --> crates/qc-builtins/src/dispatch.rs:315:4
+    |
+315 | fn joined_string(
+    |    ^^^^^^^^^^^^^
+
+warning: function `checked_field` is never used
+   --> crates/qc-builtins/src/dispatch.rs:333:4
+    |
+333 | fn checked_field(context: &mut Context<'_, '_>, value: i32) -> Result<usize, BuiltinError> {
+    |    ^^^^^^^^^^^^^
+
+warning: function `write_return` is never used
+   --> crates/qc-builtins/src/dispatch.rs:342:4
+    |
+342 | fn write_return(context: &mut Context<'_, '_>, value: Slot) -> Result<(), BuiltinError> {
+    |    ^^^^^^^^^^^^
+
+warning: function `write_return_float` is never used
+   --> crates/qc-builtins/src/dispatch.rs:350:4
+    |
+350 | fn write_return_float(context: &mut Context<'_, '_>, value: f32) -> Result<(), BuiltinError> {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `write_return_int` is never used
+   --> crates/qc-builtins/src/dispatch.rs:355:4
+    |
+355 | fn write_return_int(context: &mut Context<'_, '_>, value: i32) -> Result<(), BuiltinError> {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `write_return_string` is never used
+   --> crates/qc-builtins/src/dispatch.rs:360:4
+    |
+360 | fn write_return_string(context: &mut Context<'_, '_>, value: i32) -> Result<(), BuiltinError> {
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `write_return_edict` is never used
+   --> crates/qc-builtins/src/dispatch.rs:365:4
+    |
+365 | fn write_return_edict(context: &mut Context<'_, '_>, number: i32) -> Result<(), BuiltinError> {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `write_return_vector` is never used
+   --> crates/qc-builtins/src/dispatch.rs:375:4
+    |
+375 | fn write_return_vector(context: &mut Context<'_, '_>, value: [f32; 3]) -> Result<(), BuiltinError> {
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `read_system_global` is never used
+   --> crates/qc-builtins/src/dispatch.rs:383:4
+    |
+383 | fn read_system_global(
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `write_system_global` is never used
+   --> crates/qc-builtins/src/dispatch.rs:394:4
+    |
+394 | fn write_system_global(
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `write_system_global_float` is never used
+   --> crates/qc-builtins/src/dispatch.rs:406:4
+    |
+406 | fn write_system_global_float(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `read_system_global_entity` is never used
+   --> crates/qc-builtins/src/dispatch.rs:415:4
+    |
+415 | fn read_system_global_entity(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `read_system_vector` is never used
+   --> crates/qc-builtins/src/dispatch.rs:423:4
+    |
+423 | fn read_system_vector(
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `write_system_vector` is never used
+   --> crates/qc-builtins/src/dispatch.rs:435:4
+    |
+435 | fn write_system_vector(
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `read_field` is never used
+   --> crates/qc-builtins/src/dispatch.rs:447:4
+    |
+447 | fn read_field(
+    |    ^^^^^^^^^^
+
+warning: function `read_field_float` is never used
+   --> crates/qc-builtins/src/dispatch.rs:460:4
+    |
+460 | fn read_field_float(
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `read_field_int` is never used
+   --> crates/qc-builtins/src/dispatch.rs:469:4
+    |
+469 | fn read_field_int(
+    |    ^^^^^^^^^^^^^^
+
+warning: function `read_field_vector` is never used
+   --> crates/qc-builtins/src/dispatch.rs:478:4
+    |
+478 | fn read_field_vector(
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `write_field` is never used
+   --> crates/qc-builtins/src/dispatch.rs:497:4
+    |
+497 | fn write_field(
+    |    ^^^^^^^^^^^
+
+warning: function `write_field_float` is never used
+   --> crates/qc-builtins/src/dispatch.rs:511:4
+    |
+511 | fn write_field_float(
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `write_field_int` is never used
+   --> crates/qc-builtins/src/dispatch.rs:521:4
+    |
+521 | fn write_field_int(
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `write_field_vector` is never used
+   --> crates/qc-builtins/src/dispatch.rs:532:4
+    |
+532 | fn write_field_vector(
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `parm_slot` is never used
+   --> crates/qc-builtins/src/dispatch.rs:556:4
+    |
+556 | fn parm_slot(n: u16) -> Result<i32, BuiltinError> {
+    |    ^^^^^^^^^
+
+warning: function `called_name` is never used
+   --> crates/qc-builtins/src/dispatch.rs:572:4
+    |
+572 | fn called_name(context: &Context<'_, '_>) -> String {
+    |    ^^^^^^^^^^^
+
+warning: methods `b_spawn`, `b_remove`, `b_find`, `b_nextent`, `b_findradius`, and `b_setspawnparms` are never used
+   --> crates/qc-builtins/src/dispatch.rs:602:8
+    |
+600 | impl MockBuiltins {
+    | ----------------- methods in this implementation
+601 |     /// `spawn()` (BUILTIN-8.1): id's `ED_Alloc`, failing fatally when none is left (EDICT-6.2).
+602 |     fn b_spawn(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^
+...
+615 |     fn b_remove(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^
+...
+624 |     fn b_find(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+656 |     fn b_nextent(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^
+...
+671 |     fn b_findradius(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^
+...
+705 |     fn b_setspawnparms(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `radius_delta` is never used
+   --> crates/qc-builtins/src/dispatch.rs:718:4
+    |
+718 | fn radius_delta(org: [f32; 3], origin: [f32; 3], mins: [f32; 3], maxs: [f32; 3]) -> [f32; 3] {
+    |    ^^^^^^^^^^^^
+
+warning: constant `BUILTIN_FL_ITEM` is never used
+   --> crates/qc-builtins/src/dispatch.rs:733:7
+    |
+733 | const BUILTIN_FL_ITEM: i32 = 256;
+    |       ^^^^^^^^^^^^^^^
+
+warning: methods `link_edict`, `b_setorigin`, `b_setsize`, and `b_setmodel` are never used
+   --> crates/qc-builtins/src/dispatch.rs:738:8
+    |
+735 | impl MockBuiltins {
+    | ----------------- methods in this implementation
+...
+738 |     fn link_edict(
+    |        ^^^^^^^^^^
+...
+774 |     fn b_setorigin(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^
+...
+783 |     fn b_setsize(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^
+...
+797 |     fn b_setmodel(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^
+
+warning: associated items `bad_precache_string`, `b_precache`, and `b_precache_file` are never used
+   --> crates/qc-builtins/src/dispatch.rs:821:8
+    |
+819 | impl MockBuiltins {
+    | ----------------- associated items in this implementation
+820 |     /// Whether the first byte of `text`, read as a signed char, is a space or below (BUILTIN-10.2).
+821 |     fn bad_precache_string(text: &[u8]) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^
+...
+831 |     fn b_precache(
+    |        ^^^^^^^^^^
+...
+855 |     fn b_precache_file(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^^^^
+
+warning: multiple methods are never used
+   --> crates/qc-builtins/src/dispatch.rs:867:8
+    |
+864 | impl MockBuiltins {
+    | ----------------- methods in this implementation
+...
+867 |     fn b_bprint(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^
+...
+875 |     fn b_sprint(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^
+...
+880 |     fn b_centerprint(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^^
+...
+885 |     fn print_to_client(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^^^^
+...
+898 |     fn b_dprint(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^
+...
+905 |     fn b_stuffcmd(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^
+...
+916 |     fn b_localcmd(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^
+...
+924 |     fn b_changelevel(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^^^^
+...
+939 |     fn b_cvar(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^
+...
+948 |     fn b_cvar_set(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+    |        ^^^^^^^^^^
+
+warning: function `c_str` is never used
+   --> crates/qc-builtins/src/dispatch.rs:962:4
+    |
+962 | fn c_str(text: &[u8]) -> &[u8] {
+    |    ^^^^^
+
+warning: enum `Case` is never used
+   --> crates/qc-builtins/src/dispatch.rs:968:6
+    |
+968 | enum Case {
+    |      ^^^^
+
+warning: enum `Extreme` is never used
+   --> crates/qc-builtins/src/dispatch.rs:975:6
+    |
+975 | enum Extreme {
+    |      ^^^^^^^
+
+warning: struct `ParmArgs` is never constructed
+   --> crates/qc-builtins/src/dispatch.rs:981:8
+    |
+981 | struct ParmArgs<'c, 'm, 'p, 'e> {
+    |        ^^^^^^^^
+
+warning: constant `VKQUAKE_STRINGTEMP_LENGTH` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1012:7
+     |
+1012 | const VKQUAKE_STRINGTEMP_LENGTH: usize = 1024;
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `VKQUAKE_EXTENSIONS` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1016:7
+     |
+1016 | const VKQUAKE_EXTENSIONS: [&str; 71] = [
+     |       ^^^^^^^^^^^^^^^^^^
+
+warning: constant `VKQUAKE_SERVERINFO_CVARS` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1092:7
+     |
+1092 | const VKQUAKE_SERVERINFO_CVARS: [&str; 4] = ["fraglimit", "timelimit", "teamplay", "noexit"];
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+    --> crates/qc-builtins/src/dispatch.rs:1100:8
+     |
+1094 | impl MockBuiltins {
+     | ----------------- associated items in this implementation
+...
+1100 |     fn vkquake_extension(
+     |        ^^^^^^^^^^^^^^^^^
+...
+1141 |     fn b_registercvar(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^
+...
+1157 |     fn b_strftime(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^
+...
+1165 |     fn b_sprintf(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^
+...
+1180 |     fn b_infokey(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^
+...
+1211 |     fn b_cvar_string(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^
+...
+1232 |     fn b_extreme(context: &mut Context<'_, '_>, extreme: Extreme) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^
+...
+1250 |     fn b_bound(context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^
+...
+1266 |     fn b_strcase(&mut self, context: &mut Context<'_, '_>, case: Case) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^
+...
+1279 |     fn b_strconv(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^
+...
+1293 |     fn b_clienttype(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^
+...
+1309 |     fn b_strlen(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^
+...
+1322 |     fn b_strcat(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^
+...
+1339 |     fn b_substring(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^
+...
+1369 |     fn b_strncmp(&mut self, context: &mut Context<'_, '_>, case: Case) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^
+...
+1407 |     fn b_strstrofs(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^
+...
+1431 |     fn b_num_for_edict(context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^^
+...
+1438 |     fn b_stof(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^
+...
+1450 |     fn b_checkextension(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^^^
+...
+1465 |     fn b_fopen(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^
+...
+1472 |     fn b_strzone(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^
+...
+1484 |     fn b_strunzone(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^
+...
+1496 |     fn b_forceinfokey(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^
+
+warning: constant `BUILTIN_DATAGRAM_SLACK` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1514:7
+     |
+1514 | const BUILTIN_DATAGRAM_SLACK: usize = 16;
+     |       ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BUILTIN_SOUND_MAX_BYTES` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1517:7
+     |
+1517 | const BUILTIN_SOUND_MAX_BYTES: usize = 1 + 1 + 1 + 1 + 2 + 1 + 6;
+     |       ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BUILTIN_PARTICLE_BYTES` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1520:7
+     |
+1520 | const BUILTIN_PARTICLE_BYTES: usize = 1 + 6 + 3 + 1 + 1;
+     |       ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BUILTIN_AMBIENTSOUND_BYTES` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1523:7
+     |
+1523 | const BUILTIN_AMBIENTSOUND_BYTES: usize = 1 + 6 + 1 + 1 + 1;
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BUILTIN_MAKESTATIC_BYTES` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1526:7
+     |
+1526 | const BUILTIN_MAKESTATIC_BYTES: usize = 1 + 1 + 1 + 1 + 1 + 3 * (2 + 1);
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BUILTIN_DEFAULT_SOUND_VOLUME` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1528:7
+     |
+1528 | const BUILTIN_DEFAULT_SOUND_VOLUME: i32 = 255;
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `b_sound`, `b_ambientsound`, `b_particle`, `b_lightstyle`, and `b_makestatic` are never used
+    --> crates/qc-builtins/src/dispatch.rs:1532:8
+     |
+1530 | impl MockBuiltins {
+     | ----------------- methods in this implementation
+1531 |     /// `sound(e, chan, samp, vol, atten)` (BUILTIN-12.1 to BUILTIN-12.3).
+1532 |     fn b_sound(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^
+...
+1577 |     fn b_ambientsound(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^
+...
+1591 |     fn b_particle(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^
+...
+1606 |     fn b_lightstyle(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^
+...
+1620 |     fn b_makestatic(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^
+
+warning: function `sound_flag_savings` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1644:4
+     |
+1644 | fn sound_flag_savings(volume: i32, atten: f32) -> usize {
+     |    ^^^^^^^^^^^^^^^^^^
+
+warning: methods `write_dest`, `write_bytes`, `b_write`, `b_write_string`, and `b_write_entity` are never used
+    --> crates/qc-builtins/src/dispatch.rs:1664:8
+     |
+1661 | impl MockBuiltins {
+     | ----------------- methods in this implementation
+...
+1664 |     fn write_dest(&mut self, context: &mut Context<'_, '_>) -> Result<MessageDest, BuiltinError> {
+     |        ^^^^^^^^^^
+...
+1683 |     fn write_bytes(&mut self, dest: MessageDest, len: usize) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^
+...
+1691 |     fn b_write(&mut self, context: &mut Context<'_, '_>, len: usize) -> Result<(), BuiltinError> {
+     |        ^^^^^^^
+...
+1699 |     fn b_write_string(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^
+...
+1707 |     fn b_write_entity(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^
+
+warning: multiple methods are never used
+    --> crates/qc-builtins/src/dispatch.rs:1720:8
+     |
+1717 | impl MockBuiltins {
+     | ----------------- methods in this implementation
+...
+1720 |     fn b_traceline(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^
+...
+1743 |     fn b_pointcontents(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^^^
+...
+1749 |     fn b_checkbottom(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^
+...
+1755 |     fn b_aim(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^
+...
+1764 |     fn b_checkclient(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^
+...
+1790 |     fn pick_client(
+     |        ^^^^^^^^^^^
+...
+1821 |     fn b_droptofloor(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^^
+...
+1832 |     fn b_walkmove(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^
+...
+1846 |     fn b_changeyaw(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^
+...
+1853 |     fn b_movetogoal(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^^^
+...
+1876 |     fn step_self(
+     |        ^^^^^^^^^
+...
+1894 |     fn change_yaw(
+     |        ^^^^^^^^^^
+
+warning: function `set_size` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1936:4
+     |
+1936 | fn set_size(
+     |    ^^^^^^^^
+
+warning: function `can_move` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1950:4
+     |
+1950 | fn can_move(context: &mut Context<'_, '_>, number: EdictNumber) -> Result<bool, BuiltinError> {
+     |    ^^^^^^^^
+
+warning: function `checked_self` is never used
+    --> crates/qc-builtins/src/dispatch.rs:1959:4
+     |
+1959 | fn checked_self(context: &mut Context<'_, '_>) -> Result<EdictNumber, BuiltinError> {
+     |    ^^^^^^^^^^^^
+
+warning: methods `b_error` and `b_objerror` are never used
+    --> crates/qc-builtins/src/dispatch.rs:1968:8
+     |
+1966 | impl MockBuiltins {
+     | ----------------- methods in this implementation
+1967 |     /// `error(s)` (BUILTIN-16.1): a host error carrying the joined text (DIFF-8.2).
+1968 |     fn b_error(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^
+...
+1976 |     fn b_objerror(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+     |        ^^^^^^^^^^
+
+warning: function `q_atof` is never used
+   --> crates/qc-builtins/src/math.rs:247:15
+    |
+247 | pub(crate) fn q_atof(text: &str) -> f32 {
+    |               ^^^^^^
+
+warning: constant `STRINGTEMP_LENGTH` is never used
+  --> crates/qc-builtins/src/printf.rs:19:7
+   |
+19 | const STRINGTEMP_LENGTH: usize = 1024;
+   |       ^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_PRECISION` is never used
+  --> crates/qc-builtins/src/printf.rs:24:7
+   |
+24 | const MAX_PRECISION: usize = 2000;
+   |       ^^^^^^^^^^^^^
+
+warning: trait `Args` is never used
+  --> crates/qc-builtins/src/printf.rs:27:18
+   |
+27 | pub(crate) trait Args {
+   |                  ^^^^
+
+warning: struct `Flags` is never constructed
+  --> crates/qc-builtins/src/printf.rs:42:8
+   |
+42 | struct Flags {
+   |        ^^^^^
+
+warning: enum `Kind` is never used
+  --> crates/qc-builtins/src/printf.rs:52:6
+   |
+52 | enum Kind {
+   |      ^^^^
+
+warning: struct `Directive` is never constructed
+  --> crates/qc-builtins/src/printf.rs:58:8
+   |
+58 | struct Directive {
+   |        ^^^^^^^^^
+
+warning: struct `Out` is never constructed
+  --> crates/qc-builtins/src/printf.rs:70:8
+   |
+70 | struct Out {
+   |        ^^^
+
+warning: methods `has_room` and `write` are never used
+  --> crates/qc-builtins/src/printf.rs:76:8
+   |
+74 | impl Out {
+   | -------- methods in this implementation
+75 |     /// Whether a directive is written: `if (o < end - 1)`.
+76 |     fn has_room(&self) -> bool {
+   |        ^^^^^^^^
+...
+82 |     fn write(&mut self, text: &[u8]) {
+   |        ^^^^^
+
+warning: function `sprintf` is never used
+  --> crates/qc-builtins/src/printf.rs:98:15
+   |
+98 | pub(crate) fn sprintf(
+   |               ^^^^^^^
+
+warning: struct `Reader` is never constructed
+   --> crates/qc-builtins/src/printf.rs:142:8
+    |
+142 | struct Reader<'f> {
+    |        ^^^^^^
+
+warning: methods `peek`, `number`, `long`, `star_arg`, and `directive` are never used
+   --> crates/qc-builtins/src/printf.rs:151:8
+    |
+149 | impl Reader<'_> {
+    | --------------- methods in this implementation
+150 |     /// The byte at the reader, 0 past the end, as the C string's terminator.
+151 |     fn peek(&self) -> u8 {
+    |        ^^^^
+...
+157 |     fn number(&mut self) -> i64 {
+    |        ^^^^^^
+...
+162 |     fn long(&mut self) -> i64 {
+    |        ^^^^
+...
+174 |     fn star_arg(&mut self) -> Option<usize> {
+    |        ^^^^^^^^
+...
+191 |     fn directive(&mut self, args: &mut dyn Args) -> Option<Directive> {
+    |        ^^^^^^^^^
+
+warning: function `c_int` is never used
+   --> crates/qc-builtins/src/printf.rs:291:4
+    |
+291 | fn c_int(value: i64) -> i32 {
+    |    ^^^^^
+
+warning: function `arg_position` is never used
+   --> crates/qc-builtins/src/printf.rs:297:4
+    |
+297 | fn arg_position(n: i64, first: usize) -> usize {
+    |    ^^^^^^^^^^^^
+
+warning: function `present` is never used
+   --> crates/qc-builtins/src/printf.rs:305:4
+    |
+305 | fn present(args: &dyn Args, first: usize, arg: usize) -> bool {
+    |    ^^^^^^^
+
+warning: function `float_arg` is never used
+   --> crates/qc-builtins/src/printf.rs:310:4
+    |
+310 | fn float_arg(args: &dyn Args, first: usize, arg: usize) -> f32 {
+    |    ^^^^^^^^^
+
+warning: function `wide_bits` is never used
+   --> crates/qc-builtins/src/printf.rs:319:4
+    |
+319 | fn wide_bits(args: &dyn Args, first: usize, arg: usize) -> u64 {
+    |    ^^^^^^^^^
+
+warning: function `int_arg` is never used
+   --> crates/qc-builtins/src/printf.rs:328:4
+    |
+328 | fn int_arg(args: &dyn Args, first: usize, arg: usize) -> i32 {
+    |    ^^^^^^^
+
+warning: constant `TWO_63` is never used
+   --> crates/qc-builtins/src/printf.rs:337:7
+    |
+337 | const TWO_63: f64 = f64::from_bits(0x43E0_0000_0000_0000);
+    |       ^^^^^^
+
+warning: function `to_i64` is never used
+   --> crates/qc-builtins/src/printf.rs:341:4
+    |
+341 | fn to_i64(value: f64) -> i64 {
+    |    ^^^^^^
+
+warning: function `to_u64` is never used
+   --> crates/qc-builtins/src/printf.rs:356:4
+    |
+356 | fn to_u64(value: f64) -> u64 {
+    |    ^^^^^^
+
+warning: function `float_to_i32` is never used
+   --> crates/qc-builtins/src/printf.rs:365:4
+    |
+365 | fn float_to_i32(value: f32) -> i32 {
+    |    ^^^^^^^^^^^^
+
+warning: function `signed_arg` is never used
+   --> crates/qc-builtins/src/printf.rs:370:4
+    |
+370 | fn signed_arg(d: &Directive, args: &dyn Args, first: usize) -> i64 {
+    |    ^^^^^^^^^^
+
+warning: function `unsigned_arg` is never used
+   --> crates/qc-builtins/src/printf.rs:380:4
+    |
+380 | fn unsigned_arg(d: &Directive, args: &dyn Args, first: usize) -> u64 {
+    |    ^^^^^^^^^^^^
+
+warning: function `double_arg` is never used
+   --> crates/qc-builtins/src/printf.rs:392:4
+    |
+392 | fn double_arg(d: &Directive, args: &dyn Args, first: usize) -> f64 {
+    |    ^^^^^^^^^^
+
+warning: function `convert` is never used
+   --> crates/qc-builtins/src/printf.rs:409:4
+    |
+409 | fn convert(
+    |    ^^^^^^^
+
+warning: function `string_arg` is never used
+   --> crates/qc-builtins/src/printf.rs:491:4
+    |
+491 | fn string_arg(d: &Directive, args: &mut dyn Args, first: usize) -> Result<Vec<u8>, BuiltinError> {
+    |    ^^^^^^^^^^
+
+warning: function `quoted` is never used
+   --> crates/qc-builtins/src/printf.rs:501:4
+    |
+501 | fn quoted(text: &[u8]) -> Vec<u8> {
+    |    ^^^^^^
+
+warning: function `cut` is never used
+   --> crates/qc-builtins/src/printf.rs:536:4
+    |
+536 | fn cut(text: &[u8], precision: Option<usize>) -> Vec<u8> {
+    |    ^^^
+
+warning: function `integer` is never used
+   --> crates/qc-builtins/src/printf.rs:543:4
+    |
+543 | fn integer(d: &Directive, sign: &str, digits: String, prefix: &str, zero: bool) -> Vec<u8> {
+    |    ^^^^^^^
+
+warning: function `pad` is never used
+   --> crates/qc-builtins/src/printf.rs:565:4
+    |
+565 | fn pad(flags: &Flags, width: i64, head: Vec<u8>, body: Vec<u8>, zeros: bool) -> Vec<u8> {
+    |    ^^^
+
+warning: function `floating` is never used
+   --> crates/qc-builtins/src/printf.rs:587:4
+    |
+587 | fn floating(d: &Directive, conversion: u8, value: f64) -> Vec<u8> {
+    |    ^^^^^^^^
+
+warning: function `fixed` is never used
+   --> crates/qc-builtins/src/printf.rs:626:4
+    |
+626 | fn fixed(value: f64, precision: usize, alternate: bool) -> String {
+    |    ^^^^^
+
+warning: function `exponent` is never used
+   --> crates/qc-builtins/src/printf.rs:635:4
+    |
+635 | fn exponent(value: f64, precision: usize, alternate: bool) -> String {
+    |    ^^^^^^^^
+
+warning: function `split_exponent` is never used
+   --> crates/qc-builtins/src/printf.rs:649:4
+    |
+649 | fn split_exponent(value: f64, precision: usize) -> (String, i32) {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `general` is never used
+   --> crates/qc-builtins/src/printf.rs:659:4
+    |
+659 | fn general(value: f64, precision: usize, alternate: bool) -> String {
+    |    ^^^^^^^
+
+warning: function `number` is never used
+  --> crates/qc-builtins/src/strconv.rs:13:4
+   |
+13 | fn number(byte: u8, base: u8, conv: i32) -> u8 {
+   |    ^^^^^^
+
+warning: function `punct` is never used
+  --> crates/qc-builtins/src/strconv.rs:26:4
+   |
+26 | fn punct(byte: u8, base: u8, conv: i32) -> u8 {
+   |    ^^^^^
+
+warning: function `alpha` is never used
+  --> crates/qc-builtins/src/strconv.rs:38:4
+   |
+38 | fn alpha(byte: u8, case_base: u8, half: u8, convc: i32, convt: i32, at: usize) -> u8 {
+   |    ^^^^^
+
+warning: function `strconv` is never used
+  --> crates/qc-builtins/src/strconv.rs:58:15
+   |
+58 | pub(crate) fn strconv(ccase: i32, redalpha: i32, rednum: i32, text: &[u8]) -> Vec<u8> {
+   |               ^^^^^^^
+
+warning: constant `CONVERSIONS` is never used
+ --> crates/qc-builtins/src/strftime.rs:8:7
+  |
+8 | const CONVERSIONS: [(u8, &str); 39] = [
+  |       ^^^^^^^^^^^
+
+warning: constant `STRINGTEMP_LENGTH` is never used
+  --> crates/qc-builtins/src/strftime.rs:51:7
+   |
+51 | const STRINGTEMP_LENGTH: usize = 1024;
+   |       ^^^^^^^^^^^^^^^^^
+
+warning: function `strftime` is never used
+  --> crates/qc-builtins/src/strftime.rs:56:15
+   |
+56 | pub(crate) fn strftime(format: &[u8]) -> Vec<u8> {
+   |               ^^^^^^^^
+
+warning: function `strncmp` is never used
+  --> crates/qc-builtins/src/cstring.rs:19:15
+   |
+19 | pub(crate) fn strncmp(a: &[u8], b: &[u8], n: Option<usize>) -> i32 {
+   |               ^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `qc-builtins` (lib) generated 123 warnings (run `cargo fix --lib -p qc-builtins` to apply 3 suggestions)
+warning: `qc-builtins` (lib test) generated 76 warnings (75 duplicates)
+    Finished `mutants` profile [optimized] target(s) in 0.06s
+────────────
+ Nextest run ID e4fad82b-b642-45b9-9ae0-f43200f0a0f6 with nextest profile: default
+    Starting 218 tests across 1 binary
+       START [         ] (  1/218) qc-builtins printf::tests::conversions_are_written_as_c_writes_them
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-661-iHFpGQ.tmp/target/mutants/deps/qc_builtins-a92915a889b4ec67 --exact printf::tests::conversions_are_written_as_c_writes_them --nocapture
+       START [         ] (  1/218) qc-builtins printf::tests::a_bad_string_is_an_error
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-661-iHFpGQ.tmp/target/mutants/deps/qc_builtins-a92915a889b4ec67 --exact printf::tests::a_bad_string_is_an_error --nocapture
+       START [         ] (  1/218) qc-builtins printf::tests::a_bad_directive_ends_the_text
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-661-iHFpGQ.tmp/target/mutants/deps/qc_builtins-a92915a889b4ec67 --exact printf::tests::a_bad_directive_ends_the_text --nocapture
+       START [         ] (  1/218) qc-builtins printf::tests::arguments_are_taken_by_position_and_star
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-661-iHFpGQ.tmp/target/mutants/deps/qc_builtins-a92915a889b4ec67 --exact printf::tests::arguments_are_taken_by_position_and_star --nocapture
+       START [         ] (  1/218) qc-builtins printf::tests::the_buffer_s_end_drops_every_kind_of_byte
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-661-iHFpGQ.tmp/target/mutants/deps/qc_builtins-a92915a889b4ec67 --exact printf::tests::the_buffer_s_end_drops_every_kind_of_byte --nocapture
+       START [         ] (  1/218) qc-builtins printf::tests::quoting_nul_and_the_buffer
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-661-iHFpGQ.tmp/target/mutants/deps/qc_builtins-a92915a889b4ec67 --exact printf::tests::quoting_nul_and_the_buffer --nocapture
+       START [         ] (  1/218) qc-builtins tests::anglemod_values
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-661-iHFpGQ.tmp/target/mutants/deps/qc_builtins-a92915a889b4ec67 --exact tests::anglemod_values --nocapture
+       START [         ] (  1/218) qc-builtins printf::tests::the_reader_s_corners
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-661-iHFpGQ.tmp/target/mutants/deps/qc_builtins-a92915a889b4ec67 --exact printf::tests::the_reader_s_corners --nocapture
+       START [         ] (  1/218) qc-builtins tests::bodies::a_full_precache_list_is_a_runtime_error
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-661-iHFpGQ.tmp/target/mutants/deps/qc_builtins-a92915a889b4ec67 --exact tests::bodies::a_full_precache_list_is_a_runtime_error --nocapture
+       START [         ] (  1/218) qc-builtins tests::atof_signs
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-661-iHFpGQ.tmp/target/mutants/deps/qc_builtins-a92915a889b4ec67 --exact tests::atof_signs --nocapture
+        PASS [   0.007s] (  1/218) qc-builtins tests::anglemod_values
+       START [         ] (  2/218) qc-builtins tests::bodies::a_number_past_ids_table_stays_the_vms_error
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-661-iHFpGQ.tmp/target/mutants/deps/qc_builtins-a92915a889b4ec67 --exact tests::bodies::a_number_past_ids_table_stays_the_vms_error --nocapture
+        PASS [   0.008s] (  2/218) qc-builtins printf::tests::a_bad_directive_ends_the_text
+       START [         ] (  3/218) qc-builtins tests::bodies::a_vector_write_past_the_edicts_is_an_error
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-661-iHFpGQ.tmp/target/mutants/deps/qc_builtins-a92915a889b4ec67 --exact tests::bodies::a_vector_write_past_the_edicts_is_an_error --nocapture
+        FAIL [   0.008s] (  3/218) qc-builtins tests::bodies::a_full_precache_list_is_a_runtime_error
+  stdout ───
+
+    running 1 test
+    test tests::bodies::a_full_precache_list_is_a_runtime_error ... FAILED
+
+    failures:
+
+    failures:
+        tests::bodies::a_full_precache_list_is_a_runtime_error
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 217 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'tests::bodies::a_full_precache_list_is_a_runtime_error' (11362279) panicked at crates/qc-builtins/src/tests.rs:1412:53:
+    called `Result::unwrap_err()` on an `Ok` value: ()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 9 tests still running
+        PASS [   0.008s] (  4/218) qc-builtins printf::tests::conversions_are_written_as_c_writes_them
+        PASS [   0.009s] (  5/218) qc-builtins printf::tests::quoting_nul_and_the_buffer
+        PASS [   0.009s] (  6/218) qc-builtins tests::atof_signs
+        PASS [   0.009s] (  7/218) qc-builtins printf::tests::the_buffer_s_end_drops_every_kind_of_byte
+        PASS [   0.009s] (  8/218) qc-builtins printf::tests::the_reader_s_corners
+        PASS [   0.009s] (  9/218) qc-builtins printf::tests::arguments_are_taken_by_position_and_star
+        PASS [   0.010s] ( 10/218) qc-builtins printf::tests::a_bad_string_is_an_error
+        PASS [   0.006s] ( 11/218) qc-builtins tests::bodies::a_number_past_ids_table_stays_the_vms_error
+        FAIL [   0.005s] ( 12/218) qc-builtins tests::bodies::a_vector_write_past_the_edicts_is_an_error
+  stdout ───
+
+    running 1 test
+    test tests::bodies::a_vector_write_past_the_edicts_is_an_error ... FAILED
+
+    failures:
+
+    failures:
+        tests::bodies::a_vector_write_past_the_edicts_is_an_error
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 217 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'tests::bodies::a_vector_write_past_the_edicts_is_an_error' (11362294) panicked at crates/qc-builtins/src/tests.rs:1119:42:
+    builtin failed: ()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.013s] 12/218 tests run: 10 passed, 2 failed, 0 skipped
+        FAIL [   0.008s] (  3/218) qc-builtins tests::bodies::a_full_precache_list_is_a_runtime_error
+        FAIL [   0.005s] ( 12/218) qc-builtins tests::bodies::a_vector_write_past_the_edicts_is_an_error
+warning: 206/218 tests were not run due to test failure (run with --no-fail-fast to run all tests, or run with --max-fail)
+error: test run failed
+
+*** result: Failure(100)
