@@ -14,8 +14,8 @@ use qs_commands::{CommandError, Registry, Session};
 use serde_json::json;
 
 use crate::{
-    LAYOUT_FILE, Layout, LayoutError, MIN_PANEL_SIZE, Panel, RESIZE_PANEL, TOGGLE_PANEL,
-    layout_path, register,
+    FOCUS_BOTTOM_PANEL, FOCUS_EDITOR, FOCUS_LEFT_PANEL, FOCUS_RIGHT_PANEL, Focus, LAYOUT_FILE,
+    Layout, LayoutError, MIN_PANEL_SIZE, Panel, RESIZE_PANEL, TOGGLE_PANEL, layout_path, register,
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -111,7 +111,81 @@ fn the_commands_register_once() {
     register(&mut registry).unwrap();
     assert!(registry.get(TOGGLE_PANEL).is_some());
     assert!(registry.get(RESIZE_PANEL).is_some());
+    for id in [
+        FOCUS_EDITOR,
+        FOCUS_LEFT_PANEL,
+        FOCUS_RIGHT_PANEL,
+        FOCUS_BOTTOM_PANEL,
+    ] {
+        assert!(registry.get(id).is_some(), "{id}");
+    }
     assert!(register(&mut registry).is_err());
+}
+
+// QA-9: a focus command gives its area the keyboard, shows a hidden panel first, and is
+// outside the history.
+#[test]
+fn focusing_an_area_shows_it_and_gives_it_the_keyboard() {
+    let mut session = session();
+    assert_eq!(session.context().focus, Focus::Editor);
+    session
+        .execute(TOGGLE_PANEL, json!({ "panel": "bottom" }))
+        .unwrap();
+    assert!(!session.context().bottom.visible);
+    for (id, focus) in [
+        (FOCUS_BOTTOM_PANEL, Focus::Panel(Panel::Bottom)),
+        (FOCUS_LEFT_PANEL, Focus::Panel(Panel::Left)),
+        (FOCUS_RIGHT_PANEL, Focus::Panel(Panel::Right)),
+        (FOCUS_EDITOR, Focus::Editor),
+    ] {
+        let before = session.context().focus_requests;
+        let focused = session.execute(id, json!({})).unwrap();
+        assert_eq!(
+            focused,
+            json!({ "focus": serde_json::to_value(focus).unwrap() })
+        );
+        assert_eq!(session.context().focus, focus);
+        assert_eq!(session.context().focus_requests, before + 1);
+    }
+    assert!(session.context().bottom.visible);
+    assert!(matches!(session.undo(), Err(CommandError::NothingToUndo)));
+    let error = session
+        .execute(FOCUS_EDITOR, json!({ "panel": "left" }))
+        .unwrap_err();
+    assert!(
+        matches!(error, CommandError::InvalidParams { .. }),
+        "{error}"
+    );
+}
+
+// QA-9: the focus is part of the layout file, and a file from before it defaults to the
+// editor.
+#[test]
+fn the_focus_survives_a_restart() {
+    let dir = TempDir::new("focus");
+    let path = dir.path().join(LAYOUT_FILE);
+    let layout = Layout {
+        focus: Focus::Panel(Panel::Bottom),
+        ..Layout::default()
+    };
+    layout.write(&path).unwrap();
+    assert_eq!(
+        Layout::read(&path).unwrap().focus,
+        Focus::Panel(Panel::Bottom)
+    );
+    let requested = Layout {
+        focus_requests: 3,
+        ..layout
+    };
+    requested.write(&path).unwrap();
+    assert_eq!(
+        Layout::read(&path).unwrap(),
+        layout,
+        "the count is not written"
+    );
+    assert_eq!(requested.as_written(), layout);
+    fs::write(&path, "[left]\nvisible = false\nsize = 200.0\n").unwrap();
+    assert_eq!(Layout::read(&path).unwrap().focus, Focus::Editor);
 }
 
 #[test]

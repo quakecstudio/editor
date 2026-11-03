@@ -13,7 +13,7 @@ use std::ops::Range;
 use eframe::egui::text::{LayoutJob, TextFormat};
 use eframe::egui::{
     self, Align, Align2, Color32, FontFamily, FontId, Id, Key, Layout, Modifiers, Order, RichText,
-    Sense, TextEdit, Ui, Vec2,
+    Sense, TextEdit, Ui, Vec2, WidgetInfo, WidgetType, accesskit,
 };
 use qs_commands::palette::{PaletteMatch, search};
 use qs_commands::params::{self, Field, FieldKind, Input};
@@ -116,6 +116,10 @@ impl Palette {
                     .corner_radius(theme.radius.card)
                     .inner_margin(theme.space(2))
                     .show(ui, |ui| {
+                        ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
+                            node.set_role(accesskit::Role::Dialog);
+                            node.set_label(Text::CommandPalette.get());
+                        });
                         ui.set_width(WIDTH);
                         ui.set_max_width(WIDTH);
                         chosen = match self.prompt.take() {
@@ -165,6 +169,9 @@ impl Palette {
                 .frame(egui::Frame::NONE)
                 .desired_width(WIDTH - 200.0);
             let response = ui.add(field);
+            response.widget_info(|| {
+                WidgetInfo::labeled(WidgetType::TextEdit, true, Text::SearchCommands.get())
+            });
             if self.focus {
                 response.request_focus();
                 self.focus = false;
@@ -285,6 +292,9 @@ fn row(ui: &mut Ui, theme: &Theme, item: &PaletteMatch<'_>, selected: bool) -> e
     let height = theme.size.row;
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::click());
+    response.widget_info(|| {
+        WidgetInfo::selected(WidgetType::Button, true, selected, item.info.summary())
+    });
     if selected || response.hovered() {
         let fill = if selected {
             theme.color(Token::SelectFocus)

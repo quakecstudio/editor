@@ -9,6 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
+use eframe::egui::accesskit::Role;
 use eframe::egui::{self, Event, Key, Modifiers};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable};
@@ -245,7 +246,8 @@ fn f2_renames_the_name_everywhere() {
         panic!("{:?}", popup(&harness));
     };
     assert_eq!(name, "bounces", "the name before the caret");
-    harness.get_by_label(Text::RenameTo.get());
+    // The popup's label and its field are both named for the rename.
+    harness.get_by_role_and_label(Role::TextInput, Text::RenameTo.get());
     harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
     harness.event(Event::Text("hops".to_owned()));
     harness.run();
@@ -318,7 +320,9 @@ fn cmd_f_finds_and_replaces() {
     assert_eq!(editor(&harness).find.as_ref().unwrap().case, Case::Match);
     harness.get_by_label(&match_count(0));
     editor_mut(&mut harness).find.as_mut().unwrap().with = "x".to_owned();
-    harness.get_by_label(Text::Replace.get()).click();
+    harness
+        .get_by_role_and_label(Role::Button, Text::Replace.get())
+        .click();
     harness.run_steps(3);
     assert_eq!(text(&harness).matches("hops").count(), 4, "nothing matches");
     let id = egui::Id::new(EDITOR_AREA);

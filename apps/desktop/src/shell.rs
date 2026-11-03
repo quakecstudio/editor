@@ -16,12 +16,16 @@
 use std::path::{Path, PathBuf};
 
 use eframe::egui::containers::panel::PanelState;
-use eframe::egui::{self, Align, Button, Id, Layout as EguiLayout, RichText, Sense, Ui};
+use eframe::egui::{
+    self, Align, Button, Id, Layout as EguiLayout, Response, RichText, Sense, Ui, WidgetInfo,
+    WidgetType, accesskit,
+};
 use eframe::egui_wgpu::RenderState;
 use qs_commands::{CommandError, RegisterError, Registry, Session};
 use qs_editor_view::{Position, ViewStyle};
 use qs_layout::{
-    HasLayout, Layout, Panel, RESIZE_PANEL, ResizePanelParams, TOGGLE_PANEL, TogglePanelParams,
+    Focus, HasLayout, Layout, Panel, RESIZE_PANEL, ResizePanelParams, TOGGLE_PANEL,
+    TogglePanelParams,
 };
 use qs_render::{Camera, MapMesh};
 use qs_workbench::{
@@ -33,7 +37,7 @@ use qs_workbench::{
 use crate::editor::{Editor, Popup, Request};
 use crate::fallback::{SystemFonts, families};
 use crate::icons::Icon;
-use crate::keymap;
+use crate::keymap::{self, Scope};
 use crate::map_view::{self, MapView};
 use crate::palette::Palette;
 use crate::project::{self, Jump, SymbolScope};
@@ -124,6 +128,9 @@ pub struct Shell {
     map: Option<MapView>,
     /// The editor's file and text revision whose characters have fonts.
     covered: Option<(PathBuf, u64)>,
+    /// The count of focus commands the shell has applied (`Layout::focus_requests`): the
+    /// layout's when the window opens, so the keyboard moves only when a focus command runs.
+    focus_applied: u64,
 }
 
 impl Shell {
@@ -161,6 +168,7 @@ impl Shell {
             render_state: None,
             map: None,
             covered: None,
+            focus_applied: layout.focus_requests,
         })
     }
 
@@ -325,7 +333,7 @@ impl Shell {
     /// Writes the layout when it has changed since it was last written, and no drag is under
     /// way.
     pub(crate) fn save_if_changed(&mut self, dragging: bool) {
-        let layout = *self.layout();
+        let layout = self.layout().as_written();
         if dragging || layout == self.saved {
             return;
         }
@@ -340,14 +348,18 @@ impl Shell {
     /// Draws the window for one frame.
     pub fn ui(&mut self, ui: &mut Ui) {
         self.keys(ui);
+        let pending = self.pending_focus();
         self.toolbar(ui);
         self.status_bar(ui);
         for panel in [Panel::Left, Panel::Right, Panel::Bottom] {
-            self.panel(ui, panel);
+            self.panel(ui, panel, pending == Some(Focus::Panel(panel)));
         }
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(self.theme.color(Token::SurfaceEditor)))
-            .show(ui, |ui| self.centre(ui));
+            .show(ui, |ui| {
+                name_area(ui, accesskit::Role::Pane, Text::Centre);
+                self.centre(ui, pending == Some(Focus::Editor));
+            });
         if let Some((id, params)) = self.palette.show(
             ui,
             Id::new(Area::Palette),
@@ -363,19 +375,22 @@ impl Shell {
         self.save_if_changed(dragging);
     }
 
-    /// The shortcuts pressed this frame: the palette's, and while it is closed and the editor
-    /// does not have the keyboard each binding's command (`keymap`).
+    /// The shortcuts pressed this frame: the palette's, and while it is closed each binding's
+    /// command (`keymap`), the editor's own keys left to it while it has the keyboard.
     fn keys(&mut self, ui: &Ui) {
         if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_PALETTE)) {
             self.palette.open();
             return;
         }
-        // The palette, and the editor with its own undo history, take their keys themselves.
-        let editing = ui.memory(|m| m.has_focus(Id::new(EDITOR_AREA)));
-        if self.palette.is_open() || editing {
+        if self.palette.is_open() {
             return;
         }
+        // The editor, with its own undo history, takes its keys itself.
+        let editing = ui.memory(|m| m.has_focus(Id::new(EDITOR_AREA)));
         for binding in keymap::BINDINGS {
+            if editing && binding.scope == Scope::Shell {
+                continue;
+            }
             if ui.input_mut(|i| i.consume_shortcut(&binding.shortcut))
                 && let Err(error) = self.session.execute(
                     binding.command,
@@ -396,6 +411,7 @@ impl Shell {
             .exact_size(theme.size.toolbar)
             .frame(egui::Frame::NONE.fill(fill).inner_margin(theme.space(1)))
             .show(ui, |ui| {
+                name_area(ui, accesskit::Role::Toolbar, Text::Toolbar);
                 ui.horizontal_centered(|ui| {
                     let play = Button::new(
                         RichText::new(labelled(Icon::Play, Text::Play))
@@ -425,10 +441,16 @@ impl Shell {
                             (Panel::Bottom, Icon::PanelBottom, Text::ToggleBottomPanel),
                             (Panel::Left, Icon::PanelLeft, Text::ToggleLeftPanel),
                         ] {
+                            let visible = self.session.context().layout.panel(panel).visible;
                             let button = Button::new(icon.char().to_string())
                                 .frame(false)
-                                .selected(self.session.context().layout.panel(panel).visible);
-                            if ui.add(button).on_hover_text(text.get()).clicked() {
+                                .selected(visible);
+                            let response = ui.add(button).on_hover_text(text.get());
+                            // The icon is the button's text; its name is the tooltip's.
+                            response.widget_info(|| {
+                                WidgetInfo::selected(WidgetType::Button, true, visible, text.get())
+                            });
+                            if response.clicked() {
                                 toggled = Some(panel);
                             }
                         }
@@ -437,7 +459,15 @@ impl Shell {
                                 .color(theme.color(Token::TextMuted)),
                         );
                         let shortcut = ui.ctx().format_shortcut(&keymap::OPEN_PALETTE);
-                        if ui.add(search).on_hover_text(shortcut).clicked() {
+                        let response = ui.add(search).on_hover_text(shortcut);
+                        response.widget_info(|| {
+                            WidgetInfo::labeled(
+                                WidgetType::Button,
+                                true,
+                                Text::SearchCommands.get(),
+                            )
+                        });
+                        if response.clicked() {
                             open_palette = true;
                         }
                     });
@@ -453,6 +483,18 @@ impl Shell {
         }
     }
 
+    /// The area a focus command named since the last frame, if one ran (QA-9): the command
+    /// is counted, not compared, so naming the panel the keyboard left by a click still
+    /// moves the keyboard back.
+    fn pending_focus(&mut self) -> Option<Focus> {
+        let layout = *self.layout();
+        if self.focus_applied == layout.focus_requests {
+            return None;
+        }
+        self.focus_applied = layout.focus_requests;
+        Some(layout.focus)
+    }
+
     fn status_bar(&self, ui: &mut Ui) {
         let theme = &self.theme;
         egui::Panel::bottom(Id::new(Area::StatusBar))
@@ -463,6 +505,7 @@ impl Shell {
                     .inner_margin(egui::Margin::symmetric(8, 0)),
             )
             .show(ui, |ui| {
+                name_area(ui, accesskit::Role::Status, Text::StatusBar);
                 ui.horizontal_centered(|ui| {
                     let muted = theme.color(Token::TextMuted);
                     let (errors, warnings) =
@@ -479,7 +522,9 @@ impl Shell {
             });
     }
 
-    fn panel(&mut self, ui: &mut Ui, panel: Panel) {
+    /// Draws `panel`, giving it the keyboard when `focus`: its first heading, or the bottom
+    /// panel's selected tab, takes it.
+    fn panel(&mut self, ui: &mut Ui, panel: Panel, focus: bool) {
         let state = *self.layout().panel(panel);
         let theme = &self.theme;
         let builder = match panel {
@@ -530,18 +575,27 @@ impl Shell {
                         ui.set_max_height(given.y);
                     }
                 }
+                let name = match panel {
+                    Panel::Left => Text::LeftPanel,
+                    Panel::Right => Text::RightPanel,
+                    Panel::Bottom => Text::BottomPanel,
+                };
+                name_area(ui, accesskit::Role::Pane, name);
                 match panel {
                     Panel::Left => {
-                        jump = left(ui, theme, workbench, scope);
+                        jump = left(ui, theme, workbench, scope, focus);
                         ui.add_space(theme.space(3));
                         section(ui, theme, Text::Entities, Text::NotPlaying);
                     }
                     Panel::Right => {
-                        section(ui, theme, Text::Properties, Text::NotPlaying);
+                        let properties = section(ui, theme, Text::Properties, Text::NotPlaying);
+                        if focus {
+                            properties.request_focus();
+                        }
                         ui.add_space(theme.space(3));
                         section(ui, theme, Text::Agent, Text::NoAgent);
                     }
-                    Panel::Bottom => jump = bottom(ui, theme, bottom_tab, workbench),
+                    Panel::Bottom => jump = bottom(ui, theme, bottom_tab, workbench, focus),
                 }
             });
         if let Some(jump) = jump {
@@ -747,9 +801,14 @@ impl Shell {
         self.covered = Some(now);
     }
 
-    fn centre(&mut self, ui: &mut Ui) {
+    /// Draws the centre: its tabs and the one shown. When `focus`, the editor takes the
+    /// keyboard, or the shown tab when no file is open.
+    fn centre(&mut self, ui: &mut Ui, focus: bool) {
         self.sync_editor();
         self.cover_characters(ui.ctx());
+        if focus && self.centre_tab == CentreTab::Editor && self.editor.is_some() {
+            self.focus_editor(ui.ctx());
+        }
         let theme = &self.theme;
         egui::Frame::NONE
             .fill(theme.color(Token::SurfaceTabs))
@@ -762,7 +821,10 @@ impl Shell {
                         (CentreTab::Game, Text::Game),
                         (CentreTab::Map, Text::Map),
                     ] {
-                        ui.selectable_value(&mut self.centre_tab, tab, text.get());
+                        let response = ui.selectable_value(&mut self.centre_tab, tab, text.get());
+                        if focus && self.centre_tab == tab && self.editor.is_none() {
+                            response.request_focus();
+                        }
                     }
                 });
             });
@@ -811,19 +873,40 @@ pub(crate) fn dragged_size(previous: Option<f32>, now: Option<f32>, dragging: bo
     (dragging && (now - previous).abs() >= 0.5).then_some(now)
 }
 
-/// A panel section: its heading and, until it has content, one line of explanation.
-fn section(ui: &mut Ui, theme: &Theme, text: Text, empty: Text) {
-    heading(ui, theme, text);
-    note(ui, theme, empty);
+/// Names the area `ui` draws for a screen reader (QA-9): its node, egui's generic container,
+/// gets `role` and `name`.
+fn name_area(ui: &Ui, role: accesskit::Role, name: Text) {
+    ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
+        node.set_role(role);
+        node.set_label(name.get());
+    });
 }
 
-/// A panel section's heading.
-fn heading(ui: &mut Ui, theme: &Theme, text: Text) {
-    ui.label(
-        RichText::new(text.get())
-            .family(semibold())
-            .size(theme.type_scale.panel_heading.size),
+/// A panel section: its heading and, until it has content, one line of explanation; the
+/// heading's response.
+fn section(ui: &mut Ui, theme: &Theme, text: Text, empty: Text) -> Response {
+    let heading = heading(ui, theme, text);
+    note(ui, theme, empty);
+    heading
+}
+
+/// A panel section's heading: a heading to a screen reader, and where the keyboard lands when
+/// a focus command names the panel, so Tab moves on into the section.
+fn heading(ui: &mut Ui, theme: &Theme, text: Text) -> Response {
+    let response = ui.add(
+        egui::Label::new(
+            RichText::new(text.get())
+                .family(semibold())
+                .size(theme.type_scale.panel_heading.size),
+        )
+        .sense(Sense::focusable_noninteractive()),
     );
+    // egui gives a label its text as a value; a heading is read by its label.
+    ui.ctx().accesskit_node_builder(response.id, |node| {
+        node.set_role(accesskit::Role::Heading);
+        node.set_label(text.get());
+    });
+    response
 }
 
 /// The share of the left panel's height the Project tree may take.
@@ -837,10 +920,14 @@ fn left(
     theme: &Theme,
     workbench: &Workbench<FsLoader>,
     scope: &mut SymbolScope,
+    focus: bool,
 ) -> Option<Jump> {
     let height = ui.available_height();
     let mut jump = None;
-    heading(ui, theme, Text::Project);
+    let project = heading(ui, theme, Text::Project);
+    if focus {
+        project.request_focus();
+    }
     match workbench.root() {
         None => note(ui, theme, Text::NoProject),
         Some(root) => {
@@ -894,6 +981,7 @@ fn bottom(
     theme: &Theme,
     tab: &mut BottomTab,
     workbench: &Workbench<FsLoader>,
+    focus: bool,
 ) -> Option<Jump> {
     let problems = workbench.problems();
     ui.horizontal(|ui| {
@@ -906,7 +994,10 @@ fn bottom(
                 (BottomTab::Problems, shown @ 1..) => format!("{} {shown}", text.get()),
                 _ => text.get().to_owned(),
             };
-            ui.selectable_value(tab, value, label);
+            let response = ui.selectable_value(tab, value, label);
+            if focus && *tab == value {
+                response.request_focus();
+            }
         }
     });
     ui.separator();

@@ -13,15 +13,19 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use eframe::egui::accesskit::{Role, Toggled};
 use eframe::egui::{self, FontId, RawInput, Rect, Vec2};
+use egui_kittest::Harness;
+use egui_kittest::kittest::{NodeT as _, Queryable as _};
 use qs_commands::palette::search;
 use qs_commands::params::{self, Input};
-use qs_layout::{Layout, Panel};
+use qs_layout::{Focus, Layout, Panel};
+use serde_json::json;
 
 use crate::icons::Icon;
 use crate::keymap;
 use crate::palette::highlighted;
-use crate::shell::{commanded_size, dragged_size};
+use crate::shell::{EDITOR_AREA, commanded_size, dragged_size};
 use crate::strings::{Text, command_count, match_count};
 use crate::theme::{Mode, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
@@ -742,4 +746,203 @@ fn the_match_count_reads_as_words() {
     assert_eq!(match_count(0), "0 matches");
     assert_eq!(match_count(1), "1 match");
     assert_eq!(match_count(12), "12 matches");
+}
+
+/// A kittest harness running the app with no file open, after its first frame.
+fn accessible() -> Harness<'static, Option<App>> {
+    let mut harness = Harness::builder()
+        .with_size([1440.0, 900.0])
+        .build_ui_state(
+            |ui, app: &mut Option<App>| {
+                if let Some(app) = app {
+                    app.frame(ui);
+                }
+            },
+            None,
+        );
+    let app = App::new(&harness.ctx, None).unwrap();
+    *harness.state_mut() = Some(app);
+    harness.run();
+    harness
+}
+
+/// Runs the command `id` with no parameters in `harness`'s app, then a frame.
+fn run_command(harness: &mut Harness<'static, Option<App>>, id: &str) {
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell.execute(id, json!({})).unwrap();
+    harness.run();
+}
+
+// QA-9: every area of the window has a role and a name a screen reader can say, and every
+// control has a name: the icon-only buttons are named for what they do.
+#[test]
+fn every_area_and_control_has_a_name() {
+    let mut harness = accessible();
+    harness.state_mut().as_mut().unwrap().shell.palette.open();
+    harness.run();
+    for (role, text) in [
+        (Role::Toolbar, Text::Toolbar),
+        (Role::Status, Text::StatusBar),
+        (Role::Pane, Text::LeftPanel),
+        (Role::Pane, Text::RightPanel),
+        (Role::Pane, Text::BottomPanel),
+        (Role::Pane, Text::Centre),
+        (Role::Dialog, Text::CommandPalette),
+        (Role::TextInput, Text::SearchCommands),
+        (Role::Heading, Text::Project),
+        (Role::Heading, Text::Symbols),
+        (Role::Heading, Text::Entities),
+        (Role::Heading, Text::Properties),
+        (Role::Heading, Text::Agent),
+        (Role::Button, Text::ToggleLeftPanel),
+        (Role::Button, Text::ToggleRightPanel),
+        (Role::Button, Text::ToggleBottomPanel),
+        (Role::Button, Text::SearchCommands),
+        (Role::Button, Text::Editor),
+        (Role::Button, Text::Game),
+        (Role::Button, Text::Map),
+        (Role::Button, Text::Problems),
+        (Role::Button, Text::Console),
+        (Role::Button, Text::Debugger),
+    ] {
+        harness.get_by_role_and_label(role, text.get());
+    }
+    for text in [Text::Play, Text::Pause, Text::Step, Text::RestartMap] {
+        let button = harness.get_by_label_contains(text.get());
+        assert_eq!(button.accesskit_node().role(), Role::Button, "{text:?}");
+    }
+    // The panel toggles say whether their panel is shown.
+    let toggle = harness.get_by_role_and_label(Role::Button, Text::ToggleLeftPanel.get());
+    assert_eq!(toggle.accesskit_node().toggled(), Some(Toggled::True));
+    // The palette's rows are buttons named by their summaries.
+    harness.get_by_role_and_label(Role::Button, "Shows or hides a panel: Project and Entities on the left, Properties and the agent on the right, or Problems, Console and the debugger at the bottom.");
+    // No control is nameless.
+    let nameless: Vec<_> = harness
+        .root()
+        .children_recursive()
+        .filter(|node| {
+            matches!(
+                node.accesskit_node().role(),
+                Role::Button | Role::TextInput | Role::CheckBox
+            )
+        })
+        .filter(|node| {
+            node.accesskit_node()
+                .label()
+                .is_none_or(|label| label.trim().is_empty())
+        })
+        .collect();
+    assert!(nameless.is_empty(), "{nameless:#?}");
+}
+
+// QA-9: a focus command gives its panel's first heading, or the bottom panel's shown tab, the
+// keyboard, showing the panel first; the editor's command gives the editor the keyboard, or
+// the Editor tab when no file is open; and the same panel can be focused again after the
+// keyboard went elsewhere.
+#[test]
+fn focus_commands_reach_every_panel() {
+    let mut harness = accessible();
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .toggle(Panel::Right)
+        .unwrap();
+    harness.run();
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Heading, Text::Properties.get())
+            .is_none()
+    );
+    for (id, role, text) in [
+        (qs_layout::FOCUS_LEFT_PANEL, Role::Heading, Text::Project),
+        (
+            qs_layout::FOCUS_RIGHT_PANEL,
+            Role::Heading,
+            Text::Properties,
+        ),
+        (qs_layout::FOCUS_BOTTOM_PANEL, Role::Button, Text::Problems),
+        (qs_layout::FOCUS_EDITOR, Role::Button, Text::Editor),
+    ] {
+        run_command(&mut harness, id);
+        harness.run();
+        let target = harness.get_by_role_and_label(role, text.get());
+        assert!(target.is_focused(), "{id}: {target:?}");
+    }
+    assert!(
+        harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .layout()
+            .right
+            .visible
+    );
+    // The keyboard went to the editor by the command above; Cmd+1 again changes nothing, and
+    // Cmd+0 brings it back to the left panel.
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num0);
+    harness.run();
+    harness.run();
+    let project = harness.get_by_role_and_label(Role::Heading, Text::Project.get());
+    assert!(project.is_focused());
+    // A Tab from the heading moves on into the panel.
+    harness.key_press(egui::Key::Tab);
+    harness.run();
+    harness.run();
+    let project = harness.get_by_role_and_label(Role::Heading, Text::Project.get());
+    assert!(!project.is_focused());
+    assert_eq!(
+        harness.state().as_ref().unwrap().shell().layout().focus,
+        Focus::Panel(Panel::Left)
+    );
+}
+
+// QA-9: the focus shortcuts work while the editor has the keyboard, which the editor's own
+// shortcuts do not, and a focus command on the panel the layout already names still moves
+// the keyboard back from the editor.
+#[test]
+fn focus_shortcuts_reach_out_of_the_editor() {
+    let mut harness = accessible();
+    let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ember");
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell_mut().open_project(&project).unwrap();
+    app.shell_mut()
+        .execute(
+            "file.open",
+            json!({ "path": project.join("src/weapons.qc") }),
+        )
+        .unwrap();
+    harness.run();
+    let editor_has_keyboard = |harness: &Harness<'static, Option<App>>| {
+        harness
+            .ctx
+            .memory(|m| m.has_focus(egui::Id::new(EDITOR_AREA)))
+    };
+    run_command(&mut harness, qs_layout::FOCUS_EDITOR);
+    harness.run();
+    assert!(editor_has_keyboard(&harness));
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num2);
+    harness.run();
+    harness.run();
+    assert!(!editor_has_keyboard(&harness));
+    let properties = harness.get_by_role_and_label(Role::Heading, Text::Properties.get());
+    assert!(properties.is_focused());
+    // Back to the editor by a click, then the same panel again by its key.
+    harness
+        .ctx
+        .memory_mut(|m| m.request_focus(egui::Id::new(EDITOR_AREA)));
+    harness.run();
+    assert!(editor_has_keyboard(&harness));
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num2);
+    harness.run();
+    harness.run();
+    assert!(!editor_has_keyboard(&harness));
+    let properties = harness.get_by_role_and_label(Role::Heading, Text::Properties.get());
+    assert!(properties.is_focused());
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num1);
+    harness.run();
+    harness.run();
+    assert!(editor_has_keyboard(&harness));
 }

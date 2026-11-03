@@ -14,9 +14,10 @@ use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::io;
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use qs_commands::{Command, Outcome, RegisterError, Registry};
+use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -49,6 +50,18 @@ impl Panel {
     pub const ALL: [Self; 3] = [Self::Left, Self::Right, Self::Bottom];
 }
 
+/// The area that has the keyboard (QA-9): the editor, or a panel, which a screen reader
+/// then reads from its heading.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Focus {
+    /// The centre: the editor, or the centre tab shown when no file is open.
+    #[default]
+    Editor,
+    /// A panel around the centre.
+    Panel(Panel),
+}
+
 /// One panel's state.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -69,6 +82,13 @@ pub struct Layout {
     pub right: PanelState,
     /// Problems, Console and the debugger.
     pub bottom: PanelState,
+    /// The area that has the keyboard.
+    pub focus: Focus,
+    /// How many focus commands have run: each one is applied, including one naming the area
+    /// the keyboard was moved away from by a click, so a window compares this count rather
+    /// than the area. Not written to the file.
+    #[serde(skip)]
+    pub focus_requests: u64,
 }
 
 impl Default for Layout {
@@ -88,6 +108,8 @@ impl Default for Layout {
                 visible: true,
                 size: 230.0,
             },
+            focus: Focus::Editor,
+            focus_requests: 0,
         }
     }
 }
@@ -100,6 +122,15 @@ impl Layout {
             Panel::Left => &self.left,
             Panel::Right => &self.right,
             Panel::Bottom => &self.bottom,
+        }
+    }
+
+    /// This layout as the file holds it: without the count of focus commands.
+    #[must_use]
+    pub const fn as_written(self) -> Self {
+        Self {
+            focus_requests: 0,
+            ..self
         }
     }
 
@@ -225,6 +256,18 @@ pub const TOGGLE_PANEL: &str = "view.toggle_panel";
 /// The id of the command that sets a panel's size.
 pub const RESIZE_PANEL: &str = "view.resize_panel";
 
+/// The id of the command that gives the editor the keyboard.
+pub const FOCUS_EDITOR: &str = "view.focus_editor";
+
+/// The id of the command that gives the left panel the keyboard.
+pub const FOCUS_LEFT_PANEL: &str = "view.focus_left_panel";
+
+/// The id of the command that gives the right panel the keyboard.
+pub const FOCUS_RIGHT_PANEL: &str = "view.focus_right_panel";
+
+/// The id of the command that gives the bottom panel the keyboard.
+pub const FOCUS_BOTTOM_PANEL: &str = "view.focus_bottom_panel";
+
 /// The smallest a panel may be made, in points, so a panel is never dragged out of reach.
 pub const MIN_PANEL_SIZE: f32 = 120.0;
 
@@ -235,7 +278,96 @@ pub const MIN_PANEL_SIZE: f32 = 120.0;
 /// [`RegisterError`] when one of their ids is taken.
 pub fn register<C: HasLayout + 'static>(registry: &mut Registry<C>) -> Result<(), RegisterError> {
     registry.register(TogglePanel)?;
-    registry.register(ResizePanel)
+    registry.register(ResizePanel)?;
+    registry.register(FocusArea::<Editor>::new())?;
+    registry.register(FocusArea::<LeftPanel>::new())?;
+    registry.register(FocusArea::<RightPanel>::new())?;
+    registry.register(FocusArea::<BottomPanel>::new())
+}
+
+/// What a focus command returns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub(crate) struct Focused {
+    /// The area that has the keyboard now.
+    pub focus: Focus,
+}
+
+/// An area a focus command gives the keyboard: the command's id and summary, and the area.
+trait FocusTarget: Send + Sync + 'static {
+    const ID: &'static str;
+    const SUMMARY: &'static str;
+    const FOCUS: Focus;
+}
+
+/// `view.focus_editor`.
+struct Editor;
+
+impl FocusTarget for Editor {
+    const ID: &'static str = FOCUS_EDITOR;
+    const SUMMARY: &'static str = "Gives the keyboard to the editor in the centre.";
+    const FOCUS: Focus = Focus::Editor;
+}
+
+/// `view.focus_left_panel`.
+struct LeftPanel;
+
+impl FocusTarget for LeftPanel {
+    const ID: &'static str = FOCUS_LEFT_PANEL;
+    const SUMMARY: &'static str =
+        "Shows the left panel, Project and Entities, if it is hidden and gives it the keyboard.";
+    const FOCUS: Focus = Focus::Panel(Panel::Left);
+}
+
+/// `view.focus_right_panel`.
+struct RightPanel;
+
+impl FocusTarget for RightPanel {
+    const ID: &'static str = FOCUS_RIGHT_PANEL;
+    const SUMMARY: &'static str = "Shows the right panel, Properties and the agent, if it is \
+        hidden and gives it the keyboard.";
+    const FOCUS: Focus = Focus::Panel(Panel::Right);
+}
+
+/// `view.focus_bottom_panel`.
+struct BottomPanel;
+
+impl FocusTarget for BottomPanel {
+    const ID: &'static str = FOCUS_BOTTOM_PANEL;
+    const SUMMARY: &'static str = "Shows the bottom panel, Problems, Console and the debugger, \
+        if it is hidden and gives it the keyboard.";
+    const FOCUS: Focus = Focus::Panel(Panel::Bottom);
+}
+
+/// A focus command: gives one area the keyboard, showing it first when it is a hidden panel,
+/// outside the history like the other layout commands.
+struct FocusArea<T: FocusTarget>(PhantomData<T>);
+
+impl<T: FocusTarget> FocusArea<T> {
+    const fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<C: HasLayout + 'static, T: FocusTarget> Command<C> for FocusArea<T> {
+    const ID: &'static str = T::ID;
+    const SUMMARY: &'static str = T::SUMMARY;
+    type Params = NoParams;
+    type Output = Focused;
+    type Error = Infallible;
+
+    fn run(
+        &self,
+        context: &mut C,
+        NoParams {}: NoParams,
+    ) -> Result<Outcome<Focused, C>, Infallible> {
+        let layout = context.layout_mut();
+        if let Focus::Panel(panel) = T::FOCUS {
+            layout.panel_mut(panel).visible = true;
+        }
+        layout.focus = T::FOCUS;
+        layout.focus_requests = layout.focus_requests.wrapping_add(1);
+        Ok(Outcome::outside_history(Focused { focus: T::FOCUS }))
+    }
 }
 
 /// The parameters of `view.toggle_panel`.
