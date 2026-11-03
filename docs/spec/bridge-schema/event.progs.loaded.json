@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/event.progs.loaded.json",
+  "title": "progs/loaded notification params (BRIDGE-3)",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string"
+    },
+    "crc": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "version": {
+      "type": "integer"
+    },
+    "functions": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "globals": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fields": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "lno": {
+      "type": "boolean"
+    },
+    "time": {
+      "type": "number",
+      "description": "The VM's time when the progs loaded, in seconds; 0 before the first frame"
+    }
+  },
+  "required": [
+    "path",
+    "crc",
+    "version",
+    "functions",
+    "globals",
+    "fields",
+    "time"
+  ]
+}

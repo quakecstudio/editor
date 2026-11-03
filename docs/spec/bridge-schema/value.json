@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/value.json",
+  "title": "Shared shapes: typed QuakeC values, edicts, locations",
+  "$defs": {
+    "edict": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "An edict number, 0 the world"
+    },
+    "vector": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "location": {
+      "type": "object",
+      "properties": {
+        "function": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "statement": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "function"
+      ]
+    },
+    "value": {
+      "type": "object",
+      "description": "A QuakeC value with its type (BRIDGE-5)",
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "const": "float"
+            },
+            "value": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "vector"
+            },
+            "value": {
+              "$ref": "#/$defs/vector"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "entity"
+            },
+            "value": {
+              "$ref": "#/$defs/edict"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "field"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "function"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "void"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "fieldValue": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/value"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ]
+    },
+    "keyvalue": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ]
+    },
+    "stackFrame": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "function": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "statement": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "engine": {
+          "type": "boolean",
+          "description": "true for a frame of the engine's own code, such as SV_Physics, which has no file"
+        }
+      },
+      "required": [
+        "index",
+        "function"
+      ]
+    }
+  }
+}

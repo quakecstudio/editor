@@ -1,0 +1,10 @@
+{
+  "state": "paused",
+  "reason": "breakpoint",
+  "location": {
+    "function": "Ember_Touch",
+    "file": "src/weapons.qc",
+    "line": 33
+  },
+  "time": 21.07
+}

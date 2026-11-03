@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/screenshot.result.json",
+  "title": "screenshot response result (BRIDGE-4)",
+  "type": "object",
+  "properties": {
+    "png": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "contentMediaType": "image/png"
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "height": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "time": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "png",
+    "width",
+    "height",
+    "time"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/event.state.changed.json",
+  "title": "state/changed notification params (BRIDGE-3)",
+  "type": "object",
+  "properties": {
+    "state": {
+      "enum": [
+        "running",
+        "paused"
+      ]
+    },
+    "reason": {
+      "enum": [
+        "pause",
+        "breakpoint",
+        "step",
+        "error",
+        "reload"
+      ]
+    },
+    "location": {
+      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/location"
+    },
+    "time": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "state",
+    "time"
+  ]
+}

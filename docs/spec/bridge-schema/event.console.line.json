@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/event.console.line.json",
+  "title": "console/line notification params (BRIDGE-3)",
+  "type": "object",
+  "properties": {
+    "text": {
+      "type": "string"
+    },
+    "level": {
+      "enum": [
+        "print",
+        "developer",
+        "warning",
+        "error"
+      ]
+    },
+    "time": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "text",
+    "level"
+  ]
+}

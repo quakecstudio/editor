@@ -1,0 +1,9 @@
+{
+  "jsonrpc": "2.0",
+  "method": "console/line",
+  "params": {
+    "text": "Ember_Touch",
+    "level": "print",
+    "time": 21.07
+  }
+}

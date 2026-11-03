@@ -1,0 +1,9 @@
+{
+  "classname": "monster_army",
+  "keyvalues": [
+    {
+      "key": "origin",
+      "value": "256 128 24"
+    }
+  ]
+}

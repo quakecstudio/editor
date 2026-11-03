@@ -1,0 +1,10 @@
+{
+  "path": "build/ember/progs.dat",
+  "crc": 5927,
+  "version": 6,
+  "functions": 412,
+  "globals": 3010,
+  "fields": 105,
+  "lno": true,
+  "time": 0
+}

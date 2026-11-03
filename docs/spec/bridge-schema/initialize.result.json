@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/initialize.result.json",
+  "title": "initialize response result (BRIDGE-2.2)",
+  "type": "object",
+  "properties": {
+    "protocolVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "host": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "engine": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "description": "Each capability-flagged command, true when the host accepts it (BRIDGE-2.3)",
+      "properties": {
+        "pause": {
+          "type": "boolean"
+        },
+        "resume": {
+          "type": "boolean"
+        },
+        "field/set": {
+          "type": "boolean"
+        },
+        "pick": {
+          "type": "boolean"
+        },
+        "entity/spawn": {
+          "type": "boolean"
+        },
+        "entity/remove": {
+          "type": "boolean"
+        },
+        "entity/edit": {
+          "type": "boolean"
+        },
+        "player/spawn_at": {
+          "type": "boolean"
+        },
+        "screenshot": {
+          "type": "boolean"
+        },
+        "evaluate": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "required": [
+    "protocolVersion",
+    "host",
+    "capabilities"
+  ]
+}

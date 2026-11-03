@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/message.json",
+  "title": "The JSON-RPC 2.0 envelope of every message (BRIDGE-1.4)",
+  "type": "object",
+  "properties": {
+    "jsonrpc": {
+      "const": "2.0"
+    },
+    "id": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "method": {
+      "type": "string"
+    },
+    "params": {
+      "type": "object"
+    },
+    "result": {},
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "data": {}
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    }
+  },
+  "required": [
+    "jsonrpc"
+  ],
+  "oneOf": [
+    {
+      "required": [
+        "method",
+        "id"
+      ],
+      "not": {
+        "required": [
+          "result"
+        ]
+      }
+    },
+    {
+      "required": [
+        "method"
+      ],
+      "not": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "required": [
+        "id",
+        "result"
+      ]
+    },
+    {
+      "required": [
+        "id",
+        "error"
+      ]
+    }
+  ]
+}

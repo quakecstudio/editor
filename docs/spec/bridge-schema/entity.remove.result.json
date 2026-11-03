@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/entity.remove.result.json",
+  "title": "entity/remove response result (BRIDGE-4)",
+  "type": "object",
+  "properties": {}
+}

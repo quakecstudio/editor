@@ -1,0 +1,12 @@
+{
+  "edict": 212,
+  "field": "velocity",
+  "value": {
+    "type": "vector",
+    "value": [
+      480,
+      -18,
+      160
+    ]
+  }
+}

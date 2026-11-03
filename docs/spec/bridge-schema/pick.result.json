@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/pick.result.json",
+  "title": "pick response result (BRIDGE-4)",
+  "type": "object",
+  "properties": {
+    "edict": {
+      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/edict"
+    },
+    "point": {
+      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/vector"
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/reload.result.json",
+  "title": "reload response result (BRIDGE-4)",
+  "type": "object",
+  "properties": {
+    "migrated": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "lost": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "global",
+              "field",
+              "function"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "reason"
+        ]
+      }
+    },
+    "time": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "migrated",
+    "lost",
+    "time"
+  ]
+}

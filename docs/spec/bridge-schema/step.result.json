@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/step.result.json",
+  "title": "step response result (BRIDGE-4)",
+  "type": "object",
+  "properties": {
+    "location": {
+      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/location"
+    },
+    "time": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "time"
+  ]
+}
