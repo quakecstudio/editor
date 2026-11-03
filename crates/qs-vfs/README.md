@@ -5,7 +5,9 @@ from a base directory and its command line, and file lookup on it. `Vfs::new` is
 `COM_InitFilesystem` followed by `COM_CheckRegistered`, `Vfs::find` is `COM_FindFile`,
 `Vfs::load` is `COM_LoadFile`, and `Vfs::load_wad` finds and checks `gfx.wad` as
 `W_LoadWadFile` does. `Vfs::files` lists every file of every element, so an install can be
-walked. The host filesystem is behind the `HostFs` trait: `StdFs` is the real one, and the
+walked. `Vfs::load_rerelease` reads a file the 2021 rerelease keeps beside its game
+directories as QuakeSpasm's `LOC_LoadFile` does: the search path, then the base directory,
+then a member of `QuakeEX.kpf` there, read by the `zip` module. The host filesystem is behind the `HostFs` trait: `StdFs` is the real one, and the
 tests use a tree held in memory. Ported from `WinQuake/common.c` and `wad.c` at the commit
 pinned in [`docs/porting.md`](../../docs/porting.md).
 
@@ -14,11 +16,13 @@ are spec statements: names in directories match ASCII case-insensitively on ever
 (FS-3.7), loose lookups never leave the install (FS-3.8), and there is no limit on path
 lengths or the number of archives (FS-3.9, FS-3.10). `-cachedir` is not implemented (FS-2.5).
 
-- **Layer:** L0 formats. It depends on `qs-pak` and `qs-wad`. Finding the user's install is
+- **Layer:** L0 formats. It depends on `qs-pak`, `qs-wad` and `miniz_oxide`, which inflates
+  zip members. Finding the user's install is
   [#43](https://github.com/quakecstudio/editor/issues/43).
 - **Spec sections:** FS-1 to FS-5 in [`filesystem.md`](../../docs/spec/filesystem.md).
-- **Spec statements:** PAK-1.4 in [`pak.md`](../../docs/spec/pak.md) and WAD-1.4 in
-  [`wad2.md`](../../docs/spec/wad2.md).
+- **Spec statements:** PAK-1.4 in [`pak.md`](../../docs/spec/pak.md), WAD-1.4 in
+  [`wad2.md`](../../docs/spec/wad2.md), and RRE-1.10 in
+  [`rerelease.md`](../../docs/spec/engine/rerelease.md).
 - **Shipped:** yes.
 
 ## Walking an install

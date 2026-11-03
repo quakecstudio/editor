@@ -207,21 +207,11 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
                 .map(LoadedFile::into_bytes)
         }))
     };
-    // RRE-1.6: the rerelease's strings, read before the map as QuakeSpasm's `LOC_Init` reads
-    // them: from the search path, else from the base directory itself. `QuakeEX.kpf`, the
-    // zip QuakeSpasm reads last, is not read.
-    let text = match vfs.load(RRE_LOC_FILE.as_bytes()) {
-        Ok(Some(file)) => Some(file.into_bytes()),
-        Ok(None) => {
-            let basedir = engine
-                .iter()
-                .position(|arg| arg == "-basedir")
-                .and_then(|i| engine.get(i.saturating_add(1)))
-                .map_or(".", String::as_str);
-            std::fs::read(std::path::Path::new(basedir).join(RRE_LOC_FILE)).ok()
-        }
-        Err(e) => return Err(format!("{RRE_LOC_FILE}: {e:?}")),
-    };
+    // RRE-1.6, RRE-1.10: the rerelease's strings, read before the map as QuakeSpasm's
+    // `LOC_Init` reads them, from the search path, the base directory or `QuakeEX.kpf`.
+    let text = vfs
+        .load_rerelease(RRE_LOC_FILE)
+        .map_err(|e| format!("{RRE_LOC_FILE}: {e}"))?;
     let options = LoadOptions {
         localization: text
             .map(|text| Localization::loc_load_file(&text))

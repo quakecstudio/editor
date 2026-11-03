@@ -11,14 +11,12 @@
     reason = "test code: a failed unwrap, index, sum or cast is a failed test"
 )]
 
-use std::fs;
 use std::io::Cursor;
-use std::path::PathBuf;
 
 use miniz_oxide::deflate::compress_to_vec;
+use qs_vfs::zip::crc32;
 
-use super::{Gunzip, Zip, read_tar_gz};
-use crate::test_dirs::fresh;
+use super::{Gunzip, read_tar_gz};
 
 /// A tar header for `name`, `size` bytes of type `kind`, with a valid checksum.
 fn header(name: &str, prefix: &str, size: usize, kind: u8) -> [u8; 512] {
@@ -107,7 +105,8 @@ pub(crate) fn zip(files: &[(&str, &[u8])], deflate: bool) -> Vec<u8> {
         fixed.extend_from_slice(&20_u16.to_le_bytes());
         fixed.extend_from_slice(&0_u16.to_le_bytes());
         fixed.extend_from_slice(&method.to_le_bytes());
-        fixed.extend_from_slice(&[0; 8]);
+        fixed.extend_from_slice(&[0; 4]);
+        fixed.extend_from_slice(&crc32(data).to_le_bytes());
         fixed.extend_from_slice(&(body.len() as u32).to_le_bytes());
         fixed.extend_from_slice(&(data.len() as u32).to_le_bytes());
         fixed.extend_from_slice(&(name.len() as u16).to_le_bytes());
@@ -248,83 +247,6 @@ fn malformed_tars_are_errors() {
     let mut no_end = Vec::new();
     push_entry(&mut no_end, header("r-c/a.qc", "", 1, b'0'), b"x");
     assert!(err(&no_end).contains("no end-of-archive block"));
-}
-
-fn temp(name: &str, bytes: &[u8]) -> PathBuf {
-    let path = fresh(&format!("corpus-archive/{name}")).join(name);
-    fs::write(&path, bytes).unwrap();
-    path
-}
-
-fn open(name: &str, bytes: &[u8]) -> std::io::Result<Zip> {
-    Zip::open(fs::File::open(temp(name, bytes))?)
-}
-
-#[test]
-fn zip_members_read_stored_and_deflated() {
-    for deflate in [false, true] {
-        let bytes = zip(
-            &[("lite/id1/pak0.pak", b"PACK data"), ("lite/x", &[5; 3000])],
-            deflate,
-        );
-        let mut z = open(&format!("ok-{deflate}.zip"), &bytes).unwrap();
-        assert_eq!(z.read("lite/id1/pak0.pak").unwrap().unwrap(), b"PACK data");
-        assert_eq!(z.read("lite/x").unwrap().unwrap(), vec![5; 3000]);
-        assert!(z.read("lite/nosuch").unwrap().is_none());
-    }
-}
-
-#[test]
-fn malformed_zips_are_errors() {
-    let err = |name: &str, bytes: &[u8]| open(name, bytes).err().unwrap().to_string();
-    assert!(err("not.zip", b"not a zip").contains("no end of central directory"));
-
-    let good = zip(&[("a", b"abc")], false);
-    let eocd = good.len() - 22;
-    let mut zip64 = good.clone();
-    zip64[eocd + 16..eocd + 20].copy_from_slice(&u32::MAX.to_le_bytes());
-    assert!(err("zip64.zip", &zip64).contains("zip64"));
-    let mut outside = good.clone();
-    outside[eocd + 16..eocd + 20].copy_from_slice(&1000_u32.to_le_bytes());
-    assert!(err("outside.zip", &outside).contains("outside the file"));
-    let mut bad_cd = good.clone();
-    let cd = u32::from_le_bytes(good[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
-    bad_cd[cd] = b'X';
-    assert!(err("badcd.zip", &bad_cd).contains("central directory"));
-    let mut member64 = good.clone();
-    member64[cd + 20..cd + 24].copy_from_slice(&u32::MAX.to_le_bytes());
-    assert!(err("member64.zip", &member64).contains("zip64"));
-
-    let read_err = |name: &str, bytes: &[u8]| {
-        open(name, bytes)
-            .unwrap()
-            .read("a")
-            .unwrap_err()
-            .to_string()
-    };
-    let mut encrypted = good.clone();
-    encrypted[cd + 8] = 1;
-    assert!(read_err("enc.zip", &encrypted).contains("encrypted"));
-    let mut method = good.clone();
-    method[cd + 10] = 12;
-    assert!(read_err("method.zip", &method).contains("unsupported compression"));
-    let mut local = good.clone();
-    local[0] = b'X';
-    assert!(read_err("local.zip", &local).contains("local header"));
-    let mut size = good.clone();
-    size[cd + 24] = 4;
-    assert!(read_err("size.zip", &size).contains("stated size"));
-
-    let deflated = zip(&[("a", &[9; 500])], true);
-    let eocd = deflated.len() - 22;
-    let cd = u32::from_le_bytes(deflated[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
-    let mut small = deflated.clone();
-    small[cd + 24..cd + 28].copy_from_slice(&10_u32.to_le_bytes());
-    assert!(read_err("small.zip", &small).contains("larger than its stated size"));
-    let mut corrupt = deflated.clone();
-    corrupt[34] = 0xff;
-    corrupt[35] = 0xff;
-    assert!(read_err("corrupt.zip", &corrupt).contains("deflate"));
 }
 
 /// A reader that gives one byte per call, as a slow network or pipe may.

@@ -73,6 +73,13 @@ them up in `localization/loc_english.txt`, read from the game directory or from
   (string truncated)`), with a warning past 255. `WriteString` writes the one string it is
   given localized (`MSG_WriteString (WriteDest(), LOC_GetString (G_STRING (OFS_PARM1)))`),
   so its bytes, and the message's count of them, are the localized string's and its zero.
+- **RRE-1.10** `LOC_LoadFile` looks for the file on the search path (`COM_LoadMallocFile`,
+  FS-3), else opens `<com_basedir>/<file>`, else the member `<file>` of
+  `<com_basedir>/QuakeEX.kpf` (FS-5.3, FS-5.5); a base directory file that opens but is empty
+  (`sz <= 0`) is `goto fail`, with no look in the archive, as is an archive that is not a zip or
+  has no such member: "Couldn't load '<file>' from '<basedir>'", and nothing is localized.
+  QuakeSpasm also tries the user directory (`host_parms->userdir`) after each; QuakeC Studio
+  models no user directories (FS-5.4).
 - **RRE-1.8** `COM_HashString` XORs each byte of the key as a `char`, `hash ^= *str++`, which
   x86 signs, so a byte from 0x80 up is XORed sign-extended (`0xFFFFFFE9` for 0xE9) before the
   multiply.

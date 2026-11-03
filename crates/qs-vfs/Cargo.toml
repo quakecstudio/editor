@@ -9,10 +9,12 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+miniz_oxide = { workspace = true, features = ["with-alloc"] }
 qs-pak = { workspace = true }
 qs-wad = { workspace = true }
 
 [dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
 qc-progs = { workspace = true }
 qs-bsp = { workspace = true }
 qs-map = { workspace = true }

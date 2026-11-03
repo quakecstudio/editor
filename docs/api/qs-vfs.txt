@@ -2,10 +2,12 @@ const qs_vfs::FS_GAMENAME
 const qs_vfs::FS_POP_PATH
 const qs_vfs::FS_POP_SIZE
 const qs_vfs::FS_POP_TABLE
+const qs_vfs::RRE_KPF
 enum qs_vfs::Element
 enum qs_vfs::Location
 enum qs_vfs::VfsError
 enum qs_vfs::host::EntryKind
+enum qs_vfs::zip::ZipError
 field qs_vfs::host::DirEntry.kind
 field qs_vfs::host::DirEntry.name
 fn qs_vfs::Archive::name
@@ -29,15 +31,23 @@ fn qs_vfs::Vfs::host
 fn qs_vfs::Vfs::is_modified
 fn qs_vfs::Vfs::is_registered
 fn qs_vfs::Vfs::load
+fn qs_vfs::Vfs::load_rerelease
 fn qs_vfs::Vfs::load_wad
 fn qs_vfs::Vfs::new
 fn qs_vfs::Vfs::read
 fn qs_vfs::host::HostFs::open
 fn qs_vfs::host::HostFs::read_dir
 fn qs_vfs::host::find_entry
+fn qs_vfs::zip::Zip::open
+fn qs_vfs::zip::Zip::read
+fn qs_vfs::zip::crc32
 impl qs_vfs::VfsError: core::error::Error
 impl qs_vfs::VfsError: fmt::Display
 impl qs_vfs::host::StdFs: HostFs
+impl qs_vfs::zip::ZipError: From<io::Error>
+impl qs_vfs::zip::ZipError: core::error::Error
+impl qs_vfs::zip::ZipError: fmt::Display
+mod qs_vfs::zip
 struct qs_vfs::Archive
 struct qs_vfs::Directory
 struct qs_vfs::FileRef
@@ -45,6 +55,7 @@ struct qs_vfs::LoadedFile
 struct qs_vfs::Vfs
 struct qs_vfs::host::DirEntry
 struct qs_vfs::host::StdFs
+struct qs_vfs::zip::Zip
 trait qs_vfs::host::HostFs
 type qs_vfs::host::HostFs::File
 use qs_vfs::DirEntry = host::DirEntry
@@ -66,3 +77,19 @@ variant qs_vfs::VfsError::WadNotFound
 variant qs_vfs::host::EntryKind::Dir
 variant qs_vfs::host::EntryKind::File
 variant qs_vfs::host::EntryKind::Other
+variant qs_vfs::zip::ZipError::CentralOutside
+variant qs_vfs::zip::ZipError::CentralTruncated
+variant qs_vfs::zip::ZipError::Corrupt
+variant qs_vfs::zip::ZipError::Crc
+variant qs_vfs::zip::ZipError::Encrypted
+variant qs_vfs::zip::ZipError::Io
+variant qs_vfs::zip::ZipError::Larger
+variant qs_vfs::zip::ZipError::LocalHeader
+variant qs_vfs::zip::ZipError::Method
+variant qs_vfs::zip::ZipError::Multidisk
+variant qs_vfs::zip::ZipError::NotZip
+variant qs_vfs::zip::ZipError::Patch
+variant qs_vfs::zip::ZipError::Size
+variant qs_vfs::zip::ZipError::TooLarge
+variant qs_vfs::zip::ZipError::Truncated
+variant qs_vfs::zip::ZipError::Zip64
