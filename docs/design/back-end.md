@@ -32,15 +32,16 @@ lowered from it, and passes over that layer before the progs is written.
 
 | Crosses the boundary today | Worked out again in `qc-codegen` |
 | --- | --- |
-| `ModuleIndex`: the definition list, the facts of each definition, struct shapes, constant values | each name use, from its token (`Compiler::def_of`) |
-| `TypedBody`: the type at an expression's span, read in one place (casts, `compile.rs`) | every other type (`Compiler::type_of`), the conversion of an operand (`floats_of`, `int_as_float`, `float_of_int`), constant folding (`folded`, `folded_with_one_constant`), the choice of opcode (`ops::select`) |
+| `ModuleIndex`: the definition list, the facts of each definition, struct shapes, constant values, and the definition each name use resolves to, which `Compiler::def_of` looks up by the name's span | |
+| `TypedBody`: the type at an expression's span, read in one place (casts, `compile.rs`) | every other type (`Compiler::type_of`, carried on each value from the opcode `ops::select` chose), the conversion of an operand (`floats_of`, `int_as_float`, `float_of_int`), constant folding (`folded`, `folded_with_one_constant`) and the choice of opcode (`ops::select`) |
 
 `semantic-model.md` describes `TypedBody` as an arena of expressions, each with its type, the
 definition it names and the conversion applied, and says `qc-codegen` walks it. That
 `TypedBody` was never built: the type is the only part recorded, keyed by span. The checker
 (`qc-sema/src/check`, about 11,800 lines) does the rest of the work for its diagnostics and
 throws it away; the code generator (`compile.rs` and `compile/arrays.rs`, about 5,300 lines)
-walks each file's syntax tree and does it a second time, emitting statements and choosing
+walks each file's syntax tree, takes each name's definition from the semantic model, and does
+the rest a second time, emitting statements and choosing
 global offsets as it goes. FTEQCC's code-generation behaviour is spread through it as 52
 dialect branches.
 
@@ -109,9 +110,9 @@ Each step keeps every differential green, and the first two change no output. A 
 compiles every corpus codebase and the generated programs of seed 1 with the code generator
 before and after the step and requires the same bytes.
 
-1. **`TypedBody` as documented.** The checker keeps each expression's resolved definition,
-   conversion and constant value, and `qc-codegen` reads them: `def_of`, `type_of` and the
-   conversion and folding helpers become lookups. The output is unchanged.
+1. **`TypedBody` as documented.** The checker keeps each expression's type, conversion and
+   constant value, and `qc-codegen` reads them: `type_of` and the conversion and folding
+   helpers become lookups. The output is unchanged.
 2. **`Ir` with a creation-order allocator.** The lowering emits `Ir` instead of statements
    and offsets; allocation gives every temporary a new slot in creation order and layout
    places blocks as FTE-21.7 says, so the progs is byte for byte the same.
