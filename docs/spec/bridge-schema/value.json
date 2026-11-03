@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://quakecstudio.org/spec/bridge-schema/value.json",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/value.json",
   "title": "Shared shapes: typed QuakeC values, edicts, locations",
   "$defs": {
     "edict": {

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://quakecstudio.org/spec/bridge-schema/pause.result.json",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/pause.result.json",
   "title": "pause response result (BRIDGE-4)",
   "type": "object",
   "properties": {

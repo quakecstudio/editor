@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://quakecstudio.org/spec/bridge-schema/entity.spawn.params.json",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/entity.spawn.params.json",
   "title": "entity/spawn request params (BRIDGE-4)",
   "type": "object",
   "properties": {
@@ -10,7 +10,7 @@
     "keyvalues": {
       "type": "array",
       "items": {
-        "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/keyvalue"
+        "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/keyvalue"
       }
     }
   },

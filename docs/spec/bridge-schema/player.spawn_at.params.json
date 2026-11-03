@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://quakecstudio.org/spec/bridge-schema/player.spawn_at.params.json",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/player.spawn_at.params.json",
   "title": "player/spawn_at request params (BRIDGE-4)",
   "type": "object",
   "properties": {
     "origin": {
-      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/vector"
+      "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/vector"
     },
     "angles": {
-      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/vector"
+      "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/vector"
     }
   },
   "required": [

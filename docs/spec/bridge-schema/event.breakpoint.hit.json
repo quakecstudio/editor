@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://quakecstudio.org/spec/bridge-schema/event.breakpoint.hit.json",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/event.breakpoint.hit.json",
   "title": "breakpoint/hit notification params (BRIDGE-3)",
   "type": "object",
   "properties": {
@@ -9,10 +9,10 @@
       "minimum": 0
     },
     "location": {
-      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/location"
+      "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/location"
     },
     "self": {
-      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/edict"
+      "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/edict"
     },
     "time": {
       "type": "number"

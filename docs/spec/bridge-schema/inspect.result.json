@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://quakecstudio.org/spec/bridge-schema/inspect.result.json",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/inspect.result.json",
   "title": "inspect response result (BRIDGE-4)",
   "type": "object",
   "properties": {
     "edict": {
-      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/edict"
+      "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/edict"
     },
     "classname": {
       "type": "string"
@@ -13,19 +13,19 @@
     "fields": {
       "type": "array",
       "items": {
-        "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/fieldValue"
+        "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/fieldValue"
       }
     },
     "globals": {
       "type": "array",
       "items": {
-        "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/fieldValue"
+        "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/fieldValue"
       }
     },
     "stack": {
       "type": "array",
       "items": {
-        "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/stackFrame"
+        "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/stackFrame"
       }
     },
     "entities": {
@@ -34,7 +34,7 @@
         "type": "object",
         "properties": {
           "edict": {
-            "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/edict"
+            "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/edict"
           },
           "classname": {
             "type": "string"
@@ -43,7 +43,7 @@
             "type": "string"
           },
           "origin": {
-            "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/vector"
+            "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/vector"
           }
         },
         "required": [
