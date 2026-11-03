@@ -1,0 +1,625 @@
+
+*** crates/qc-sema/src/check/expr.rs:365:9: replace Checker<'e>::operator_at -> Result<Option<Value>, Fatal> with Ok(None)
+
+*** mutation diff:
+--- crates/qc-sema/src/check/expr.rs
++++ replace Checker<'e>::operator_at -> Result<Option<Value>, Fatal> with Ok(None)
+@@ -357,102 +357,17 @@
+     /// [`Checker::operator`] of the operator `op` at `span`.
+     pub(super) fn operator_at(
+         &mut self,
+         op: BinaryOp,
+         span: Span,
+         lhs: &Value,
+         rhs: &Value,
+     ) -> Result<Option<Value>, Fatal> {
+-        let Some(spelling) = binary_spelling(op) else {
+-            return Ok(None);
+-        };
+-        // An array named bare is its head, a pointer (`REF_ARRAYHEAD`), which is not followed.
+-        if lhs.ty == Type::Unknown
+-            || rhs.ty == Type::Unknown
+-            || lhs.is_array_head()
+-            || rhs.is_array_head()
+-        {
+-            return Ok(None);
+-        }
+-        let (Some(left), Some(right)) = (self.operand(lhs, rhs), self.operand(rhs, lhs)) else {
+-            return Ok(None);
+-        };
+-        let in_class = self.env.in_class();
+-        let Some(choice) = choose_opcode(&candidates(spelling), left, right, in_class) else {
+-            return Ok(None);
+-        };
+-        let Some(opcode) = row(choice.op()) else {
+-            return Ok(None);
+-        };
+-        if let Choice::Mismatch(_) = choice {
+-            self.mismatch(spelling, lhs, rhs, span);
+-        }
+-        if let Ok(number) = u16::try_from(choice.op().number()) {
+-            self.opcodes.insert((span.start, span.end), number);
+-        }
+-        let [a, b, _] = opcode.types;
+-        let mut folded = [None, None];
+-        for (slot, (value, operand, row)) in
+-            folded.iter_mut().zip([(lhs, left, a), (rhs, right, b)])
+-        {
+-            *slot = self.convert(value, operand, row, span)?;
+-        }
+-        // A constant converted to the row's type is folded by FTEQCC's conversion, which the
+-        // model does not follow: its value no longer decides anything (FTEF-26.13).
+-        let constness = |value: &Value, operand: Operand, row: OpType| {
+-            if row.etype() == operand.etype
+-                || value.constness == Constness::Variable
+-                || conversion_opcodes(operand.etype, row.etype()).is_empty()
+-            {
+-                value.constness
+-            } else {
+-                Constness::Opaque
+-            }
+-        };
+-        // A converted operand is what `QCC_EvaluateCast(lhsd, *op->type_a, true)` gives, of the
+-        // row's type, a temporary the conversion made (FTEF-23.9); a null constant is cast so
+-        // too, and the opcode's warnings then read the row's type.
+-        let converted = |value: &Value, operand: Operand, row: OpType| {
+-            let kept = row.etype() == operand.etype || row == OpType::Variant;
+-            Value {
+-                constness: constness(value, operand, row),
+-                // A null constant is cast with no statement, `QCC_MakeIntConst(0)` of the
+-                // row's type, still a constant (FTEF-28.4).
+-                sym: if kept || value.null() {
+-                    value.sym
+-                } else {
+-                    Sym::Temp
+-                },
+-                ty: match row {
+-                    _ if kept => value.ty.clone(),
+-                    // `type_function`, a `void()`, and `type_field`, a `.void` (FTEF-28.4).
+-                    OpType::Function if value.null() => Type::Function(
+-                        FunctionType {
+-                            ret: Type::Simple(SimpleType::Void),
+-                            params: Vec::new(),
+-                            variadic: false,
+-                            labels: ParamLabels::default(),
+-                        }
+-                        .into(),
+-                    ),
+-                    OpType::Field if value.null() => {
+-                        Type::Field(Type::Simple(SimpleType::Void).into())
+-                    }
+-                    _ => row.value_type(),
+-                },
+-                ..value.clone()
+-            }
+-        };
+-        // A constant whose conversion folded is the constant it folded to (FTEF-26.3).
+-        let [folded_lhs, folded_rhs] = folded;
+-        let lhs = folded_lhs.unwrap_or_else(|| converted(lhs, left, a));
+-        let rhs = folded_rhs.unwrap_or_else(|| converted(rhs, right, b));
+-        // The value is what the opcode, its folding or its emulation gives, of that one's type.
+-        Ok(Some(self.emit(choice.op(), &lhs, &rhs, span)?))
++        Ok(None) /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Converts the operand `value` to the opcode's type `row` for it, if it is another, with
+     /// the warning "Implicit conversion" when the conversion is costly (FTEF-23.5) and the
+     /// implicit cast's own diagnostics; a refused cast is a fatal error. A constant whose
+     /// conversion opcodes fold is returned as the constant they give.
+     fn convert(
+         &mut self,
+
+
+*** /Users/jplock/.rustup/toolchains/1.99.0-aarch64-apple-darwin/bin/cargo nextest run --no-run --cargo-profile=mutants --verbose --package=qc-sema@2026.10.0
+   Compiling qc-sema v2026.10.0 (/private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/crates/qc-sema)
+warning: unused imports: `Choice` and `choose_opcode`
+  --> crates/qc-sema/src/check/expr.rs:18:29
+   |
+18 | use crate::check::convert::{Choice, Operand, choose_opcode};
+   |                             ^^^^^^           ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `candidates` and `row`
+  --> crates/qc-sema/src/check/expr.rs:21:37
+   |
+21 | use crate::check::opcodes::{OpType, candidates, row};
+   |                                     ^^^^^^^^^^  ^^^
+
+warning: unused import: `Constness`
+  --> crates/qc-sema/src/check/expr.rs:25:20
+   |
+25 | use crate::check::{Constness, Env, FunctionFacts, Reference, Sym, TypedBody, Value};
+   |                    ^^^^^^^^^
+
+warning: unused imports: `FunctionType` and `ParamLabels`
+  --> crates/qc-sema/src/check/expr.rs:27:17
+   |
+27 | use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
+   |                 ^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused variable: `op`
+   --> crates/qc-sema/src/check/expr.rs:360:9
+    |
+360 |         op: BinaryOp,
+    |         ^^ help: if this is intentional, prefix it with an underscore: `_op`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `span`
+   --> crates/qc-sema/src/check/expr.rs:361:9
+    |
+361 |         span: Span,
+    |         ^^^^ help: if this is intentional, prefix it with an underscore: `_span`
+
+warning: unused variable: `lhs`
+   --> crates/qc-sema/src/check/expr.rs:362:9
+    |
+362 |         lhs: &Value,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_lhs`
+
+warning: unused variable: `rhs`
+   --> crates/qc-sema/src/check/expr.rs:363:9
+    |
+363 |         rhs: &Value,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_rhs`
+
+warning: struct `Operand` is never constructed
+  --> crates/qc-sema/src/check/convert.rs:19:19
+   |
+19 | pub(crate) struct Operand {
+   |                   ^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `name` and `pointee` are never used
+  --> crates/qc-sema/src/check/convert.rs:52:25
+   |
+29 | impl OpType {
+   | ----------- methods in this implementation
+...
+52 |     pub(crate) const fn name(self) -> &'static str {
+   |                         ^^^^
+...
+77 |     pub(crate) const fn pointee(self) -> Option<Etype> {
+   |                         ^^^^^^^
+
+warning: method `cost_to` is never used
+   --> crates/qc-sema/src/check/convert.rs:104:19
+    |
+101 | impl Operand {
+    | ------------ method in this implementation
+...
+104 |     pub(crate) fn cost_to(self, to: Etype, in_class: bool) -> Option<i32> {
+    |                   ^^^^^^^
+
+warning: enum `Choice` is never used
+   --> crates/qc-sema/src/check/convert.rs:135:17
+    |
+135 | pub(crate) enum Choice {
+    |                 ^^^^^^
+
+warning: method `op` is never used
+   --> crates/qc-sema/src/check/convert.rs:145:25
+    |
+143 | impl Choice {
+    | ----------- method in this implementation
+144 |     /// The opcode emitted either way.
+145 |     pub(crate) const fn op(self) -> Op {
+    |                         ^^
+
+warning: function `choose_opcode` is never used
+   --> crates/qc-sema/src/check/convert.rs:155:15
+    |
+155 | pub(crate) fn choose_opcode(
+    |               ^^^^^^^^^^^^^
+
+warning: method `cost` is never used
+   --> crates/qc-sema/src/check/convert.rs:191:8
+    |
+188 | impl Opcode {
+    | ----------- method in this implementation
+...
+191 |     fn cost(&self, lhs: Operand, rhs: Operand, in_class: bool) -> Option<i32> {
+    |        ^^^^
+
+warning: method `numeric_ranking` is never used
+  --> crates/qc-sema/src/check/etype.rs:74:25
+   |
+47 | impl Etype {
+   | ---------- method in this implementation
+...
+74 |     pub(crate) const fn numeric_ranking(self) -> Option<i32> {
+   |                         ^^^^^^^^^^^^^^^
+
+warning: methods `convert`, `operand`, and `mismatch` are never used
+   --> crates/qc-sema/src/check/expr.rs:372:8
+    |
+ 79 | impl<'e> Checker<'e> {
+    | -------------------- methods in this implementation
+...
+372 |     fn convert(
+    |        ^^^^^^^
+...
+416 |     fn operand(&self, value: &Value, other: &Value) -> Option<Operand> {
+    |        ^^^^^^^
+...
+431 |     fn mismatch(&mut self, spelling: &str, lhs: &Value, rhs: &Value, span: Span) {
+    |        ^^^^^^^^
+
+warning: function `binary_spelling` is never used
+   --> crates/qc-sema/src/check/expr.rs:445:10
+    |
+445 | const fn binary_spelling(op: BinaryOp) -> Option<&'static str> {
+    |          ^^^^^^^^^^^^^^^
+
+warning: method `is_binary` is never used
+   --> crates/qc-sema/src/check/opcodes.rs:626:14
+    |
+623 | impl Class {
+    | ---------- method in this implementation
+...
+626 |     const fn is_binary(self) -> bool {
+    |              ^^^^^^^^^
+
+warning: function `candidates` is never used
+   --> crates/qc-sema/src/check/opcodes.rs:645:15
+    |
+645 | pub(crate) fn candidates(spelling: &str) -> Vec<Op> {
+    |               ^^^^^^^^^^
+
+warning: method `name` is never used
+  --> crates/qc-sema/src/check/convert.rs:52:25
+   |
+29 | impl OpType {
+   | ----------- method in this implementation
+...
+52 |     pub(crate) const fn name(self) -> &'static str {
+   |                         ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `qc-sema` (lib) generated 20 warnings (run `cargo fix --lib -p qc-sema` to apply 8 suggestions)
+warning: `qc-sema` (lib test) generated 11 warnings (10 duplicates)
+    Finished `mutants` profile [optimized] target(s) in 4.16s
+
+*** result: Success
+
+*** /Users/jplock/.rustup/toolchains/1.99.0-aarch64-apple-darwin/bin/cargo nextest run --cargo-profile=mutants --verbose --package=qc-sema@2026.10.0
+warning: unused imports: `Choice` and `choose_opcode`
+  --> crates/qc-sema/src/check/expr.rs:18:29
+   |
+18 | use crate::check::convert::{Choice, Operand, choose_opcode};
+   |                             ^^^^^^           ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `candidates` and `row`
+  --> crates/qc-sema/src/check/expr.rs:21:37
+   |
+21 | use crate::check::opcodes::{OpType, candidates, row};
+   |                                     ^^^^^^^^^^  ^^^
+
+warning: unused import: `Constness`
+  --> crates/qc-sema/src/check/expr.rs:25:20
+   |
+25 | use crate::check::{Constness, Env, FunctionFacts, Reference, Sym, TypedBody, Value};
+   |                    ^^^^^^^^^
+
+warning: unused imports: `FunctionType` and `ParamLabels`
+  --> crates/qc-sema/src/check/expr.rs:27:17
+   |
+27 | use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
+   |                 ^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused variable: `op`
+   --> crates/qc-sema/src/check/expr.rs:360:9
+    |
+360 |         op: BinaryOp,
+    |         ^^ help: if this is intentional, prefix it with an underscore: `_op`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `span`
+   --> crates/qc-sema/src/check/expr.rs:361:9
+    |
+361 |         span: Span,
+    |         ^^^^ help: if this is intentional, prefix it with an underscore: `_span`
+
+warning: unused variable: `lhs`
+   --> crates/qc-sema/src/check/expr.rs:362:9
+    |
+362 |         lhs: &Value,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_lhs`
+
+warning: unused variable: `rhs`
+   --> crates/qc-sema/src/check/expr.rs:363:9
+    |
+363 |         rhs: &Value,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_rhs`
+
+warning: struct `Operand` is never constructed
+  --> crates/qc-sema/src/check/convert.rs:19:19
+   |
+19 | pub(crate) struct Operand {
+   |                   ^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `name` and `pointee` are never used
+  --> crates/qc-sema/src/check/convert.rs:52:25
+   |
+29 | impl OpType {
+   | ----------- methods in this implementation
+...
+52 |     pub(crate) const fn name(self) -> &'static str {
+   |                         ^^^^
+...
+77 |     pub(crate) const fn pointee(self) -> Option<Etype> {
+   |                         ^^^^^^^
+
+warning: method `cost_to` is never used
+   --> crates/qc-sema/src/check/convert.rs:104:19
+    |
+101 | impl Operand {
+    | ------------ method in this implementation
+...
+104 |     pub(crate) fn cost_to(self, to: Etype, in_class: bool) -> Option<i32> {
+    |                   ^^^^^^^
+
+warning: enum `Choice` is never used
+   --> crates/qc-sema/src/check/convert.rs:135:17
+    |
+135 | pub(crate) enum Choice {
+    |                 ^^^^^^
+
+warning: method `op` is never used
+   --> crates/qc-sema/src/check/convert.rs:145:25
+    |
+143 | impl Choice {
+    | ----------- method in this implementation
+144 |     /// The opcode emitted either way.
+145 |     pub(crate) const fn op(self) -> Op {
+    |                         ^^
+
+warning: function `choose_opcode` is never used
+   --> crates/qc-sema/src/check/convert.rs:155:15
+    |
+155 | pub(crate) fn choose_opcode(
+    |               ^^^^^^^^^^^^^
+
+warning: method `cost` is never used
+   --> crates/qc-sema/src/check/convert.rs:191:8
+    |
+188 | impl Opcode {
+    | ----------- method in this implementation
+...
+191 |     fn cost(&self, lhs: Operand, rhs: Operand, in_class: bool) -> Option<i32> {
+    |        ^^^^
+
+warning: method `numeric_ranking` is never used
+  --> crates/qc-sema/src/check/etype.rs:74:25
+   |
+47 | impl Etype {
+   | ---------- method in this implementation
+...
+74 |     pub(crate) const fn numeric_ranking(self) -> Option<i32> {
+   |                         ^^^^^^^^^^^^^^^
+
+warning: methods `convert`, `operand`, and `mismatch` are never used
+   --> crates/qc-sema/src/check/expr.rs:372:8
+    |
+ 79 | impl<'e> Checker<'e> {
+    | -------------------- methods in this implementation
+...
+372 |     fn convert(
+    |        ^^^^^^^
+...
+416 |     fn operand(&self, value: &Value, other: &Value) -> Option<Operand> {
+    |        ^^^^^^^
+...
+431 |     fn mismatch(&mut self, spelling: &str, lhs: &Value, rhs: &Value, span: Span) {
+    |        ^^^^^^^^
+
+warning: function `binary_spelling` is never used
+   --> crates/qc-sema/src/check/expr.rs:445:10
+    |
+445 | const fn binary_spelling(op: BinaryOp) -> Option<&'static str> {
+    |          ^^^^^^^^^^^^^^^
+
+warning: method `is_binary` is never used
+   --> crates/qc-sema/src/check/opcodes.rs:626:14
+    |
+623 | impl Class {
+    | ---------- method in this implementation
+...
+626 |     const fn is_binary(self) -> bool {
+    |              ^^^^^^^^^
+
+warning: function `candidates` is never used
+   --> crates/qc-sema/src/check/opcodes.rs:645:15
+    |
+645 | pub(crate) fn candidates(spelling: &str) -> Vec<Op> {
+    |               ^^^^^^^^^^
+
+warning: method `name` is never used
+  --> crates/qc-sema/src/check/convert.rs:52:25
+   |
+29 | impl OpType {
+   | ----------- method in this implementation
+...
+52 |     pub(crate) const fn name(self) -> &'static str {
+   |                         ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `qc-sema` (lib) generated 20 warnings (run `cargo fix --lib -p qc-sema` to apply 8 suggestions)
+warning: `qc-sema` (lib test) generated 11 warnings (10 duplicates)
+    Finished `mutants` profile [optimized] target(s) in 0.06s
+────────────
+ Nextest run ID a9d11108-19f5-40de-bab8-13ec412d712f with nextest profile: default
+    Starting 784 tests across 1 binary
+       START [         ] (  1/784) qc-sema cast::tests::c_words_name_their_kinds
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::c_words_name_their_kinds --nocapture
+       START [         ] (  1/784) qc-sema cast::tests::a_store_casts_an_entity_and_a_float
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::a_store_casts_an_entity_and_a_float --nocapture
+       START [         ] (  1/784) qc-sema cast::tests::a_float_casts_to_numbers_and_vectors
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::a_float_casts_to_numbers_and_vectors --nocapture
+       START [         ] (  1/784) qc-sema cast::tests::assumed_number_types
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::assumed_number_types --nocapture
+       START [         ] (  1/784) qc-sema cast::tests::named_definitions_cast_by_their_type
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::named_definitions_cast_by_their_type --nocapture
+       START [         ] (  1/784) qc-sema cast::tests::lax_casts
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::lax_casts --nocapture
+       START [         ] (  1/784) qc-sema cast::tests::long_suffixes_and_ilp32
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::long_suffixes_and_ilp32 --nocapture
+       START [         ] (  1/784) qc-sema cast::tests::numbers_are_typed_by_their_suffix
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::numbers_are_typed_by_their_suffix --nocapture
+       START [         ] (  1/784) qc-sema cast::tests::null_is_an_integer_or_float_zero
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::null_is_an_integer_or_float_zero --nocapture
+       START [         ] (  1/784) qc-sema cast::tests::integers_cast_where_cast_tries_them
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::integers_cast_where_cast_tries_them --nocapture
+        PASS [   0.010s] (  1/784) qc-sema cast::tests::integers_cast_where_cast_tries_them
+       START [         ] (  2/784) qc-sema cast::tests::pointees_and_fields_of_unfollowed_types
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::pointees_and_fields_of_unfollowed_types --nocapture
+        PASS [   0.010s] (  2/784) qc-sema cast::tests::a_float_casts_to_numbers_and_vectors
+       START [         ] (  3/784) qc-sema cast::tests::pointers_and_warnings
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::pointers_and_warnings --nocapture
+        PASS [   0.010s] (  3/784) qc-sema cast::tests::c_words_name_their_kinds
+       START [         ] (  4/784) qc-sema cast::tests::qccx_casts
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::qccx_casts --nocapture
+        PASS [   0.010s] (  4/784) qc-sema cast::tests::named_definitions_cast_by_their_type
+       START [         ] (  5/784) qc-sema cast::tests::should_convert_between_kinds
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::should_convert_between_kinds --nocapture
+        PASS [   0.011s] (  5/784) qc-sema cast::tests::a_store_casts_an_entity_and_a_float
+       START [         ] (  6/784) qc-sema cast::tests::supplied_conversions
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::supplied_conversions --nocapture
+        PASS [   0.011s] (  6/784) qc-sema cast::tests::null_is_an_integer_or_float_zero
+       START [         ] (  7/784) qc-sema cast::tests::type_names_are_fteqcc_spellings
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::type_names_are_fteqcc_spellings --nocapture
+        PASS [   0.011s] (  7/784) qc-sema cast::tests::lax_casts
+       START [         ] (  8/784) qc-sema cast::tests::types_are_the_same_part_by_part
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::types_are_the_same_part_by_part --nocapture
+        PASS [   0.012s] (  8/784) qc-sema cast::tests::assumed_number_types
+       START [         ] (  9/784) qc-sema cast::tests::undefined_word_size_casts
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::undefined_word_size_casts --nocapture
+        PASS [   0.012s] (  9/784) qc-sema cast::tests::long_suffixes_and_ilp32
+       START [         ] ( 10/784) qc-sema cast::tests::vectors_strings_and_named_types
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::vectors_strings_and_named_types --nocapture
+        PASS [   0.013s] ( 10/784) qc-sema cast::tests::numbers_are_typed_by_their_suffix
+       START [         ] ( 11/784) qc-sema cast::tests::void_and_byte_pointer_casts
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact cast::tests::void_and_byte_pointer_casts --nocapture
+        PASS [   0.009s] ( 11/784) qc-sema cast::tests::supplied_conversions
+       START [         ] ( 12/784) qc-sema check::constant::tests::a_constant_is_true_when_it_is_not_zero
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::constant::tests::a_constant_is_true_when_it_is_not_zero --nocapture
+        PASS [   0.009s] ( 12/784) qc-sema cast::tests::undefined_word_size_casts
+       START [         ] ( 13/784) qc-sema check::constant::tests::a_constant_reads_as_its_words
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::constant::tests::a_constant_reads_as_its_words --nocapture
+        PASS [   0.010s] ( 13/784) qc-sema cast::tests::should_convert_between_kinds
+       START [         ] ( 14/784) qc-sema check::constant::tests::a_number_is_read_by_its_base_and_type
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::constant::tests::a_number_is_read_by_its_base_and_type --nocapture
+        PASS [   0.011s] ( 14/784) qc-sema cast::tests::pointers_and_warnings
+       START [         ] ( 15/784) qc-sema check::emulate::tests::every_conversion_emits_its_opcodes
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::emulate::tests::every_conversion_emits_its_opcodes --nocapture
+        PASS [   0.010s] ( 15/784) qc-sema cast::tests::type_names_are_fteqcc_spellings
+       START [         ] ( 16/784) qc-sema check::emulate::tests::every_opcode_is_emulated_as_the_switch_says
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::emulate::tests::every_opcode_is_emulated_as_the_switch_says --nocapture
+        PASS [   0.011s] ( 16/784) qc-sema cast::tests::qccx_casts
+       START [         ] ( 17/784) qc-sema check::fold::tests::arms_of_two_constants
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::fold::tests::arms_of_two_constants --nocapture
+        PASS [   0.010s] ( 17/784) qc-sema cast::tests::vectors_strings_and_named_types
+       START [         ] ( 18/784) qc-sema check::fold::tests::mixed_divisions_by_zero
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::fold::tests::mixed_divisions_by_zero --nocapture
+        PASS [   0.012s] ( 18/784) qc-sema cast::tests::types_are_the_same_part_by_part
+       START [         ] ( 19/784) qc-sema check::fold::tests::right_operand_divisions
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::fold::tests::right_operand_divisions --nocapture
+        PASS [   0.014s] ( 19/784) qc-sema cast::tests::pointees_and_fields_of_unfollowed_types
+       START [         ] ( 20/784) qc-sema check::fold::tests::unary_folds_and_conversions
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::fold::tests::unary_folds_and_conversions --nocapture
+        PASS [   0.011s] ( 20/784) qc-sema cast::tests::void_and_byte_pointer_casts
+       START [         ] ( 21/784) qc-sema check::tests::an_assignment_row_keeps_its_target
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::tests::an_assignment_row_keeps_its_target --nocapture
+        PASS [   0.009s] ( 21/784) qc-sema check::constant::tests::a_constant_reads_as_its_words
+       START [         ] ( 22/784) qc-sema check::tests::candidates_are_the_spellings_rows_in_order
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::tests::candidates_are_the_spellings_rows_in_order --nocapture
+        PASS [   0.009s] ( 22/784) qc-sema check::emulate::tests::every_opcode_is_emulated_as_the_switch_says
+       START [         ] ( 23/784) qc-sema check::tests::choosing_an_opcode
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::tests::choosing_an_opcode --nocapture
+        PASS [   0.009s] ( 23/784) qc-sema check::emulate::tests::every_conversion_emits_its_opcodes
+       START [         ] ( 24/784) qc-sema check::tests::conversion_costs
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::tests::conversion_costs --nocapture
+        PASS [   0.011s] ( 24/784) qc-sema check::constant::tests::a_constant_is_true_when_it_is_not_zero
+       START [         ] ( 25/784) qc-sema check::tests::numeric_ranking
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::tests::numeric_ranking --nocapture
+        PASS [   0.011s] ( 25/784) qc-sema check::constant::tests::a_number_is_read_by_its_base_and_type
+       START [         ] ( 26/784) qc-sema check::tests::the_table_is_fteqccs_in_order
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::tests::the_table_is_fteqccs_in_order --nocapture
+        PASS [   0.011s] ( 26/784) qc-sema check::fold::tests::arms_of_two_constants
+       START [         ] ( 27/784) qc-sema check::tests::ties_and_field_access
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact check::tests::ties_and_field_access --nocapture
+        PASS [   0.010s] ( 27/784) qc-sema check::fold::tests::right_operand_divisions
+       START [         ] ( 28/784) qc-sema tests::accessors::the_index_is_read_through_its_accessors
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact tests::accessors::the_index_is_read_through_its_accessors --nocapture
+        PASS [   0.012s] ( 28/784) qc-sema check::fold::tests::mixed_divisions_by_zero
+       START [         ] ( 29/784) qc-sema tests::aggregates::a_braced_elements_error_stands_at_its_brace
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact tests::aggregates::a_braced_elements_error_stands_at_its_brace --nocapture
+        PASS [   0.011s] ( 29/784) qc-sema check::fold::tests::unary_folds_and_conversions
+       START [         ] ( 30/784) qc-sema tests::aggregates::a_member_array_size_is_a_nonzero_integer
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact tests::aggregates::a_member_array_size_is_a_nonzero_integer --nocapture
+        PASS [   0.011s] ( 30/784) qc-sema check::tests::an_assignment_row_keeps_its_target
+       START [         ] ( 31/784) qc-sema tests::aggregates::a_member_size_names_a_constant
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact tests::aggregates::a_member_size_names_a_constant --nocapture
+        PASS [   0.010s] ( 31/784) qc-sema check::tests::candidates_are_the_spellings_rows_in_order
+       START [         ] ( 32/784) qc-sema tests::aggregates::a_struct_cast_names_the_struct
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact tests::aggregates::a_struct_cast_names_the_struct --nocapture
+        PASS [   0.009s] ( 32/784) qc-sema check::tests::choosing_an_opcode
+       START [         ] ( 33/784) qc-sema tests::aggregates::a_struct_static_member_is_a_global
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact tests::aggregates::a_struct_static_member_is_a_global --nocapture
+        PASS [   0.011s] ( 33/784) qc-sema check::tests::numeric_ranking
+       START [         ] ( 34/784) qc-sema tests::aggregates::a_trailing_comma_after_every_member
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact tests::aggregates::a_trailing_comma_after_every_member --nocapture
+        PASS [   0.010s] ( 34/784) qc-sema check::tests::ties_and_field_access
+       START [         ] ( 35/784) qc-sema tests::aggregates::an_element_past_the_end_is_left_over
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact tests::aggregates::an_element_past_the_end_is_left_over --nocapture
+        PASS [   0.012s] ( 35/784) qc-sema check::tests::the_table_is_fteqccs_in_order
+       START [         ] ( 36/784) qc-sema tests::aggregates::an_unbraced_element_is_named_by_its_first_token
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact tests::aggregates::an_unbraced_element_is_named_by_its_first_token --nocapture
+        PASS [   0.011s] ( 36/784) qc-sema tests::aggregates::a_member_array_size_is_a_nonzero_integer
+       START [         ] ( 37/784) qc-sema tests::aggregates::an_unsized_array_counts_its_braced_elements
+             command: /private/var/folders/bc/xc0n4h7d5lx2n0t7pqq8hbm00000gn/T/cargo-mutants-649t-Ze0nu8.tmp/target/mutants/deps/qc_sema-6c3569841d6389df --exact tests::aggregates::an_unsized_array_counts_its_braced_elements --nocapture
+        FAIL [   0.011s] ( 37/784) qc-sema tests::accessors::the_index_is_read_through_its_accessors
+  stdout ───
+
+    running 1 test
+    test tests::accessors::the_index_is_read_through_its_accessors ... FAILED
+
+    failures:
+
+    failures:
+        tests::accessors::the_index_is_read_through_its_accessors
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 783 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'tests::accessors::the_index_is_read_through_its_accessors' (12685273) panicked at crates/qc-sema/src/tests/accessors.rs:46:5:
+    assertion failed: i.initial_value(e).is_some()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 9 tests still running
+        PASS [   0.015s] ( 38/784) qc-sema check::tests::conversion_costs
+        PASS [   0.011s] ( 39/784) qc-sema tests::aggregates::a_braced_elements_error_stands_at_its_brace
+        PASS [   0.012s] ( 40/784) qc-sema tests::aggregates::a_member_size_names_a_constant
+        PASS [   0.009s] ( 41/784) qc-sema tests::aggregates::a_struct_cast_names_the_struct
+        PASS [   0.010s] ( 42/784) qc-sema tests::aggregates::a_struct_static_member_is_a_global
+        PASS [   0.008s] ( 43/784) qc-sema tests::aggregates::a_trailing_comma_after_every_member
+        PASS [   0.007s] ( 44/784) qc-sema tests::aggregates::an_unbraced_element_is_named_by_its_first_token
+        PASS [   0.007s] ( 45/784) qc-sema tests::aggregates::an_unsized_array_counts_its_braced_elements
+        PASS [   0.009s] ( 46/784) qc-sema tests::aggregates::an_element_past_the_end_is_left_over
+────────────
+     Summary [   0.053s] 46/784 tests run: 45 passed, 1 failed, 0 skipped
+        FAIL [   0.011s] ( 37/784) qc-sema tests::accessors::the_index_is_read_through_its_accessors
+warning: 738/784 tests were not run due to test failure (run with --no-fail-fast to run all tests, or run with --max-fail)
+error: test run failed
+
+*** result: Failure(100)

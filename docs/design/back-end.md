@@ -49,8 +49,8 @@ dialect branches.
 
 ```mermaid
 flowchart LR
-  T[qc-sema: TypedBody per function] --> L[lower: Ir per function]
-  L --> P1[profile passes: assignment folding, return-alias copies, ...]
+  T[qc-sema check: TypedBody per function] --> L[qc-sema lower: Ir per function, and the warnings that read it]
+  L --> P1[qc-codegen profile passes: assignment folding, return-alias copies, ...]
   P1 --> A[allocation: temporaries]
   A --> Y[layout: locals, blocks, immediates]
   Y --> W[write: progs.dat and .lno]
@@ -60,11 +60,18 @@ flowchart LR
    source order, with its type, the definition a name resolves to, the conversion applied to
    it and its constant value when the profile folds it. The checker already computes all of
    them; it now keeps them.
-2. **`Ir`** (`qc-codegen`, L4). Per function, a list of statements in emission order, each an
+2. **`Ir`** (`qc_sema::ir`, L3). Per function, a list of statements in emission order, each an
    opcode with operands that are values, not offsets: a definition, an immediate, a
    temporary `t0, t1, ...` the lowering made, or the return global. A temporary's life is
    explicit: the statement that writes it and the statements that read it. Jumps name
-   statements. Each statement keeps its source origin, for the `.lno` (QC-27.19).
+   statements. Each statement keeps its source origin, for the `.lno` (QC-27.19). The
+   lowering is where an opcode the target lacks becomes the statements that emulate it
+   (`QCC_PR_StatementFlags`, FTEF-23.10), once, and where the warnings that depend on the
+   emitted code are raised: the emulation warnings and the ones naming a temporary `temp_N`
+   (FTEF-27.16). It is in L3, beside the checker, because those warnings are the semantic
+   model's (`semantic-model.md`, "The one rule") and a lower layer cannot read a higher one;
+   the checker's own model of emitted code (`check/emulate.rs`, its temporaries and its
+   assignment folding) and the code generator's inline emulations are both replaced by it.
 3. **Passes** over `Ir`, chosen by the dialect profile, each with its spec statements: the
    FTEQCC behaviours now inline in `compile.rs` (`opt_assignments`, FTE-18.12; the return
    global's copies, FTE-18.13; the `?:` result as a local), then optimisations (L-04).
@@ -110,22 +117,27 @@ Each step keeps every differential green, and the first two change no output. A 
 compiles every corpus codebase and the generated programs of seed 1 with the code generator
 before and after the step and requires the same bytes.
 
-1. **`TypedBody` as documented.** The checker keeps each expression's type, conversion and
-   constant value, and `qc-codegen` reads them: `type_of` and the conversion and folding
-   helpers become lookups. The output is unchanged.
-2. **`Ir` with a creation-order allocator.** The lowering emits `Ir` instead of statements
-   and offsets; allocation gives every temporary a new slot in creation order and layout
-   places blocks as FTE-21.7 says, so the progs is byte for byte the same.
+1. **`TypedBody` as documented.** The checker keeps each expression's type, conversion,
+   constant value and the opcode `QCC_PR_ChooseOpcode` picks, and `qc-codegen` reads them:
+   `type_of`, `ops::select` and the conversion and folding helpers become lookups. The output
+   is unchanged. The types and the binary operators' opcodes were measured to agree already
+   (#688).
+2. **`Ir` with a creation-order allocator.** `qc_sema::ir` is the layer, and the lowering in
+   `qc-sema` builds it from each checked body, emulations included; `qc-codegen` writes the
+   progs from it instead of walking the syntax tree. Allocation gives every temporary a new
+   slot in creation order and layout places blocks as FTE-21.7 says, so the progs is byte for
+   byte the same. The checker's emulation warnings then read the lowering, and
+   `check/emulate.rs`'s model of emitted code goes.
 3. **Profile passes.** The FTEQCC branches move out of the lowering into passes, one
    behaviour per change, each with its spec statements and a test of its own.
 4. **What the passes make possible**: the oracle-defect proof of #649 can read the `Ir`; L-04's
    optimisations, a GMQCC profile (L-02) and the FTE extended format become passes and
    writers.
 
-## Questions for Justin
+## Decided
 
-- **Where `Ir` lives.** A module of `qc-codegen`, as proposed, or a crate of its own in L4 so
-  another back end (a debugger's expression evaluator, say) can use it.
-- **Step 1's scope.** `TypedBody` as documented covers casts, conversions and folding; whether
-  it should also carry FTEQCC's opcode choice (`check/convert.rs`, `check/opcodes.rs`), so
-  `ops::select` in `qc-codegen` goes too.
+- **Where `Ir` lives** (Justin, 2026-11-03): in L3, as `qc_sema::ir`, with its lowering in
+  `qc-sema`, because the semantic model's warnings depend on the emitted code. The code
+  generator keeps the passes, allocation, layout and writing.
+- **Step 1's scope**: it includes the opcode choice, since the types already agree and
+  reading only them would remove almost nothing.
