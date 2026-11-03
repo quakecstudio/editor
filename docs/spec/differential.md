@@ -828,6 +828,12 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   written for another engine's builtins, such as the CSQC drawing of Arcane Dimensions'
   `Hud_Draw*` compiled into its server module, then runs to its end in both progs. The VM
   differential (DIFF-1 to DIFF-11) keeps the error.
+- **DIFF-12.27** The variables DIFF-12.2 and DIFF-12.21 draw include the entity globals
+  (a global of entity type at a slot other than 0 whose value in the progs is 0, alone at its
+  slot, other than `self`, `other` and `world`, which every call sets), each drawn as
+  DIFF-12.2 draws an entity: an edict in use, a client one time in three. A mod keeps its state in entity globals, crmod7 its `boss`, `team_first_place` and
+  `crmod_qtag_it`, and a function guarded by `if (crmod_qtag_it == world) return;` never ran
+  past the guard while only float and string variables were drawn.
 - **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and
   Arcane Dimensions, are set up and called with the mock engine under vkQuake's profile
   (BUILTIN-18): crmod7 calls extension builtins while it sets up its world, and Arcane

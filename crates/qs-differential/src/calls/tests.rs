@@ -1533,3 +1533,33 @@ fn unimplemented_builtins_return_zero() {
     let missed: Vec<i32> = body.filter(|s| !report.executed.contains(s)).collect();
     assert!(missed.is_empty(), "{missed:?}");
 }
+
+// spec DIFF-12.27: an entity variable a function's statements name is drawn, so a guard on
+// it against the world is passed in some round
+#[test]
+fn entity_variables_are_drawn() {
+    let source = "float x; entity keeper;\nvoid() worldspawn = { x = 1; };\n\
+        void() f = { if (keeper == world) return; x = 2; x = 3; };\n";
+    let bytes = compile(source, false);
+    let progs = Progs::read(&bytes).unwrap();
+    let report = run(&bytes, &bytes, 16);
+    assert!(report.divergences.is_empty(), "{:?}", report.divergences);
+    with_drawer_of(source, |drawer, progs| {
+        let f = function(progs, b"f");
+        let pools = drawer.pools(f);
+        assert_eq!(pools.variables, [b"keeper".to_vec(), b"x".to_vec()]);
+        let drawn = (1..8).filter(|&round| {
+            let c = drawer.draw(&mut Rng::new(b"f", round), (f, &pools), round);
+            c.globals.iter().any(|(name, _)| name == b"keeper")
+        });
+        assert!(drawn.count() > 0);
+    });
+    let f = progs
+        .functions()
+        .iter()
+        .find(|f| progs.string(f.s_name) == Some(b"f"))
+        .unwrap();
+    let body = f.first_statement..f.first_statement + 5;
+    let missed: Vec<i32> = body.filter(|s| !report.executed.contains(s)).collect();
+    assert!(missed.is_empty(), "{missed:?}");
+}

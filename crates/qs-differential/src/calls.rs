@@ -811,8 +811,8 @@ struct Program<'a, 'p> {
     progs: &'a Progs<'p>,
     /// The named globals, in definition order.
     globals: Vec<Global>,
-    /// The slot of each name a context writes by name: its first float or string global
-    /// outside every function's locals, else its first (DIFF-12.11).
+    /// The slot of each name a context writes by name: its first float, string or entity
+    /// global outside every function's locals, else its first (DIFF-12.11, DIFF-12.27).
     global_slots: BTreeMap<Vec<u8>, usize>,
     /// The named fields, by name: the type and slot of the first definition of each.
     fields: BTreeMap<Vec<u8>, (DefType, usize)>,
@@ -877,9 +877,15 @@ impl<'a, 'p> Program<'a, 'p> {
             functions,
             locals,
         };
-        // DIFF-12.11: a context writes a global by name, a float or a string, to its first
-        // float or string definition outside every function's locals, else to its first.
-        let scalar = |g: &&Global| matches!(g.1, DefType::Known(Etype::Float | Etype::String));
+        // DIFF-12.11: a context writes a global by name, a float, a string or an entity
+        // (DIFF-12.27), to its first such definition outside every function's locals, else
+        // to its first.
+        let scalar = |g: &&Global| {
+            matches!(
+                g.1,
+                DefType::Known(Etype::Float | Etype::String | Etype::Entity)
+            )
+        };
         let mut global_slots = BTreeMap::new();
         for global in program
             .globals

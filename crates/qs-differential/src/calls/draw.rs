@@ -134,6 +134,12 @@ type ComparedByName = BTreeMap<Vec<u8>, Compared>;
 /// The pairs of names a function's statements compare with each other (DIFF-12.22).
 type Pairs = Vec<(Vec<u8>, Vec<u8>)>;
 
+/// The entity system globals every call sets itself, `self`, `other` and `world`
+/// (DIFF-12.2), which DIFF-12.27 leaves out of the variables.
+fn is_entity_system_global(name: &[u8]) -> bool {
+    matches!(name, b"self" | b"other" | b"world")
+}
+
 /// The precache builtins' numbers (BUILTIN-10): a function calling one is a spawn function
 /// (DIFF-12.25).
 const PRECACHE_BUILTINS: [i32; 6] = [19, 20, 68, 75, 76, 77];
@@ -398,9 +404,14 @@ impl Pools {
                 (Some(DefType::Known(Etype::Field)), _) => {
                     fields.extend(name());
                 }
-                (Some(DefType::Known(Etype::Float | Etype::String)), 0) => {
-                    if ofs != 0 {
-                        variables.extend(name());
+                // DIFF-12.27: an entity variable is drawn too, but not `self`, `other` or
+                // `world`, which every call sets.
+                (Some(DefType::Known(Etype::Float | Etype::String | Etype::Entity)), 0) => {
+                    if ofs != 0
+                        && let Some(name) = name()
+                        && !is_entity_system_global(&name)
+                    {
+                        variables.insert(name);
                     }
                 }
                 (Some(DefType::Known(Etype::Float)), bits) => {
@@ -495,7 +506,13 @@ pub(super) fn owners(world: &World<'_, '_, '_>, progs: &Progs<'_>) -> BTreeMap<i
 impl<'a, 'p> Drawer<'a, 'p> {
     pub(super) fn new(world: &World<'a, 'p, '_>) -> Self {
         let progs = world.program.progs;
-        let scalar = |def_type| matches!(drawable(def_type), Some(Etype::Float | Etype::String));
+        // DIFF-12.21 and DIFF-12.27: float, string and entity variables.
+        let scalar = |def_type| {
+            matches!(
+                drawable(def_type),
+                Some(Etype::Float | Etype::String | Etype::Entity)
+            )
+        };
         let mut named_by: BTreeMap<u32, usize> = BTreeMap::new();
         for def in progs.global_defs().iter() {
             if scalar(def.def_type()) {
@@ -507,11 +524,12 @@ impl<'a, 'p> Drawer<'a, 'p> {
             .program
             .globals
             .iter()
-            .filter(|(_, def_type, ofs)| {
+            .filter(|(name, def_type, ofs)| {
                 let alone = u32::try_from(*ofs)
                     .is_ok_and(|ofs| ofs != 0 && named_by.get(&ofs).copied() == Some(1));
                 scalar(*def_type)
                     && alone
+                    && !is_entity_system_global(name)
                     && progs
                         .globals()
                         .get(*ofs)
