@@ -14,6 +14,7 @@ use qs_render::{
     Camera, Extras, GAMMA, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
 };
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
+use qs_sim::rerelease::patch_builtins;
 use qs_sim::{LoadOptions, World};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
@@ -188,7 +189,11 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     let name = format!("maps/{map}.bsp");
     let bytes = read(&name)?;
     let bsp = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(&name))?;
-    let progs_bytes: &'static [u8] = Vec::leak(read("progs.dat")?);
+    let mut progs_bytes = read("progs.dat")?;
+    // RRE-4.1: QuakeSpasm gives the rerelease's named functions their builtins as it loads the
+    // progs, and RRE-4.2 its table then runs to 92.
+    let rerelease_builtins = patch_builtins(&mut progs_bytes) > 0;
+    let progs_bytes: &'static [u8] = Vec::leak(progs_bytes);
     let progs = Progs::read(progs_bytes).map_err(|e| format!("progs.dat: {e}"))?;
     // The world reads the other models the progs precaches, such as the health boxes, from the
     // same search path; so do the client and the renderer.
@@ -221,6 +226,7 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
         localization: text
             .map(|text| Localization::loc_load_file(&text))
             .unwrap_or_default(),
+        rerelease_builtins,
     };
     let mut world =
         World::load(&progs, &map, &bsp, reader()?, options).map_err(|e| e.to_string())?;

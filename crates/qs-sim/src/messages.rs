@@ -68,6 +68,8 @@ const SVC_SOUND: i32 = 6;
 const SVC_TIME: i32 = 7;
 pub(crate) const SVC_PRINT: i32 = 8;
 const SVC_STUFFTEXT: i32 = 9;
+/// `svc_localsound`, the rerelease's (RRE-2.1).
+const SVC_LOCALSOUND: i32 = 56;
 const SVC_SETANGLE: i32 = 10;
 const SVC_SERVERINFO: i32 = 11;
 const SVC_LIGHTSTYLE: i32 = 12;
@@ -502,6 +504,41 @@ impl SimCall<'_, '_, '_> {
         let message = &mut self.sim.messages.client.message;
         message.write_byte(svc);
         message.write_string(&text);
+    }
+
+    /// `localsound (client, sample)`, `PF_localsound` and `SV_LocalSound` (RRE-2.1): to a
+    /// client, `svc_localsound`, a field byte and the sample's precache index as a byte; an
+    /// edict that is no client, a sample not precached, an index of 256 or more under
+    /// protocol 15, or a message with fewer than 4 bytes free sends nothing.
+    pub(crate) fn local_sound(&mut self) {
+        let n = self.edict_of(parm_raw(&self.context, 0));
+        let sample = self.string_text(parm_raw(&self.context, 1));
+        if n < 1 || !self.is_client_slot(n) {
+            // "tried to localsound to a non-client"
+            return;
+        }
+        let name = String::from_utf8_lossy(&sample).into_owned();
+        let Some(index) = self
+            .sim
+            .mock
+            .engine()
+            .precache_index(Precache::Sound, &name)
+            .filter(|&i| i >= 1)
+        else {
+            // "SV_LocalSound: <sample> not precached"
+            return;
+        };
+        // PROTOCOL_NETQUAKE has no SND_LARGESOUND.
+        let Ok(index) = u8::try_from(index) else {
+            return;
+        };
+        let message = &mut self.sim.messages.client.message;
+        if message.len() > message.max().saturating_sub(4) {
+            return;
+        }
+        message.write_byte(SVC_LOCALSOUND);
+        message.write_byte(0);
+        message.write_byte(i32::from(index));
     }
 
     /// `stuffcmd`: `svc_stufftext` and PARM1 to the client (BUILTIN-11.4).

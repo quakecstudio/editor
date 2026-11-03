@@ -284,6 +284,7 @@ fn printed_and_written_strings_are_localized_with_a_file_loaded() {
     assert_eq!(read(&mut plain), ("$qc_hi".to_owned(), "$qc_hi".to_owned()));
     let options = LoadOptions {
         localization: Localization::loc_load_file(b"qc_hi = \"Hi {}!\"\n"),
+        ..LoadOptions::default()
     };
     let mut localized = player_with_options(&ledge(), "", "", &more, options);
     assert_eq!(
@@ -889,4 +890,95 @@ fn cleanup_truncates_every_edicts_effects() {
         5.0,
         "7.5 as an int is 7, less the flash"
     );
+}
+
+/// The rerelease's builtins, as its progs gets them once patched (RRE-4.1).
+const RERELEASE_BUILTINS: &str = "float() finaleFinished = #79;\n\
+    void(entity e, string s) localsound = #80;\n\
+    void() draw_point = #81;\n\
+    void() draw_cylinder = #89;\n\
+    float() CheckPlayerEXFlags = #90;\n\
+    float() walkpathtogoal = #91;\n\
+    void() bot_movetopoint = #92;\n\
+    void() past = #93;\n";
+
+/// A player whose progs has the rerelease's builtins, in the rerelease's table or not, and
+/// precaches `misc/a.wav`; `PlayerPreThink` runs `pre`.
+fn rerelease_player(pre: &str, rerelease_builtins: bool) -> Running {
+    let more = format!(
+        "{RERELEASE_BUILTINS}void() worldspawn = {{ precache_sound(\"misc/b.wav\"); \
+         precache_sound(\"misc/a.wav\"); }};\n"
+    );
+    let options = LoadOptions {
+        rerelease_builtins,
+        ..LoadOptions::default()
+    };
+    player_with_options(&ledge(), "", pre, &more, options)
+}
+
+// spec RRE-2.1: localsound writes svc_localsound, a field byte and the sample's precache
+// index, to the client; a non-client or a sample not precached sends nothing
+#[test]
+fn localsound_sends_the_sound_to_the_client() {
+    let pre = "localsound(world, \"misc/a.wav\"); localsound(self, \"misc/nope.wav\"); \
+        localsound(self, \"misc/a.wav\");";
+    let mut run = rerelease_player(pre, true);
+    run.packets();
+    run.frames(1, 0.1).unwrap();
+    let packets = run.packets();
+    assert_eq!(packets[1], [56, 0, 2]);
+}
+
+// spec RRE-2.1: a client message with fewer than 4 bytes free drops the sound
+#[test]
+fn localsound_is_dropped_from_a_full_message() {
+    let mut run = rerelease_player("localsound(self, \"misc/a.wav\");", true);
+    run.packets();
+    let message = &mut run.world.builtins.messages.client.message;
+    let room = message.max() - message.len();
+    for _ in 0..room - 3 {
+        message.write_byte(1);
+    }
+    let full = message.len();
+    run.frames(1, 0.1).unwrap();
+    assert_eq!(run.packets()[1].len(), full, "3 bytes free: dropped");
+    let mut run = rerelease_player("localsound(self, \"misc/a.wav\");", true);
+    run.packets();
+    let message = &mut run.world.builtins.messages.client.message;
+    let room = message.max() - message.len();
+    for _ in 0..room - 4 {
+        message.write_byte(1);
+    }
+    run.frames(1, 0.1).unwrap();
+    assert!(
+        run.packets()[1].ends_with(&[56, 0, 2]),
+        "4 bytes free: sent"
+    );
+}
+
+// spec RRE-4.2: in the rerelease's table finaleFinished, CheckPlayerEXFlags and
+// walkpathtogoal return 0, and 81 to 89 and 92 are the run error unimplemented builtin
+#[test]
+fn the_rereleases_table_runs_to_92() {
+    let pre = "self.frags = 5 + finaleFinished() + CheckPlayerEXFlags() + walkpathtogoal();";
+    let mut run = rerelease_player(pre, true);
+    run.frames(1, 0.1).unwrap();
+    assert_eq!(run.world.float(1, "frags"), 5.0);
+    for call in ["draw_point();", "draw_cylinder();", "bot_movetopoint();"] {
+        let mut run = rerelease_player(call, true);
+        let error = run.frames(1, 0.1).unwrap_err().to_string();
+        assert!(error.contains("unimplemented builtin"), "{call} {error}");
+    }
+}
+
+// spec RRE-4.2: past 92 the rerelease's table has no builtin, and without it 79 is past id's
+#[test]
+fn the_rereleases_table_ends_at_92() {
+    let mut run = rerelease_player("past();", true);
+    let past = run.frames(1, 0.1).unwrap_err().to_string();
+    assert!(!past.contains("unimplemented builtin"), "{past}");
+    let mut run = rerelease_player("finaleFinished();", false);
+    let id = run.frames(1, 0.1).unwrap_err().to_string();
+    assert!(!id.contains("unimplemented builtin"), "{id}");
+    assert_eq!(past.replace("93", "79"), id);
 }

@@ -91,7 +91,7 @@ pub struct Entity {
 /// A map's world: the VM with its entities spawned, linked in the world's collision.
 pub struct World {
     machine: Machine,
-    builtins: SimBuiltins,
+    pub(crate) builtins: SimBuiltins,
     /// The client's command, once it has entered the game (PHYS-9.6, PHYS-10).
     player: Option<UserCmd>,
 }
@@ -102,6 +102,9 @@ pub struct LoadOptions {
     /// The rerelease's localized strings, from `localization/loc_english.txt`; with none the
     /// builtins send their text as id's engine does (RRE-1.6).
     pub localization: Localization,
+    /// Whether the rerelease's builtins 79 to 92 are in the table (RRE-4.2), for a progs whose
+    /// names [`crate::rerelease::patch_builtins`] gave them builtins.
+    pub rerelease_builtins: bool,
 }
 
 impl World {
@@ -131,11 +134,13 @@ impl World {
         engine.clients_active = vec![false; MAXCLIENTS];
         // RRE-1.6: QuakeSpasm loads the file when the host starts, before any map spawns.
         engine.localization = options.localization;
+        let rerelease_builtins = options.rerelease_builtins;
         let mut world = Self {
             machine,
             builtins: SimBuiltins::new(engine, map, bsp, files, progs.header().crc),
             player: None,
         };
+        world.builtins.rerelease = rerelease_builtins;
         let entities = bsp.entities();
         // EDICT-4.1: the world's fields.
         let model = world.make_string(format!("maps/{map}.bsp").into_bytes());

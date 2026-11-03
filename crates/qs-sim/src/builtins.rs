@@ -24,6 +24,7 @@ use crate::collision::{
 };
 use crate::messages::{SVC_CENTERPRINT, SVC_PRINT, ServerMessages};
 use crate::physics::Sound;
+use crate::rerelease::RRE_NUM_BUILTINS;
 
 /// `setorigin`.
 const SETORIGIN: u32 = 2;
@@ -91,6 +92,9 @@ pub struct SimBuiltins {
     pub(crate) sounds: Vec<Sound>,
     /// The messages to the client (NET-1 to NET-5).
     pub(crate) messages: ServerMessages,
+    /// Whether the rerelease's builtins 79 to 92 are in the table, for a progs whose names
+    /// were patched to them (RRE-4.2).
+    pub(crate) rerelease: bool,
     files: ModelFiles,
 }
 
@@ -125,6 +129,7 @@ impl SimBuiltins {
             collision: Collision::new(map),
             sounds: Vec::new(),
             messages: ServerMessages::new(map, crc),
+            rerelease: false,
             files,
         }
     }
@@ -166,12 +171,50 @@ const fn f32_of(value: i32) -> f32 {
     value as f32
 }
 
+/// `finaleFinished`, the first of the rerelease's builtins (RRE-4.2).
+const FINALE_FINISHED: u32 = 79;
+/// `localsound` (RRE-2.1).
+const LOCALSOUND: u32 = 80;
+/// `CheckPlayerEXFlags` (RRE-4.2).
+const CHECK_PLAYER_EX_FLAGS: u32 = 90;
+/// `walkpathtogoal` (RRE-4.2).
+const WALK_PATH_TO_GOAL: u32 = 91;
+
+impl SimBuiltins {
+    /// QuakeSpasm's builtins 79 to 92 (RRE-4.2): `finaleFinished`, `CheckPlayerEXFlags` and
+    /// `walkpathtogoal` return 0, `localsound` sends its sound (RRE-2.1), and the rest are
+    /// `PF_Fixme`'s "unimplemented builtin".
+    fn rerelease_call(
+        &mut self,
+        number: u32,
+        context: &mut Context<'_, '_>,
+    ) -> Result<(), RunError> {
+        let mut call = SimCall::new(context, self);
+        match number {
+            FINALE_FINISHED | CHECK_PLAYER_EX_FLAGS | WALK_PATH_TO_GOAL => call.set_return(0.0),
+            LOCALSOUND => {
+                call.local_sound();
+                Ok(())
+            }
+            _ => Err(call.context.run_error(ErrorKind::Builtin {
+                message: "unimplemented builtin".to_owned(),
+            })),
+        }
+    }
+}
+
 impl Builtins for SimBuiltins {
     fn limit(&self) -> Option<u32> {
+        if self.rerelease {
+            return Some(RRE_NUM_BUILTINS);
+        }
         self.mock.limit()
     }
 
     fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
+        if self.rerelease && number >= FINALE_FINISHED {
+            return self.rerelease_call(number, context);
+        }
         match number {
             // WORLD-8.1: the mock sets the fields; the world links.
             SETORIGIN | SETMODEL | SETSIZE => {
