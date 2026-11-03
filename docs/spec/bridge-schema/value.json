@@ -36,7 +36,22 @@
       },
       "required": [
         "function"
-      ]
+      ],
+      "dependentRequired": {
+        "file": [
+          "line",
+          "statement"
+        ],
+        "line": [
+          "file",
+          "statement"
+        ],
+        "statement": [
+          "file",
+          "line"
+        ]
+      },
+      "description": "Where execution is: the function, and with a .lno the file, line and statement index together (BRIDGE-3.4)"
     },
     "value": {
       "type": "object",

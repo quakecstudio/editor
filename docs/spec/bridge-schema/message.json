@@ -8,14 +8,12 @@
       "const": "2.0"
     },
     "id": {
-      "oneOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ]
+      "type": [
+        "integer",
+        "string",
+        "null"
+      ],
+      "description": "Null only in a response to a request whose id could not be read (JSON-RPC 2.0, section 5)"
     },
     "method": {
       "type": "string"
@@ -50,9 +48,26 @@
         "method",
         "id"
       ],
+      "properties": {
+        "id": {
+          "type": [
+            "integer",
+            "string"
+          ]
+        }
+      },
       "not": {
-        "required": [
-          "result"
+        "anyOf": [
+          {
+            "required": [
+              "result"
+            ]
+          },
+          {
+            "required": [
+              "error"
+            ]
+          }
         ]
       }
     },
@@ -61,8 +76,22 @@
         "method"
       ],
       "not": {
-        "required": [
-          "id"
+        "anyOf": [
+          {
+            "required": [
+              "id"
+            ]
+          },
+          {
+            "required": [
+              "result"
+            ]
+          },
+          {
+            "required": [
+              "error"
+            ]
+          }
         ]
       }
     },
@@ -70,13 +99,23 @@
       "required": [
         "id",
         "result"
-      ]
+      ],
+      "not": {
+        "required": [
+          "method"
+        ]
+      }
     },
     {
       "required": [
         "id",
         "error"
-      ]
+      ],
+      "not": {
+        "required": [
+          "method"
+        ]
+      }
     }
   ]
 }

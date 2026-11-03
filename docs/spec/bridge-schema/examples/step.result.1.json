@@ -2,7 +2,8 @@
   "location": {
     "function": "Ember_Touch",
     "file": "src/weapons.qc",
-    "line": 34
+    "line": 34,
+    "statement": 1183
   },
   "time": 21.07
 }

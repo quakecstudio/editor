@@ -196,8 +196,6 @@ fn the_commands_table_matches_the_schemas_and_capabilities() {
         }
     }
     assert!(launch_has_no_method);
-    // breakpoint/clear is named in the set_breakpoint row's text, not its method cell.
-    commands.insert("breakpoint/clear".to_owned());
     let names: BTreeSet<String> = schema_names().into_iter().collect();
     for command in &commands {
         let file = command.replace('/', ".");
@@ -252,23 +250,65 @@ fn the_envelope_and_the_version_shape() {
         !message
             .is_valid(&json!({"jsonrpc": "2.0", "id": 1, "error": {"code": "x", "message": "x"}}))
     );
+    assert!(
+        message.is_valid(
+            &json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": "x"}})
+        ),
+        "a response to a request whose id could not be read"
+    );
+    assert!(!message.is_valid(&json!({"jsonrpc": "2.0", "id": null, "method": "pause"})));
+    assert!(!message.is_valid(&json!({"jsonrpc": "2.0", "id": 1, "method": "pause", "result": 1})));
+    assert!(!message.is_valid(&json!({"jsonrpc": "2.0", "method": "pause", "result": 1})));
+    assert!(!message.is_valid(
+        &json!({"jsonrpc": "2.0", "id": 1, "method": "pause", "error": {"code": 1, "message": "x"}})
+    ));
+    // spec BRIDGE-3.4: a location with a file has its line and statement too.
+    let changed = validator("event.state.changed");
+    let at = |location: Value| json!({"state": "paused", "time": 1.0, "location": location});
+    assert!(changed.is_valid(&at(json!({"function": "f"}))));
+    assert!(changed.is_valid(&at(
+        json!({"function": "f", "file": "a.qc", "line": 1, "statement": 0})
+    )));
+    assert!(!changed.is_valid(&at(json!({"function": "f", "file": "a.qc", "line": 1}))));
+    assert!(!changed.is_valid(&at(json!({"function": "f", "line": 1, "statement": 0}))));
     let init = validator("initialize.params");
     assert!(init.is_valid(&json!({"protocolVersion": "1.0", "client": {"name": "x"}})));
     assert!(!init.is_valid(&json!({"protocolVersion": "1", "client": {"name": "x"}})));
     assert!(!init.is_valid(&json!({"protocolVersion": "1.0"})));
 }
 
-// spec BRIDGE-6.1, BRIDGE-5.1: no schema forbids an unknown member, so a message from a newer
-// minor version validates, and a value's shape follows its type
+/// Every object in a JSON document, depth first.
+fn objects(value: &Value) -> Vec<&serde_json::Map<String, Value>> {
+    let mut found = Vec::new();
+    let mut stack = vec![value];
+    while let Some(value) = stack.pop() {
+        match value {
+            Value::Object(map) => {
+                found.push(map);
+                stack.extend(map.values());
+            }
+            Value::Array(items) => stack.extend(items),
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        }
+    }
+    found
+}
+
+// spec BRIDGE-6.1, BRIDGE-5.1: no schema, at any depth, forbids an unknown member, so a
+// message from a newer minor version validates, and a value's shape follows its type
 #[test]
 fn unknown_members_pass_and_wrong_value_types_fail() {
     for name in schema_names() {
         let schema = read_json(&schema_dir().join(format!("{name}.json")));
-        assert_ne!(
-            schema["additionalProperties"],
-            json!(false),
-            "{name} forbids unknown members"
-        );
+        for object in objects(&schema) {
+            for keyword in ["additionalProperties", "unevaluatedProperties"] {
+                assert_ne!(
+                    object.get(keyword),
+                    Some(&json!(false)),
+                    "{name} forbids unknown members with {keyword}"
+                );
+            }
+        }
     }
     let set = validator("field.set.params");
     let mut params = json!({"edict": 1, "field": "health", "value": {"type": "float", "value": 1}});

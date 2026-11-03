@@ -30,34 +30,49 @@
       "type": "object",
       "description": "Each capability-flagged command, true when the host accepts it (BRIDGE-2.3)",
       "properties": {
-        "pause": {
+        "breakpoint/clear": {
           "type": "boolean"
         },
-        "resume": {
+        "breakpoint/set": {
           "type": "boolean"
         },
-        "field/set": {
-          "type": "boolean"
-        },
-        "pick": {
-          "type": "boolean"
-        },
-        "entity/spawn": {
-          "type": "boolean"
-        },
-        "entity/remove": {
+        "console": {
           "type": "boolean"
         },
         "entity/edit": {
           "type": "boolean"
         },
+        "entity/remove": {
+          "type": "boolean"
+        },
+        "entity/spawn": {
+          "type": "boolean"
+        },
+        "evaluate": {
+          "type": "boolean"
+        },
+        "field/set": {
+          "type": "boolean"
+        },
+        "pause": {
+          "type": "boolean"
+        },
+        "pick": {
+          "type": "boolean"
+        },
         "player/spawn_at": {
+          "type": "boolean"
+        },
+        "reload": {
+          "type": "boolean"
+        },
+        "resume": {
           "type": "boolean"
         },
         "screenshot": {
           "type": "boolean"
         },
-        "evaluate": {
+        "step": {
           "type": "boolean"
         }
       }

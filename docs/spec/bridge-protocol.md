@@ -21,7 +21,8 @@ Issue: [#89](https://github.com/quakecstudio/editor/issues/89) (P3-01).
 
 ## BRIDGE-1 Transport and framing
 
-**Source:** this design; LSP 3.18, "Base Protocol": "The base protocol consists of a header
+**Source:** this design; JSON-RPC 2.0 (`specs/jsonrpc/2.0/specification.html`); LSP 3.18,
+"Base Protocol": "The base protocol consists of a header
 and a content part (comparable to HTTP). The header and content part are separated by a
 '\r\n'." and "Content-Length | number | The length of the content part in bytes. This header
 is required."
@@ -39,14 +40,17 @@ is required."
   encoding, and any other is refused by closing the connection. The header is ASCII.
 - **BRIDGE-1.3** The content is one JSON-RPC 2.0 object: a request (`method` and `id`), a
   notification (`method`, no `id`) or a response (`id` with `result` or `error`). Batches
-  (a JSON array) are not supported: one is answered with a parse error (`-32600`) and no
+  (a JSON array) are not supported: one is answered with `-32600` (invalid request) and no
   message is read from it. An `id` is an integer or a string the sender chooses; the host's
   own requests, if any, use ids the client never does, since the client numbers from 1 and
   the host from -1 downward.
 - **BRIDGE-1.4** The envelope is `bridge-schema/message.json`: `jsonrpc` is `"2.0"`, a
   request has `method` and `id` and no `result`, a notification has `method` and no `id`, a
-  response has `id` and exactly one of `result` and `error`, where an error has an integer
-  `code`, a `message` and an optional `data`.
+  response has `id` and exactly one of `result` and `error`, and no `method`, where an error
+  has an integer `code`, a `message` and an optional `data`. A response's `id` is `null` only
+  when the request's could not be read (a parse error or an invalid request), as JSON-RPC
+  2.0, section 5, requires: "If there was an error in detecting the id in the Request object
+  (e.g. Parse error/Invalid Request), it MUST be Null."
 
 ## BRIDGE-2 The session
 
@@ -60,11 +64,13 @@ is required."
 - **BRIDGE-2.2** The host answers `initialize` with the protocol version it speaks, its own
   name, version and engine, and its capabilities (`initialize.result.json`). The host sends no
   event before it has answered.
-- **BRIDGE-2.3** The capabilities are one boolean per capability-flagged command (BRIDGE-4.1,
-  the ENG-14 commands and those the host may leave out of a build): `pause`, `resume`,
-  `field/set`, `pick`, `entity/spawn`, `entity/remove`, `entity/edit`, `player/spawn_at`,
-  `screenshot` and `evaluate`. A command whose flag is absent or `false` is answered with
-  `-32005` (unsupported); the client shows it disabled.
+- **BRIDGE-2.3** The capabilities are one boolean per capability-flagged command (BRIDGE-4.1):
+  every command but `initialize`, `shutdown` and `inspect`, so a host built without reload
+  (P3-03), debugging (P3-04) or an ENG-14 command says so: `reload`, `breakpoint/set`,
+  `breakpoint/clear`, `step`, `console`, `pause`, `resume`, `field/set`, `pick`,
+  `entity/spawn`, `entity/remove`, `entity/edit`, `player/spawn_at`, `screenshot` and
+  `evaluate`. A command whose flag is absent or `false` is answered with `-32005`
+  (unsupported); the client shows it disabled.
 - **BRIDGE-2.4** A protocol version is `major.minor` in decimal. The host accepts a client
   whose `major` is its own and answers with its own version; a different `major` is answered
   with `-32001` (incompatible version) and the host closes the connection. A client reading a
@@ -128,12 +134,12 @@ A command is a request from the client, answered with a result on success or an 
   | Operation | Method | Flagged | Does |
   | --- | --- | --- | --- |
   | launch | none | | the client starts the host process with its arguments (P3-06); the session starts with `initialize` (BRIDGE-2) |
-  | reload | `reload` | no | loads the progs named, or the running one's path again, keeping the map, migrating globals and fields by name and type (P3-03); the result counts what migrated and lists what was lost and why |
-  | set_breakpoint | `breakpoint/set` | no | a breakpoint at a source line, resolved through the `.lno` to the first statement on that line of the file; the result names it and where it landed; `breakpoint/clear` removes one by id |
-  | step | `step` | no | runs one statement (`statement`), into the next call (`in`), to the next statement of this function (`over`), to the caller (`out`) or to the end of the server frame (`frame`); the host must be paused (BRIDGE-4.3) |
+  | reload | `reload` | yes | loads the progs named, or the running one's path again, keeping the map, migrating globals and fields by name and type (P3-03); the result counts what migrated and lists what was lost and why |
+  | set_breakpoint | `breakpoint/set`, `breakpoint/clear` | yes | `breakpoint/set` puts a breakpoint at a source line, resolved through the `.lno` to the first statement on that line of the file; the result names it and where it landed; `breakpoint/clear` removes one by id |
+  | step | `step` | yes | runs one statement (`statement`), into the next call (`in`), to the next statement of this function (`over`), to the caller (`out`) or to the end of the server frame (`frame`); the host must be paused (BRIDGE-4.3) |
   | inspect | `inspect` | no | an edict's classname and every field with its value (`edict`), every named global (`globals`), the call stack (`stack`, paused only) or the list of edicts in use with classname, model and origin (`entities`) |
   | watch | `evaluate` | yes | the value of a QuakeC expression: a global, a field path such as `self.owner.health`, or a constant, in the frame given (paused only) |
-  | console | `console` | no | runs a console command; its output comes back as `console/line` events |
+  | console | `console` | yes | runs a console command; its output comes back as `console/line` events |
   | screenshot | `screenshot` | yes | the frame the host last drew, or draws for the size asked, as a PNG in base64 |
   | pause, resume | `pause`, `resume` | yes | stop and start the server clock; the state events follow (BRIDGE-3.3) |
   | set field | `field/set` | yes | writes one field of an edict with a typed value; while paused it is applied when the game resumes (`on_resume`), else at once (`now`) |
@@ -160,7 +166,7 @@ A command is a request from the client, answered with a result on success or an 
 
 ## BRIDGE-5 Values
 
-**Source:** this design; PROGS-3, the QuakeC types.
+**Source:** this design; PROGS-16, the eight QC types.
 
 ### Behaviour
 
@@ -193,7 +199,8 @@ A command is a request from the client, answered with a result on success or an 
 
 ## BRIDGE-7 Errors
 
-**Source:** this design; JSON-RPC 2.0, section 5.1, "Error object".
+**Source:** this design; JSON-RPC 2.0, section 5.1, "Error object"
+(`specs/jsonrpc/2.0/specification.html`).
 
 ### Behaviour
 
