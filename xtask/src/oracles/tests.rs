@@ -61,7 +61,7 @@ fn fake_root(name: &str) -> (PathBuf, Files) {
         sha256::hex_digest(PR_EDICT.as_bytes()),
     );
     fs::write(dir.join(SOURCES), sources).unwrap();
-    // DIFF-14.4: the fixed FTEQCC is built from a copy of the fetched tree, so the fake tree
+    // DIFF-14.12: the fixed FTEQCC is built from a copy of the fetched tree, so the fake tree
     // holds a `qcc_pr_comp.c` with the text of every fix.
     let fteqcc = dir.join(OUT).join("src/fteqcc").join(super::defects::FILE);
     fs::create_dir_all(fteqcc.parent().unwrap()).unwrap();
@@ -141,7 +141,7 @@ fn the_oracles_are_built_once_from_the_files_fetched() {
     );
     assert!(dir.join(OUT).join("bin/stamp").is_file());
     let compiles = fake.seen.lock().unwrap().len();
-    // qcc, FTEQCC, the VM oracle and the fixed FTEQCC (DIFF-14.4): each source, then each
+    // qcc, FTEQCC, the VM oracle and the fixed FTEQCC (DIFF-14.12): each source, then each
     // link.
     let sources = QCC_FILES.len() + 2 * FTEQCC_FILES.len() + 2 + VM_HARNESS.len();
     assert_eq!(compiles, sources + 4);
