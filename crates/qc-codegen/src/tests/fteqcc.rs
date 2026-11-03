@@ -706,6 +706,21 @@ fn an_ifnot_of_a_not_is_shortened_to_an_if() {
     assert_eq!(t[14], st(IfNot, t[13].c, 3, 0));
 }
 
+// spec FTEF-34.16: the NOT of `if (c ? a : !x)` writes the `?:`'s temporary, referenced by both
+// arms, so the IFNOT keeps it
+#[test]
+fn an_ifnot_of_a_ternarys_not_keeps_the_not() {
+    let p = fte_progs("float c, a, x, n;\nvoid() t = { if (c ? a : !x) n = 1; };\n");
+    let x = global(&p, "x");
+    let t = body(&p, "t");
+    assert_eq!(
+        opcodes(&t),
+        ops(&[IfNot, StoreF, Goto, NotF, IfNot, StoreF, Done])
+    );
+    assert_eq!(t[3], st(NotF, x, 0, t[1].b));
+    assert_eq!(t[4], st(IfNot, t[1].b, 2, 0));
+}
+
 // spec FTEF-34.16: id's qcc has no `shortenifs`; `if (!f)` stays NOT_F and IFNOT
 #[test]
 fn qcc_keeps_the_not_of_a_condition() {
@@ -2819,14 +2834,14 @@ fn a_noref_definition_initialised_again_keeps_its_first_value() {
     );
 }
 
-// spec FTEF-26.14: BITOR_F, BITAND_F and EQ_F of two constants fold, as do AND_F and OR_F, and
-// a constant vector's component is a constant
+// spec FTEF-26.14: BITOR_F, BITAND_F, EQ_F and NE_F of two constants fold, a named constant
+// counting, as do AND_F and OR_F, and a constant vector's component is a constant
 #[test]
 fn bit_operators_and_comparisons_of_two_constants_fold() {
     let p = fte_progs(
-        "float x; vector k = '1 2 3';\n\
+        "float x; vector k = '1 2 3'; const float K1 = 5;\n\
          void() t = { x = 3 | 4; x = 7 & 5; x = 3 == 3; x = 3 == 4; x = x & (1 | 2);\n\
-         x = 16 * k_y; x = (1 && 2); x = (0 || 0); };\n",
+         x = 16 * k_y; x = (1 && 2); x = (0 || 0); x = (K1 != 65536) & 1; x = K1 != 5; };\n",
     );
     let x = global(&p, "x");
     let store = |f: f32| st(StoreF, immediate(&p, f), x, 0);
@@ -2839,6 +2854,8 @@ fn bit_operators_and_comparisons_of_two_constants_fold() {
             store(0.0),
             st(BitAnd, x, immediate(&p, 3.0), x),
             store(32.0),
+            store(1.0),
+            store(0.0),
             store(1.0),
             store(0.0),
             st(Done, 0, 0, 0)

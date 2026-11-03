@@ -4573,11 +4573,13 @@ saturates, as on the arm64 build the differential is recorded on.
   id target `b = (_Bool)fn;` of a `void() fn` is the `OP_NE_FNC` truth and three "ftoi
   emulation", as of an entity. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`, `QCC_SRef_EvalConst`.
-- **FTEF-26.14** `BITOR_F`, `BITAND_F` and `EQ_F` of two constants fold too: the bit operators
+- **FTEF-26.14** `BITOR_F`, `BITAND_F`, `EQ_F` and `NE_F` of two constants fold too: the bit operators
   on each constant's `int` (`QCC_MakeFloatConst(QCC_PR_RoundFloatConst(eval_a) |
   QCC_PR_RoundFloatConst(eval_b))`, `& ...`, the conversion `int ival = val;` with the warning
-  "Constant float operand %f will be truncated to %i" when it is not whole) and `EQ_F` to 1 or
-  0 (`QCC_MakeFloatConst(eval_a->_float == eval_b->_float)`); `AND_F` and `OR_F` fold to an int
+  "Constant float operand %f will be truncated to %i" when it is not whole) and `EQ_F` and
+  `NE_F` to 1 or 0 (`QCC_MakeFloatConst(eval_a->_float == eval_b->_float)`, `!=`), a named
+  constant counting (`K1 != 65536` with `const float K1 = 5` is the constant 1); `AND_F` and
+  `OR_F` fold to an int
   constant. So `self.items & (IT_SHOTGUN | IT_AXE)` is one `BITAND` of the folded mask. A
   constant vector's component, its component definition or a word read by offset, is a
   constant (`QCC_SRef_EvalConst` reads the symbol's data at the reference's offset), so
@@ -5600,7 +5602,9 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   tests of `if`, `while`, `for` and `c ? a : b` shorten, and `if (!x)` of a float `x` that is
   `-0.0` branches past the body, since `OP_IF` tests the word's bits; `c ?: b`, `&&` and `||`
   keep their operand (`STFL_PRESERVEA`, a second reference) and do not, nor does a `NOT_S` or
-  `NOT_V`, nor the `OP_IF` of `do ... while`. Source:
+  `NOT_V`, nor the `OP_IF` of `do ... while`; nor does `if (c ? a : !x)`, whose `NOT` writes
+  the `?:`'s temporary (FTEF-30.3), referenced by both arms' stores (`refcount == 1` fails), so
+  it stays `NOT_F x t; IFNOT t`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_StatementFlags`, `QCC_Generate_OP_IFNOT`; `engine/qclib/qccmain.c`, `optimisations[]`.
 - **FTEF-34.17** A nested function (FTEF-18.2) is checked as any function is when it ends

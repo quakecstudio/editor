@@ -2120,6 +2120,9 @@ impl<'a> Compiler<'a> {
         if self.dialect != Dialect::Fteqcc
             || op != Opcode::IfNot
             || !matches!(condition.kind, ValueKind::Temp(_))
+            // A `?:`'s temporary that its last arm's `NOT` wrote has a reference from each
+            // arm (`refcount == 1` fails), so its test keeps the `NOT`.
+            || self.is_joined(condition)
         {
             return None;
         }
@@ -2868,20 +2871,22 @@ impl<'a> Compiler<'a> {
                 Literal::Vector(each(v, &|_, c| s * c))
             }
             // FTEF-26.14: `BITOR_F` and `BITAND_F` of two constants fold on each one's `int`
-            // (`QCC_PR_RoundFloatConst`), `EQ_F` to 1 or 0.
+            // (`QCC_PR_RoundFloatConst`), `EQ_F` and `NE_F` to 1 or 0.
             (Opcode::BitOr, Literal::Float(x), Literal::Float(y)) => {
                 Literal::Float(int_to_float(float_to_int(x) | float_to_int(y)))
             }
             (Opcode::BitAnd, Literal::Float(x), Literal::Float(y)) => {
                 Literal::Float(int_to_float(float_to_int(x) & float_to_int(y)))
             }
-            (Opcode::EqF, Literal::Float(x), Literal::Float(y)) => {
+            (Opcode::EqF | Opcode::NeF, Literal::Float(x), Literal::Float(y)) => {
                 #[expect(
                     clippy::float_cmp,
-                    reason = "spec FTEF-26.14: FTEQCC folds `eval_a->_float == eval_b->_float`"
+                    reason = "spec FTEF-26.14: FTEQCC folds `eval_a->_float == eval_b->_float` \
+                              and `!=`"
                 )]
                 let equal = x == y;
-                Literal::Float(if equal { 1.0 } else { 0.0 })
+                let truth = if opcode == Opcode::EqF { equal } else { !equal };
+                Literal::Float(if truth { 1.0 } else { 0.0 })
             }
             // FTEF-26.14: `AND_F` and `OR_F` of two constants fold to an int constant
             // (`QCC_MakeIntConst(eval_a->_float && eval_b->_float)`), made a float where a
