@@ -310,6 +310,18 @@ only entity-field access); a vector has no members. The rerelease applies `.z` d
   loaded and its word taken. SWAB's `w_rockets.qc` reads `other.angles.y`, the rerelease's
   `doors.qc` `self.movedir[0]`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseArrayPointer`, `QCC_PR_ParseValue`.
 
+- **FTE-9.6** A component of a call's vector value, `(f()).y`, is a word of the call's alias
+  of the return global (FTE-18.13): `QCC_PR_ParseRefArrayPointer`'s `vectorarrayindex` makes
+  the member a constant index into the alias, and `QCC_RefToDef` moves the alias's offset by
+  it (`ret.ofs += QCC_Eval_Int (idxeval, ...)`), so the word is read from wherever the alias
+  is when the statement is made: the return global, or the temporary a clobber before a later
+  call copied the whole value to. So `gf0 = (normalize(gv0)).y + ff1(1);` is `CALL1 normalize`,
+  the argument store, `STORE_V` of the return global to a temporary `t`, `CALL1 ff1` and `ADD_F
+  t+1, OFS_RETURN`, and `gf0 = (normalize(gv0)).z;` with no call after it reads
+  `OFS_RETURN+2`. A member of a call's struct value is the same. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseRefArrayPointer`, `QCC_RefToDef`, `QCC_GetAliasTemp`, `QCC_ClobberDef`.
+
 ## FTE-10 `const` declarations
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseDefs` (the `const` keyword), fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.

@@ -333,7 +333,11 @@ impl Compiler<'_> {
             {
                 Some(f32::from_bits(self.program.word(at.ofs)))
             }
-            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Return(_) | ValueKind::Cast(_) => {
+            ValueKind::Def(_)
+            | ValueKind::Temp(_)
+            | ValueKind::Return(_)
+            | ValueKind::ReturnWord(..)
+            | ValueKind::Cast(_) => {
                 None
             }
         };

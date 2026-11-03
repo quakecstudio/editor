@@ -89,6 +89,11 @@ enum ValueKind {
     /// A definition read as another type of its basic type by a cast, with no statement
     /// (FTEF-30.6).
     Cast(ValueType),
+    /// A word of a call's vector or struct value, `(f()).y`, of the member's type: the alias
+    /// of `Return` read at `ofs - OFS_RETURN` words into wherever the alias is when a
+    /// statement reads it, the return global or the temporary a clobber copied it to
+    /// (FTE-9.6).
+    ReturnWord(AliasId, ValueType),
 }
 
 /// The index of an [`Alias`] in [`Compiler::aliases`].
@@ -500,7 +505,7 @@ impl<'a> Compiler<'a> {
                 .program
                 .def(*place)
                 .map_or(ValueType::simple(Etype::Void), |d| d.ty.clone()),
-            ValueKind::Temp(ty) | ValueKind::Cast(ty) => ty.clone(),
+            ValueKind::Temp(ty) | ValueKind::Cast(ty) | ValueKind::ReturnWord(_, ty) => ty.clone(),
             ValueKind::Return(alias) => {
                 if self.dialect.has_fteqcc_extensions()
                     && let Some(alias) = self.aliases.get(alias.0)
@@ -532,13 +537,15 @@ impl<'a> Compiler<'a> {
     /// the temporary a clobber copied it to, else the return global (FTE-18.5).
     fn operand_of(&mut self, value: &Value) -> u32 {
         match value.kind {
-            ValueKind::Return(id) => {
+            ValueKind::Return(id) | ValueKind::ReturnWord(id, _) => {
                 let Some(alias) = self.aliases.get_mut(id.0) else {
                     return value.ofs;
                 };
                 alias.live = false;
                 self.last_read = Some(id);
-                alias.temp.unwrap_or(OFS_RETURN)
+                // FTE-9.6: a word of the value is the same word of wherever the alias is.
+                let word = value.ofs.saturating_sub(OFS_RETURN);
+                alias.temp.unwrap_or(OFS_RETURN).saturating_add(word)
             }
             ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Cast(_) => value.ofs,
         }
@@ -579,7 +586,7 @@ impl<'a> Compiler<'a> {
 
     /// Marks `value` read by nothing more, so no clobber copies it (`QCC_FreeTemp`).
     fn drop_value(&mut self, value: &Value) {
-        if let ValueKind::Return(alias) = value.kind
+        if let ValueKind::Return(alias) | ValueKind::ReturnWord(alias, _) = value.kind
             && let Some(alias) = self.aliases.get_mut(alias.0)
         {
             alias.live = false;
@@ -2335,7 +2342,9 @@ impl<'a> Compiler<'a> {
         let kind = match value.kind {
             ValueKind::Def(_) | ValueKind::Cast(_) => ValueKind::Cast(target),
             ValueKind::Temp(_) => ValueKind::Temp(target),
-            ValueKind::Return(_) => return Err(Abort::Internal(Internal::Unsupported, span)),
+            ValueKind::Return(_) | ValueKind::ReturnWord(..) => {
+                return Err(Abort::Internal(Internal::Unsupported, span));
+            }
         };
         Ok(Value {
             ofs: value.ofs,
@@ -2899,7 +2908,11 @@ impl<'a> Compiler<'a> {
                 }
                 return Some(Literal::Float(f32::from_bits(self.program.word(value.ofs))));
             }
-            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Cast(_) | ValueKind::Return(_) => {
+            ValueKind::Def(_)
+            | ValueKind::Temp(_)
+            | ValueKind::Cast(_)
+            | ValueKind::Return(_)
+            | ValueKind::ReturnWord(..) => {
                 return None;
             }
         };
@@ -2972,9 +2985,18 @@ impl<'a> Compiler<'a> {
         if let Some(name) = &name
             && let Some((word, ty)) = self.member_of(&self.type_of(&base), name)
         {
+            // FTE-9.6: a member of a call's struct value stays with its alias.
+            let kind = match base.kind {
+                ValueKind::Return(id) | ValueKind::ReturnWord(id, _) => {
+                    ValueKind::ReturnWord(id, ty)
+                }
+                ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Cast(_) => {
+                    ValueKind::Temp(ty)
+                }
+            };
             return Ok(Member::Done(Value {
                 ofs: base.ofs.checked_add(word).at(span)?,
-                kind: ValueKind::Temp(ty),
+                kind,
             }));
         }
         Ok(Member::Base(base))
@@ -3033,9 +3055,15 @@ impl<'a> Compiler<'a> {
             Some("z") => 2,
             _ => return Ok(None),
         };
+        let ty = ValueType::simple(Etype::Float);
+        // FTE-9.6: a word of a call's value stays with its alias.
+        let kind = match base.kind {
+            ValueKind::Return(id) | ValueKind::ReturnWord(id, _) => ValueKind::ReturnWord(id, ty),
+            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Cast(_) => ValueKind::Temp(ty),
+        };
         Ok(Some(Value {
             ofs: base.ofs.checked_add(offset).at(span)?,
-            kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
+            kind,
         }))
     }
 
@@ -3277,7 +3305,7 @@ impl<'a> Compiler<'a> {
     fn is_definition_word(&self, value: &Value) -> bool {
         match value.kind {
             ValueKind::Def(_) | ValueKind::Cast(_) => true,
-            ValueKind::Return(_) => false,
+            ValueKind::Return(_) | ValueKind::ReturnWord(..) => false,
             ValueKind::Temp(_) => self.program.defs.iter().any(|def| {
                 let words = type_words(self.index, &def.ty).saturating_mul(def.count.unwrap_or(1));
                 def.name != "IMMEDIATE"
@@ -3495,7 +3523,7 @@ impl<'a> Compiler<'a> {
 
     /// Marks a call's value live again after a statement read it, as a readable store does.
     fn keep_alive(&mut self, value: &Value) {
-        if let ValueKind::Return(alias) = value.kind
+        if let ValueKind::Return(alias) | ValueKind::ReturnWord(alias, _) = value.kind
             && let Some(alias) = self.aliases.get_mut(alias.0)
         {
             alias.live = true;
@@ -3545,7 +3573,7 @@ impl<'a> Compiler<'a> {
         };
         let name = match &callee.kind {
             ValueKind::Def(place) => self.program.def(*place).map(|d| d.name.clone()),
-            ValueKind::Temp(_) | ValueKind::Return(_) | ValueKind::Cast(_) => None,
+            ValueKind::Temp(_) | ValueKind::Return(_) | ValueKind::ReturnWord(..) | ValueKind::Cast(_) => None,
         };
         let fixed = (!function.variadic).then_some(function.params.len());
         let mut count = 0_usize;
@@ -3809,7 +3837,7 @@ impl Compiler<'_> {
                 .and_then(|id| self.defaults.get(&id))
                 .cloned()
                 .unwrap_or_default(),
-            ValueKind::Temp(_) | ValueKind::Return(_) | ValueKind::Cast(_) => Vec::new(),
+            ValueKind::Temp(_) | ValueKind::Return(_) | ValueKind::ReturnWord(..) | ValueKind::Cast(_) => Vec::new(),
         };
         // FTE-18.7: an empty slot takes its parameter's default, and so does each parameter
         // after the last argument that has one and is not `optional`.

@@ -1442,3 +1442,146 @@ fn a_va_list_elements_other_words_are_compared() {
     assert_eq!(against_fteqcc(&float(5), &float(5)), []);
     assert!(!against_fteqcc(&float(5), &float(6)).is_empty());
 }
+
+#[test]
+#[ignore = "debug: GEN_DIR names a generated program's directory"]
+fn debug_pairing() {
+    let Ok(dir) = std::env::var("GEN_DIR") else {
+        return;
+    };
+    let theirs = std::fs::read(format!("{dir}/progs.dat")).unwrap();
+    let ours = std::fs::read(format!("{dir}/ours.dat")).unwrap();
+    let (tp, op) = (Progs::read(&theirs).unwrap(), Progs::read(&ours).unwrap());
+    let (a, b) = (super::Program::new(&tp), super::Program::new(&op));
+    eprintln!(
+        "fields equal: {}",
+        a.fields.keys().eq(b.fields.keys())
+    );
+    let fa: Vec<_> = a.fields.keys().map(|k| String::from_utf8_lossy(k).into_owned()).collect();
+    let fb: Vec<_> = b.fields.keys().map(|k| String::from_utf8_lossy(k).into_owned()).collect();
+    if fa != fb {
+        eprintln!("theirs fields {fa:?}\nours fields {fb:?}");
+    }
+    let mut rest = b.globals.iter().enumerate().filter(|(_, g)| !b.is_local(g)).peekable();
+    for (i, g) in a.globals.iter().enumerate() {
+        if g.2 == 0 || a.is_local(g) {
+            continue;
+        }
+        let found = rest.find(|(_, o)| o.0 == g.0);
+        if found.is_none() {
+            eprintln!(
+                "unpaired theirs #{i} {:?} type {:?} ofs {}",
+                String::from_utf8_lossy(&g.0),
+                g.1,
+                g.2
+            );
+            let ctx: Vec<String> = a.globals[i.saturating_sub(3)..(i + 4).min(a.globals.len())]
+                .iter()
+                .map(|g| format!("{}@{}{}", String::from_utf8_lossy(&g.0), g.2, if a.is_local(g) { "L" } else { "" }))
+                .collect();
+            eprintln!("theirs ctx {ctx:?}");
+            let ours_all: Vec<String> = b.globals.iter().map(|g| format!("{}@{}{}", String::from_utf8_lossy(&g.0), g.2, if b.is_local(g) { "L" } else { "" })).collect();
+            let pos = ours_all.iter().position(|s| s.starts_with(&format!("{}@", String::from_utf8_lossy(&g.0))));
+            eprintln!("ours around the name {:?}", pos.map(|p| &ours_all[p.saturating_sub(3)..(p + 4).min(ours_all.len())]));
+            return;
+        }
+    }
+    let pairs = super::Oracle::Fteqcc.pair_globals(&a, &b).unwrap();
+    for (i, j) in &pairs {
+        let (ga, gb) = (&a.globals[*i], &b.globals[*j]);
+        if ga.1 != gb.1 {
+            eprintln!(
+                "type mismatch {:?}: theirs {:?} ours {:?}",
+                String::from_utf8_lossy(&ga.0),
+                ga.1,
+                gb.1
+            );
+            return;
+        }
+    }
+    eprintln!("all paired, same types");
+}
+
+#[test]
+#[ignore = "debug: GEN_DIR, FN, ROUND and SCENARIO replay one call of a generated program"]
+fn debug_replay() {
+    let Ok(dir) = std::env::var("GEN_DIR") else {
+        return;
+    };
+    let fn_name = std::env::var("FN").unwrap();
+    let round: u32 = std::env::var("ROUND").unwrap().parse().unwrap();
+    let which = std::env::var("SCENARIO").unwrap();
+    let theirs = std::fs::read(format!("{dir}/progs.dat")).unwrap();
+    let ours = std::fs::read(format!("{dir}/ours.dat")).unwrap();
+    let (tp, op) = (Progs::read(&theirs).unwrap(), Progs::read(&ours).unwrap());
+    let spec = scenarios("").into_iter().find(|s| s.name == which).unwrap();
+    let text = format!("progs progs.dat\n{}", spec.directives);
+    let scenario = scenario::read(text.as_bytes(), Path::new(".")).unwrap();
+    let entities = spec.entities.unwrap_or_default();
+    let mut tw = World::new(&tp, &scenario, &entities, EngineProfile::Id).unwrap();
+    let mut ow = World::new(&op, &scenario, &entities, EngineProfile::Id).unwrap();
+    let pair = super::Pair::new(Oracle::Fteqcc, &tw, &ow);
+    let drawer = Drawer::new(&tw);
+    let function = tp.ed_find_function(fn_name.as_bytes()).unwrap();
+    let their_index = tp
+        .functions()
+        .iter()
+        .position(|f| f.first_statement == function.first_statement)
+        .unwrap();
+    let our_index = ow.program.functions[fn_name.as_bytes()][0];
+    let pools = drawer.pools(function);
+    let context = drawer.draw(&mut Rng::new(fn_name.as_bytes(), round), (function, &pools), round);
+    eprintln!("self {} other {} server {:?}", context.self_edict, context.other_edict, context.server);
+    for (e, name, draw) in &context.fields {
+        eprintln!("  field {e}.{} = {draw:?}", String::from_utf8_lossy(name));
+    }
+    for (name, draw) in &context.globals {
+        eprintln!("  global {} = {draw:?}", String::from_utf8_lossy(name));
+    }
+    eprintln!("  parms {:?}", context.parms);
+    let t = tw.call(i32::try_from(their_index).unwrap(), &context);
+    let o = ow.call(our_index, &context);
+    eprintln!("theirs: {:?} {} statements; ours: {:?} {} statements", t.error, t.executed.len(), o.error, o.executed.len());
+    let name = |p: &Progs<'_>, f: i32| {
+        p.functions()
+            .get(usize::try_from(f).unwrap_or(usize::MAX))
+            .and_then(|f| p.string(f.s_name))
+            .map(|n| String::from_utf8_lossy(n).into_owned())
+            .unwrap_or_default()
+    };
+    let seq = |p: &Progs<'_>, ex: &[super::Executed]| -> Vec<String> {
+        ex.iter()
+            .map(|e| {
+                let st = p.statements().get(usize::try_from(e.statement).unwrap()).unwrap();
+                format!("{}:{} op{} {} {} {}{}", name(p, e.function), e.statement, st.op, st.a, st.b, st.c, e.builtin.map(|b| format!(" #{b}")).unwrap_or_default())
+            })
+            .collect()
+    };
+    let (ts, os) = (seq(&tp, &t.executed), seq(&op, &o.executed));
+    let ops = |s: &str| s.split(' ').nth(1).unwrap_or("").to_owned();
+    let mut i = 0;
+    while i < ts.len().min(os.len()) && ops(&ts[i]) == ops(&os[i]) {
+        i += 1;
+    }
+    eprintln!("first opcode difference at executed statement {i}");
+    for k in i.saturating_sub(6)..(i + 6).min(ts.len().max(os.len())) {
+        eprintln!("  {:<52} | {}", ts.get(k).cloned().unwrap_or_default(), os.get(k).cloned().unwrap_or_default());
+    }
+    if let Ok(range) = std::env::var("SHOW") {
+        let (from, to) = range.split_once("..").unwrap();
+        let (from, to): (usize, usize) = (from.parse().unwrap(), to.parse().unwrap());
+        for k in from..to.min(ts.len().max(os.len())) {
+            eprintln!("  {k:3} {:<52} | {}", ts.get(k).cloned().unwrap_or_default(), os.get(k).cloned().unwrap_or_default());
+        }
+    }
+    if let Ok(slot) = std::env::var("SLOT") {
+        let slot: i32 = slot.parse().unwrap();
+        for (k, e) in o.executed.iter().enumerate() {
+            let st = op.statements().get(usize::try_from(e.statement).unwrap()).unwrap();
+            if st.b == slot || st.c == slot || st.a == slot {
+                eprintln!("  ours touches slot {slot} at executed {k}: {} | theirs {}", os[k], ts.get(k).cloned().unwrap_or_default());
+            }
+        }
+    }
+    eprintln!("differ: {:?}", pair.differ(&tw, &t, &ow, &o));
+}

@@ -3063,6 +3063,39 @@ fn a_parenthesised_vector_fields_component_is_a_word_of_its_copy() {
     );
 }
 
+// spec FTE-9.6: a component of a call's vector value is the word of the alias, read from the
+// temporary a later clobber copies the value to, not from the return global
+#[test]
+fn a_components_of_a_calls_value_follows_the_alias_to_its_copy() {
+    let p = fte_progs(
+        "vector gv0; float gf0; vector(vector v) normalize = #9; float(float f) ff1 = #1;\n\
+         void() t = { gf0 = (normalize(gv0)).y + ff1(1); gf0 = (normalize(gv0)).z; };\n",
+    );
+    let (gv0, gf0, normalize, ff1) = (
+        global(&p, "gv0"),
+        global(&p, "gf0"),
+        global(&p, "normalize"),
+        global(&p, "ff1"),
+    );
+    let t = body(&p, "t");
+    let copy = t[3].b;
+    assert_eq!(
+        t,
+        [
+            st(Opcode::StoreV, gv0, 4, 0),
+            st(Opcode::Call1, normalize, 0, 0),
+            st(StoreF, immediate(&p, 1.0), 4, 0),
+            st(Opcode::StoreV, 1, copy, 0),
+            st(Opcode::Call1, ff1, 0, 0),
+            st(AddF, copy + 1, 1, gf0),
+            st(Opcode::StoreV, gv0, 4, 0),
+            st(Opcode::Call1, normalize, 0, 0),
+            st(StoreF, 3, gf0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
 // spec FTEF-27.4: an int constant, the fold of `&&` of two constants, stored to a float field
 // or passed to a float parameter is the float constant
 #[test]
