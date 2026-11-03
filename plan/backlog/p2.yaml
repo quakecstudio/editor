@@ -3162,10 +3162,10 @@ issues:
   deliverable:
   - 'crates/qc-codegen/src/compile/arrays.rs and compile.rs: qc-codegen emits an `ArrayGet*NAME` (and `ArraySet*NAME` where FTEQCC does) accessor for the same arrays FTEQCC does, including an array only ever subscripted by a constant index, and names the accessors, their locals and the element and following definitions in FTEQCC''s order, with a spec statement in docs/spec/dialect-fteqcc.md quoting qcc_pr_comp.c (QCC_PR_EmitArrayGetFunction and its call sites) and a citing test'
   - 'crates/qs-differential: the scenarios or scripted call set drive the CTF gameplay paths (team flag handling, obituaries, water movement) so rerelease-ctf reaches at least 90% of statements, with the forms recorded in docs/spec/differential.md'
-  - 'xtask/src/compiler_diff.rs: rerelease-ctf moved from `PENDING` to `RERELEASE`, and arcane-dimensions and crmod7 added to `MODS_AT_BAR`, each passing; .github/workflows/differential.yml: arcane-dimensions and crmod7 added to the `corpus fetch` list of the full compiler differential'
+  - 'xtask/src/compiler_diff.rs: rerelease-ctf moved from `PENDING` to `RERELEASE`, and arcane-dimensions added to `MODS_AT_BAR`, passing; .github/workflows/differential.yml: arcane-dimensions added to the full compiler differential. crmod7, at 0 divergences and 87.7% of statements, is accepted below the bar by Justin (2026-11-03) and left to P3-33'
   acceptance:
   - '`cargo xtask compiler-diff --full` passes on rerelease-ctf: no divergence and at least 90% of statements executed'
-  - '`cargo xtask compiler-diff --full` holds arcane-dimensions and crmod7 to DIFF-12.5''s bar: no divergence and at least 90% of statements executed'
+  - '`cargo xtask compiler-diff --full` holds arcane-dimensions to DIFF-12.5''s bar: no divergence and at least 90% of statements executed; crmod7 reaches no divergence, its coverage left to P3-33'
   - 'The five rerelease codebases and four mods already at the bar stay at the bar: `cargo xtask compiler-diff --full` passes on all six rerelease codebases and all six -Tid mods'
   verify:
   - cargo test -p qc-codegen -p qc-sema -p qs-differential
