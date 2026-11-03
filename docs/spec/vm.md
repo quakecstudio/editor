@@ -53,6 +53,16 @@ for VM-9.2 run on an x86 host. The test vectors were checked with exactly that b
   undefined in C. This spec fixes the answer: a statement that would read or write a global
   slot outside that range fails with a runtime error (VM-19.7) before it changes any global or
   field. It is a deliberate divergence; qcc never writes such an operand.
+- **VM-1.5** The two slots past the last global, `numglobals` and `numglobals + 1`, are the
+  memory after the globals in id's engine, which reads them without harm: `PR_LoadProgs` points
+  `pr_globals` into the loaded file (`pr_global_struct = (globalvars_t *)((byte *)progs +
+  progs->ofs_globals); pr_globals = (float *)pr_global_struct;`), and past the file's end lies
+  the hunk's zeroed padding (`COM_LoadFile`'s `Hunk_AllocName (len+1, base)`). FTEQCC reads
+  them: when a function's `RETURN` operand is its last temporary, allocated as the last global,
+  `OP_RETURN` copies three words from it (VM-16.1), two of them past the globals. This VM gives
+  every progs those two slots, zero, which a statement reads or writes without VM-1.4's error;
+  no definition names them and the globals a trace or snapshot reads stop before them. Source:
+  `WinQuake/pr_edict.c`, `PR_LoadProgs`; `WinQuake/common.c`, `COM_LoadFile`.
 
 ## VM-2 Starting a run
 
