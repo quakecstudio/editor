@@ -146,6 +146,7 @@ jobs:
           - rerelease-mg1
           - rerelease-mg3
           - rerelease-ctf
+          - arcane-dimensions
           - copper
           - librequake
           - qc-conduit
