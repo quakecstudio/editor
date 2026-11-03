@@ -694,3 +694,224 @@ fn track_files_name_the_candidates() {
     );
     assert_eq!(track_files(11, &["wav"]), ["music/track11.wav"]);
 }
+
+// spec SND-1: the water and sky channels have their sounds precached, slime and lava none
+#[test]
+fn the_ambient_sounds_are_precached() {
+    assert_eq!(Ambient::Water.sound_name(), Some("ambience/water1.wav"));
+    assert_eq!(Ambient::Sky.sound_name(), Some("ambience/wind2.wav"));
+    assert_eq!(Ambient::Slime.sound_name(), None);
+    assert_eq!(Ambient::Lava.sound_name(), None);
+    let (mut mixer, mut table, _, _, _, _) = fixture();
+    let files = files(&[
+        ("ambience/water1.wav", wav(11025, 8, 1, &[128; 8], Some(0))),
+        ("ambience/wind2.wav", wav(11025, 8, 1, &[128; 8], Some(0))),
+    ]);
+    mixer.precache_ambients(&mut table, &mut files.reader());
+    let water = table.find("ambience/water1.wav").unwrap();
+    let wind = table.find("ambience/wind2.wav").unwrap();
+    assert_eq!(table.loaded(water), Some(&Loaded::Data));
+    mixer.update(&table, Listener::default(), Some([255; 4]), 0.1);
+    assert_eq!(mixer.channels()[0].sfx, Some(water));
+    assert_eq!(mixer.channels()[1].sfx, Some(wind));
+    assert_eq!(mixer.channels()[2].sfx, None);
+    assert_eq!(mixer.channels()[3].sfx, None);
+    assert_eq!(mixer.speed(), 11025);
+    assert_eq!(water.index(), 3, "after beep, loop and missing");
+}
+
+// spec SND-3.2: the pan follows the dot product of the normalised offset with the listener's
+// right vector, the distance its length times dist_mult, from the listener's own origin
+#[test]
+fn spatialization_at_an_angle() {
+    let (mut mixer, table, _, beep, _, _) = fixture();
+    let mut rand = Fixed(vec![]);
+    let listener = Listener {
+        origin: [100.0, 100.0, 0.0],
+        ..Listener::default()
+    };
+    mixer.update(&table, listener, None, 0.0);
+    // Offset (300, -400, 0): length 500, dist 0.5, dot 0.8: right (int) (255 * 0.5 * 1.8),
+    // left (int) (255 * 0.5 * 0.2).
+    let a = mixer
+        .start_sound(&table, &mut rand, start(2, 1, beep, [400.0, -300.0, 0.0]))
+        .unwrap();
+    assert_eq!(
+        (mixer.channels()[a].leftvol, mixer.channels()[a].rightvol),
+        (25, 229)
+    );
+    // Offset (0, -300, 400): length 500, dot 0.6; in single precision 1 - dot is just under
+    // 0.4 and 255 * 0.5 * that just under 51, so the left truncates to 50, as C does.
+    let b = mixer
+        .start_sound(&table, &mut rand, start(3, 1, beep, [100.0, -200.0, 400.0]))
+        .unwrap();
+    assert_eq!(
+        (mixer.channels()[b].leftvol, mixer.channels()[b].rightvol),
+        (50, 204)
+    );
+    // Offset (-300, 400, 0): dot -0.8, to the left.
+    let c = mixer
+        .start_sound(&table, &mut rand, start(4, 1, beep, [-200.0, 500.0, 0.0]))
+        .unwrap();
+    assert_eq!(
+        (mixer.channels()[c].leftvol, mixer.channels()[c].rightvol),
+        (229, 25)
+    );
+}
+
+// spec SND-2.5: only an identical sound still at its start offsets the new one; one that has
+// played on, or another sound at its start, does not
+#[test]
+fn only_an_identical_sound_at_its_start_offsets() {
+    let (mut mixer, table, _, beep, looped, _) = fixture();
+    mixer
+        .start_sound(&table, &mut Fixed(vec![]), start(2, 1, beep, [0.0; 3]))
+        .unwrap();
+    mixer.paint_channels(&table, 3);
+    assert_eq!(mixer.channels()[4].pos, 3);
+    let second = mixer
+        .start_sound(&table, &mut Fixed(vec![500]), start(3, 1, beep, [0.0; 3]))
+        .unwrap();
+    assert_eq!(mixer.channels()[second].pos, 0, "the first has played on");
+    let other = mixer
+        .start_sound(&table, &mut Fixed(vec![500]), start(5, 1, looped, [0.0; 3]))
+        .unwrap();
+    assert_eq!(
+        mixer.channels()[other].pos,
+        0,
+        "a different sound at its start"
+    );
+}
+
+// spec SND-4.3: the ambient volume boundaries: a target of exactly 8 is kept, a volume at its
+// target stays, and a step past the target in either direction lands on it
+#[test]
+fn ambient_volume_boundaries() {
+    let (mut mixer, mut table, _, _, _, _) = fixture();
+    let files = files(&[
+        ("ambience/water1.wav", wav(11025, 8, 1, &[128; 8], Some(0))),
+        ("ambience/wind2.wav", wav(11025, 8, 1, &[128; 8], Some(0))),
+    ]);
+    mixer.precache_ambients(&mut table, &mut files.reader());
+    let mut settings = *mixer.settings();
+    settings.ambient_level = 1.0;
+    mixer.set_settings(settings);
+    let listener = Listener::default();
+    mixer.update(&table, listener, Some([8, 50, 0, 0]), 1.0);
+    assert_eq!(mixer.channels()[0].master_vol, 8, "exactly 8 is not zeroed");
+    assert_eq!(
+        mixer.channels()[1].master_vol,
+        50,
+        "a step of 100 lands on 50"
+    );
+    mixer.update(&table, listener, Some([8, 50, 0, 0]), 1.0);
+    assert_eq!(
+        mixer.channels()[1].master_vol,
+        50,
+        "at the target nothing moves"
+    );
+    mixer.update(&table, listener, Some([7, 0, 0, 0]), 1.0);
+    assert_eq!(mixer.channels()[0].master_vol, 0, "7 is below 8, so 0");
+    assert_eq!(
+        mixer.channels()[1].master_vol,
+        0,
+        "a step of 100 lands on 0"
+    );
+}
+
+// spec SND-4.4: a static channel silent on one side still combines; dynamic channels never
+// combine; a static channel of another sound breaks the chain and the next of the first
+// sound finds the first again
+#[test]
+fn combining_edges() {
+    let files = files(&[
+        (
+            "loop.wav",
+            wav(
+                11025,
+                8,
+                1,
+                &[200, 128, 100, 128, 150, 128, 50, 128],
+                Some(4),
+            ),
+        ),
+        ("loop2.wav", wav(11025, 8, 1, &[128; 8], Some(0))),
+    ]);
+    let mut table = SoundTable::new();
+    let mut read = files.reader();
+    let looped = table.precache("loop.wav", 11025, &mut read).unwrap();
+    let other = table.precache("loop2.wav", 11025, &mut read).unwrap();
+    let mut mixer = Mixer::new(MixerSpec::default());
+    let mut rand = Fixed(vec![]);
+    // Two dynamic sounds of one sound keep their own volumes.
+    mixer.start_sound(&table, &mut rand, start(2, 1, looped, [0.0; 3]));
+    mixer.start_sound(&table, &mut rand, start(3, 1, looped, [0.0; 3]));
+    mixer.update(&table, Listener::default(), None, 0.0);
+    assert_eq!(mixer.channels()[4].leftvol, 255);
+    assert_eq!(mixer.channels()[5].leftvol, 255);
+    // Two static sounds 500 units to the listener's right: left 0, right 255; they combine.
+    let a = mixer
+        .static_sound(&table, looped, [0.0, -500.0, 0.0], 255.0, 64.0)
+        .unwrap();
+    let b = mixer
+        .static_sound(&table, looped, [0.0, -500.0, 0.0], 255.0, 64.0)
+        .unwrap();
+    let c = mixer
+        .static_sound(&table, other, [0.0; 3], 100.0, 64.0)
+        .unwrap();
+    let d = mixer
+        .static_sound(&table, looped, [0.0, -500.0, 0.0], 255.0, 64.0)
+        .unwrap();
+    mixer.update(&table, Listener::default(), None, 0.0);
+    let channels = mixer.channels();
+    assert_eq!((channels[a].leftvol, channels[a].rightvol), (0, 255 * 3));
+    assert_eq!((channels[b].leftvol, channels[b].rightvol), (0, 0));
+    assert_eq!((channels[c].leftvol, channels[c].rightvol), (100, 100));
+    assert_eq!((channels[d].leftvol, channels[d].rightvol), (0, 0));
+}
+
+// spec SND-5.3: the right side is scaled by its own volume, and a channel silent on one side
+// is still painted on the other
+#[test]
+fn each_side_has_its_own_volume() {
+    let (mut mixer, table, _, _, looped, _) = fixture();
+    let listener = Listener::default();
+    mixer.update(&table, listener, None, 0.0);
+    // 500 units to the right at attenuation 64: dist 0.5, right 255, left 0.
+    let index = mixer
+        .static_sound(&table, looped, [0.0, -500.0, 0.0], 255.0, 64.0)
+        .unwrap();
+    assert_eq!(
+        (
+            mixer.channels()[index].leftvol,
+            mixer.channels()[index].rightvol
+        ),
+        (0, 255)
+    );
+    let from = mixer.painted();
+    mixer.take_output();
+    mixer.paint_channels(&table, from + 1);
+    let out = mixer.take_output();
+    assert_eq!(out, [0, 12485]);
+}
+
+// The accessors and the null output
+#[test]
+fn accessors_and_the_null_output() {
+    use crate::{NullOutput, Output};
+    let mut table = SoundTable::new();
+    assert!(table.is_empty());
+    let id = table.find("a.wav").unwrap();
+    assert!(!table.is_empty());
+    assert_eq!(id.index(), 0);
+    assert_eq!(table.find("b.wav").unwrap().index(), 1);
+    assert_eq!(
+        SoundError::NameTooLong("x".to_owned()).to_string(),
+        "Sound name too long: x"
+    );
+    assert_eq!(SoundError::OutOfSfx.to_string(), "S_FindName: out of sfx_t");
+    let mut output = NullOutput::default();
+    assert_eq!(output.frames(), 0);
+    output.write(&[1, 2, 3, 4, 5, 6]);
+    assert_eq!(output.frames(), 3);
+}
