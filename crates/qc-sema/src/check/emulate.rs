@@ -47,6 +47,24 @@ enum Emulation {
     /// the program defines no function of the name given (`QCC_PR_EmulationFunc`), which is
     /// otherwise called (FTEF-27.4).
     Remainder(&'static str, &'static [Op]),
+    /// `~a` as `-1 - a` (`op = SUB; var_b = var_a; var_a = QCC_MakeFloatConst(-1)`,
+    /// FTEF-27.9): this subtraction of the constant -1 (a vector of them when it is a vector's)
+    /// and the operand, emitted with no further check.
+    Complement(Op),
+    /// `a ^ b` as `(a & ~b) | (b & ~a)` (FTE-19.7): the complement of `b`, the `&` of `a` and
+    /// it, the complement of `a`, the `&` of `b` and it, and the `|` of the two, each emitted in
+    /// turn; for an `int`, a call of the program's function of the name given when it has one
+    /// (`QCC_PR_EmulationFunc`).
+    Xor {
+        /// The function called instead, if the program defines it.
+        helper: Option<&'static str>,
+        /// The complement.
+        not: Op,
+        /// The `&`.
+        and: Op,
+        /// The `|`.
+        or: Op,
+    },
     /// `v / f` as `v * (1 / f)` (FTE-19.9): the first opcode of the float constant 1
     /// (`QCC_MakeFloatConst(1)`) and the right operand, then the second of the left operand and
     /// that quotient.
@@ -250,6 +268,8 @@ impl Checker<'_> {
                 | Emulation::Expand(_)
                 | Emulation::Remainder(..)
                 | Emulation::Reciprocal(..)
+                | Emulation::Complement(_)
+                | Emulation::Xor { .. }
                 | Emulation::Instead(_)
                 | Emulation::Swapped(_)
         ) && let Some(builder) = &mut self.fragment
@@ -317,6 +337,13 @@ impl Checker<'_> {
                 let product = self.emit(mul, rhs, &quotient, span)?;
                 self.emit(sub, lhs, &product, span)
             }
+            Emulation::Complement(sub) => Ok(self.complement(sub, lhs, span)),
+            Emulation::Xor {
+                helper,
+                not,
+                and,
+                or,
+            } => self.xor(helper, [not, and, or], (lhs, rhs), span, result),
             Emulation::Reciprocal(div, then) => {
                 let one = Constant::float(1.0);
                 self.made(one);
@@ -386,6 +413,43 @@ impl Checker<'_> {
                 Ok(result)
             }
         }
+    }
+
+    /// `~a` as the subtraction `sub` of -1 and `a` (`Emulation::Complement`), its constant an
+    /// immediate the lowering made.
+    fn complement(&mut self, sub: Op, lhs: &Value, span: Span) -> Value {
+        let minus_one = if sub == Op::SubV {
+            Constant::vector([-1.0; 3])
+        } else {
+            Constant::float(-1.0)
+        };
+        self.made(minus_one);
+        self.generate(sub, span);
+        self.statement_temps(sub, &Value::constant(minus_one), lhs, replaced(sub))
+    }
+
+    /// `a ^ b` as `(a & ~b) | (b & ~a)` of the complement, `&` and `|` opcodes `ops`
+    /// (`Emulation::Xor`), or `result`, a call of `helper` when the program defines it, which
+    /// the intermediate layer does not hold yet.
+    fn xor(
+        &mut self,
+        helper: Option<&str>,
+        [not, and, or]: [Op; 3],
+        (lhs, rhs): (&Value, &Value),
+        span: Span,
+        result: Value,
+    ) -> Result<Value, Fatal> {
+        if helper.is_some_and(|helper| self.env.defines(helper)) {
+            if let Some(builder) = &mut self.fragment {
+                builder.give_up();
+            }
+            return Ok(result);
+        }
+        let not_b = self.emit(not, rhs, &Value::unknown(), span)?;
+        let left = self.emit(and, lhs, &not_b, span)?;
+        let not_a = self.emit(not, lhs, &Value::unknown(), span)?;
+        let right = self.emit(and, rhs, &not_a, span)?;
+        self.emit(or, &left, &right, span)
     }
 
     /// FTEF-27.4: a conversion the target lacks: by the helper the program defines, else with
@@ -617,7 +681,7 @@ impl Checker<'_> {
             Op::LtU | Op::LeU | Op::DivU | Op::BitextendI | Op::BitextendU => {
                 self.unsigned(op, lhs, rhs, span, result)
             }
-            Op::BitandD | Op::BitorD | Op::BitxorV | Op::BitxorD | Op::BitnotI => {
+            Op::BitandD | Op::BitorD | Op::BitxorD | Op::BitnotI => {
                 self.bitwise(op, lhs, rhs, span, result)
             }
             Op::IfF | Op::IfnotF | Op::IfS | Op::IfnotS | Op::NotI => self.truth(op, lhs, span),
@@ -720,13 +784,9 @@ impl Checker<'_> {
                 let value = self.emit(then, &lhs, &rhs, span)?;
                 self.emit(Op::ConvI64d, &value, &Value::unknown(), span)
             }
-            Op::BitxorV | Op::BitxorD => {
+            Op::BitxorD => {
                 // `(a & ~b) | (b & ~a)`.
-                let (not, and, or) = if op == Op::BitxorV {
-                    (Op::BitnotV, Op::BitandV, Op::BitorV)
-                } else {
-                    (Op::BitnotD, Op::BitandD, Op::BitorD)
-                };
+                let (not, and, or) = (Op::BitnotD, Op::BitandD, Op::BitorD);
                 let not_b = self.emit(not, rhs, &Value::unknown(), span)?;
                 let left = self.emit(and, lhs, &not_b, span)?;
                 let not_a = self.emit(not, lhs, &Value::unknown(), span)?;
@@ -811,7 +871,7 @@ impl Checker<'_> {
 const fn emulation(op: Op) -> Emulation {
     use Emulation::{
         Conversion, ConvertLeft, ConvertRight, Emitted, Expand, Forced, Helper, Instead,
-        Reciprocal, Refuse, Remainder, Simple, Special, Words,
+        Reciprocal, Refuse, Remainder, Simple, Special, Words, Xor,
     };
     if let Some(substitution) = substitution(op) {
         return substitution;
@@ -841,21 +901,24 @@ const fn emulation(op: Op) -> Emulation {
         Op::ModU => Remainder("ModInt", &[Op::DivU, Op::MulU, Op::SubU]),
         Op::ModFi => Remainder("mod", &[Op::DivFi, Op::BitorF, Op::MulIf, Op::SubF]),
         Op::ModIf => Remainder("mod", &[Op::DivIf, Op::BitorF, Op::MulF, Op::SubIf]),
-        // `(a & ~b) | (b & ~a)`.
-        Op::BitxorF => Expand(&[
-            Op::BitnotF,
-            Op::BitandF,
-            Op::BitnotF,
-            Op::BitandF,
-            Op::BitorF,
-        ]),
-        Op::BitxorI => Expand(&[
-            Op::BitnotI,
-            Op::BitandI,
-            Op::BitnotI,
-            Op::BitandI,
-            Op::BitorI,
-        ]),
+        Op::BitxorF => Xor {
+            helper: None,
+            not: Op::BitnotF,
+            and: Op::BitandF,
+            or: Op::BitorF,
+        },
+        Op::BitxorI => Xor {
+            helper: Some("BitxorInt"),
+            not: Op::BitnotI,
+            and: Op::BitandI,
+            or: Op::BitorI,
+        },
+        Op::BitxorV => Xor {
+            helper: None,
+            not: Op::BitnotV,
+            and: Op::BitandV,
+            or: Op::BitorV,
+        },
         Op::DivVf => Reciprocal(Op::DivF, Op::MulVf),
         Op::CrossV | Op::SpaceshipF => Expand(&[Op::MulF, Op::SubF]),
         Op::ConvItof | Op::StoreIf | Op::ConvFtoi | Op::StoreFi | Op::ConvUf => Conversion,
@@ -890,7 +953,6 @@ const fn emulation(op: Op) -> Emulation {
         | Op::BitextendU
         | Op::BitandD
         | Op::BitorD
-        | Op::BitxorV
         | Op::BitxorD
         | Op::IfF
         | Op::IfnotF
@@ -982,10 +1044,10 @@ const fn emulation(op: Op) -> Emulation {
 /// FTEF-27.9: the opcodes `QCC_PR_StatementFlags` replaces by others: `op = OTHER; break;`,
 /// emitted with no further check, a bit clear, and a comparison of the operands swapped.
 const fn substitution(op: Op) -> Option<Emulation> {
-    use Emulation::{Clear, Replaced, Swapped};
+    use Emulation::{Clear, Complement, Replaced, Swapped};
     Some(match op {
-        Op::BitnotF => Replaced(Op::SubF),
-        Op::BitnotV => Replaced(Op::SubV),
+        Op::BitnotF => Complement(Op::SubF),
+        Op::BitnotV => Complement(Op::SubV),
         Op::BitnotI64 => Replaced(Op::SubI64),
         Op::StoreP | Op::StoreI => Replaced(Op::StoreF),
         Op::LoadP | Op::LoadI => Replaced(Op::LoadF),
