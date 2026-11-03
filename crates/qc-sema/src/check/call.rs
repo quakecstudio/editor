@@ -208,7 +208,17 @@ impl Checker<'_> {
                 .as_ref()
                 .is_some_and(|r| r.ty == Type::Simple(SimpleType::Float))
         });
-        let constants: Vec<_> = values.iter().map(Value::known).collect();
+        // FTEF-32.17: only an argument read directly (`REF_GLOBAL`) is folded.
+        let constants: Vec<_> = passed
+            .iter()
+            .zip(&values)
+            .map(
+                |(reference, value)| match reference.as_ref().map(|r| &r.reference) {
+                    Some(Reference::Global) | None => value.known(),
+                    Some(_) => None,
+                },
+            )
+            .collect();
         if let Some(folded) = fold::builtin_call(&name, &constants, floats) {
             return Ok(Value::constant(folded));
         }

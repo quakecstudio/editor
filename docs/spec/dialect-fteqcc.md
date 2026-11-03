@@ -5398,6 +5398,14 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   function given a body is a function of its own (FTEF-18.2). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
   `QCC_UnmarshalLocals`.
+- **FTEF-32.17** The call fold of FTEF-32.14 reads only an argument that is a reference to a
+  global read directly: `opt_constantarithmatic && argcount == 1 && arglist[0]->type ==
+  REF_GLOBAL`, and for two arguments `arglist[0]->type == REF_GLOBAL && arglist[1]->type ==
+  REF_GLOBAL` (`QCC_PR_GenerateFunctionCallRef`). A constant vector's component, `('4 0
+  0').x`, is parsed as an index into the vector (`vectorarrayindex`, `QCC_PR_BuildRef(retbuf,
+  REF_ARRAY, base, idx, ...)` in `QCC_PR_ParseRefArrayPointer`), so `floor(('4 0 0').x)` is
+  called, though an operator of it folds (FTEF-26.13). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`.
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,

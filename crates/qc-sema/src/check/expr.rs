@@ -236,7 +236,24 @@ impl<'e> Checker<'e> {
             Some(ast::LiteralKind::FrameRef) => Value::of(Type::Simple(SimpleType::Float)),
             Some(ast::LiteralKind::Float) => {
                 let flags = self.env.lex_flags_at(token.span().start);
-                Value::constant(Constant::of_number(&token.text_lossless(), flags))
+                let text = token.text_lossless();
+                // FTEF-13.3: a character constant, `'0'`, is its character's code, which the
+                // lexer reads.
+                if text.starts_with('\'') {
+                    let lexed = qc_lexer::lex_flagged(
+                        text.as_bytes(),
+                        qc_lexer::Dialect::Fteqcc,
+                        flags,
+                        &|_| None,
+                    );
+                    return match lexed.tokens.first().map(|t| &t.kind) {
+                        Some(qc_lexer::TokenKind::Float(code)) => {
+                            Value::constant(Constant::float(*code))
+                        }
+                        Some(_) | None => Value::of(Type::Simple(SimpleType::Float)),
+                    };
+                }
+                Value::constant(Constant::of_number(&text, flags))
             }
             None => Value::unknown(),
         }

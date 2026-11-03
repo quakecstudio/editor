@@ -9,6 +9,7 @@ use qc_syntax::ast;
 use qc_syntax::{Dialect, QC_MAX_NESTING};
 
 use crate::db::Db;
+use crate::ir::Fragment;
 use crate::symbol::{DefId, FileId};
 use crate::ty::{FROM_AST_CALLS, FunctionType, ParamLabels, SimpleType, Type, TypeContext};
 use qc_diag::Span;
@@ -569,5 +570,58 @@ fn xor_lowers_with_complements_of_minus_one() {
             c: Destination::Value,
         }),
         "SUB_V of '-1 -1 -1' and w"
+    );
+}
+
+/// The fragment of the operator `operator` at the first `text` in `t` of `source`, under FTEQCC.
+fn fte_fragment_at(source: &str, text: &str, operator: &str) -> Fragment {
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let start = source
+        .find(text)
+        .unwrap()
+        .saturating_add(text.find(operator).unwrap());
+    index.bodies[&t]
+        .fragment_at(Span::new(start, start.saturating_add(operator.len())))
+        .unwrap()
+        .clone()
+}
+
+// spec FTEF-32.17: a call of a constant vector's component is not folded, so an operator of it
+// is a statement; a call of a constant read directly folds, and so does the operator
+#[test]
+fn a_call_of_a_vector_component_is_not_folded() {
+    let source = "float(float f) floor = #37; float a; vector v; \
+                  void() t = { a = floor(('4 0 0').x) & 1; a = floor(4) & 1; };";
+    let component = fte_fragment_at(source, ") & 1", "&");
+    assert_eq!(component.statements.len(), 1, "{component:?}");
+    let direct = fte_fragment_at(source, "(4) & 1", "&");
+    assert!(direct.statements.is_empty(), "{direct:?}");
+}
+
+// spec FTEF-13.3: a character constant is its character's code, so `a - '0'` subtracts 48 and
+// `'0' + 1` folds to 49
+#[test]
+fn a_character_constant_is_its_code() {
+    use crate::ir::{Immediate, ImmediateKind, Operand};
+    let source = "float a; void() t = { a = a - '0'; a = '0' + 1; };";
+    let subtract = fte_fragment_at(source, "a - '0'", "-");
+    assert_eq!(
+        subtract.statements.len(),
+        1,
+        "a - 48 is no identity: {subtract:?}"
+    );
+    let folded = fte_fragment_at(source, "'0' + 1", "+");
+    assert_eq!(
+        folded.value,
+        Some(Operand::Immediate(Immediate {
+            kind: ImmediateKind::Float,
+            words: [49.0_f32.to_bits(), 0, 0],
+        }))
     );
 }
