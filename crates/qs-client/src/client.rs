@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
 // Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2007-2008 Kristian Duske
 // Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/cl_main.c, CL_ClearState, CL_AllocDlight, CL_DecayLights, CL_LerpPoint, CL_RelinkEntities, CL_ReadFromServer
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/cl_parse.c, CL_EntityNum, CL_ParseStartSoundPacket, CL_ParseServerInfo, CL_ParseUpdate, CL_ParseBaseline, CL_ParseClientdata, CL_NewTranslation, CL_ParseStatic, CL_ParseStaticSound, CL_ParseServerMessage
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/cl_tent.c, CL_InitTEnts, CL_ParseBeam, CL_ParseTEnt, CL_NewTempEntity, CL_UpdateTEnts
-// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/cl_parse.c, CL_ParseUpdate
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/cl_parse.c, CL_ParseUpdate, CL_ParseLocalSound, CL_ParseServerMessage
 // Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/r_alias.c, R_SetupAliasFrame, R_SetupEntityTransform
 
 //! The client's state and frame (`docs/spec/engine/client.md`, CLIENT-1 to CLIENT-7): the
@@ -147,6 +148,12 @@ const SVC_FINALE: i32 = 31;
 const SVC_CDTRACK: i32 = 32;
 const SVC_SELLSCREEN: i32 = 33;
 const SVC_CUTSCENE: i32 = 34;
+/// `svc_achievement`, the rerelease's (RRE-2.3).
+const SVC_ACHIEVEMENT: i32 = 52;
+/// `svc_localsound`, the rerelease's (RRE-2.2).
+const SVC_LOCALSOUND: i32 = 56;
+/// `SND_LARGESOUND`: the sound index is a short (RRE-2.1).
+const SND_LARGESOUND: i32 = 1 << 4;
 
 const U_MOREBITS: i32 = 1 << 0;
 const U_ORIGIN1: i32 = 1 << 1;
@@ -224,6 +231,8 @@ pub enum ParseError {
     BadMessage,
     /// `CL_ParseServerMessage: Illegible server message`: an unknown command.
     Illegible(i32),
+    /// `CL_ParseLocalSound: <n> > MAX_SOUNDS` (RRE-2.2).
+    LocalSound(i32),
     /// `Server returned version <n>, not 15`.
     Version(i32),
     /// `Bad maxclients (<n>) from server`.
@@ -258,6 +267,7 @@ impl core::fmt::Display for ParseError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::BadMessage => write!(f, "CL_ParseServerMessage: Bad server message"),
+            Self::LocalSound(n) => write!(f, "CL_ParseLocalSound: {n} > MAX_SOUNDS"),
             Self::Illegible(cmd) => {
                 write!(f, "CL_ParseServerMessage: Illegible server message ({cmd})")
             }
@@ -325,6 +335,9 @@ pub enum Event {
         /// The channel.
         channel: i32,
     },
+    /// `svc_localsound` (RRE-2.2): the sound precache index to play on the view entity at
+    /// full volume, `S_LocalSound` (SND-2.7).
+    LocalSound(usize),
     /// `svc_spawnstaticsound` (CLIENT-4.2): the origin, the sound index, the volume byte
     /// and the attenuation byte, for SND-4.1.
     StaticSound {
@@ -1179,6 +1192,21 @@ impl Client {
                     events.push(Event::CenterPrint(r.string()));
                 }
                 SVC_SELLSCREEN => events.push(Event::SellScreen),
+                // RRE-2.3: "Ignoring svc_achievement (<id>)".
+                SVC_ACHIEVEMENT => drop(r.string()),
+                SVC_LOCALSOUND => {
+                    let field_mask = r.byte();
+                    let sound = if field_mask & SND_LARGESOUND != 0 {
+                        r.short()
+                    } else {
+                        r.byte()
+                    };
+                    let sound = usize::try_from(sound)
+                        .ok()
+                        .filter(|&s| s < CLIENT_MAX_SOUNDS)
+                        .ok_or(ParseError::LocalSound(sound))?;
+                    events.push(Event::LocalSound(sound));
+                }
                 other => return Err(ParseError::Illegible(other)),
             }
         }

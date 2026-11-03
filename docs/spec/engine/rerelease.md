@@ -108,12 +108,23 @@ them up in `localization/loc_english.txt`, read from the game directory or from
   not in the server's precache list prints `SV_LocalSound: <sample> not precached` and sends
   nothing; an index of 256 or more sends nothing under protocol 15 (`PROTOCOL_NETQUAKE`,
   CLIENT-1.1) and sets `SND_LARGESOUND` under the FitzQuake protocols; and a client message
-  within 4 bytes of full drops it.
+  with fewer than 4 bytes free (`cursize > maxsize-4`) drops it.
 - **RRE-2.2** The client reads the index (at or past `MAX_SOUNDS` is the error
   `CL_ParseLocalSound: <n> > MAX_SOUNDS`) and plays the sound as SND-2.7, on the view entity
   at full volume.
 - **RRE-2.3** `svc_achievement` (52) carries a string; the client reads and ignores it
   (`Ignoring svc_achievement (<id>)`), since achievements are the rerelease platform's.
+- **RRE-2.4** `PF_localsound` reads its client with `G_EDICTNUM(OFS_PARM0)`, QuakeSpasm's
+  `NUM_FOR_EDICT(G_EDICT(o))`: the value is a byte offset from the first edict, divided by
+  `pr_edict_size` with C's truncating `/` and not checked to fall on an edict, so an offset
+  inside an edict is that edict and -1 is the world; a number below 0 or at or past
+  `num_edicts` is `Host_Error ("NUM_FOR_EDICT: bad pointer")`.
+- **RRE-2.5** The preview host's client holds id's 256 sound precaches (`CLIENT_MAX_SOUNDS`,
+  CLIENT-1.1), not QuakeSpasm's 2048, so its RRE-2.2 bound is 256. A negative index, from a short
+  under `SND_LARGESOUND`, passes QuakeSpasm's `sound_num >= MAX_SOUNDS` check and reads
+  `cl.sound_precache[sound_num]` before the array, which is undefined; the client makes it
+  the same error, `CL_ParseLocalSound: <n> > MAX_SOUNDS`. The client does not check that
+  the index has a precache: it passes the index on in its event, as it does `svc_sound`'s.
 
 ## RRE-3 Music
 
@@ -139,3 +150,31 @@ them up in `localization/loc_english.txt`, read from the game directory or from
 | --- | --- | --- |
 | `RRE_MUSIC_DIR` | `music` | `bgmusic.c`, `MUSIC_DIRNAME` |
 | `RRE_TRACK_FORMAT` | `track%02d` | `bgmusic.c`, `BGM_PlayCDtrack` |
+
+## RRE-4 The rerelease's builtins
+
+**Source:** `Quake/pr_edict.c`, `exbuiltins`, `PR_PatchRereleaseBuiltins`, `PR_LoadProgs`;
+`Quake/pr_cmds.c`, `pr_builtin`, `PF_finalefinished`, `PF_CheckPlayerEXFlags`,
+`PF_walkpathtogoal`, `PF_localsound`, `PF_Fixme`.
+
+The rerelease's QuakeC declares `bprint`, `sprint`, `centerprint`, `localsound` and its other
+own builtins by name, `#0:ex_NAME` (BUILTIN-17.3, ENGT-2.16); an engine gives each a number when
+it loads the progs. The preview host runs the rerelease's progs as QuakeSpasm does.
+
+### Behaviour
+
+- **RRE-4.1** When the progs loads, `PR_PatchRereleaseBuiltins` goes through `exbuiltins` in
+  order and, for each row, gives the function `ED_FindFunction` finds by the row's name (the
+  first of that name) the row's `first_statement` when it has the row's old one: `centerprint`
+  from -90, `bprint` from -91 and `sprint` from -92 (Update-1's numbers) to -73, -23 and -24;
+  and from 0, `ex_centerprint` to -73, `ex_bprint` to -23, `ex_sprint` to -24,
+  `ex_finaleFinished` to -79, `ex_localsound` to -80, `ex_draw_point` to `ex_draw_cylinder`
+  to -81 to -89, `ex_CheckPlayerEXFlags` to -90, `ex_walkpathtogoal` to -91, and
+  `ex_bot_movetopoint` and `ex_bot_followentity` both to -92. A function of another name or
+  another `first_statement` is left alone.
+- **RRE-4.2** QuakeSpasm's table runs past id's 78 to 92: 79 `PF_finalefinished`, 90
+  `PF_CheckPlayerEXFlags` and 91 `PF_walkpathtogoal` return 0 (`G_FLOAT(OFS_RETURN) = 0`,
+  `PATH_ERROR` for the last); 80 `PF_localsound` (RRE-2.1); and 81 to 89 and 92 `PF_Fixme`,
+  the run error `unimplemented builtin`. The preview host puts 79 to 92 in its table only for
+  a progs RRE-4.1 changed, so another progs keeps id's 79 builtins (LIMIT-5.1) and its
+  `BadBuiltin` past them.

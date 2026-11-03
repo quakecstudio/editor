@@ -27,6 +27,7 @@ use crate::messages::ClientMessages;
 #[cfg(test)]
 use crate::messages::ServerMessages;
 use crate::physics::Sound;
+use crate::rerelease::BuiltinTable;
 use qc_builtins::localization::Localization;
 
 use crate::spawn::{self, FieldDef, LoadError, SPAWNFLAGS_SLOT, SpawnError, SpawnHost};
@@ -91,7 +92,7 @@ pub struct Entity {
 /// A map's world: the VM with its entities spawned, linked in the world's collision.
 pub struct World {
     machine: Machine,
-    builtins: SimBuiltins,
+    pub(crate) builtins: SimBuiltins,
     /// The client's command, once it has entered the game (PHYS-9.6, PHYS-10).
     player: Option<UserCmd>,
 }
@@ -102,6 +103,9 @@ pub struct LoadOptions {
     /// The rerelease's localized strings, from `localization/loc_english.txt`; with none the
     /// builtins send their text as id's engine does (RRE-1.6).
     pub localization: Localization,
+    /// The builtin table, as [`crate::rerelease::patch_builtins`] chose it for the progs
+    /// (RRE-4.2).
+    pub builtins: BuiltinTable,
 }
 
 impl World {
@@ -133,7 +137,14 @@ impl World {
         engine.localization = options.localization;
         let mut world = Self {
             machine,
-            builtins: SimBuiltins::new(engine, map, bsp, files, progs.header().crc),
+            builtins: SimBuiltins::new(
+                engine,
+                map,
+                bsp,
+                files,
+                progs.header().crc,
+                options.builtins,
+            ),
             player: None,
         };
         let entities = bsp.entities();

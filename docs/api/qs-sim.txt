@@ -21,6 +21,7 @@ const qs_sim::messages::NET_PACKET_SLACK
 const qs_sim::messages::NET_PROTOCOL_VERSION
 const qs_sim::messages::NET_SIGNON_SIZE
 const qs_sim::messages::NET_VERSION
+const qs_sim::rerelease::RRE_NUM_BUILTINS
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_DEATHMATCH
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_EASY
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_HARD
@@ -30,6 +31,7 @@ enum qs_sim::collision::CollisionError
 enum qs_sim::collision::Solid
 enum qs_sim::collision::area::MoveKind
 enum qs_sim::collision::hull::EntityHull
+enum qs_sim::rerelease::BuiltinTable
 enum qs_sim::spawn::LoadError
 enum qs_sim::spawn::SpawnError
 enum qs_sim::spawn::Token
@@ -86,6 +88,7 @@ field qs_sim::world::Entity.model
 field qs_sim::world::Entity.number
 field qs_sim::world::Entity.origin
 field qs_sim::world::Entity.skin
+field qs_sim::world::LoadOptions.builtins
 field qs_sim::world::LoadOptions.localization
 fn qs_sim::collision::Collision::add_brush
 fn qs_sim::collision::Collision::area
@@ -146,6 +149,7 @@ fn qs_sim::messages::Message::write_float
 fn qs_sim::messages::Message::write_long
 fn qs_sim::messages::Message::write_short
 fn qs_sim::messages::Message::write_string
+fn qs_sim::rerelease::patch_builtins
 fn qs_sim::spawn::Parser::new
 fn qs_sim::spawn::Parser::next_token
 fn qs_sim::spawn::SpawnHost::allocate
@@ -183,6 +187,7 @@ impl qs_sim::spawn::SpawnError: core::fmt::Display
 impl qs_sim::world::WorldError: core::error::Error
 impl qs_sim::world::WorldError: core::fmt::Display
 mod qs_sim::collision
+mod qs_sim::rerelease
 mod qs_sim::spawn
 struct qs_sim::builtins::SimBuiltins
 struct qs_sim::client::UserCmd
@@ -278,6 +283,8 @@ variant qs_sim::collision::area::MoveKind::NoMonsters
 variant qs_sim::collision::area::MoveKind::Normal
 variant qs_sim::collision::hull::EntityHull::Box
 variant qs_sim::collision::hull::EntityHull::Brush
+variant qs_sim::rerelease::BuiltinTable::Id
+variant qs_sim::rerelease::BuiltinTable::Rerelease
 variant qs_sim::spawn::LoadError::Run
 variant qs_sim::spawn::LoadError::Spawn
 variant qs_sim::spawn::SpawnError::BadEdictNumber

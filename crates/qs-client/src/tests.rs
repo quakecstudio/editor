@@ -557,6 +557,56 @@ fn every_command_is_read() {
     }
 }
 
+// spec RRE-2.2: svc_localsound's index is a byte, a short under SND_LARGESOUND, and one at or
+// past MAX_SOUNDS is the error
+// spec RRE-2.3: svc_achievement's string is read and ignored
+// spec RRE-2.5: the bound is id's 256, and a negative index is the same error
+#[test]
+fn the_rereleases_local_sound_and_achievement() {
+    let mut client = connected();
+    let mut m = msg();
+    m.write_byte(52);
+    m.write_string(b"ACH_BEAT_E1"); // achievement
+    m.write_byte(56);
+    m.write_byte(0);
+    m.write_byte(255); // localsound
+    m.write_byte(56);
+    m.write_byte(1 << 4);
+    m.write_short(7); // localsound, large
+    m.write_byte(56);
+    m.write_byte(0x0f);
+    m.write_byte(3); // localsound, the other bits ignored
+    assert_eq!(
+        frame(&mut client, 0.1, &[m.take()]),
+        [
+            Event::LocalSound(255),
+            Event::LocalSound(7),
+            Event::LocalSound(3)
+        ]
+    );
+    let errors: [(Vec<u8>, ParseError); 2] = [
+        (vec![56, 1 << 4, 0, 1], ParseError::LocalSound(256)),
+        (vec![56, 1 << 4, 0xff, 0xff], ParseError::LocalSound(-1)),
+    ];
+    for (bytes, want) in errors {
+        let mut client = connected();
+        assert_eq!(
+            client.frame(
+                0.0,
+                std::slice::from_ref(&bytes),
+                &mut TestModels,
+                &mut Fixed(vec![])
+            ),
+            Err(want.clone()),
+            "{bytes:?}"
+        );
+    }
+    assert_eq!(
+        ParseError::LocalSound(256).to_string(),
+        "CL_ParseLocalSound: 256 > MAX_SOUNDS"
+    );
+}
+
 // spec CLIENT-1.5: the signon stages climb and the first update after 3 completes them
 #[test]
 fn the_signon_completes_on_the_first_update() {

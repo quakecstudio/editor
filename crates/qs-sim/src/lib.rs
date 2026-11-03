@@ -13,6 +13,7 @@ mod fixtures;
 mod messages;
 mod movement;
 mod physics;
+pub mod rerelease;
 pub mod spawn;
 mod world;
 
