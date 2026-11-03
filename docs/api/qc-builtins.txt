@@ -22,6 +22,7 @@ enum qc_builtins::error::RuntimeError
 enum qc_builtins::mock::EngineProfile
 enum qc_builtins::mock::MessageDest
 enum qc_builtins::mock::Precache
+enum qc_builtins::mock::Unimplemented
 enum qc_builtins::table::Class
 field qc_builtins::mock::Buffers.reliable
 field qc_builtins::mock::Buffers.signon
@@ -43,6 +44,7 @@ field qc_builtins::mock::MockEngine.rng
 field qc_builtins::mock::MockEngine.server_active
 field qc_builtins::mock::MockEngine.sound_precache
 field qc_builtins::mock::MockEngine.strings
+field qc_builtins::mock::MockEngine.unimplemented
 field qc_builtins::mock::ModelBounds.maxs
 field qc_builtins::mock::ModelBounds.mins
 field qc_builtins::table::Builtin.c_function
@@ -121,6 +123,7 @@ use qc_builtins::FatalError = error::FatalError
 use qc_builtins::MockBuiltins = dispatch::MockBuiltins
 use qc_builtins::MockEngine = mock::MockEngine
 use qc_builtins::RuntimeError = error::RuntimeError
+use qc_builtins::Unimplemented = mock::Unimplemented
 use qc_builtins::lookup = table::lookup
 variant qc_builtins::error::BuiltinError::Fatal
 variant qc_builtins::error::BuiltinError::Host
@@ -163,6 +166,8 @@ variant qc_builtins::mock::MessageDest::Init
 variant qc_builtins::mock::MessageDest::One
 variant qc_builtins::mock::Precache::Model
 variant qc_builtins::mock::Precache::Sound
+variant qc_builtins::mock::Unimplemented::Error
+variant qc_builtins::mock::Unimplemented::ReturnsZero
 variant qc_builtins::table::Class::Output
 variant qc_builtins::table::Class::Pure
 variant qc_builtins::table::Class::State
