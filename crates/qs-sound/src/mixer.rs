@@ -9,8 +9,10 @@
 //! on a channel, is placed in stereo by the listener, and the channels are painted into
 //! 16-bit stereo frames.
 
+use qc_builtins::math::vector_normalize;
 use qc_vm::convert::{double_to_float, double_to_int, float_to_int, int_to_float};
 
+use crate::output::Output;
 use crate::sfx::{SfxId, SoundData, SoundTable, Width};
 
 /// The channels in the mixer (SND-1.1).
@@ -74,7 +76,7 @@ impl Ambient {
         }
     }
 
-    /// The sound `S_Init` precaches for the channel (SND-1).
+    /// The sound `S_Init` precaches for the channel (SND-4.3).
     #[must_use]
     pub const fn sound_name(self) -> Option<&'static str> {
         match self {
@@ -132,6 +134,28 @@ impl Default for Listener {
     }
 }
 
+/// Where the listener is, for the ambient channels (SND-4.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ListenerLeaf {
+    /// No world model is loaded: the ambient channels are left as they are.
+    NoWorld,
+    /// The listener is outside the world: the ambient channels lose their sounds.
+    Outside,
+    /// The listener's leaf, with its four ambient levels in [`Ambient`] order.
+    In([u8; SND_NUM_AMBIENTS]),
+}
+
+/// Where the frames after a loop restart inside a block are painted (SND-5.7).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LoopPaint {
+    /// At their place in the block, as QuakeSpasm paints them.
+    #[default]
+    Fixed,
+    /// Over the block's first frames, as id's engine paints them; the engine differential
+    /// selects this.
+    Id,
+}
+
 /// One channel, `channel_t` (SND-1.2).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Channel {
@@ -168,8 +192,10 @@ pub struct Settings {
     pub ambient_level: f32,
     /// `ambient_fade` (SND-4.3).
     pub ambient_fade: f32,
-    /// `_snd_mixahead` (SND-5.1).
+    /// `_snd_mixahead` (SND-5.6).
     pub mixahead: f32,
+    /// Where a loop restart's frames go (SND-5.7).
+    pub loop_paint: LoopPaint,
 }
 
 impl Default for Settings {
@@ -180,6 +206,7 @@ impl Default for Settings {
             ambient_level: SND_AMBIENT_LEVEL,
             ambient_fade: SND_AMBIENT_FADE,
             mixahead: SND_MIXAHEAD,
+            loop_paint: LoopPaint::Fixed,
         }
     }
 }
@@ -197,15 +224,15 @@ pub struct Mixer {
     buffer_frames: usize,
     /// `paintedtime`, in frames.
     painted: i64,
-    /// `soundtime`, in frames.
+    /// `soundtime`, in frames (SND-5.9).
     sound_time: i64,
+    /// The seconds the headless clock has stepped (SND-5.9).
+    elapsed: f64,
     listener: Listener,
     /// `cl.viewentity`.
     view_entity: i32,
     ambient_sfx: [Option<SfxId>; SND_NUM_AMBIENTS],
     settings: Settings,
-    /// The frames painted since the last [`Mixer::take_output`], as left, right pairs.
-    output: Vec<i16>,
     /// What the mixer would print to the console.
     messages: Vec<String>,
 }
@@ -217,7 +244,7 @@ pub struct MixerSpec {
     pub speed: u32,
     /// Whether the output has two channels.
     pub stereo: bool,
-    /// The output buffer's frames, which caps how far ahead the mixer paints (SND-5.1).
+    /// The output buffer's frames, which caps how far ahead the mixer paints (SND-5.6).
     pub buffer_frames: usize,
     /// The entity the listener is, `cl.viewentity`.
     pub view_entity: i32,
@@ -238,16 +265,6 @@ impl Default for MixerSpec {
     }
 }
 
-/// `VectorNormalize`: the vector scaled to length 1 and its length; a zero vector stays zero.
-fn normalize(v: [f32; 3]) -> ([f32; 3], f32) {
-    let length = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-    if length == 0.0 {
-        return (v, 0.0);
-    }
-    let ilength = 1.0 / length;
-    ([v[0] * ilength, v[1] * ilength, v[2] * ilength], length)
-}
-
 impl Mixer {
     /// A mixer with no sound playing, `S_Init` then `S_StopAllSounds`; the ambient sounds
     /// are precached by [`Mixer::precache_ambients`].
@@ -261,27 +278,22 @@ impl Mixer {
             buffer_frames: spec.buffer_frames,
             painted: 0,
             sound_time: 0,
+            elapsed: 0.0,
             listener: Listener::default(),
             view_entity: spec.view_entity,
             ambient_sfx: [None; SND_NUM_AMBIENTS],
             settings: spec.settings,
-            output: Vec::new(),
             messages: Vec::new(),
         }
     }
 
-    /// `S_Init`'s precaches: the water and sky ambient sounds (SND-1), through `table` and
-    /// `read`.
-    pub fn precache_ambients(
-        &mut self,
-        table: &mut SoundTable,
-        read: &mut dyn FnMut(&str) -> Option<Vec<u8>>,
-    ) {
+    /// `S_Init`'s precaches: the water and sky ambient sounds (SND-4.3), through `table`.
+    pub fn precache_ambients(&mut self, table: &mut SoundTable) {
         for ambient in Ambient::ALL {
             let Some(name) = ambient.sound_name() else {
                 continue;
             };
-            if let Ok(id) = table.precache(name, self.speed, read)
+            if let Ok(id) = table.precache(name)
                 && let Some(slot) = self.ambient_sfx.get_mut(ambient.index())
             {
                 *slot = Some(id);
@@ -341,11 +353,6 @@ impl Mixer {
         std::mem::take(&mut self.messages)
     }
 
-    /// The frames painted since the last call, as left, right pairs of 16-bit samples.
-    pub fn take_output(&mut self) -> Vec<i16> {
-        std::mem::take(&mut self.output)
-    }
-
     /// `S_StopAllSounds`: no static channels, every channel cleared (SND-1.1).
     pub fn stop_all(&mut self) {
         self.total_channels = SND_FIRST_STATIC;
@@ -403,7 +410,7 @@ impl Mixer {
             channel.origin[1] - self.listener.origin[1],
             channel.origin[2] - self.listener.origin[2],
         ];
-        let (source, length) = normalize(source);
+        let (source, length) = vector_normalize(source);
         let dist = length * channel.dist_mult;
         let right = self.listener.right;
         let dot = right[0] * source[0] + right[1] * source[1] + right[2] * source[2];
@@ -432,7 +439,7 @@ impl Mixer {
     /// `rand` draws the skip of SND-2.5, `rand () % (int) (0.1 * speed)`.
     pub fn start_sound(
         &mut self,
-        table: &SoundTable,
+        table: &mut SoundTable,
         rand: &mut dyn Random,
         start: Start,
     ) -> Option<usize> {
@@ -462,6 +469,8 @@ impl Mixer {
             *self.channels.get_mut(index)? = channel;
             return None;
         }
+        // SND-2.4: `S_LoadSound`.
+        table.load(sfx);
         let Some(data) = table.data(sfx) else {
             *self.channels.get_mut(index)? = channel;
             return None;
@@ -513,20 +522,16 @@ impl Mixer {
     pub fn local_sound(
         &mut self,
         table: &mut SoundTable,
-        read: &mut dyn FnMut(&str) -> Option<Vec<u8>>,
         rand: &mut dyn Random,
         name: &str,
     ) -> Option<usize> {
         if self.settings.nosound {
             return None;
         }
-        let id = match table.precache(name, self.speed, read) {
-            Ok(id) => id,
-            Err(error) => {
-                self.messages
-                    .push(format!("S_LocalSound: can't cache {name} ({error})"));
-                return None;
-            }
+        let Ok(id) = table.precache(name) else {
+            self.messages
+                .push(format!("S_LocalSound: can't cache {name}"));
+            return None;
         };
         let start = Start {
             entnum: self.view_entity,
@@ -544,7 +549,7 @@ impl Mixer {
     /// has no data or does not loop.
     pub fn static_sound(
         &mut self,
-        table: &SoundTable,
+        table: &mut SoundTable,
         sfx: SfxId,
         origin: [f32; 3],
         vol: f32,
@@ -557,6 +562,7 @@ impl Mixer {
         }
         let index = self.total_channels;
         self.total_channels = self.total_channels.saturating_add(1);
+        table.load(sfx);
         let Some(data) = table.data(sfx) else {
             return Some(index);
         };
@@ -580,15 +586,18 @@ impl Mixer {
         Some(index)
     }
 
-    /// `S_UpdateAmbientSounds`: the ambient channels follow the listener's leaf (SND-4.3).
-    /// `leaf` is the leaf's four ambient levels, `None` when the listener is in no leaf;
+    /// `S_UpdateAmbientSounds`: the ambient channels follow the listener's leaf (SND-4.3);
     /// `frametime` is `host_frametime`.
-    fn update_ambients(&mut self, leaf: Option<[u8; SND_NUM_AMBIENTS]>, frametime: f64) {
-        let Some(levels) = leaf.filter(|_| self.settings.ambient_level != 0.0) else {
-            for channel in self.channels.iter_mut().take(SND_NUM_AMBIENTS) {
-                channel.sfx = None;
+    fn update_ambients(&mut self, leaf: ListenerLeaf, frametime: f64) {
+        let levels = match leaf {
+            ListenerLeaf::NoWorld => return,
+            ListenerLeaf::In(levels) if self.settings.ambient_level != 0.0 => levels,
+            ListenerLeaf::Outside | ListenerLeaf::In(_) => {
+                for channel in self.channels.iter_mut().take(SND_NUM_AMBIENTS) {
+                    channel.sfx = None;
+                }
+                return;
             }
-            return;
         };
         for ambient in Ambient::ALL {
             let index = ambient.index();
@@ -620,16 +629,17 @@ impl Mixer {
         }
     }
 
-    /// `S_Update (origin, forward, right, up)` then `S_Update_` (SND-4.3, SND-4.4, SND-5.1):
+    /// `S_Update (origin, forward, right, up)` then `S_Update_` (SND-4.3, SND-4.4, SND-5.6):
     /// the listener moves, the ambient channels follow its leaf, every channel is spatialized,
     /// static channels of one sound are combined, and the mixer paints ahead of `soundtime`,
-    /// which `frametime` seconds advance (SND-5.5).
+    /// which `frametime` seconds advance (SND-5.9), into `output`.
     pub fn update(
         &mut self,
-        table: &SoundTable,
+        table: &mut SoundTable,
         listener: Listener,
-        leaf: Option<[u8; SND_NUM_AMBIENTS]>,
+        leaf: ListenerLeaf,
         frametime: f64,
+        output: &mut dyn Output,
     ) {
         self.listener = listener;
         self.update_ambients(leaf, frametime);
@@ -677,30 +687,38 @@ impl Mixer {
                 }
             }
         }
-        // SND-5.5: the device has played `frametime` seconds more.
-        let played = double_to_int(frametime * f64::from(self.speed));
-        self.sound_time = self.sound_time.saturating_add(i64::from(played.max(0)));
-        self.mix(table);
+        // SND-5.9: the headless clock has stepped `frametime` seconds more.
+        self.elapsed += frametime.max(0.0);
+        let played = double_to_int(self.elapsed * f64::from(self.speed));
+        self.sound_time = i64::from(played.max(0));
+        self.mix(table, output);
     }
 
     /// `S_Update_`: paints from `paintedtime` to `soundtime + mixahead`, at most the buffer
-    /// ahead (SND-5.1).
-    fn mix(&mut self, table: &SoundTable) {
+    /// ahead (SND-5.6).
+    fn mix(&mut self, table: &mut SoundTable, output: &mut dyn Output) {
         if self.painted < self.sound_time {
             self.painted = self.sound_time;
         }
-        let ahead = double_to_int(f64::from(self.settings.mixahead) * f64::from(self.speed));
-        let mut endtime = self.sound_time.saturating_add(i64::from(ahead.max(0)));
+        // SND-5.6: `endtime = soundtime + _snd_mixahead.value * shm->speed`, a float sum.
+        let soundtime = int_to_float(i32::try_from(self.sound_time).unwrap_or(i32::MAX));
+        let speed = int_to_float(i32::try_from(self.speed).unwrap_or(i32::MAX));
+        let mut endtime = i64::from(float_to_int(soundtime + self.settings.mixahead * speed));
         let cap = i64::try_from(self.buffer_frames).unwrap_or(i64::MAX);
         if endtime.saturating_sub(self.sound_time) > cap {
             endtime = self.sound_time.saturating_add(cap);
         }
-        self.paint_channels(table, endtime);
+        self.paint_channels(table, endtime, output);
     }
 
-    /// `S_PaintChannels (endtime)` (SND-5.2 to SND-5.4): the frames from `paintedtime` to
-    /// `endtime` are mixed and appended to the output.
-    pub fn paint_channels(&mut self, table: &SoundTable, endtime: i64) {
+    /// `S_PaintChannels (endtime)` (SND-5.2 to SND-5.4, SND-5.7, SND-5.8, SND-5.10): the
+    /// frames from `paintedtime` to `endtime` are mixed and written to `output`.
+    pub fn paint_channels(
+        &mut self,
+        table: &mut SoundTable,
+        endtime: i64,
+        output: &mut dyn Output,
+    ) {
         // `snd_vol = volume.value * 256`, an int.
         let snd_vol = float_to_int(self.settings.volume * 256.0);
         let mut paintbuffer = vec![(0_i32, 0_i32); SND_PAINTBUFFER_SIZE];
@@ -721,6 +739,7 @@ impl Mixer {
                 if channel.leftvol == 0 && channel.rightvol == 0 {
                     continue;
                 }
+                table.load(sfx);
                 let Some(data) = table.data(sfx) else {
                     continue;
                 };
@@ -729,20 +748,26 @@ impl Mixer {
                     let count = channel.end.min(end).saturating_sub(ltime);
                     if count > 0 {
                         let count = usize::try_from(count).unwrap_or(0);
-                        let offset =
-                            usize::try_from(ltime.saturating_sub(self.painted)).unwrap_or(0);
+                        // SND-5.7: id paints from the block's start whatever `ltime` is.
+                        let offset = match self.settings.loop_paint {
+                            LoopPaint::Fixed => {
+                                usize::try_from(ltime.saturating_sub(self.painted)).unwrap_or(0)
+                            }
+                            LoopPaint::Id => 0,
+                        };
                         paint_channel(channel, data, &mut paintbuffer, offset, count);
                         ltime = ltime.saturating_add(i64::try_from(count).unwrap_or(0));
                     }
                     if ltime >= channel.end {
                         match data.loopstart() {
-                            Some(loopstart) => {
+                            // SND-5.8: a loop that would never end stops instead.
+                            Some(loopstart) if loopstart < data.length() => {
                                 channel.pos = loopstart;
                                 let left = data.length().saturating_sub(loopstart);
                                 channel.end =
                                     ltime.saturating_add(i64::try_from(left).unwrap_or(0));
                             }
-                            None => {
+                            Some(_) | None => {
                                 channel.sfx = None;
                                 break;
                             }
@@ -750,11 +775,16 @@ impl Mixer {
                     }
                 }
             }
-            // SND-5.4: `(sum * snd_vol) >> 8`, clamped to 16 bits.
+            // SND-5.4: `(sum * snd_vol) >> 8`, clamped to 16 bits; SND-5.10: a mono output
+            // takes the left sum alone.
+            let mut written = Vec::with_capacity(frames.saturating_mul(2));
             for &(left, right) in paintbuffer.iter().take(frames) {
-                self.output.push(transfer(left, snd_vol));
-                self.output.push(transfer(right, snd_vol));
+                written.push(transfer(left, snd_vol));
+                if self.stereo {
+                    written.push(transfer(right, snd_vol));
+                }
             }
+            output.write(&written);
             self.painted = end;
         }
     }

@@ -9,6 +9,13 @@ pub trait Output {
     fn write(&mut self, frames: &[i16]);
 }
 
+/// A `Vec<i16>` keeps every frame it is given: a recording, or a test's view of the mix.
+impl Output for Vec<i16> {
+    fn write(&mut self, frames: &[i16]) {
+        self.extend_from_slice(frames);
+    }
+}
+
 /// Counts the frames it is given and plays nothing: the headless mode's output.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct NullOutput {

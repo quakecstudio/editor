@@ -2953,6 +2953,7 @@ dependencies = [
 name = "qs-sound"
 version = "2026.10.0"
 dependencies = [
+ "qc-builtins",
  "qc-vm",
  "qs-wav",
 ]

@@ -20,6 +20,8 @@ const qs_sound::music::RRE_MUSIC_EXTENSIONS
 const qs_sound::sfx::SND_MAX_NAME
 const qs_sound::sfx::SND_MAX_SFX
 enum qs_sound::mixer::Ambient
+enum qs_sound::mixer::ListenerLeaf
+enum qs_sound::mixer::LoopPaint
 enum qs_sound::sfx::Loaded
 enum qs_sound::sfx::SoundError
 enum qs_sound::sfx::Width
@@ -44,6 +46,7 @@ field qs_sound::mixer::MixerSpec.stereo
 field qs_sound::mixer::MixerSpec.view_entity
 field qs_sound::mixer::Settings.ambient_fade
 field qs_sound::mixer::Settings.ambient_level
+field qs_sound::mixer::Settings.loop_paint
 field qs_sound::mixer::Settings.mixahead
 field qs_sound::mixer::Settings.nosound
 field qs_sound::mixer::Settings.volume
@@ -73,7 +76,6 @@ fn qs_sound::mixer::Mixer::static_sound
 fn qs_sound::mixer::Mixer::stop_all
 fn qs_sound::mixer::Mixer::stop_sound
 fn qs_sound::mixer::Mixer::take_messages
-fn qs_sound::mixer::Mixer::take_output
 fn qs_sound::mixer::Mixer::total_channels
 fn qs_sound::mixer::Mixer::update
 fn qs_sound::mixer::Random::rand
@@ -96,12 +98,14 @@ fn qs_sound::sfx::SoundTable::loaded
 fn qs_sound::sfx::SoundTable::name
 fn qs_sound::sfx::SoundTable::new
 fn qs_sound::sfx::SoundTable::precache
+fn qs_sound::sfx::SoundTable::speed
 impl qs_sound::mixer::Listener: Default
 impl qs_sound::mixer::MixerSpec: Default
 impl qs_sound::mixer::Settings: Default
 impl qs_sound::output::NullOutput: Output
 impl qs_sound::sfx::SoundError: fmt::Display
 impl qs_sound::sfx::SoundError: std::error::Error
+impl qs_sound::sfx::SoundTable: fmt::Debug
 struct qs_sound::mixer::Channel
 struct qs_sound::mixer::Listener
 struct qs_sound::mixer::Mixer
@@ -115,10 +119,13 @@ struct qs_sound::sfx::SoundData
 struct qs_sound::sfx::SoundTable
 trait qs_sound::mixer::Random
 trait qs_sound::output::Output
+type qs_sound::sfx::Reader
 use qs_sound::Ambient = mixer::Ambient
 use qs_sound::Channel = mixer::Channel
 use qs_sound::Listener = mixer::Listener
+use qs_sound::ListenerLeaf = mixer::ListenerLeaf
 use qs_sound::Loaded = sfx::Loaded
+use qs_sound::LoopPaint = mixer::LoopPaint
 use qs_sound::Mixer = mixer::Mixer
 use qs_sound::MixerSpec = mixer::MixerSpec
 use qs_sound::NullOutput = output::NullOutput
@@ -126,6 +133,7 @@ use qs_sound::Output = output::Output
 use qs_sound::RRE_MUSIC_DIR = music::RRE_MUSIC_DIR
 use qs_sound::RRE_MUSIC_EXTENSIONS = music::RRE_MUSIC_EXTENSIONS
 use qs_sound::Random = mixer::Random
+use qs_sound::Reader = sfx::Reader
 use qs_sound::SND_AMBIENT_FADE = mixer::SND_AMBIENT_FADE
 use qs_sound::SND_AMBIENT_LEVEL = mixer::SND_AMBIENT_LEVEL
 use qs_sound::SND_AMBIENT_MIN_VOLUME = mixer::SND_AMBIENT_MIN_VOLUME
@@ -157,6 +165,11 @@ variant qs_sound::mixer::Ambient::Lava
 variant qs_sound::mixer::Ambient::Sky
 variant qs_sound::mixer::Ambient::Slime
 variant qs_sound::mixer::Ambient::Water
+variant qs_sound::mixer::ListenerLeaf::In
+variant qs_sound::mixer::ListenerLeaf::NoWorld
+variant qs_sound::mixer::ListenerLeaf::Outside
+variant qs_sound::mixer::LoopPaint::Fixed
+variant qs_sound::mixer::LoopPaint::Id
 variant qs_sound::sfx::Loaded::Data
 variant qs_sound::sfx::Loaded::Missing
 variant qs_sound::sfx::Loaded::Refused

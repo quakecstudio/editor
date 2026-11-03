@@ -70,6 +70,8 @@ impl SoundData {
         };
         // SND-1.6: `fracstep = stepscale * 256`, stored in an int.
         let fracstep = double_to_int(f64::from(stepscale * 256.0));
+        // Reserve no more than the file holds: a low rate makes `length` many times it.
+        let held = usize::try_from(wav.info.samples).unwrap_or(0);
         let mut samplefrac = 0_i32;
         let source = |samplefrac: i32| {
             // `srcsample = samplefrac >> 8`; a negative one (a rate too high for an int)
@@ -78,7 +80,7 @@ impl SoundData {
         };
         let samples = match wav.info.width {
             1 => {
-                let mut out = Vec::with_capacity(length);
+                let mut out = Vec::with_capacity(length.min(held));
                 for _ in 0..length {
                     let sample = wav.sample(source(samplefrac));
                     samplefrac = samplefrac.wrapping_add(fracstep);
@@ -89,7 +91,7 @@ impl SoundData {
                 Samples::Eight(out)
             }
             _ => {
-                let mut out = Vec::with_capacity(length);
+                let mut out = Vec::with_capacity(length.min(held));
                 for _ in 0..length {
                     out.push(wav.sample(source(samplefrac)));
                     samplefrac = samplefrac.wrapping_add(fracstep);
@@ -197,17 +199,37 @@ struct Sfx {
     loaded: Option<Loaded>,
 }
 
-/// The sounds the engine knows, `known_sfx` (SND-1.3), and their data (SND-1.4).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// Gives the bytes of a file of the game filesystem by its path, `COM_LoadFile`.
+pub type Reader = Box<dyn FnMut(&str) -> Option<Vec<u8>>>;
+
+/// The sounds the engine knows, `known_sfx` (SND-1.3), and their data (SND-1.4), loaded
+/// through the game filesystem when a sound is precached or first played.
 pub struct SoundTable {
     sfx: Vec<Sfx>,
+    /// The output rate the data is resampled to (SND-1.5).
+    speed: u32,
+    read: Reader,
+}
+
+impl fmt::Debug for SoundTable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SoundTable")
+            .field("sfx", &self.sfx)
+            .field("speed", &self.speed)
+            .finish_non_exhaustive()
+    }
 }
 
 impl SoundTable {
-    /// An empty table.
+    /// An empty table whose sounds are read through `read` and resampled to `speed` samples
+    /// per second.
     #[must_use]
-    pub const fn new() -> Self {
-        Self { sfx: Vec::new() }
+    pub fn new(speed: u32, read: Reader) -> Self {
+        Self {
+            sfx: Vec::new(),
+            speed,
+            read,
+        }
     }
 
     /// `S_FindName`: the sound named `name`, known from now on (SND-1.3).
@@ -234,27 +256,22 @@ impl SoundTable {
         Ok(SfxId(self.sfx.len().saturating_sub(1)))
     }
 
-    /// `S_PrecacheSound` with `precache` 1: the sound named `name`, loaded through `read`,
-    /// which gives the bytes of a file of the game filesystem by its path, at `speed` samples
-    /// per second (SND-1.3, SND-1.4).
+    /// `S_PrecacheSound` with `precache` 1: the sound named `name`, loaded (SND-1.3,
+    /// SND-1.4).
     ///
     /// # Errors
     ///
     /// As [`SoundTable::find`]. A file that is missing or not playable is not an error: the
     /// sound is known without data and [`SoundTable::loaded`] says why.
-    pub fn precache(
-        &mut self,
-        name: &str,
-        speed: u32,
-        read: &mut dyn FnMut(&str) -> Option<Vec<u8>>,
-    ) -> Result<SfxId, SoundError> {
+    pub fn precache(&mut self, name: &str) -> Result<SfxId, SoundError> {
         let id = self.find(name)?;
-        self.load(id, speed, read);
+        self.load(id);
         Ok(id)
     }
 
-    /// `S_LoadSound`: loads `id`'s data if it has none yet (SND-1.4).
-    pub fn load(&mut self, id: SfxId, speed: u32, read: &mut dyn FnMut(&str) -> Option<Vec<u8>>) {
+    /// `S_LoadSound`: loads `id`'s data if it was never tried (SND-1.4), as every start of a
+    /// sound does (SND-2.4, SND-4.2, SND-5.2).
+    pub fn load(&mut self, id: SfxId) {
         let Some(sfx) = self.sfx.get_mut(id.0) else {
             return;
         };
@@ -262,13 +279,13 @@ impl SoundTable {
             return;
         }
         let path = qs_wav::s_load_sound_path(&sfx.name);
-        let Some(bytes) = read(&path) else {
+        let Some(bytes) = (self.read)(&path) else {
             sfx.loaded = Some(Loaded::Missing);
             return;
         };
         match qs_wav::s_load_sound(&bytes) {
             Ok(wav) => {
-                sfx.data = Some(SoundData::resample(&wav, speed));
+                sfx.data = Some(SoundData::resample(&wav, self.speed));
                 sfx.loaded = Some(Loaded::Data);
             }
             Err(qs_wav::WavError::Stereo { .. }) => sfx.loaded = Some(Loaded::Stereo),
@@ -286,6 +303,12 @@ impl SoundTable {
     #[must_use]
     pub fn loaded(&self, id: SfxId) -> Option<&Loaded> {
         self.sfx.get(id.0)?.loaded.as_ref()
+    }
+
+    /// The output rate the data is resampled to.
+    #[must_use]
+    pub const fn speed(&self) -> u32 {
+        self.speed
     }
 
     /// `id`'s name.
