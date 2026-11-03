@@ -103,10 +103,10 @@ runs it; a command with parameters first shows a form made from its schema
 Escape goes back from the form and closes the palette. A command's error stays on the palette.
 
 `keymap.rs` binds shortcuts to commands that take no parameters: Cmd+Z runs `edit.undo` and
-Shift+Cmd+Z `edit.redo`, which the editor takes itself while it has the keyboard; Cmd+0,
-Cmd+1, Cmd+2 and Cmd+3 run `view.focus_left_panel`, `view.focus_editor`,
-`view.focus_right_panel` and `view.focus_bottom_panel` from anywhere, as in VS Code. The
-palette shows each command's shortcut from it.
+Shift+Cmd+Z `edit.redo`, which the editor takes itself while it has the keyboard; Cmd+1,
+Cmd+2, Cmd+3 and Cmd+4 run `view.focus_editor`, `view.focus_left_panel`,
+`view.focus_right_panel` and `view.focus_bottom_panel` from anywhere (Cmd+0 stays egui's zoom
+reset). The palette shows each command's shortcut from it.
 
 ## Accessibility
 
@@ -116,7 +116,8 @@ panel toggles are named for the panel they show and say whether it is shown, the
 dialog whose rows are buttons named by their summaries, and the editor's text is a multiline
 text input with its selection. A focus command gives a panel's first heading, or the bottom
 panel's shown tab, the keyboard, showing the panel first, so Tab then walks the panel; the
-editor's gives the editor the keyboard, or the Editor tab when no file is open. The tests in
+editor's gives the editor the keyboard, or the shown centre tab when no file is open or
+another tab is shown. The tests in
 `tests.rs` query the tree with `egui_kittest`; `cargo xtask contrast` holds both themes to
 WCAG AA. The recorded VoiceOver, NVDA and Orca passes are P4-24's.
 

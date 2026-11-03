@@ -17,8 +17,7 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui::containers::panel::PanelState;
 use eframe::egui::{
-    self, Align, Button, Id, Layout as EguiLayout, Response, RichText, Sense, Ui, WidgetInfo,
-    WidgetType, accesskit,
+    self, Align, Button, Id, Layout as EguiLayout, Response, RichText, Sense, Ui, accesskit,
 };
 use eframe::egui_wgpu::RenderState;
 use qs_commands::{CommandError, RegisterError, Registry, Session};
@@ -446,10 +445,9 @@ impl Shell {
                                 .frame(false)
                                 .selected(visible);
                             let response = ui.add(button).on_hover_text(text.get());
-                            // The icon is the button's text; its name is the tooltip's.
-                            response.widget_info(|| {
-                                WidgetInfo::selected(WidgetType::Button, true, visible, text.get())
-                            });
+                            // The icon is the button's text; its name is the tooltip's. The
+                            // button said whether it is selected.
+                            name_field(ui, &response, text);
                             if response.clicked() {
                                 toggled = Some(panel);
                             }
@@ -460,13 +458,7 @@ impl Shell {
                         );
                         let shortcut = ui.ctx().format_shortcut(&keymap::OPEN_PALETTE);
                         let response = ui.add(search).on_hover_text(shortcut);
-                        response.widget_info(|| {
-                            WidgetInfo::labeled(
-                                WidgetType::Button,
-                                true,
-                                Text::SearchCommands.get(),
-                            )
-                        });
+                        name_field(ui, &response, Text::SearchCommands);
                         if response.clicked() {
                             open_palette = true;
                         }
@@ -802,11 +794,12 @@ impl Shell {
     }
 
     /// Draws the centre: its tabs and the one shown. When `focus`, the editor takes the
-    /// keyboard, or the shown tab when no file is open.
+    /// keyboard, or the shown tab when no file is open or another tab is shown.
     fn centre(&mut self, ui: &mut Ui, focus: bool) {
         self.sync_editor();
         self.cover_characters(ui.ctx());
-        if focus && self.centre_tab == CentreTab::Editor && self.editor.is_some() {
+        let editor_shown = self.centre_tab == CentreTab::Editor && self.editor.is_some();
+        if focus && editor_shown {
             self.focus_editor(ui.ctx());
         }
         let theme = &self.theme;
@@ -822,7 +815,7 @@ impl Shell {
                         (CentreTab::Map, Text::Map),
                     ] {
                         let response = ui.selectable_value(&mut self.centre_tab, tab, text.get());
-                        if focus && self.centre_tab == tab && self.editor.is_none() {
+                        if focus && !editor_shown && self.centre_tab == tab {
                             response.request_focus();
                         }
                     }
@@ -878,6 +871,15 @@ pub(crate) fn dragged_size(previous: Option<f32>, now: Option<f32>, dragging: bo
 fn name_area(ui: &Ui, role: accesskit::Role, name: Text) {
     ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
         node.set_role(role);
+        node.set_label(name.get());
+    });
+}
+
+/// Names a widget that egui named by its text, or not at all, for a screen reader (QA-9):
+/// its node's label becomes `name`, and nothing else about it changes, so the widget's own
+/// output events are not sent again.
+pub(crate) fn name_field(ui: &Ui, response: &Response, name: Text) {
+    ui.ctx().accesskit_node_builder(response.id, |node| {
         node.set_label(name.get());
     });
 }

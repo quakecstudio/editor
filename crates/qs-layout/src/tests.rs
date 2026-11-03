@@ -158,34 +158,21 @@ fn focusing_an_area_shows_it_and_gives_it_the_keyboard() {
     );
 }
 
-// QA-9: the focus is part of the layout file, and a file from before it defaults to the
-// editor.
+// QA-9: the focus and the count of focus commands are not written to the file, so a focus
+// command never rewrites it and the keyboard starts in the editor.
 #[test]
-fn the_focus_survives_a_restart() {
+fn the_focus_is_not_written() {
     let dir = TempDir::new("focus");
     let path = dir.path().join(LAYOUT_FILE);
-    let layout = Layout {
+    let focused = Layout {
         focus: Focus::Panel(Panel::Bottom),
+        focus_requests: 3,
         ..Layout::default()
     };
-    layout.write(&path).unwrap();
-    assert_eq!(
-        Layout::read(&path).unwrap().focus,
-        Focus::Panel(Panel::Bottom)
-    );
-    let requested = Layout {
-        focus_requests: 3,
-        ..layout
-    };
-    requested.write(&path).unwrap();
-    assert_eq!(
-        Layout::read(&path).unwrap(),
-        layout,
-        "the count is not written"
-    );
-    assert_eq!(requested.as_written(), layout);
-    fs::write(&path, "[left]\nvisible = false\nsize = 200.0\n").unwrap();
-    assert_eq!(Layout::read(&path).unwrap().focus, Focus::Editor);
+    focused.write(&path).unwrap();
+    assert_eq!(Layout::read(&path).unwrap(), Layout::default());
+    assert_eq!(focused.as_written(), Layout::default());
+    assert!(!fs::read_to_string(&path).unwrap().contains("focus"));
 }
 
 #[test]

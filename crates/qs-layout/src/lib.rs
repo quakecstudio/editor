@@ -82,7 +82,9 @@ pub struct Layout {
     pub right: PanelState,
     /// Problems, Console and the debugger.
     pub bottom: PanelState,
-    /// The area that has the keyboard.
+    /// The area the last focus command gave the keyboard. Not written to the file: the
+    /// keyboard starts in the editor.
+    #[serde(skip)]
     pub focus: Focus,
     /// How many focus commands have run: each one is applied, including one naming the area
     /// the keyboard was moved away from by a click, so a window compares this count rather
@@ -125,10 +127,11 @@ impl Layout {
         }
     }
 
-    /// This layout as the file holds it: without the count of focus commands.
+    /// This layout as the file holds it: without the focus and the count of focus commands.
     #[must_use]
     pub const fn as_written(self) -> Self {
         Self {
+            focus: Focus::Editor,
             focus_requests: 0,
             ..self
         }

@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui::{
     Align2, Area, Button, Frame, Id, Key, KeyboardShortcut, Modifiers, Order, Pos2, RichText,
-    TextEdit, Ui, WidgetInfo, WidgetType,
+    TextEdit, Ui,
 };
 use qs_editor_view::find::{Case, Query};
 use qs_editor_view::{EditorView, Position, Selection, ViewStyle};
@@ -26,6 +26,7 @@ use qs_workbench::{Candidate, OpenFile, Place};
 
 use crate::code_style::CodeStyler;
 use crate::project::Jump;
+use crate::shell::name_field;
 use crate::strings::{Text, match_count};
 use crate::theme::{Theme, Token};
 
@@ -468,13 +469,7 @@ impl Editor {
                         Popup::Rename { offset, mut name } => {
                             ui.label(Text::RenameTo.get());
                             let field = ui.add(TextEdit::singleline(&mut name).code_editor());
-                            field.widget_info(|| {
-                                WidgetInfo::labeled(
-                                    WidgetType::TextEdit,
-                                    true,
-                                    Text::RenameTo.get(),
-                                )
-                            });
+                            name_field(ui, &field, Text::RenameTo);
                             field.request_focus();
                             let enter = ui.input(|i| i.key_pressed(Key::Enter));
                             if enter && !name.is_empty() {
@@ -523,9 +518,7 @@ fn find_bar(ui: &mut Ui, theme: &Theme, find: &mut FindBar, state: &mut qs_edito
                         .hint_text(Text::Find.get())
                         .desired_width(FIND_WIDTH),
                 );
-                field.widget_info(|| {
-                    WidgetInfo::labeled(WidgetType::TextEdit, true, Text::Find.get())
-                });
+                name_field(ui, &field, Text::Find);
                 if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                     state.find_next(&query);
                     field.request_focus();
@@ -548,14 +541,12 @@ fn find_bar(ui: &mut Ui, theme: &Theme, find: &mut FindBar, state: &mut qs_edito
                 if ui.button(Text::FindNext.get()).clicked() {
                     state.find_next(&query);
                 }
-                ui.add(
+                let with = ui.add(
                     TextEdit::singleline(&mut find.with)
                         .hint_text(Text::Replace.get())
                         .desired_width(REPLACE_WIDTH),
-                )
-                .widget_info(|| {
-                    WidgetInfo::labeled(WidgetType::TextEdit, true, Text::Replace.get())
-                });
+                );
+                name_field(ui, &with, Text::Replace);
                 if ui.button(Text::Replace.get()).clicked() {
                     state.replace_next(&query, &find.with);
                 }

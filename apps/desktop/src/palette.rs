@@ -22,6 +22,7 @@ use serde_json::Value;
 
 use crate::icons::Icon;
 use crate::keymap;
+use crate::shell::name_field;
 use crate::strings::{Text, command_count};
 use crate::theme::{Theme, Token};
 
@@ -169,9 +170,7 @@ impl Palette {
                 .frame(egui::Frame::NONE)
                 .desired_width(WIDTH - 200.0);
             let response = ui.add(field);
-            response.widget_info(|| {
-                WidgetInfo::labeled(WidgetType::TextEdit, true, Text::SearchCommands.get())
-            });
+            name_field(ui, &response, Text::SearchCommands);
             if self.focus {
                 response.request_focus();
                 self.focus = false;
@@ -292,8 +291,10 @@ fn row(ui: &mut Ui, theme: &Theme, item: &PaletteMatch<'_>, selected: bool) -> e
     let height = theme.size.row;
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::click());
+    // The row's name says the id, which tells commands with alike summaries apart.
     response.widget_info(|| {
-        WidgetInfo::selected(WidgetType::Button, true, selected, item.info.summary())
+        let name = format!("{}: {}", item.info.id().as_str(), item.info.summary());
+        WidgetInfo::selected(WidgetType::Button, true, selected, name)
     });
     if selected || response.hovered() {
         let fill = if selected {

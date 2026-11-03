@@ -30,8 +30,8 @@ pub struct Binding {
 pub const OPEN_PALETTE: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::P);
 
-/// Every binding. The focus keys follow VS Code: Cmd+0 the side bar, Cmd+1 the editor, then
-/// the right and bottom panels in turn.
+/// Every binding. The focus keys put the editor on Cmd+1 as VS Code does, then the left,
+/// right and bottom panels on Cmd+2 to Cmd+4; Cmd+0 stays egui's zoom reset.
 pub const BINDINGS: [Binding; 6] = [
     Binding {
         command: "edit.undo",
@@ -44,23 +44,23 @@ pub const BINDINGS: [Binding; 6] = [
         scope: Scope::Shell,
     },
     Binding {
-        command: qs_layout::FOCUS_LEFT_PANEL,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0),
-        scope: Scope::Everywhere,
-    },
-    Binding {
         command: qs_layout::FOCUS_EDITOR,
         shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Num1),
         scope: Scope::Everywhere,
     },
     Binding {
-        command: qs_layout::FOCUS_RIGHT_PANEL,
+        command: qs_layout::FOCUS_LEFT_PANEL,
         shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Num2),
         scope: Scope::Everywhere,
     },
     Binding {
-        command: qs_layout::FOCUS_BOTTOM_PANEL,
+        command: qs_layout::FOCUS_RIGHT_PANEL,
         shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Num3),
+        scope: Scope::Everywhere,
+    },
+    Binding {
+        command: qs_layout::FOCUS_BOTTOM_PANEL,
+        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Num4),
         scope: Scope::Everywhere,
     },
 ];

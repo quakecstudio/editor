@@ -5,8 +5,8 @@ each is, kept in `layout.toml` in the app's data directory (`qs_paths::AppDirs::
 commands that change it, `view.toggle_panel` and `view.resize_panel`, and the focus commands
 `view.focus_editor`, `view.focus_left_panel`, `view.focus_right_panel` and
 `view.focus_bottom_panel`, which name the area that has the keyboard (`Layout::focus`),
-showing a hidden panel first; each one is counted (`Layout::focus_requests`, not written to
-the file) so the window applies every one.
+showing a hidden panel first; the focus and its count of commands (`Layout::focus_requests`,
+which lets the window apply every one) are not written to the file.
 
 - **Layer:** L5 commands. It depends on `qs-commands`, `schemars`, `serde` and `toml`.
 - **Decision:** plan requirement UI-2, P2-17 (#73); not engine behaviour.

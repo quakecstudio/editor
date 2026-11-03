@@ -814,8 +814,13 @@ fn every_area_and_control_has_a_name() {
     // The panel toggles say whether their panel is shown.
     let toggle = harness.get_by_role_and_label(Role::Button, Text::ToggleLeftPanel.get());
     assert_eq!(toggle.accesskit_node().toggled(), Some(Toggled::True));
-    // The palette's rows are buttons named by their summaries.
-    harness.get_by_role_and_label(Role::Button, "Shows or hides a panel: Project and Entities on the left, Properties and the agent on the right, or Problems, Console and the debugger at the bottom.");
+    // The palette's rows are buttons named by their ids and summaries.
+    harness.get_by_role_and_label(
+        Role::Button,
+        "view.toggle_panel: Shows or hides a panel: Project and Entities on the left, \
+         Properties and the agent on the right, or Problems, Console and the debugger at the \
+         bottom.",
+    );
     // No control is nameless.
     let nameless: Vec<_> = harness
         .root()
@@ -880,9 +885,9 @@ fn focus_commands_reach_every_panel() {
             .right
             .visible
     );
-    // The keyboard went to the editor by the command above; Cmd+1 again changes nothing, and
-    // Cmd+0 brings it back to the left panel.
-    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num0);
+    // The keyboard went to the Editor tab by the command above; Cmd+2 brings it to the left
+    // panel.
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num2);
     harness.run();
     harness.run();
     let project = harness.get_by_role_and_label(Role::Heading, Text::Project.get());
@@ -923,7 +928,7 @@ fn focus_shortcuts_reach_out_of_the_editor() {
     run_command(&mut harness, qs_layout::FOCUS_EDITOR);
     harness.run();
     assert!(editor_has_keyboard(&harness));
-    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num2);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num3);
     harness.run();
     harness.run();
     assert!(!editor_has_keyboard(&harness));
@@ -935,7 +940,7 @@ fn focus_shortcuts_reach_out_of_the_editor() {
         .memory_mut(|m| m.request_focus(egui::Id::new(EDITOR_AREA)));
     harness.run();
     assert!(editor_has_keyboard(&harness));
-    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num2);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num3);
     harness.run();
     harness.run();
     assert!(!editor_has_keyboard(&harness));
@@ -945,4 +950,16 @@ fn focus_shortcuts_reach_out_of_the_editor() {
     harness.run();
     harness.run();
     assert!(editor_has_keyboard(&harness));
+    // With the Map tab shown, the editor's command gives the keyboard to that tab, as there
+    // is no editor to give it to.
+    harness
+        .get_by_role_and_label(Role::Button, Text::Map.get())
+        .click();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num1);
+    harness.run();
+    harness.run();
+    assert!(!editor_has_keyboard(&harness));
+    let map = harness.get_by_role_and_label(Role::Button, Text::Map.get());
+    assert!(map.is_focused());
 }
