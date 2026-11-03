@@ -17,8 +17,9 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
 use crate::check::fold::{Folded, fold};
-use crate::check::opcodes::{Assoc, row};
+use crate::check::opcodes::{Opcode, row};
 use crate::check::{Constness, Sym, Value};
+use crate::ir;
 use crate::ty::Type;
 
 /// `QCTARGVER_FTE_DEF` and `QCTARGVER_FTE_MAX`: the FTE revisions `badopcode` suggests.
@@ -43,9 +44,36 @@ enum Emulation {
     /// on their high words, each cast to `int`, joined by the second (FTEF-27.13).
     Words(Op, Op),
     /// `a % b` as `a - b * (a / b)`: the division, the floor (`d | d`) for a float one, the
-    /// product of `b` and the quotient and the difference from `a`, each emitted in turn
-    /// (FTEF-27.4).
-    Remainder(&'static [Op]),
+    /// product of `b` and the quotient and the difference from `a`, each emitted in turn, when
+    /// the program defines no function of the name given (`QCC_PR_EmulationFunc`), which is
+    /// otherwise called (FTEF-27.4).
+    Remainder(&'static str, &'static [Op]),
+    /// `~a` as `-1 - a` (`op = SUB; var_b = var_a; var_a = QCC_MakeFloatConst(-1)`,
+    /// FTEF-27.9): this subtraction of the constant -1 (a vector of them when it is a vector's)
+    /// and the operand, emitted with no further check.
+    Complement(Op),
+    /// `a ^ b` as `(a & ~b) | (b & ~a)` (FTE-19.7): the complement of `b`, the `&` of `a` and
+    /// it, the complement of `a`, the `&` of `b` and it, and the `|` of the two, each emitted in
+    /// turn; for an `int`, a call of the program's function of the name given when it has one
+    /// (`QCC_PR_EmulationFunc`).
+    Xor {
+        /// The function called instead, if the program defines it.
+        helper: Option<&'static str>,
+        /// The complement.
+        not: Op,
+        /// The `&`.
+        and: Op,
+        /// The `|`.
+        or: Op,
+    },
+    /// A vector operator as this float one of each word (FTE-19.12): a vector temporary taken
+    /// (`QCC_GetTemp(type_vector)`), then three plain statements, `a+i`, `b+i` into `c+i`
+    /// (`QCC_PR_SimpleStatement`), which free neither operand.
+    ByWord(Op),
+    /// `v / f` as `v * (1 / f)` (FTE-19.9): the first opcode of the float constant 1
+    /// (`QCC_MakeFloatConst(1)`) and the right operand, then the second of the left operand and
+    /// that quotient.
+    Reciprocal(Op, Op),
     /// `return QCC_PR_StatementFlags(OTHER, a, b, ...)`: this opcode instead, folded, emitted or
     /// emulated in turn.
     Instead(Op),
@@ -74,9 +102,6 @@ enum Emulation {
     /// with the fatal error when the target lacks it: a 64-bit `&`, `|` and `^` word by word,
     /// and a 64-bit field load by two `OP_LOAD_FLD`s.
     Simple(&'static [Op]),
-    /// Emitted as three plain statements of the float opcode with `force` on, no check of the
-    /// target: a vector's `&` and `|` component by component.
-    Forced,
     /// No emulation: "Opcode ... not valid for target" (FTEF-27.5).
     Refuse,
 }
@@ -98,6 +123,13 @@ impl Checker<'_> {
             |value: &Value| value.constness == Constness::Opaque && !value.ty.is_function();
         if opaque(lhs) || opaque(rhs) {
             self.emitted = self.emitted.saturating_add(1);
+            // An opcode the target lacks is emulated by the code generator, which follows the
+            // value; the intermediate layer holds no fragment of it.
+            if !self.env.target_at(span.start).valid(op)
+                && let Some(builder) = &mut self.fragment
+            {
+                builder.give_up();
+            }
             // Its value decides no folding or emulation; the comparison warnings read no value.
             if self.env.target_at(span.start).valid(op) {
                 self.compare(op, lhs, rhs, span);
@@ -114,7 +146,11 @@ impl Checker<'_> {
             self.env.report(notice.code, span, notice.message);
         }
         match folded {
-            Some(Folded::Constant(constant)) => return Ok(Value::constant(constant)),
+            Some(Folded::Constant(constant)) => {
+                // FTEF-26.2: a folded value is an immediate FTEQCC makes (`QCC_MakeFloatConst`).
+                self.made(constant);
+                return Ok(Value::constant(constant));
+            }
             Some(Folded::Left) => return Ok(lhs.clone()),
             Some(Folded::Right) => return Ok(rhs.clone()),
             None => {}
@@ -141,20 +177,57 @@ impl Checker<'_> {
             self.env.temps().free(offset);
         }
         let Some(row) = row(op) else {
+            if let Some(builder) = &mut self.fragment {
+                builder.give_up();
+            }
             return result;
         };
+        let result = self.lowered(op, row, lhs, rhs, result);
+        if !row.makes_value() {
+            return result;
+        }
         let words = match row.types[2].etype() {
-            Etype::Void => return result,
             Etype::Vector => 3,
             Etype::Int64 | Etype::Uint64 | Etype::Double => 2,
             _ => 1,
         };
-        if row.assoc == Assoc::Right {
-            return result;
-        }
         let temp = Some(self.env.temps().take(words));
         self.last_temp = temp;
         Value { temp, ..result }
+    }
+
+    /// Records `constant` as an immediate the fragment being lowered made, when there is one; a
+    /// kind of constant the layer does not hold leaves the fragment unheld.
+    fn made(&mut self, constant: Constant) {
+        let Some(builder) = &mut self.fragment else {
+            return;
+        };
+        match constant.immediate() {
+            Some(immediate) => builder.made(immediate),
+            None => builder.give_up(),
+        }
+    }
+
+    /// The statement `op` of `lhs` and `rhs` added to the fragment being lowered, when there is
+    /// one: an operand its row reads that the fragment cannot name means it holds the
+    /// operator no longer. `result` is given the statement's value as its operand.
+    fn lowered(&mut self, op: Op, row: &Opcode, lhs: &Value, rhs: &Value, result: Value) -> Value {
+        let Some(builder) = &mut self.fragment else {
+            return result;
+        };
+        let reads = |value: &Value, slot: usize| {
+            row.types
+                .get(slot)
+                .is_some_and(|t| t.etype() != Etype::Void)
+                .then(|| value.operand())
+        };
+        let c = if row.makes_value() {
+            ir::Destination::Value
+        } else {
+            ir::Destination::Nothing
+        };
+        let ir = builder.push(op, [reads(lhs, 0), reads(rhs, 1)], c);
+        Value { ir, ..result }
     }
 
     /// FTEF-34.9: the store a value of basic type `etype` is copied by, `OP_STORE_*`.
@@ -193,7 +266,26 @@ impl Checker<'_> {
         span: Span,
         result: Value,
     ) -> Result<Value, Fatal> {
-        match emulation(op) {
+        let emulation = emulation(op);
+        // The intermediate layer holds the emulations that are statements emitted in turn;
+        // the others the code generator still lowers itself.
+        if !matches!(
+            emulation,
+            Emulation::ConvertRight(..)
+                | Emulation::ConvertLeft(..)
+                | Emulation::Remainder(..)
+                | Emulation::Reciprocal(..)
+                | Emulation::Complement(_)
+                | Emulation::ByWord(_)
+                | Emulation::Clear { .. }
+                | Emulation::Xor { .. }
+                | Emulation::Instead(_)
+                | Emulation::Swapped(_)
+        ) && let Some(builder) = &mut self.fragment
+        {
+            builder.give_up();
+        }
+        match emulation {
             Emulation::ConvertRight(conv, then) => {
                 let rhs = self.emit(conv, rhs, &Value::unknown(), span)?;
                 self.emit(then, lhs, &rhs, span)
@@ -236,7 +328,14 @@ impl Checker<'_> {
                 let high = self.emit(compare, &lhs, &rhs, span)?;
                 self.emit(join, &low, &high, span)
             }
-            Emulation::Remainder(steps) => {
+            Emulation::Remainder(helper, steps) => {
+                // The call of the helper is not held by the intermediate layer yet.
+                if self.env.defines(helper) {
+                    if let Some(builder) = &mut self.fragment {
+                        builder.give_up();
+                    }
+                    return Ok(result);
+                }
                 let &[div, ref rest @ .., mul, sub] = steps else {
                     return Ok(result);
                 };
@@ -246,6 +345,20 @@ impl Checker<'_> {
                 }
                 let product = self.emit(mul, rhs, &quotient, span)?;
                 self.emit(sub, lhs, &product, span)
+            }
+            Emulation::Complement(sub) => Ok(self.complement(sub, lhs, span)),
+            Emulation::ByWord(word_op) => Ok(self.by_word(word_op, (lhs, rhs), result)),
+            Emulation::Xor {
+                helper,
+                not,
+                and,
+                or,
+            } => self.xor(helper, [not, and, or], (lhs, rhs), span, result),
+            Emulation::Reciprocal(div, then) => {
+                let one = Constant::float(1.0);
+                self.made(one);
+                let reciprocal = self.emit(div, &Value::constant(one), rhs, span)?;
+                self.emit(then, lhs, &reciprocal, span)
             }
             Emulation::Instead(other) => {
                 // `var_c.cast = type_uint;` (or `type_uint64`) after an unsigned operator's
@@ -280,16 +393,7 @@ impl Checker<'_> {
                 self.generate(other, span);
                 Ok(replaced(other))
             }
-            Emulation::Clear { and, sub, store } => {
-                let target = self.env.target_at(span.start);
-                if let Some(store) = store.filter(|&store| target.valid(store)) {
-                    self.generate(store, span);
-                    return Ok(replaced(store));
-                }
-                self.emit(and, lhs, rhs, span)?;
-                self.generate(sub, span);
-                Ok(replaced(sub))
-            }
+            Emulation::Clear { and, sub, store } => self.clear([and, sub], store, (lhs, rhs), span),
             Emulation::Conversion => self.conversion(op, lhs, span, result),
             Emulation::Special => self.special(op, lhs, rhs, span, result),
             Emulation::Emitted => {
@@ -304,12 +408,104 @@ impl Checker<'_> {
                 }
                 Ok(result)
             }
-            Emulation::Forced => Ok(result),
             Emulation::Refuse => {
                 self.refuse_emitted(op, span);
                 Ok(result)
             }
         }
+    }
+
+    /// A bit clear (`Emulation::Clear`): the `store` opcode when the target has it, else
+    /// `a - (a & b)` of the `and` and `sub` opcodes: `var_b = (a & b); op = SUB`, the subtraction
+    /// emitted as any statement (`QCC_PR_StatementFlags` after the `break`).
+    fn clear(
+        &mut self,
+        [and, sub]: [Op; 2],
+        store: Option<Op>,
+        (lhs, rhs): (&Value, &Value),
+        span: Span,
+    ) -> Result<Value, Fatal> {
+        let target = self.env.target_at(span.start);
+        if let Some(store) = store.filter(|&store| target.valid(store)) {
+            // The store opcode is not held by the intermediate layer yet.
+            if let Some(builder) = &mut self.fragment {
+                builder.give_up();
+            }
+            self.generate(store, span);
+            return Ok(replaced(store));
+        }
+        let masked = self.emit(and, lhs, rhs, span)?;
+        self.generate(sub, span);
+        Ok(self.statement_temps(sub, lhs, &masked, replaced(sub)))
+    }
+
+    /// `~a` as the subtraction `sub` of -1 and `a` (`Emulation::Complement`), its constant an
+    /// immediate the lowering made.
+    fn complement(&mut self, sub: Op, lhs: &Value, span: Span) -> Value {
+        let minus_one = if sub == Op::SubV {
+            Constant::vector([-1.0; 3])
+        } else {
+            Constant::float(-1.0)
+        };
+        self.made(minus_one);
+        self.generate(sub, span);
+        self.statement_temps(sub, &Value::constant(minus_one), lhs, replaced(sub))
+    }
+
+    /// The vector operator whose float one of each word is `word_op` (`Emulation::ByWord`):
+    /// `result`, a vector temporary, its three words written in turn.
+    fn by_word(&mut self, word_op: Op, (lhs, rhs): (&Value, &Value), result: Value) -> Value {
+        let temp = self.env.temps().take(3);
+        // A store of the vector folds into no word's statement (`opt_assignments` reads c).
+        self.last_temp = None;
+        let mut ir = None;
+        if let Some(builder) = &mut self.fragment {
+            match (lhs.operand(), rhs.operand()) {
+                (Some(a), Some(b)) => {
+                    if let Some(vector) = builder.vector() {
+                        for word in 0..3 {
+                            builder.push(
+                                word_op,
+                                [Some(a.word(word)), Some(b.word(word))],
+                                ir::Destination::Word(vector, word),
+                            );
+                        }
+                        ir = Some(ir::Operand::Temp(vector));
+                    }
+                }
+                _ => builder.give_up(),
+            }
+        }
+        // Plain statements, which report nothing at global scope (FTEF-34.9).
+        Value {
+            temp: Some(temp),
+            ir,
+            ..result
+        }
+    }
+
+    /// `a ^ b` as `(a & ~b) | (b & ~a)` of the complement, `&` and `|` opcodes `ops`
+    /// (`Emulation::Xor`), or `result`, a call of `helper` when the program defines it, which
+    /// the intermediate layer does not hold yet.
+    fn xor(
+        &mut self,
+        helper: Option<&str>,
+        [not, and, or]: [Op; 3],
+        (lhs, rhs): (&Value, &Value),
+        span: Span,
+        result: Value,
+    ) -> Result<Value, Fatal> {
+        if helper.is_some_and(|helper| self.env.defines(helper)) {
+            if let Some(builder) = &mut self.fragment {
+                builder.give_up();
+            }
+            return Ok(result);
+        }
+        let not_b = self.emit(not, rhs, &Value::unknown(), span)?;
+        let left = self.emit(and, lhs, &not_b, span)?;
+        let not_a = self.emit(not, lhs, &Value::unknown(), span)?;
+        let right = self.emit(and, rhs, &not_a, span)?;
+        self.emit(or, &left, &right, span)
     }
 
     /// FTEF-27.4: a conversion the target lacks: by the helper the program defines, else with
@@ -541,7 +737,7 @@ impl Checker<'_> {
             Op::LtU | Op::LeU | Op::DivU | Op::BitextendI | Op::BitextendU => {
                 self.unsigned(op, lhs, rhs, span, result)
             }
-            Op::BitandD | Op::BitorD | Op::BitxorV | Op::BitxorD | Op::BitnotI => {
+            Op::BitandD | Op::BitorD | Op::BitxorD | Op::BitnotI => {
                 self.bitwise(op, lhs, rhs, span, result)
             }
             Op::IfF | Op::IfnotF | Op::IfS | Op::IfnotS | Op::NotI => self.truth(op, lhs, span),
@@ -644,13 +840,9 @@ impl Checker<'_> {
                 let value = self.emit(then, &lhs, &rhs, span)?;
                 self.emit(Op::ConvI64d, &value, &Value::unknown(), span)
             }
-            Op::BitxorV | Op::BitxorD => {
+            Op::BitxorD => {
                 // `(a & ~b) | (b & ~a)`.
-                let (not, and, or) = if op == Op::BitxorV {
-                    (Op::BitnotV, Op::BitandV, Op::BitorV)
-                } else {
-                    (Op::BitnotD, Op::BitandD, Op::BitorD)
-                };
+                let (not, and, or) = (Op::BitnotD, Op::BitandD, Op::BitorD);
                 let not_b = self.emit(not, rhs, &Value::unknown(), span)?;
                 let left = self.emit(and, lhs, &not_b, span)?;
                 let not_a = self.emit(not, lhs, &Value::unknown(), span)?;
@@ -734,8 +926,8 @@ impl Checker<'_> {
 )]
 const fn emulation(op: Op) -> Emulation {
     use Emulation::{
-        Conversion, ConvertLeft, ConvertRight, Emitted, Expand, Forced, Helper, Instead, Refuse,
-        Remainder, Simple, Special, Words,
+        ByWord, Conversion, ConvertLeft, ConvertRight, Emitted, Expand, Helper, Instead,
+        Reciprocal, Refuse, Remainder, Simple, Special, Words, Xor,
     };
     if let Some(substitution) = substitution(op) {
         return substitution;
@@ -760,27 +952,30 @@ const fn emulation(op: Op) -> Emulation {
         Op::PowI => Helper(&["pow", "powf"], "int*^int"),
         Op::PowFi => Helper(&["pow", "powf"], "float*^int"),
         Op::PowIf => Helper(&["pow", "powf"], "int*^float"),
-        Op::ModF => Remainder(&[Op::DivF, Op::BitorF, Op::MulF, Op::SubF]),
-        Op::ModI => Remainder(&[Op::DivI, Op::MulI, Op::SubI]),
-        Op::ModU => Remainder(&[Op::DivU, Op::MulU, Op::SubU]),
-        Op::ModFi => Remainder(&[Op::DivFi, Op::BitorF, Op::MulIf, Op::SubF]),
-        Op::ModIf => Remainder(&[Op::DivIf, Op::BitorF, Op::MulF, Op::SubIf]),
-        // `(a & ~b) | (b & ~a)`.
-        Op::BitxorF => Expand(&[
-            Op::BitnotF,
-            Op::BitandF,
-            Op::BitnotF,
-            Op::BitandF,
-            Op::BitorF,
-        ]),
-        Op::BitxorI => Expand(&[
-            Op::BitnotI,
-            Op::BitandI,
-            Op::BitnotI,
-            Op::BitandI,
-            Op::BitorI,
-        ]),
-        Op::DivVf => Expand(&[Op::DivF, Op::MulVf]),
+        Op::ModF => Remainder("mod", &[Op::DivF, Op::BitorF, Op::MulF, Op::SubF]),
+        Op::ModI => Remainder("ModInt", &[Op::DivI, Op::MulI, Op::SubI]),
+        Op::ModU => Remainder("ModInt", &[Op::DivU, Op::MulU, Op::SubU]),
+        Op::ModFi => Remainder("mod", &[Op::DivFi, Op::BitorF, Op::MulIf, Op::SubF]),
+        Op::ModIf => Remainder("mod", &[Op::DivIf, Op::BitorF, Op::MulF, Op::SubIf]),
+        Op::BitxorF => Xor {
+            helper: None,
+            not: Op::BitnotF,
+            and: Op::BitandF,
+            or: Op::BitorF,
+        },
+        Op::BitxorI => Xor {
+            helper: Some("BitxorInt"),
+            not: Op::BitnotI,
+            and: Op::BitandI,
+            or: Op::BitorI,
+        },
+        Op::BitxorV => Xor {
+            helper: None,
+            not: Op::BitnotV,
+            and: Op::BitandV,
+            or: Op::BitorV,
+        },
+        Op::DivVf => Reciprocal(Op::DivF, Op::MulVf),
         Op::CrossV | Op::SpaceshipF => Expand(&[Op::MulF, Op::SubF]),
         Op::ConvItof | Op::StoreIf | Op::ConvFtoi | Op::StoreFi | Op::ConvUf => Conversion,
         Op::ConvFu => Instead(Op::ConvFtoi),
@@ -814,7 +1009,6 @@ const fn emulation(op: Op) -> Emulation {
         | Op::BitextendU
         | Op::BitandD
         | Op::BitorD
-        | Op::BitxorV
         | Op::BitxorD
         | Op::IfF
         | Op::IfnotF
@@ -896,7 +1090,8 @@ const fn emulation(op: Op) -> Emulation {
         Op::BitorI64 => Simple(&[Op::BitorI, Op::BitorI]),
         Op::BitxorI64 => Simple(&[Op::BitxorI, Op::BitxorI]),
         // `QCC_PR_SimpleStatement(op, ..., true)`, forced, per component.
-        Op::BitandV | Op::BitorV => Forced,
+        Op::BitandV => ByWord(Op::BitandF),
+        Op::BitorV => ByWord(Op::BitorF),
         // "emit this anyway. if it reaches runtime then you messed up."
         Op::LoadaStruct => Emitted,
         _ => Refuse,
@@ -906,10 +1101,10 @@ const fn emulation(op: Op) -> Emulation {
 /// FTEF-27.9: the opcodes `QCC_PR_StatementFlags` replaces by others: `op = OTHER; break;`,
 /// emitted with no further check, a bit clear, and a comparison of the operands swapped.
 const fn substitution(op: Op) -> Option<Emulation> {
-    use Emulation::{Clear, Replaced, Swapped};
+    use Emulation::{Clear, Complement, Replaced, Swapped};
     Some(match op {
-        Op::BitnotF => Replaced(Op::SubF),
-        Op::BitnotV => Replaced(Op::SubV),
+        Op::BitnotF => Complement(Op::SubF),
+        Op::BitnotV => Complement(Op::SubV),
         Op::BitnotI64 => Replaced(Op::SubI64),
         Op::StoreP | Op::StoreI => Replaced(Op::StoreF),
         Op::LoadP | Op::LoadI => Replaced(Op::LoadF),

@@ -947,4 +947,6 @@ fn temporaries_are_named_by_their_offset() {
     assert_eq!(itof("s[i] += x;"), [unsafe_("temp_1")]);
     assert_eq!(itof("q = (__bfloat)d;"), [unsafe_("temp_0")]);
     assert_eq!(itof("x = ii;"), [unsafe_("ii")]);
+    // A vector's temporary is three words, so the next one is at offset 3.
+    assert_eq!(itof("v = (v + v) * c8;"), [unsafe_("temp_3")]);
 }

@@ -15,6 +15,7 @@ use qc_syntax::ast::{self, AstNode as _, BinaryOp, LiteralKind};
 
 use crate::check::expr::Fatal;
 use crate::check::{Env, TypedBody};
+use crate::ir;
 use crate::ty::{SimpleType, Type};
 
 /// A basic type as `pr_opcodes` names its operands' (`etype_t`).
@@ -115,6 +116,8 @@ pub(super) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
     }
     TypedBody {
         types: checker.types,
+        opcodes: HashMap::new(),
+        fragments: ir::Fragments::default(),
     }
 }
 

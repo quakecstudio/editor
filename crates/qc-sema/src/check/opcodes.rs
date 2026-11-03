@@ -14,6 +14,8 @@
 
 use qc_preproc::Op;
 
+use crate::check::etype::Etype;
+
 use crate::ty::{SimpleType, Type};
 
 /// The type an opcode reads or writes, `pr_opcodes[]`'s `type_a`, `type_b` and `type_c`: a
@@ -618,6 +620,14 @@ pub(crate) static OPCODES: [Opcode; 413] = [
 /// The row of `pr_opcodes[]` that is `op`.
 pub(crate) fn row(op: Op) -> Option<&'static Opcode> {
     OPCODES.get(op.number())
+}
+
+impl Opcode {
+    /// Whether a statement of it writes a value to a temporary of its own, operand c
+    /// (FTEF-27.16): not a store, whose `associative` is right, nor an opcode of no result.
+    pub(crate) fn makes_value(&self) -> bool {
+        self.assoc != Assoc::Right && self.types[2].etype() != Etype::Void
+    }
 }
 
 impl Class {

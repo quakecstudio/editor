@@ -49,6 +49,7 @@ use crate::symbol::{DefId, Definition};
 use crate::ty::Type;
 use constant::{Constant, unquoted};
 
+use crate::ir;
 use etype::Etype;
 
 /// What the check stage reads of the module around the body it checks.
@@ -220,6 +221,8 @@ pub(crate) struct Value {
     pub(crate) bitfield: Option<Bitfield>,
     /// The word offset of the temporary that holds it, `temp_N` (FTEF-27.16).
     pub(crate) temp: Option<u32>,
+    /// The operand it is in the fragment being lowered (`docs/design/back-end.md`), if any.
+    pub(crate) ir: Option<ir::Operand>,
     /// Whether it is a call's return value, an alias of `OFS_RETURN` that a statement which
     /// clobbers the aliases copies to a temporary first (`QCC_ClobberDef`, FTEF-30.13).
     pub(crate) returned: bool,
@@ -321,6 +324,15 @@ impl Sym {
 }
 
 impl Value {
+    /// The operand it is in the fragment being lowered: the one it was given, else a constant's
+    /// immediate (`docs/design/back-end.md`).
+    pub(crate) fn operand(&self) -> Option<ir::Operand> {
+        self.ir.or_else(|| match self.constness {
+            Constness::Known(constant) => constant.immediate().map(ir::Operand::Immediate),
+            Constness::Variable | Constness::Opaque => None,
+        })
+    }
+
     /// A value of `ty` that is no literal.
     pub(crate) const fn of(ty: Type) -> Self {
         Self {
@@ -334,6 +346,7 @@ impl Value {
             text: None,
             bitfield: None,
             temp: None,
+            ir: None,
             returned: false,
         }
     }
@@ -668,6 +681,8 @@ impl CvarValue {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TypedBody {
     types: HashMap<(usize, usize), Type>,
+    opcodes: HashMap<(usize, usize), qc_preproc::Op>,
+    fragments: ir::Fragments,
 }
 
 impl TypedBody {
@@ -675,6 +690,20 @@ impl TypedBody {
     #[must_use]
     pub fn type_at(&self, span: Span) -> Option<&Type> {
         self.types.get(&(span.start, span.end))
+    }
+
+    /// The opcode `QCC_PR_ChooseOpcode` chose for the binary operator whose token is at
+    /// `span`, if the check chose one (FTEF-23.4).
+    #[must_use]
+    pub fn opcode_at(&self, span: Span) -> Option<qc_preproc::Op> {
+        self.opcodes.get(&(span.start, span.end)).copied()
+    }
+
+    /// The statements the binary operator whose token is at `span` lowers to, its emulation
+    /// included (FTEF-27), when the intermediate layer holds them (`docs/design/back-end.md`).
+    #[must_use]
+    pub fn fragment_at(&self, span: Span) -> Option<&ir::Fragment> {
+        self.fragments.at(span)
     }
 }
 

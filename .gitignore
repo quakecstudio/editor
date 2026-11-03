@@ -25,3 +25,7 @@ __pycache__/
 apps/desktop/snapshots/*.new.png
 apps/desktop/snapshots/*.diff.png
 apps/desktop/snapshots/*.old.png
+
+# cargo-mutants output
+mutants.out/
+mutants.out.old/

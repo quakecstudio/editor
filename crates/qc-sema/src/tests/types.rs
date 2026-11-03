@@ -233,3 +233,290 @@ fn a_checked_body_keeps_its_expression_types() {
     assert_eq!(at("\"x\""), Some(&Type::Simple(SimpleType::String)));
     assert_eq!(at("g = {"), None);
 }
+
+// spec FTEF-23.4: the check stage keeps the opcode `QCC_PR_ChooseOpcode` picks for each binary
+// operator, by the operator's span, the row FTEQCC chose even when the target emulates it
+#[test]
+fn a_checked_body_keeps_its_operators_opcodes() {
+    use qc_preproc::Op;
+    let source = "float a; vector v; void() g = { a = a + 1; v = v * a; v = v / a; a = a < 2; };";
+    let index = super::fte_index_of(source);
+    let g = index
+        .defs
+        .iter()
+        .position(|d| d.name == "g")
+        .map(DefId::new)
+        .unwrap();
+    let body = &index.bodies[&g];
+    let at = |text: &str, operator: &str| {
+        let start = source.find(text).unwrap() + text.find(operator).unwrap();
+        body.opcode_at(Span::new(start, start + operator.len()))
+    };
+    assert_eq!(at("a + 1", "+"), Some(Op::AddF), "ADD_F");
+    assert_eq!(at("v * a", "*"), Some(Op::MulVf), "MUL_VF");
+    assert_eq!(
+        at("v / a", "/"),
+        Some(Op::DivVf),
+        "DIV_VF, emulated on the id target"
+    );
+    assert_eq!(at("a < 2", "<"), Some(Op::LtF), "LT_F");
+    assert_eq!(
+        at("a = a + 1", "="),
+        None,
+        "an assignment is chosen elsewhere"
+    );
+}
+
+// spec FTEF-23.4: a binary operator lowers to the statement of the opcode chosen for it, its
+// operands the operator's inputs, its value the statement's temporary
+// spec FTEF-26.2: an operator of two constants folds, to an immediate with no statement
+// spec FTEF-27.4: an emulated `%` is its emulation's statements
+// spec FTE-19.9: `v / f` is `v * (1 / f)`
+// spec FTE-19.12: `v & w` of vectors is BITAND_F of each word into a vector temporary
+#[test]
+fn a_binary_operator_lowers_to_a_fragment() {
+    use crate::ir::{
+        Destination, Fragment, Immediate, ImmediateKind, Input, Operand, Statement, Temp, TempId,
+        Whole,
+    };
+    use qc_preproc::Op;
+    let source = "float a; vector v; void() t = { a = a + 1; v = v * a; a = 2 + 3; a = a % 2; \
+                  v = v / a; v = v & v; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let body = &index.bodies[&t];
+    let at = |text: &str, operator: &str| {
+        let start = source.find(text).unwrap() + text.find(operator).unwrap();
+        body.fragment_at(Span::new(start, start + operator.len()))
+    };
+    let float = |value: f32| {
+        Operand::Immediate(Immediate {
+            kind: ImmediateKind::Float,
+            words: [value.to_bits(), 0, 0],
+        })
+    };
+    let one = |op: Op, a: Operand, b: Operand| Fragment {
+        statements: vec![Statement {
+            op,
+            a: Some(a),
+            b: Some(b),
+            c: Destination::Value,
+        }],
+        immediates: Vec::new(),
+        temps: vec![Temp::Made(0)],
+        value: Some(Operand::Temp(TempId::new(0))),
+    };
+    assert_eq!(
+        at("a + 1", "+"),
+        Some(&one(
+            Op::AddF,
+            Operand::Input(Input::Left),
+            Operand::Input(Input::Right)
+        )),
+        "ADD_F: a literal operand is an input too"
+    );
+    assert_eq!(
+        at("v * a", "*"),
+        Some(&one(
+            Op::MulVf,
+            Operand::Input(Input::Left),
+            Operand::Input(Input::Right)
+        )),
+        "MUL_VF"
+    );
+    assert_eq!(
+        at("2 + 3", "+"),
+        Some(&Fragment {
+            statements: Vec::new(),
+            immediates: vec![Immediate {
+                kind: ImmediateKind::Float,
+                words: [5.0_f32.to_bits(), 0, 0],
+            }],
+            temps: Vec::new(),
+            value: Some(float(5.0)),
+        }),
+        "the folded value is an immediate the lowering made"
+    );
+    // FTEF-27.4: with no `mod` function, `a % b` is `a - b * (a / b)`, the quotient floored by
+    // `BITOR` of itself, each step a statement of the fragment.
+    let made = |op: Op, a: Operand, b: Operand| Statement {
+        op,
+        a: Some(a),
+        b: Some(b),
+        c: Destination::Value,
+    };
+    assert_eq!(
+        at("a % 2", "%"),
+        Some(&Fragment {
+            statements: vec![
+                made(
+                    Op::DivF,
+                    Operand::Input(Input::Left),
+                    Operand::Input(Input::Right)
+                ),
+                made(
+                    Op::BitorF,
+                    Operand::Temp(TempId::new(0)),
+                    Operand::Temp(TempId::new(0))
+                ),
+                made(
+                    Op::MulF,
+                    Operand::Input(Input::Right),
+                    Operand::Temp(TempId::new(1))
+                ),
+                made(
+                    Op::SubF,
+                    Operand::Input(Input::Left),
+                    Operand::Temp(TempId::new(2))
+                ),
+            ],
+            immediates: Vec::new(),
+            temps: (0..4).map(Temp::Made).collect(),
+            value: Some(Operand::Temp(TempId::new(3))),
+        }),
+        "DIV_F, BITOR, MUL_F, SUB_F"
+    );
+    // FTE-19.9: `v / f` is `v * (1 / f)`, the constant 1 an immediate the lowering made.
+    assert_eq!(
+        at("v / a", "/"),
+        Some(&Fragment {
+            statements: vec![
+                made(Op::DivF, float(1.0), Operand::Input(Input::Right)),
+                made(
+                    Op::MulVf,
+                    Operand::Input(Input::Left),
+                    Operand::Temp(TempId::new(0))
+                ),
+            ],
+            immediates: vec![Immediate {
+                kind: ImmediateKind::Float,
+                words: [1.0_f32.to_bits(), 0, 0],
+            }],
+            temps: vec![Temp::Made(0), Temp::Made(1)],
+            value: Some(Operand::Temp(TempId::new(1))),
+        }),
+        "DIV_F of 1, MUL_VF"
+    );
+    // FTE-19.12: `v & w` of vectors is a vector temporary and `BITAND_F` of each word into it.
+    let word = |i: u8| Statement {
+        op: Op::BitandF,
+        a: Some(Operand::Word(Whole::Input(Input::Left), i)),
+        b: Some(Operand::Word(Whole::Input(Input::Right), i)),
+        c: Destination::Word(TempId::new(0), i),
+    };
+    assert_eq!(
+        at("v & v", "&"),
+        Some(&Fragment {
+            statements: (0..3).map(word).collect(),
+            immediates: Vec::new(),
+            temps: vec![Temp::Vector(0)],
+            value: Some(Operand::Temp(TempId::new(0))),
+        }),
+        "three BITAND_F"
+    );
+}
+
+// spec FTEF-27.4: with a `mod` function defined, `a % b` calls it, which the intermediate layer
+// does not hold yet, so the operator has no fragment
+#[test]
+fn a_helper_call_is_no_fragment_yet() {
+    let source =
+        "float(float a, float b) mod = { return a; };\nfloat a; void() t = { a = a % 2; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let start = source.find("a % 2").unwrap() + 2;
+    assert_eq!(
+        index.bodies[&t].fragment_at(Span::new(start, start + 1)),
+        None
+    );
+}
+
+// spec FTEF-26.13: a word of a constant vector is a constant, so an operator of it and a
+// constant folds, to an immediate with no statement
+#[test]
+fn a_constant_vectors_component_is_a_constant() {
+    use crate::ir::{Immediate, ImmediateKind, Operand};
+    let source = "float a; void() t = { a = ('7 16384 3').y & 1; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let start = source.find(" & 1").unwrap() + 1;
+    let fragment = index.bodies[&t]
+        .fragment_at(Span::new(start, start + 1))
+        .unwrap();
+    assert!(fragment.statements.is_empty(), "{fragment:?}");
+    assert_eq!(
+        fragment.value,
+        Some(Operand::Immediate(Immediate {
+            kind: ImmediateKind::Float,
+            words: [0.0_f32.to_bits(), 0, 0],
+        }))
+    );
+}
+
+// spec FTE-19.7: `a ^ b` is `(a & ~b) | (b & ~a)`, each `~` `SUB_F` of the immediate -1 and its
+// operand, a vector's `SUB_V` of '-1 -1 -1'
+#[test]
+fn xor_lowers_with_complements_of_minus_one() {
+    use crate::ir::{Destination, Immediate, ImmediateKind, Input, Operand, Statement};
+    use qc_preproc::Op;
+    let source = "float a, b; vector v, w; void() t = { a = a ^ b; v = v ^ w; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let at = |text: &str| {
+        let start = source.find(text).unwrap() + 2;
+        index.bodies[&t]
+            .fragment_at(Span::new(start, start + 1))
+            .cloned()
+            .unwrap()
+    };
+    let minus_one = |kind: ImmediateKind| Immediate {
+        kind,
+        words: match kind {
+            ImmediateKind::Vector => [(-1.0_f32).to_bits(); 3],
+            ImmediateKind::Float | ImmediateKind::Integer => [(-1.0_f32).to_bits(), 0, 0],
+        },
+    };
+    let floats = at("a ^ b");
+    assert_eq!(
+        floats.statements.first(),
+        Some(&Statement {
+            op: Op::SubF,
+            a: Some(Operand::Immediate(minus_one(ImmediateKind::Float))),
+            b: Some(Operand::Input(Input::Right)),
+            c: Destination::Value,
+        }),
+        "SUB_F of -1 and b"
+    );
+    assert_eq!(floats.immediates, [minus_one(ImmediateKind::Float); 2]);
+    let vectors = at("v ^ w");
+    assert_eq!(
+        vectors.statements.first(),
+        Some(&Statement {
+            op: Op::SubV,
+            a: Some(Operand::Immediate(minus_one(ImmediateKind::Vector))),
+            b: Some(Operand::Input(Input::Right)),
+            c: Destination::Value,
+        }),
+        "SUB_V of '-1 -1 -1' and w"
+    );
+}

@@ -3259,7 +3259,8 @@ issues:
   - P2-07
   - P2-08
   deliverable:
-  - 'crates/qc-codegen: an intermediate layer lowered from the semantic model''s typed bodies, with explicit values, their lifetimes and the statements that read and write them, and the progs written from it'
+  - 'crates/qc-sema (`qc_sema::ir`, L3, decided by Justin on 2026-11-03): an intermediate layer lowered from each checked body, with explicit values, their lifetimes and the statements that read and write them, the emulation of opcodes the target lacks done once in the lowering, and the warnings that depend on the emitted code raised from it, replacing the checker''s own model of emitted code (`check/emulate.rs`, its temporaries and assignment folding)'
+  - 'crates/qc-codegen: the progs written from the intermediate layer instead of from the syntax tree, with the code generator''s inline emulations removed'
   - 'crates/qc-codegen: temporary allocation and the layout of locals and temporaries as passes over the layer, selected by the dialect profile, each pass with its spec statements in docs/spec/'
   - 'docs/design/: the back end''s design (the layer, its passes and how a dialect profile chooses them), beside docs/design/semantic-model.md'
   acceptance:
