@@ -3345,3 +3345,21 @@ fn not_of_an_int_and_a_vector_times_an_int_follow_the_vanilla_emulation() {
         "the int 0"
     );
 }
+
+// spec DIFF-14.11: the store of a vector result's first word is not folded into the statement
+// that made the vector, which would write all three words from the target; a store of a whole
+// result of the target's width still is (FTE-18.12)
+#[test]
+fn a_part_of_a_wider_result_is_stored_not_folded() {
+    let p = fte_progs("float a; vector v; void() t = { a = (v * a).x; a = a * 2; };\n");
+    let (a, v) = (global(&p, "a"), global(&p, "v"));
+    let f = body(&p, "t");
+    assert_eq!(opcodes(&f), ops(&[MulVf, StoreF, MulF, Done]));
+    assert_eq!((f[0].a, f[0].b), (v, a));
+    assert_eq!(
+        (f[1].a, f[1].b),
+        (f[0].c, a),
+        "the vector's first word is stored to a"
+    );
+    assert_eq!(f[2].c, a, "a whole float result is folded into a");
+}

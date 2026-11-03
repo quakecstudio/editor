@@ -3631,6 +3631,7 @@ impl<'a> Compiler<'a> {
         {
             return false;
         }
+        let stored = self.type_of(value).words();
         let Some(last) = self.program.statements.last_mut() else {
             return false;
         };
@@ -3640,6 +3641,15 @@ impl<'a> Compiler<'a> {
         // Only a statement that writes its result to `c` names a temporary there: a store
         // writes to `b`, so a `?:`'s stores to its temporary in each arm (FTE-8.3) never match.
         if last.c != made {
+            return false;
+        }
+        // DIFF-14.11: a result wider than the value stored, a vector whose first word is
+        // stored (`(u * v).x`), is not folded, or the statement would write every word of it
+        // from `to`. FTEQCC folds it (`QCC_CollapseStore`), an oracle defect (ADR-0020).
+        let wider = Opcode::from_number(last.op)
+            .and_then(|op| ops::ROWS.iter().find(|row| row.opcode == op))
+            .is_some_and(|row| ValueType::simple(row.c).words() > stored);
+        if wider {
             return false;
         }
         last.c = def;
