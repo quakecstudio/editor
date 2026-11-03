@@ -1626,6 +1626,31 @@ mod bodies {
         f.run_err(ServerState::Active, "boom");
     }
 
+    // spec RRE-1.9: with a localization loaded, error carries the localized and formatted
+    // text, and WriteString counts the localized string's bytes
+    // spec RRE-1.6: with none, it carries the key as it is
+    #[test]
+    fn error_and_write_string_are_localized_with_a_file_loaded() {
+        use crate::localization::Localization;
+        let (strings, offsets) = string_table(&["$qc_boom", "x"]);
+        let table = Localization::loc_load_file(b"qc_boom = \"It went {}\"\n");
+        let mut f = Fixture::new(10, 2, strings.clone(), 0);
+        f.set_parm_i(0, offsets[0]);
+        f.set_parm_i(1, offsets[1]);
+        f.run_err(ServerState::Active, "$qc_boomx");
+        let mut f = Fixture::new(10, 2, strings.clone(), 0);
+        f.builtins.engine_mut().localization = table.clone();
+        f.set_parm_i(0, offsets[0]);
+        f.set_parm_i(1, offsets[1]);
+        f.run_err(ServerState::Active, "It went x");
+        let mut f = Fixture::new(58, 2, strings, 0);
+        f.builtins.engine_mut().localization = table;
+        f.set_parm_f(0, 0.0); // MSG_BROADCAST
+        f.set_parm_i(1, offsets[0]);
+        f.run_ok(ServerState::Active);
+        assert_eq!(f.engine().buffers.unreliable, 11); // "It went {}" + NUL
+    }
+
     // spec BUILTIN-16.2: objerror frees self and carries the joined text.
     #[test]
     fn objerror_frees_self() {

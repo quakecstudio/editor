@@ -21,7 +21,7 @@ use qc_sema::{Db, FileId, ModuleInput};
 use qc_types::{Etype, Slot};
 use qs_bsp::{Bsp, BspLoader, ClipNode};
 
-use super::{World, WorldError, field_slot};
+use super::{LoadOptions, World, WorldError, field_slot};
 use crate::UserCmd;
 use crate::collision::CONTENTS_WATER;
 use crate::fixtures::{CONTENTS_EMPTY, CONTENTS_SOLID, MapSpec, bsp, node, plane};
@@ -209,6 +209,17 @@ pub(crate) fn running(
     entities: &str,
     files: Vec<(String, Vec<u8>)>,
 ) -> Running {
+    running_with(spec, source, entities, files, LoadOptions::default())
+}
+
+/// [`running`] with the host's load options.
+pub(crate) fn running_with(
+    spec: &MapSpec,
+    source: &str,
+    entities: &str,
+    files: Vec<(String, Vec<u8>)>,
+    options: LoadOptions,
+) -> Running {
     let progs_bytes = compile(source);
     let progs = Progs::read(&progs_bytes).unwrap();
     let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{entities}");
@@ -220,7 +231,7 @@ pub(crate) fn running(
             .find(|(n, _)| n == name)
             .map(|(_, bytes)| bytes.clone())
     });
-    let world = World::load(&progs, "test", &map, read).expect("the world loads");
+    let world = World::load(&progs, "test", &map, read, options).expect("the world loads");
     Running {
         world,
         progs: progs_bytes,
@@ -1481,12 +1492,23 @@ impl Running {
 /// A connected player on `spec`: `PutClientInServer` makes a walking, living player of the
 /// player's size and runs `put`; `PlayerPreThink` runs `pre`. `more` is further source.
 pub(crate) fn player(spec: &MapSpec, put: &str, pre: &str, more: &str) -> Running {
+    player_with_options(spec, put, pre, more, LoadOptions::default())
+}
+
+/// [`player`] with the host's load options.
+pub(crate) fn player_with_options(
+    spec: &MapSpec,
+    put: &str,
+    pre: &str,
+    more: &str,
+    options: LoadOptions,
+) -> Running {
     let source = format!(
         "{more}void() PutClientInServer = {{ self.health = 100; self.solid = 3; \
          self.movetype = 3; self.view_ofs = '0 0 22'; {PLAYER_SIZE} {put} }};\n\
          void() PlayerPreThink = {{ {pre} }};\n"
     );
-    let mut run = run_on(spec, &source, "");
+    let mut run = running_with(spec, &source, "", Vec::new(), options);
     run.connect();
     run
 }

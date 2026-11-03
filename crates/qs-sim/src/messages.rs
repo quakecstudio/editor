@@ -411,30 +411,27 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// The joined text of the string parameters from `first` (BUILTIN-7.3); with a
-    /// localization loaded, `PF_VarString`'s localized text (RRE-1.5, RRE-1.6).
+    /// localization loaded, `PF_VarString`'s localized text (RRE-1.9, RRE-1.6).
     fn joined_text(&self, first: u16) -> Vec<u8> {
         let argc = u16::try_from(self.context.machine_view().argc()).unwrap_or(u16::MAX);
-        if self.sim.localization.is_loaded() {
-            let parms: Vec<Vec<u8>> = (0..argc)
-                .map(|n| self.string_text(parm_raw(&self.context, n)))
-                .collect();
-            return self.sim.localization.var_string(&parms, usize::from(first));
+        let parms: Vec<Vec<u8>> = (first..argc)
+            .map(|n| self.string_text(parm_raw(&self.context, n)))
+            .collect();
+        let localization = &self.sim.mock.engine().localization;
+        if localization.is_empty() {
+            return parms.concat();
         }
-        let mut text = Vec::new();
-        for n in first..argc {
-            let value = parm_raw(&self.context, n);
-            text.extend_from_slice(&self.string_text(value));
-        }
-        text
+        localization.pf_var_string(&parms)
     }
 
-    /// `WriteString`'s string: localized when a localization is loaded (RRE-1.5, RRE-1.6).
+    /// `WriteString`'s string: localized when a localization is loaded (RRE-1.9, RRE-1.6).
     fn written_text(&self, value: i32) -> Vec<u8> {
         let text = self.string_text(value);
-        if self.sim.localization.is_loaded() {
-            return self.sim.localization.get(&text).to_vec();
+        let localization = &self.sim.mock.engine().localization;
+        if localization.is_empty() {
+            return text;
         }
-        text
+        localization.loc_get_string(&text).to_vec()
     }
 
     /// `SV_ModelIndex`: 0 for an empty name, else the precache entry; a name not precached

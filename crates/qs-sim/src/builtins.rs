@@ -22,7 +22,6 @@ use qs_mdl::Sprite;
 use crate::collision::{
     Body, Collision, CollisionError, Host, MoveKind, Solid, Trace, link_edict, sv_move,
 };
-use crate::localization::Localization;
 use crate::messages::{SVC_CENTERPRINT, SVC_PRINT, ServerMessages};
 use crate::physics::Sound;
 
@@ -92,8 +91,6 @@ pub struct SimBuiltins {
     pub(crate) sounds: Vec<Sound>,
     /// The messages to the client (NET-1 to NET-5).
     pub(crate) messages: ServerMessages,
-    /// The rerelease's localized strings, none until the host loads them (RRE-1.6).
-    pub(crate) localization: Localization,
     files: ModelFiles,
 }
 
@@ -128,7 +125,6 @@ impl SimBuiltins {
             collision: Collision::new(map),
             sounds: Vec::new(),
             messages: ServerMessages::new(map, crc),
-            localization: Localization::default(),
             files,
         }
     }

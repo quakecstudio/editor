@@ -10,13 +10,13 @@
 //! The rerelease's localization: the keyed strings of `localization/loc_english.txt`, looked up
 //! by the text the print builtins and `WriteString` send (RRE-1).
 //!
-//! Implements RRE-1.2 to RRE-1.8.
+//! Implements RRE-1.2 to RRE-1.9, RRE-1.7 and RRE-1.8.
 
 /// The localization file's path in the game's files (RRE-1, `LOC_Init`).
 pub const RRE_LOC_FILE: &str = "localization/loc_english.txt";
 
 /// The bytes `PF_VarString`'s and `LOC_Format`'s buffer holds, its terminating zero among them
-/// (RRE-1.5).
+/// (RRE-1.9).
 pub const RRE_VARSTRING_LEN: usize = 1024;
 
 /// FNV-1a's offset basis (RRE-1.2).
@@ -58,8 +58,8 @@ fn c_string(text: &[u8], at: usize) -> &[u8] {
 }
 
 /// `COM_HashString`: FNV-1a over the key's `char`s, each signed and so sign-extended from 0x80
-/// up (RRE-1.8).
-fn hash(key: &[u8]) -> u32 {
+/// up. Implements RRE-1.8.
+fn com_hash_string(key: &[u8]) -> u32 {
     let mut hash = RRE_FNV_OFFSET;
     for &byte in key {
         let char = i32::from(i8::from_ne_bytes([byte]));
@@ -70,11 +70,11 @@ fn hash(key: &[u8]) -> u32 {
 }
 
 impl Localization {
-    /// `LOC_LoadFile` of the file's bytes (RRE-1.7): each line parsed in place in a copy of
-    /// the text, as QuakeSpasm parses it, and every entry put in the table (RRE-1.2). A file
-    /// with no entry loads nothing, as no file does.
+    /// `LOC_LoadFile` of the file's bytes: each line parsed in place in a copy of the text, as
+    /// QuakeSpasm parses it, and every entry put in the table. A file with no entry loads
+    /// nothing, as no file does. Implements RRE-1.7 and RRE-1.2.
     #[must_use]
-    pub fn parse(file: &[u8]) -> Self {
+    pub fn loc_load_file(file: &[u8]) -> Self {
         // `COM_LoadMallocFile` ends the text with a zero; the text ends at its first one.
         let mut text = c_string(file, 0).to_vec();
         text.push(0);
@@ -164,7 +164,7 @@ impl Localization {
         let mut indices = vec![0_u32; size];
         for (i, entry) in entries.iter().enumerate() {
             let key = c_string(&text, entry.key);
-            let start = slot(hash(key), size);
+            let start = hash_slot(com_hash_string(key), size);
             let mut pos = start;
             // The table is twice the entries, so a free slot is always found.
             while indices.get(pos).is_some_and(|&index| index != 0) {
@@ -184,12 +184,6 @@ impl Localization {
         }
     }
 
-    /// Whether a file with an entry is loaded (`localization.numindices`).
-    #[must_use]
-    pub fn is_loaded(&self) -> bool {
-        !self.indices.is_empty()
-    }
-
     /// The number of entries.
     #[must_use]
     pub fn len(&self) -> usize {
@@ -202,16 +196,17 @@ impl Localization {
         self.entries.is_empty()
     }
 
-    /// `LOC_GetRawString (key)` (RRE-1.3): the value of a `$key` the table holds, else `None`.
+    /// `LOC_GetRawString (key)`: the value of a `$key` the table holds, else `None`.
+    /// Implements RRE-1.3.
     #[must_use]
-    pub fn raw(&self, key: &[u8]) -> Option<&[u8]> {
+    pub fn loc_get_raw_string(&self, key: &[u8]) -> Option<&[u8]> {
         let key = c_string(key, 0);
         let key = key.strip_prefix(b"$")?;
-        if !self.is_loaded() {
+        if self.is_empty() {
             return None;
         }
         let size = self.indices.len();
-        let start = slot(hash(key), size);
+        let start = hash_slot(com_hash_string(key), size);
         let mut pos = start;
         loop {
             let index = self.indices.get(pos).copied().unwrap_or(0);
@@ -235,16 +230,17 @@ impl Localization {
         }
     }
 
-    /// `LOC_GetString (key)` (RRE-1.3): the value, or the key itself.
+    /// `LOC_GetString (key)`: the value, or the key itself. Implements RRE-1.3.
     #[must_use]
-    pub fn get<'a>(&'a self, key: &'a [u8]) -> &'a [u8] {
-        self.raw(key).unwrap_or_else(|| c_string(key, 0))
+    pub fn loc_get_string<'a>(&'a self, key: &'a [u8]) -> &'a [u8] {
+        self.loc_get_raw_string(key)
+            .unwrap_or_else(|| c_string(key, 0))
     }
 
-    /// `LOC_HasPlaceholders` (RRE-1.4): a `{}` or `{N}` in `text`, and a file loaded.
+    /// `LOC_HasPlaceholders`: a `{}` or `{N}` in `text`, and a file loaded. Implements RRE-1.4.
     #[must_use]
-    pub fn has_placeholders(&self, text: &[u8]) -> bool {
-        if !self.is_loaded() {
+    pub fn loc_has_placeholders(&self, text: &[u8]) -> bool {
+        if self.is_empty() {
             return false;
         }
         let text = c_string(text, 0);
@@ -252,7 +248,7 @@ impl Localization {
         // whose number wrapped negative is passed over with the byte after it.
         let mut at = 0;
         while text.get(at).is_some() {
-            match parse_arg(text, at) {
+            match loc_parse_arg(text, at) {
                 Some((index, _)) if index >= 0 => return true,
                 Some((_, next)) => at = next.saturating_add(1),
                 None => at = at.saturating_add(1),
@@ -261,32 +257,32 @@ impl Localization {
         false
     }
 
-    /// `PF_VarString (first)` (RRE-1.5) of the string parameters `parms`, the call's from
-    /// parameter 0: the first from `first` localized, `LOC_Format` of it when it has
-    /// placeholders, else every one from `first` localized and appended, cut to 1023 bytes.
+    /// `PF_VarString (first)` of `parms`, the string parameters from `first` to the last
+    /// the call passed: the first localized, `LOC_Format` of it when it has placeholders, its
+    /// `{N}` the localized parameter `first + 1 + N` (`PF_GetStringArg`), else every one
+    /// localized and appended, cut to 1023 bytes. Implements RRE-1.9.
     #[must_use]
-    pub fn var_string(&self, parms: &[Vec<u8>], first: usize) -> Vec<u8> {
-        let Some(format) = parms.get(first) else {
+    pub fn pf_var_string(&self, parms: &[Vec<u8>]) -> Vec<u8> {
+        let Some(format) = parms.first() else {
             return Vec::new();
         };
-        let format = self.get(format);
+        let format = self.loc_get_string(format);
         let full = RRE_VARSTRING_LEN.saturating_sub(1);
-        if self.has_placeholders(format) {
-            let offset = first.saturating_add(1);
+        if self.loc_has_placeholders(format) {
             let arg = |n: i32| -> &[u8] {
-                let index = i64::from(n).saturating_add(i64::try_from(offset).unwrap_or(i64::MAX));
-                usize::try_from(index)
+                usize::try_from(n)
                     .ok()
+                    .and_then(|n| n.checked_add(1))
                     .and_then(|index| parms.get(index))
-                    .map_or(&b""[..], |parm| self.get(parm))
+                    .map_or(&b""[..], |parm| self.loc_get_string(parm))
             };
-            return format_args(format, &arg, full);
+            return loc_format(format, &arg, full);
         }
         // `q_strlcat` into the buffer: once it is full the rest adds nothing, and
         // `PF_VarString` returns ("overflow (string truncated)").
         let mut out = Vec::new();
-        for parm in parms.get(first..).unwrap_or_default() {
-            let part = self.get(parm);
+        for parm in parms {
+            let part = self.loc_get_string(parm);
             let room = full.saturating_sub(out.len());
             out.extend_from_slice(part.get(..part.len().min(room)).unwrap_or_default());
         }
@@ -296,7 +292,7 @@ impl Localization {
 
 /// `LOC_ParseArg` at byte `at` of `text`: the index of a `{}` (0) or `{N}` placeholder there
 /// and the byte after it, the decimal `N` wrapping as x86's `int` does.
-fn parse_arg(text: &[u8], at: usize) -> Option<(i32, usize)> {
+fn loc_parse_arg(text: &[u8], at: usize) -> Option<(i32, usize)> {
     let byte = |i: usize| text.get(i).copied().unwrap_or(0);
     if byte(at) != b'{' {
         return None;
@@ -315,13 +311,13 @@ fn parse_arg(text: &[u8], at: usize) -> Option<(i32, usize)> {
     Some((arg, i.saturating_add(1)))
 }
 
-/// `LOC_Format (format, getarg, out, len)` (RRE-1.4): the format with each placeholder replaced
+/// `LOC_Format (format, getarg, out, len)`, implementing RRE-1.4: the format with each placeholder replaced
 /// by its argument, at most `full` bytes (`len - 1`), an argument that does not fit cut.
-fn format_args<'a>(format: &[u8], arg: &dyn Fn(i32) -> &'a [u8], full: usize) -> Vec<u8> {
+fn loc_format<'a>(format: &[u8], arg: &dyn Fn(i32) -> &'a [u8], full: usize) -> Vec<u8> {
     let mut out = Vec::new();
     let mut at = 0;
     while format.get(at).is_some() && out.len() < full {
-        match parse_arg(format, at) {
+        match loc_parse_arg(format, at) {
             Some((index, next)) if index >= 0 => {
                 let insert = c_string(arg(index), 0);
                 let room = full.saturating_sub(out.len());
@@ -345,7 +341,7 @@ fn format_args<'a>(format: &[u8], arg: &dyn Fn(i32) -> &'a [u8], full: usize) ->
 }
 
 /// The table slot a hash starts probing at: `hash % numindices`.
-fn slot(hash: u32, size: usize) -> usize {
+fn hash_slot(hash: u32, size: usize) -> usize {
     let size32 = u32::try_from(size).unwrap_or(u32::MAX);
     hash.checked_rem(size32)
         .and_then(|pos| usize::try_from(pos).ok())

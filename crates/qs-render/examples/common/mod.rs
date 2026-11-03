@@ -13,8 +13,8 @@ use qs_mdl::spr::Sprite;
 use qs_render::{
     Camera, Extras, GAMMA, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
 };
-use qs_sim::World;
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
+use qs_sim::{LoadOptions, World};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
 /// The height of a player's eyes above its origin, `view_ofs` in id's QuakeC `client.qc`.
@@ -202,11 +202,28 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
                 .map(LoadedFile::into_bytes)
         }))
     };
-    let mut world = World::load(&progs, &map, &bsp, reader()?).map_err(|e| e.to_string())?;
-    // RRE-1.6: the rerelease's strings, when the game's files hold them.
-    if let Ok(text) = read(RRE_LOC_FILE) {
-        world.set_localization(Localization::parse(&text));
-    }
+    // RRE-1.6: the rerelease's strings, read before the map as QuakeSpasm's `LOC_Init` reads
+    // them: from the search path, else from the base directory itself. `QuakeEX.kpf`, the
+    // zip QuakeSpasm reads last, is not read.
+    let text = match vfs.load(RRE_LOC_FILE.as_bytes()) {
+        Ok(Some(file)) => Some(file.into_bytes()),
+        Ok(None) => {
+            let basedir = engine
+                .iter()
+                .position(|arg| arg == "-basedir")
+                .and_then(|i| engine.get(i.saturating_add(1)))
+                .map_or(".", String::as_str);
+            std::fs::read(std::path::Path::new(basedir).join(RRE_LOC_FILE)).ok()
+        }
+        Err(e) => return Err(format!("{RRE_LOC_FILE}: {e:?}")),
+    };
+    let options = LoadOptions {
+        localization: text
+            .map(|text| Localization::loc_load_file(&text))
+            .unwrap_or_default(),
+    };
+    let mut world =
+        World::load(&progs, &map, &bsp, reader()?, options).map_err(|e| e.to_string())?;
     world.settle(&progs).map_err(|e| e.to_string())?;
     let mut sim = Sim {
         world,

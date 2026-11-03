@@ -20,6 +20,8 @@
 /// `skill`, `deathmatch`, `coop` and `teamplay` start at `1`, `0`, `0`, `0`; a scenario's
 /// `cvar` line replaces a text. Any other name reads as 0 and `cvar_set` of it changes nothing
 /// (BUILTIN-11.8, DIFF-2.4).
+use crate::localization::Localization;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cvars {
     entries: Vec<(String, String)>,
@@ -244,6 +246,8 @@ pub struct MockEngine {
     pub server_active: bool,
     /// Whose rules the mock follows (BUILTIN-18); id's unless the caller chooses another.
     pub profile: EngineProfile,
+    /// The rerelease's localized strings, none unless the host loads them (RRE-1.6).
+    pub localization: Localization,
     /// The server clock `sv.time`, a `double` (DIFF-3.2): 1.0 at map start.
     ///
     /// `spawn` and `remove` read it for the edict reuse policy and `freetime` (EDICT-6,
@@ -425,6 +429,7 @@ impl MockEngine {
             clients_active: Vec::new(),
             server_active: false,
             profile: EngineProfile::Id,
+            localization: Localization::default(),
             clock: 1.0,
         }
     }

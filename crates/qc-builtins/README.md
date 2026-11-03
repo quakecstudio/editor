@@ -38,7 +38,8 @@ nothing higher.
 
 - **Spec sections:** [BUILTIN-1, BUILTIN-2, BUILTIN-3, BUILTIN-4, BUILTIN-5, BUILTIN-6,
   BUILTIN-7, BUILTIN-8, BUILTIN-9, BUILTIN-10, BUILTIN-11, BUILTIN-12, BUILTIN-13, BUILTIN-14,
-  BUILTIN-15, BUILTIN-16](../../docs/spec/builtins.md) and the mock engine of
+  BUILTIN-15, BUILTIN-16](../../docs/spec/builtins.md), the rerelease's localization
+  [RRE-1](../../docs/spec/engine/rerelease.md) (`localization`), and the mock engine of
   [DIFF-6, DIFF-7](../../docs/spec/differential.md). BUILTIN-17, the rerelease's prototypes,
   is not implemented here: no code or test cites it, and its statements are in the coverage
   baseline.

@@ -23,11 +23,11 @@ use qs_bsp::Bsp;
 
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::UserCmd;
-use crate::localization::Localization;
 use crate::messages::ClientMessages;
 #[cfg(test)]
 use crate::messages::ServerMessages;
 use crate::physics::Sound;
+use qc_builtins::localization::Localization;
 
 use crate::spawn::{self, FieldDef, LoadError, SPAWNFLAGS_SLOT, SpawnError, SpawnHost};
 
@@ -96,12 +96,20 @@ pub struct World {
     player: Option<UserCmd>,
 }
 
+/// What the host gives a world besides its map and progs.
+#[derive(Clone, Debug, Default)]
+pub struct LoadOptions {
+    /// The rerelease's localized strings, from `localization/loc_english.txt`; with none the
+    /// builtins send their text as id's engine does (RRE-1.6).
+    pub localization: Localization,
+}
+
 impl World {
     /// The world of the map `map`, read from `bsp`, with the entities of its entity lump
     /// spawned through `progs`, as `SV_SpawnServer` makes it for single player: the world's
     /// fields, then the globals, then the entities (EDICT-4.1, EDICT-11.4, EDICT-8). The
     /// builtins link each entity in the world's collision (WORLD-8); `files` reads the other
-    /// models the progs precaches.
+    /// models the progs precaches, and `options` holds what the host loaded before the map.
     ///
     /// # Errors
     ///
@@ -112,6 +120,7 @@ impl World {
         map: &str,
         bsp: &Bsp<'_>,
         files: ModelFiles,
+        options: LoadOptions,
     ) -> Result<Self, WorldError> {
         let machine =
             Machine::new(progs, MAXCLIENTS).map_err(|e| WorldError::Progs(e.to_string()))?;
@@ -120,6 +129,8 @@ impl World {
         engine.clock = MAP_START_TIME;
         engine.server_active = false;
         engine.clients_active = vec![false; MAXCLIENTS];
+        // RRE-1.6: QuakeSpasm loads the file when the host starts, before any map spawns.
+        engine.localization = options.localization;
         let mut world = Self {
             machine,
             builtins: SimBuiltins::new(engine, map, bsp, files, progs.header().crc),
@@ -169,13 +180,6 @@ impl World {
     /// `svc_setangle` as the client reads it (PHYS-10.2, NET-4.3).
     pub fn take_set_angle(&mut self) -> Option<[f32; 3]> {
         self.builtins.messages.set_angle.take()
-    }
-
-    /// Localizes the print builtins' text and `WriteString`'s string with `localization`, the
-    /// rerelease's `localization/loc_english.txt` (RRE-1.5, RRE-1.6); a table with no entry
-    /// localizes nothing.
-    pub fn set_localization(&mut self, localization: Localization) {
-        self.builtins.localization = localization;
     }
 
     /// Whether the game is standard Quake, not `-rogue` or `-hipnotic`, which changes how the

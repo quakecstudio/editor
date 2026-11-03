@@ -10,8 +10,8 @@ server runs them. Collision, monster movement, physics and the player all follow
 - **Spec sections:** WORLD-1 to WORLD-8 of [`world.md`](../../docs/spec/engine/world.md),
   MOVE-1 to MOVE-5 of [`move.md`](../../docs/spec/engine/move.md), PHYS-1 to PHYS-10 of
   [`physics.md`](../../docs/spec/engine/physics.md), NET-1 to NET-5 of
-  [`net.md`](../../docs/spec/engine/net.md), RRE-1 of
-  [`rerelease.md`](../../docs/spec/engine/rerelease.md), and the spawning of EDICT-8.
+  [`net.md`](../../docs/spec/engine/net.md), and the spawning of EDICT-8; the rerelease's
+  localization (RRE-1) is `qc-builtins`'.
 - **Ported from:** id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`:
   `WinQuake/world.c`, `sv_move.c`, `sv_phys.c`, `sv_user.c`, `sv_main.c` (`SV_SpawnServer`
   and the message writers) and `host_cmd.c` (the signon commands), with parts of
@@ -39,21 +39,8 @@ server runs them. Collision, monster movement, physics and the player all follow
   the messages, kept for the viewer until the client crate reads them.
 - `World::set_standard_quake(standard)`: `-rogue` and `-hipnotic` send the weapon as a bit
   index (NET-4.4).
-- `World::set_localization(localization)`: the rerelease's keyed strings, parsed from
-  `localization/loc_english.txt` by `localization::Localization::parse` (RRE-1.7); with a file
-  loaded the print builtins and `WriteString` send their text localized (RRE-1.5), with none
-  as id's engine sends it (RRE-1.6).
-
-## What it is not, yet
-
-Intermission, changing level and save games are not ported, and there is one client slot. There is no oracle differential for physics or player movement: their behaviour is
-specified from id's source and tested against those statements.
-
-## Trying it
-
-```text
-cargo run -p qs-sim --example entities -- <maps/x.bsp> <progs.dat> [frames]
-```
-
-lists the models a map's entities spawn with. With `QS_PLAY` set, it connects a player and
-prints its eye each frame.
+- `LoadOptions`, the host's part of `World::load`: the rerelease's keyed strings, parsed from
+  `localization/loc_english.txt` by `localization::Localization::loc_load_file` (RRE-1.7),
+  given to the mock engine before the map spawns; with a file loaded the print builtins and
+  `WriteString` send their text localized (RRE-1.9), with none as id's engine sends it
+  (RRE-1.6).

@@ -10,7 +10,6 @@ mod client;
 pub mod collision;
 #[cfg(test)]
 mod fixtures;
-pub mod localization;
 mod messages;
 mod movement;
 mod physics;
@@ -25,4 +24,5 @@ pub use messages::{
     NET_PROTOCOL_VERSION, NET_SIGNON_SIZE, NET_VERSION,
 };
 pub use physics::Sound;
-pub use world::{Entity, World, WorldError};
+pub use qc_builtins::localization;
+pub use world::{Entity, LoadOptions, World, WorldError};

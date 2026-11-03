@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::io::Write as _;
 
-use qs_sim::World;
+use qs_sim::{LoadOptions, World};
 
 fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -39,7 +39,8 @@ fn main() -> Result<(), String> {
         .map(std::path::Path::to_path_buf)
         .unwrap_or_default();
     let files = Box::new(move |name: &str| std::fs::read(root.join(name)).ok());
-    let mut world = World::load(&progs, map, &bsp, files).map_err(|e| e.to_string())?;
+    let mut world =
+        World::load(&progs, map, &bsp, files, LoadOptions::default()).map_err(|e| e.to_string())?;
     world.settle(&progs).map_err(|e| e.to_string())?;
     // Server frames of a tenth of a second; with a player when asked for.
     let play = std::env::var_os("QS_PLAY").is_some();
