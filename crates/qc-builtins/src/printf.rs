@@ -827,6 +827,57 @@ mod tests {
         assert_eq!(print("%2000d", &[F(1.0)]).len(), 1023);
     }
 
+    // spec BUILTIN-18.8: the reader's corners: a `0` width is no width, so the flags still
+    // follow it; a `0` among the flags zero-pads; `h`, `q` and the C length letters choose the
+    // argument's kind without ending the directive; a wide integer is two argument slots; a
+    // `*` width of 0 leaves `%p` at no width; a precision of 0 clears only a zero; `%v` is
+    // three `%g` and `%V` three `%G`; and `%S` escapes a carriage return
+    #[test]
+    fn the_reader_s_corners() {
+        use Arg::{F, I, S, V};
+        let wide = V([f32::from_bits(1), f32::from_bits(2), 0.0]);
+        for (format, args, expected) in [
+            ("%0-3d|", vec![F(5.0)], "5  |"),
+            ("% 05d", vec![F(5.0)], " 0005"),
+            ("%hi", vec![F(3.0)], "3"),
+            ("%zd%jd%td", vec![F(1.0), F(2.0), F(3.0)], "123"),
+            ("%qld", vec![wide], "8589934593"),
+            ("%qlx", vec![wide], "200000001"),
+            ("%*p|", vec![F(0.0), I(255)], "ff|"),
+            ("%*p|", vec![F(-3.0), I(255)], "ff |"),
+            ("%.0d", vec![F(5.0)], "5"),
+            ("%.0u", vec![F(5.0)], "5"),
+            ("%.0x", vec![F(0.0)], ""),
+            ("%#x", vec![F(0.0)], "0"),
+            ("%u", vec![F(1e19)], "9999999980506447872"),
+            (
+                "%v",
+                vec![V([1e-10, f32::NAN, f32::INFINITY])],
+                "1e-10 nan inf",
+            ),
+            (
+                "%V",
+                vec![V([1e-10, f32::NAN, f32::INFINITY])],
+                "1E-10 NAN INF",
+            ),
+            ("%S", vec![S("a\rb")], "\\\"a\\rb\""),
+        ] {
+            assert_eq!(print(format, &args), expected, "{format}");
+        }
+    }
+
+    // spec BUILTIN-18.8: a `%%` or a plain byte at the buffer's end is dropped like a
+    // conversion: the text never passes 1023 bytes
+    #[test]
+    fn the_buffer_s_end_drops_every_kind_of_byte() {
+        let full = "x".repeat(1023);
+        let over = "x".repeat(1030);
+        assert_eq!(print(&format!("{full}%%"), &[]).len(), 1023);
+        assert_eq!(print(&format!("{full}y"), &[]).len(), 1023);
+        assert_eq!(print(&over, &[]).len(), 1023);
+        assert!(print(&format!("{full}%%"), &[]).ends_with('x'));
+    }
+
     // spec BUILTIN-18.8: a string argument that is no string is the mock's string error
     #[test]
     fn a_bad_string_is_an_error() {

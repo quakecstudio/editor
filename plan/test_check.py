@@ -160,6 +160,17 @@ class ReadinessRule(unittest.TestCase):
         # The phase's gate waits for every readiness issue in the phase.
         self.assertEqual(by_key["G"]["depends"], ["R"])
 
+    def test_review_not_rereview_is_the_dependency(self):
+        # A re-review of a layer depends on its review; building on the layer waits for the
+        # review whatever the file order, and the gate waits for both.
+        issues = [built("D", "L0-formats"), built("RB", "L0-formats", ("R",), kind="type:readiness"),
+                  built("R", "L0-formats", kind="type:readiness"),
+                  built("X", "L1-vm", ("D",)), built("G", "repo", kind="type:gate")]
+        check.add_readiness_dependencies(issues)
+        by_key = {i["key"]: i for i in issues}
+        self.assertEqual(by_key["X"]["depends"], ["D", "R"])
+        self.assertEqual(sorted(by_key["G"]["depends"]), ["R", "RB"])
+
     def test_missing_readiness_flagged(self):
         issues = [built("D", "L0-formats"), built("X", "L1-vm", ("D",))]
         check.add_readiness_dependencies(issues)
