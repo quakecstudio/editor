@@ -31,6 +31,18 @@ fn main() -> Result<(), String> {
     // `-fly`: a free camera instead of the player.
     let fly = args.iter().any(|a| a == "-fly");
     args.retain(|a| a != "-fly");
+    // `-benchmark <seconds>`: no vsync, a free camera turning slowly, and after that many
+    // seconds the average frame rate on stdout and exit (P2-152).
+    let benchmark = take_numbers(&mut args, "-benchmark", 1)?.and_then(|v| match v.as_slice() {
+        [seconds] => Some(*seconds),
+        _ => None,
+    });
+    let fly = fly || benchmark.is_some();
+    // `-position <x> <y>`: where the window opens, to put it on a chosen display.
+    let position = take_numbers(&mut args, "-position", 2)?.and_then(|v| match v.as_slice() {
+        [x, y] => Some([*x, *y]),
+        _ => None,
+    });
     let common::Loaded {
         map,
         mesh,
@@ -42,11 +54,27 @@ fn main() -> Result<(), String> {
         sim.connect()?;
     }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title(format!("qs-render: {map}"))
-            .with_inner_size([1280.0, 800.0]),
+        viewport: {
+            let viewport = egui::ViewportBuilder::default()
+                .with_title(format!("qs-render: {map}"))
+                .with_inner_size([1280.0, 800.0]);
+            match position {
+                Some(at) => viewport.with_position(at),
+                None => viewport,
+            }
+        },
         renderer: eframe::Renderer::Wgpu,
         depth_buffer: 32,
+        wgpu_options: egui_wgpu::WgpuConfiguration {
+            surface: {
+                let mut surface = egui_wgpu::WgpuConfiguration::default().surface;
+                if benchmark.is_some() {
+                    surface.present_mode = wgpu::PresentMode::AutoNoVsync;
+                }
+                surface
+            },
+            ..egui_wgpu::WgpuConfiguration::default()
+        },
         ..eframe::NativeOptions::default()
     };
     let triangles = mesh.indices.len().checked_div(3).unwrap_or(0);
@@ -77,10 +105,34 @@ fn main() -> Result<(), String> {
                 behind: 0.0,
                 started: Instant::now(),
                 last: Instant::now(),
+                benchmark,
+                frames: 0,
+                slowest: 0.0,
             }))
         }),
     )
     .map_err(|e| e.to_string())
+}
+
+/// Takes the flag `name` and the `count` numbers after it out of `args`, when it is there.
+fn take_numbers(
+    args: &mut Vec<String>,
+    name: &str,
+    count: usize,
+) -> Result<Option<Vec<f32>>, String> {
+    let Some(i) = args.iter().position(|a| a == name) else {
+        return Ok(None);
+    };
+    let end = i.saturating_add(count);
+    let values: Vec<f32> = args
+        .get(i.saturating_add(1)..=end)
+        .ok_or_else(|| format!("{name} needs {count} number(s)"))?
+        .iter()
+        .map(|s| s.parse::<f32>())
+        .collect::<Result<_, _>>()
+        .map_err(|e| format!("{name}: {e}"))?;
+    args.drain(i..=end);
+    Ok(Some(values))
 }
 
 struct Viewer {
@@ -94,6 +146,12 @@ struct Viewer {
     behind: f64,
     started: Instant,
     last: Instant,
+    /// The seconds a benchmark runs, when it is one.
+    benchmark: Option<f32>,
+    /// The frames drawn so far.
+    frames: u32,
+    /// The longest frame so far, in seconds.
+    slowest: f32,
 }
 
 impl eframe::App for Viewer {
@@ -115,6 +173,28 @@ impl eframe::App for Viewer {
         }
         let aspect = rect.width() / rect.height().max(1.0);
         let time = now.duration_since(self.started);
+        if let Some(limit) = self.benchmark {
+            // A slow turn, so the whole view around the start is drawn.
+            self.camera.turn(seconds * 30.0, 0.0);
+            self.frames = self.frames.saturating_add(1);
+            self.slowest = self.slowest.max(seconds);
+            let elapsed = time.as_secs_f32();
+            if elapsed >= limit {
+                let mut out = std::io::stdout().lock();
+                writeln!(
+                    out,
+                    "benchmark: {} {:.0} fps average over {} frames in {elapsed:.1} s, slowest \
+                     frame {:.1} ms",
+                    self.map,
+                    f64::from(self.frames) / f64::from(elapsed),
+                    self.frames,
+                    self.slowest * 1000.0
+                )
+                .ok();
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                self.benchmark = None;
+            }
+        }
 
         self.models.update(&self.sim);
         let lightmap = self
