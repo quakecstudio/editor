@@ -45,7 +45,7 @@ never `#[allow]`. Every source file starts with `// SPDX-License-Identifier: GPL
 - Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): an imperative
   description of at most 72 characters with no trailing period.
 - Open a pull request that says what changed and how each acceptance criterion is met, with
-  `Closes #<issue>`. `main` only accepts changes through the merge queue, which squash-merges.
+  `Closes #<issue>`. `main` only accepts changes through a pull request, which is squash-merged.
 
 ## License
 

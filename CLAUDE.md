@@ -76,11 +76,13 @@ tests cite. Public protocols we implement are cached verbatim in [`specs/`](spec
 
 ## Working autonomously
 
-Use the project skills and subagents; [`docs/agents/README.md`](docs/agents/README.md)
-explains them and how to run a whole phase under `/goal`.
+Use the project skills; [`docs/agents/README.md`](docs/agents/README.md) explains them and
+how to run a whole phase under `/goal`. **No subagents** (Justin, 2026-10-29): the session
+works every issue, fix and review itself, one at a time, never through the Agent tool, a fork
+or a teammate.
 
-- `/work-issue <n>` for one issue, `/run-phase <phase>` to drive a phase through the
-  `implementer` and `reviewer` subagents.
+- `/work-issue <n>` for one issue, `/run-phase <phase>` to work a phase issue by issue. A
+  readiness review or gate needs a reviewer who did not write the code: ask Justin how.
 - `needs:human` issues (decisions, hardware, credentials, legal, the MVP release) are
   prepared, never closed, by agents: `/prepare-decision`. When an agent stops on something
   only a person can resolve, it labels the issue `escalated` and comments.
@@ -200,14 +202,15 @@ checklist.
 
 ## Git
 
-`main` only accepts changes through the merge queue: work on a branch named
-`<type>/<issue>-<slug>` and open a PR with `Closes #<issue>`. Conventional Commits, at most 72
+`main` only accepts changes through a pull request (the merge queue is off): work on a branch
+named `<type>/<issue>-<slug>` and open a PR with `Closes #<issue>`. Conventional Commits, at most 72
 characters, imperative. **No Co-Authored-By trailers, and no "Generated with" footer or any
 other attribution in a PR body or commit**: PRs are squash-merged, so the body becomes the
-commit. An agent may add its own PR to the
-merge queue once CI passes (`.claude/skills/work-issue/scripts/land.sh`), an implementer only
-after its `code-review` self-review is recorded in the PR body (`work-issue`), except for
-`needs:human` issues, which wait for Justin. Parallel agents use separate worktrees. See
+commit. An agent squash-merges its own PR once CI passes
+(`.claude/skills/work-issue/scripts/land.sh`), only after its `code-review` self-review is
+recorded in the PR body (`work-issue`), except for `needs:human` issues, which wait for
+Justin, and merges `main` into any other open branch afterwards. Separate pieces of work use
+separate worktrees. See
 [`.claude/rules/branching.md`](.claude/rules/branching.md) and
 [`.claude/rules/commits-and-issues.md`](.claude/rules/commits-and-issues.md).
 

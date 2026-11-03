@@ -89,8 +89,8 @@ instead of its `.claude/` source.
 Referenced in place from the Kiro skills, never copied:
 
 - `.claude/skills/work-issue/scripts/start.sh` - mark an issue In Progress on the board.
-- `.claude/skills/work-issue/scripts/land.sh` - wait for CI, add the PR to the merge queue,
-  wait for the merge.
+- `.claude/skills/work-issue/scripts/land.sh` - wait for CI and squash-merge the PR (or
+  queue it, if the merge queue is turned back on).
 
 ## Claude to Kiro translation notes
 
@@ -107,9 +107,9 @@ The `.claude/` skills and agents use a few Claude Code conventions. When followi
   (mostly `gh`, `python3 plan/*` and the two scripts). Kiro governs tool access through the
   agent's `tools`/`allowedTools` and the permission prompt; treat the list as the intended
   scope.
-- **The Claude `Agent` tool / subagents** - delegation to the `implementer` and `reviewer`
-  subagents. In Kiro, delegate by invoking the `implementer` and `reviewer` agents defined
-  in `.kiro/agents/`.
+- **The Claude `Agent` tool / subagents** - not used: the session works every issue, fix and
+  review itself (Justin, 2026-10-29). Do not invoke the `.kiro/agents/` agents for issue work
+  either.
 - **Running the `plan/` scripts** - they need PyYAML. On a normal machine the session hook
   (`.claude/hooks/session-setup.sh`) installs it system-wide with `apt` (`python3-yaml`), and
   CI installs it with pip, so `python3 plan/check.py` just works. Where that apt install is

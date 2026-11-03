@@ -1,15 +1,19 @@
 # CI and the protection of main
 
-CI runs on every pull request and every merge-queue group (QA-1, PM-4, CONV-7). Nothing
-reaches `main` except through the merge queue, and the queue merges a group only when every
-required check below has passed on it, so a push to `main` is not checked again.
+CI runs on every pull request (QA-1, PM-4, CONV-7). Nothing reaches `main` except through a
+pull request, which merges only when every required check below has passed on it, so a push
+to `main` is not checked again. The merge queue is off (since 2026-10-30: it re-ran the full
+suite on PRs that were already green). A PR need not be up to date with `main` to merge, so
+after each merge the agent merges `main` into any other open branch before landing it. The
+`merge_group` triggers stay in the workflows so that turning the queue back on needs only the
+ruleset; with it on, every job also runs on each merge group.
 
 ## When each run happens
 
 | Run | Ref | What runs | Why |
 | --- | --- | --- | --- |
-| Pull request | `refs/pull/<n>/merge` | every job; `Test Assets (linux)` without the deletion check | finds a problem on every platform before the change is queued |
-| Merge group | `refs/heads/gh-readonly-queue/main/...` | every job and every step except `Dependency Review` | checks exactly what lands on `main` |
+| Pull request | `refs/pull/<n>/merge` | every job; `Test Assets (linux)` runs the deletion checks only when the parser chain changed | finds a problem on every platform before the change merges |
+| Merge group, only with the queue on | `refs/heads/gh-readonly-queue/main/...` | every job and every step except `Dependency Review` | checks exactly what lands on `main` |
 | Cache run on `main` (`ci.yml` only) | `refs/heads/main` | every job except `Format`, `cargo-deny` and `Dependency Review`, as on a pull request | fills the caches; see below |
 
 That is the full path. A pull request or merge group that changes only documentation, the
@@ -17,13 +21,16 @@ plan or agent files takes the light path instead ([below](#light-changes)).
 
 The single-token deletion checks of id 1.01 (`cargo xtask parse-corpus --deletions`, P1-21)
 and of the rerelease under the FTEQCC profile (`--fteqcc --deletions`, P2-51) reparse each
-file once per token and are the steps that take minutes, so they run only in
-the merge group, which every change passes before it reaches `main`. In that run the
-`Test Assets (linux)` job builds xtask at `opt-level` 3 (`CARGO_PROFILE_DEV_OPT_LEVEL`), once
-for all its steps, with debug assertions and overflow checks still on. Every other step and
-job runs on the pull request too, so a platform problem still shows before queueing. A
-step skipped this way still lets its job report success, so the required check names never
-change.
+file once per token and are the steps that take minutes. They say something new only when
+the parser chain they exercise changes, so `Classify the change` sets a `parser` output when
+the diff touches `qc-diag`, `qc-lexer`, `qc-preproc`, `qc-syntax`, the xtask code that drives
+them (`parse_corpus.rs`, `lex_corpus.rs`), `corpus/manifest.toml` or `Cargo.lock`, or when
+there is no diff to compare (the weekly and manual runs). The checks run on such a pull
+request, on those runs, and in every merge group when the queue is on; never in a cache run
+on `main`. In a run that does them, the `Test Assets (linux)` job builds xtask at `opt-level`
+3 (`CARGO_PROFILE_DEV_OPT_LEVEL`), once for all its steps, with debug assertions and overflow
+checks still on. A step skipped this way still lets its job report success, so the required
+check names never change.
 
 ### Light changes
 
@@ -37,7 +44,7 @@ needs it:
 | Event | Diff |
 | --- | --- |
 | Pull request | the merge commit against its first parent, the base branch |
-| Merge group | `merge_group.base_sha` against the group's head |
+| Merge group (queue on) | `merge_group.base_sha` against the group's head |
 | Push to `main` | `before` against the pushed commit; every path in the push filter is full, so this run is always full |
 | Schedule, `workflow_dispatch` | none: full |
 
@@ -136,7 +143,7 @@ A run stops as soon as one test fails, at two levels (P2-146):
 | `cargo xtask ci` | Linux | the command `make ci` runs, less the steps another job runs with the same command (`cargo xtask ci --skip`, [below](#which-job-runs-each-step-of-cargo-xtask-ci)): the plan checks (`plan/check.py` and its tests, with PyYAML installed), the cached specifications (`scripts/refresh-specs.sh --verify`, offline: fails naming any file under `specs/` whose SHA-256 differs from `specs/manifest.tsv`, that is listed but missing, or that has no row), conventions, ADRs, layers, licenses, attribution, contrast, the `qs-commands` `release_guard` example built and run under `--profile release` (the command guard catches a panic in a release build, P2-12; a test target would not show it, since Cargo builds tests with unwind whatever the profile says), the `commands` check (`docs/commands.md` matches the command registry), clippy fixtures and deny fixtures; on a cache run on `main`, fmt and cargo-deny too |
 | `cargo-deny` | Linux | `cargo deny --locked --all-features check advisories bans licenses sources` with cargo-deny 0.20.2, the version the `cargo xtask ci` job installs |
 | `Dependency Review` | Linux | `dependency-review-action` on pull requests; skipped on merge groups and cache runs, which a required check accepts |
-| `Test Assets (linux)`, `Test Assets (macos)`, `Test Assets (windows)` | each OS | the `language_coverage.py` tests, `cargo xtask corpus verify`, then `cargo xtask assets fetch` and `precache` ([test-assets.md](test-assets.md)); on Linux only, `cargo xtask engines --check`, which fetches the engine-target database's fact sources by checksum and fails when `crates/qc-engines/src/tables.rs` differs from what they give ([engine-targets.md](spec/engine-targets.md), ENGT-1.2), `cargo xtask corpus fetch id-1.01`, which writes id 1.01 to the cache by checksum, `corpus/language_coverage.py`, which checks that [`docs/spec/language.md`](spec/language.md) covers every construct id's QuakeC 1.01 uses, `cargo xtask lex-corpus`, which lexes every `.qc` file and preprocesses the files `progs.src` lists with no errors, `cargo xtask oracles id101` on the same files, which compiles them with id's qcc, checks the progs.dat's SHA-256 and traces two scenarios with the VM oracle, `cargo xtask parse-corpus`, which parses id 1.01 with no errors and checks that every file of the rerelease, Copper and Arcane Dimensions round-trips through the syntax tree, then, in the merge group only, `cargo xtask parse-corpus --deletions`, which deletes each token of id 1.01 in turn to check that recovery stays local, and the same with `--fteqcc` on the rerelease under the FTEQCC profile, `cargo xtask oracles rerelease` on the six rerelease codebases, which compiles each with FTEQCC to a version 6 progs.dat with vanilla opcodes only and a `.lno`, checks both against recorded SHA-256 digests and keeps them in `target/oracles/rerelease` (cached on `oracles/`, the xtask oracle code and `corpus/manifest.toml`), `cargo xtask corpus build`, which checks that every progs.dat those oracles build round-trips through `qc-progs` byte for byte, `cargo xtask differential --fast`, which runs id 1.01 end to end in the VM oracle and QuakeC Studio's runner and fails on any divergence DIFF-10.1 does not list (the differential VM suite QA-1 names; the full corpus runs nightly, [below](#differential)), `cargo xtask compiler-diff --fast`, which compiles id 1.01 with id's qcc and with `qc-codegen` with `--opt fold` off and on, calls every function of each progs in `qc-vm` 32 times and fails on any divergence or on less than 90% of qcc's statements executed (the compiler differential, [DIFF-12](spec/differential.md); 128 rounds run nightly), `cargo xtask corpus fetch` of every map in the manifest and `cargo xtask map-corpus`, which checks that each reads and writes back through `qs-map` byte for byte, and the `qs-vfs` `walk` example on the LibreQuake lite asset, which loads every BSP, `.lit`, alias model, sprite and sound in it; the download cache, which holds the asset archives and the repository archives `corpus fetch` reads, is keyed on the SHA-256 of `corpus/manifest.toml` and saved after the last fetch |
+| `Test Assets (linux)`, `Test Assets (macos)`, `Test Assets (windows)` | each OS | the `language_coverage.py` tests, `cargo xtask corpus verify`, then `cargo xtask assets fetch` and `precache` ([test-assets.md](test-assets.md)); on Linux only, `cargo xtask engines --check`, which fetches the engine-target database's fact sources by checksum and fails when `crates/qc-engines/src/tables.rs` differs from what they give ([engine-targets.md](spec/engine-targets.md), ENGT-1.2), `cargo xtask corpus fetch id-1.01`, which writes id 1.01 to the cache by checksum, `corpus/language_coverage.py`, which checks that [`docs/spec/language.md`](spec/language.md) covers every construct id's QuakeC 1.01 uses, `cargo xtask lex-corpus`, which lexes every `.qc` file and preprocesses the files `progs.src` lists with no errors, `cargo xtask oracles id101` on the same files, which compiles them with id's qcc, checks the progs.dat's SHA-256 and traces two scenarios with the VM oracle, `cargo xtask parse-corpus`, which parses id 1.01 with no errors and checks that every file of the rerelease, Copper and Arcane Dimensions round-trips through the syntax tree, then, when the parser chain changed ([above](#when-each-run-happens)), `cargo xtask parse-corpus --deletions`, which deletes each token of id 1.01 in turn to check that recovery stays local, and the same with `--fteqcc` on the rerelease under the FTEQCC profile, `cargo xtask oracles rerelease` on the six rerelease codebases, which compiles each with FTEQCC to a version 6 progs.dat with vanilla opcodes only and a `.lno`, checks both against recorded SHA-256 digests and keeps them in `target/oracles/rerelease` (cached on `oracles/`, the xtask oracle code and `corpus/manifest.toml`), `cargo xtask corpus build`, which checks that every progs.dat those oracles build round-trips through `qc-progs` byte for byte, `cargo xtask differential --fast`, which runs id 1.01 end to end in the VM oracle and QuakeC Studio's runner and fails on any divergence DIFF-10.1 does not list (the differential VM suite QA-1 names; the full corpus runs nightly, [below](#differential)), `cargo xtask compiler-diff --fast`, which compiles id 1.01 with id's qcc and with `qc-codegen` with `--opt fold` off and on, calls every function of each progs in `qc-vm` 32 times and fails on any divergence or on less than 90% of qcc's statements executed (the compiler differential, [DIFF-12](spec/differential.md); 128 rounds run nightly), `cargo xtask corpus fetch` of every map in the manifest and `cargo xtask map-corpus`, which checks that each reads and writes back through `qs-map` byte for byte, and the `qs-vfs` `walk` example on the LibreQuake lite asset, which loads every BSP, `.lit`, alias model, sprite and sound in it; the download cache, which holds the asset archives and the repository archives `corpus fetch` reads, is keyed on the SHA-256 of `corpus/manifest.toml` and saved after the last fetch |
 
 ### Which job runs each step of cargo xtask ci
 
@@ -227,8 +234,8 @@ Every action is pinned to a commit SHA with its version in a comment, every job 
 least-privilege `permissions`, and every checkout sets `persist-credentials: false`.
 
 **Differs from vouch:** vouch skips its build matrix in merge groups and reports a stand-in
-check instead. Here every job runs in the merge group, so what merges has been built for
-every target at the commit that lands.
+check instead. Here every job runs on the pull request (and in the merge group when the queue
+is on), so what merges has been built for every target.
 
 ## Protection of main
 
@@ -236,12 +243,15 @@ The `default-branch` ruleset ([settings](https://github.com/quakecstudio/editor/
 applies to `main`:
 
 - **Pull request required**, with squash as the only merge method. No approving review is
-  required: agents land their own PRs once CI passes, except `needs:human` issues.
-- **Merge queue**, squash, building up to 5 groups.
+  required: agents squash-merge their own PRs once CI passes, except `needs:human` issues.
+- **No merge queue** since 2026-10-30. The ruleset lives in `quakecstudio/infra`
+  (`environments/github/main.tf`, `merge_queue`); turning the queue back on is that one
+  change, and `land.sh` then queues the PR instead of merging it.
 - **Required status checks**: every check in the `ci.yml` and `secure_workflows.yml` tables above (not `Benchmarks`), by the exact name it
-  reports. A required check whose name never reports holds the queue until it times out,
+  reports. A required check whose name never reports blocks every merge,
   so a job is renamed, added or removed in the same change as the ruleset.
-- **No force pushes** and **no deletion**. Nobody can bypass the ruleset.
+- **No force pushes** and **no deletion**. Organization admins and the repository admin role
+  can bypass the ruleset; agents never do.
 
 The repository allows squash merges only and deletes branches after merging.
 

@@ -1,7 +1,8 @@
-# CI for every pull request and every merge-queue group (docs/conventions.md,
-# CONV-7). Each job name below is a required status check in the `main` ruleset
-# (docs/ci.md), so every job runs on merge_group events and keeps a static name:
-# renaming a job means changing the ruleset too.
+# CI for every pull request (docs/conventions.md, CONV-7). Each job name below is
+# a required status check in the `main` ruleset (docs/ci.md) and keeps a static
+# name: renaming a job means changing the ruleset too. The merge queue is off;
+# the merge_group trigger stays so that turning it back on needs only the
+# ruleset, and every job then runs on merge_group events too.
 #
 # A change whose every file is on the light allowlist of scripts/ci-changes.sh
 # (documentation, the plan, agent files) takes the light path: each required
@@ -11,7 +12,7 @@
 #
 # Caches are saved only by runs on main (github.ref == 'refs/heads/main'): a
 # cache saved in a pull request or merge group run is scoped to its ref and no
-# other pull request or queue run can restore it. The merge group has already
+# other pull request or queue run can restore it. The pull request has already
 # checked what lands on main, so a run on main is there to fill the caches: it
 # runs the pull request's jobs except Format and cargo-deny, which save none,
 # and only when a file that decides a cache key changes (the push paths below
@@ -73,6 +74,7 @@ jobs:
     outputs:
       full: ${{ steps.classify.outputs.full }}
       oracles: ${{ steps.classify.outputs.oracles }}
+      parser: ${{ steps.classify.outputs.parser }}
     steps:
       # A pull request checks out its merge commit, whose first parent is the
       # base branch, so a depth of two holds the pull request's whole diff.
@@ -117,6 +119,17 @@ jobs:
             echo "oracles=true" >>"$GITHUB_OUTPUT"
           else
             echo "oracles=false" >>"$GITHUB_OUTPUT"
+          fi
+          # The token-deletion checks in Test Assets (linux) take minutes; they say something
+          # new only when the parser chain they exercise changes: qc-diag, qc-lexer,
+          # qc-preproc, qc-syntax, the xtask code that drives them, the corpus manifest or
+          # the lockfile. With no base to compare, they run.
+          if [ -z "$base" ] || ! git diff --quiet "$base" HEAD -- \
+            crates/qc-diag crates/qc-lexer crates/qc-preproc crates/qc-syntax \
+            xtask/src/parse_corpus.rs xtask/src/lex_corpus.rs corpus/manifest.toml Cargo.lock; then
+            echo "parser=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "parser=false" >>"$GITHUB_OUTPUT"
           fi
 
   fmt:
@@ -444,10 +457,11 @@ jobs:
         shell: bash
     env:
       CI_PATH: ${{ needs.changes.outputs.full == 'false' && 'light' || 'full' }}
-      # The deletion check below runs only in the merge group on Linux, where it takes
-      # minutes unoptimized: there the job's one xtask build is optimized. Debug
-      # assertions and overflow checks stay on, as in every other run.
-      CARGO_PROFILE_DEV_OPT_LEVEL: ${{ github.event_name == 'merge_group' && matrix.name == 'linux' && '3' || '0' }}
+      # The deletion checks below take minutes unoptimized, so on Linux, in a run that
+      # does them, the job's one xtask build is optimized. Debug assertions and
+      # overflow checks stay on, as in every other run.
+      DELETIONS: ${{ github.event_name == 'merge_group' || (github.event_name != 'push' && needs.changes.outputs.parser != 'false') }}
+      CARGO_PROFILE_DEV_OPT_LEVEL: ${{ matrix.name == 'linux' && (github.event_name == 'merge_group' || (github.event_name != 'push' && needs.changes.outputs.parser != 'false')) && '3' || '0' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.CI_PATH == 'full'
@@ -527,14 +541,15 @@ jobs:
           cargo xtask parse-corpus "$QS_TEST_ASSETS/codebase/rerelease" \
             "$QS_TEST_ASSETS/codebase/copper" "$QS_TEST_ASSETS/codebase/arcane-dimensions"
       # P1-21: every single-token deletion in id 1.01 leaves a local error. It reparses
-      # each file once per token, the one step that takes minutes, so it runs in the
-      # merge group only, which every change passes before it reaches main.
+      # each file once per token, the one step that takes minutes, so it runs only when
+      # the parser chain changed (the changes job's parser output), on the weekly and
+      # manual runs, and in a merge group if the queue is on.
       - name: Check that deleting any token of id 1.01 leaves a local error
-        if: env.CI_PATH == 'full' && runner.os == 'Linux' && github.event_name == 'merge_group'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux' && env.DELETIONS == 'true'
         run: cargo xtask parse-corpus --deletions "$QS_TEST_ASSETS/codebase/id-1.01"
       # P2-51: the same for the rerelease under the FTEQCC profile.
       - name: Check that deleting any token of the rerelease leaves a local error under FTEQCC
-        if: env.CI_PATH == 'full' && runner.os == 'Linux' && github.event_name == 'merge_group'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux' && env.DELETIONS == 'true'
         run: cargo xtask parse-corpus --fteqcc --deletions "$QS_TEST_ASSETS/codebase/rerelease"
       # P1-26: the pinned FTEQCC compiles the six rerelease codebases to version 6 progs.dat
       # files with vanilla opcodes only, and .lno files. They are kept as oracle artifacts in

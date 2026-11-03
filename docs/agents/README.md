@@ -4,7 +4,7 @@ QuakeC Studio is built by Claude Code agents working through the plan's issues, 
 
 ## What is autonomous and what is not
 
-Agents take an issue from open to merged on their own: they read it, build it on a branch, open a PR, wait for CI, add the PR to the merge queue and confirm the merge. They also run the independent readiness reviews, close phase gates when nothing in the phase straggles, and prepare everything a person has to act on.
+An agent session takes an issue from open to merged on its own: it reads it, builds it on a branch, opens a PR, waits for CI and squash-merges it. It works every issue, fix and review itself, one at a time, with no subagents (Justin, 2026-10-29: they cost tokens out of proportion to what they deliver). It also prepares everything a person has to act on. Readiness reviews and phase gates need a reviewer who did not write the code, so the session asks Justin how each one is done instead of reviewing its own work.
 
 Issues labelled `needs:human` wait for Justin. They are:
 
@@ -12,7 +12,7 @@ Issues labelled `needs:human` wait for Justin. They are:
 - work that needs hardware, credentials or a lawyer: the MVP demo on three OSes (#135), the license compliance review before release;
 - the MVP gate (#136), because it publishes the release.
 
-Other phase gates are not yours: the reviewer agent closes a gate once every issue in the phase's milestone is closed, including follow-ups filed along the way, nothing was deferred to a later phase, and every gate criterion has evidence in `docs/gates/<phase>.md`. If something would have to be deferred, it labels the gate `escalated` and asks you instead.
+Other phase gates are not yours to do, though you say who reviews them: the reviewer closes a gate once every issue in the phase's milestone is closed, including follow-ups filed along the way, nothing was deferred to a later phase, and every gate criterion has evidence in `docs/gates/<phase>.md`. If something would have to be deferred, it labels the gate `escalated` and asks you instead.
 
 Any issue an agent cannot finish without a person gets the `escalated` label and a comment saying what is needed. `status.py` treats it like `needs:human`; remove the label once it is resolved.
 
@@ -23,29 +23,28 @@ Creating new GitHub repositories (such as `quakecstudio/tree-sitter-quakec`) is 
 | Piece | What it does |
 | --- | --- |
 | [`plan/status.py`](../../plan/status.py) | Reads the plan and GitHub and prints a phase's progress: closed, ready to work, waiting and on what. Its last line is the verdict a `/goal` condition tests: `COMPLETE`, `IN PROGRESS, next #..`, `WAITING ON PEOPLE #..` or `BLOCKED #..` |
-| `/run-phase <phase>` | The orchestrator skill: delegates every ready issue to the right subagent and loops until the phase is complete or waiting on people |
+| `/run-phase <phase>` | The coordinator skill: works every ready issue itself, one at a time, and loops until the phase is complete or waiting on people |
 | `/work-issue <n>` | Takes one issue from open to merged |
 | `/prepare-decision <n>` | Drafts an ADR for a decision issue and asks Justin |
 | `/readiness-review <n>` | Independent review of a layer's test suite against [`docs/testing.md`](../testing.md) |
 | `/gate-review <n>` | Checks that nothing in the phase straggles, writes the gate report with its evidence and closes the gate |
 | `/plan-change` | Changes `plan/` safely and syncs GitHub |
-| `implementer` subagent | All build work (specs, ports, features, tests, tooling, docs) and decision drafts |
-| `reviewer` subagent | Readiness reviews and phase gates; never fixes what it reviews |
+| `.claude/agents/implementer.md`, `reviewer.md` | Role definitions from when issues were delegated to subagents; not used while the no-subagents rule stands |
 | `.claude/skills/work-issue/scripts/start.sh` | Sets the issue's Status on the project board to In Progress when work starts; closing it moves it to Done |
-| `.claude/skills/work-issue/scripts/land.sh` | Waits for CI, adds the PR to the merge queue, waits for the merge; first refuses a body with a closing keyword in a negated sentence (`check-pr-body.sh`) |
+| `.claude/skills/work-issue/scripts/land.sh` | Waits for CI and squash-merges the PR (or, with the merge queue on, queues it and waits for the merge); first refuses a body with a closing keyword in a negated sentence (`check-pr-body.sh`) |
 
-`status.py` sorts issues into tracks by who may work them: `build`, `review` (readiness and gates), `human` (`needs:human` or `escalated`), and `agents` (`build` and `review`). The orchestrator works the `agents` track and routes each issue by its track, so a readiness review is always done by a different agent from the one that wrote the code.
+`status.py` sorts issues into tracks by who may work them: `build`, `review` (readiness and gates), `human` (`needs:human` or `escalated`), and `agents` (`build` and `review`). The coordinator works the `agents` track: `build` issues itself, and for `review` issues it asks Justin how the review is done, so a readiness review is never done by the session that wrote the code.
 
 The project is GPL-3.0-or-later ([ADR-0002](../adr/0002-license-model.md)), so agents may read and port id's source directly; ports keep id's copyright line and cite where they came from.
 
 ## Merge policy
 
-An agent may add its own PR to the merge queue once CI passes on it (`land.sh` does this). An implementer's PR also needs its own diff reviewed with the `code-review` skill at high effort and the outcome recorded in the PR body (`work-issue`, "Land it"); that is a self-review, not an independent one. Readiness and gate PRs are reviews already and skip it. It never merges a `needs:human` issue's PR, never skips or loosens a test, lint or ratchet to get green, and never pushes to `main` directly.
+The merge queue on `main` is off, so an agent squash-merges its own PR once CI passes on it (`land.sh` does this) and then merges `main` into any other open branch. A build PR also needs its own diff reviewed with the `code-review` skill at high effort and the outcome recorded in the PR body (`work-issue`, "Land it"); that is a self-review, not an independent one. Readiness and gate PRs are reviews already and skip it. It never merges a `needs:human` issue's PR, never skips or loosens a test, lint or ratchet to get green, and never pushes to `main` directly.
 
 ## Before the first run
 
 - Claude Code signed in with your claude.ai account, run from a clone of this repo.
-- `gh auth login` with access to the `quakecstudio` org (issues, PRs, the merge queue).
+- `gh auth login` with access to the `quakecstudio` org (issues and PRs).
 - Python 3 with PyYAML (`pip install pyyaml`) for `plan/`.
 - Auto mode on, so tool calls inside each turn do not wait for approval.
 
@@ -63,7 +62,7 @@ Change `P0` to the phase. Each pass of the loop starts by checking the scheduled
 gh run list --branch main --event schedule --limit 40 --json workflowName,conclusion,createdAt,url --jq 'group_by(.workflowName)|map(max_by(.createdAt))|.[]|select(.conclusion!="success")'
 ```
 
-and anything it lists is fixed, or filed and delegated, before new work starts.
+and anything it lists is fixed, or filed and worked next, before new work starts.
 
 When the run stops on `WAITING ON PEOPLE`, the issues it lists have a draft ADR or a comment explaining what they need. Act on them, then start the goal again; `status.py` picks up where it left off, because all state lives in GitHub and the repo, not in the session.
 
@@ -112,8 +111,8 @@ in the hand-back or the PR so the next refresh corrects it; do not edit the base
 
 What a run spends tokens on, and the rules that keep it down (`.claude/skills/run-phase`, `work-issue`, `readiness-review` and the agent definitions carry them):
 
-- Agents are background subagents with their own worktree, one per issue, and report once at the end. In-process teammates and helper agents are not used: each message to the coordinator costs a full-context turn, and each agent carries its own context on every tool call.
-- The coordinator acts on hand-backs and on the completion of its own background watches, never on polling or progress messages.
+- No subagents, forks, teammates or helper agents (2026-10-29): each one carries its own context on every tool call and repeats what the coordinator already knows. The session works one issue at a time itself.
+- The session waits on the completion of its own background watches (`gh pr checks --watch`, `gh run watch`, a background local job), never on polling or sleeps.
 - Defects are found before a PR, where they cost minutes: cargo-mutants on the diff (`--in-diff`) for L0 to L3 crates, the differential families for parser and model work, targeted local checks while other agents share the machine. A defect found by a readiness review instead costs a measurement and a review round, about an hour each.
 - A readiness review measures its own branch once, with its tests on it.
 
