@@ -310,3 +310,175 @@ beside it: a red, green and blue sample for each byte of the lighting lump.
 - **REND-6.2** Each channel is summed as REND-1.13 sums a texel, into an `unsigned` that wraps,
   shifted right by 7 (`r = *bl++ >> 7`) and capped at 255. The renderer draws a map without a
   `.lit` file as GLQuake does (REND-5.4), and one with it as QuakeSpasm does.
+
+## REND-7 Dynamic lights
+
+**Source:** `WinQuake/gl_rlight.c`, `R_PushDlights`, `R_MarkLights`, `R_RenderDlights`,
+`R_RenderDlight`, `AddLightBlend`; `WinQuake/gl_rsurf.c`, `R_AddDynamicLights`
+(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
+
+The client's dynamic lights (CLIENT-5.5, CLIENT-5.7) light the faces near them for a frame.
+
+### Behaviour
+
+- **REND-7.1** Each frame, before the view is drawn, every live light (`die` not before
+  `cl.time`, radius not 0) is pushed through the world's nodes from the root: at a node, with
+  `dist` the light's origin against the node's plane, only the front child is visited when
+  `dist > radius` and only the back child when `dist < -radius`; otherwise every face of the
+  node gets the light's bit (`1 << i`) for this frame, and both children are visited. A leaf
+  ends the walk.
+- **REND-7.2** A face with light bits this frame has its lightmap rebuilt with the lights
+  added (`R_AddDynamicLights`): for each marked light, `rad = radius - |dist|` with `dist`
+  the light's origin against the face's plane, and a light with `rad < minlight` (the light's
+  `minlight`) adds nothing; else `minlight = rad - minlight`, the light's impact on the plane
+  is `origin - normal * dist`, and `local` is its texture coordinates less the face's
+  `texturemins`. For each lightmap texel `(s, t)`, with `sd = |local.s - 16 s|` and `td =
+  |local.t - 16 t|` as ints, the distance is `sd + (td >> 1)` when `sd > td` and `td + (sd >>
+  1)` otherwise; a texel with `dist < minlight` gets `(rad - dist) * 256` added to its
+  `blocklights` sum, which REND-5.4 then shifts and caps.
+- **REND-7.3** `R_LightPoint` (REND-5.6) is not changed by dynamic lights.
+- **REND-7.4** With `gl_flashblend` (1 by default in GLQuake, off in the FitzQuake lineage
+  and off here by ADR-0012's rule, since the lineage lights the lightmaps instead) a light is
+  drawn as a fan of 16 triangles of radius `radius * 0.35` facing the view, additive, with
+  the centre `(0.2, 0.1, 0)` and the rim black, and no face is marked; a light the eye is
+  inside adds `(1, 0.5, 0)` at `radius * 0.0003` to the view blend (VIEW-4.6).
+
+### Constants
+
+| Constant | Value | Source |
+| --- | --- | --- |
+| `REND_MAX_DLIGHTS` | 32 | `client.h`, `MAX_DLIGHTS` |
+| `REND_FLASHBLEND_SCALE` | 0.35 | `gl_rlight.c`, `R_RenderDlight` |
+
+## REND-8 Sky
+
+**Source:** `WinQuake/gl_warp.c`, `R_InitSky`, `EmitBothSkyLayers`, `EmitSkyPolys`
+(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`); `Quake/gl_sky.c`,
+`Sky_NewMap`, `Sky_LoadSkyBox` (sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`).
+
+A sky texture (`sky*`, BSP-9) is 256 by 128: the right half is the solid back layer and the
+left half the cloud layer, whose index 0 is transparent.
+
+### Behaviour
+
+- **REND-8.1** `R_InitSky` makes two 128 by 128 textures: the solid one from the right half,
+  and the alpha one from the left half with index 0 replaced by the average colour of the
+  right half (each channel the integer average over the 128 by 128 texels), alpha 0 there.
+- **REND-8.2** A sky face is drawn twice, the solid layer then the cloud layer blended over
+  it: for each vertex, `dir = vertex - eye` with `dir.z` tripled ("flatten the sphere"),
+  scaled by `6 * 63 / |dir|`, and the texture coordinates `s = (speedscale + dir.x) / 128`,
+  `t = (speedscale + dir.y) / 128`, where `speedscale` is `realtime * 8` for the solid layer
+  and `realtime * 16` for the clouds, each reduced modulo 128 (`speedscale -= (int) speedscale
+  & ~127`). The preview host uses `cl.time` for `realtime` so a scripted run draws the same
+  sky.
+- **REND-8.3** QuakeSpasm reads the worldspawn's `sky` key (also `skyname` and `qlsky`) as a
+  skybox name and loads the six faces `gfx/env/<name><side>` for the sides `rt`, `bk`, `lf`,
+  `ft`, `up`, `dn`; a map with one draws the box instead of the layers, and its `skyfog` key
+  (default `r_skyfog` 0.5) is the fraction of the fog colour blended over the sky. The preview
+  host draws a skybox when the map names one, under ADR-0012.
+
+### Constants
+
+| Constant | Value | Source |
+| --- | --- | --- |
+| `REND_SKY_SOLID_SPEED` | 8 | `gl_warp.c`, `EmitBothSkyLayers` |
+| `REND_SKY_CLOUD_SPEED` | 16 | `gl_warp.c`, `EmitBothSkyLayers` |
+| `REND_SKY_SCALE` | 378 | `gl_warp.c`, `EmitSkyPolys` (`6 * 63`) |
+| `REND_SKYFOG` | 0.5 | `gl_sky.c`, `r_skyfog` default |
+
+## REND-9 Liquids
+
+**Source:** `WinQuake/gl_warp.c`, `EmitWaterPolys`, `GL_SubdivideSurface`, `turbsin`;
+`WinQuake/gl_rsurf.c`, `R_DrawWaterSurfaces`
+(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
+
+A liquid face (a texture named `*...`, BSP-9, flagged `SURF_DRAWTURB`) is subdivided and its
+texture coordinates warped by time.
+
+### Behaviour
+
+- **REND-9.1** A liquid face is subdivided into polygons at most `gl_subdivide_size` (128)
+  units across on each axis, cutting along the planes at multiples of that size through the
+  face's bounds, so the warp bends the surface rather than only its edges.
+- **REND-9.2** Each vertex's texture coordinates are `s = (os + turbsin[(int) ((ot * 0.125 +
+  time) * TURBSCALE) & 255]) / 64` and `t = (ot + turbsin[(int) ((os * 0.125 + time) *
+  TURBSCALE) & 255]) / 64`, where `os` and `ot` are the vertex's texture coordinates in
+  texels (REND-1.2), `TURBSCALE = 256 / (2 pi)` and `turbsin` is the 256-entry table of
+  `8 * sin (i * 2 pi / 256)` from `gl_warp_sin.h`. `time` is `realtime`; the preview host
+  uses `cl.time` (REND-8.2).
+- **REND-9.3** Water is drawn after the world, opaque in GLQuake; the FitzQuake lineage draws
+  it with `r_wateralpha` (1 by default, so opaque) and the preview host does the same, the
+  alpha a setting.
+
+### Constants
+
+| Constant | Value | Source |
+| --- | --- | --- |
+| `REND_SUBDIVIDE_SIZE` | 128 | `gl_warp.c`, `gl_subdivide_size` default |
+| `REND_TURBSCALE` | 256 / (2 pi) | `gl_warp.c`, `TURBSCALE` |
+| `REND_TURB_AMPLITUDE` | 8 | `gl_warp_sin.h` |
+
+## REND-10 Fog
+
+**Source:** `Quake/gl_fog.c`, `Fog_ParseWorldspawn`, `Fog_Update`, `Fog_ParseServerMessage`,
+`Fog_GetColor`, `Fog_GetDensity`, `Fog_SetupFrame`
+(sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`).
+
+id's engine has no fog; the FitzQuake lineage's global fog is what the rerelease's and the
+corpus mods' maps set, through the worldspawn `fog` key and the `svc_fog` message, so the
+preview host draws it (ADR-0012).
+
+### Behaviour
+
+- **REND-10.1** A new map starts with no fog (density 0, colour 0.3 grey) and then reads
+  the worldspawn's `fog` key as `density red green blue` with `sscanf`, so a shorter value
+  sets only the leading fields.
+- **REND-10.2** `Fog_Update (density, r, g, b, time)` with a `time` above 0 fades from the
+  current values (or from the point a fade in progress has reached) to the new ones over
+  `time` seconds, ending at `cl.time + time`; with `time` 0 it sets them at once.
+  `svc_fog` carries density, red, green and blue as bytes over 255 and the time as a short
+  over 100, at least 0.
+- **REND-10.3** While a fade is in progress (`fade_done > cl.time`) the colour and density
+  are `f * old + (1 - f) * new` with `f = (fade_done - cl.time) / fade_time`. The colour's
+  channels are clamped to 0 to 1 and rounded to the nearest 1/255 ("so solid-colored sky
+  can match the fog perfectly").
+- **REND-10.4** The fog is `GL_EXP2` with `GL_FOG_DENSITY = density / 64`: a fragment's
+  colour is mixed toward the fog colour by `1 - exp (-((density / 64) * z)^2)`, `z` its eye
+  distance. The preview host computes the same in its shader.
+
+### Constants
+
+| Constant | Value | Source |
+| --- | --- | --- |
+| `REND_FOG_DEFAULT_DENSITY` | 0.0 | `gl_fog.c`, `DEFAULT_DENSITY` |
+| `REND_FOG_DEFAULT_GRAY` | 0.3 | `gl_fog.c`, `DEFAULT_GRAY` |
+| `REND_FOG_DENSITY_SCALE` | 64 | `gl_fog.c`, `Fog_SetupFrame` |
+
+## REND-11 Sprites
+
+**Source:** `Quake/r_sprite.c`, `R_GetSpriteFrame`, `R_DrawSpriteModel`
+(sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`); the frames are SPR-2 and
+SPR-3.
+
+GLQuake draws every sprite facing the view plane; QuakeSpasm honours the sprite's orientation
+type, which the preview host does (ADR-0012).
+
+### Behaviour
+
+- **REND-11.1** A frame out of the sprite's range is drawn as frame 0. A single frame is
+  itself; a frame group picks by time: `time = cl.time + syncbase` (CLIENT-2.4), `target =
+  time - (int) (time / fullinterval) * fullinterval` with `fullinterval` the group's last
+  interval, and the first subframe whose interval exceeds `target`, the last if none does. An
+  angled group (`SPR_ANGLED`) picks subframe `dir & 7` with `dir = (int) ((atan2 (r, f) +
+  1.125 pi) * 4 / pi)`, `f` and `r` the dot products of the sprite's forward with the view's
+  forward and right.
+- **REND-11.2** The quad's axes by the sprite's type: `SPR_VP_PARALLEL_UPRIGHT` (0) up is
+  world up and right is `forward x up` normalised; `SPR_FACING_UPRIGHT` (1) forward is the
+  sprite's origin less the eye, flattened and normalised, right `(forward.y, -forward.x, 0)`,
+  up world up; `SPR_VP_PARALLEL` (2) the view's up and right; `SPR_ORIENTED` (3) the sprite's
+  own angles' vectors, drawn with a polygon offset so it sits on walls; `SPR_VP_PARALLEL_ORIENTED`
+  (4) the view's right and up rotated by the sprite's roll. The corners are `origin + down *
+  up + left * right`, `origin + up * up + left * right`, `origin + up * up + right * right`
+  and `origin + down * up + right * right` with the frame's `up`, `down`, `left` and `right`
+  (SPR-2) and the texture's `(0, tmax)`, `(0, 0)`, `(smax, 0)`, `(smax, tmax)`; transparent
+  texels are cut by alpha test.
