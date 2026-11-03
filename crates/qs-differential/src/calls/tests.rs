@@ -1442,3 +1442,51 @@ fn a_va_list_elements_other_words_are_compared() {
     assert_eq!(against_fteqcc(&float(5), &float(5)), []);
     assert!(!against_fteqcc(&float(5), &float(6)).is_empty());
 }
+
+// spec DIFF-12.24: an accessor is called once for every index of its array after its rounds,
+// so every leaf of its tree runs; a function that is not an accessor gets no such calls
+#[test]
+fn accessors_are_called_for_every_index() {
+    let source = "float arr[40]; float x;\nvoid() worldspawn = { x = 1; };\n\
+        float(float i) get = { return arr[i]; };\nvoid(float i, float v) set = { arr[i] = v; };\n";
+    let bytes = compile_fteqcc(source);
+    let progs = Progs::read(&bytes).unwrap();
+    let report = run(&bytes, &bytes, 1);
+    assert!(report.divergences.is_empty(), "{:?}", report.divergences);
+    let functions = progs.functions();
+    let body = |name: &[u8]| {
+        let (i, f) = functions
+            .iter()
+            .enumerate()
+            .find(|(_, f)| progs.string(f.s_name) == Some(name))
+            .unwrap_or_else(|| panic!("no {}", String::from_utf8_lossy(name)));
+        let end = functions
+            .iter()
+            .skip(i + 1)
+            .map(|g| g.first_statement)
+            .filter(|&s| s > f.first_statement)
+            .min()
+            .unwrap_or(i32::try_from(progs.statements().len()).unwrap());
+        f.first_statement..end
+    };
+    for name in [&b"ArrayGet*arr"[..], &b"ArraySet*arr"[..]] {
+        let body = body(name);
+        let missed: Vec<i32> = body
+            .clone()
+            .filter(|s| !report.executed.contains(s))
+            .collect();
+        assert!(body.len() > 40, "a tree over 40 elements: {}", body.len());
+        // Every leaf runs; what may stay is the bound check's error call at the end, which
+        // ends the call before its statement is recorded, and the trailing DONE.
+        assert!(
+            missed.iter().all(|s| *s >= body.end - 3),
+            "{} missed {missed:?}",
+            String::from_utf8_lossy(name)
+        );
+    }
+    // One round of `get` plus the accessor calls: 42 each for the getter and the setter.
+    assert!(report.calls >= 2 * 42 + 3, "{}", report.calls);
+    assert!(super::draw::is_accessor(b"ArrayGet*arr"));
+    assert!(super::draw::is_accessor(b"ArraySet*tab"));
+    assert!(!super::draw::is_accessor(b"get"));
+}

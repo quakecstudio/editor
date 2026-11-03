@@ -32,7 +32,7 @@ use crate::scenario::{self, Scenario};
 mod draw;
 
 pub(crate) use draw::Rng;
-use draw::{Context, Drawer};
+use draw::{Context, Draw, Drawer, is_accessor};
 
 /// `OFS_RETURN` (VM-14.1): the return value's first slot.
 const OFS_RETURN: usize = 1;
@@ -525,11 +525,9 @@ fn run_calls_reporting(
         let mut limit = rounds;
         let mut before = reached(&report.executed);
         let mut round = 0;
-        while round < limit {
-            let mut rng = Rng::new(name, round);
-            let context = drawer.draw(&mut rng, (function, &pools), round);
-            let theirs = their_world.call(their_index, &context);
-            let ours = our_world.call(our_index, &context);
+        let mut compare = |context: &Context, round: u32, report: &mut Report| {
+            let theirs = their_world.call(their_index, context);
+            let ours = our_world.call(our_index, context);
             report.calls = report.calls.saturating_add(1);
             report
                 .executed
@@ -541,6 +539,11 @@ fn run_calls_reporting(
                     what,
                 });
             }
+        };
+        while round < limit {
+            let mut rng = Rng::new(name, round);
+            let context = drawer.draw(&mut rng, (function, &pools), round);
+            compare(&context, round, &mut report);
             round = round.saturating_add(1);
             if round == limit && limit < cap {
                 let now = reached(&report.executed);
@@ -548,6 +551,21 @@ fn run_calls_reporting(
                     limit = limit.saturating_add(batch).min(cap);
                 }
                 before = now;
+            }
+        }
+        // DIFF-12.24: an accessor is also called once for every index of its array, from a
+        // round 0 context, so each element's leaf of its tree runs.
+        if is_accessor(name)
+            && let Some(indexes) = drawer.accessor_indexes(function, &pools)
+        {
+            for (i, index) in indexes.into_iter().enumerate() {
+                let round = cap.saturating_add(u32::try_from(i).unwrap_or(u32::MAX));
+                let mut rng = Rng::new(name, round);
+                let mut context = drawer.draw(&mut rng, (function, &pools), 0);
+                if let Some(first) = context.parms.first_mut() {
+                    *first = Draw::Float(index);
+                }
+                compare(&context, round, &mut report);
             }
         }
     }

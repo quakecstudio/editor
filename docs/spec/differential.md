@@ -797,6 +797,24 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   agrees under DIFF-12.7's readings and their other two words hold the same bits. So crmod7's
   `score_check_sudden_death`, which passes strings on to a variadic, is no divergence by its
   `__va_list[1]`.
+- **DIFF-12.24** FTEQCC's getter and setter of an array, `ArrayGet*NAME` and `ArraySet*NAME`
+  (FTEF-19.78), are a tree over the index: `QCC_PR_ArrayRecurseDivideRegular` and
+  `QCC_PR_ArraySetRecurseDivide` split `min..max` at `mid = min + (max-min)/2` with `LT_F
+  index, mid+1` while `max-min > 4`, and each leaf of one or two elements tests `LT_F index,
+  min+1` and returns or stores element `min`; with `flag_boundchecks` (`defaultflag`, so on)
+  the getter first returns on `index < 0` and `index >= numslots`. A round's draws reach one
+  leaf each, so a large array's accessor stays mostly unexecuted. After its rounds, an
+  accessor (a function whose name starts with `ArrayGet*` or `ArraySet*`) is called once more
+  for each index from -1 up to the largest float constant its statements compare its first
+  parameter with, the array's size, each from a round 0 context (DIFF-12.2) with that index as
+  the first parameter, the round numbers going on from the rounds' cap (DIFF-12.16); an
+  accessor whose statements compare the index with no constant gets no such calls. So crmod7's
+  `ArrayGet*warpmap` and the others of its large arrays, half of its unexecuted statements,
+  run every leaf.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_EmitArrayGetFunction`, `QCC_PR_ArrayRecurseDivideRegular`,
+  `QCC_PR_EmitArraySetFunction`, `QCC_PR_ArraySetRecurseDivide`; `engine/qclib/qccmain.c`,
+  the `boundchecks` entry of `compiler_flag`.
 - **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and
   Arcane Dimensions, are set up and called with the mock engine under vkQuake's profile
   (BUILTIN-18): crmod7 calls extension builtins while it sets up its world, and Arcane

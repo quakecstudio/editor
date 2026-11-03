@@ -131,6 +131,16 @@ type ComparedByName = BTreeMap<Vec<u8>, Compared>;
 /// The pairs of names a function's statements compare with each other (DIFF-12.22).
 type Pairs = Vec<(Vec<u8>, Vec<u8>)>;
 
+/// The most indexes an accessor is called with (DIFF-12.24): past this an array is larger
+/// than any FTEQCC progs holds.
+const MAX_ACCESSOR_INDEXES: usize = 65536;
+
+/// Whether `name` is FTEQCC's getter or setter of an array, `ArrayGet*NAME` or
+/// `ArraySet*NAME` (FTEF-19.78, DIFF-12.24).
+pub(super) fn is_accessor(name: &[u8]) -> bool {
+    name.starts_with(b"ArrayGet*") || name.starts_with(b"ArraySet*")
+}
+
 /// The values a function's statements compare one name with (DIFF-12.22).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct Compared {
@@ -568,6 +578,35 @@ impl<'a, 'p> Drawer<'a, 'p> {
         pools
     }
 
+    /// DIFF-12.24: the indexes an accessor `function` is called with besides its rounds: -1,
+    /// then 0 up to the largest float constant its statements compare its index parameter,
+    /// the first, with (the array's size, `QCC_PR_ArrayRecurseDivideRegular`'s last `min+1`
+    /// or the bound check's `numslots`); `None` when it compares the index with nothing.
+    pub(super) fn accessor_indexes(&self, function: Function, own: &Pools) -> Option<Vec<f32>> {
+        let ofs = u32::try_from(function.parm_start).ok()?;
+        let name = self.names.get(&ofs)?;
+        let compared = own.compared.get(name)?;
+        let largest = compared
+            .numbers
+            .iter()
+            .map(|bits| f32::from_bits(*bits))
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .fold(None, |most: Option<f32>, value| {
+                Some(most.map_or(value, |m| m.max(value)))
+            })?;
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "spec DIFF-12.24: a non-negative, finite array size, capped below"
+        )]
+        let count = (largest.min(f32_of_usize(MAX_ACCESSOR_INDEXES)) as usize).saturating_add(1);
+        Some(
+            core::iter::once(-1.0)
+                .chain((0..count).map(f32_of_usize))
+                .collect(),
+        )
+    }
+
     /// An edict in use.
     fn edict(&self, rng: &mut Rng) -> usize {
         rng.pick(&self.edicts).copied().unwrap_or(0)
@@ -859,4 +898,13 @@ impl Rng {
             _ => -whole(self.below(1000)),
         }
     }
+}
+
+/// An index as the float a call passes.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "an array index, far below f32's exact range"
+)]
+fn f32_of_usize(value: usize) -> f32 {
+    value as f32
 }
