@@ -860,7 +860,7 @@ mod tests {
     // spec REND-2.2: water ripples by 8 sin of `t*0.125 + realtime`, over 64
     // spec REND-2.3: the solid layer scrolls at 8 a second in the right half, the alpha layer
     // at 16 in the left half over it
-    // spec REND-2.4: both are computed for each pixel
+    // spec REND-2.5: both are computed for each pixel
     #[test]
     fn the_shader_moves_water_and_sky() {
         let module = wgsl::parse_str(SHADER).unwrap();
