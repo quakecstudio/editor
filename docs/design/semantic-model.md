@@ -98,7 +98,9 @@ on the profile; they come from `expand`'s tables at the offset being read
   record them.
 - **`TypedBody`** (`check/`): a function body's expressions in an arena, each with its type,
   the definition it names (if a name) and the cast or conversion `QCC_SupplyConversion`
-  applied; the statements in order. It is what `qc-codegen` walks.
+  applied; the statements in order. It is what `qc-codegen` walks. Today it records only the
+  type at each expression's span; [`back-end.md`](back-end.md), "Getting there", step 1,
+  finishes it.
 
 ## Module map
 
