@@ -37,6 +37,7 @@ pub use binum::builtin_binum;
 pub use kind::SyntaxKind;
 #[cfg(test)]
 pub(crate) use parser::FTEQCC_MAX_NAME;
+pub use parser::{DeclaredTypeKind, DeclaredTypeName};
 pub use parser::{LIMIT_MAX_PARMS, LIMIT_QCC_MAX_NAME, QC_MAX_NESTING};
 pub use qc_lexer::{Code, Diagnostic, Dialect, Span};
 pub use qc_preproc::{CompilerFlags, FlagEdit, Keyword, KeywordEdit, Keywords, Priorities};
@@ -61,6 +62,10 @@ pub struct Parse {
     /// The keywords the parser read each token with, each from the byte it holds from
     /// (FTEF-20.1): the preprocessor's marks and the changes the definitions made.
     keywords: Vec<(usize, Keywords)>,
+    /// The types the file declares, after those it was given (FTEF-16.2): a `typedef`,
+    /// `struct`, `union`, `class`, `enum` or accessor name, which a later file of the module
+    /// is parsed with.
+    types: Vec<DeclaredTypeName>,
     /// The tokens of a preprocessor's text the parser lexed with other flags than the
     /// preprocessor did, those of an `extern` block (FTEF-21.17).
     relexed: Vec<Span>,
@@ -107,6 +112,10 @@ impl Parse {
     /// The keywords the parser read the tokens with (FTEF-20.1): each the byte they hold from
     /// and the keywords, in order; the text before the first holds FTEQCC's defaults.
     #[must_use]
+    pub fn types(&self) -> &[DeclaredTypeName] {
+        &self.types
+    }
+
     pub fn keywords(&self) -> &[(usize, Keywords)] {
         &self.keywords
     }
@@ -171,7 +180,7 @@ pub fn parse(source: &[u8]) -> Parse {
 /// tree's text is `source`, byte for byte.
 #[must_use]
 pub fn parse_with(source: &[u8], dialect: Dialect) -> Parse {
-    parse_text(source, dialect, input::Text::Source, &[], &[], &[])
+    parse_text(source, dialect, input::Text::Source, &[], &[], &[], &[])
 }
 
 /// Parses a module's source in source form (`docs/spec/project-file.md` PRJ-4.4), in `dialect`:
@@ -180,7 +189,15 @@ pub fn parse_with(source: &[u8], dialect: Dialect) -> Parse {
 /// bytes trivia the lexer skipped. Never fails, and the tree's text is `source`, byte for byte.
 #[must_use]
 pub fn parse_module_source(source: &[u8], dialect: Dialect) -> Parse {
-    parse_text(source, dialect, input::Text::ModuleSource, &[], &[], &[])
+    parse_text(
+        source,
+        dialect,
+        input::Text::ModuleSource,
+        &[],
+        &[],
+        &[],
+        &[],
+    )
 }
 
 /// Parses text a preprocessor wrote, in `dialect`: as [`parse_with`], except that the text
@@ -192,7 +209,15 @@ pub fn parse_module_source(source: &[u8], dialect: Dialect) -> Parse {
 /// Implements QC-9.19. Never fails, and the tree's text is `source`, byte for byte.
 #[must_use]
 pub fn parse_preprocessed(source: &[u8], dialect: Dialect) -> Parse {
-    parse_text(source, dialect, input::Text::Preprocessed, &[], &[], &[])
+    parse_text(
+        source,
+        dialect,
+        input::Text::Preprocessed,
+        &[],
+        &[],
+        &[],
+        &[],
+    )
 }
 
 /// [`parse_preprocessed`] of text whose compiler flags `flags` changes (FTEF-12.12, FTEF-21.1):
@@ -215,6 +240,22 @@ pub fn parse_preprocessed_flagged(
     keywords: &[(usize, KeywordEdit)],
     seams: &[usize],
 ) -> Parse {
+    parse_preprocessed_after(source, dialect, flags, keywords, seams, &[])
+}
+
+/// [`parse_preprocessed_flagged`] of a file that follows others in its module, which declared
+/// the types `types` (FTEF-16.2): FTEQCC reads a module as one stream, so a `typedef`,
+/// `struct`, `class` or `enum` an earlier file declares names a type in a later one, and
+/// `(NAME) e` with such a name is a cast.
+#[must_use]
+pub fn parse_preprocessed_after(
+    source: &[u8],
+    dialect: Dialect,
+    flags: &[(usize, FlagEdit)],
+    keywords: &[(usize, KeywordEdit)],
+    seams: &[usize],
+    types: &[DeclaredTypeName],
+) -> Parse {
     parse_text(
         source,
         dialect,
@@ -222,6 +263,7 @@ pub fn parse_preprocessed_flagged(
         flags,
         keywords,
         seams,
+        types,
     )
 }
 
@@ -239,6 +281,7 @@ fn parse_text(
     edits: &[(usize, FlagEdit)],
     keywords: &[(usize, KeywordEdit)],
     seams: &[usize],
+    types: &[DeclaredTypeName],
 ) -> Parse {
     let mut blocks = Vec::new();
     let mut pass = 0_usize;
@@ -250,7 +293,7 @@ fn parse_text(
                 .map(|&(at, flags)| (at, flags.lex()))
                 .collect();
         let input = input::Input::new(source, dialect, text, &lex);
-        let mut parser = parser::Parser::new(input, dialect, keywords, &marks, seams);
+        let mut parser = parser::Parser::new(input, dialect, keywords, &marks, seams, types);
         parser.source_file();
         pass = pass.saturating_add(1);
         // Done when this pass read the blocks it was lexed with, or when the passes are spent.
@@ -279,13 +322,19 @@ fn finish(
     } else {
         Vec::new()
     };
-    let (green, diagnostics, keywords) = parser.finish();
+    let parser::Finished {
+        green,
+        diagnostics,
+        keywords,
+        types,
+    } = parser.finish();
     Parse {
         green,
         diagnostics,
         flags: marks,
         lex,
         keywords,
+        types,
         relexed,
     }
 }

@@ -213,9 +213,10 @@ fn generate(generate: &Generate) -> Result<bool, String> {
             .map_err(|e| format!("{}: {e}", dir.display()))?;
         std::fs::write(dir.join("t.qc"), &program.source)
             .map_err(|e| format!("{}: {e}", dir.display()))?;
-        for (form, uses) in program.forms {
+        // DIFF-14.2: how many programs use each form, however often each uses it.
+        for form in program.forms.keys() {
             let entry = forms.entry(form).or_insert(0);
-            *entry = entry.saturating_add(uses);
+            *entry = entry.saturating_add(1);
         }
     }
     let mut text = String::new();

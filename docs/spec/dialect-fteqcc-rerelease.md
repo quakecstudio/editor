@@ -1035,7 +1035,9 @@ empty (QC-14.2).
   to a one-word temporary (FTE-9.3's `LOAD_V` into a `?:`'s temporary) therefore reaches the
   next temporaries, never an immediate. This compiler lays its blocks out the same way but
   reuses no temporary (FTEF-27.16), so a block is wider than FTEQCC's where FTEQCC reuses
-  one, and the blocks after it start later. Source:
+  one, and the blocks after it start later; and it gives an initialised constant local its
+  storage where the body is read, as a static's (FTEF-32.16), where FTEQCC lays it out after
+  every global. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
   `QCC_UnmarshalLocals`; `engine/qclib/qcc_pr_comp.c`, `QCC_GetTemp`.
 ## FTE-22 Name resolution

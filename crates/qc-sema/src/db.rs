@@ -93,6 +93,8 @@ struct ExpandedFile {
     /// The rendered offsets of the strings FTEQCC's lexer did not join to the one before them
     /// (FTEF-21.17).
     seams: Vec<usize>,
+    /// The types the files before it declared (FTEF-16.2).
+    types: Vec<qc_syntax::DeclaredTypeName>,
     parse: Parse,
     decls: FileDecls,
 }
@@ -434,8 +436,11 @@ impl Db {
         let mut keywords = Vec::with_capacity(input.compiled.len());
         let mut relexed = Vec::new();
         let preprocessor_count = syntax.len();
+        // FTEF-16.2: a file is parsed knowing the types the files before it declared.
+        let mut types: Vec<qc_syntax::DeclaredTypeName> = Vec::new();
         for (&id, rendered) in input.compiled.iter().zip(&preprocessed.files) {
-            let file = self.expanded_file(id, rendered, false);
+            let file = self.expanded_file(id, rendered, false, &types);
+            types = file.parse.types().to_vec();
             keywords.push(file.parse.keywords().to_vec());
             // FTEF-21.17: the tokens an `extern` block lexed with other flags have the parser's
             // lexical errors and warnings, not the preprocessor's.
@@ -565,8 +570,10 @@ impl Db {
                 .collect(),
             ..FirstRead::default()
         };
+        let mut types: Vec<qc_syntax::DeclaredTypeName> = Vec::new();
         for (&id, rendered) in input.compiled.iter().zip(&preprocessed.first) {
-            let file = self.expanded_file(id, rendered, true);
+            let file = self.expanded_file(id, rendered, true, &types);
+            types = file.parse.types().to_vec();
             read.keywords.push(file.parse.keywords().to_vec());
             read.relexed.extend(
                 file.parse
@@ -618,15 +625,22 @@ impl Db {
     /// The parse and lowering of compiled file `file` whose expansion is `rendered`: the cached
     /// ones when the expansion and the lexer's flags and keywords in it are unchanged, otherwise
     /// parsed and lowered again.
-    fn expanded_file(&mut self, file: FileId, rendered: &Rendered, first: bool) -> ExpandedFile {
+    fn expanded_file(
+        &mut self,
+        file: FileId,
+        rendered: &Rendered,
+        first: bool,
+        types: &[qc_syntax::DeclaredTypeName],
+    ) -> ExpandedFile {
         let text = rendered.text.as_slice();
-        // The first pass read as the second was, with the same text, flags and keywords, is
-        // that parse again.
+        // The first pass read as the second was, with the same text, flags, keywords and
+        // types, is that parse again.
         if first
             && let Some(second) = self.expanded.get(&(file, false))
             && second.text == text
             && second.flags == rendered.flags
             && second.keywords == rendered.keywords
+            && second.types == types
         {
             return second.clone();
         }
@@ -635,16 +649,18 @@ impl Db {
             && cached.flags == rendered.flags
             && cached.keywords == rendered.keywords
             && cached.seams == rendered.seams
+            && cached.types == types
         {
             return cached.clone();
         }
         self.bump(Query::Parse);
-        let parse = qc_syntax::parse_preprocessed_flagged(
+        let parse = qc_syntax::parse_preprocessed_after(
             text,
             self.dialect,
             &rendered.flags,
             &rendered.keywords,
             &rendered.seams,
+            types,
         );
         self.bump(Query::Lower);
         let decls = lower_file(&parse, self.dialect);
@@ -653,6 +669,7 @@ impl Db {
             flags: rendered.flags.clone(),
             keywords: rendered.keywords.clone(),
             seams: rendered.seams.clone(),
+            types: types.to_vec(),
             parse,
             decls,
         };

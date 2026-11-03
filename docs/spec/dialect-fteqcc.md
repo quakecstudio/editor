@@ -2425,9 +2425,10 @@ The corpus writes locals of class and pointer types, casts to classes (`(ncPlaye
   call. This profile takes a cast where `(` holds a type word, a `.` or a C type word; or a
   name that is a registered or declared type and `*`s or a function type's parameter list,
   closed by `)` and followed by a term; or such a name alone in parentheses followed by a term.
-  `(visible(head))` and `(sin(x))` stay parenthesised calls. A type a `typedef` in an earlier
-  file of the module declares is not known to the parser of a later file, which reads
-  `(T) &x` as a `&` of `T` and `x`; no corpus codebase writes that form.
+  `(visible(head))` and `(sin(x))` stay parenthesised calls. FTEQCC reads a module as one
+  stream, so a type an earlier file declares names a type in a later one: this profile parses
+  each file with the types the files before it declared (`qc_syntax::Parse::types`), as
+  FreeCS's `(CCVarTextBox) new` and `(gameEntry_t)` casts of its platform files need.
 - **FTEF-16.3** `[x, y, z]` builds a vector of three expressions, the missing ones 0 ("and to not
   need the 2nd/3rd parts if you're lazy - [5] or [5,6]"); a fourth is an error, since
   `QCC_PR_Expect("]")` follows the third.

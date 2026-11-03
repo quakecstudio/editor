@@ -12,7 +12,7 @@ use qc_progs::opcode::Opcode::{
 use qc_progs::{ProgsFile, Statement};
 
 use super::{
-    body, compile_fteqcc, fte_progs, function, global, immediate, immediate_string,
+    body, compile_fteqcc, fte_files, fte_progs, function, global, immediate, immediate_string,
     immediate_vector, st, string, words,
 };
 use crate::{CompileError, Internal};
@@ -1683,6 +1683,31 @@ fn a_wrap_calls_the_body_it_moved() {
     );
 }
 
+// spec FTE-21.7, FTEF-15.11: the moved body's block of locals goes with its record, so the
+// wrapper and `prior*NAME` each have a block of their own, the moved one's after the
+// wrapper's, and each body reads its parameter at its own block
+#[test]
+fn a_wrapped_body_keeps_its_block_of_locals_with_its_record() {
+    let p = fte_progs(
+        "void(float x) f = { x = 1; };\n__wrap void(float x) f = { prior(x); x = 2; };\n",
+    );
+    let wrapper = function(&p, "f");
+    let moved = function(&p, "prior*f");
+    assert_eq!((wrapper.locals, moved.locals), (1, 1));
+    assert!(wrapper.parm_start > 0 && moved.parm_start > wrapper.parm_start);
+    let first = usize::try_from(moved.first_statement).unwrap();
+    assert_eq!(
+        p.statements[first],
+        st(StoreF, immediate(&p, 1.0), moved.parm_start, 0)
+    );
+    let start = usize::try_from(wrapper.first_statement).unwrap();
+    assert_eq!(p.statements[start], st(StoreF, wrapper.parm_start, 4, 0));
+    assert_eq!(
+        p.statements[start + 2],
+        st(StoreF, immediate(&p, 2.0), wrapper.parm_start, 0)
+    );
+}
+
 // spec FTE-19.12: `v & w` of vectors is BITAND_F of each component into a vector temporary, and
 // `v ^ w` is `(v & ~w) | (w & ~v)` with each `~` as SUB_V from '-1 -1 -1'
 #[test]
@@ -2120,6 +2145,96 @@ fn an_element_at_a_computed_index_is_read_after_the_value_and_the_index_stored_t
             st(StoreF, index, 4, 0),
             st(StoreF, sum, 7, 0),
             st(Call2, set, 0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTE-3.6: a `break` before a dropped branch stays, one in the dropped branch and a
+// `continue` after it are forgotten, and a `case` label a dropped branch recorded is forgotten
+// too, so the switch's test jumps to the kept body
+#[test]
+fn a_dropped_branchs_jumps_and_labels_are_forgotten_and_earlier_ones_kept() {
+    let p = fte_progs(
+        "float d;\nvoid() t = { while (d) { if (d) break; if (1) { d = 1; } else { break; \
+         continue; } d = 2; } };\nvoid() u = { switch (d) { case 1: if (1) { d = 3; } else { \
+         case 2: d = 4; } d = 5; } };\n",
+    );
+    let d = global(&p, "d");
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(IfNot, d, 6, 0),
+            st(IfNot, d, 2, 0),
+            st(Goto, 4, 0, 0),
+            st(StoreF, immediate(&p, 1.0), d, 0),
+            st(StoreF, immediate(&p, 2.0), d, 0),
+            st(Goto, -5, 0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+    let u = body(&p, "u");
+    let hit = u[4].c;
+    assert_eq!(
+        u,
+        [
+            st(Goto, 4, 0, 0),
+            st(StoreF, immediate(&p, 3.0), d, 0),
+            st(StoreF, immediate(&p, 5.0), d, 0),
+            st(Goto, 3, 0, 0),
+            st(EqF, d, immediate(&p, 1.0), hit),
+            st(If, hit, -4, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-29.14: `varr[i] += v` of a vector array reads the element by the getter with the
+// index divided by 3 and stores the sum by the setter with the index divided again
+#[test]
+fn a_vector_element_compound_assignment_divides_its_index_for_both_calls() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nvector varr[2]; float d; vector v;\nvoid() t = { \
+         varr[d & 1] += v; };\n",
+    );
+    let (d, v, get, set) = (
+        global(&p, "d"),
+        global(&p, "v"),
+        global(&p, "ArrayGet*varr"),
+        global(&p, "ArraySet*varr"),
+    );
+    let t = body(&p, "t");
+    let (index, words, sum) = (t[0].c, t[1].c, t[4].c);
+    assert_eq!(
+        t,
+        [
+            st(BitAnd, d, immediate(&p, 1.0), index),
+            st(MulF, index, immediate(&p, 3.0), words),
+            st(DivF, words, immediate(&p, 3.0), 4),
+            st(Opcode::Call1, get, 0, 0),
+            st(Opcode::AddV, 1, v, sum),
+            st(DivF, words, immediate(&p, 3.0), 4),
+            st(Opcode::StoreV, sum, 7, 0),
+            st(Call2, set, 0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-16.2: a type an earlier file of the module declares names a type in a later one,
+// so `(Thing) 1` there is a cast, while `(gf0) & 3` of a variable stays a `&`
+#[test]
+fn a_cast_to_a_type_an_earlier_file_declared_is_a_cast() {
+    let p = fte_files(&[
+        ("a.qc", "typedef float Thing;\nfloat gf0, x;\n"),
+        ("b.qc", "void() t = { x = (Thing) 1; x = (gf0) & 3; };\n"),
+    ]);
+    let (gf0, x) = (global(&p, "gf0"), global(&p, "x"));
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(StoreF, immediate(&p, 1.0), x, 0),
+            st(BitAnd, gf0, immediate(&p, 3.0), x),
             st(Done, 0, 0, 0),
         ]
     );

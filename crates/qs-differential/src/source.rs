@@ -115,7 +115,6 @@ impl Ty {
         }
     }
 
-    /// The prefix of the globals, fields, locals and parameters of this type.
     /// The zero of the type, which a local is set to before it is read.
     const fn zero(self) -> &'static str {
         match self {
@@ -126,6 +125,7 @@ impl Ty {
         }
     }
 
+    /// The prefix of the globals, fields, locals and parameters of this type.
     const fn tag(self) -> &'static str {
         match self {
             Self::Float => "f",
@@ -339,7 +339,10 @@ impl Gen {
             self.form("local");
         }
         // The counter every loop of this function bounds itself with.
-        self.out.push_str("\tlocal float n;\n\tn = 0;\n");
+        // One counter per loop nesting depth, so a loop inside another never resets the
+        // outer loop's bound.
+        self.out
+            .push_str("\tlocal float n, m, k;\n\tn = 0;\n\tm = 0;\n\tk = 0;\n");
         // A local starts with whatever its slot held (VM-15.7), which the two layouts need not
         // share, so each is stored before it is read.
         for i in 0..locals {
@@ -357,6 +360,19 @@ impl Gen {
         writeln!(self.out, "\treturn {value};\n}};").unwrap_or(());
         self.form("return");
         self.functions.push(Function { name, params, ret });
+    }
+
+    /// The counter of the loop about to open, by its nesting depth: `n`, `m` or `k`.
+    fn counter(&self) -> &'static str {
+        ["n", "m", "k"].get(self.in_loop).copied().unwrap_or("k")
+    }
+
+    /// The counter of the innermost open loop.
+    fn loop_counter(&self) -> &'static str {
+        ["n", "m", "k"]
+            .get(self.in_loop.saturating_sub(1))
+            .copied()
+            .unwrap_or("k")
     }
 
     // -- statements ----------------------------------------------------------------------
@@ -423,9 +439,10 @@ impl Gen {
             7 => {
                 let bound = self.below(3).saturating_add(1);
                 let condition = self.expr(Ty::Float, 1);
+                let n = self.counter();
                 writeln!(
                     self.out,
-                    "{indent}while (n < {bound} && ({condition})) {{\n{indent}\tn = n + 1;"
+                    "{indent}while ({n} < {bound} && ({condition})) {{\n{indent}\t{n} = {n} + 1;"
                 )
                 .unwrap_or(());
                 self.in_loop = self.in_loop.saturating_add(1);
@@ -436,16 +453,18 @@ impl Gen {
             }
             8 => {
                 let bound = self.below(3).saturating_add(1);
-                writeln!(self.out, "{indent}do {{\n{indent}\tn = n + 1;").unwrap_or(());
+                let n = self.counter();
+                writeln!(self.out, "{indent}do {{\n{indent}\t{n} = {n} + 1;").unwrap_or(());
                 self.in_loop = self.in_loop.saturating_add(1);
                 self.block();
                 self.in_loop = self.in_loop.saturating_sub(1);
-                writeln!(self.out, "{indent}}} while (n < {bound});").unwrap_or(());
+                writeln!(self.out, "{indent}}} while ({n} < {bound});").unwrap_or(());
                 self.form("do-while");
             }
             9 => {
                 let bound = self.below(3).saturating_add(1);
-                writeln!(self.out, "{indent}for (n = 0; n < {bound}; n++) {{").unwrap_or(());
+                let n = self.counter();
+                writeln!(self.out, "{indent}for ({n} = 0; {n} < {bound}; {n}++) {{").unwrap_or(());
                 self.in_loop = self.in_loop.saturating_add(1);
                 self.block();
                 self.in_loop = self.in_loop.saturating_sub(1);
@@ -480,7 +499,8 @@ impl Gen {
         }
         if self.in_loop > 0 && self.chance(10) {
             let word = self.choose(&["break", "continue"], "break");
-            writeln!(self.out, "{indent}if (n > 1) {word};").unwrap_or(());
+            let n = self.loop_counter();
+            writeln!(self.out, "{indent}if ({n} > 1) {word};").unwrap_or(());
             self.form(word);
         }
     }

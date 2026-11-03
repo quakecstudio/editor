@@ -74,6 +74,31 @@ pub(crate) fn compile_fteqcc(source: &str) -> Result<Compiled, CompileError> {
     compile_module(&mut db, &input, |_| "t.qc".to_owned(), Options::default())
 }
 
+/// The progs of the files `files`, compiled in that order under the FTEQCC profile.
+pub(crate) fn fte_files(files: &[(&str, &str)]) -> ProgsFile {
+    let mut db = Db::new();
+    db.set_dialect(qc_syntax::Dialect::Fteqcc);
+    let mut input = ModuleInput::default();
+    for (i, (name, text)) in files.iter().enumerate() {
+        db.set_file(
+            FileId::new(i),
+            PathBuf::from(name),
+            text.as_bytes().to_vec(),
+        );
+        input.compiled.push(FileId::new(i));
+    }
+    let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
+    match compile_module(
+        &mut db,
+        &input,
+        |id| names[id.index()].clone(),
+        Options::default(),
+    ) {
+        Ok(compiled) => compiled.progs,
+        Err(error) => panic!("{files:?} did not compile: {error:?}"),
+    }
+}
+
 /// The progs of a program that must compile under the FTEQCC profile.
 pub(crate) fn fte_progs(source: &str) -> ProgsFile {
     match compile_fteqcc(source) {

@@ -557,12 +557,9 @@ fn a_parenthesised_name_is_a_cast_only_when_it_names_a_type() {
     let tree = crate::parse_with(source, crate::Dialect::Fteqcc)
         .syntax()
         .debug_tree();
-    let binaries = tree.matches("BinaryExpr@").count();
-    let casts = tree.matches("CastExpr@").count();
-    assert_eq!(casts, 1, "{tree}");
-    assert!(binaries >= 4, "{tree}");
-    assert!(
-        !tree.contains("AddressOfExpr@") || tree.matches("AddressOfExpr@").count() == 1,
-        "{tree}"
-    );
+    // `(gf0) & 3`, `(f()) & 1` and the two `+`; `(T) &gf0` a cast of one unary `&`.
+    assert_eq!(tree.matches("BinaryExpr@").count(), 4, "{tree}");
+    assert_eq!(tree.matches("CastExpr@").count(), 1, "{tree}");
+    assert_eq!(tree.matches("UnaryExpr@").count(), 1, "{tree}");
+    assert!(tree.contains("CastExpr@94..102\n"), "{tree}");
 }

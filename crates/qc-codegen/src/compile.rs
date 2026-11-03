@@ -1108,6 +1108,11 @@ impl<'a> Compiler<'a> {
             .at(span)?;
         let prior_number = operand_index(self.program.functions.len()).at(span)?;
         self.program.functions.push(moved);
+        // FTE-21.7: the moved body's block of locals goes with its record.
+        self.program.rekey_block(
+            number,
+            usize::try_from(prior_number).map_err(|_| Abort::Internal(Internal::TooLarge, span))?,
+        );
         let prior = self
             .program
             .generated("prior", def.ty.clone(), 1)
@@ -4002,11 +4007,11 @@ fn unparenthesized(expr: &ast::Expr) -> Option<ast::Expr> {
     }
 }
 
-/// Parameter slot `i`'s global offset, `OFS_PARM0 + 3 * i` (QC-18.3). A ninth argument's slot
-/// is past the eight, as id's `qcc` writes `def_parms[8]`; its call is refused (QC-18.2).
 /// The elements of a variadic function's `__va_list` (FTE-18.6: `int maxvacount = 24;`).
 const VA_COUNT: u32 = 24;
 
+/// Parameter slot `i`'s global offset, `OFS_PARM0 + 3 * i` (QC-18.3). A ninth argument's slot
+/// is past the eight, as id's `qcc` writes `def_parms[8]`; its call is refused (QC-18.2).
 fn parm_slot(i: usize) -> Option<u32> {
     u32::try_from(i)
         .ok()?

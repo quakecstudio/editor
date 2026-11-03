@@ -311,6 +311,33 @@ impl TypeShape {
     }
 }
 
+/// What a parse leaves: the tree, every diagnostic in source order, the keywords each token
+/// was read with and the types the file declares.
+pub(crate) struct Finished {
+    pub(crate) green: GreenNode,
+    pub(crate) diagnostics: Vec<Diagnostic>,
+    pub(crate) keywords: Vec<(usize, Keywords)>,
+    pub(crate) types: Vec<DeclaredTypeName>,
+}
+
+/// A type a file declared, as a later file of the module is parsed with it (FTEF-16.2).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeclaredTypeName {
+    /// The name as written.
+    pub name: String,
+    /// Whether it names a function type.
+    pub kind: DeclaredTypeKind,
+}
+
+/// What a declared type's name stands for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeclaredTypeKind {
+    /// A value type: a struct, class, enum, accessor or a typedef of a value.
+    Value,
+    /// A function type: a typedef of one, or of C's function pointer (FTEF-7.5).
+    Function,
+}
+
 /// A type the program declared (FTEF-20.14, FTEF-7.5).
 #[derive(Clone, Debug)]
 struct DeclaredType {
@@ -461,6 +488,7 @@ impl<'a> Parser<'a> {
         edits: &[(usize, KeywordEdit)],
         flags: &[(usize, CompilerFlags)],
         seams: &[usize],
+        types: &[DeclaredTypeName],
     ) -> Self {
         let brace_close = brace_closes(&input.tokens);
         let mut parser = Self {
@@ -484,7 +512,14 @@ impl<'a> Parser<'a> {
             applied: 0,
             keyword_marks: Vec::new(),
             flags: flags.to_vec(),
-            types: Vec::new(),
+            types: types
+                .iter()
+                .map(|t| DeclaredType {
+                    name: t.name.clone(),
+                    depth: 0,
+                    function: t.kind == DeclaredTypeKind::Function,
+                })
+                .collect(),
             blocks: Vec::new(),
             seams: seams.to_vec(),
             open_blocks: 0,
@@ -550,13 +585,32 @@ impl<'a> Parser<'a> {
 
     /// The tree, every diagnostic, lexical ones included, in source order, and the keywords
     /// each token was read with.
-    pub(crate) fn finish(mut self) -> (GreenNode, Vec<Diagnostic>, Vec<(usize, Keywords)>) {
+    pub(crate) fn finish(mut self) -> Finished {
         let mut diagnostics = self.input.diagnostics;
         diagnostics.extend(self.errors);
         diagnostics.sort_by_key(|d| d.span.start);
         self.keyword_marks
             .dedup_by(|later, earlier| later.1 == earlier.1);
-        (self.builder.finish(), diagnostics, self.keyword_marks)
+        // A body's types end with its block (FTEF-20.15); the file's own carry on.
+        let types = self
+            .types
+            .iter()
+            .filter(|t| t.depth == 0)
+            .map(|t| DeclaredTypeName {
+                name: t.name.clone(),
+                kind: if t.function {
+                    DeclaredTypeKind::Function
+                } else {
+                    DeclaredTypeKind::Value
+                },
+            })
+            .collect();
+        Finished {
+            green: self.builder.finish(),
+            diagnostics,
+            keywords: self.keyword_marks,
+            types,
+        }
     }
 
     // ---- keywords ----
@@ -2839,15 +2893,15 @@ impl<'a> Parser<'a> {
         // not warned of.
         if self.fteqcc()
             && self.errors.len() == errors
-            && let Some(token) = self.current()
-            && matches!(
-                token.kind,
-                K::Name | K::FloatLit | K::VectorLit | K::StringLit | K::FrameRef
-            )
+            && self.current().is_some_and(|token| {
+                matches!(
+                    token.kind,
+                    K::Name | K::FloatLit | K::VectorLit | K::StringLit | K::FrameRef
+                )
+            })
         {
             // At the expression's end, as FTEQCC reports it before what the reader wants
             // next (a definition's "Missing semicolon" is reported there too).
-            let _ = token;
             let span = Span::new(self.last_end, self.last_end);
             self.warning_at(Code::W0205, "Expected punctuation", span);
         }

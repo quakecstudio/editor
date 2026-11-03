@@ -358,6 +358,16 @@ impl Program {
         Ok(())
     }
 
+    /// FTE-21.7: the block closed as function `from`'s becomes function `to`'s, as a wrap
+    /// moves the record of the body it wraps to the end (FTEF-15.11).
+    pub(crate) fn rekey_block(&mut self, from: usize, to: usize) {
+        for block in &mut self.pending_blocks {
+            if block.record == from {
+                block.record = to;
+            }
+        }
+    }
+
     /// FTE-21.7: `QCC_UnmarshalLocals`: lays out every closed block after every global,
     /// static and immediate made so far, in the order of the function records: each block's
     /// definitions and statement operands take their real offsets and its record its
