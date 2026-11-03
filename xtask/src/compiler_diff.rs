@@ -117,10 +117,10 @@ fn parse_generated(args: &[String]) -> Result<(u64, u64), String> {
 /// How long one FTEQCC run of a generated program may take.
 const FTEQCC_LIMIT: std::time::Duration = std::time::Duration::from_secs(20);
 
-/// Runs the pinned FTEQCC on the `progs.src` in `dir`, as the grammar differential does
+/// Runs the FTEQCC `fteqcc` on the `progs.src` in `dir`, as the grammar differential does
 /// (DIFF-13.2); returns what it printed. Its progs is `dir/progs.dat` when it accepted.
-fn fteqcc_in(oracles: &Oracles, dir: &Path) -> Result<String, String> {
-    let mut command = Command::new(&oracles.fteqcc);
+fn fteqcc_in(oracles: &Oracles, fteqcc: &Path, dir: &Path) -> Result<String, String> {
+    let mut command = Command::new(fteqcc);
     command
         .args(["-Tid", "-srcfile", "progs.src"])
         .current_dir(dir);
@@ -178,7 +178,14 @@ fn generated(root: &Path, count: u64, seed: u64) -> Result<bool, String> {
     let mut refused = Vec::new();
     for n in 0..count {
         let program = dir.join(n.to_string());
-        let log = fteqcc_in(&oracles, &program)?;
+        // DIFF-14.4: the fixed FTEQCC first, its progs kept as `fixed.dat`, then the pinned one.
+        let fixed = program.join("fixed.dat");
+        fteqcc_in(&oracles, &oracles.fteqcc_fixed, &program)?;
+        let built = program.join("progs.dat");
+        if built.is_file() {
+            fs::rename(&built, &fixed).map_err(|e| format!("{}: {e}", fixed.display()))?;
+        }
+        let log = fteqcc_in(&oracles, &oracles.fteqcc, &program)?;
         let theirs = program.join("progs.dat");
         if !theirs.is_file() {
             rejected.push((n, log));
@@ -196,10 +203,11 @@ fn generated(root: &Path, count: u64, seed: u64) -> Result<bool, String> {
             };
             write(&program.join(name), &codegen::bytes(&compiled)?)?;
             pairs.push_str(&format!(
-                "generated-{seed}-{n}{}\t{}\t{}\n",
+                "generated-{seed}-{n}{}\t{}\t{}\t{}\n",
                 if fold { "-fold" } else { "" },
                 theirs.display(),
-                program.join(name).display()
+                program.join(name).display(),
+                fixed.display()
             ));
         }
     }

@@ -942,6 +942,30 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
 - **DIFF-14.3** The short run, 200 programs of seed 1, runs in the `Test Assets (linux)` job
   of every pull request after the fast compiler differential; the long run, 10000 programs of
   seed 1, is a job of the nightly Differential workflow.
+- **DIFF-14.4** The oracles include a second FTEQCC, `fteqcc-fixed`, built from the pinned
+  tree with each defect of DIFF-14.6 and DIFF-14.7 fixed in `engine/qclib/qcc_pr_comp.c` and
+  nothing else changed (ADR-0020, tier 3). The fixes are texts the build replaces
+  (`xtask/src/oracles/defects.rs`); a fix whose text the pinned file does not hold exactly as
+  often as it says stops the build, so a changed upstream cannot build an unfixed oracle.
+  Each generated program is compiled by it as well as by the pinned FTEQCC.
+- **DIFF-14.5** A generated program whose pinned FTEQCC progs diverges from ours passes as an
+  FTEQCC defect proved when the fixed FTEQCC's progs agrees with ours on every call; it fails
+  when the fixed FTEQCC's progs diverges from ours, also where the pinned one agrees, since a
+  fix must change nothing but its defect. A defect of qc-codegen therefore still fails the run:
+  ours then diverges from both.
+- **DIFF-14.6** FTEQCC defect: a `?:` whose arms are one word has its result in a one-word
+  local named `ternary` (`QCC_PR_DummyDef(r.cast=val.cast, "ternary", pr_scope, 0, ...)` in
+  `QCC_PR_RefExpression`), and `opt_assignments` folds the statement that made an arm into it.
+  An arm `(e.v).x` is `LOAD_V` into a temporary (FTE-9.3), so the fold makes the `LOAD_V`
+  write three words from the local, the two globals after it included: another local, or the
+  first local of the next function's block (FTE-21.7). Generated programs 555 and 1108 of seed
+  1 read a value it overwrote. The fix gives the local three words (`arraysize` 3).
+- **DIFF-14.7** FTEQCC defect: `QCC_PR_StatementFlags` frees a statement's operands before it
+  takes its result's temporary (`QCC_GetTemp`), so a vector result can take the slot of an
+  operand; `MUL_VF` and `MUL_FV` read their float operand again for each component (VM-5.4), so
+  `v * (w * f).x` reads, for its second and third components, the word its first one wrote.
+  Generated program 1230 of seed 1 does. The fix frees the operands of a statement whose result
+  is wider than a word only after its result's temporary is taken.
 
 ## Test vectors
 
