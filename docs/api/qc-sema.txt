@@ -3,6 +3,7 @@ enum qc_sema::cast::Kind
 enum qc_sema::cast::Source
 enum qc_sema::ir::Destination
 enum qc_sema::ir::ImmediateKind
+enum qc_sema::ir::Input
 enum qc_sema::ir::Operand
 enum qc_sema::ir::Temp
 enum qc_sema::ir::Whole
@@ -128,6 +129,8 @@ fn qc_sema::expand::ModuleInput::from_module
 fn qc_sema::expand::OriginMap::locate
 fn qc_sema::ir::Fragments::at
 fn qc_sema::ir::Operand::word
+fn qc_sema::ir::TempId::index
+fn qc_sema::ir::TempId::new
 fn qc_sema::lower::decl::LiteralValue::builtin_function
 fn qc_sema::lower::decl::RawDecl::literal
 fn qc_sema::lower::decl::declares
@@ -179,6 +182,7 @@ struct qc_sema::ir::Fragment
 struct qc_sema::ir::Fragments
 struct qc_sema::ir::Immediate
 struct qc_sema::ir::Statement
+struct qc_sema::ir::TempId
 struct qc_sema::lower::FileDecls
 struct qc_sema::lower::decl::BuiltinFunction
 struct qc_sema::lower::decl::RawDecl
@@ -253,6 +257,8 @@ variant qc_sema::ir::Destination::Word
 variant qc_sema::ir::ImmediateKind::Float
 variant qc_sema::ir::ImmediateKind::Integer
 variant qc_sema::ir::ImmediateKind::Vector
+variant qc_sema::ir::Input::Left
+variant qc_sema::ir::Input::Right
 variant qc_sema::ir::Operand::Immediate
 variant qc_sema::ir::Operand::Input
 variant qc_sema::ir::Operand::Temp

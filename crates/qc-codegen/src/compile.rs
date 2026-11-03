@@ -1555,18 +1555,11 @@ impl<'a> Compiler<'a> {
         right: &Value,
         span: Span,
     ) -> Lowered<(Value, Value)> {
-        let float = |c: &Self, v: &Value| c.type_of(v).etype() == Etype::Float;
-        let scaled = |c: &Self, v: &Value| {
-            operator == Operator::Mul && c.type_of(v).etype() == Etype::Vector
-        };
-        if self.is_integer(left) && (float(self, right) || scaled(self, right)) {
-            return Ok((self.int_as_float(left, span)?, right.clone()));
-        }
-        if self.is_integer(right) && (float(self, left) || scaled(self, left)) {
-            let right = self.int_as_float(right, span)?;
-            return Ok((left.clone(), right));
-        }
-        Ok((left.clone(), right.clone()))
+        Ok(match self.converted_input(operator, left, right) {
+            Some(ir::Input::Left) => (self.int_as_float(left, span)?, right.clone()),
+            Some(ir::Input::Right) => (left.clone(), self.int_as_float(right, span)?),
+            None => (left.clone(), right.clone()),
+        })
     }
 
     /// FTEF-27.17: `!` of an FTEQCC `int`: a constant folds to the int `!v`
@@ -2672,7 +2665,10 @@ impl<'a> Compiler<'a> {
         if self.fold || !self.dialect.has_fteqcc_extensions() {
             return Ok(None);
         }
-        let Some(fragment) = self.fragment(op_span) else {
+        let Some(body) = self.typed_body() else {
+            return Ok(None);
+        };
+        let Some(fragment) = body.fragment_at(op_span) else {
             return Ok(None);
         };
         // FTEF-26.15: a fold to no statement of a value that is not two constants may drop a
@@ -2683,17 +2679,14 @@ impl<'a> Compiler<'a> {
             return Ok(None);
         }
         let types = self.converted_types(operator, left, right);
-        let Some(rows) = self.plan_fragment(&fragment, types) else {
+        let Some(rows) = self.plan_fragment(fragment, types) else {
             return Ok(None);
         };
         let (left, right) = &self.floats_of(operator, left, right, op_span)?;
         // An emulation is a fragment other than the one statement of the opcode chosen
         // (FTEF-23.4); an operand's conversion folded by the checker is this code generator's
         // own, so it is not one.
-        let chosen = self
-            .scope
-            .and_then(|function| self.index.body(function))
-            .and_then(|body| body.opcode_at(op_span));
+        let chosen = body.opcode_at(op_span);
         let emulated = !matches!(fragment.statements.as_slice(), [only] if Some(only.op) == chosen);
         if let ([only], false) = (rows.as_slice(), emulated) {
             if self.both_constant(left, right)
@@ -2705,7 +2698,7 @@ impl<'a> Compiler<'a> {
                 return Ok(Some(value));
             }
         }
-        self.emit_fragment(&fragment, &rows, left, right, span)
+        self.emit_fragment(fragment, &rows, left, right, span)
             .map(Some)
     }
 
@@ -2713,15 +2706,32 @@ impl<'a> Compiler<'a> {
     /// operand of a float operator a float, worked out without emitting the conversion.
     fn converted_types(&self, operator: Operator, left: &Value, right: &Value) -> (Etype, Etype) {
         let (a, b) = (self.type_of(left).etype(), self.type_of(right).etype());
-        let floaty =
-            |t: Etype| t == Etype::Float || (operator == Operator::Mul && t == Etype::Vector);
-        if self.is_integer(left) && floaty(b) {
-            return (Etype::Float, b);
+        match self.converted_input(operator, left, right) {
+            Some(ir::Input::Left) => (Etype::Float, b),
+            Some(ir::Input::Right) => (a, Etype::Float),
+            None => (a, b),
         }
-        if self.is_integer(right) && floaty(a) {
-            return (a, Etype::Float);
+    }
+
+    /// FTEF-27.8: the operand of `operator` that is an integer [`Compiler::floats_of`] makes a
+    /// float: one beside a float, or beside a vector a `*` scales.
+    fn converted_input(
+        &self,
+        operator: Operator,
+        left: &Value,
+        right: &Value,
+    ) -> Option<ir::Input> {
+        let floaty = |v: &Value| {
+            let t = self.type_of(v).etype();
+            t == Etype::Float || (operator == Operator::Mul && t == Etype::Vector)
+        };
+        if self.is_integer(left) && floaty(right) {
+            return Some(ir::Input::Left);
         }
-        (a, b)
+        if self.is_integer(right) && floaty(left) {
+            return Some(ir::Input::Right);
+        }
+        None
     }
 
     /// The rows of `fragment`'s statements, when this code generator can write it with inputs of
@@ -2742,7 +2752,10 @@ impl<'a> Compiler<'a> {
         {
             return None;
         }
-        let input = |n: u8| if n == 0 { types.0 } else { types.1 };
+        let input = |side: ir::Input| match side {
+            ir::Input::Left => types.0,
+            ir::Input::Right => types.1,
+        };
         // An input must have the type the row reads, a vector's when a word of it is read: the
         // model does not yet lower every operand conversion the code generator does (a
         // vector's truth, FTE-19.10).
@@ -2758,7 +2771,9 @@ impl<'a> Compiler<'a> {
         };
         let mut rows = Vec::with_capacity(fragment.statements.len());
         for statement in &fragment.statements {
-            let row = Opcode::from_number(u32::from(statement.op))
+            let row = u32::try_from(statement.op.number())
+                .ok()
+                .and_then(Opcode::from_number)
                 .and_then(|op| ops::ROWS.iter().find(|row| row.opcode == op))?;
             let operands_ok = [statement.a, statement.b]
                 .iter()
@@ -2813,7 +2828,7 @@ impl<'a> Compiler<'a> {
                     *temps.get_mut(made).at(span)? = Some((ofs, row.c));
                 }
                 ir::Destination::Word(temp, word) => {
-                    let (ofs, _) = temps.get(usize::from(temp)).copied().flatten().at(span)?;
+                    let (ofs, _) = temps.get(temp.index()).copied().flatten().at(span)?;
                     let c = ofs.checked_add(u32::from(word)).at(span)?;
                     self.program.emit_into(row.opcode, a, b, c).at(span)?;
                 }
@@ -2824,13 +2839,13 @@ impl<'a> Compiler<'a> {
         // `QCC_UnFreeTemp`, or a plain statement, which frees nothing), and FTEQCC frees only
         // one of a call's value's references, so its alias stays live for the next clobber to
         // copy (FTE-18.13).
-        for (n, input) in [(0, left), (1, right)] {
+        for (side, input) in [(ir::Input::Left, left), (ir::Input::Right, right)] {
             let reads = fragment
                 .statements
                 .iter()
                 .flat_map(|statement| [statement.a, statement.b])
                 .filter(|operand| {
-                    matches!(operand, Some(ir::Operand::Input(m) | ir::Operand::Word(ir::Whole::Input(m), _)) if *m == n)
+                    matches!(operand, Some(ir::Operand::Input(m) | ir::Operand::Word(ir::Whole::Input(m), _)) if *m == side)
                 })
                 .count();
             if reads > 1 {
@@ -2839,14 +2854,14 @@ impl<'a> Compiler<'a> {
         }
         match fragment.value {
             Some(ir::Operand::Temp(n)) => {
-                let (ofs, etype) = temps.get(usize::from(n)).copied().flatten().at(span)?;
+                let (ofs, etype) = temps.get(n.index()).copied().flatten().at(span)?;
                 Ok(Value {
                     ofs,
                     kind: ValueKind::Temp(ValueType::simple(etype)),
                 })
             }
-            Some(ir::Operand::Input(0)) => Ok(left.clone()),
-            Some(ir::Operand::Input(_)) => Ok(right.clone()),
+            Some(ir::Operand::Input(ir::Input::Left)) => Ok(left.clone()),
+            Some(ir::Operand::Input(ir::Input::Right)) => Ok(right.clone()),
             Some(ir::Operand::Immediate(immediate)) => {
                 let place = self.immediate_place(immediate, span)?;
                 self.def_value(place, span)
@@ -2865,12 +2880,10 @@ impl<'a> Compiler<'a> {
         self.program.immediate(&literal).at(span)
     }
 
-    /// The fragment the semantic model lowered the operator whose token is at `op_span` to.
-    fn fragment(&self, op_span: Span) -> Option<ir::Fragment> {
-        self.scope
-            .and_then(|function| self.index.body(function))
-            .and_then(|body| body.fragment_at(op_span))
-            .cloned()
+    /// The typed body of the function being compiled, as the semantic model checked it.
+    fn typed_body(&self) -> Option<&'a qc_sema::TypedBody> {
+        let index = self.index;
+        self.scope.and_then(|function| index.body(function))
     }
 
     /// The global a fragment's `operand` is: an input's, a temporary's the fragment has taken
@@ -2891,9 +2904,9 @@ impl<'a> Compiler<'a> {
             Some(ir::Operand::Word(whole, word)) => (whole, word),
         };
         let base = match whole {
-            ir::Whole::Input(0) => self.operand_of(left),
-            ir::Whole::Input(_) => self.operand_of(right),
-            ir::Whole::Temp(n) => temps.get(usize::from(n)).copied().flatten().at(span)?.0,
+            ir::Whole::Input(ir::Input::Left) => self.operand_of(left),
+            ir::Whole::Input(ir::Input::Right) => self.operand_of(right),
+            ir::Whole::Temp(n) => temps.get(n.index()).copied().flatten().at(span)?.0,
             ir::Whole::Immediate(immediate) => {
                 let place = self.immediate_place(immediate, span)?;
                 self.program.def(place).at(span)?.ofs
@@ -2903,10 +2916,45 @@ impl<'a> Compiler<'a> {
     }
 
     /// FTEQCC's `a ^ b` (FTE-19.7): `OP_BITXOR_F`'s or `OP_BITXOR_V`'s emulation,
-    /// `(a & ~b) | (b & ~a)`, as the semantic model lowered it.
+    /// `(a & ~b) | (b & ~a)`, as the semantic model lowered it, else [`Compiler::xor_inline`]
+    /// when it holds no fragment: an operand whose constant it does not follow, or
+    /// `--opt fold`.
     fn xor(&mut self, left: &Value, right: &Value, spans: (Span, Span)) -> Lowered<Value> {
-        self.lowered_binary(Operator::BitAnd, left, right, spans)?
-            .ok_or(Abort::Internal(Internal::Unsupported, spans.0))
+        match self.lowered_binary(Operator::BitAnd, left, right, spans)? {
+            Some(value) => Ok(value),
+            None => self.xor_inline(left, right, spans),
+        }
+    }
+
+    /// FTEQCC's `a ^ b` on the vanilla opcodes (FTE-19.7, FTE-19.12), `OP_BITXOR_F`'s and
+    /// `OP_BITXOR_V`'s emulation: `(a & ~b) | (b & ~a)`, each `~` as `-1 - x`, a vector's
+    /// `'-1 -1 -1' - x`.
+    fn xor_inline(&mut self, left: &Value, right: &Value, spans: (Span, Span)) -> Lowered<Value> {
+        let span = spans.1;
+        let etype = self.type_of(left).etype();
+        if !matches!(etype, Etype::Float | Etype::Vector) || self.type_of(right).etype() != etype {
+            return Err(Abort::Internal(Internal::Unsupported, spans.0));
+        }
+        let minus_one = if etype == Etype::Vector {
+            let place = self
+                .program
+                .immediate(&Literal::Vector([-1.0; 3]))
+                .at(span)?;
+            self.def_value(place, span)?
+        } else {
+            self.float_literal(-1.0, span)?
+        };
+        let not_b = self.operate(Operator::Sub, &minus_one, right, spans)?;
+        let a_only = self.operate(Operator::BitAnd, left, &not_b, spans)?;
+        let not_a = self.operate(Operator::Sub, &minus_one, left, spans)?;
+        let b_only = self.operate(Operator::BitAnd, right, &not_a, spans)?;
+        let result = self.operate(Operator::BitOr, &a_only, &b_only, spans)?;
+        // The emulation reads each operand twice (`QCC_UnFreeTemp`), and FTEQCC frees only one
+        // of a call's value's references, so the alias stays live for the next clobber to
+        // copy (FTE-18.13).
+        self.keep_alive(left);
+        self.keep_alive(right);
+        Ok(result)
     }
 
     /// The row of `operator` for the two operands' types, folded under `--opt fold`, else
@@ -2931,6 +2979,23 @@ impl<'a> Compiler<'a> {
                 && matches!(operator, Operator::And | Operator::Or)
             {
                 return self.any_logic(operator, left, right, op_span);
+            }
+            // FTE-19.12: `v & w` and `v | w` of vectors are `BITAND_F` or `BITOR_F` of each
+            // component into a vector temporary.
+            if self.dialect.has_fteqcc_extensions()
+                && matches!(operator, Operator::BitAnd | Operator::BitOr)
+                && (a, b) == (Etype::Vector, Etype::Vector)
+            {
+                return self.vector_bits(operator, left, right, span);
+            }
+            // FTE-19.9: `v / f` is `OP_DIV_VF`'s emulation, `v * (1 / f)`.
+            if self.dialect.has_fteqcc_extensions()
+                && operator == Operator::Div
+                && (a, b) == (Etype::Vector, Etype::Float)
+            {
+                let one = self.float_literal(1.0, span)?;
+                let reciprocal = self.operate(Operator::Div, &one, right, (op_span, span))?;
+                return self.operate(Operator::Mul, left, &reciprocal, (op_span, span));
             }
             return Self::mismatch(operator, op_span);
         };
@@ -3002,6 +3067,34 @@ impl<'a> Compiler<'a> {
         } else {
             None
         }
+    }
+
+    /// FTE-19.12: `OP_BITAND_V` or `OP_BITOR_V` on the vanilla opcodes, the float opcode of
+    /// each component pair into the matching word of a vector temporary.
+    fn vector_bits(
+        &mut self,
+        operator: Operator,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> Lowered<Value> {
+        let op = if operator == Operator::BitAnd {
+            Opcode::BitAnd
+        } else {
+            Opcode::BitOr
+        };
+        let temp = self.program.allocate(3).at(span)?;
+        let (left, right) = (self.operand_of(left), self.operand_of(right));
+        for word in 0..3_u32 {
+            let a = left.checked_add(word).at(span)?;
+            let b = right.checked_add(word).at(span)?;
+            let c = temp.checked_add(word).at(span)?;
+            self.program.emit_into(op, a, b, c).at(span)?;
+        }
+        Ok(Value {
+            ofs: temp,
+            kind: ValueKind::Temp(ValueType::simple(Etype::Vector)),
+        })
     }
 
     /// FTEQCC's `&&` and `||` of operands that are not both floats, `OP_AND_ANY` and

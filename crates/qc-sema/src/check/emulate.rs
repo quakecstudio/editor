@@ -123,6 +123,13 @@ impl Checker<'_> {
             |value: &Value| value.constness == Constness::Opaque && !value.ty.is_function();
         if opaque(lhs) || opaque(rhs) {
             self.emitted = self.emitted.saturating_add(1);
+            // An opcode the target lacks is emulated by the code generator, which follows the
+            // value; the intermediate layer holds no fragment of it.
+            if !self.env.target_at(span.start).valid(op)
+                && let Some(builder) = &mut self.fragment
+            {
+                builder.give_up();
+            }
             // Its value decides no folding or emulation; the comparison warnings read no value.
             if self.env.target_at(span.start).valid(op) {
                 self.compare(op, lhs, rhs, span);
@@ -214,20 +221,12 @@ impl Checker<'_> {
                 .is_some_and(|t| t.etype() != Etype::Void)
                 .then(|| value.operand())
         };
-        let ir = match u16::try_from(op.number()) {
-            Ok(number) => {
-                let c = if row.makes_value() {
-                    ir::Destination::Value
-                } else {
-                    ir::Destination::Nothing
-                };
-                builder.push(number, [reads(lhs, 0), reads(rhs, 1)], c)
-            }
-            Err(_) => {
-                builder.give_up();
-                None
-            }
+        let c = if row.makes_value() {
+            ir::Destination::Value
+        } else {
+            ir::Destination::Nothing
         };
+        let ir = builder.push(op, [reads(lhs, 0), reads(rhs, 1)], c);
         Value { ir, ..result }
     }
 
@@ -274,7 +273,6 @@ impl Checker<'_> {
             emulation,
             Emulation::ConvertRight(..)
                 | Emulation::ConvertLeft(..)
-                | Emulation::Expand(_)
                 | Emulation::Remainder(..)
                 | Emulation::Reciprocal(..)
                 | Emulation::Complement(_)
@@ -462,16 +460,12 @@ impl Checker<'_> {
         self.last_temp = None;
         let mut ir = None;
         if let Some(builder) = &mut self.fragment {
-            match (
-                lhs.operand(),
-                rhs.operand(),
-                u16::try_from(word_op.number()),
-            ) {
-                (Some(a), Some(b), Ok(number)) => {
+            match (lhs.operand(), rhs.operand()) {
+                (Some(a), Some(b)) => {
                     if let Some(vector) = builder.vector() {
                         for word in 0..3 {
                             builder.push(
-                                number,
+                                word_op,
                                 [Some(a.word(word)), Some(b.word(word))],
                                 ir::Destination::Word(vector, word),
                             );

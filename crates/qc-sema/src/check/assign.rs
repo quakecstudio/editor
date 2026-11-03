@@ -415,9 +415,7 @@ impl Checker<'_> {
         // The opcode on the value read and the right side is a fragment of the intermediate
         // layer, by the operator's span, as a binary operator's is, and the opcode the one chosen
         // there (FTEF-23.4).
-        if let Ok(number) = u16::try_from(op.number()) {
-            self.opcodes.insert((span.start, span.end), number);
-        }
+        self.opcodes.insert((span.start, span.end), op);
         let value = self
             .lowering(span, &read, &rhs, |checker, read, rhs| {
                 checker.emit(op, read, rhs, span).map(Some)

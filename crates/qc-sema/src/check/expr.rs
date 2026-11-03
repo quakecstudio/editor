@@ -9,7 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use qc_diag::{Code, Span};
-use qc_preproc::FteFlag;
+use qc_preproc::{FteFlag, Op};
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 
 use crate::cast::Source;
@@ -31,7 +31,7 @@ use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
 pub(super) struct Checker<'e> {
     pub(super) env: &'e mut dyn Env,
     types: HashMap<(usize, usize), Type>,
-    pub(super) opcodes: HashMap<(usize, usize), u16>,
+    pub(super) opcodes: HashMap<(usize, usize), Op>,
     /// The binary operators' fragments lowered so far.
     fragments: ir::Fragments,
     /// The fragment of the binary operator being checked, if any.
@@ -386,11 +386,11 @@ impl<'e> Checker<'e> {
         lower: impl FnOnce(&mut Self, &Value, &Value) -> Result<Option<Value>, Fatal>,
     ) -> Result<Option<Value>, Fatal> {
         let lhs = Value {
-            ir: Some(ir::Operand::Input(0)),
+            ir: Some(ir::Operand::Input(ir::Input::Left)),
             ..lhs.clone()
         };
         let rhs = Value {
-            ir: Some(ir::Operand::Input(1)),
+            ir: Some(ir::Operand::Input(ir::Input::Right)),
             ..rhs.clone()
         };
         let outer = self.fragment.replace(ir::Builder::new());
@@ -437,9 +437,7 @@ impl<'e> Checker<'e> {
         if let Choice::Mismatch(_) = choice {
             self.mismatch(spelling, lhs, rhs, span);
         }
-        if let Ok(number) = u16::try_from(choice.op().number()) {
-            self.opcodes.insert((span.start, span.end), number);
-        }
+        self.opcodes.insert((span.start, span.end), choice.op());
         let [a, b, _] = opcode.types;
         let mut folded = [None, None];
         for (slot, (value, operand, row)) in
@@ -490,6 +488,8 @@ impl<'e> Checker<'e> {
                     }
                     _ => row.value_type(),
                 },
+                // A converted operand is a temporary the intermediate layer does not name.
+                ir: if kept || value.null() { value.ir } else { None },
                 ..value.clone()
             }
         };

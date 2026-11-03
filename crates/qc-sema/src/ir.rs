@@ -10,27 +10,57 @@
 
 use std::collections::HashMap;
 
+use qc_preproc::Op;
+
 /// What a statement reads or what a fragment's value is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Operand {
-    /// The fragment's input `n`: the left (0) or right (1) operand of its operator, as the code
-    /// generator holds it.
-    Input(u8),
-    /// The fragment's temporary `n`, in the order the lowering took them.
-    Temp(u16),
+    /// One of the fragment's inputs, the operands of its operator, as the code generator holds
+    /// them.
+    Input(Input),
+    /// One of the fragment's temporaries.
+    Temp(TempId),
     /// An immediate constant (FTEF-26): its kind and its words.
     Immediate(Immediate),
     /// One word of a vector input, temporary or immediate: `var.ofs++` (FTE-9.3).
     Word(Whole, u8),
 }
 
+/// An operand of the operator a fragment is lowered from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Input {
+    /// The left operand.
+    Left,
+    /// The right operand.
+    Right,
+}
+
+/// A temporary of a fragment: its number in [`Fragment::temps`], the order the lowering took
+/// them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TempId(u16);
+
+impl TempId {
+    /// The temporary of index `n`.
+    #[must_use]
+    pub const fn new(n: u16) -> Self {
+        Self(n)
+    }
+
+    /// Its index in [`Fragment::temps`].
+    #[must_use]
+    pub fn index(self) -> usize {
+        usize::from(self.0)
+    }
+}
+
 /// A value whose words a [`Operand::Word`] names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Whole {
-    /// The fragment's input `n`.
-    Input(u8),
-    /// The fragment's temporary `n`.
-    Temp(u16),
+    /// One of the fragment's inputs.
+    Input(Input),
+    /// One of the fragment's temporaries.
+    Temp(TempId),
     /// An immediate.
     Immediate(Immediate),
 }
@@ -58,7 +88,7 @@ pub enum Destination {
     Value,
     /// A word of a vector temporary of the fragment, by the temporary's number and the
     /// word's, taken before (`QCC_GetTemp(type_vector)`, [`Temp::Vector`]).
-    Word(u16, u8),
+    Word(TempId, u8),
 }
 
 /// A constant a fragment names: the words of its value and the kind of immediate that holds
@@ -85,8 +115,8 @@ pub enum ImmediateKind {
 /// One statement: its opcode's number (`pr_opcodes`), its operands, and where it writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Statement {
-    /// The opcode's number.
-    pub op: u16,
+    /// The opcode.
+    pub op: Op,
     /// Operand a.
     pub a: Option<Operand>,
     /// Operand b.
@@ -166,7 +196,7 @@ impl Builder {
     /// makes, when it makes one.
     pub(crate) fn push(
         &mut self,
-        op: u16,
+        op: Op,
         reads: [Option<Option<Operand>>; 2],
         c: Destination,
     ) -> Option<Operand> {
@@ -192,12 +222,12 @@ impl Builder {
             return None;
         }
         self.temps.push(Temp::Made(index));
-        Some(Operand::Temp(temp))
+        Some(Operand::Temp(TempId(temp)))
     }
 
     /// Takes a vector temporary before the next statement, whose words statements then write
     /// ([`Destination::Word`]); its number.
-    pub(crate) fn vector(&mut self) -> Option<u16> {
+    pub(crate) fn vector(&mut self) -> Option<TempId> {
         let (Ok(index), Ok(temp)) = (
             u16::try_from(self.statements.len()),
             u16::try_from(self.temps.len()),
@@ -206,7 +236,7 @@ impl Builder {
             return None;
         };
         self.temps.push(Temp::Vector(index));
-        Some(temp)
+        Some(TempId(temp))
     }
 
     /// Records an immediate the lowering made.
@@ -232,7 +262,8 @@ impl Builder {
 
 #[cfg(test)]
 mod tests {
-    use super::{Builder, Destination, Fragment, Operand, Statement, Temp};
+    use super::{Builder, Destination, Fragment, Input, Operand, Statement, Temp, TempId};
+    use qc_preproc::Op;
 
     // A statement's value is the next temporary and a vector taken before its words is one too;
     // a statement writing nothing or a word names none; and an operand the fragment cannot name
@@ -240,13 +271,23 @@ mod tests {
     #[test]
     fn a_builder_numbers_temporaries_and_refuses_an_unnamed_operand() {
         let mut builder = Builder::new();
-        let inputs = [Some(Some(Operand::Input(0))), Some(Some(Operand::Input(1)))];
-        let made = builder.push(6, inputs, Destination::Value);
-        assert_eq!(made, Some(Operand::Temp(0)));
-        assert_eq!(builder.vector(), Some(1));
-        assert_eq!(builder.push(64, inputs, Destination::Word(1, 2)), None);
+        let inputs = [
+            Some(Some(Operand::Input(Input::Left))),
+            Some(Some(Operand::Input(Input::Right))),
+        ];
+        let made = builder.push(Op::AddF, inputs, Destination::Value);
+        assert_eq!(made, Some(Operand::Temp(TempId(0))));
+        assert_eq!(builder.vector(), Some(TempId(1)));
         assert_eq!(
-            builder.push(31, [made.map(Some), inputs[1]], Destination::Nothing),
+            builder.push(Op::BitandF, inputs, Destination::Word(TempId(1), 2)),
+            None
+        );
+        assert_eq!(
+            builder.push(
+                Op::StoreF,
+                [made.map(Some), inputs[1]],
+                Destination::Nothing
+            ),
             None
         );
         let statement = |op, a, b, c| Statement {
@@ -256,31 +297,36 @@ mod tests {
             c,
         };
         assert_eq!(
-            builder.clone().finish(Some(Operand::Temp(1))),
+            builder.clone().finish(Some(Operand::Temp(TempId(1)))),
             Some(Fragment {
                 statements: vec![
-                    statement(6, Operand::Input(0), Operand::Input(1), Destination::Value),
                     statement(
-                        64,
-                        Operand::Input(0),
-                        Operand::Input(1),
-                        Destination::Word(1, 2)
+                        Op::AddF,
+                        Operand::Input(Input::Left),
+                        Operand::Input(Input::Right),
+                        Destination::Value
                     ),
                     statement(
-                        31,
-                        Operand::Temp(0),
-                        Operand::Input(1),
+                        Op::BitandF,
+                        Operand::Input(Input::Left),
+                        Operand::Input(Input::Right),
+                        Destination::Word(TempId(1), 2)
+                    ),
+                    statement(
+                        Op::StoreF,
+                        Operand::Temp(TempId(0)),
+                        Operand::Input(Input::Right),
                         Destination::Nothing
                     ),
                 ],
                 immediates: Vec::new(),
                 temps: vec![Temp::Made(0), Temp::Vector(1)],
-                value: Some(Operand::Temp(1)),
+                value: Some(Operand::Temp(TempId(1))),
             })
         );
         for reads in [[Some(None), None], [None, Some(None)]] {
             let mut unnamed = builder.clone();
-            assert_eq!(unnamed.push(1, reads, Destination::Value), None);
+            assert_eq!(unnamed.push(Op::MulF, reads, Destination::Value), None);
             assert_eq!(unnamed.finish(None), None);
         }
         let mut given_up = Builder::new();
@@ -293,13 +339,13 @@ mod tests {
     fn a_word_is_of_a_whole_value() {
         use super::Whole;
         assert_eq!(
-            Operand::Input(1).word(2),
-            Some(Operand::Word(Whole::Input(1), 2))
+            Operand::Input(Input::Right).word(2),
+            Some(Operand::Word(Whole::Input(Input::Right), 2))
         );
         assert_eq!(
-            Operand::Temp(3).word(0),
-            Some(Operand::Word(Whole::Temp(3), 0))
+            Operand::Temp(TempId(3)).word(0),
+            Some(Operand::Word(Whole::Temp(TempId(3)), 0))
         );
-        assert_eq!(Operand::Word(Whole::Temp(3), 0).word(1), None);
+        assert_eq!(Operand::Word(Whole::Temp(TempId(3)), 0).word(1), None);
     }
 }

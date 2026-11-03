@@ -238,6 +238,7 @@ fn a_checked_body_keeps_its_expression_types() {
 // operator, by the operator's span, the row FTEQCC chose even when the target emulates it
 #[test]
 fn a_checked_body_keeps_its_operators_opcodes() {
+    use qc_preproc::Op;
     let source = "float a; vector v; void() g = { a = a + 1; v = v * a; v = v / a; a = a < 2; };";
     let index = super::fte_index_of(source);
     let g = index
@@ -251,14 +252,14 @@ fn a_checked_body_keeps_its_operators_opcodes() {
         let start = source.find(text).unwrap() + text.find(operator).unwrap();
         body.opcode_at(Span::new(start, start + operator.len()))
     };
-    assert_eq!(at("a + 1", "+"), Some(6), "ADD_F");
-    assert_eq!(at("v * a", "*"), Some(4), "MUL_VF");
+    assert_eq!(at("a + 1", "+"), Some(Op::AddF), "ADD_F");
+    assert_eq!(at("v * a", "*"), Some(Op::MulVf), "MUL_VF");
     assert_eq!(
         at("v / a", "/"),
-        Some(139),
+        Some(Op::DivVf),
         "DIV_VF, emulated on the id target"
     );
-    assert_eq!(at("a < 2", "<"), Some(22), "LT_F");
+    assert_eq!(at("a < 2", "<"), Some(Op::LtF), "LT_F");
     assert_eq!(
         at("a = a + 1", "="),
         None,
@@ -275,8 +276,10 @@ fn a_checked_body_keeps_its_operators_opcodes() {
 #[test]
 fn a_binary_operator_lowers_to_a_fragment() {
     use crate::ir::{
-        Destination, Fragment, Immediate, ImmediateKind, Operand, Statement, Temp, Whole,
+        Destination, Fragment, Immediate, ImmediateKind, Input, Operand, Statement, Temp, TempId,
+        Whole,
     };
+    use qc_preproc::Op;
     let source = "float a; vector v; void() t = { a = a + 1; v = v * a; a = 2 + 3; a = a % 2; \
                   v = v / a; v = v & v; };";
     let index = super::fte_index_of(source);
@@ -297,7 +300,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
             words: [value.to_bits(), 0, 0],
         })
     };
-    let one = |op: u16, a: Operand, b: Operand| Fragment {
+    let one = |op: Op, a: Operand, b: Operand| Fragment {
         statements: vec![Statement {
             op,
             a: Some(a),
@@ -306,16 +309,24 @@ fn a_binary_operator_lowers_to_a_fragment() {
         }],
         immediates: Vec::new(),
         temps: vec![Temp::Made(0)],
-        value: Some(Operand::Temp(0)),
+        value: Some(Operand::Temp(TempId::new(0))),
     };
     assert_eq!(
         at("a + 1", "+"),
-        Some(&one(6, Operand::Input(0), Operand::Input(1))),
+        Some(&one(
+            Op::AddF,
+            Operand::Input(Input::Left),
+            Operand::Input(Input::Right)
+        )),
         "ADD_F: a literal operand is an input too"
     );
     assert_eq!(
         at("v * a", "*"),
-        Some(&one(4, Operand::Input(0), Operand::Input(1))),
+        Some(&one(
+            Op::MulVf,
+            Operand::Input(Input::Left),
+            Operand::Input(Input::Right)
+        )),
         "MUL_VF"
     );
     assert_eq!(
@@ -333,7 +344,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
     );
     // FTEF-27.4: with no `mod` function, `a % b` is `a - b * (a / b)`, the quotient floored by
     // `BITOR` of itself, each step a statement of the fragment.
-    let made = |op: u16, a: Operand, b: Operand| Statement {
+    let made = |op: Op, a: Operand, b: Operand| Statement {
         op,
         a: Some(a),
         b: Some(b),
@@ -343,14 +354,30 @@ fn a_binary_operator_lowers_to_a_fragment() {
         at("a % 2", "%"),
         Some(&Fragment {
             statements: vec![
-                made(5, Operand::Input(0), Operand::Input(1)),
-                made(65, Operand::Temp(0), Operand::Temp(0)),
-                made(1, Operand::Input(1), Operand::Temp(1)),
-                made(8, Operand::Input(0), Operand::Temp(2)),
+                made(
+                    Op::DivF,
+                    Operand::Input(Input::Left),
+                    Operand::Input(Input::Right)
+                ),
+                made(
+                    Op::BitorF,
+                    Operand::Temp(TempId::new(0)),
+                    Operand::Temp(TempId::new(0))
+                ),
+                made(
+                    Op::MulF,
+                    Operand::Input(Input::Right),
+                    Operand::Temp(TempId::new(1))
+                ),
+                made(
+                    Op::SubF,
+                    Operand::Input(Input::Left),
+                    Operand::Temp(TempId::new(2))
+                ),
             ],
             immediates: Vec::new(),
             temps: (0..4).map(Temp::Made).collect(),
-            value: Some(Operand::Temp(3)),
+            value: Some(Operand::Temp(TempId::new(3))),
         }),
         "DIV_F, BITOR, MUL_F, SUB_F"
     );
@@ -359,24 +386,28 @@ fn a_binary_operator_lowers_to_a_fragment() {
         at("v / a", "/"),
         Some(&Fragment {
             statements: vec![
-                made(5, float(1.0), Operand::Input(1)),
-                made(4, Operand::Input(0), Operand::Temp(0)),
+                made(Op::DivF, float(1.0), Operand::Input(Input::Right)),
+                made(
+                    Op::MulVf,
+                    Operand::Input(Input::Left),
+                    Operand::Temp(TempId::new(0))
+                ),
             ],
             immediates: vec![Immediate {
                 kind: ImmediateKind::Float,
                 words: [1.0_f32.to_bits(), 0, 0],
             }],
             temps: vec![Temp::Made(0), Temp::Made(1)],
-            value: Some(Operand::Temp(1)),
+            value: Some(Operand::Temp(TempId::new(1))),
         }),
         "DIV_F of 1, MUL_VF"
     );
     // FTE-19.12: `v & w` of vectors is a vector temporary and `BITAND_F` of each word into it.
     let word = |i: u8| Statement {
-        op: 64,
-        a: Some(Operand::Word(Whole::Input(0), i)),
-        b: Some(Operand::Word(Whole::Input(1), i)),
-        c: Destination::Word(0, i),
+        op: Op::BitandF,
+        a: Some(Operand::Word(Whole::Input(Input::Left), i)),
+        b: Some(Operand::Word(Whole::Input(Input::Right), i)),
+        c: Destination::Word(TempId::new(0), i),
     };
     assert_eq!(
         at("v & v", "&"),
@@ -384,7 +415,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
             statements: (0..3).map(word).collect(),
             immediates: Vec::new(),
             temps: vec![Temp::Vector(0)],
-            value: Some(Operand::Temp(0)),
+            value: Some(Operand::Temp(TempId::new(0))),
         }),
         "three BITAND_F"
     );
@@ -441,7 +472,8 @@ fn a_constant_vectors_component_is_a_constant() {
 // operand, a vector's `SUB_V` of '-1 -1 -1'
 #[test]
 fn xor_lowers_with_complements_of_minus_one() {
-    use crate::ir::{Destination, Immediate, ImmediateKind, Operand, Statement};
+    use crate::ir::{Destination, Immediate, ImmediateKind, Input, Operand, Statement};
+    use qc_preproc::Op;
     let source = "float a, b; vector v, w; void() t = { a = a ^ b; v = v ^ w; };";
     let index = super::fte_index_of(source);
     let t = index
@@ -468,9 +500,9 @@ fn xor_lowers_with_complements_of_minus_one() {
     assert_eq!(
         floats.statements.first(),
         Some(&Statement {
-            op: 8,
+            op: Op::SubF,
             a: Some(Operand::Immediate(minus_one(ImmediateKind::Float))),
-            b: Some(Operand::Input(1)),
+            b: Some(Operand::Input(Input::Right)),
             c: Destination::Value,
         }),
         "SUB_F of -1 and b"
@@ -480,9 +512,9 @@ fn xor_lowers_with_complements_of_minus_one() {
     assert_eq!(
         vectors.statements.first(),
         Some(&Statement {
-            op: 9,
+            op: Op::SubV,
             a: Some(Operand::Immediate(minus_one(ImmediateKind::Vector))),
-            b: Some(Operand::Input(1)),
+            b: Some(Operand::Input(Input::Right)),
             c: Destination::Value,
         }),
         "SUB_V of '-1 -1 -1' and w"
