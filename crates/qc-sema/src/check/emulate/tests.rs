@@ -187,8 +187,8 @@ const EMULATED: &[(Op, &str)] = &[
     (Op::AddEf, "Special"),
     (Op::SubEi, "Special"),
     (Op::SubEf, "Special"),
-    (Op::BitandV, "Forced"),
-    (Op::BitorV, "Forced"),
+    (Op::BitandV, "ByWord(BitandF)"),
+    (Op::BitorV, "ByWord(BitorF)"),
     (Op::BitnotV, "Complement(SubV)"),
     (
         Op::BitxorV,

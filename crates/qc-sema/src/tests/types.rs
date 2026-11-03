@@ -271,11 +271,14 @@ fn a_checked_body_keeps_its_operators_opcodes() {
 // spec FTEF-26.2: an operator of two constants folds, to an immediate with no statement
 // spec FTEF-27.4: an emulated `%` is its emulation's statements
 // spec FTE-19.9: `v / f` is `v * (1 / f)`
+// spec FTE-19.12: `v & w` of vectors is BITAND_F of each word into a vector temporary
 #[test]
 fn a_binary_operator_lowers_to_a_fragment() {
-    use crate::ir::{Fragment, Immediate, ImmediateKind, Operand, Statement};
+    use crate::ir::{
+        Destination, Fragment, Immediate, ImmediateKind, Operand, Statement, Temp, Whole,
+    };
     let source = "float a; vector v; void() t = { a = a + 1; v = v * a; a = 2 + 3; a = a % 2; \
-                  v = v / a; };";
+                  v = v / a; v = v & v; };";
     let index = super::fte_index_of(source);
     let t = index
         .defs
@@ -299,9 +302,10 @@ fn a_binary_operator_lowers_to_a_fragment() {
             op,
             a: Some(a),
             b: Some(b),
-            makes: true,
+            c: Destination::Value,
         }],
         immediates: Vec::new(),
+        temps: vec![Temp::Made(0)],
         value: Some(Operand::Temp(0)),
     };
     assert_eq!(
@@ -322,6 +326,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
                 kind: ImmediateKind::Float,
                 words: [5.0_f32.to_bits(), 0, 0],
             }],
+            temps: Vec::new(),
             value: Some(float(5.0)),
         }),
         "the folded value is an immediate the lowering made"
@@ -332,7 +337,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
         op,
         a: Some(a),
         b: Some(b),
-        makes: true,
+        c: Destination::Value,
     };
     assert_eq!(
         at("a % 2", "%"),
@@ -344,6 +349,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
                 made(8, Operand::Input(0), Operand::Temp(2)),
             ],
             immediates: Vec::new(),
+            temps: (0..4).map(Temp::Made).collect(),
             value: Some(Operand::Temp(3)),
         }),
         "DIV_F, BITOR, MUL_F, SUB_F"
@@ -360,9 +366,27 @@ fn a_binary_operator_lowers_to_a_fragment() {
                 kind: ImmediateKind::Float,
                 words: [1.0_f32.to_bits(), 0, 0],
             }],
+            temps: vec![Temp::Made(0), Temp::Made(1)],
             value: Some(Operand::Temp(1)),
         }),
         "DIV_F of 1, MUL_VF"
+    );
+    // FTE-19.12: `v & w` of vectors is a vector temporary and `BITAND_F` of each word into it.
+    let word = |i: u8| Statement {
+        op: 64,
+        a: Some(Operand::Word(Whole::Input(0), i)),
+        b: Some(Operand::Word(Whole::Input(1), i)),
+        c: Destination::Word(0, i),
+    };
+    assert_eq!(
+        at("v & v", "&"),
+        Some(&Fragment {
+            statements: (0..3).map(word).collect(),
+            immediates: Vec::new(),
+            temps: vec![Temp::Vector(0)],
+            value: Some(Operand::Temp(0)),
+        }),
+        "three BITAND_F"
     );
 }
 
