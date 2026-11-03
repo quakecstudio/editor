@@ -10,11 +10,14 @@ enum qc_syntax::ast::SimpleTypeKind
 enum qc_syntax::ast::UnaryOp
 enum qc_syntax::c_scalar::CScalar
 enum qc_syntax::kind::SyntaxKind
+enum qc_syntax::parser::DeclaredTypeKind
 enum qc_syntax::recovery::RecoveryFault
 enum qc_syntax::tree::SyntaxElement
 field qc_syntax::c_scalar::CContext.ilp32
 field qc_syntax::c_scalar::CContext.keywords
 field qc_syntax::c_scalar::CType.scalar
+field qc_syntax::parser::DeclaredTypeName.kind
+field qc_syntax::parser::DeclaredTypeName.name
 field qc_syntax::recovery::DeletionFailure.fault
 field qc_syntax::recovery::DeletionFailure.span
 field qc_syntax::recovery::DeletionFailure.token
@@ -32,6 +35,7 @@ fn qc_syntax::Parse::lex_flags_at
 fn qc_syntax::Parse::relexed
 fn qc_syntax::Parse::syntax
 fn qc_syntax::Parse::tree
+fn qc_syntax::Parse::types
 fn qc_syntax::ast::AccessorDecl::declarators
 fn qc_syntax::ast::AccessorDecl::members
 fn qc_syntax::ast::AccessorDecl::name
@@ -179,6 +183,7 @@ fn qc_syntax::kind::SyntaxKind::is_trivia
 fn qc_syntax::parse
 fn qc_syntax::parse_module_source
 fn qc_syntax::parse_preprocessed
+fn qc_syntax::parse_preprocessed_after
 fn qc_syntax::parse_preprocessed_flagged
 fn qc_syntax::parse_with
 fn qc_syntax::recovery::check_deletions_with
@@ -218,6 +223,7 @@ struct qc_syntax::Parse
 struct qc_syntax::c_scalar::CContext
 struct qc_syntax::c_scalar::CType
 struct qc_syntax::c_scalar::CWords
+struct qc_syntax::parser::DeclaredTypeName
 struct qc_syntax::recovery::DeletionFailure
 struct qc_syntax::recovery::DeletionReport
 struct qc_syntax::tree::SyntaxNode
@@ -225,6 +231,8 @@ struct qc_syntax::tree::SyntaxToken
 trait qc_syntax::ast::AstNode
 use qc_syntax::Code = qc_lexer::Code
 use qc_syntax::CompilerFlags = qc_preproc::CompilerFlags
+use qc_syntax::DeclaredTypeKind = parser::DeclaredTypeKind
+use qc_syntax::DeclaredTypeName = parser::DeclaredTypeName
 use qc_syntax::Diagnostic = qc_lexer::Diagnostic
 use qc_syntax::Dialect = qc_lexer::Dialect
 use qc_syntax::FlagEdit = qc_preproc::FlagEdit
@@ -478,6 +486,8 @@ variant qc_syntax::kind::SyntaxKind::VoidKw
 variant qc_syntax::kind::SyntaxKind::WhileKw
 variant qc_syntax::kind::SyntaxKind::WhileStmt
 variant qc_syntax::kind::SyntaxKind::Whitespace
+variant qc_syntax::parser::DeclaredTypeKind::Function
+variant qc_syntax::parser::DeclaredTypeKind::Value
 variant qc_syntax::recovery::RecoveryFault::EarlierChanged
 variant qc_syntax::recovery::RecoveryFault::ErrorOutside
 variant qc_syntax::recovery::RecoveryFault::LaterChanged

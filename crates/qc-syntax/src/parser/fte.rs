@@ -1335,8 +1335,10 @@ impl Parser<'_> {
     // ---- terms ----
 
     /// Whether the `(` here opens a cast (FTEF-16.2): a type word, a `.` or a C type word
-    /// follows; or a type name and `*`s or a parameter list and then `)`; or a lone name in
-    /// parentheses followed by a token that starts a term.
+    /// follows; or a name that is a type, registered or declared so far, with `*`s or a
+    /// parameter list and then `)`, or alone in parentheses, followed by a token that starts a
+    /// term. `QCC_PR_ParseType` takes only a type, so `(gf0) & 3` with a variable `gf0` is a
+    /// parenthesised operand of `&`, not a cast of an address.
     pub(super) fn fte_at_cast(&self) -> bool {
         let Some(first) = self.nth(1) else {
             return false;
@@ -1350,7 +1352,7 @@ impl Parser<'_> {
         if self.type_word(1).is_some() || self.c_type_word(1) || self.type_form(1) {
             return true;
         }
-        if !self.fte_type_name(1) {
+        if !self.registered_type(1) {
             return false;
         }
         let n = self.skip_stars(2);

@@ -20,6 +20,20 @@
 //! `--mode fast` makes 32 rounds of calls to each function, `--mode full` 128 (DIFF-12.6).
 //! It exits 0 when every pair has no divergence and the calls executed at least 90% of the
 //! `qcc` progs' statements (DIFF-12.5), 1 otherwise, and 2 on a usage or setup error.
+//!
+//! Two more forms serve the generated-program differential (DIFF-14):
+//!
+//! ```text
+//! compiler-diff --generate <dir> --seed <n> --count <n>
+//! compiler-diff --pairs <file> [--mode <fast|full>] [--oracle <qcc|fteqcc>] [--engine <id|vkquake>]
+//! ```
+//!
+//! `--generate` writes program `n` of the seed to `<dir>/<n>/t.qc` with a `progs.src` that
+//! lists it, and the forms every program used, with their counts, to `<dir>/forms.tsv`.
+//! `--pairs` compares each line's pair, `name`, the oracle's progs and ours separated by tabs,
+//! in one process, printing one line per pair, and exits 0 when no pair diverges: a generated
+//! program's calls need not reach 90% of its statements, since every function of it is
+//! called and a bounded loop is left early by its counter.
 
 #![expect(
     clippy::print_stdout,
@@ -35,6 +49,7 @@ use qc_builtins::EngineProfile;
 use qs_differential::calls::{
     CodebaseReport, FAST_ROUNDS, FULL_ROUNDS, Oracle, run_codebase, uncovered,
 };
+use qs_differential::source::{self, FORMS};
 
 /// The divergences printed for each pair; the rest are counted.
 const PRINTED: usize = 10;
@@ -42,7 +57,9 @@ const PRINTED: usize = 10;
 const USAGE: &str = "usage: compiler-diff --mode <fast|full> --codebase <id> \
                      [--oracle <qcc|fteqcc>] [--engine <id|vkquake>] [--summary <file>] [--uncovered <file>] \
                      --theirs <progs> \
-                     --ours <progs> [--ours <progs>...]";
+                     --ours <progs> [--ours <progs>...]\n\
+       compiler-diff --generate <dir> --seed <n> --count <n>\n\
+       compiler-diff --pairs <file> [--mode <fast|full>] [--oracle <qcc|fteqcc>] [--engine <id|vkquake>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -70,7 +87,29 @@ struct Options {
     ours: Vec<PathBuf>,
 }
 
-fn parse(args: &[String]) -> Result<Options, String> {
+/// The `--generate` form: where to write the programs, the seed and how many.
+struct Generate {
+    dir: PathBuf,
+    seed: u64,
+    count: u64,
+}
+
+/// What the command line asks for.
+enum Run {
+    /// One oracle progs against each of ours.
+    Suite(Options),
+    /// Programs of a seed written out (DIFF-14.1).
+    Generate(Generate),
+    /// The pairs a file lists, each compared (DIFF-14.2).
+    Pairs {
+        file: PathBuf,
+        rounds: u32,
+        oracle: Oracle,
+        engine: EngineProfile,
+    },
+}
+
+fn parse(args: &[String]) -> Result<Run, String> {
     let mut rounds = FAST_ROUNDS;
     let mut codebase = None;
     let mut oracle = Oracle::Qcc;
@@ -79,6 +118,10 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut uncovered = None;
     let mut theirs = None;
     let mut ours = Vec::new();
+    let mut generate = None;
+    let mut seed = None;
+    let mut count = None;
+    let mut pairs = None;
     let mut rest = args.iter();
     while let Some(flag) = rest.next() {
         let mut value = || rest.next().ok_or_else(|| format!("{flag} needs a value"));
@@ -109,13 +152,44 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--uncovered" => uncovered = Some(PathBuf::from(value()?)),
             "--theirs" => theirs = Some(PathBuf::from(value()?)),
             "--ours" => ours.push(PathBuf::from(value()?)),
+            "--generate" => generate = Some(PathBuf::from(value()?)),
+            "--seed" => {
+                seed = Some(
+                    value()?
+                        .parse::<u64>()
+                        .map_err(|e| format!("--seed: {e}"))?,
+                )
+            }
+            "--count" => {
+                count = Some(
+                    value()?
+                        .parse::<u64>()
+                        .map_err(|e| format!("--count: {e}"))?,
+                );
+            }
+            "--pairs" => pairs = Some(PathBuf::from(value()?)),
             other => return Err(format!("unknown argument {other:?}\n{USAGE}")),
         }
+    }
+    if let Some(dir) = generate {
+        return Ok(Run::Generate(Generate {
+            dir,
+            seed: seed.ok_or(USAGE)?,
+            count: count.ok_or(USAGE)?,
+        }));
+    }
+    if let Some(file) = pairs {
+        return Ok(Run::Pairs {
+            file,
+            rounds,
+            oracle,
+            engine,
+        });
     }
     if ours.is_empty() {
         return Err(USAGE.to_owned());
     }
-    Ok(Options {
+    Ok(Run::Suite(Options {
         rounds,
         codebase: codebase.ok_or(USAGE)?,
         oracle,
@@ -124,11 +198,122 @@ fn parse(args: &[String]) -> Result<Options, String> {
         uncovered,
         theirs: theirs.ok_or(USAGE)?,
         ours,
-    })
+    }))
+}
+
+/// DIFF-14.1: writes the programs `count` of `seed` under `dir`, and the forms they used.
+fn generate(generate: &Generate) -> Result<bool, String> {
+    let mut forms: std::collections::BTreeMap<&'static str, usize> =
+        std::collections::BTreeMap::new();
+    for n in 0..generate.count {
+        let program = source::program(generate.seed, n);
+        let dir = generate.dir.join(n.to_string());
+        std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        std::fs::write(dir.join("progs.src"), "progs.dat\nt.qc\n")
+            .map_err(|e| format!("{}: {e}", dir.display()))?;
+        std::fs::write(dir.join("t.qc"), &program.source)
+            .map_err(|e| format!("{}: {e}", dir.display()))?;
+        // DIFF-14.2: how many programs use each form, however often each uses it.
+        for form in program.forms.keys() {
+            let entry = forms.entry(form).or_insert(0);
+            *entry = entry.saturating_add(1);
+        }
+    }
+    let mut text = String::new();
+    for form in FORMS {
+        let uses = forms.get(form).copied().unwrap_or(0);
+        text.push_str(&format!("{form}\t{uses}\n"));
+    }
+    let path = generate.dir.join("forms.tsv");
+    std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+    println!(
+        "compiler-diff: wrote {} programs of seed {} under {}",
+        generate.count,
+        generate.seed,
+        generate.dir.display()
+    );
+    Ok(true)
+}
+
+/// DIFF-14.2: compares every pair `file` lists, one per line as `name`, the oracle's progs and
+/// ours separated by tabs; a pair passes when no call diverges.
+fn pairs(
+    file: &PathBuf,
+    rounds: u32,
+    oracle: Oracle,
+    engine: EngineProfile,
+) -> Result<bool, String> {
+    let text = std::fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let mut all_ok = true;
+    let mut compared = 0_usize;
+    let quiet = |_: &str, _: usize, _: usize| {};
+    for line in text.lines().filter(|line| !line.trim().is_empty()) {
+        let mut fields = line.split('\t');
+        let (Some(name), Some(theirs), Some(ours)) = (fields.next(), fields.next(), fields.next())
+        else {
+            return Err(format!(
+                "{}: a line is not name, theirs, ours: {line:?}",
+                file.display()
+            ));
+        };
+        let read = |path: &str| std::fs::read(path).map_err(|e| format!("{path}: {e}"));
+        let (theirs, ours) = (read(theirs)?, read(ours)?);
+        let report = run_codebase(oracle, &theirs, &ours, rounds, engine, &quiet)
+            .map_err(|e| format!("{name}: {e}"))?;
+        compared = compared.saturating_add(1);
+        let divergences = report.divergences();
+        if divergences == 0 {
+            println!(
+                "ok    {name}: {} of {} statements ({:.1}%)",
+                report.executed.len(),
+                report.total_statements,
+                report.coverage() * 100.0
+            );
+        } else {
+            all_ok = false;
+            println!("FAIL  {name}: {divergences} divergences");
+            let mut printed = 0_usize;
+            for (scenario, scenario_report) in &report.scenarios {
+                for divergence in scenario_report
+                    .divergences
+                    .iter()
+                    .take(PRINTED.saturating_sub(printed))
+                {
+                    let function = divergence.function.as_deref().map_or_else(
+                        || "the setup".to_owned(),
+                        |f| String::from_utf8_lossy(f).into_owned(),
+                    );
+                    println!(
+                        "      {scenario}: {function}, round {}: {:?}",
+                        divergence.round, divergence.what
+                    );
+                    printed = printed.saturating_add(1);
+                }
+            }
+        }
+    }
+    println!(
+        "compiler-diff: {compared} pairs compared, {}",
+        if all_ok {
+            "none diverged"
+        } else {
+            "some diverged"
+        }
+    );
+    Ok(all_ok)
 }
 
 fn run(args: &[String]) -> Result<bool, String> {
-    let options = parse(args)?;
+    let options = match parse(args)? {
+        Run::Suite(options) => options,
+        Run::Generate(request) => return generate(&request),
+        Run::Pairs {
+            file,
+            rounds,
+            oracle,
+            engine,
+        } => return pairs(&file, rounds, oracle, engine),
+    };
     let read = |path: &PathBuf| std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()));
     let theirs = read(&options.theirs)?;
     let mut all_ok = true;
@@ -246,16 +431,17 @@ fn add_row(
 mod tests {
     #![expect(
         clippy::unwrap_used,
-        reason = "test code: a failed unwrap is a failed test"
+        clippy::unreachable,
+        reason = "test code: a failed unwrap or a wrong variant is a failed test"
     )]
 
     use std::collections::BTreeSet;
     use std::path::PathBuf;
 
     use qc_builtins::EngineProfile;
-    use qs_differential::calls::{CodebaseReport, Oracle};
+    use qs_differential::calls::{CodebaseReport, FULL_ROUNDS, Oracle};
 
-    use super::{Options, add_row};
+    use super::{Generate, Options, Run, add_row, parse};
 
     // spec DIFF-12.14: each pair compared adds its row to the results table, after the rows
     // already there.
@@ -294,5 +480,38 @@ mod tests {
              | rerelease | oracle.dat | ours-fold.dat | 0 | 0 of 4 (0.0%) | fail |\n"
         );
         assert!(add_row(&dir.join("no/such/dir.md"), &options, &summary, &report).is_err());
+    }
+
+    // spec DIFF-14.2: `--generate` names the directory, the seed and the count, `--pairs` the
+    // file, with the rounds, the oracle and the engine of a suite run; either leaves the
+    // suite's own arguments unrequired
+    #[test]
+    fn the_generate_and_pairs_forms_parse() {
+        let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        match parse(&args(&["--generate", "out", "--seed", "7", "--count", "3"])).unwrap() {
+            Run::Generate(Generate { dir, seed, count }) => {
+                assert_eq!((dir, seed, count), (PathBuf::from("out"), 7, 3));
+            }
+            Run::Suite(_) | Run::Pairs { .. } => unreachable!("not a generate run"),
+        }
+        assert!(parse(&args(&["--generate", "out", "--seed", "7"])).is_err());
+        match parse(&args(&[
+            "--pairs", "p.tsv", "--mode", "full", "--oracle", "fteqcc",
+        ]))
+        .unwrap()
+        {
+            Run::Pairs {
+                file,
+                rounds,
+                oracle,
+                engine,
+            } => {
+                assert_eq!(file, PathBuf::from("p.tsv"));
+                assert_eq!(rounds, FULL_ROUNDS);
+                assert_eq!(oracle, Oracle::Fteqcc);
+                assert_eq!(engine, EngineProfile::Id);
+            }
+            Run::Suite(_) | Run::Generate(_) => unreachable!("not a pairs run"),
+        }
     }
 }

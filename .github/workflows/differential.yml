@@ -95,6 +95,38 @@ jobs:
   # for the rerelease and the corpus mods at the bar), against qc-codegen with fold off and on
   # (DIFF-12, DIFF-12.6, DIFF-12.14, DIFF-12.18); one job per codebase, since one takes up to
   # an hour.
+  # P2-153 (DIFF-14.3): 10000 generated programs of seed 1, each compiled by the pinned FTEQCC
+  # and by qc-codegen and compared as a codebase is.
+  generated:
+    name: Compiler differential (generated programs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: differential-${{ runner.os }}
+          save-if: false
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            target/oracles/src
+            target/oracles/bin
+          key: oracles-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**') }}
+      - name: Build and check the oracles
+        run: cargo xtask oracles
+      - name: Run the compiler differential on generated programs
+        run: cargo xtask compiler-diff --generated 10000 --seed 1
+
   compiler-diff:
     name: Compiler differential (${{ matrix.codebase }})
     runs-on: ubuntu-latest

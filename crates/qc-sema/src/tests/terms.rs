@@ -722,6 +722,24 @@ fn a_name_in_parentheses_is_its_value() {
         ["Expected punctuation", "expected ;, found 1"]
     );
     assert_eq!(
+        body("y = x 1;"),
+        ["Expected punctuation", "expected ;, found 1"]
+    );
+    // FTEQCC stops at the fatal error; this parser goes on to the statement after it.
+    assert_eq!(
+        body("if (x y) y = 1;").get(..2),
+        Some(
+            &[
+                "Expected punctuation".to_owned(),
+                "expected ), found y".to_owned()
+            ][..]
+        )
+    );
+    assert_eq!(
+        body("y = (x 1);"),
+        ["Expected punctuation", "expected ), found 1"]
+    );
+    assert_eq!(
         body("local float q = (x) y;"),
         [
             "Expected punctuation",
@@ -729,21 +747,23 @@ fn a_name_in_parentheses_is_its_value() {
             "Statement does not do anything"
         ]
     );
+    // FTEQCC reports the four in the order it parses; here the parser's three come first and
+    // the resolver's "is not constant" after them.
     assert_eq!(
         found("float q = (x) 1;"),
         [
             "Expected punctuation",
-            "initializer for 'q' is not constant",
             "Missing semicolon at end of definition",
-            "\"1\" is not a type"
+            "\"1\" is not a type",
+            "initializer for 'q' is not constant"
         ]
     );
     assert_eq!(
         body("y = (nope) 1;"),
         [
-            "Unknown value \"nope\".",
             "Expected punctuation",
-            "expected ;, found 1"
+            "expected ;, found 1",
+            "Unknown value \"nope\"."
         ]
     );
 }

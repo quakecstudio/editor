@@ -65,13 +65,19 @@ fn engine(id: &str) -> &'static str {
     }
 }
 
-const USAGE: &str = "usage: cargo xtask compiler-diff [--fast [<codebase>...] | --full <codebase>]";
+const USAGE: &str = "usage: cargo xtask compiler-diff [--fast [<codebase>...] | --full <codebase>]\n\
+       cargo xtask compiler-diff --generated <count> [--seed <n>]";
 
 /// Runs `cargo xtask compiler-diff [--fast [<codebase>...] | --full <codebase>]`: the CI
 /// subset over id 1.01, or 128 rounds over the one codebase named, which runs for up to an
 /// hour on its own, so that the codebases run one at a time or in parallel, each in its own
-/// directory under `target/compiler-diff/<id>/` with its own results table (DIFF-12.6).
+/// directory under `target/compiler-diff/<id>/` with its own results table (DIFF-12.6); or
+/// `--generated <count> [--seed <n>]`, the generated-program differential (DIFF-14).
 pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
+    if args.first().is_some_and(|flag| flag == "--generated") {
+        let (count, seed) = parse_generated(args)?;
+        return generated(root, count, seed);
+    }
     let (mode, selected) = parse(args)?;
     let oracles = oracles::build(root)?;
     let codebases = asset_root()?.join("codebase");
@@ -85,6 +91,196 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
         ok &= run_suite(root, mode, id, &progs, &summary)?;
     }
     Ok(ok)
+}
+
+/// `--generated <count> [--seed <n>]`: how many programs, from which seed (1 unless given).
+fn parse_generated(args: &[String]) -> Result<(u64, u64), String> {
+    let mut rest = args.iter().skip(1);
+    let count = rest
+        .next()
+        .ok_or(USAGE)?
+        .parse::<u64>()
+        .map_err(|e| format!("--generated: {e}\n{USAGE}"))?;
+    let seed = match (rest.next().map(String::as_str), rest.next()) {
+        (None, _) => 1,
+        (Some("--seed"), Some(value)) => value
+            .parse::<u64>()
+            .map_err(|e| format!("--seed: {e}\n{USAGE}"))?,
+        _ => return Err(USAGE.to_owned()),
+    };
+    if rest.next().is_some() {
+        return Err(USAGE.to_owned());
+    }
+    Ok((count, seed))
+}
+
+/// How long one FTEQCC run of a generated program may take.
+const FTEQCC_LIMIT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Runs the pinned FTEQCC on the `progs.src` in `dir`, as the grammar differential does
+/// (DIFF-13.2); returns what it printed. Its progs is `dir/progs.dat` when it accepted.
+fn fteqcc_in(oracles: &Oracles, dir: &Path) -> Result<String, String> {
+    let mut command = Command::new(&oracles.fteqcc);
+    command
+        .args(["-Tid", "-srcfile", "progs.src"])
+        .current_dir(dir);
+    let output = oracles
+        .exec
+        .output_within(&mut command, FTEQCC_LIMIT)
+        .map_err(|e| format!("cannot run fteqcc: {e}"))?;
+    Ok(output.map_or_else(
+        || "fteqcc ran out of time".to_owned(),
+        |output| {
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            )
+        },
+    ))
+}
+
+/// The generated-program differential (DIFF-14): the `compiler-diff` binary writes `count`
+/// programs of `seed` under `target/compiler-diff/generated/<seed>/`, each is compiled with
+/// the pinned FTEQCC and with `qc-codegen` in the FTEQCC dialect with `--opt fold` off and
+/// on, and the binary compares every pair in one process. A program FTEQCC rejects is a
+/// defect of the generator and fails the run; each divergence names the program's directory,
+/// whose `t.qc` is the case to keep. The forms every program used are totalled in
+/// `forms.tsv`, and the run prints any form DIFF-14.1 names that fewer than one program in a
+/// hundred used.
+fn generated(root: &Path, count: u64, seed: u64) -> Result<bool, String> {
+    let oracles = oracles::build(root)?;
+    let dir = root
+        .join("target")
+        .join("compiler-diff")
+        .join("generated")
+        .join(seed.to_string());
+    if dir.exists() {
+        fs::remove_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let dir_text = dir.to_string_lossy().into_owned();
+    if !run_binary(
+        root,
+        &[
+            "--generate",
+            &dir_text,
+            "--seed",
+            &seed.to_string(),
+            "--count",
+            &count.to_string(),
+        ],
+    )? {
+        return Err("the compiler-diff binary could not write the programs".to_owned());
+    }
+    let mut pairs = String::new();
+    let mut rejected = Vec::new();
+    let mut refused = Vec::new();
+    for n in 0..count {
+        let program = dir.join(n.to_string());
+        let log = fteqcc_in(&oracles, &program)?;
+        let theirs = program.join("progs.dat");
+        if !theirs.is_file() {
+            rejected.push((n, log));
+            continue;
+        }
+        let profile = Profile::Fteqcc { autoproto: false };
+        for (name, fold) in [("ours.dat", false), ("ours-fold.dat", true)] {
+            // A program FTEQCC accepted and qc-codegen refuses is a divergence of its own.
+            let compiled = match codegen::compile_codebase(&program, profile, Options { fold }) {
+                Ok(compiled) => compiled,
+                Err(error) => {
+                    refused.push((n, error));
+                    break;
+                }
+            };
+            write(&program.join(name), &codegen::bytes(&compiled)?)?;
+            pairs.push_str(&format!(
+                "generated-{seed}-{n}{}\t{}\t{}\n",
+                if fold { "-fold" } else { "" },
+                theirs.display(),
+                program.join(name).display()
+            ));
+        }
+    }
+    let pairs_path = dir.join("pairs.tsv");
+    write(&pairs_path, pairs.as_bytes())?;
+    for (n, log) in &rejected {
+        eprintln!(
+            "compiler-diff: FTEQCC rejected program {n} ({}): {}",
+            dir.join(n.to_string()).join("t.qc").display(),
+            log.lines().find(|l| l.contains("error")).unwrap_or("")
+        );
+    }
+    for (n, error) in &refused {
+        eprintln!(
+            "FAIL  generated-{seed}-{n}: qc-codegen refused what FTEQCC compiled ({}): {error}",
+            dir.join(n.to_string()).join("t.qc").display()
+        );
+    }
+    let compared = run_binary(
+        root,
+        &[
+            "--pairs",
+            &pairs_path.to_string_lossy(),
+            "--mode",
+            "fast",
+            "--oracle",
+            "fteqcc",
+            "--engine",
+            "id",
+        ],
+    )?;
+    let forms = fs::read_to_string(dir.join("forms.tsv"))
+        .map_err(|e| format!("{}: {e}", dir.join("forms.tsv").display()))?;
+    let floor = count.checked_div(100).unwrap_or(0);
+    let mut rare = Vec::new();
+    for line in forms.lines() {
+        if let Some((form, uses)) = line.split_once('\t')
+            && uses.parse::<u64>().is_ok_and(|uses| uses < floor)
+        {
+            rare.push(format!("{form} ({uses})"));
+        }
+    }
+    if !rare.is_empty() {
+        eprintln!(
+            "compiler-diff: forms used by fewer than one program in a hundred: {}",
+            rare.join(", ")
+        );
+    }
+    eprintln!(
+        "compiler-diff: {count} programs of seed {seed}, {} rejected by FTEQCC, {} refused by \
+         qc-codegen, {}",
+        rejected.len(),
+        refused.len(),
+        if compared {
+            "no divergence among the rest"
+        } else {
+            "divergences above"
+        }
+    );
+    Ok(compared && rejected.is_empty() && refused.is_empty() && rare.is_empty())
+}
+
+/// Runs the `compiler-diff` binary with `args`, as [`run_suite`] does; true when it exits 0.
+fn run_binary(root: &Path, args: &[&str]) -> Result<bool, String> {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let status = Command::new(cargo)
+        .current_dir(root)
+        .args([
+            "run",
+            "--release",
+            "--locked",
+            "-p",
+            "qs-differential",
+            "--bin",
+            "compiler-diff",
+            "--",
+        ])
+        .args(args)
+        .status()
+        .map_err(|e| format!("cannot run the compiler differential: {e}"))?;
+    Ok(status.success())
 }
 
 /// The head of a codebase's results table, `target/compiler-diff/<id>/summary.md`; the
@@ -274,7 +470,10 @@ mod tests {
 
     use qc_codegen::Options;
 
-    use super::{MODS_AT_BAR, Mode, RERELEASE, VANILLA, VKQUAKE_MODS, engine, parse, write_progs};
+    use super::{
+        MODS_AT_BAR, Mode, RERELEASE, VANILLA, VKQUAKE_MODS, engine, parse, parse_generated,
+        write_progs,
+    };
     use crate::exec::{Fake, Reply};
     use crate::oracles::codegen::{self, Profile};
     use crate::oracles::rerelease;
@@ -465,6 +664,39 @@ mod tests {
             .map(|line| line.trim().trim_start_matches("- "))
             .collect();
         assert_eq!(matrix, Mode::Full.codebases());
+    }
+
+    // spec DIFF-14.2: `--generated <count> [--seed <n>]` names how many programs and the seed,
+    // 1 unless given
+    #[test]
+    fn the_generated_run_takes_a_count_and_a_seed() {
+        let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            parse_generated(&args(&["--generated", "200"])).unwrap(),
+            (200, 1)
+        );
+        assert_eq!(
+            parse_generated(&args(&["--generated", "10", "--seed", "4"])).unwrap(),
+            (10, 4)
+        );
+        assert!(parse_generated(&args(&["--generated"])).is_err());
+        assert!(parse_generated(&args(&["--generated", "x"])).is_err());
+        assert!(parse_generated(&args(&["--generated", "10", "--seed"])).is_err());
+        assert!(parse_generated(&args(&["--generated", "10", "--rounds", "4"])).is_err());
+        assert!(parse_generated(&args(&["--generated", "10", "--seed", "4", "more"])).is_err());
+    }
+
+    // spec DIFF-14.3: the short run is a step of every pull request's Test Assets job and the
+    // long one a job of the nightly workflow
+    #[test]
+    fn the_workflows_run_the_generated_differential() {
+        let ci =
+            fs::read_to_string(crate::workspace_root().join(".github/workflows/ci.yml")).unwrap();
+        assert!(ci.contains("cargo xtask compiler-diff --generated 200 --seed 1"));
+        let nightly =
+            fs::read_to_string(crate::workspace_root().join(".github/workflows/differential.yml"))
+                .unwrap();
+        assert!(nightly.contains("cargo xtask compiler-diff --generated 10000 --seed 1"));
     }
 
     // spec DIFF-12.19: crmod7 and Arcane Dimensions run under vkQuake's profile, every other

@@ -93,7 +93,7 @@ pub(super) enum Shift {
 }
 
 /// Where a subscript's element is.
-enum Slot {
+pub(super) enum Slot {
     /// At this global, for a constant index.
     At(u32),
     /// At the word this float global holds, for any other index.
@@ -175,7 +175,18 @@ impl Compiler<'_> {
     /// it before the operator.
     pub(super) fn read_stored(&mut self, store: &ElementStore, span: Span) -> Lowered<Value> {
         let array = store.array.clone();
-        self.read_words(&array, store.words, store.ty.clone(), span)
+        if store.vector || type_words(self.index, &store.ty) != 1 {
+            return self.read_words(&array, store.words, store.ty.clone(), span);
+        }
+        // The setter reads the index again (its refcount is above 1 in FTEQCC), so its store
+        // to the first parameter is not folded into the statement that made it.
+        let getter = self.array_function(&array, Access::Get, span)?;
+        self.program.emit(
+            Opcode::StoreF,
+            operand(store.words).at(span)?,
+            operand(OFS_PARM0).at(span)?,
+        );
+        self.call_stored(getter, store.ty.clone(), span)
     }
 
     /// The element of `array` at index `words`, a value of type `ty`, read by its getter: a
@@ -313,7 +324,7 @@ impl Compiler<'_> {
     /// Where the element `index` names is, the member at `word` of it: the global for a
     /// constant whole number within the array (FTE-13.6), else the index in words, multiplied
     /// by an element's words and the member's word added, by `MUL_F` and `ADD_F` (FTE-13.12).
-    fn slot(&mut self, array: &Array, index: &ast::Expr, word: u32) -> Lowered<Slot> {
+    pub(super) fn slot(&mut self, array: &Array, index: &ast::Expr, word: u32) -> Lowered<Slot> {
         let span = index.syntax().span();
         let at = self.expr(index)?;
         let constant = match at.kind {
@@ -455,7 +466,11 @@ impl Compiler<'_> {
     /// `QCC_PR_EmitArrayGetFunction` and `QCC_PR_EmitArraySetFunction` for each array function
     /// made, in the order they were made, after every file (FTE-13.8, FTE-13.11).
     pub(crate) fn emit_array_functions(&mut self) -> Result<(), (Internal, FileId, Span)> {
-        for made in std::mem::take(&mut self.array_functions) {
+        for mut made in std::mem::take(&mut self.array_functions) {
+            // FTE-21.7: a local array's offset is real only once its block is laid out.
+            if let Some(def) = self.program.def(made.array.place) {
+                made.array.ofs = def.ofs;
+            }
             let file = made.array.location.file;
             let emitted = match made.access {
                 Access::Get => self.emit_getter(&made),

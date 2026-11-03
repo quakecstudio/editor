@@ -2419,10 +2419,16 @@ The corpus writes locals of class and pointer types, casts to classes (`(ncPlaye
 - **FTEF-16.2** `(type) e` is a cast to any type: `QCC_PR_RefTerm` reads `(`, then
   `newtype = QCC_PR_ParseType(false, true, false)`, and, after `)`,
   `e = QCC_PR_Expression (UNARY_PRIORITY, EXPR_DISALLOW_COMMA);` or, before `{`, an initialiser
-  of the type. This profile takes a cast where `(` holds a type word, a `.` or a C type word; or
-  a name and `*`s or a function type's parameter list, closed by `)` and followed by a term; or a
-  lone name in parentheses followed by a term. `(visible(head))` and `(sin(x))` stay
-  parenthesised calls.
+  of the type. `QCC_PR_ParseType` takes only a type, a type word or a name `QCC_TypeForName`
+  finds, registered or declared by a `typedef`, `struct`, `union`, `class` or `enum` so far, so
+  `(gf0) & 3` with a variable `gf0` is the parenthesised operand of a `&`, and `(f()) & 1` of a
+  call. This profile takes a cast where `(` holds a type word, a `.` or a C type word; or a
+  name that is a registered or declared type and `*`s or a function type's parameter list,
+  closed by `)` and followed by a term; or such a name alone in parentheses followed by a term.
+  `(visible(head))` and `(sin(x))` stay parenthesised calls. FTEQCC reads a module as one
+  stream, so a type an earlier file declares names a type in a later one: this profile parses
+  each file with the types the files before it declared (`qc_syntax::Parse::types`), as
+  FreeCS's `(CCVarTextBox) new` and `(gameEntry_t)` casts of its platform files need.
 - **FTEF-16.3** `[x, y, z]` builds a vector of three expressions, the missing ones 0 ("and to not
   need the 2nd/3rd parts if you're lazy - [5] or [5,6]"); a fourth is an error, since
   `QCC_PR_Expect("]")` follows the third.
@@ -2461,16 +2467,20 @@ The corpus writes locals of class and pointer types, casts to classes (`(ncPlaye
   and the type word after it is "expected ;, found float". The warning is given for any unknown
   name that is a keyword in force (FTEF-20.4).
 - **FTEF-16.15** `(NAME)` where `QCC_PR_ParseType` finds no type of the name is no cast but the
-  value in parentheses, an unknown name a `variant` (FTEF-19.69), and what this profile's parser
-  read as the cast's operand follows it (FTEF-16.2): `- e`, and a negative number, which the
-  lexer splits after a value (`QCC_PR_IncludeChunk`), is a subtraction, `(x) -1` as `x - 1`;
-  `(args)` calls the value, "not a function" of a `float`; `[i]` is an index the value does not
-  take (FTEF-18.37, FTEF-18.38); and a number or a name is "Expected punctuation"
-  (`WARN_UNEXPECTEDPUNCT`), then "expected ;, found TOKEN", or in a definition's value the end
+  value in parentheses, an unknown name a `variant` (FTEF-19.69), and what follows it is read
+  after the value (FTEF-16.2): `- e`, and a negative number, which the lexer splits after a
+  value (`QCC_PR_IncludeChunk`), is a subtraction, `(x) -1` as `x - 1`; `(args)` calls the
+  value, "not a function" of a `float`; `[i]` is an index the value does not take (FTEF-18.37,
+  FTEF-18.38); and a number or a name after any top-level expression (a statement's, a
+  definition's value, a condition's or a parenthesised one), parenthesised or not, is
+  "Expected punctuation" (`QCC_PR_RefExpression` at `TOP_PRIORITY`: `if (pr_token_type !=
+  tt_punct) { if (priority == TOP_PRIORITY) QCC_PR_ParseWarning(WARN_UNEXPECTEDPUNCT,
+  "Expected punctuation"); }`), then "expected ;, found TOKEN" (or "expected ), found TOKEN"
+  for `if (x y)` and `(x 1)`), or in a definition's value the end
   of the value, "Missing semicolon at end of definition" and at global scope "\"TOKEN\" is not a
   type". So `(x)[1] = 2;` of a `float x` is "Statement does not do anything" and "expected ;,
-  found [", `y = (x) 1;` "Expected punctuation" and "expected ;, found 1", and no `(x)` is
-  "\"x\" is not a type". Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  found [", `y = (x) 1;` and `y = x 1;` "Expected punctuation" and "expected ;, found 1", and
+  no `(x)` is "\"x\" is not a type". Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefTerm`, `QCC_PR_RefExpression`.
 - **FTEF-16.16** `case` and `default` are statements: `QCC_PR_ParseStatement` reads `if
   (QCC_PR_CheckKeyword(keyword_case, "case"))` and `keyword_default` among the others, adds the
@@ -3408,7 +3418,8 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
 - **FTEF-19.43** A cast's type and `sizeof`'s are read with `QCC_PR_ParseType(false, true,
   false)`, `silentfail`, so a name that is no type makes no cast and no type: `(T *)0`, `(T)0`,
   `sizeof(T *)` and `sizeof(T)` with no type `T` are a parenthesised expression and an operand,
-  "Unknown value \"T\""; `sizeof(s)` after `struct S` is the type under `-Fcaseinsens`
+  "Unknown value \"T\"", and `(T *)0` then "\")\" - not a name" for the `*`'s missing
+  operand; `sizeof(s)` after `struct S` is the type under `-Fcaseinsens`
   (FTEF-19.33) and "Unknown value" without, and `(struct s *)0` is a pointer to the struct `s`, a
   tag, in either case (FTEF-6.8). This profile's parser reads the shapes `(name)` and `(name *)`
   before an operand, and `sizeof(name *)`, as a type, and the semantic model reports the name as
@@ -4622,7 +4633,11 @@ the statements it would emit are code generation's.
   builtin is not defined" and refused) and then subtracts with `OP_SUB_I` (`(op ==
   &pr_opcodes[OP_ADD_EF]) ? OP_ADD_I : OP_SUB_I`, never `OP_ADD_EF` there). `<=>` of strings needs
   `strcmp`, else the fatal error `E0321`.
-- **FTEF-27.4** A conversion folds a constant (FTEF-26.3); else it calls `itof`, `ftoi`, or for
+- **FTEF-27.4** An `int` value where a float is stored, passed or returned is converted
+  (`QCC_SupplyConversion(val, ev_float, true)`): a folded `&&` or `||` of two constants, an
+  `int` (FTEF-26.14), stored to a float field is `STOREP_F` of the float constant (`world.ff =
+  (7 && 512)` stores `1`), passed to `ftos` is `STORE_F` of the float `1` to the parameter
+  slot, and stored to a float global `STORE_F` of it. A conversion folds a constant (FTEF-26.3); else it calls `itof`, `ftoi`, or for
   `OP_CONV_UF` `utof`, `quake_utof`, `itof` or `quake_itof`, when defined; else it is the warning
   `W0237` "itof emulation: denormals are unsafe NAME" (NAME the symbol's, `var_a.sym->name`: the
   value's definition, `IMMEDIATE` for an immediate, and for a temporary `temp_N`, N its slot in
@@ -5053,6 +5068,13 @@ reference are FTEF-31's.
   `STORE_S` of the temporary to `s`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_RefExpression`.
+- **FTEF-30.17** On a target without `STORE_IF` (`!QCC_OPCodeValid(&pr_opcodes[OP_STORE_IF])`,
+  so `-Tid`) an arm that is an `int` is made a float (`QCC_SupplyConversion(val, ev_float,
+  true)`) before it is stored, each arm in turn, a constant one the float constant it converts
+  to (FTEF-26.3): a folded `&&` or `||` of two constants is an `int` (FTEF-26.14), so
+  `c ? x : (K0 && K2)` stores the float `1` and `c ? (1 && 6) : (0 || 0)` the floats `1` and
+  `0`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefExpression`.
 
 ## FTEF-31 References
 
@@ -5531,8 +5553,8 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   a function, whose extension FTEQCC emulates only the first time; a `__double` stored to a
   `_Bool`, which FTEQCC follows with one more "ftoi emulation"; and the offset constants a
   struct's member array frees again (FTEF-29.12). The text of an error in a program both
-  refuse: `typedef ;` warned at the line of the token after the `;`; `(T *)0` and `typedef for
-  x;` with `T` and `for` no type; `[x, 0, 0]_x`; and `spawn(float)`, whose type keyword the
+  refuse: `typedef ;` warned at the line of the token after the `;`; `typedef for
+  x;` with `for` no type; `[x, 0, 0]_x`; and `spawn(float)`, whose type keyword the
   semantic model reads as a value. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`.
 - **FTEF-34.15** A `float` or `vector` constant whose initialiser expression folded to a

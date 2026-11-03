@@ -24,6 +24,10 @@ pub(crate) struct Frame {
     pub(crate) function: i32,
 }
 
+/// The slots past the last global that a statement may still reach (VM-1.5): the memory after
+/// the globals in id's engine, which FTEQCC's `RETURN` of a last temporary reads.
+const GLOBAL_SLACK: usize = 2;
+
 /// Reading or writing a global slot that is outside the globals (VM-1.4).
 ///
 /// id checks no operand (`PARANOID` is off), so such an access reads or writes outside the
@@ -122,7 +126,8 @@ impl Machine {
     pub fn new(progs: &Progs<'_>, maxclients: usize) -> Result<Self, MachineError> {
         let layout = qc_edict::EdictLayout::for_progs(progs)?;
         let edicts = EdictStore::new(layout, maxclients)?;
-        let globals: Vec<Slot> = progs.globals().iter().collect();
+        let mut globals: Vec<Slot> = progs.globals().iter().collect();
+        globals.extend(std::iter::repeat_n(Slot::ZERO, GLOBAL_SLACK));
         Ok(Self {
             globals,
             edicts,
@@ -136,10 +141,11 @@ impl Machine {
         })
     }
 
-    /// The globals, slots 0 to `numglobals - 1`.
+    /// The globals, slots 0 to `numglobals - 1`, without the slack past them (VM-1.5).
     #[must_use]
     pub fn globals(&self) -> &[Slot] {
-        &self.globals
+        let end = self.globals.len().saturating_sub(GLOBAL_SLACK);
+        self.globals.get(..end).unwrap_or_default()
     }
 
     /// The edict store.
@@ -197,14 +203,15 @@ impl Machine {
         self.trace_flag = on;
     }
 
-    /// Reads one global slot, bounds-checked (VM-1.3, VM-1.4).
+    /// Reads one global slot, bounds-checked (VM-1.3, VM-1.4); the two slack slots past the
+    /// globals read as zero (VM-1.5).
     ///
     /// A builtin reads a parameter slot (`OFS_PARM0` up) and a system global through this
     /// (VM-14.1, PROGS-18); the index is `self.globals().len()` at most.
     ///
     /// # Errors
     ///
-    /// [`GlobalAccessError`] when `slot` is negative or not less than `numglobals`.
+    /// [`GlobalAccessError`] when `slot` is negative or not less than `numglobals + 2`.
     pub fn global(&self, slot: i32) -> Result<Slot, GlobalAccessError> {
         usize::try_from(slot)
             .ok()
@@ -220,8 +227,8 @@ impl Machine {
     ///
     /// # Errors
     ///
-    /// [`GlobalAccessError`] when `slot` is negative or not less than `numglobals`; nothing is
-    /// written.
+    /// [`GlobalAccessError`] when `slot` is negative or not less than `numglobals + 2` (the
+    /// slack of VM-1.5 is written like a global); nothing is written.
     pub fn set_global(&mut self, slot: i32, value: Slot) -> Result<(), GlobalAccessError> {
         match usize::try_from(slot)
             .ok()

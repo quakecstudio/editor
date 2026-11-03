@@ -214,6 +214,16 @@ fn compile_lowered(
                 internal,
             })?;
     }
+    // FTE-21.7: every function's block of private locals is laid out after the globals,
+    // statics and immediates of the module, before the array functions' own.
+    compiler
+        .program
+        .resolve_blocks()
+        .map_err(|internal| CompileError::Internal {
+            file: FileId::new(0),
+            span: Span::new(0, 0),
+            internal,
+        })?;
     compiler
         .emit_array_functions()
         .map_err(|(internal, file, span)| CompileError::Internal {

@@ -475,7 +475,7 @@ mod coverage {
     use super::harness::{self, Func, Stmt};
     use crate::exec::{NoBuiltins, NoObserver, Observer, ServerState};
     use crate::trace::Trace;
-    use crate::{ErrorKind, Machine, MachineError, RunError};
+    use crate::{ErrorKind, GlobalAccessError, Machine, MachineError, RunError};
 
     fn read(bytes: &[u8]) -> Progs<'_> {
         Progs::read_with(
@@ -558,6 +558,49 @@ mod coverage {
             matches!(error.kind, ErrorKind::Divergence(d) if d.statement() == "VM-14.7"),
             "NoBuiltins fails a builtin call with VM-14.7, got {:?}",
             error.kind
+        );
+    }
+
+    // spec VM-1.5: the two slots past the last global read as zero and take a write, so a
+    // RETURN of the last global copies its three words; the slot after them is VM-1.4's error,
+    // and the globals a snapshot reads stop at numglobals
+    #[test]
+    fn two_slack_slots_past_the_globals_are_readable_and_writable() {
+        let numglobals = 128_usize;
+        let last = i32::try_from(numglobals).unwrap() - 1;
+        let bytes = harness::ProgsBuilder::default()
+            .statements(&[Stmt::op("RETURN", 127, 0, 0), Stmt::op("DONE", 0, 0, 0)])
+            .functions(vec![Func {
+                first_statement: 1,
+                ..Func::default()
+            }])
+            .numglobals(numglobals)
+            .globals_init(&[(numglobals - 1, 0x4000_0000)])
+            .build();
+        let progs = read(&bytes);
+        let mut machine = Machine::new(&progs, 0).unwrap();
+        assert_eq!(machine.globals().len(), numglobals);
+        assert_eq!(machine.global(last + 1), Ok(Slot::ZERO));
+        assert_eq!(machine.global(last + 2), Ok(Slot::ZERO));
+        assert_eq!(
+            machine.global(last + 3),
+            Err(GlobalAccessError { slot: last + 3 })
+        );
+        assert_eq!(machine.set_global(last + 2, Slot::from_f32(5.0)), Ok(()));
+        assert_eq!(machine.global(last + 2), Ok(Slot::from_f32(5.0)));
+        assert_eq!(machine.globals().len(), numglobals);
+        machine
+            .execute_program(
+                &progs,
+                ServerState::Active,
+                &mut NoBuiltins,
+                &mut NoObserver,
+                1,
+            )
+            .unwrap();
+        assert_eq!(
+            machine.global3(1).unwrap(),
+            [Slot::from_f32(2.0), Slot::ZERO, Slot::from_f32(5.0)]
         );
     }
 

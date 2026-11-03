@@ -442,9 +442,13 @@ fn a_missing_semicolon_after_a_definition_warns() {
         .iter()
         .map(|d| (d.code, d.message.as_str()))
         .collect();
+    // FTEF-16.15: the name after the value is "Expected punctuation" first, as FTEQCC warns.
     assert_eq!(
         warnings,
-        [(Code::W0203, "Missing semicolon at end of definition")]
+        [
+            (Code::W0205, "Expected punctuation"),
+            (Code::W0203, "Missing semicolon at end of definition")
+        ]
     );
     assert!(!Code::W0203.is_error());
     assert_eq!(fte_codes("float x\nfloat y;\n"), [Code::W0203]);

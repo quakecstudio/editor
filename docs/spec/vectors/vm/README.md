@@ -15,7 +15,7 @@ against the id VM oracle (P1-11).
 | [`compare.txt`](compare.txt) | VM-6 to VM-8 | 27 |
 | [`bitwise.txt`](bitwise.txt) | VM-9 | 8 |
 | [`store.txt`](store.txt) | VM-10 to VM-12 | 27 |
-| [`flow.txt`](flow.txt) | VM-1 to VM-3, VM-13 to VM-19 | 56 |
+| [`flow.txt`](flow.txt) | VM-1 to VM-3, VM-13 to VM-19 | 57 |
 | [`builtins.txt`](builtins.txt) | EDICT-1.9, BUILTIN-2.4, BUILTIN-2.5, BUILTIN-2.7 to BUILTIN-2.10, BUILTIN-7.7, BUILTIN-8.3, BUILTIN-8.8 | 26 |
 | [`math.txt`](math.txt) | BUILTIN-6, BUILTIN-7.1, BUILTIN-7.2, BUILTIN-7.5, BUILTIN-7.6, BUILTIN-13.2, BUILTIN-15.4, BUILTIN-15.5: builtins.md "Math and strings" | 78 |
 | [`edicts.txt`](edicts.txt) | EDICT-1.4, EDICT-1.7, EDICT-5.3, EDICT-6, EDICT-7: edicts.md "Allocation and freeing" | 17 |

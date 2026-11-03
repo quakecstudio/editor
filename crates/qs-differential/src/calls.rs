@@ -31,7 +31,8 @@ use crate::scenario::{self, Scenario};
 
 mod draw;
 
-use draw::{Context, Drawer, Rng};
+pub(crate) use draw::Rng;
+use draw::{Context, Drawer};
 
 /// `OFS_RETURN` (VM-14.1): the return value's first slot.
 const OFS_RETURN: usize = 1;

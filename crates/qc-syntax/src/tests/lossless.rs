@@ -520,10 +520,14 @@ fn a_case_label_error_is_reported_once() {
         at("void() f = { switch (x) { case 1] } };"),
         [(32, "expected :, found ]".to_owned())]
     );
-    // The label after a broken one is read as a label.
+    // The label after a broken one is read as a label; the stray number is "Expected
+    // punctuation" first, as FTEQCC warns (FTEF-16.15).
     assert_eq!(
         at("void() f = { switch (x) { case 1 2 case 3: break; } };"),
-        [(33, "expected :, found 2".to_owned())]
+        [
+            (32, "Expected punctuation".to_owned()),
+            (33, "expected :, found 2".to_owned())
+        ]
     );
 }
 
@@ -542,4 +546,65 @@ fn nested_unary_operands_warn_once_per_operator() {
     let semicolon = source.rfind("c;").map(|at| at + 1);
     assert_eq!(warned.len(), 2);
     assert!(warned.iter().all(|&at| Some(at) == semicolon), "{warned:?}");
+}
+
+// spec FTEF-16.2: a parse lists the types the file declares at file level, a body's left out
+// with its block (FTEF-20.15), and a later file parsed with them reads `(T) e` as a cast
+#[test]
+fn a_file_declares_types_a_later_file_is_parsed_with() {
+    use crate::{DeclaredTypeKind, DeclaredTypeName};
+    let first = crate::parse_with(
+        b"typedef float T; typedef void() Fn; struct S { float a; };\n\
+          void() f = { typedef float U; };",
+        crate::Dialect::Fteqcc,
+    );
+    let names: Vec<(&str, DeclaredTypeKind)> = first
+        .types()
+        .iter()
+        .map(|t| (t.name.as_str(), t.kind))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("T", DeclaredTypeKind::Value),
+            ("Fn", DeclaredTypeKind::Function),
+            ("S", DeclaredTypeKind::Value),
+        ]
+    );
+    let later = b"float x; float() g = { return (T) &x; };";
+    let alone = crate::parse_with(later, crate::Dialect::Fteqcc)
+        .syntax()
+        .debug_tree();
+    assert_eq!(alone.matches("CastExpr@").count(), 0, "{alone}");
+    let with = crate::parse_preprocessed_after(
+        later,
+        crate::Dialect::Fteqcc,
+        &[],
+        &[],
+        &[],
+        &[DeclaredTypeName {
+            name: "T".to_owned(),
+            kind: DeclaredTypeKind::Value,
+        }],
+    )
+    .syntax()
+    .debug_tree();
+    assert_eq!(with.matches("CastExpr@").count(), 1, "{with}");
+    assert_eq!(with.matches("UnaryExpr@").count(), 1, "{with}");
+}
+
+// spec FTEF-16.2: a parenthesised name is a cast only when the name is a type: a variable or
+// a call in parentheses before `&` is the operand of a `&`, a declared type a cast
+#[test]
+fn a_parenthesised_name_is_a_cast_only_when_it_names_a_type() {
+    let source = b"typedef float T; float gf0; float arr[4];\n\
+        float() f = { return arr[(gf0) & 3] + ((f()) & 1) + (T) &gf0; };";
+    let tree = crate::parse_with(source, crate::Dialect::Fteqcc)
+        .syntax()
+        .debug_tree();
+    // `(gf0) & 3`, `(f()) & 1` and the two `+`; `(T) &gf0` a cast of one unary `&`.
+    assert_eq!(tree.matches("BinaryExpr@").count(), 4, "{tree}");
+    assert_eq!(tree.matches("CastExpr@").count(), 1, "{tree}");
+    assert_eq!(tree.matches("UnaryExpr@").count(), 1, "{tree}");
+    assert!(tree.contains("CastExpr@94..102\n"), "{tree}");
 }
