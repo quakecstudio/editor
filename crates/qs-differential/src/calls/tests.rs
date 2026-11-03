@@ -198,13 +198,13 @@ fn first(theirs: &str, ours: &str) -> (Option<String>, Difference) {
     )
 }
 
-const FOLDED: &str = "float x;\nvector v;\n\
+const WITH_ARITHMETIC: &str = "float x;\nvector v;\n\
     void() worldspawn = { x = 1 + 2; };\n\
     void() f = { x = 2 * 3 + time; v = '1 2 3' * 2; };\n\
     void(float a, entity e, string s) g = { if (a > 1 + 1) x = a; else x = 0 - a; \
         if (e) x = x + 1; if (s == \"player\") x = x * 2; };\n";
 
-/// [`FOLDED`] with its constant arithmetic folded by hand.
+/// [`WITH_ARITHMETIC`] with its constant arithmetic folded by hand.
 const BY_HAND: &str = "float x;\nvector v;\n\
     void() worldspawn = { x = 3; };\n\
     void() f = { x = 6 + time; v = '2 4 6'; };\n\
@@ -215,7 +215,7 @@ const BY_HAND: &str = "float x;\nvector v;\n\
 // folded by hand have other statements and globals, yet every call agrees by name and type.
 #[test]
 fn a_program_folded_and_not_agrees() {
-    let (plain, folded) = (compile(FOLDED), compile(BY_HAND));
+    let (plain, folded) = (compile(WITH_ARITHMETIC), compile(BY_HAND));
     let (a, b) = (Progs::read(&plain).unwrap(), Progs::read(&folded).unwrap());
     assert!(a.statements().len() > b.statements().len());
     assert_ne!(a.globals().len(), b.globals().len());
@@ -669,7 +669,7 @@ fn a_report_is_a_row_of_the_results_table() {
 // unions their statements; each scenario reports its progress, the last report every function
 #[test]
 fn a_codebase_runs_every_scenario() {
-    let progs = compile(FOLDED);
+    let progs = compile(WITH_ARITHMETIC);
     let folded = compile(BY_HAND);
     let reported = std::sync::Mutex::new(Vec::new());
     let progress = |name: &str, done: usize, of: usize| {
@@ -752,9 +752,9 @@ fn the_float_pool_is_what_it_says() {
     );
 }
 
-/// The drawer over the first world of [`FOLDED`], with a function's record by name.
+/// The drawer over the first world of [`WITH_ARITHMETIC`], with a function's record by name.
 fn with_drawer(test: impl FnOnce(&Drawer<'_, '_>, &Progs<'_>)) {
-    with_drawer_of(FOLDED, test);
+    with_drawer_of(WITH_ARITHMETIC, test);
 }
 
 /// The drawer over the first world of `source`.

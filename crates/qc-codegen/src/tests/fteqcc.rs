@@ -246,6 +246,38 @@ fn a_constant_arithmetic_index_folds_and_needs_no_accessor() {
     );
 }
 
+// spec FTEF-26.2: an arithmetic operator of two constants folds to the constant of its value,
+// computed in f32 as the opcode computes it: each product and sum rounded in turn, the dot
+// product `(a0*b0 + a1*b1) + a2*b2`; the store of it is the function's one statement
+#[test]
+fn constant_arithmetic_folds_to_its_value() {
+    for (expr, value) in [
+        ("0.1 + 0.2", 0.1_f32 + 0.2_f32),
+        ("3 - 5", -2.0),
+        ("0.1 * 3", 0.1_f32 * 3.0),
+        ("1 / 3", 1.0_f32 / 3.0),
+        ("'0.1 2 3' * '0.7 5 6'", (0.1_f32 * 0.7 + 10.0) + 18.0),
+        // `(1e8 + -1e8) + 1` is 1; summed from the right, `-1e8 + 1` rounds to `-1e8`.
+        ("'10000 10000 1' * '10000 -10000 1'", 1.0),
+    ] {
+        let p = fte_progs(&format!("float r;\nvoid() f = {{ r = {expr}; }};\n"));
+        let f = body(&p, "f");
+        assert_eq!(opcodes(&f), ops(&[StoreF, Done]), "{expr}");
+        assert_eq!(words(&p, f[0].a, 1), [value.to_bits()], "{expr}");
+    }
+    for (expr, value) in [
+        ("'1 2 3' + '0.5 0.5 0.5'", [1.5_f32, 2.5, 3.5]),
+        ("'1 2 3' - '0.1 1 1'", [1.0 - 0.1, 1.0, 2.0]),
+        ("0.1 * '1 2 3'", [0.1, 0.2, 0.1 * 3.0]),
+        ("'1 2 3' * 0.1", [0.1, 0.2, 3.0 * 0.1]),
+    ] {
+        let p = fte_progs(&format!("vector v;\nvoid() f = {{ v = {expr}; }};\n"));
+        let f = body(&p, "f");
+        assert_eq!(opcodes(&f), ops(&[StoreV, Done]), "{expr}");
+        assert_eq!(words(&p, f[0].a, 3), value.map(f32::to_bits), "{expr}");
+    }
+}
+
 // spec FTE-13.6: a constant index outside the array is not lowered
 #[test]
 fn a_constant_index_outside_the_array_is_not_lowered() {

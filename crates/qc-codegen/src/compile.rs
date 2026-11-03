@@ -3185,9 +3185,7 @@ impl<'a> Compiler<'a> {
             // FTEF-26.14: `AND_F` and `OR_F` of two constants fold to an int constant
             // (`QCC_MakeIntConst(eval_a->_float && eval_b->_float)`), made a float where a
             // float is stored (FTEF-27.4).
-            (Opcode::And | Opcode::Or, Literal::Float(x), Literal::Float(y))
-                if self.dialect.has_fteqcc_extensions() =>
-            {
+            (Opcode::And | Opcode::Or, Literal::Float(x), Literal::Float(y)) => {
                 let (x, y) = (x != 0.0, y != 0.0);
                 let truth = if opcode == Opcode::And {
                     x && y
@@ -3319,8 +3317,9 @@ impl<'a> Compiler<'a> {
 
     /// Whether both operands are compile-time constants and the dialect folds their operator
     /// even inside a function: FTEQCC's `opt_constantarithmatic` (`-O1`, a default optimisation)
-    /// does (FTEF-26.2), id's `qcc` does not (QC-27.20). FTEQCC reads each operand with
-    /// `QCC_SRef_EvalConst`, which takes a named constant or an immediate.
+    /// does (FTEF-26.2); under id's `qcc` every operator emits its opcode (QC-16.1). FTEQCC
+    /// reads each operand with `QCC_SRef_EvalConst`, which takes a named constant or an
+    /// immediate.
     fn both_constant(&self, left: &Value, right: &Value) -> bool {
         self.dialect.has_fteqcc_extensions()
             && self.constant_literal(left).is_some()

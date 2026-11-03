@@ -260,7 +260,7 @@ issues:
   verify:
   - Rerelease conformance job (P2-10)
 - key: P2-08
-  title: Emit .lno and add constant folding
+  title: Emit .lno line maps
   labels:
   - L4-bridges
   - area:compiler
@@ -268,7 +268,6 @@ issues:
   size: S
   reqs:
   - COMP-1
-  - COMP-5
   - FND-6
   depends:
   - P2-06
