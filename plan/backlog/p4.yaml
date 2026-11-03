@@ -415,8 +415,10 @@ issues:
   acceptance:
   - Succeeds on all three OSes from release builds
   - On Windows and on Linux, `cargo run --release -p qs-install --example find` with no arguments, run from main, detects a real Steam or GOG Quake install, reporting its id1, rerelease and expansion paths (FS-6.1) and the editions and missing files (FS-6.4, FS-6.5); a failure is filed as a type:bug against qs-install and fixed before this issue closes
+  - On the Windows and Linux machines of the demo, spikes/bench.sh shows p99 frame time at most 8.33 ms for the egui shell, its results committed under docs/spikes/data/ beside ref-mac (ADR-0003; decided 2026-11-02, moved here from P2-149)
+  - On Windows and on Linux, Japanese and Chinese text composed through the real input method appears in the editor as committed, with the candidate window at the caret, recorded under docs/spikes/data/ (ADR-0003; decided 2026-11-02, moved here from P2-151)
   verify:
-  - Recordings and eval report attached, with the Windows and Linux `find` output
+  - Recordings and eval report attached, with the Windows and Linux `find` output, bench.sh results and IME recordings
 - key: P4-27
   title: Write PAK files
   labels:
