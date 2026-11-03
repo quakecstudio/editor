@@ -5,11 +5,12 @@
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/sv_user.c, SV_ClientThink, SV_AirMove, SV_WaterMove, SV_WaterJump, SV_UserFriction, SV_Accelerate, SV_AirAccelerate, DropPunchAngle, SV_ReadClientMove
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/sv_phys.c, SV_Physics_Client, SV_WalkMove, SV_CheckWater, SV_CheckStuck, SV_WallFriction, SV_TryUnstick
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/view.c, V_CalcRoll
-// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/mathlib.c, AngleVectors, VectorNormalize, Length
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/mathlib.c, AngleVectors, Length
 
 //! The player (`docs/spec/engine/physics.md` PHYS-8 and PHYS-9): what the client asks for each
 //! frame, and how the server moves the player for it.
 
+use qc_builtins::math::vector_normalize;
 use qc_types::Slot;
 use qc_vm::convert::{double_to_float, float_to_int};
 use qc_vm::{ErrorKind, RunError};
@@ -109,16 +110,6 @@ fn length(v: [f32; 3]) -> f32 {
     double_to_float(f64::from(dot(v, v)).sqrt())
 }
 
-/// `VectorNormalize`: the vector made one long, when it is not 0, and its length.
-fn normalize(v: [f32; 3]) -> ([f32; 3], f32) {
-    let len = length(v);
-    if len == 0.0 {
-        return (v, len);
-    }
-    let inverse = 1.0 / len;
-    (v.map(|c| c * inverse), len)
-}
-
 /// `V_CalcRoll`: the roll a sideways velocity leans the view by.
 fn calc_roll(angles: [f32; 3], velocity: [f32; 3]) -> f32 {
     let (_, right, _) = angle_vectors(angles);
@@ -166,7 +157,7 @@ impl SimCall<'_, '_, '_> {
         }
         let onground = self.flags(ent) & FL_ONGROUND != 0;
         // DropPunchAngle
-        let (punch, len) = normalize(self.vector(ent, "punchangle"));
+        let (punch, len) = vector_normalize(self.vector(ent, "punchangle"));
         let len = (len - PUNCH_FADE * frametime).max(0.0);
         self.set_vector(ent, "punchangle", punch.map(|c| c * len));
         if self.float(ent, "health") <= 0.0 {
@@ -228,7 +219,7 @@ impl SimCall<'_, '_, '_> {
         } else {
             cmd.up
         };
-        let (wishdir, mut wishspeed) = normalize(wishvel);
+        let (wishdir, mut wishspeed) = vector_normalize(wishvel);
         if wishspeed > MAX_SPEED {
             wishvel = wishvel.map(|c| c * (MAX_SPEED / wishspeed));
             wishspeed = MAX_SPEED;
@@ -298,7 +289,7 @@ impl SimCall<'_, '_, '_> {
     /// `SV_AirAccelerate` (PHYS-9.4).
     fn air_accelerate(&mut self, ent: usize, wishvel: [f32; 3], wishspeed: f32, frametime: f32) {
         let velocity = self.vector(ent, "velocity");
-        let (wishveloc, wishspd) = normalize(wishvel);
+        let (wishveloc, wishspd) = vector_normalize(wishvel);
         let wishspd = wishspd.min(AIR_SPEED);
         let addspeed = wishspd - dot(velocity, wishveloc);
         if addspeed <= 0.0 {
@@ -347,7 +338,7 @@ impl SimCall<'_, '_, '_> {
         if addspeed <= 0.0 {
             return;
         }
-        let (wishvel, _) = normalize(wishvel);
+        let (wishvel, _) = vector_normalize(wishvel);
         let accelspeed = (ACCELERATE * wishspeed * frametime).min(addspeed);
         let velocity = self.vector(ent, "velocity");
         self.set_vector(

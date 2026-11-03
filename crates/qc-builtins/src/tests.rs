@@ -140,6 +140,29 @@ fn normalize_values() {
     assert!(vec_same(math::normalize([0.0, 0.0, 0.0]), [0.0, 0.0, 0.0]));
 }
 
+// spec SND-3.2: VectorNormalize scales to length 1 and returns the length; a zero-length
+// vector is returned as it is, which differs from normalize only below the float range
+#[test]
+fn vector_normalize_values() {
+    assert_eq!(
+        math::vector_normalize([3.0, 4.0, 0.0]),
+        ([0.6, 0.8, 0.0], 5.0)
+    );
+    assert_eq!(
+        math::vector_normalize([0.0, 0.0, -2.0]),
+        ([0.0, 0.0, -1.0], 2.0)
+    );
+    assert_eq!(math::vector_normalize([0.0; 3]), ([0.0; 3], 0.0));
+    // The squares of 1e-30 underflow to 0, so the length is 0 and the vector is kept.
+    let tiny = [1e-30, -1e-30, 1e-30];
+    assert_eq!(math::vector_normalize(tiny), (tiny, 0.0));
+    assert_eq!(math::normalize(tiny), [0.0; 3]);
+    // 1/length is a float: (1, 2, 2) has length 3 and 1/3 rounds to 0.333_333_34.
+    let (unit, length) = math::vector_normalize([1.0, 2.0, 2.0]);
+    assert_eq!(length, 3.0);
+    assert_eq!(unit, [0.333_333_34, 0.666_666_7, 0.666_666_7]);
+}
+
 // spec BUILTIN-6.4: vectoyaw is a whole yaw from 0 to 359.
 #[test]
 fn vectoyaw_values() {

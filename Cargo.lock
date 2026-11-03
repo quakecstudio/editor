@@ -3170,6 +3170,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-sound"
+version = "2026.10.0"
+dependencies = [
+ "qc-builtins",
+ "qc-vm",
+ "qs-wav",
+]
+
+[[package]]
 name = "qs-tests"
 version = "2026.10.0"
 dependencies = [

@@ -193,9 +193,8 @@ are silent whatever a leaf's level for them (SND-4.3).
 
 ### Behaviour
 
-- **SND-5.1** `S_Update_` mixes from `paintedtime`, first raised to `soundtime` when it fell
-  behind ("overshot"), up to `endtime = soundtime + (int) (_snd_mixahead * speed)`, lowered so
-  that `endtime - soundtime` is at most the output buffer's frames.
+- **SND-5.1** **Withdrawn** 2026-11-03: it truncated `_snd_mixahead * speed` to an int before
+  the sum; the sum is a single-precision float, truncated as a whole. Replaced by SND-5.6.
 - **SND-5.2** `S_PaintChannels (endtime)` works in blocks of at most `SND_PAINTBUFFER_SIZE`
   frames. Each block starts as zeros and every channel from 0 to `total_channels - 1` with a
   sound and a volume other than 0 on either side is added into it, in index order: a channel
@@ -212,9 +211,30 @@ are silent whatever a leaf's level for them (SND-4.3).
   rate; the engine differential compares the paint buffers of the two engines at the oracle's
   rate, 11025 Hz, sample for sample, since every step above is integer arithmetic on the same
   loaded data, except where SND-2.5 drew a skip.
-- **SND-5.5** `soundtime` is the frames the device has played; in the preview host's headless
-  mode it advances by `(int) (frametime * speed)` per server frame, so a scripted run mixes the
-  same frames on every machine.
+- **SND-5.5** **Withdrawn** 2026-11-03: it advanced the headless clock by a truncated step per
+  frame, which drifts behind the run's time by up to a frame per step. Replaced by SND-5.9.
+- **SND-5.6** `S_Update_` mixes from `paintedtime`, first raised to `soundtime` when it fell
+  behind ("overshot"), up to `endtime = soundtime + _snd_mixahead * speed`, a single-precision
+  sum (`soundtime` and `speed` converted to float) stored in an unsigned int, lowered so that
+  `endtime - soundtime` is at most the output buffer's frames.
+- **SND-5.7** `SND_PaintChannelFrom8` and `SND_PaintChannelFrom16` write `paintbuffer[0]`
+  onward whatever `ltime` is, so when a looped sound restarts inside a block (`ltime` past
+  `paintedtime`) the frames after the restart are added over the block's first frames rather
+  than at `ltime - paintedtime`, and the channel is silent for the rest of the block.
+  QuakeSpasm (`snd_mix.c`, `paintbufferstart`) adds them at `ltime - paintedtime`. The preview
+  host does so by default (`LoopPaint::Fixed`) and reproduces id's placement under
+  `LoopPaint::Id`, which the engine differential selects.
+- **SND-5.8** A looped sound whose `loopstart` is at or past its `length` (a loop point in
+  the last input samples, truncated by the resampling of SND-1.5 to the length) never ends in
+  id's engine: `ch.end = ltime + length - loopstart` does not pass `ltime`, so
+  `S_PaintChannels` restarts it forever and the game hangs. The preview host stops the channel
+  instead.
+- **SND-5.9** `soundtime` is the frames the device has played; in the preview host's headless
+  mode it is `(int) (elapsed * speed)`, with `elapsed` the seconds the run has stepped (a
+  double), so a scripted run mixes the same frames on every machine.
+- **SND-5.10** `S_TransferPaintBuffer` on a one-channel output steps through the paint buffer
+  two ints at a time (`step = 3 - channels`), so each frame's left sum alone is written, scaled
+  and clamped as in SND-5.4.
 
 ### Constants
 

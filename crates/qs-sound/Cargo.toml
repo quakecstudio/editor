@@ -1,0 +1,17 @@
+[package]
+name = "qs-sound"
+description = "The preview host's sound engine: channels, spatialization, ambient and static sounds, and the mixer, as id's snd_dma.c and snd_mix.c play them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qc-builtins = { workspace = true }
+qc-vm = { workspace = true }
+qs-wav = { workspace = true }
+
+[lints]
+workspace = true

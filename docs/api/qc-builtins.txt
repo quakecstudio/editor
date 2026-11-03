@@ -64,6 +64,7 @@ fn qc_builtins::math::normalize
 fn qc_builtins::math::random
 fn qc_builtins::math::rint
 fn qc_builtins::math::vectoangles
+fn qc_builtins::math::vector_normalize
 fn qc_builtins::math::vectoyaw
 fn qc_builtins::math::vlen
 fn qc_builtins::math::vtos
