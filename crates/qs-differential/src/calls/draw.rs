@@ -902,13 +902,19 @@ impl<'a, 'p> Drawer<'a, 'p> {
                     .filter(|(_, name, _)| name == first)
                     .map(|(edict, _, draw)| (*edict, draw.clone()))
                     .collect();
+                // DIFF-12.28: only between names of one type, so a parameter that shares a
+                // field's name passes no entity to a string field.
+                let same = |a: Option<&DefType>, b: Option<&DefType>| {
+                    a.and_then(|t| drawable(*t)).is_some()
+                        && a.and_then(|t| drawable(*t)) == b.and_then(|t| drawable(*t))
+                };
                 for (edict, draw) in found {
-                    if self.fields.contains_key(second) {
+                    if same(self.fields.get(first), self.fields.get(second)) {
                         fields.push((edict, second.clone(), draw));
                     }
                 }
                 if let Some((_, draw)) = globals.iter().rev().find(|(name, _)| name == first)
-                    && self.variables.contains_key(second)
+                    && same(self.variables.get(first), self.variables.get(second))
                 {
                     globals.push((second.clone(), draw.clone()));
                 }

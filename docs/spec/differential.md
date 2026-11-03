@@ -842,6 +842,12 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   past the guard while only float and string variables were drawn. An entity variable is a
   name whose compared values DIFF-12.22 records too: `EQ_E` and `NE_E` with it pair it with the
   other operand, `self` or another variable, and mark the world among its values.
+- **DIFF-12.28** A pair (DIFF-12.22) passes a drawn value from one name to the other only when
+  both are fields, or both variables, of one drawn type: a name the statements give a
+  parameter and a field alike, crmod7's entity parameter `client` and its string field
+  `.client`, would otherwise copy an entity's number into a string field, which each progs
+  reads as a different offset of its own string table, a difference of the drawing and not of
+  the compilers.
 - **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and
   Arcane Dimensions, are set up and called with the mock engine under vkQuake's profile
   (BUILTIN-18): crmod7 calls extension builtins while it sets up its world, and Arcane

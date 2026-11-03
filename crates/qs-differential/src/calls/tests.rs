@@ -1567,6 +1567,40 @@ fn unimplemented_builtins_return_zero() {
     assert!(missed.is_empty(), "{missed:?}");
 }
 
+// spec DIFF-12.28: a pair of names of two types passes no value: a float field paired with an
+// entity field leaves the entity field's draws entities, and a pair of one type still passes
+#[test]
+fn a_pair_passes_values_only_between_one_type() {
+    let source = "float x; .float fx; .float fy; .entity owner;\n\
+        void() worldspawn = { x = 1; };\n\
+        void() f = { x = self.fx + self.fy; x = self.owner.fx; };\n";
+    with_drawer_of(source, |drawer, progs| {
+        let f = function(progs, b"f");
+        let mut pools = drawer.pools(f);
+        pools.pairs = vec![
+            (b"fx".to_vec(), b"owner".to_vec()),
+            (b"fx".to_vec(), b"fy".to_vec()),
+        ];
+        let mut passed = false;
+        for round in 0..256 {
+            let c = drawer.draw(&mut Rng::new(b"f", round), (f, &pools), round);
+            for (edict, name, draw) in &c.fields {
+                if name == b"owner" {
+                    assert!(matches!(draw, Draw::Entity(_)), "round {round}: {draw:?}");
+                }
+                if name == b"fy"
+                    && c.fields
+                        .iter()
+                        .any(|(e, n, d)| e == edict && n == b"fx" && d == draw)
+                {
+                    passed = true;
+                }
+            }
+        }
+        assert!(passed, "a float pair passes its value");
+    });
+}
+
 // spec DIFF-12.27: an entity variable a function's statements name is drawn, so a guard on
 // it against the world is passed in some round
 #[test]
@@ -1743,8 +1777,12 @@ fn debug_replay() {
     let text = format!("progs progs.dat\n{}", spec.directives);
     let scenario = scenario::read(text.as_bytes(), Path::new(".")).unwrap();
     let entities = spec.entities.unwrap_or_default();
-    let mut tw = World::new(&tp, &scenario, &entities, EngineProfile::Id).unwrap();
-    let mut ow = World::new(&op, &scenario, &entities, EngineProfile::Id).unwrap();
+    let profile = match std::env::var("ENGINE").as_deref() {
+        Ok("vkquake") => EngineProfile::VkQuake,
+        _ => EngineProfile::Id,
+    };
+    let mut tw = World::new(&tp, &scenario, &entities, profile).unwrap();
+    let mut ow = World::new(&op, &scenario, &entities, profile).unwrap();
     let pair = super::Pair::new(Oracle::Fteqcc, &tw, &ow);
     let drawer = Drawer::new(&tw);
     let function = tp.ed_find_function(fn_name.as_bytes()).unwrap();
