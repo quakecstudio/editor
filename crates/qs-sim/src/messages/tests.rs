@@ -648,7 +648,7 @@ fn the_ideal_pitch_follows_the_floor() {
     run.frames(2, 0.1).unwrap();
     assert_eq!(run.world.float(1, "idealpitch"), 0.0, "flat ground");
     let put_deep = "self.idealpitch = 5; self.angles = '0 0 0'; setorigin(self, '80 0 24');";
-    let mut deep = player(&ledge_over(-200.0), put_deep, "", "");
+    let mut deep = player(&ledge_over(200.0), put_deep, "", "");
     let w = moved(&mut deep, UserCmd::default(), 2, 0.1);
     assert_eq!(
         w.float(1, "idealpitch"),

@@ -1,0 +1,448 @@
+const qs_client::client::CLIENT_BEAM_MODELS
+const qs_client::client::CLIENT_BEAM_STEP
+const qs_client::client::CLIENT_BEAM_TIME
+const qs_client::client::CLIENT_DEFAULT_VIEWHEIGHT
+const qs_client::client::CLIENT_LERP_MAX_GAP
+const qs_client::client::CLIENT_LERP_MOVE_TIME
+const qs_client::client::CLIENT_LERP_RESET_GAP
+const qs_client::client::CLIENT_LERP_SINGLE_POSE
+const qs_client::client::CLIENT_MAX_BEAMS
+const qs_client::client::CLIENT_MAX_DLIGHTS
+const qs_client::client::CLIENT_MAX_EDICTS
+const qs_client::client::CLIENT_MAX_LIGHTSTYLES
+const qs_client::client::CLIENT_MAX_MODELS
+const qs_client::client::CLIENT_MAX_SCOREBOARD
+const qs_client::client::CLIENT_MAX_SOUNDS
+const qs_client::client::CLIENT_MAX_STATIC_ENTITIES
+const qs_client::client::CLIENT_MAX_STATS
+const qs_client::client::CLIENT_MAX_TEMP_ENTITIES
+const qs_client::client::CLIENT_MAX_VISEDICTS
+const qs_client::client::CLIENT_PROTOCOL_VERSION
+const qs_client::client::CLIENT_ROTATE_SPEED
+const qs_client::client::CLIENT_SIGNONS
+const qs_client::client::CLIENT_TELEPORT_DISTANCE
+const qs_client::client::CLIENT_TENT_SOUNDS
+const qs_client::client::stat::ACTIVEWEAPON
+const qs_client::client::stat::AMMO
+const qs_client::client::stat::ARMOR
+const qs_client::client::stat::CELLS
+const qs_client::client::stat::FRAGS
+const qs_client::client::stat::HEALTH
+const qs_client::client::stat::MONSTERS
+const qs_client::client::stat::NAILS
+const qs_client::client::stat::ROCKETS
+const qs_client::client::stat::SECRETS
+const qs_client::client::stat::SHELLS
+const qs_client::client::stat::TOTALMONSTERS
+const qs_client::client::stat::TOTALSECRETS
+const qs_client::client::stat::WEAPON
+const qs_client::client::stat::WEAPONFRAME
+const qs_client::models::SYNCTYPE_RAND
+const qs_client::models::flags::GIB
+const qs_client::models::flags::GRENADE
+const qs_client::models::flags::ROCKET
+const qs_client::models::flags::ROTATE
+const qs_client::models::flags::TRACER
+const qs_client::models::flags::TRACER2
+const qs_client::models::flags::TRACER3
+const qs_client::models::flags::ZOMGIB
+const qs_client::particles::PART_ABSOLUTE_MIN_PARTICLES
+const qs_client::particles::PART_ENTITY_PARTICLES
+const qs_client::particles::PART_GRAVITY
+const qs_client::particles::PART_GRAVITY_SCALE
+const qs_client::particles::PART_MAX_PARTICLES
+const qs_client::particles::PART_RAMP1
+const qs_client::particles::PART_RAMP2
+const qs_client::particles::PART_RAMP3
+const qs_client::view::VIEW_BOB
+const qs_client::view::VIEW_BOBCYCLE
+const qs_client::view::VIEW_BOBUP
+const qs_client::view::VIEW_CENTERMOVE
+const qs_client::view::VIEW_CENTERSPEED
+const qs_client::view::VIEW_CSHIFTPERCENT
+const qs_client::view::VIEW_FORWARDSPEED
+const qs_client::view::VIEW_IDLESCALE
+const qs_client::view::VIEW_IDLE_CYCLES
+const qs_client::view::VIEW_IDLE_LEVELS
+const qs_client::view::VIEW_KICKPITCH
+const qs_client::view::VIEW_KICKROLL
+const qs_client::view::VIEW_KICKTIME
+const qs_client::view::VIEW_NUM_CSHIFTS
+const qs_client::view::VIEW_ROLLANGLE
+const qs_client::view::VIEW_ROLLSPEED
+const qs_client::view::VIEW_VIEWSIZE
+enum qs_client::client::Event
+enum qs_client::client::Game
+enum qs_client::client::ParseError
+enum qs_client::client::SoundRef
+enum qs_client::models::ModelKind
+enum qs_client::particles::ParticleType
+enum qs_client::view::Contents
+field qs_client::client::LerpSettings.models
+field qs_client::client::LerpSettings.moves
+field qs_client::client::Score.colors
+field qs_client::client::Score.frags
+field qs_client::client::Score.name
+field qs_client::client::SoundStart.attenuation
+field qs_client::client::SoundStart.channel
+field qs_client::client::SoundStart.entity
+field qs_client::client::SoundStart.origin
+field qs_client::client::SoundStart.sound
+field qs_client::client::SoundStart.volume
+field qs_client::entity::Baseline.angles
+field qs_client::entity::Baseline.colormap
+field qs_client::entity::Baseline.effects
+field qs_client::entity::Baseline.frame
+field qs_client::entity::Baseline.modelindex
+field qs_client::entity::Baseline.origin
+field qs_client::entity::Baseline.skin
+field qs_client::entity::Entity.angles
+field qs_client::entity::Entity.baseline
+field qs_client::entity::Entity.colormap
+field qs_client::entity::Entity.effects
+field qs_client::entity::Entity.forcelink
+field qs_client::entity::Entity.frame
+field qs_client::entity::Entity.lerp
+field qs_client::entity::Entity.lerpflags
+field qs_client::entity::Entity.model
+field qs_client::entity::Entity.msg_angles
+field qs_client::entity::Entity.msg_origins
+field qs_client::entity::Entity.msgtime
+field qs_client::entity::Entity.origin
+field qs_client::entity::Entity.skin
+field qs_client::entity::Entity.syncbase
+field qs_client::entity::Lerp.current_angles
+field qs_client::entity::Lerp.current_origin
+field qs_client::entity::Lerp.current_pose
+field qs_client::entity::Lerp.move_start
+field qs_client::entity::Lerp.previous_angles
+field qs_client::entity::Lerp.previous_origin
+field qs_client::entity::Lerp.previous_pose
+field qs_client::entity::Lerp.start
+field qs_client::entity::Lerp.time
+field qs_client::entity::LerpFlags.movestep
+field qs_client::entity::LerpFlags.reset_anim
+field qs_client::entity::LerpFlags.reset_anim2
+field qs_client::entity::LerpFlags.reset_move
+field qs_client::models::FrameInfo.first_pose
+field qs_client::models::FrameInfo.interval
+field qs_client::models::FrameInfo.poses
+field qs_client::models::ModelInfo.flags
+field qs_client::models::ModelInfo.kind
+field qs_client::models::ModelInfo.nolerp
+field qs_client::models::ModelInfo.random_sync
+field qs_client::particles::Particle.color
+field qs_client::particles::Particle.die
+field qs_client::particles::Particle.kind
+field qs_client::particles::Particle.origin
+field qs_client::particles::Particle.ramp
+field qs_client::particles::Particle.velocity
+field qs_client::scene::DynamicLight.minlight
+field qs_client::scene::DynamicLight.origin
+field qs_client::scene::DynamicLight.radius
+field qs_client::scene::PoseBlend.blend
+field qs_client::scene::PoseBlend.current
+field qs_client::scene::PoseBlend.previous
+field qs_client::scene::Scene.blend
+field qs_client::scene::Scene.entities
+field qs_client::scene::Scene.lights
+field qs_client::scene::Scene.lightstyles
+field qs_client::scene::Scene.particles
+field qs_client::scene::Scene.statics
+field qs_client::scene::Scene.time
+field qs_client::scene::Scene.view
+field qs_client::scene::Scene.weapon_poses
+field qs_client::scene::SceneEntity.angles
+field qs_client::scene::SceneEntity.colormap
+field qs_client::scene::SceneEntity.frame
+field qs_client::scene::SceneEntity.model
+field qs_client::scene::SceneEntity.origin
+field qs_client::scene::SceneEntity.poses
+field qs_client::scene::SceneEntity.skin
+field qs_client::scene::SceneEntity.syncbase
+field qs_client::scene::SceneParticle.color
+field qs_client::scene::SceneParticle.origin
+field qs_client::view::Refdef.angles
+field qs_client::view::Refdef.entity_angles
+field qs_client::view::Refdef.origin
+field qs_client::view::Refdef.weapon
+field qs_client::view::Shift.color
+field qs_client::view::Shift.percent
+field qs_client::view::ViewInput.entity_angles
+field qs_client::view::ViewInput.frametime
+field qs_client::view::ViewInput.health
+field qs_client::view::ViewInput.intermission
+field qs_client::view::ViewInput.onground
+field qs_client::view::ViewInput.origin
+field qs_client::view::ViewInput.punchangle
+field qs_client::view::ViewInput.time
+field qs_client::view::ViewInput.velocity
+field qs_client::view::ViewInput.viewangles
+field qs_client::view::ViewInput.viewheight
+field qs_client::view::ViewInput.weapon
+field qs_client::view::ViewSettings.cshiftpercent
+field qs_client::view::ViewSettings.gamma
+field qs_client::view::ViewSettings.idlescale
+field qs_client::view::ViewSettings.offsets
+field qs_client::view::ViewSettings.viewsize
+field qs_client::view::ViewState.dmg_time
+field qs_client::view::ViewState.faceanimtime
+field qs_client::view::ViewState.nodrift
+field qs_client::view::ViewState.shifts
+field qs_client::view::Weapon.angles
+field qs_client::view::Weapon.frame
+field qs_client::view::Weapon.model
+field qs_client::view::Weapon.origin
+fn qs_client::client::Client::completed_time
+fn qs_client::client::Client::entities
+fn qs_client::client::Client::frame
+fn qs_client::client::Client::gametype
+fn qs_client::client::Client::idealpitch
+fn qs_client::client::Client::intermission
+fn qs_client::client::Client::inwater
+fn qs_client::client::Client::item_gettime
+fn qs_client::client::Client::items
+fn qs_client::client::Client::levelname
+fn qs_client::client::Client::lightstyles
+fn qs_client::client::Client::maxclients
+fn qs_client::client::Client::message_time
+fn qs_client::client::Client::model
+fn qs_client::client::Client::new
+fn qs_client::client::Client::onground
+fn qs_client::client::Client::particles
+fn qs_client::client::Client::paused
+fn qs_client::client::Client::scene
+fn qs_client::client::Client::scores
+fn qs_client::client::Client::set_contents
+fn qs_client::client::Client::set_forwardmove
+fn qs_client::client::Client::set_gravity
+fn qs_client::client::Client::set_lerp
+fn qs_client::client::Client::set_view_settings
+fn qs_client::client::Client::set_viewangles
+fn qs_client::client::Client::signon
+fn qs_client::client::Client::start_pitch_drift
+fn qs_client::client::Client::statics
+fn qs_client::client::Client::stats
+fn qs_client::client::Client::stop_pitch_drift
+fn qs_client::client::Client::time
+fn qs_client::client::Client::view
+fn qs_client::client::Client::view_settings
+fn qs_client::client::Client::viewangles
+fn qs_client::client::Client::viewentity
+fn qs_client::entity::Entity::has_model
+fn qs_client::entity::Entity::new
+fn qs_client::message::Reader::angle
+fn qs_client::message::Reader::bad
+fn qs_client::message::Reader::byte
+fn qs_client::message::Reader::char
+fn qs_client::message::Reader::coord
+fn qs_client::message::Reader::done
+fn qs_client::message::Reader::float
+fn qs_client::message::Reader::long
+fn qs_client::message::Reader::new
+fn qs_client::message::Reader::short
+fn qs_client::message::Reader::string
+fn qs_client::models::ModelInfo::alias
+fn qs_client::models::ModelInfo::brush
+fn qs_client::models::ModelInfo::frame
+fn qs_client::models::ModelInfo::sprite
+fn qs_client::models::Models::describe
+fn qs_client::models::Random::rand
+fn qs_client::particles::Particles::active
+fn qs_client::particles::Particles::blob_explosion
+fn qs_client::particles::Particles::capacity
+fn qs_client::particles::Particles::clear
+fn qs_client::particles::Particles::entity_field
+fn qs_client::particles::Particles::explosion
+fn qs_client::particles::Particles::explosion2
+fn qs_client::particles::Particles::lava_splash
+fn qs_client::particles::Particles::new
+fn qs_client::particles::Particles::rocket_trail
+fn qs_client::particles::Particles::run_effect
+fn qs_client::particles::Particles::teleport_splash
+fn qs_client::particles::Particles::update
+fn qs_client::view::ViewState::blend
+fn qs_client::view::ViewState::bonus_flash
+fn qs_client::view::ViewState::damage
+fn qs_client::view::ViewState::drift_pitch
+fn qs_client::view::ViewState::fade
+fn qs_client::view::ViewState::powerup_shift
+fn qs_client::view::ViewState::render
+fn qs_client::view::ViewState::set_contents
+fn qs_client::view::ViewState::start_pitch_drift
+fn qs_client::view::ViewState::stop_pitch_drift
+fn qs_client::view::angledelta
+fn qs_client::view::calc_bob
+fn qs_client::view::calc_roll
+fn qs_client::view::gamma_table
+impl qs_client::client::Client: Default
+impl qs_client::client::LerpSettings: Default
+impl qs_client::client::ParseError: core::error::Error
+impl qs_client::client::ParseError: core::fmt::Display
+impl qs_client::particles::Particles: Default
+impl qs_client::view::ViewSettings: Default
+impl qs_client::view::ViewState: Default
+mod qs_client::client::stat
+mod qs_client::models::flags
+struct qs_client::client::Client
+struct qs_client::client::LerpSettings
+struct qs_client::client::Score
+struct qs_client::client::SoundStart
+struct qs_client::entity::Baseline
+struct qs_client::entity::Entity
+struct qs_client::entity::Lerp
+struct qs_client::entity::LerpFlags
+struct qs_client::message::Reader
+struct qs_client::models::FrameInfo
+struct qs_client::models::ModelInfo
+struct qs_client::particles::Particle
+struct qs_client::particles::Particles
+struct qs_client::scene::DynamicLight
+struct qs_client::scene::PoseBlend
+struct qs_client::scene::Scene
+struct qs_client::scene::SceneEntity
+struct qs_client::scene::SceneParticle
+struct qs_client::view::Refdef
+struct qs_client::view::Shift
+struct qs_client::view::ViewInput
+struct qs_client::view::ViewSettings
+struct qs_client::view::ViewState
+struct qs_client::view::Weapon
+trait qs_client::models::Models
+trait qs_client::models::Random
+use qs_client::Baseline = entity::Baseline
+use qs_client::CLIENT_BEAM_MODELS = client::CLIENT_BEAM_MODELS
+use qs_client::CLIENT_BEAM_STEP = client::CLIENT_BEAM_STEP
+use qs_client::CLIENT_BEAM_TIME = client::CLIENT_BEAM_TIME
+use qs_client::CLIENT_DEFAULT_VIEWHEIGHT = client::CLIENT_DEFAULT_VIEWHEIGHT
+use qs_client::CLIENT_LERP_MAX_GAP = client::CLIENT_LERP_MAX_GAP
+use qs_client::CLIENT_LERP_MOVE_TIME = client::CLIENT_LERP_MOVE_TIME
+use qs_client::CLIENT_LERP_RESET_GAP = client::CLIENT_LERP_RESET_GAP
+use qs_client::CLIENT_LERP_SINGLE_POSE = client::CLIENT_LERP_SINGLE_POSE
+use qs_client::CLIENT_MAX_BEAMS = client::CLIENT_MAX_BEAMS
+use qs_client::CLIENT_MAX_DLIGHTS = client::CLIENT_MAX_DLIGHTS
+use qs_client::CLIENT_MAX_EDICTS = client::CLIENT_MAX_EDICTS
+use qs_client::CLIENT_MAX_LIGHTSTYLES = client::CLIENT_MAX_LIGHTSTYLES
+use qs_client::CLIENT_MAX_MODELS = client::CLIENT_MAX_MODELS
+use qs_client::CLIENT_MAX_SCOREBOARD = client::CLIENT_MAX_SCOREBOARD
+use qs_client::CLIENT_MAX_SOUNDS = client::CLIENT_MAX_SOUNDS
+use qs_client::CLIENT_MAX_STATIC_ENTITIES = client::CLIENT_MAX_STATIC_ENTITIES
+use qs_client::CLIENT_MAX_STATS = client::CLIENT_MAX_STATS
+use qs_client::CLIENT_MAX_TEMP_ENTITIES = client::CLIENT_MAX_TEMP_ENTITIES
+use qs_client::CLIENT_MAX_VISEDICTS = client::CLIENT_MAX_VISEDICTS
+use qs_client::CLIENT_PROTOCOL_VERSION = client::CLIENT_PROTOCOL_VERSION
+use qs_client::CLIENT_ROTATE_SPEED = client::CLIENT_ROTATE_SPEED
+use qs_client::CLIENT_SIGNONS = client::CLIENT_SIGNONS
+use qs_client::CLIENT_TELEPORT_DISTANCE = client::CLIENT_TELEPORT_DISTANCE
+use qs_client::CLIENT_TENT_SOUNDS = client::CLIENT_TENT_SOUNDS
+use qs_client::Client = client::Client
+use qs_client::Contents = view::Contents
+use qs_client::DynamicLight = scene::DynamicLight
+use qs_client::Entity = entity::Entity
+use qs_client::Event = client::Event
+use qs_client::FrameInfo = models::FrameInfo
+use qs_client::Game = client::Game
+use qs_client::Lerp = entity::Lerp
+use qs_client::LerpFlags = entity::LerpFlags
+use qs_client::LerpSettings = client::LerpSettings
+use qs_client::ModelInfo = models::ModelInfo
+use qs_client::ModelKind = models::ModelKind
+use qs_client::Models = models::Models
+use qs_client::PART_ABSOLUTE_MIN_PARTICLES = particles::PART_ABSOLUTE_MIN_PARTICLES
+use qs_client::PART_ENTITY_PARTICLES = particles::PART_ENTITY_PARTICLES
+use qs_client::PART_GRAVITY = particles::PART_GRAVITY
+use qs_client::PART_GRAVITY_SCALE = particles::PART_GRAVITY_SCALE
+use qs_client::PART_MAX_PARTICLES = particles::PART_MAX_PARTICLES
+use qs_client::PART_RAMP1 = particles::PART_RAMP1
+use qs_client::PART_RAMP2 = particles::PART_RAMP2
+use qs_client::PART_RAMP3 = particles::PART_RAMP3
+use qs_client::ParseError = client::ParseError
+use qs_client::Particle = particles::Particle
+use qs_client::ParticleType = particles::ParticleType
+use qs_client::Particles = particles::Particles
+use qs_client::PoseBlend = scene::PoseBlend
+use qs_client::Random = models::Random
+use qs_client::Reader = message::Reader
+use qs_client::Refdef = view::Refdef
+use qs_client::SYNCTYPE_RAND = models::SYNCTYPE_RAND
+use qs_client::Scene = scene::Scene
+use qs_client::SceneEntity = scene::SceneEntity
+use qs_client::SceneParticle = scene::SceneParticle
+use qs_client::Score = client::Score
+use qs_client::Shift = view::Shift
+use qs_client::SoundRef = client::SoundRef
+use qs_client::SoundStart = client::SoundStart
+use qs_client::VIEW_BOB = view::VIEW_BOB
+use qs_client::VIEW_BOBCYCLE = view::VIEW_BOBCYCLE
+use qs_client::VIEW_BOBUP = view::VIEW_BOBUP
+use qs_client::VIEW_CENTERMOVE = view::VIEW_CENTERMOVE
+use qs_client::VIEW_CENTERSPEED = view::VIEW_CENTERSPEED
+use qs_client::VIEW_CSHIFTPERCENT = view::VIEW_CSHIFTPERCENT
+use qs_client::VIEW_FORWARDSPEED = view::VIEW_FORWARDSPEED
+use qs_client::VIEW_IDLESCALE = view::VIEW_IDLESCALE
+use qs_client::VIEW_IDLE_CYCLES = view::VIEW_IDLE_CYCLES
+use qs_client::VIEW_IDLE_LEVELS = view::VIEW_IDLE_LEVELS
+use qs_client::VIEW_KICKPITCH = view::VIEW_KICKPITCH
+use qs_client::VIEW_KICKROLL = view::VIEW_KICKROLL
+use qs_client::VIEW_KICKTIME = view::VIEW_KICKTIME
+use qs_client::VIEW_NUM_CSHIFTS = view::VIEW_NUM_CSHIFTS
+use qs_client::VIEW_ROLLANGLE = view::VIEW_ROLLANGLE
+use qs_client::VIEW_ROLLSPEED = view::VIEW_ROLLSPEED
+use qs_client::VIEW_VIEWSIZE = view::VIEW_VIEWSIZE
+use qs_client::ViewInput = view::ViewInput
+use qs_client::ViewSettings = view::ViewSettings
+use qs_client::ViewState = view::ViewState
+use qs_client::Weapon = view::Weapon
+use qs_client::angledelta = view::angledelta
+use qs_client::calc_bob = view::calc_bob
+use qs_client::calc_roll = view::calc_roll
+use qs_client::flags = models::flags
+use qs_client::gamma_table = view::gamma_table
+use qs_client::stat = client::stat
+variant qs_client::client::Event::CdTrack
+variant qs_client::client::Event::CenterPrint
+variant qs_client::client::Event::Disconnect
+variant qs_client::client::Event::NewMap
+variant qs_client::client::Event::Pause
+variant qs_client::client::Event::Print
+variant qs_client::client::Event::SellScreen
+variant qs_client::client::Event::Signon
+variant qs_client::client::Event::Sound
+variant qs_client::client::Event::StaticSound
+variant qs_client::client::Event::StopSound
+variant qs_client::client::Event::StuffText
+variant qs_client::client::Game::MissionPack
+variant qs_client::client::Game::Standard
+variant qs_client::client::ParseError::BadColormap
+variant qs_client::client::ParseError::BadMessage
+variant qs_client::client::ParseError::BadModel
+variant qs_client::client::ParseError::EntityNumber
+variant qs_client::client::ParseError::Illegible
+variant qs_client::client::ParseError::LightStyle
+variant qs_client::client::ParseError::MaxClients
+variant qs_client::client::ParseError::ModelNotFound
+variant qs_client::client::ParseError::Scoreboard
+variant qs_client::client::ParseError::Signon
+variant qs_client::client::ParseError::SoundEntity
+variant qs_client::client::ParseError::Stat
+variant qs_client::client::ParseError::TempEntity
+variant qs_client::client::ParseError::TooManyPrecaches
+variant qs_client::client::ParseError::TooManyStatics
+variant qs_client::client::ParseError::Version
+variant qs_client::client::SoundRef::Index
+variant qs_client::client::SoundRef::Name
+variant qs_client::models::ModelKind::Alias
+variant qs_client::models::ModelKind::Brush
+variant qs_client::models::ModelKind::Sprite
+variant qs_client::particles::ParticleType::Blob
+variant qs_client::particles::ParticleType::Blob2
+variant qs_client::particles::ParticleType::Explode
+variant qs_client::particles::ParticleType::Explode2
+variant qs_client::particles::ParticleType::Fire
+variant qs_client::particles::ParticleType::Grav
+variant qs_client::particles::ParticleType::SlowGrav
+variant qs_client::particles::ParticleType::Static
+variant qs_client::view::Contents::Empty
+variant qs_client::view::Contents::Lava
+variant qs_client::view::Contents::Slime
+variant qs_client::view::Contents::Water

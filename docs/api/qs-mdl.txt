@@ -35,6 +35,7 @@ const qs_mdl::mdl::MDL_ST_RAND
 const qs_mdl::mdl::MDL_ST_SYNC
 const qs_mdl::mdl::MDL_TRIANGLE_SIZE
 const qs_mdl::mdl::MDL_VERSION
+const qs_mdl::mdl::MDL_VERTEX_NORMALS
 const qs_mdl::spr::SPR_FACING_UPRIGHT
 const qs_mdl::spr::SPR_FRAME_HEADER_SIZE
 const qs_mdl::spr::SPR_GROUP
