@@ -5,6 +5,8 @@
 | [`design-doc.md`](design-doc.md) | The design document (revision 38, 2026-10-15): goals, licensing, architecture, foundations, compiler, engine bridge, agent, UI, map editor, quality, MVP scope, risks |
 | [`mockups/`](mockups/) | The approved mockups of the main screens (approved on [#199](https://github.com/quakecstudio/editor/issues/199#issuecomment-6202660819)) |
 | [`visual.md`](visual.md) | The visual design: colour, type, spacing, icons, motion and window chrome ([ADR-0010](../adr/0010-visual-design.md)) |
+| [`semantic-model.md`](semantic-model.md) | How `qc-sema` turns source into definitions, types and diagnostics: the stages, the dialect rules and the module map |
+| [`back-end.md`](back-end.md) | How `qc-codegen` turns the checked program into a progs: the typed body it reads, the intermediate layer, its passes, and the steps from today's design ([ADR-0020](../adr/0020-compiler-compatibility-tiers.md)) |
 | [`tokens.toml`](tokens.toml) | The theme tokens for dark and light, the single source the UI layer reads; `cargo xtask contrast` checks them against WCAG AA |
 
 The plan in [`../../plan/`](../../plan/README.md) turns the design document into requirements and issues. When the two disagree, fix one of them in the same PR; `plan/check.py` only checks that every requirement is covered, not that the prose still matches.
