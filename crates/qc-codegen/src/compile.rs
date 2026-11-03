@@ -2663,13 +2663,6 @@ impl<'a> Compiler<'a> {
         let Some(fragment) = body.fragment_at(op_span) else {
             return Ok(None);
         };
-        // FTEF-26.15: a fold to no statement of a value that is not two constants may drop a
-        // call's value, which this code generator's own fold frees.
-        if fragment.statements.is_empty()
-            && (fragment.immediates.is_empty() || !self.both_constant(left, right))
-        {
-            return Ok(None);
-        }
         let types = self.converted_types(operator, left, right);
         let Some(rows) = self.plan_fragment(fragment, types) else {
             return Ok(None);
@@ -2690,8 +2683,16 @@ impl<'a> Compiler<'a> {
                 return Ok(Some(value));
             }
         }
-        self.emit_fragment(fragment, &rows, left, right, span)
-            .map(Some)
+        let value = self.emit_fragment(fragment, &rows, left, right, span)?;
+        // FTEF-26.15: a fold to no statement frees the operands it drops (`QCC_FreeTemp`): a
+        // call's value among them is read by nothing more, so no clobber copies it
+        // (FTE-18.13); the operand that is the value stays live.
+        if fragment.statements.is_empty() {
+            self.drop_value(left);
+            self.drop_value(right);
+            self.keep_alive(&value);
+        }
+        Ok(Some(value))
     }
 
     /// The basic types `left` and `right` have once [`Compiler::floats_of`] has made an integer
