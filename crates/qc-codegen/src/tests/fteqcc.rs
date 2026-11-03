@@ -64,6 +64,75 @@ fn an_array_is_its_elements_in_consecutive_globals() {
     assert!(p.global_defs.iter().all(|d| string(&p, d.s_name) != "v_x"));
 }
 
+// spec FTE-13.16: an array's size literal is an immediate made before the array's globals,
+// which a later use of the same value shares
+#[test]
+fn an_arrays_size_literal_is_an_immediate_before_its_globals() {
+    let p = fte_progs(
+        "float before;\nfloat arr[4];\nstring sarr[3];\nfloat g;\nvoid() t = { g = 3; g = 4; };\n",
+    );
+    let (before, arr, sarr) = (global(&p, "before"), global(&p, "arr"), global(&p, "sarr"));
+    assert_eq!((arr, sarr), (before + 2, arr + 5));
+    assert_eq!(
+        (immediate(&p, 4.0), immediate(&p, 3.0)),
+        (before + 1, arr + 4)
+    );
+}
+
+// spec FTE-13.17: a subscript as a statement of its own computes its index and calls no getter,
+// a vector array's index multiplied by 3; and FTE-13.8: the setter a later store needs is the
+// first accessor made, so its definition comes before the getter's
+#[test]
+fn a_bare_subscript_statement_computes_its_index_and_reads_nothing() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nfloat arr[4]; vector varr[2]; float d;\nvoid() t = { \
+         arr[d & 3]; (varr[d & 1]); arr[d & 3] = d; d = arr[d]; };\n",
+    );
+    let (d, get, set) = (
+        global(&p, "d"),
+        global(&p, "ArrayGet*arr"),
+        global(&p, "ArraySet*arr"),
+    );
+    let t = body(&p, "t");
+    let (i, j, m) = (t[0].c, t[1].c, t[2].c);
+    assert_eq!(
+        t,
+        [
+            st(BitAnd, d, immediate(&p, 3.0), i),
+            st(BitAnd, d, immediate(&p, 1.0), j),
+            st(MulF, j, immediate(&p, 3.0), m),
+            st(BitAnd, d, immediate(&p, 3.0), 4),
+            st(StoreF, d, 7, 0),
+            st(Call2, set, 0, 0),
+            st(StoreF, d, 4, 0),
+            st(Opcode::Call1, get, 0, 0),
+            st(StoreF, 1, d, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+    assert!(set < get);
+}
+
+// spec FTEF-26.13, FTEF-26.14: a component of a vector literal is a constant, so an index
+// `('7 16384 3'.y) & 1` folds and the store is to the element's global with no setter
+#[test]
+fn a_vector_literals_component_is_a_constant_index() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nstring sarr[3]; string s;\nvoid() t = { \
+         sarr[(('7 16384 3').y) & 1] = s; };\n",
+    );
+    let (s, sarr) = (global(&p, "s"), global(&p, "sarr"));
+    assert_eq!(
+        body(&p, "t"),
+        [st(Opcode::StoreS, s, sarr, 0), st(Done, 0, 0, 0)]
+    );
+    assert!(
+        p.functions
+            .iter()
+            .all(|f| !string(&p, f.s_name).starts_with("ArraySet"))
+    );
+}
+
 // spec FTE-13.6: a constant index is the element's global, with no statement
 #[test]
 fn a_constant_index_is_the_elements_global() {
@@ -1932,6 +2001,60 @@ fn an_element_incremented_by_a_value_index_is_read_then_stored() {
     assert_eq!(names[getter + 1], "ArraySet*arr");
 }
 
+// spec FTE-3.6: the branch a constant condition drops is compiled and its statements taken out
+// again, so the accessor function its array store made stays, and a `break` in it is forgotten
+#[test]
+fn a_dropped_branch_keeps_the_accessor_it_made_and_loses_its_jumps() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nfloat arr[4]; float d;\nvoid() t = { \
+         while (d) { if (1) { d = 1; } else { arr[d] = 2; break; } } };\n",
+    );
+    let (d, set) = (global(&p, "d"), global(&p, "ArraySet*arr"));
+    assert!(set > 0);
+    let t = body(&p, "t");
+    assert_eq!(
+        t,
+        [
+            st(IfNot, d, 3, 0),
+            st(StoreF, immediate(&p, 1.0), d, 0),
+            st(Goto, -2, 0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-29.14: `arr[i] += e` with an index that is a temporary evaluates `e` first, then
+// reads the element by the getter with the index stored to the parameter (not folded into the
+// statement that made it, since the setter stores it again), adds and stores by the setter
+#[test]
+fn an_element_at_a_computed_index_is_read_after_the_value_and_the_index_stored_twice() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nfloat arr[4]; float d, e;\nvoid() t = { arr[d & 3] += e * 2; };\n",
+    );
+    let (d, e, get, set) = (
+        global(&p, "d"),
+        global(&p, "e"),
+        global(&p, "ArrayGet*arr"),
+        global(&p, "ArraySet*arr"),
+    );
+    let t = body(&p, "t");
+    let (index, product, sum) = (t[0].c, t[1].c, t[4].c);
+    assert_eq!(
+        t,
+        [
+            st(BitAnd, d, immediate(&p, 3.0), index),
+            st(MulF, e, immediate(&p, 2.0), product),
+            st(StoreF, index, 4, 0),
+            st(Opcode::Call1, get, 0, 0),
+            st(AddF, 1, product, sum),
+            st(StoreF, index, 4, 0),
+            st(StoreF, sum, 7, 0),
+            st(Call2, set, 0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
 // spec FTEF-29.14: `x = arr[d]++` copies the getter's value to a temporary before the sum is
 // stored, and `x` takes the copy
 #[test]
@@ -2624,6 +2747,162 @@ fn a_ternarys_arms_are_stored_by_size_then_by_type() {
             st(StoreS, q, t[16].b, 0),
             st(StoreS, t[16].b, s, 0),
             st(Done, 0, 0, 0)
+        ]
+    );
+}
+
+// spec FTE-21.6: a variadic function's record counts its named parameters, 0 for `entity(...)`
+// and 1 for `float(float a, ...)`; spec FTE-18.6: its `__va_list` is a static taking the
+// globals before its parameters, outside the locals the record counts
+#[test]
+fn a_variadic_function_counts_its_named_parameters_and_keeps_its_va_list_static() {
+    let p = fte_progs(
+        "float x; entity e;\nentity(...) f = { local float n; n = 1; return e; };\n\
+         float(float a, ...) g = { return a; };\nfloat y;\n",
+    );
+    let f = function(&p, "f");
+    let g = function(&p, "g");
+    assert_eq!(f.numparms, 0);
+    assert_eq!(g.numparms, 1);
+    let list = global(&p, "__va_list[0]");
+    assert!(
+        list + 72 <= f.parm_start,
+        "the va_list {list} lies before f's parameters {}",
+        f.parm_start
+    );
+    assert!(f.locals < 72, "f's locals {} count the va_list", f.locals);
+    assert_eq!(body(&p, "f")[0], st(StoreV, 4, list, 0));
+}
+
+// spec FTE-14.5, FTE-9.1: `(gst.v).y` of a struct's vector member is the member's word after
+// its first, as `gst.v.z` is, with no field load
+#[test]
+fn a_struct_members_component_is_its_word() {
+    let p = fte_progs(
+        "typedef struct { float a; vector v; } S; S gst; float x;\n\
+         void() t = { x = (gst.v).y; x = gst.v.z; };\n",
+    );
+    let (gst, x) = (global(&p, "gst"), global(&p, "x"));
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(StoreF, gst + 2, x, 0),
+            st(StoreF, gst + 3, x, 0),
+            st(Done, 0, 0, 0)
+        ]
+    );
+}
+
+// spec FTE-3.7: a body ending in `break` followed by an empty `case` label gets the `GOTO` past
+// the tests, which the label then targets
+#[test]
+fn a_case_label_at_the_end_of_a_switch_body_keeps_the_goto_past_the_tests() {
+    let p = fte_progs("float d;\nvoid() u = { switch (d) { case 2: d = 1; break; case 3: } };\n");
+    let d = global(&p, "d");
+    let u = body(&p, "u");
+    let (a, b) = (u[4].c, u[6].c);
+    assert_eq!(
+        u,
+        [
+            st(Goto, 4, 0, 0),
+            st(StoreF, immediate(&p, 1.0), d, 0),
+            st(Goto, 6, 0, 0),
+            st(Goto, 5, 0, 0),
+            st(EqF, d, immediate(&p, 2.0), a),
+            st(If, a, -4, 0),
+            st(EqF, d, immediate(&p, 3.0), b),
+            st(If, b, -4, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-30.17: an arm that is an int, such as a folded `&&` of two constants, is made a
+// float on the vanilla opcodes, a constant one the float immediate
+#[test]
+fn an_int_arm_of_a_ternary_is_made_a_float() {
+    let p = fte_progs(
+        "float gf0; float pf1;\nconst float K0 = 1; const float K2 = 6;\nvoid() t = { \
+         pf1 = (gf0 ? gf0 : (K0 && K2)); pf1 = (gf0 ? (1 && 6) : (0 || 0)); };\n",
+    );
+    let (gf0, pf1, k0) = (global(&p, "gf0"), global(&p, "pf1"), global(&p, "K0"));
+    let t = body(&p, "t");
+    let (a, b, zero) = (t[1].b, t[6].b, t[8].a);
+    assert_eq!(p.globals[usize::try_from(zero).unwrap()].bits(), 0);
+    assert_eq!(
+        t,
+        [
+            st(IfNot, gf0, 3, 0),
+            st(StoreF, gf0, a, 0),
+            st(Goto, 2, 0, 0),
+            st(StoreF, k0, a, 0),
+            st(StoreF, a, pf1, 0),
+            st(IfNot, gf0, 3, 0),
+            st(StoreF, k0, b, 0),
+            st(Goto, 2, 0, 0),
+            st(StoreF, zero, b, 0),
+            st(StoreF, b, pf1, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTE-9.3: a parenthesised vector field is loaded as a copy and its component is the
+// copy's word, as a value, an argument and a store's target
+#[test]
+fn a_parenthesised_vector_fields_component_is_a_word_of_its_copy() {
+    let p = fte_progs(
+        "entity world; .vector fv; float gf0; void(float f) ff1 = #1;\nvoid() t = { \
+         gf0 = (world.fv).z * 2; ff1((world.fv).y); (world.fv).x = 1; };\n",
+    );
+    let (world, fv, gf0, ff1) = (
+        global(&p, "world"),
+        global(&p, "fv"),
+        global(&p, "gf0"),
+        global(&p, "ff1"),
+    );
+    let t = body(&p, "t");
+    let (a, b, c) = (t[0].c, t[2].c, t[5].c);
+    assert_eq!(
+        t,
+        [
+            st(Opcode::LoadV, world, fv, a),
+            st(MulF, a + 2, immediate(&p, 2.0), gf0),
+            st(Opcode::LoadV, world, fv, b),
+            st(StoreF, b + 1, 4, 0),
+            st(Opcode::Call1, ff1, 0, 0),
+            st(Opcode::LoadV, world, fv, c),
+            st(StoreF, immediate(&p, 1.0), c, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-27.4: an int constant, the fold of `&&` of two constants, stored to a float field
+// or passed to a float parameter is the float constant
+#[test]
+fn an_int_constant_stored_to_a_field_or_passed_to_a_float_parameter_is_a_float() {
+    let p = fte_progs(
+        "entity world; .float ff; string(float f) ftos = #26; string s;\nvoid() t = { \
+         world.ff = (7 && 512); s = ftos((7 && 512)); };\n",
+    );
+    let (world, ff, ftos, s) = (
+        global(&p, "world"),
+        global(&p, "ff"),
+        global(&p, "ftos"),
+        global(&p, "s"),
+    );
+    let t = body(&p, "t");
+    let address = t[0].c;
+    assert_eq!(
+        t,
+        [
+            st(Opcode::Address, world, ff, address),
+            st(Opcode::StorepF, immediate(&p, 1.0), address, 0),
+            st(StoreF, immediate(&p, 1.0), 4, 0),
+            st(Opcode::Call1, ftos, 0, 0),
+            st(Opcode::StoreS, 1, s, 0),
+            st(Done, 0, 0, 0),
         ]
     );
 }

@@ -134,12 +134,16 @@ Vanilla `qcc` has no `switch`; the words `switch`, `case` and `default` are ordi
 - **FTE-3.7** After a `switch`'s body, the `GOTO` past the tests is made unless the body's last
   statement is a `RETURN`, `DONE` or `GOTO` (`QCC_StatementIsAJump`) and no jump of the
   function so far targets the statement after it (`QCC_AStatementJumpsTo(numstatements,
-  pr_scope->code, numstatements)`): `if (oldst == numstatements ||
+  pr_scope->code, numstatements)`), which also holds when a `case` or `default` label is
+  recorded at it (`for (st = 0; st < num_cases; st++) if (pr_cases[st] == targ) return
+  true;`): `if (oldst == numstatements ||
   !QCC_StatementIsAJump(numstatements-1, numstatements-1) || QCC_AStatementJumpsTo(numstatements,
   pr_scope->code, numstatements)) patch2 = QCC_Generate_OP_GOTO();`. So a body whose cases all
   `return` (the rerelease's `GetNetName`) has no `GOTO` after its last `RETURN`, a body ending
   in `break` after an `if` whose branch ended in `break` too has one (crmod7's
-  `config_command`), and an empty body has one. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseStatement`.
+  `config_command`), a body ending in `break` or `return` followed by an empty `case 3:` or
+  `default:` has one, and an empty body has one. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseStatement`,
+  `QCC_AStatementJumpsTo`.
 - **FTE-3.8** A `case` whose constant's word is 0 (`const QCC_eval_t *eval =
   QCC_SRef_EvalConst(dmin); if (!eval || eval->_int)` is false) tests the switched value itself
   with `IFNOT` to its label (`patch3 = QCC_Generate_OP_IFNOT(e, false)`), with no `EQ_*`; and
@@ -286,7 +290,13 @@ only entity-field access); a vector has no members. The rerelease applies `.z` d
   used with a compound operator (FTE-6).
 - **FTE-9.3** Progs encoding: a vector's three floats are consecutive globals (QC-21), so
   `v.x`, `v.y` and `v.z` are the global at the vector's offset, offset plus one and offset
-  plus two; no new opcode is used.
+  plus two; no new opcode is used. A parenthesised field, `(e.v).y`, is the value of `e.v`,
+  `LOAD_V` into a temporary, and the component its word, so `gf0 = (world.fv).z * 2` is
+  `LOAD_V world fv t`, `MUL_F t+2 2 gf0`, `f((world.fv).y)` is `LOAD_V`, `STORE_F t+1` to the
+  parameter slot, and `(world.fv).x = 1` stores into the copy; without parentheses `e.v.y` is
+  the component field `e.v_y` (FTE-9.4, FTE-18.11). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseField`, `QCC_PR_RefTerm`.
 - **FTE-9.4** A store to a component of an entity's vector field, `e.v.x = f` or `e.v[0] = f`,
   stores through `ADDRESS` of the component's own field `v_x` (QC-11.12) with `STOREP_F`; a
   compound assignment or increment reads it first by `LOAD_F` of that field. The component is
@@ -483,6 +493,21 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   `error`'s message and `sprintf`'s format among them, with `OP_STORE_F`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_StoreToArray`, `QCC_PR_GenerateFunctionCall2`, `QCC_PR_EmitArrayGetFunction`,
   `QCC_PR_EmitArraySetFunction`.
+- **FTE-13.16** An array's size is read as an expression (`arraysize =
+  QCC_PR_IntConstExpr();`, whose `QCC_PR_Expression(TOP_PRIORITY, 0)` parses it and
+  `QCC_SRef_EvalConst` takes its value), so each literal in it is an immediate
+  (`QCC_PR_ParseImmediate`) made before the array's globals, in the order written, and shared
+  by every later use of the same value: `float arr[4]; string sarr[3];` lays out the
+  immediate `4`, `arr`'s four words, the immediate `3` and `sarr`'s three. A statement that
+  writes past an element, such as `MUL_FV` into `arr[3]` (FTE-13.15), reaches those
+  neighbours. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_IntConstExpr`.
+- **FTE-13.17** A subscript by a value as a statement of its own, `arr[i];` (parenthesised or
+  not), computes its index (FTE-13.12: `BITAND` for `i & 3`, and `MUL_F` by the element's
+  words for a vector array) and calls no getter: the statement's expression is a reference
+  (`QCC_PR_RefExpression`) that nothing converts to a value, and `QCC_FreeTemp` releases its
+  index. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseStatement`, `QCC_PR_RefExpression`.
 
 ## FTE-14 `typedef struct` and member access
 
@@ -701,8 +726,12 @@ name (QC-10.3), and nothing follows the name.
   QCC_PR_GetSRef(type_vector, "__va_list", pr_scope, true, maxvacount, ...)` and for each `i` a
   store of slot `i + num_parms`): `STORE_V` of each slot to `__va_list`'s element `i`, a slot
   below 8 being `OFS_PARM0 + 3 * u` and a later one a vector global `$parmN` made the first
-  time it is needed. `rerelease-mg3`'s `float(...) SUB_True` makes one, written as its 24
-  elements (FTE-13.13). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  time it is needed. The array is a static of the function (`saved` is set and `pr_scope` the
+  function), so it takes the next globals when the body is read, before the function's
+  parameters and locals, which FTEQCC lays out after every function's statics
+  (`QCC_UnmarshalLocals`): the record's `parm_start` is above it and its `locals` count it
+  out. `rerelease-mg3`'s `float(...) SUB_True` makes one, written as its 24 elements
+  (FTE-13.13), and a variadic function with no body use of `va_arg` makes one all the same. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseImmediateStatements`.
 - **FTE-18.7** A call passes a parameter's default value where its argument is left empty,
   `f(a, , c)` (`else if (arg < t->num_parms && (QCC_PR_PeekToken (",") || QCC_PR_PeekToken
@@ -977,7 +1006,11 @@ empty (QC-14.2).
   `ai_run(12)` reaches `ai_run(16)` through `CheckAnyAttack`, `WizardCheckAttack` and
   `wiz_run1`, and then calls `movetogoal(dist)` with 12; the pinned FTEQCC's record of `ai_run`
   has `locals` 1. `qc-codegen` counts the parameters and every global from them to the end of
-  the last `local` declaration, its temporaries among them.
+  the last `local` declaration, its temporaries among them. The record's `numparms` is the
+  count of the named parameters given space, `funcs[i].numparms = p;` after the loop over
+  `functions[i].type->num_parms` of them, a variadic function's too: `entity(...) f` has
+  `numparms` 0 and `float(float a, ...) g` 1, where id's `qcc` writes -1 for any variadic
+  function (QC-13.3), so `PR_EnterFunction` copies the named parameters of a variadic call.
 
 ## FTE-22 Name resolution
 
