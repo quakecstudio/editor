@@ -8,7 +8,8 @@
     clippy::arithmetic_side_effects,
     clippy::indexing_slicing,
     clippy::panic,
-    reason = "test code: a failed unwrap, index or overflow is a failed test"
+    clippy::cast_possible_truncation,
+    reason = "test code: a failed unwrap, index, overflow or cast is a failed test"
 )]
 
 use std::cell::Cell;
@@ -16,6 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Cursor};
 use std::path::{Component, Path};
 
+use miniz_oxide::deflate::compress_to_vec;
 use qc_progs::crc::{crc_block, crc_process_byte};
 use qs_pak::{PAK_PAK0_COUNT, PAK_PAK0_CRC};
 
@@ -203,5 +205,48 @@ pub(crate) fn wad(name: &[u8]) -> Vec<u8> {
     let mut field = name.to_vec();
     field.resize(16, 0);
     out.extend_from_slice(&field);
+    out
+}
+
+/// A zip of `files`, each stored or, with `deflate`, deflated.
+pub(crate) fn zip(files: &[(&str, &[u8])], deflate: bool) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut central = Vec::new();
+    for (name, data) in files {
+        let (method, body) = if deflate {
+            (8_u16, compress_to_vec(data, 6))
+        } else {
+            (0, data.to_vec())
+        };
+        let offset = out.len() as u32;
+        let mut fixed = Vec::new();
+        fixed.extend_from_slice(&20_u16.to_le_bytes());
+        fixed.extend_from_slice(&0_u16.to_le_bytes());
+        fixed.extend_from_slice(&method.to_le_bytes());
+        fixed.extend_from_slice(&[0; 8]);
+        fixed.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        fixed.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        fixed.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        fixed.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&0x0403_4b50_u32.to_le_bytes());
+        out.extend_from_slice(&fixed);
+        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(&body);
+        central.extend_from_slice(&0x0201_4b50_u32.to_le_bytes());
+        central.extend_from_slice(&20_u16.to_le_bytes());
+        central.extend_from_slice(&fixed);
+        central.extend_from_slice(&[0; 10]);
+        central.extend_from_slice(&offset.to_le_bytes());
+        central.extend_from_slice(name.as_bytes());
+    }
+    let cd_offset = out.len() as u32;
+    out.extend_from_slice(&central);
+    out.extend_from_slice(&0x0605_4b50_u32.to_le_bytes());
+    out.extend_from_slice(&[0; 4]);
+    out.extend_from_slice(&(files.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(files.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(central.len() as u32).to_le_bytes());
+    out.extend_from_slice(&cd_offset.to_le_bytes());
+    out.extend_from_slice(&0_u16.to_le_bytes());
     out
 }

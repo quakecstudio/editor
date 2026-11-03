@@ -2,6 +2,7 @@ const qs_vfs::FS_GAMENAME
 const qs_vfs::FS_POP_PATH
 const qs_vfs::FS_POP_SIZE
 const qs_vfs::FS_POP_TABLE
+const qs_vfs::RRE_KPF
 enum qs_vfs::Element
 enum qs_vfs::Location
 enum qs_vfs::VfsError
@@ -30,6 +31,7 @@ fn qs_vfs::Vfs::host
 fn qs_vfs::Vfs::is_modified
 fn qs_vfs::Vfs::is_registered
 fn qs_vfs::Vfs::load
+fn qs_vfs::Vfs::load_rerelease
 fn qs_vfs::Vfs::load_wad
 fn qs_vfs::Vfs::new
 fn qs_vfs::Vfs::read
@@ -68,6 +70,7 @@ variant qs_vfs::VfsError::Archive
 variant qs_vfs::VfsError::CorruptedDataFile
 variant qs_vfs::VfsError::CouldntLoadPackfile
 variant qs_vfs::VfsError::Io
+variant qs_vfs::VfsError::Kpf
 variant qs_vfs::VfsError::ModifiedShareware
 variant qs_vfs::VfsError::Wad
 variant qs_vfs::VfsError::WadNotFound

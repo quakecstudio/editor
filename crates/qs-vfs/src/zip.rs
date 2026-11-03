@@ -11,10 +11,10 @@ use std::io::{self, Read, Seek, SeekFrom};
 use miniz_oxide::inflate::{TINFLStatus, decompress_to_vec_with_limit};
 
 /// Why a zip, or a member of it, could not be read.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ZipError {
     /// Reading the source failed.
-    Io(io::Error),
+    Io(io::ErrorKind),
     /// No end-of-central-directory record in the last 64 KiB.
     NotZip,
     /// A zip64 archive or member.
@@ -70,7 +70,7 @@ impl core::error::Error for ZipError {}
 
 impl From<io::Error> for ZipError {
     fn from(error: io::Error) -> Self {
-        Self::Io(error)
+        Self::Io(error.kind())
     }
 }
 

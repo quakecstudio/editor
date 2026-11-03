@@ -11,9 +11,10 @@ use std::path::PathBuf;
 use qs_pak::PakError;
 use qs_wad::WadError;
 
-use crate::fixtures::{MemFs, pak, pak_with_extra, pop_lmp, unmodified_pak, wad};
+use crate::fixtures::{MemFs, pak, pak_with_extra, pop_lmp, unmodified_pak, wad, zip};
 use crate::{
     Element, FS_GAMENAME, FS_POP_PATH, FS_POP_SIZE, FS_POP_TABLE, FileRef, Location, Vfs, VfsError,
+    zip::ZipError,
 };
 
 /// No command-line arguments.
@@ -782,4 +783,46 @@ fn host_filesystem_links() {
             b"real.txt".to_vec()
         ]
     );
+}
+
+// spec RRE-1.10: a rerelease file is read from the search path, else from the base directory,
+// else from QuakeEX.kpf there; an empty file in the base directory ends the look
+#[test]
+fn a_rerelease_file_is_looked_up_as_loc_loadfile_does() {
+    const LOC: &str = "localization/loc_english.txt";
+    let kpf = zip(&[(LOC, b"from kpf")], true);
+    let load = |tree: MemFs| Vfs::new(tree, NO_ARGS, "q").unwrap().load_rerelease(LOC);
+    // A registered game, whose search path finds a loose file in a subdirectory (FS-3.4).
+    let base = || {
+        MemFs::default()
+            .file("q/id1/gfx/pop.lmp", &pop_lmp(&[]))
+            .file("q/QuakeEX.kpf", &kpf)
+    };
+    assert_eq!(load(base()).unwrap().unwrap(), b"from kpf");
+    let loose = base().file("q/localization/loc_english.txt", b"from base");
+    assert_eq!(load(loose).unwrap().unwrap(), b"from base");
+    let searched = base()
+        .file("q/localization/loc_english.txt", b"from base")
+        .file("q/id1/localization/loc_english.txt", b"from id1");
+    assert_eq!(load(searched).unwrap().unwrap(), b"from id1");
+    let empty = base().file("q/localization/loc_english.txt", b"");
+    assert_eq!(load(empty).unwrap(), None);
+    assert_eq!(load(MemFs::default().dir("q/id1")).unwrap(), None);
+    let other = zip(&[("x", b"y")], false);
+    let without = MemFs::default().dir("q/id1").file("q/QuakeEX.kpf", &other);
+    assert_eq!(load(without).unwrap(), None);
+    let broken = MemFs::default()
+        .dir("q/id1")
+        .file("q/QuakeEX.kpf", b"not a zip");
+    assert!(matches!(
+        load(broken),
+        Err(VfsError::Kpf {
+            error: ZipError::NotZip,
+            ..
+        })
+    ));
+    let unreadable = base()
+        .file("q/localization/loc_english.txt", b"x")
+        .unreadable("q/localization/loc_english.txt");
+    assert_eq!(load(unreadable).unwrap().unwrap(), b"from kpf");
 }

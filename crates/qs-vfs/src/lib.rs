@@ -30,6 +30,7 @@ use std::path::{Path, PathBuf};
 
 use qs_pak::{Pak, PakError};
 use qs_wad::{Wad, WadError};
+use zip::{Zip, ZipError};
 
 pub use host::{DirEntry, EntryKind, HostFs, StdFs, find_entry};
 use host::{components, resolve};
@@ -65,6 +66,10 @@ pub const FS_POP_TABLE: [u16; 128] = [
     0x0000, 0x0000, 0x0000, 0x0000, 0x6400, 0x0000, 0x0000, 0x0000, //
 ];
 
+/// The rerelease's archive of the files it keeps beside its game directories, in its base
+/// directory (FS-5.3).
+pub const RRE_KPF: &str = "QuakeEX.kpf";
+
 /// Why the search path could not be built or a file could not be read. The messages are
 /// id's where id has one.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -98,6 +103,14 @@ pub enum VfsError {
         /// What was wrong.
         error: WadError,
     },
+    /// `QuakeEX.kpf` is in the base directory but is no zip this reads, or its member could not
+    /// be read (FS-5.5).
+    Kpf {
+        /// The archive's host path.
+        path: PathBuf,
+        /// What was wrong.
+        error: ZipError,
+    },
     /// A loose file was found but could not be read.
     Io {
         /// The file's host path.
@@ -118,6 +131,7 @@ impl fmt::Display for VfsError {
             }
             Self::WadNotFound { name } => write!(f, "W_LoadWadFile: couldn't load {name}"),
             Self::Wad { name, error } => write!(f, "Wad file {name} {error}"),
+            Self::Kpf { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Io { path, kind } => write!(f, "{} could not be read: {kind}", path.display()),
         }
     }
@@ -278,6 +292,8 @@ impl LoadedFile {
 #[derive(Debug)]
 pub struct Vfs<H> {
     host: H,
+    /// The base directory, `com_basedir`, without a trailing separator (FS-1.2).
+    basedir: PathBuf,
     elements: Vec<Element>,
     game_dir: String,
     modified: bool,
@@ -308,6 +324,7 @@ impl<H: HostFs> Vfs<H> {
             host,
             elements: Vec::new(),
             game_dir: String::new(),
+            basedir: PathBuf::new(),
             modified: false,
             proghack: false,
             registered: true,
@@ -330,6 +347,7 @@ impl<H: HostFs> Vfs<H> {
         if basedir.ends_with(['/', '\\']) {
             basedir.pop();
         }
+        self.basedir = PathBuf::from(&basedir);
         self.com_add_game_directory(&basedir, FS_GAMENAME)?;
         if com_check_parm(args, "-rogue").is_some() {
             self.com_add_game_directory(&basedir, "rogue")?;
@@ -585,6 +603,43 @@ impl<H: HostFs> Vfs<H> {
             return Ok(None);
         };
         self.read(&file).map(|bytes| Some(LoadedFile::new(bytes)))
+    }
+
+    /// Finds and reads `name` as the rerelease's engine reads a file it keeps beside its game
+    /// directories, QuakeSpasm's `LOC_LoadFile`: on the search path (FS-3), else as
+    /// `<basedir>/<name>`, else as the member `name` of `<basedir>/QuakeEX.kpf` (FS-5.5); `None`
+    /// when none has it, or when the base directory's own file is empty.
+    ///
+    /// Implements RRE-1.10.
+    ///
+    /// # Errors
+    ///
+    /// As [`Vfs::read`]; [`VfsError::Io`] when a file in the base directory opens but cannot
+    /// be read; [`VfsError::Kpf`] when `QuakeEX.kpf` is no zip or its member is unreadable.
+    pub fn load_rerelease(&self, name: &str) -> Result<Option<Vec<u8>>, VfsError> {
+        if let Some(file) = self.load(name.as_bytes())? {
+            return Ok(Some(file.into_bytes()));
+        }
+        let loose = self.basedir.join(name);
+        if let Ok(mut file) = self.host.open(&loose) {
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes).map_err(|e| VfsError::Io {
+                path: loose.clone(),
+                kind: e.kind(),
+            })?;
+            // `sz <= 0` is `goto fail`, with no look in the archive.
+            return Ok((!bytes.is_empty()).then_some(bytes));
+        }
+        let kpf = self.basedir.join(RRE_KPF);
+        let Ok(file) = self.host.open(&kpf) else {
+            return Ok(None);
+        };
+        let kpf_error = |error| VfsError::Kpf {
+            path: kpf.clone(),
+            error,
+        };
+        let mut archive = Zip::open(file).map_err(kpf_error)?;
+        archive.read(name).map_err(kpf_error)
     }
 
     /// Loads the WAD2 file `name` through the search path and checks that it loads, as id's

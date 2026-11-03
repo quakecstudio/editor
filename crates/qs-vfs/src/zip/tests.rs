@@ -11,52 +11,8 @@
 
 use std::io::Cursor;
 
-use miniz_oxide::deflate::compress_to_vec;
-
 use super::{Zip, ZipError};
-
-/// A zip of `files`, each stored or, with `deflate`, deflated.
-fn zip(files: &[(&str, &[u8])], deflate: bool) -> Vec<u8> {
-    let mut out = Vec::new();
-    let mut central = Vec::new();
-    for (name, data) in files {
-        let (method, body) = if deflate {
-            (8_u16, compress_to_vec(data, 6))
-        } else {
-            (0, data.to_vec())
-        };
-        let offset = out.len() as u32;
-        let mut fixed = Vec::new();
-        fixed.extend_from_slice(&20_u16.to_le_bytes());
-        fixed.extend_from_slice(&0_u16.to_le_bytes());
-        fixed.extend_from_slice(&method.to_le_bytes());
-        fixed.extend_from_slice(&[0; 8]);
-        fixed.extend_from_slice(&(body.len() as u32).to_le_bytes());
-        fixed.extend_from_slice(&(data.len() as u32).to_le_bytes());
-        fixed.extend_from_slice(&(name.len() as u16).to_le_bytes());
-        fixed.extend_from_slice(&0_u16.to_le_bytes());
-        out.extend_from_slice(&0x0403_4b50_u32.to_le_bytes());
-        out.extend_from_slice(&fixed);
-        out.extend_from_slice(name.as_bytes());
-        out.extend_from_slice(&body);
-        central.extend_from_slice(&0x0201_4b50_u32.to_le_bytes());
-        central.extend_from_slice(&20_u16.to_le_bytes());
-        central.extend_from_slice(&fixed);
-        central.extend_from_slice(&[0; 10]);
-        central.extend_from_slice(&offset.to_le_bytes());
-        central.extend_from_slice(name.as_bytes());
-    }
-    let cd_offset = out.len() as u32;
-    out.extend_from_slice(&central);
-    out.extend_from_slice(&0x0605_4b50_u32.to_le_bytes());
-    out.extend_from_slice(&[0; 4]);
-    out.extend_from_slice(&(files.len() as u16).to_le_bytes());
-    out.extend_from_slice(&(files.len() as u16).to_le_bytes());
-    out.extend_from_slice(&(central.len() as u32).to_le_bytes());
-    out.extend_from_slice(&cd_offset.to_le_bytes());
-    out.extend_from_slice(&0_u16.to_le_bytes());
-    out
-}
+use crate::fixtures::zip;
 
 fn open(bytes: &[u8]) -> Result<Zip<Cursor<Vec<u8>>>, ZipError> {
     Zip::open(Cursor::new(bytes.to_vec()))
