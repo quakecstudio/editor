@@ -10,6 +10,10 @@
     clippy::indexing_slicing,
     reason = "test code: a failed unwrap, index or panic is a failed test"
 )]
+#![expect(
+    clippy::print_stderr,
+    reason = "test code: the ignored debug tests print what they replay"
+)]
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -1535,8 +1539,16 @@ fn debug_pairing() {
     eprintln!("all paired, same types");
 }
 
+/// One executed statement as the value replay records it: its index, opcode, the words at
+/// its `a` and `b` after it ran, its function and the words at its result.
+type ValuedStep = (i32, u16, [u32; 3], [u32; 3], i32, [u32; 3]);
+
 #[test]
 #[ignore = "debug: GEN_DIR, FN, ROUND and SCENARIO replay one call of a generated program"]
+#[expect(
+    clippy::too_many_lines,
+    reason = "test code: one debug replay, its inputs, traces and value comparison together"
+)]
 fn debug_replay() {
     let Ok(dir) = std::env::var("GEN_DIR") else {
         return;
@@ -1588,6 +1600,145 @@ fn debug_replay() {
         o.error,
         o.executed.len()
     );
+    // The operands' values before each statement: the first step whose values differ shows
+    // which earlier statement computed, or named, something else.
+    struct Values {
+        statements: Vec<qc_progs::Statement>,
+        steps: Vec<ValuedStep>,
+    }
+    impl qc_vm::Observer for Values {
+        fn run(&mut self, _machine: &qc_vm::Machine, _function: i32) {}
+        fn step(&mut self, m: &qc_vm::Machine, f: i32, s: i32, op: u16, _b: Option<u32>) {
+            let st = self.statements.get(usize::try_from(s).unwrap()).copied();
+            let read = |ofs: i32| {
+                let w = |k: i32| m.global(ofs.wrapping_add(k)).map_or(0, |v| v.bits());
+                [w(0), w(1), w(2)]
+            };
+            // `step` runs after the statement: the operands and the result, its `c` or a
+            // store's `b`, are read as the statement left them.
+            let (a, b, c) = st.map_or(([0; 3], [0; 3], [0; 3]), |st| {
+                let target = if (31..=36).contains(&st.op) {
+                    st.b
+                } else {
+                    st.c
+                };
+                (read(st.a), read(st.b), read(target))
+            });
+            self.steps.push((s, op, a, b, f, c));
+        }
+        fn exit(&mut self, _machine: &qc_vm::Machine) {}
+        fn error(&mut self, _machine: &qc_vm::Machine, _error: &qc_vm::RunError) {}
+    }
+    let values = |p: &Progs<'_>| Values {
+        statements: p.statements().iter().collect(),
+        steps: Vec::new(),
+    };
+    let skip: usize = std::env::var("SKIP")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let (_, tv) = tw.call_observed(i32::try_from(their_index).unwrap(), &context, values(&tp));
+    let (_, ov) = ow.call_observed(our_index, &context, values(&op));
+    let fn_name_of = |p: &Progs<'_>, f: i32| {
+        p.functions()
+            .get(usize::try_from(f).unwrap_or(usize::MAX))
+            .and_then(|f| p.string(f.s_name))
+            .map(|n| String::from_utf8_lossy(n).into_owned())
+            .unwrap_or_default()
+    };
+    let show = |p: &Progs<'_>, v: &Values, i: usize| -> String {
+        let Some(step) = v.steps.get(i) else {
+            return String::new();
+        };
+        let st = p
+            .statements()
+            .get(usize::try_from(step.0).unwrap())
+            .unwrap();
+        let f = |w: u32| format!("{w}={}", f32::from_bits(w));
+        format!(
+            "{}:{} op{} a@{}={} b@{}={} -> {}",
+            fn_name_of(p, step.4),
+            step.0,
+            step.1,
+            st.a,
+            f(step.2[0]),
+            st.b,
+            f(step.3[0]),
+            f(step.5[0])
+        )
+    };
+    let mut k = 0;
+    let mut skipped = 0;
+    while k < tv.steps.len().min(ov.steps.len()) {
+        let (a, b) = (&tv.steps[k], &ov.steps[k]);
+        let vector_a = matches!(a.1, 2 | 4 | 7 | 9 | 11 | 16 | 32 | 39 | 45);
+        let vector_b = matches!(a.1, 2 | 3 | 7 | 9 | 11 | 16);
+        // Two string offsets naming the same text are the same value: the tables differ.
+        let text = |p: &Progs<'_>, w: &World<'_, '_, '_>, n: u32| {
+            let n = i32::from_ne_bytes(n.to_ne_bytes());
+            if n > 0 {
+                p.string(n).map(<[u8]>::to_vec)
+            } else if n < 0 {
+                w.host.builtins.engine().strings.text(n).map(<[u8]>::to_vec)
+            } else {
+                None
+            }
+        };
+        let same_word = |x: u32, y: u32| {
+            x == y || (text(&tp, &tw, x).is_some() && text(&tp, &tw, x) == text(&op, &ow, y))
+        };
+        let same = |x: &[u32; 3], y: &[u32; 3], v: bool| {
+            if v { x == y } else { same_word(x[0], y[0]) }
+        };
+        // A jump's offset and a call's function number are not values.
+        let (check_a, check_b) = match a.1 {
+            51..=58 | 60 | 61 => (false, false),
+            49 | 50 => (true, false),
+            _ => (true, true),
+        };
+        // An operand the statement itself overwrote shows the result, compared on its own.
+        let clobbered = |p: &Progs<'_>, step: &ValuedStep| {
+            let st = p
+                .statements()
+                .get(usize::try_from(step.0).unwrap())
+                .unwrap();
+            let target = if (31..=36).contains(&st.op) {
+                st.b
+            } else {
+                st.c
+            };
+            let words = if matches!(st.op, 3 | 4 | 7 | 9 | 25 | 32) {
+                3
+            } else {
+                1
+            };
+            let hit = |x: i32| x >= target && x < target + words;
+            (hit(st.a), hit(st.b))
+        };
+        let (ca, cb) = clobbered(&tp, a);
+        let (check_a, check_b) = (check_a && !ca, check_b && !cb);
+        let result_differs = !matches!(a.1, 37..=42 | 49..=61) && !same_word(a.5[0], b.5[0]);
+        if a.1 != b.1
+            || (check_a && !same(&a.2, &b.2, vector_a))
+            || (check_b && !same(&a.3, &b.3, vector_b))
+            || result_differs
+        {
+            if skipped < skip {
+                skipped += 1;
+                k += 1;
+                continue;
+            }
+            eprintln!("first operand value difference at executed statement {k}:");
+            for i in k.saturating_sub(8)..(k + 2) {
+                eprintln!("  {i:4} {:<60} | {}", show(&tp, &tv, i), show(&op, &ov, i));
+            }
+            break;
+        }
+        k += 1;
+    }
+    if k == tv.steps.len().min(ov.steps.len()) {
+        eprintln!("no operand value difference in {k} steps");
+    }
     let name = |p: &Progs<'_>, f: i32| {
         p.functions()
             .get(usize::try_from(f).unwrap_or(usize::MAX))

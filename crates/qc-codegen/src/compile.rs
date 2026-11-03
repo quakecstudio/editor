@@ -1202,6 +1202,20 @@ impl<'a> Compiler<'a> {
                 let a = match ret.value() {
                     Some(value) => {
                         let value = self.expr(&value)?;
+                        // FTEF-27.4: an `int` returned where a float is converted
+                        // (`QCC_EvaluateCast(e, pr_scope->type->aux_type, true)`).
+                        let returns_float = self
+                            .body_return
+                            .as_ref()
+                            .is_some_and(|ty| ty.etype() == Etype::Float)
+                            && self.body_return.as_ref().is_some_and(|ty| {
+                                !matches!(ty, ValueType::Of(t) if t.fteqcc_scalar() == Some(CScalar::Integer))
+                            });
+                        let value = if returns_float && self.is_integer(&value) {
+                            self.int_as_float(&value, span)?
+                        } else {
+                            value
+                        };
                         operand(self.operand_of(&value)).at(span)?
                     }
                     None => operand(self.bare_return(span)?).at(span)?,

@@ -1509,6 +1509,17 @@ fn a_null_is_stored_by_the_targets_type() {
     assert_eq!(t[2], st(Opcode::StorepFnc, null, t[1].c, 0));
 }
 
+// spec FTE-20.5: a number's immediate is shared by its bits, so `'-0 0 0'` and `'0 0 0'` are
+// two immediates
+#[test]
+fn immediates_are_shared_by_their_bits() {
+    let p = fte_progs("vector v;\nvoid() t = { v = '-0 0 0'; v = '0 0 0'; };\n");
+    let t = body(&p, "t");
+    assert_ne!(t[0].a, t[1].a);
+    assert_eq!(words(&p, t[0].a, 3), [(-0.0_f32).to_bits(), 0, 0]);
+    assert_eq!(words(&p, t[1].a, 3), [0, 0, 0]);
+}
+
 // spec FTE-20.5: a literal never shares a variable's word, so an element of an array is still
 // named by a constant index whose value a variable holds
 #[test]
@@ -3111,6 +3122,15 @@ fn a_components_of_a_calls_value_follows_the_alias_to_its_copy() {
             st(Done, 0, 0, 0),
         ]
     );
+}
+
+// spec FTEF-27.4: an int constant, the fold of `||` of two constants, returned from a float
+// function is the float constant
+#[test]
+fn an_int_constant_returned_from_a_float_function_is_a_float() {
+    let p = fte_progs("const float K0 = 3;\nfloat() t = { return (K0 || 777); };\n");
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(Opcode::Return, immediate(&p, 1.0), 0, 0));
 }
 
 // spec FTEF-27.4: an int constant, the fold of `&&` of two constants, stored to a float field

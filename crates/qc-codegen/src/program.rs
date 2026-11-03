@@ -792,16 +792,21 @@ impl Program {
 
     /// Whether the words from `ofs` hold `literal`'s value, compared as `PR_ParseImmediate`
     /// compares: floats and each vector component with `==`, strings by their text at the
-    /// stored offset (QC-20.2).
+    /// stored offset (QC-20.2). FTEQCC shares a number's immediate by its bits
+    /// (`QCC_Make32bitConst`, `QCC_Make96bitConst`, FTE-20.5), so `-0` and `0` are two.
     #[expect(
         clippy::float_cmp,
         reason = "spec QC-20.2: qcc compares the floats with =="
     )]
     fn holds(&self, ofs: u32, literal: &Literal) -> bool {
-        let float = |i: u32| f32::from_bits(self.word(ofs.saturating_add(i)));
+        let word = |i: u32| self.word(ofs.saturating_add(i));
+        let same = |i: u32, value: f32| match self.literal_sharing {
+            LiteralSharing::Initialised => f32::from_bits(word(i)) == value,
+            LiteralSharing::Constants => word(i) == value.to_bits(),
+        };
         match literal {
-            Literal::Float(value) => float(0) == *value,
-            Literal::Vector(v) => float(0) == v[0] && float(1) == v[1] && float(2) == v[2],
+            Literal::Float(value) => same(0, *value),
+            Literal::Vector(v) => same(0, v[0]) && same(1, v[1]) && same(2, v[2]),
             Literal::String(text) => self.string_at(self.word(ofs)) == Some(text.as_slice()),
         }
     }
