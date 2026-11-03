@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! A [`MapMesh`] on the GPU, drawn inside egui's render pass through a paint callback
-//! (ADR-0003): the map view and the preview host share it.
+//! (ADR-0003): the map view and the preview host share it. The frame is drawn in GLQuake's
+//! order (`R_RenderView`): the world, the alias models and brush entities, the sprites, the
+//! particles, the view model, the water, the view blend and the 2D layer.
 
 use egui_wgpu::wgpu::util::{BufferInitDescriptor, DeviceExt, TextureDataOrder};
 use egui_wgpu::wgpu::{self, BindGroup, Buffer, Device, Queue, RenderPipeline, TextureFormat};
@@ -9,14 +11,34 @@ use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
 
 use crate::alias::AliasVertex;
 use crate::mesh::{Animation, Batch, Image, MapMesh, Placement, Surface, frame, mip_levels};
+use crate::particles::{ParticleVertex, particle_texture};
+use crate::sprite::SpriteVertex;
 
 /// The bytes of a [`crate::mesh::Vertex`] on the GPU: position, texture and light coordinates.
 const VERTEX_BYTES: u64 = 7 * 4;
 /// The bytes of an [`AliasVertex`] on the GPU: position, skin coordinates and shade.
 const ALIAS_VERTEX_BYTES: u64 = 6 * 4;
-/// The bytes of the view's uniform, one 4 by 4 matrix.
-/// The bytes of the view's uniform: a 4 by 4 matrix, then the eye's position and the time.
-const VIEW_BYTES: u64 = 20 * 4;
+/// The bytes of a [`SpriteVertex`]: position and texture coordinates.
+const SPRITE_VERTEX_BYTES: u64 = 5 * 4;
+/// The bytes of a [`ParticleVertex`]: position, texture coordinates and colour.
+const PARTICLE_VERTEX_BYTES: u64 = 9 * 4;
+/// The bytes of a [`FlatVertex`]: position, texture coordinates and colour.
+const FLAT_VERTEX_BYTES: u64 = 8 * 4;
+/// The bytes of the view's uniform: a 4 by 4 matrix, the eye's position and the time, the
+/// fog, and the parameters.
+const VIEW_BYTES: u64 = 28 * 4;
+/// `glDepthRange (gldepthmin, gldepthmin + 0.3*(gldepthmax-gldepthmin))`: the view model is
+/// drawn in the nearest 0.3 of the depth range, so it never pokes into walls (REND-4.11).
+const VIEW_MODEL_DEPTH: f32 = 0.3;
+/// The whole depth range.
+const FULL_DEPTH: (f32, f32) = (0.0, 1.0);
+/// `GL_PolygonOffset (OFFSET_DECAL)`, `glPolygonOffset (-1, -1)`: an oriented sprite is
+/// pulled toward the eye so it sits on the wall it is placed on (REND-11.2).
+const DECAL_BIAS: wgpu::DepthBiasState = wgpu::DepthBiasState {
+    constant: -1,
+    slope_scale: -1.0,
+    clamp: 0.0,
+};
 
 /// A map's buffers, textures and pipeline, kept in egui's callback resources.
 pub struct MapRenderer {
@@ -33,15 +55,80 @@ pub struct MapRenderer {
     alias_pipeline: RenderPipeline,
     /// Each alias skin image, bound as a surface texture.
     skins: Vec<BindGroup>,
-    /// This frame's alias triangles, and how many vertices the buffer holds.
-    alias: Option<(Buffer, u64)>,
+    /// This frame's alias triangles, and the view model's.
+    alias: Grown,
     alias_draws: Vec<AliasDraw>,
+    weapon: Grown,
+    weapon_draws: Vec<AliasDraw>,
+    /// The pipelines of sprites: plain, and pulled toward the eye for decals (REND-11.2).
+    sprite_pipelines: [RenderPipeline; 2],
+    /// Each sprite frame image.
+    frames: Vec<BindGroup>,
+    sprites: Grown,
+    sprite_draws: Vec<SpriteDraw>,
+    /// The pipeline of particles and the particle texture (PART-3.2).
+    particle_pipeline: RenderPipeline,
+    particle_texture: BindGroup,
+    particles: Grown,
+    particle_count: u32,
+    /// The 2D layer's pipelines: pictures with the alpha test, and blends (HUD-1, VIEW-4.6).
+    flat_pipelines: [RenderPipeline; 2],
+    /// Each picture, and the white texel for fills and blends.
+    pics: Vec<BindGroup>,
+    white: BindGroup,
+    flat: Grown,
+    flat_draws: Vec<FlatDraw>,
     /// Each model's matrix, one every [`MODEL_STRIDE`] bytes, the world's first (REND-1.9).
     models: Buffer,
     model_group: BindGroup,
     model_count: usize,
+    /// Whether each model is drawn this frame: a brush entity not in the visible list is not.
+    shown: Vec<bool>,
     /// The lightmap atlas, written again as the light styles change (REND-5.5).
     lightmap: wgpu::Texture,
+}
+
+/// A vertex buffer that grows to what a frame needs.
+struct Grown {
+    label: &'static str,
+    buffer: Option<(Buffer, u64)>,
+    /// The bytes of one vertex, the least a buffer holds.
+    vertex: u64,
+}
+
+impl Grown {
+    const fn new(label: &'static str, vertex: u64) -> Self {
+        Self {
+            label,
+            buffer: None,
+            vertex,
+        }
+    }
+
+    /// Writes `bytes`, making a larger buffer first when the one there is too small.
+    fn write(&mut self, device: &Device, queue: &Queue, bytes: &[u8]) {
+        let needed = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        if let Some(size) = grown(
+            self.buffer.as_ref().map(|(_, size)| *size),
+            needed,
+            self.vertex,
+        ) {
+            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(self.label),
+                size,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.buffer = Some((buffer, size));
+        }
+        if let Some((buffer, _)) = &self.buffer {
+            queue.write_buffer(buffer, 0, bytes);
+        }
+    }
+
+    fn slice(&self) -> Option<wgpu::BufferSlice<'_>> {
+        self.buffer.as_ref().map(|(buffer, _)| buffer.slice(..))
+    }
 }
 
 /// The bytes between two models' matrices: the dynamic offset alignment every device allows.
@@ -69,6 +156,76 @@ pub struct ModelFrame {
     pub draws: Vec<AliasDraw>,
 }
 
+/// One sprite's quad, drawn with one frame image (REND-11.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpriteDraw {
+    /// The index of its image among the sprite frames the renderer was made with.
+    pub image: usize,
+    /// Its first vertex.
+    pub first: u32,
+    /// Its vertices, six.
+    pub count: u32,
+    /// Whether it is a decal on a wall, drawn with the polygon offset.
+    pub oriented: bool,
+}
+
+/// The sprites of one frame.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SpriteFrame {
+    /// Every sprite's vertices, three a triangle.
+    pub vertices: Vec<SpriteVertex>,
+    /// The runs of `vertices`.
+    pub draws: Vec<SpriteDraw>,
+}
+
+/// One corner of the 2D layer's quads: a picture, a character, a fill or a blend (HUD-1 to
+/// HUD-3, VIEW-4.6).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FlatVertex {
+    /// Its position in the layer's units, from the top left (`glOrtho`).
+    pub position: [f32; 2],
+    /// Its texture coordinates.
+    pub texture: [f32; 2],
+    /// Its colour, which the texel is multiplied by.
+    pub color: [f32; 4],
+}
+
+/// One run of the 2D layer's vertices.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FlatDraw {
+    /// The picture it is drawn with, an index among the pictures the renderer was made with;
+    /// `None` for the white texel, a fill or a blend.
+    pub pic: Option<usize>,
+    /// Whether it is blended over the screen with no alpha test (the view blend,
+    /// `Draw_FadeScreen`) instead of alpha tested (a picture, a character, a fill).
+    pub blend: bool,
+    /// Its first vertex.
+    pub first: u32,
+    /// Its vertices, six a quad.
+    pub count: u32,
+}
+
+/// The 2D layer of one frame, in drawing order.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FlatFrame {
+    /// Every quad's vertices, three a triangle.
+    pub vertices: Vec<FlatVertex>,
+    /// The runs of `vertices`.
+    pub draws: Vec<FlatDraw>,
+}
+
+/// The images the renderer is made with besides the mesh's.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Assets<'a> {
+    /// Every alias model's skin images (REND-4.3).
+    pub skins: &'a [Image],
+    /// Every sprite's frame images (REND-11.2).
+    pub frames: &'a [Image],
+    /// The 2D pictures: `gfx.wad`'s, the `gfx/*.lmp` files and the console characters
+    /// (HUD-1 to HUD-3).
+    pub pics: &'a [Image],
+}
+
 /// The pipeline of each kind of surface, an index into [`MapRenderer`]'s pipelines.
 const fn pipeline_of(surface: Surface) -> usize {
     match surface {
@@ -78,10 +235,24 @@ const fn pipeline_of(surface: Surface) -> usize {
     }
 }
 
+/// How a pipeline writes its fragments.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pass {
+    /// Opaque, writing depth.
+    Opaque,
+    /// `glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)`, writing depth: the water.
+    Blended,
+    /// Blended, with `glDepthMask (GL_FALSE)`: the particles.
+    BlendedNoDepthWrite,
+    /// Blended, with no depth test: the 2D layer.
+    Flat,
+    /// Opaque, pulled toward the eye: a decal.
+    Decal,
+}
+
 impl MapRenderer {
-    /// Uploads `mesh` and the alias model skins `skins`, and builds the pipelines for a target
-    /// of `format` with a depth buffer of `depth` (the format egui's render pass was made
-    /// with).
+    /// Uploads `mesh` and `assets`, and builds the pipelines for a target of `format` with a
+    /// depth buffer of `depth` (the format egui's render pass was made with).
     #[must_use]
     #[expect(
         clippy::too_many_lines,
@@ -92,7 +263,7 @@ impl MapRenderer {
         queue: &Queue,
         (format, depth): (TextureFormat, TextureFormat),
         mesh: &MapMesh,
-        skins: &[Image],
+        assets: &Assets<'_>,
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("qs-render world"),
@@ -192,7 +363,24 @@ impl MapRenderer {
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32],
         };
-        let pipeline = |(vertex, layout_of): (&str, &wgpu::VertexBufferLayout<'_>), entry: &str| {
+        let sprite_vertex = wgpu::VertexBufferLayout {
+            array_stride: SPRITE_VERTEX_BYTES,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2],
+        };
+        let particle_vertex = wgpu::VertexBufferLayout {
+            array_stride: PARTICLE_VERTEX_BYTES,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32x4],
+        };
+        let flat_vertex = wgpu::VertexBufferLayout {
+            array_stride: FLAT_VERTEX_BYTES,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x4],
+        };
+        let pipeline = |(vertex, layout_of): (&str, &wgpu::VertexBufferLayout<'_>),
+                        entry: &str,
+                        pass: Pass| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("qs-render world"),
                 layout: Some(&layout),
@@ -202,20 +390,18 @@ impl MapRenderer {
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     buffers: &[Some(layout_of.clone())],
                 },
-                primitive: primitive(),
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: depth,
-                    depth_write_enabled: Some(true),
-                    depth_compare: Some(DEPTH_COMPARE),
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
+                primitive: primitive(pass),
+                depth_stencil: Some(depth_stencil(depth, pass)),
                 multisample: wgpu::MultisampleState::default(),
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: Some(entry),
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
-                    targets: &[Some(format.into())],
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: blend_of(pass),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
                 }),
                 multiview_mask: None,
                 cache: None,
@@ -223,11 +409,30 @@ impl MapRenderer {
         };
         let world = ("vertex", &world_vertex);
         let pipelines = [
-            pipeline(world, "fragment"),
-            pipeline(world, "turbulent"),
-            pipeline(world, "sky"),
+            pipeline(world, "fragment", Pass::Opaque),
+            pipeline(world, "turbulent", Pass::Blended),
+            pipeline(world, "sky", Pass::Opaque),
         ];
-        let alias_pipeline = pipeline(("alias_vertex", &alias_vertex), "alias_fragment");
+        let alias_pipeline = pipeline(
+            ("alias_vertex", &alias_vertex),
+            "alias_fragment",
+            Pass::Opaque,
+        );
+        let sprite = ("sprite_vertex", &sprite_vertex);
+        let sprite_pipelines = [
+            pipeline(sprite, "sprite_fragment", Pass::Opaque),
+            pipeline(sprite, "sprite_fragment", Pass::Decal),
+        ];
+        let particle_pipeline = pipeline(
+            ("particle_vertex", &particle_vertex),
+            "particle_fragment",
+            Pass::BlendedNoDepthWrite,
+        );
+        let flat = ("flat_vertex", &flat_vertex);
+        let flat_pipelines = [
+            pipeline(flat, "flat_fragment", Pass::Flat),
+            pipeline(flat, "blend_fragment", Pass::Flat),
+        ];
         let vertex_bytes: Vec<u8> = mesh
             .vertices
             .iter()
@@ -320,13 +525,28 @@ impl MapRenderer {
                 })
             };
         // REND-4.3: a skin is mipmapped and filtered as a world texture is.
-        let skins = skins
+        let skins = assets
+            .skins
             .iter()
             .map(|image| {
                 let texture = upload_levels(device, queue, &mip_levels(image));
                 bind(&texture, &mipmapped, &texture)
             })
             .collect();
+        // A sprite frame and a picture keep their transparent texels: no mipmaps, filtered
+        // linearly as `GL_LoadTexture (..., alpha)` filters them.
+        let plain = |image: &Image| {
+            let texture = upload(device, queue, image);
+            bind(&texture, &linear, &texture)
+        };
+        let frames = assets.frames.iter().map(plain).collect();
+        let pics = assets.pics.iter().map(plain).collect();
+        let particle_texture = plain(&particle_texture());
+        let white = plain(&Image {
+            width: 1,
+            height: 1,
+            rgba: vec![255; 4],
+        });
         let textures = mesh
             .textures
             .iter()
@@ -360,43 +580,97 @@ impl MapRenderer {
             animations: mesh.animations.clone(),
             alias_pipeline,
             skins,
-            alias: None,
+            alias: Grown::new("qs-render alias vertices", ALIAS_VERTEX_BYTES),
             alias_draws: Vec::new(),
+            weapon: Grown::new("qs-render view model vertices", ALIAS_VERTEX_BYTES),
+            weapon_draws: Vec::new(),
+            sprite_pipelines,
+            frames,
+            sprites: Grown::new("qs-render sprite vertices", SPRITE_VERTEX_BYTES),
+            sprite_draws: Vec::new(),
+            particle_pipeline,
+            particle_texture,
+            particles: Grown::new("qs-render particle vertices", PARTICLE_VERTEX_BYTES),
+            particle_count: 0,
+            flat_pipelines,
+            pics,
+            white,
+            flat: Grown::new("qs-render 2D vertices", FLAT_VERTEX_BYTES),
+            flat_draws: Vec::new(),
             models,
             model_group,
             model_count,
+            shown: vec![true; model_count],
             lightmap: lightmap_texture,
         }
     }
 
     /// Moves the models to `matrices`, the world's first, as the entities stand now
-    /// (REND-1.9); a matrix past the mesh's models is left out.
-    pub fn set_placements(&self, queue: &Queue, matrices: &[[[f32; 4]; 4]]) {
+    /// (REND-1.9); a model given `None` is not drawn, and a matrix past the mesh's models is
+    /// left out.
+    pub fn set_placements(&mut self, queue: &Queue, matrices: &[Option<[[f32; 4]; 4]>]) {
         let take = matrices.len().min(self.model_count);
-        queue.write_buffer(
-            &self.models,
-            0,
-            &model_bytes(matrices.get(..take).unwrap_or(&[])),
-        );
+        let matrices = matrices.get(..take).unwrap_or(&[]);
+        for (shown, matrix) in self.shown.iter_mut().zip(matrices) {
+            *shown = matrix.is_some();
+        }
+        let placed: Vec<[[f32; 4]; 4]> = matrices
+            .iter()
+            .map(|m| m.unwrap_or(Placement::WORLD.matrix()))
+            .collect();
+        queue.write_buffer(&self.models, 0, &model_bytes(&placed));
     }
 
     /// Sets the alias models drawn next, growing their buffer when they need more room.
     pub fn set_models(&mut self, device: &Device, queue: &Queue, models: &ModelFrame) {
-        let bytes = alias_bytes(&models.vertices);
-        let needed = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
-        if let Some(size) = grown(self.alias.as_ref().map(|(_, size)| *size), needed) {
-            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("qs-render alias vertices"),
-                size,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            self.alias = Some((buffer, size));
-        }
-        if let Some((buffer, _)) = &self.alias {
-            queue.write_buffer(buffer, 0, &bytes);
-        }
+        self.alias
+            .write(device, queue, &alias_bytes(&models.vertices));
         self.alias_draws.clone_from(&models.draws);
+    }
+
+    /// Sets the view model drawn next, in the nearest 0.3 of the depth range (REND-4.11).
+    pub fn set_weapon(&mut self, device: &Device, queue: &Queue, weapon: &ModelFrame) {
+        self.weapon
+            .write(device, queue, &alias_bytes(&weapon.vertices));
+        self.weapon_draws.clone_from(&weapon.draws);
+    }
+
+    /// Sets the sprites drawn next (REND-11).
+    pub fn set_sprites(&mut self, device: &Device, queue: &Queue, sprites: &SpriteFrame) {
+        let bytes: Vec<u8> = sprites
+            .vertices
+            .iter()
+            .flat_map(|v| {
+                let [x, y, z] = v.position;
+                let [s, t] = v.texture;
+                [x, y, z, s, t]
+            })
+            .flat_map(f32::to_ne_bytes)
+            .collect();
+        self.sprites.write(device, queue, &bytes);
+        self.sprite_draws.clone_from(&sprites.draws);
+    }
+
+    /// Sets the particles drawn next (PART-3.2).
+    pub fn set_particles(&mut self, device: &Device, queue: &Queue, particles: &[ParticleVertex]) {
+        let bytes: Vec<u8> = particles
+            .iter()
+            .flat_map(|v| {
+                let [x, y, z] = v.position;
+                let [s, t] = v.texture;
+                let [r, g, b, a] = v.color;
+                [x, y, z, s, t, r, g, b, a]
+            })
+            .flat_map(f32::to_ne_bytes)
+            .collect();
+        self.particles.write(device, queue, &bytes);
+        self.particle_count = u32::try_from(particles.len()).unwrap_or(u32::MAX);
+    }
+
+    /// Sets the 2D layer drawn next (HUD-1 to HUD-3, VIEW-4.6).
+    pub fn set_flat(&mut self, device: &Device, queue: &Queue, flat: &FlatFrame) {
+        self.flat.write(device, queue, &flat_bytes(&flat.vertices));
+        self.flat_draws.clone_from(&flat.draws);
     }
 
     /// Writes `image`, the mesh's lightmap made again for new light styles
@@ -420,26 +694,60 @@ impl MapRenderer {
     }
 
     /// Sets the view for the next draw: the matrix from map coordinates to clip space, the
-    /// eye's position (REND-2.3) and the time in seconds (REND-2.2, REND-2.3).
+    /// eye's position (REND-2.3), the time in seconds (REND-2.2, REND-2.3), the fog
+    /// (REND-10), the water alpha (REND-9), the sky's fog (REND-8) and the 2D layer's size.
     pub fn set_view(&self, queue: &Queue, view: &View) {
         let eye_time = [view.eye[0], view.eye[1], view.eye[2], view.time];
+        let [r, g, b] = view.fog.color;
+        let fog = [r, g, b, view.fog.density / REND_FOG_DENSITY_SCALE];
+        // REND-8.1: the fog's share of the sky only while there is fog.
+        let skyfog = if view.fog.density > 0.0 {
+            view.skyfog.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let params = [view.water_alpha, skyfog, view.screen[0], view.screen[1]];
         let bytes: Vec<u8> = view
             .clip_from_world
             .iter()
             .flatten()
             .chain(&eye_time)
+            .chain(&fog)
+            .chain(&params)
             .flat_map(|v| v.to_ne_bytes())
             .collect();
         queue.write_buffer(&self.view, 0, &bytes);
     }
 
-    /// Draws every batch into `pass`, each animated texture at its frame for `time` seconds
-    /// (REND-2.1).
-    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>, time: f32) {
+    /// Draws the frame into `pass` in `R_RenderView`'s order, each animated texture at its
+    /// frame for `time` seconds (REND-2.1); `viewport` is the pass's viewport in pixels,
+    /// which the view model's depth range is set on.
+    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>, time: f32, viewport: Option<[f32; 4]>) {
         pass.set_bind_group(0, &self.shared, &[]);
+        self.draw_world(pass, time, Surface::Lit);
+        self.draw_world(pass, time, Surface::Sky);
+        self.draw_alias(pass, &self.alias, &self.alias_draws);
+        self.draw_sprites(pass);
+        self.draw_particles(pass);
+        // REND-4.11: the view model in the nearest 0.3 of the depth range.
+        if let Some([x, y, w, h]) = viewport {
+            pass.set_viewport(x, y, w, h, FULL_DEPTH.0, VIEW_MODEL_DEPTH);
+            self.draw_alias(pass, &self.weapon, &self.weapon_draws);
+            pass.set_viewport(x, y, w, h, FULL_DEPTH.0, FULL_DEPTH.1);
+        }
+        // REND-9.1: the water after everything else, blended.
+        self.draw_world(pass, time, Surface::Turbulent);
+        self.draw_flat(pass);
+    }
+
+    /// The batches of `kind` (REND-1.11).
+    fn draw_world(&self, pass: &mut wgpu::RenderPass<'_>, time: f32, kind: Surface) {
         pass.set_vertex_buffer(0, self.vertices.slice(..));
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
-        for batch in &self.batches {
+        for batch in self.batches.iter().filter(|b| b.surface == kind) {
+            if !self.shown.get(batch.model).copied().unwrap_or(true) {
+                continue;
+            }
             let frame = frame(&self.animations, batch.texture, time);
             if let (Some(texture), Some(pipeline)) = (
                 self.textures.get(frame),
@@ -455,21 +763,77 @@ impl MapRenderer {
                 );
             }
         }
-        let Some((buffer, _)) = &self.alias else {
+    }
+
+    fn draw_alias(&self, pass: &mut wgpu::RenderPass<'_>, buffer: &Grown, draws: &[AliasDraw]) {
+        let Some(slice) = buffer.slice() else {
             return;
         };
         pass.set_pipeline(&self.alias_pipeline);
-        pass.set_vertex_buffer(0, buffer.slice(..));
+        pass.set_vertex_buffer(0, slice);
         // Alias vertices are already where they are drawn: the world's matrix.
         pass.set_bind_group(2, &self.model_group, &[0]);
-        for draw in &self.alias_draws {
+        for draw in draws {
             if let Some(skin) = self.skins.get(draw.skin) {
                 pass.set_bind_group(1, skin, &[]);
                 pass.draw(draw.first..draw.first.saturating_add(draw.count), 0..1);
             }
         }
     }
+
+    fn draw_sprites(&self, pass: &mut wgpu::RenderPass<'_>) {
+        let Some(slice) = self.sprites.slice() else {
+            return;
+        };
+        pass.set_vertex_buffer(0, slice);
+        pass.set_bind_group(2, &self.model_group, &[0]);
+        for draw in &self.sprite_draws {
+            let pipeline = self.sprite_pipelines.get(usize::from(draw.oriented));
+            if let (Some(image), Some(pipeline)) = (self.frames.get(draw.image), pipeline) {
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(1, image, &[]);
+                pass.draw(draw.first..draw.first.saturating_add(draw.count), 0..1);
+            }
+        }
+    }
+
+    fn draw_particles(&self, pass: &mut wgpu::RenderPass<'_>) {
+        let Some(slice) = self.particles.slice() else {
+            return;
+        };
+        if self.particle_count == 0 {
+            return;
+        }
+        pass.set_pipeline(&self.particle_pipeline);
+        pass.set_vertex_buffer(0, slice);
+        pass.set_bind_group(1, &self.particle_texture, &[]);
+        pass.set_bind_group(2, &self.model_group, &[0]);
+        pass.draw(0..self.particle_count, 0..1);
+    }
+
+    fn draw_flat(&self, pass: &mut wgpu::RenderPass<'_>) {
+        let Some(slice) = self.flat.slice() else {
+            return;
+        };
+        pass.set_vertex_buffer(0, slice);
+        pass.set_bind_group(2, &self.model_group, &[0]);
+        for draw in &self.flat_draws {
+            let pic = match draw.pic {
+                Some(index) => self.pics.get(index),
+                None => Some(&self.white),
+            };
+            let pipeline = self.flat_pipelines.get(usize::from(draw.blend));
+            if let (Some(pic), Some(pipeline)) = (pic, pipeline) {
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(1, pic, &[]);
+                pass.draw(draw.first..draw.first.saturating_add(draw.count), 0..1);
+            }
+        }
+    }
 }
+
+/// `Fog_SetupFrame`: `glFogf (GL_FOG_DENSITY, Fog_GetDensity () / 64.0)` (REND-10.4).
+const REND_FOG_DENSITY_SCALE: f32 = 64.0;
 
 /// Each matrix at its [`MODEL_STRIDE`], column by column.
 fn model_bytes(matrices: &[[[f32; 4]; 4]]) -> Vec<u8> {
@@ -509,10 +873,24 @@ fn alias_bytes(vertices: &[AliasVertex]) -> Vec<u8> {
         .collect()
 }
 
+/// `vertices` as the 2D pipelines read them: position, texture coordinates and colour.
+fn flat_bytes(vertices: &[FlatVertex]) -> Vec<u8> {
+    vertices
+        .iter()
+        .flat_map(|v| {
+            let [x, y] = v.position;
+            let [s, t] = v.texture;
+            let [r, g, b, a] = v.color;
+            [x, y, s, t, r, g, b, a]
+        })
+        .flat_map(f32::to_ne_bytes)
+        .collect()
+}
+
 /// The size a buffer of `size` bytes, or none yet, grows to for `needed` bytes; `None` when it
-/// holds them already. A buffer is never empty.
-fn grown(size: Option<u64>, needed: u64) -> Option<u64> {
-    let needed = needed.max(ALIAS_VERTEX_BYTES);
+/// holds them already. A buffer is never smaller than one vertex of `vertex` bytes.
+fn grown(size: Option<u64>, needed: u64, vertex: u64) -> Option<u64> {
+    let needed = needed.max(vertex);
     size.is_none_or(|size| size < needed).then_some(needed)
 }
 
@@ -520,12 +898,51 @@ fn grown(size: Option<u64>, needed: u64) -> Option<u64> {
 /// an entity's over the world's, is seen.
 const DEPTH_COMPARE: wgpu::CompareFunction = wgpu::CompareFunction::LessEqual;
 
+/// The depth state of a `pass`: tested and written, except that the particles do not write
+/// (`glDepthMask (GL_FALSE)`) and the 2D layer is not tested (`glDisable (GL_DEPTH_TEST)`
+/// in `GL_Set2D`); a decal is biased toward the eye (REND-11.2).
+fn depth_stencil(format: TextureFormat, pass: Pass) -> wgpu::DepthStencilState {
+    let (write, compare, bias) = match pass {
+        Pass::Opaque | Pass::Blended => (true, DEPTH_COMPARE, wgpu::DepthBiasState::default()),
+        Pass::BlendedNoDepthWrite => (false, DEPTH_COMPARE, wgpu::DepthBiasState::default()),
+        Pass::Flat => (
+            false,
+            wgpu::CompareFunction::Always,
+            wgpu::DepthBiasState::default(),
+        ),
+        Pass::Decal => (true, DEPTH_COMPARE, DECAL_BIAS),
+    };
+    wgpu::DepthStencilState {
+        format,
+        depth_write_enabled: Some(write),
+        depth_compare: Some(compare),
+        stencil: wgpu::StencilState::default(),
+        bias,
+    }
+}
+
+/// `glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)` where a pass blends.
+const fn blend_of(pass: Pass) -> Option<wgpu::BlendState> {
+    match pass {
+        Pass::Opaque | Pass::Decal => None,
+        Pass::Blended | Pass::BlendedNoDepthWrite | Pass::Flat => {
+            Some(wgpu::BlendState::ALPHA_BLENDING)
+        }
+    }
+}
+
 /// REND-1.10: GLQuake's `glCullFace (GL_FRONT)` with `GL_CULL_FACE` on and GL's
-/// counter-clockwise front face: only the side a face is seen from the front is drawn.
-fn primitive() -> wgpu::PrimitiveState {
+/// counter-clockwise front face: only the side a face is seen from the front is drawn. The
+/// 2D layer is not culled (`glDisable (GL_CULL_FACE)` in `GL_Set2D`), nor are sprites and
+/// particles, which face the eye either way.
+fn primitive(pass: Pass) -> wgpu::PrimitiveState {
+    let cull = match pass {
+        Pass::Opaque | Pass::Blended => Some(wgpu::Face::Front),
+        Pass::BlendedNoDepthWrite | Pass::Flat | Pass::Decal => None,
+    };
     wgpu::PrimitiveState {
         front_face: wgpu::FrontFace::Ccw,
-        cull_mode: Some(wgpu::Face::Front),
+        cull_mode: cull,
         ..wgpu::PrimitiveState::default()
     }
 }
@@ -597,6 +1014,28 @@ fn upload_texture(
     )
 }
 
+/// The fog over the frame, `Fog_GetColor` and `Fog_GetDensity` (REND-10).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fog {
+    /// The colour, each channel 0 to 1.
+    pub color: [f32; 3],
+    /// The density before the division by 64; 0 for none.
+    pub density: f32,
+}
+
+impl Default for Fog {
+    /// REND-10.1: no fog, grey.
+    fn default() -> Self {
+        Self {
+            color: [REND_FOG_DEFAULT_GRAY; 3],
+            density: 0.0,
+        }
+    }
+}
+
+/// `DEFAULT_GRAY` (REND-10.1).
+const REND_FOG_DEFAULT_GRAY: f32 = 0.3;
+
 /// What one frame of the map view is drawn with.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct View {
@@ -606,7 +1045,39 @@ pub struct View {
     pub eye: [f32; 3],
     /// Seconds since the map started, which moving textures follow (REND-2).
     pub time: f32,
+    /// The fog (REND-10).
+    pub fog: Fog,
+    /// `r_wateralpha` (REND-9.1).
+    pub water_alpha: f32,
+    /// The fog's share of the sky, `skyfog` (REND-8.1).
+    pub skyfog: f32,
+    /// The 2D layer's width and height in its units, `vid.width` and `vid.height` (HUD-1).
+    pub screen: [f32; 2],
 }
+
+impl View {
+    /// A view through `clip_from_world` from `eye` at `time`, with no fog, opaque water and
+    /// a 2D layer of GLQuake's default 640 by 480 (`-conwidth`).
+    #[must_use]
+    pub fn new(clip_from_world: [[f32; 4]; 4], eye: [f32; 3], time: f32) -> Self {
+        Self {
+            clip_from_world,
+            eye,
+            time,
+            fog: Fog::default(),
+            water_alpha: REND_WATERALPHA,
+            skyfog: REND_SKYFOG,
+            screen: [CONWIDTH, CONWIDTH * 3.0 / 4.0],
+        }
+    }
+}
+
+/// `r_wateralpha`'s default (REND-9.1).
+const REND_WATERALPHA: f32 = 1.0;
+/// `r_skyfog`'s default (REND-8.1).
+const REND_SKYFOG: f32 = 0.5;
+/// `vid.conwidth = 640` when `-conwidth` is not given; `vid.conheight = vid.conwidth*3 / 4`.
+const CONWIDTH: f32 = 640.0;
 
 /// One frame of the map view, set before egui's render pass and drawn inside it from the
 /// [`MapRenderer`] in egui's callback resources.
@@ -615,8 +1086,16 @@ pub struct MapCallback {
     pub view: View,
     /// The alias models it shows.
     pub models: ModelFrame,
-    /// Each of the mesh's models' matrices, the world's first.
-    pub placements: Vec<[[f32; 4]; 4]>,
+    /// The view model (REND-4.11).
+    pub weapon: ModelFrame,
+    /// The sprites (REND-11).
+    pub sprites: SpriteFrame,
+    /// The particles (PART-3.2).
+    pub particles: Vec<ParticleVertex>,
+    /// The 2D layer: the view blend, then the status bar and the centre print.
+    pub flat: FlatFrame,
+    /// Each of the mesh's models' matrices, the world's first; `None` for one not drawn.
+    pub placements: Vec<Option<[[f32; 4]; 4]>>,
     /// The lightmap made again for this frame's light styles, when they changed (REND-5.5).
     pub lightmap: Option<Image>,
 }
@@ -633,6 +1112,10 @@ impl CallbackTrait for MapCallback {
         if let Some(renderer) = resources.get_mut::<MapRenderer>() {
             renderer.set_view(queue, &self.view);
             renderer.set_models(device, queue, &self.models);
+            renderer.set_weapon(device, queue, &self.weapon);
+            renderer.set_sprites(device, queue, &self.sprites);
+            renderer.set_particles(device, queue, &self.particles);
+            renderer.set_flat(device, queue, &self.flat);
             if !self.placements.is_empty() {
                 renderer.set_placements(queue, &self.placements);
             }
@@ -645,14 +1128,31 @@ impl CallbackTrait for MapCallback {
 
     fn paint(
         &self,
-        _info: epaint::PaintCallbackInfo,
+        info: epaint::PaintCallbackInfo,
         pass: &mut wgpu::RenderPass<'static>,
         resources: &CallbackResources,
     ) {
         if let Some(renderer) = resources.get::<MapRenderer>() {
-            renderer.draw(pass, self.view.time);
+            let viewport = info.viewport_in_pixels();
+            let viewport = [
+                viewport.left_px,
+                viewport.top_px,
+                viewport.width_px,
+                viewport.height_px,
+            ]
+            .map(|v| f32_of_i32(v.max(0)));
+            let viewport = (viewport[2] > 0.0 && viewport[3] > 0.0).then_some(viewport);
+            renderer.draw(pass, self.view.time, viewport);
         }
     }
+}
+
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a viewport's pixels, far below f32's exact range"
+)]
+const fn f32_of_i32(value: i32) -> f32 {
+    value as f32
 }
 
 #[cfg(test)]
@@ -660,41 +1160,452 @@ mod tests {
     #![expect(
         clippy::unwrap_used,
         clippy::indexing_slicing,
-        reason = "test code: a failed unwrap or index is a failed test"
+        clippy::arithmetic_side_effects,
+        clippy::cast_possible_truncation,
+        reason = "test code: a failed unwrap or index is a failed test; the image's pixels are small, exact numbers"
     )]
 
     use egui_wgpu::wgpu;
     use egui_wgpu::wgpu::naga::front::wgsl;
     use egui_wgpu::wgpu::naga::valid::{Capabilities, ValidationFlags, Validator};
 
+    use qs_bsp::SURF_DRAWTURB;
+
     use super::{
-        ALIAS_VERTEX_BYTES, DEPTH_COMPARE, MapCallback, MapRenderer, ModelFrame, View, alias_bytes,
+        ALIAS_VERTEX_BYTES, AliasDraw, Assets, DEPTH_COMPARE, FlatDraw, FlatFrame, FlatVertex, Fog,
+        MapCallback, MapRenderer, ModelFrame, Pass, SpriteDraw, SpriteFrame, View, alias_bytes,
         grown, primitive,
     };
+    use crate::alias::AliasVertex;
+    use crate::camera::Camera;
     use crate::mesh::Image;
     use crate::mesh::tests::{MapSpec, bsp, palette, samples};
+    use crate::particles::ParticleVertex;
+    use crate::sprite::SpriteVertex;
     use crate::{LightStyles, MapMesh};
     use egui_wgpu::CallbackTrait as _;
 
-    /// A headless device, and a renderer of the test map on it.
+    const FORMATS: (wgpu::TextureFormat, wgpu::TextureFormat) = (
+        wgpu::TextureFormat::Rgba8Unorm,
+        wgpu::TextureFormat::Depth32Float,
+    );
+
+    /// A headless device, and a renderer of the test map on it, lit by 50 as the lightmap
+    /// tests read it.
     fn renderer() -> (egui_wgpu::RenderState, MapRenderer, MapMesh) {
+        renderer_of(&MapSpec::default(), &[50], &Assets::default())
+    }
+
+    /// A headless device, and a renderer of the test map `spec` lit by `lighting` on it, with
+    /// `assets`.
+    fn renderer_of(
+        spec: &MapSpec,
+        lighting: &[u8],
+        assets: &Assets<'_>,
+    ) -> (egui_wgpu::RenderState, MapRenderer, MapMesh) {
         let state = egui_kittest::wgpu::create_render_state(
             egui_kittest::wgpu::default_wgpu_setup(),
             egui_wgpu::RendererOptions::default(),
         );
-        let lighting = samples(&[50]);
-        let mesh = MapMesh::build(&bsp(&MapSpec::default(), &lighting), &palette()).unwrap();
-        let renderer = MapRenderer::new(
+        let lighting = samples(lighting);
+        let mesh = MapMesh::build(&bsp(spec, &lighting), &palette()).unwrap();
+        let renderer = MapRenderer::new(&state.device, &state.queue, FORMATS, &mesh, assets);
+        (state, renderer, mesh)
+    }
+
+    /// The test face wound so its front, which GLQuake culls (REND-1.10), is below: seen
+    /// from above.
+    fn seen_from_above() -> MapSpec {
+        MapSpec {
+            surfedges: vec![-4, -3, -2, -1],
+            ..MapSpec::default()
+        }
+    }
+
+    /// The renderer of the test map at full light, seen from above, for the offscreen images.
+    fn bright() -> (egui_wgpu::RenderState, MapRenderer, MapMesh) {
+        renderer_of(&seen_from_above(), &[255], &Assets::default())
+    }
+
+    /// The side of the offscreen image: 64 pixels, whose rows are 256 bytes, the copy
+    /// alignment.
+    const SIDE: u32 = 64;
+
+    /// A view from 40 above the test face's middle looking straight down, so the face fills
+    /// the middle of the image: the pixel at (32, 32) is the face's (32, 16).
+    fn looking_down() -> View {
+        View::new(
+            Camera::clip_from_view([32.0, 16.0, 40.0], [90.0, 0.0, 0.0], 90.0, 1.0),
+            [32.0, 16.0, 40.0],
+            0.0,
+        )
+    }
+
+    /// A frame with nothing but the world, looking down at it.
+    fn frame() -> MapCallback {
+        MapCallback {
+            view: looking_down(),
+            models: ModelFrame::default(),
+            weapon: ModelFrame::default(),
+            sprites: SpriteFrame::default(),
+            particles: Vec::new(),
+            flat: FlatFrame::default(),
+            placements: Vec::new(),
+            lightmap: None,
+        }
+    }
+
+    /// Draws `callback` offscreen over `clear` and returns the image's pixels, four bytes
+    /// each, row by row.
+    fn render(
+        state: &egui_wgpu::RenderState,
+        renderer: MapRenderer,
+        callback: &MapCallback,
+        clear: wgpu::Color,
+    ) -> Vec<u8> {
+        let mut resources = egui_wgpu::CallbackResources::default();
+        resources.insert(renderer);
+        let texture = |format, usage| {
+            state.device.create_texture(&wgpu::TextureDescriptor {
+                label: None,
+                size: wgpu::Extent3d {
+                    width: SIDE,
+                    height: SIDE,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage,
+                view_formats: &[],
+            })
+        };
+        let colour = texture(
+            FORMATS.0,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        );
+        let depth = texture(FORMATS.1, wgpu::TextureUsages::RENDER_ATTACHMENT);
+        let colour_view = colour.create_view(&Default::default());
+        let depth_view = depth.create_view(&Default::default());
+        let mut encoder = state.device.create_command_encoder(&Default::default());
+        let screen = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [SIDE, SIDE],
+            pixels_per_point: 1.0,
+        };
+        callback.prepare(
             &state.device,
             &state.queue,
-            (
-                wgpu::TextureFormat::Rgba8Unorm,
-                wgpu::TextureFormat::Depth32Float,
-            ),
-            &mesh,
-            &[],
+            &screen,
+            &mut encoder,
+            &mut resources,
         );
-        (state, renderer, mesh)
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &colour_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(clear),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            let renderer = resources.get::<MapRenderer>().unwrap();
+            let side = f32::from(u16::try_from(SIDE).unwrap());
+            renderer.draw(&mut pass, callback.view.time, Some([0.0, 0.0, side, side]));
+        }
+        let bytes = u64::from(SIDE) * u64::from(SIDE) * 4;
+        let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: bytes,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        encoder.copy_texture_to_buffer(
+            colour.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(SIDE * 4),
+                    rows_per_image: Some(SIDE),
+                },
+            },
+            colour.size(),
+        );
+        state.queue.submit([encoder.finish()]);
+        buffer.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        state
+            .device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .unwrap();
+        buffer.slice(..).get_mapped_range().unwrap().to_vec()
+    }
+
+    /// The pixel at `(x, y)` of an image `render` returned.
+    fn pixel(image: &[u8], x: u32, y: u32) -> [u8; 4] {
+        let at = usize::try_from((y * SIDE + x) * 4).unwrap();
+        image[at..at + 4].try_into().unwrap()
+    }
+
+    /// Whether each channel of `a` is within `by` of `b`'s.
+    fn near(a: [u8; 4], b: [u8; 4], by: u8) -> bool {
+        a.iter().zip(b).all(|(x, y)| x.abs_diff(y) <= by)
+    }
+
+    const BLACK: wgpu::Color = wgpu::Color::BLACK;
+    /// The test face's colour: texture index 7 through the test palette, full bright.
+    const FACE: [u8; 4] = [7, 14, 21, 255];
+
+    /// `v` as a byte, rounded.
+    fn byte(v: f32) -> u8 {
+        u8::try_from(v.round() as i32).unwrap()
+    }
+
+    // spec REND-1.7: the face is drawn where the view sees it, its texture times its light
+    #[test]
+    fn the_world_is_drawn_where_the_view_sees_it() {
+        let (state, renderer, _) = bright();
+        let image = render(&state, renderer, &frame(), BLACK);
+        assert_eq!(pixel(&image, 32, 32), FACE);
+        // The view spans x -8 to 72 and y -24 to 56: the face's corner (0, 0) is 8 units from
+        // the view's left edge and 24 from its top, 6 and 19 pixels; beyond it is the clear.
+        assert_eq!(pixel(&image, 2, 2), [0, 0, 0, 255]);
+    }
+
+    // spec REND-10.4: a fragment's colour is mixed toward the fog colour by
+    // `1 - exp (-((density / 64) * z)^2)` of its distance from the eye
+    #[test]
+    fn fog_mixes_the_face_toward_the_fog_colour_by_distance() {
+        let fogged = |density: f32| {
+            let (state, renderer, _) = bright();
+            let mut callback = frame();
+            callback.view.fog = Fog {
+                color: [0.3, 0.6, 0.9],
+                density,
+            };
+            let image = render(&state, renderer, &callback, BLACK);
+            pixel(&image, 32, 32)
+        };
+        assert_eq!(fogged(0.0), FACE);
+        // Density 64 at 40 units: `1 - exp (-1600)`, all fog.
+        let all = fogged(64.0);
+        assert!(near(all, [77, 153, 230, 255], 1), "{all:?}");
+        // Density 1 at 40 units: `1 - exp (-(40/64)^2)` = 0.323 of the way.
+        let mixed = fogged(1.0);
+        let mix = 1.0 - (-(40.0_f32 / 64.0).powi(2)).exp();
+        let expect = |face: f32, fog: f32| byte(face + (fog - face) * mix);
+        let want = [
+            expect(7.0, 76.5),
+            expect(14.0, 153.0),
+            expect(21.0, 229.5),
+            255,
+        ];
+        assert!(near(mixed, want, 2), "{mixed:?} vs {want:?}");
+    }
+
+    // spec REND-9.1: water is blended over the scene with the water alpha, 1 by default
+    #[test]
+    fn water_blends_by_the_water_alpha() {
+        let water = |alpha: f32| {
+            let spec = MapSpec {
+                flags: SURF_DRAWTURB,
+                ..seen_from_above()
+            };
+            let (state, renderer, _) = renderer_of(&spec, &[255], &Assets::default());
+            let mut callback = frame();
+            callback.view.water_alpha = alpha;
+            let image = render(&state, renderer, &callback, wgpu::Color::WHITE);
+            pixel(&image, 32, 32)
+        };
+        // Turbulent water samples its texture at warped coordinates: the one texel colour.
+        assert_eq!(water(1.0), FACE);
+        let half = water(0.5);
+        assert!(near(half, [131, 134, 138, 255], 2), "{half:?}");
+    }
+
+    // spec REND-11.2: a sprite's quad is drawn with its frame image, transparent texels cut
+    // by the alpha test
+    #[test]
+    fn sprites_are_alpha_tested() {
+        // A 4 by 1 frame: red twice, then transparent twice.
+        let frames = [Image {
+            width: 4,
+            height: 1,
+            rgba: vec![255, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 0, 0, 255, 0, 0],
+        }];
+        let assets = Assets {
+            frames: &frames,
+            ..Assets::default()
+        };
+        let (state, renderer, _) = renderer_of(&seen_from_above(), &[255], &assets);
+        let mut callback = frame();
+        // A quad 20 above the face, from x 0 to 64 and y 0 to 32, textured along x.
+        let corner = |x: f32, y: f32, s: f32, t: f32| SpriteVertex {
+            position: [x, y, 20.0],
+            texture: [s, t],
+        };
+        let quad = [
+            corner(0.0, 0.0, 0.0, 1.0),
+            corner(0.0, 32.0, 0.0, 0.0),
+            corner(64.0, 32.0, 1.0, 0.0),
+            corner(64.0, 0.0, 1.0, 1.0),
+        ];
+        callback.sprites = SpriteFrame {
+            vertices: vec![quad[0], quad[1], quad[2], quad[0], quad[2], quad[3]],
+            draws: vec![SpriteDraw {
+                image: 0,
+                first: 0,
+                count: 6,
+                oriented: false,
+            }],
+        };
+        let out = render(&state, renderer, &callback, BLACK);
+        // Looking down with the view's up along +x, x runs up the image: 20 below the eye the
+        // view spans 20 units each way, so x 24 is 13 pixels below the middle, at the second
+        // red texel's centre, and x 40 is 13 above it, at the first transparent texel's,
+        // where the face shows.
+        assert_eq!(pixel(&out, 32, 45), [255, 0, 0, 255]);
+        assert_eq!(pixel(&out, 32, 19), FACE);
+    }
+
+    // spec PART-3.2: a particle's triangle is drawn in its colour through the particle
+    // texture, blended
+    #[test]
+    fn particles_are_drawn_in_their_colour() {
+        let (state, renderer, _) = bright();
+        let mut callback = frame();
+        let corner = |x: f32, y: f32| ParticleVertex {
+            position: [x, y, 20.0],
+            // Inside the dot: texel (1, 1) of 8.
+            texture: [0.1875, 0.1875],
+            color: [0.0, 1.0, 0.0, 1.0],
+        };
+        callback.particles = vec![
+            corner(-50.0, -50.0),
+            corner(200.0, -50.0),
+            corner(-50.0, 200.0),
+        ];
+        let out = render(&state, renderer, &callback, BLACK);
+        assert_eq!(pixel(&out, 32, 32), [0, 255, 0, 255]);
+    }
+
+    // spec REND-4.11: the view model is drawn in the nearest 0.3 of the depth range, so it
+    // is seen through a wall an alias model is hidden by
+    #[test]
+    fn the_view_model_is_drawn_over_the_walls() {
+        let skin = [Image {
+            width: 1,
+            height: 1,
+            rgba: vec![255; 4],
+        }];
+        let assets = Assets {
+            skins: &skin,
+            ..Assets::default()
+        };
+        // A triangle 10 below the face, behind it from the eye.
+        let corner = |x: f32, y: f32| AliasVertex {
+            position: [x, y, -10.0],
+            texture: [0.5, 0.5],
+            shade: 1.0,
+        };
+        // Wound as a Quake face is, so the front culled by REND-1.10 is away from the eye.
+        let model = ModelFrame {
+            vertices: vec![
+                corner(-50.0, -50.0),
+                corner(-50.0, 200.0),
+                corner(200.0, -50.0),
+            ],
+            draws: vec![AliasDraw {
+                skin: 0,
+                first: 0,
+                count: 3,
+            }],
+        };
+        let (state, renderer, _) = renderer_of(&seen_from_above(), &[255], &assets);
+        let mut callback = frame();
+        callback.models = model.clone();
+        let hidden = render(&state, renderer, &callback, BLACK);
+        assert_eq!(pixel(&hidden, 32, 32), FACE, "an entity behind the face");
+        let (state, renderer, _) = renderer_of(&seen_from_above(), &[255], &assets);
+        let mut callback = frame();
+        callback.weapon = model;
+        let shown = render(&state, renderer, &callback, BLACK);
+        assert_eq!(
+            pixel(&shown, 32, 32),
+            [255, 255, 255, 255],
+            "the view model"
+        );
+    }
+
+    // spec HUD-1.1: the 2D layer is drawn in its own units from the top left over the view,
+    // `glOrtho (0, vid.width, vid.height, 0, ...)`
+    // spec VIEW-4.6: the view blend is blended over the frame by its alpha
+    #[test]
+    fn the_flat_layer_covers_the_view_in_screen_units() {
+        let (state, renderer, _) = bright();
+        let mut callback = frame();
+        let corner = |x: f32, y: f32, color| FlatVertex {
+            position: [x, y],
+            texture: [0.5, 0.5],
+            color,
+        };
+        let red = [1.0, 0.0, 0.0, 1.0];
+        let blue = [0.0, 0.0, 1.0, 0.5];
+        // A fill over the top-left quarter, and a half blue blend over the whole layer.
+        let quad = |w: f32, h: f32, color| {
+            [
+                corner(0.0, 0.0, color),
+                corner(w, 0.0, color),
+                corner(w, h, color),
+                corner(0.0, 0.0, color),
+                corner(w, h, color),
+                corner(0.0, h, color),
+            ]
+        };
+        let mut vertices = quad(320.0, 240.0, red).to_vec();
+        vertices.extend(quad(640.0, 480.0, blue));
+        callback.flat = FlatFrame {
+            vertices,
+            draws: vec![
+                FlatDraw {
+                    pic: None,
+                    blend: false,
+                    first: 0,
+                    count: 6,
+                },
+                FlatDraw {
+                    pic: None,
+                    blend: true,
+                    first: 6,
+                    count: 6,
+                },
+            ],
+        };
+        let out = render(&state, renderer, &callback, BLACK);
+        // Top left: red, then half blue over it.
+        let top_left = pixel(&out, 16, 16);
+        assert!(near(top_left, [128, 0, 128, 255], 1), "{top_left:?}");
+        // Bottom right, off the face: the clear, then half blue.
+        let bottom_right = pixel(&out, 60, 60);
+        assert!(near(bottom_right, [0, 0, 128, 255], 1), "{bottom_right:?}");
+        // Over the face: the face, then half blue.
+        let over = pixel(&out, 40, 40);
+        assert!(near(over, [4, 7, 138, 255], 2), "{over:?}");
     }
 
     /// The renderer's lightmap texels, read back from the GPU, first row.
@@ -757,12 +1668,12 @@ mod tests {
         let mut resources = egui_wgpu::CallbackResources::default();
         resources.insert(renderer);
         let callback = MapCallback {
-            view: View {
-                clip_from_world: [[0.0; 4]; 4],
-                eye: [0.0; 3],
-                time: 0.0,
-            },
+            view: View::new([[0.0; 4]; 4], [0.0; 3], 0.0),
             models: ModelFrame::default(),
+            weapon: ModelFrame::default(),
+            sprites: SpriteFrame::default(),
+            particles: Vec::new(),
+            flat: FlatFrame::default(),
             placements: Vec::new(),
             lightmap: Some(mesh.lightmap.clone()),
         };
@@ -793,13 +1704,15 @@ mod tests {
     // spec REND-1.10: only a face's front is drawn: GL's counter-clockwise front, front culled
     #[test]
     fn faces_are_culled_as_glquake_culls_them() {
-        let state = primitive();
+        let state = primitive(Pass::Opaque);
         assert_eq!(state.front_face, wgpu::FrontFace::Ccw);
         assert_eq!(state.cull_mode, Some(wgpu::Face::Front));
         assert_eq!(state.topology, wgpu::PrimitiveTopology::TriangleList);
+        // `GL_Set2D` turns culling off; sprites and particles face the eye either way.
+        for pass in [Pass::Flat, Pass::Decal, Pass::BlendedNoDepthWrite] {
+            assert_eq!(primitive(pass).cull_mode, None);
+        }
     }
-    use crate::alias::AliasVertex;
-
     #[test]
     fn alias_vertices_are_six_floats_in_order() {
         let vertex = AliasVertex {
@@ -821,11 +1734,12 @@ mod tests {
 
     #[test]
     fn the_alias_buffer_grows_only_when_it_must() {
-        assert_eq!(grown(None, 0), Some(ALIAS_VERTEX_BYTES));
-        assert_eq!(grown(None, 100), Some(100));
-        assert_eq!(grown(Some(100), 100), None);
-        assert_eq!(grown(Some(100), 50), None);
-        assert_eq!(grown(Some(100), 101), Some(101));
+        let vertex = ALIAS_VERTEX_BYTES;
+        assert_eq!(grown(None, 0, vertex), Some(ALIAS_VERTEX_BYTES));
+        assert_eq!(grown(None, 100, vertex), Some(100));
+        assert_eq!(grown(Some(100), 100, vertex), None);
+        assert_eq!(grown(Some(100), 50, vertex), None);
+        assert_eq!(grown(Some(100), 101, vertex), Some(101));
     }
 
     const SHADER: &str = include_str!("shader.wgsl");
@@ -844,7 +1758,9 @@ mod tests {
                 "let light = textureSample(lightmap, lightmap_sampler, input.light).rgb;"
             )
         );
-        assert!(SHADER.contains("return vec4<f32>(colour.rgb * light, OPAQUE);"));
+        assert!(
+            SHADER.contains("return vec4<f32>(fogged(colour.rgb * light, input.world), OPAQUE);")
+        );
     }
 
     // spec REND-4.8: an alias model's skin is multiplied by its vertex's shade
@@ -854,7 +1770,7 @@ mod tests {
         Validator::new(ValidationFlags::all(), Capabilities::empty())
             .validate(&module)
             .unwrap();
-        assert!(SHADER.contains("return vec4<f32>(colour.rgb * input.shade, OPAQUE);"));
+        assert!(SHADER.contains("fogged(colour.rgb * input.shade, input.world), OPAQUE);"));
     }
 
     // spec REND-2.2: water ripples by 8 sin of `t*0.125 + realtime`, over 64
@@ -877,7 +1793,14 @@ mod tests {
                 "turbulent",
                 "sky",
                 "alias_vertex",
-                "alias_fragment"
+                "alias_fragment",
+                "sprite_vertex",
+                "sprite_fragment",
+                "particle_vertex",
+                "particle_fragment",
+                "flat_vertex",
+                "flat_fragment",
+                "blend_fragment"
             ]
         );
         for constant in [

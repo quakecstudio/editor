@@ -1,0 +1,20 @@
+[package]
+name = "qs-client"
+description = "The preview host's client: the server's messages read into entities, lights, particles, the view and the status bar, as id's cl_*.c, r_part.c, view.c and sbar.c keep them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qc-builtins = { workspace = true }
+qc-vm = { workspace = true }
+qs-mdl = { workspace = true }
+
+[dev-dependencies]
+qs-sim = { workspace = true }
+
+[lints]
+workspace = true

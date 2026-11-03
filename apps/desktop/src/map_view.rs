@@ -65,6 +65,10 @@ impl MapView {
             MapCallback {
                 view: self.view(aspect, now),
                 models: qs_render::ModelFrame::default(),
+                weapon: qs_render::ModelFrame::default(),
+                sprites: qs_render::SpriteFrame::default(),
+                particles: Vec::new(),
+                flat: qs_render::FlatFrame::default(),
                 placements: Vec::new(),
                 lightmap: None,
             },
@@ -76,11 +80,11 @@ impl MapView {
     /// which moves water and sky.
     #[must_use]
     pub fn view(&self, aspect: f32, now: f64) -> View {
-        View {
-            clip_from_world: self.camera.clip_from_world(aspect),
-            eye: self.camera.origin,
-            time: seconds(now - self.started),
-        }
+        View::new(
+            self.camera.clip_from_world(aspect),
+            self.camera.origin,
+            seconds(now - self.started),
+        )
     }
 }
 
@@ -92,7 +96,7 @@ pub fn install(state: &RenderState, mesh: &MapMesh) {
         &state.queue,
         (state.target_format, DEPTH_FORMAT),
         mesh,
-        &[],
+        &qs_render::Assets::default(),
     );
     state.renderer.write().callback_resources.insert(renderer);
 }

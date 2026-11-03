@@ -8,8 +8,10 @@
 //! ```
 //!
 //! The map defaults to `e1m1`. You play it: W, A, S and D move, Space jumps, Q and E swim
-//! down and up, Shift runs, and dragging with the mouse looks around. `-fly` gives a free
-//! camera instead, Space and C rising and sinking. `-gamma <g>` is GLQuake's, 0.7 by default, and
+//! down and up, Shift runs, the mouse button fires, and dragging with the mouse looks around;
+//! the view, the weapon, the status bar and the centre print are the client's, read from the
+//! server's messages as id's client reads them. `-fly` gives a free camera instead, Space and
+//! C rising and sinking. `-gamma <g>` is GLQuake's, 0.7 by default, and
 //! `-show water` or `-show sky` starts at the map's first water or sky. `-benchmark <seconds>`
 //! presents without vsync, turns a free camera slowly and, after that many seconds, prints the
 //! average frame rate, the slowest frame and the time the frames' work took on the CPU, then
@@ -20,7 +22,9 @@ use std::time::Instant;
 
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
-use qs_render::{Camera, MapCallback, MapMesh, MapRenderer, View};
+use qs_bsp::Bsp;
+use qs_client::Client;
+use qs_render::{Camera, MapMesh, MapRenderer, Play, View};
 
 mod common;
 
@@ -52,13 +56,14 @@ fn main() -> Result<(), String> {
     let common::Loaded {
         map,
         mesh,
-        models,
+        play,
         camera,
-        mut sim,
+        sim,
+        client,
+        bsp,
+        describer,
+        rand,
     } = common::load(&args)?;
-    if !fly {
-        sim.connect()?;
-    }
     let mut viewport = egui::ViewportBuilder::default()
         .with_title(format!("qs-render: {map}"))
         .with_inner_size([1280.0, 800.0]);
@@ -90,7 +95,7 @@ fn main() -> Result<(), String> {
                 &state.queue,
                 (state.target_format, wgpu::TextureFormat::Depth32Float),
                 &mesh,
-                &models.skins,
+                &play.assets(),
             );
             state.renderer.write().callback_resources.insert(renderer);
             Ok(Box::new(Viewer {
@@ -98,9 +103,14 @@ fn main() -> Result<(), String> {
                 mesh,
                 camera,
                 triangles,
-                models,
+                play,
                 sim,
+                client,
+                bsp,
+                describer,
+                rand,
                 fly,
+                last_set: [f32::NAN; 2],
                 behind: 0.0,
                 started: Instant::now(),
                 last: Instant::now(),
@@ -141,9 +151,15 @@ struct Viewer {
     mesh: MapMesh,
     camera: Camera,
     triangles: usize,
-    models: common::Models,
+    play: Play,
     sim: common::Sim,
+    client: Client,
+    bsp: Bsp<'static>,
+    describer: common::Describer,
+    rand: common::Rand,
     fly: bool,
+    /// The view angles last given to the client, to tell a `svc_setangle` from them.
+    last_set: [f32; 2],
     behind: f64,
     started: Instant,
     last: Instant,
@@ -167,16 +183,31 @@ impl eframe::App for Viewer {
         let seconds = frame.min(0.1);
         self.last = now;
         let rect = ui.max_rect();
-        let response = ui.allocate_rect(rect, egui::Sense::drag());
+        let response = ui.allocate_rect(rect, egui::Sense::click_and_drag());
         let drag = response.drag_delta();
         self.camera.turn(-drag.x * TURN, drag.y * TURN);
-        if !self.fly {
-            self.play(ui, f64::from(seconds));
-        } else {
+        let frametime = if self.fly {
             self.fly_around(ui, seconds);
-            if let Err(error) = self.sim.advance(f64::from(seconds), &mut self.behind) {
-                report_server_error(&error);
+            match self.sim.advance(f64::from(seconds), &mut self.behind) {
+                Ok(frametime) => frametime,
+                Err(error) => {
+                    report_server_error(&error);
+                    0.0
+                }
             }
+        } else {
+            self.play(ui, f64::from(seconds))
+        };
+        // The client reads what the server wrote and advances its clock by the server's
+        // frame, as the host does when both run in one process.
+        let packets = self.sim.packets();
+        if let Err(error) = self.client.frame(
+            frametime_f32(frametime),
+            &packets,
+            &mut self.describer,
+            &mut self.rand,
+        ) {
+            report_server_error(&format!("client: {error}"));
         }
         let aspect = rect.width() / rect.height().max(1.0);
         if self.benchmark.is_some() {
@@ -192,33 +223,41 @@ impl eframe::App for Viewer {
         }
         let time = now.duration_since(self.started);
 
-        self.models.update(&self.sim);
-        let lightmap = self
-            .mesh
-            .relight(&self.sim.light_styles())
-            .then(|| self.mesh.lightmap.clone());
-        ui.painter().add(egui_wgpu::Callback::new_paint_callback(
-            rect,
-            MapCallback {
-                view: View {
-                    clip_from_world: self.camera.clip_from_world(aspect),
-                    eye: self.camera.origin,
-                    time: time.as_secs_f32(),
-                },
-                models: self.models.frame(self.sim.time()),
-                placements: self.models.placements(),
-                lightmap,
-            },
-        ));
+        let scene = self.client.scene();
+        let hud = self.client.hud();
+        // The 2D layer keeps GLQuake's 640 wide console, as tall as the window's shape.
+        self.play.screen = [CONWIDTH, screen_height(aspect)];
+        self.client
+            .set_screen(self.play.screen[0], self.play.screen[1]);
+        let mut callback = self
+            .play
+            .frame(&scene, &hud, &self.bsp, &mut self.mesh, aspect);
+        if self.fly {
+            let mut view = View::new(
+                self.camera.clip_from_world(aspect),
+                self.camera.origin,
+                time.as_secs_f32(),
+            );
+            view.fog = callback.view.fog;
+            view.screen = callback.view.screen;
+            callback.view = view;
+            callback.weapon = Default::default();
+        }
+        let entities = callback
+            .models
+            .draws
+            .len()
+            .saturating_add(callback.sprites.draws.len());
+        ui.painter()
+            .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
         // egui's fonts are not bundled (their licenses are outside deny.toml's), so the stats
         // go in the title bar.
         let [x, y, z] = self.camera.origin;
         ui.ctx()
             .send_viewport_cmd(egui::ViewportCommand::Title(format!(
-                "qs-render: {}  {} triangles  {} models  ({x:.0} {y:.0} {z:.0})  {:.0} fps",
+                "qs-render: {}  {} triangles  {entities} entities  ({x:.0} {y:.0} {z:.0})  {:.0} fps",
                 self.map,
                 self.triangles,
-                self.models.len(),
                 1.0 / seconds.max(1e-3)
             )));
         ui.ctx().request_repaint();
@@ -250,35 +289,59 @@ impl eframe::App for Viewer {
 }
 
 impl Viewer {
-    /// The player: the keys and the view as `CL_BaseMove` makes the command, the server's
-    /// frame, then the eye where the player stands.
-    fn play(&mut self, ui: &egui::Ui, seconds: f64) {
+    /// The player: the keys and the view as `CL_BaseMove` makes the command, then the
+    /// server's frame; the eye is the client's. The frame's length, 0 when none ran.
+    fn play(&mut self, ui: &egui::Ui, seconds: f64) -> f64 {
+        // The server's `svc_setangle` turned the client's view: follow it.
+        let [pitch, yaw, _] = self.client.viewangles();
+        if pitch.to_bits() != self.last_set[0].to_bits()
+            || yaw.to_bits() != self.last_set[1].to_bits()
+        {
+            self.camera.pitch = pitch;
+            self.camera.yaw = yaw;
+        }
         // CL_AdjustAngles keeps the pitch within -70 and 80.
         self.camera.pitch = self.camera.pitch.clamp(-70.0, 80.0);
+        self.client
+            .set_viewangles([self.camera.pitch, self.camera.yaw, 0.0]);
+        self.last_set = [self.camera.pitch, self.camera.yaw];
         let cmd = ui.input(|input| {
             let key = |k: egui::Key| f32::from(u8::from(input.key_down(k)));
             // cl_movespeedkey
             let speed = if input.modifiers.shift { 2.0 } else { 1.0 };
+            let attack = u8::from(input.pointer.primary_down());
+            let impulse = (1..=8_u8)
+                .find(|n| {
+                    let key = match n {
+                        1 => egui::Key::Num1,
+                        2 => egui::Key::Num2,
+                        3 => egui::Key::Num3,
+                        4 => egui::Key::Num4,
+                        5 => egui::Key::Num5,
+                        6 => egui::Key::Num6,
+                        7 => egui::Key::Num7,
+                        _ => egui::Key::Num8,
+                    };
+                    input.key_pressed(key)
+                })
+                .unwrap_or(0);
             qs_sim::UserCmd {
                 angles: [self.camera.pitch, self.camera.yaw, 0.0],
                 // cl_forwardspeed, cl_backspeed, cl_sidespeed, cl_upspeed
                 forward: (200.0 * key(egui::Key::W) - 200.0 * key(egui::Key::S)) * speed,
                 side: (350.0 * key(egui::Key::D) - 350.0 * key(egui::Key::A)) * speed,
                 up: (200.0 * key(egui::Key::E) - 200.0 * key(egui::Key::Q)) * speed,
-                buttons: u8::from(input.key_down(egui::Key::Space)) << 1,
-                impulse: 0,
+                buttons: attack | (u8::from(input.key_down(egui::Key::Space)) << 1),
+                impulse,
             }
         });
         self.sim.command(cmd);
-        if let Err(error) = self.sim.advance(seconds, &mut self.behind) {
-            report_server_error(&error);
-        }
-        if let Some([pitch, yaw, _]) = self.sim.set_angle() {
-            self.camera.pitch = pitch;
-            self.camera.yaw = yaw;
-        }
-        if let Some(eye) = self.sim.eye() {
-            self.camera.origin = eye;
+        match self.sim.advance(seconds, &mut self.behind) {
+            Ok(frametime) => frametime,
+            Err(error) => {
+                report_server_error(&error);
+                0.0
+            }
         }
     }
 
@@ -301,6 +364,27 @@ impl Viewer {
             );
         });
     }
+}
+
+/// GLQuake's console width, `vid.conwidth` (HUD-1).
+const CONWIDTH: i32 = 640;
+
+/// The 2D layer's height for a window `aspect` wide per unit of height.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a rounded height of a few hundred units"
+)]
+fn screen_height(aspect: f32) -> i32 {
+    (f32::from(u16::try_from(CONWIDTH).unwrap_or(640)) / aspect.max(0.1)).round() as i32
+}
+
+/// The server's frame as the client's `host_frametime`, in seconds.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a frame of at most 0.1 seconds, exact enough in f32"
+)]
+fn frametime_f32(frametime: f64) -> f32 {
+    frametime as f32
 }
 
 /// A server error stops the frame but not the viewer: it is printed.

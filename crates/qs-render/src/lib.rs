@@ -17,16 +17,28 @@ mod camera;
 mod gpu;
 mod light;
 mod mesh;
+mod particles;
 mod pick;
+mod play;
+mod sprite;
 mod styles;
 
-pub use alias::{AliasEntity, AliasError, AliasModel, AliasVertex, bob_rotate, shade_light};
+pub use alias::{
+    AliasEntity, AliasError, AliasKind, AliasModel, AliasVertex, bob_rotate, entity_light,
+    shade_light,
+};
 pub use camera::Camera;
-pub use gpu::{AliasDraw, MapCallback, MapRenderer, ModelFrame, View};
+pub use gpu::{
+    AliasDraw, Assets, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, MapRenderer, ModelFrame,
+    SpriteDraw, SpriteFrame, View,
+};
 pub use light::light_point;
 pub use mesh::{
     Animation, Batch, Extras, GAMMA, Image, Lightmaps, MapMesh, MeshBuilder, MeshError, Palette,
-    Placement, Surface, Vertex, frame, mip_levels,
+    Placement, REND_MAX_DLIGHTS, Surface, Vertex, frame, mip_levels,
 };
+pub use particles::{ParticleVertex, particle_texture, particle_triangles};
 pub use pick::Hit;
+pub use play::{FogState, Pics, Play, PlayError, fog_parse_worldspawn};
+pub use sprite::{Eye, SpriteEntity, SpriteError, SpriteModel, SpriteVertex};
 pub use styles::{LightStyles, MAX_LIGHTSTYLES};

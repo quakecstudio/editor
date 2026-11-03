@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The world's surfaces: lit (REND-1.7), turbulent (REND-2.2) and sky (REND-2.3); and alias
-// models (REND-4.8).
+// The world's surfaces: lit (REND-1.7), turbulent (REND-2.2, REND-9.1) and sky (REND-2.3,
+// REND-8.1); alias models (REND-4.8); sprites (REND-11.2); particles (PART-3.2); the fog over
+// them all (REND-10.4); and the 2D layer: the view blend (VIEW-4.6), the status bar, the
+// scoreboards and the centre print (HUD-1 to HUD-3).
 
 // REND-2.2: the peak of `turbsin`, 8 sin(2πi/256), in `WinQuake/gl_warp_sin.h`.
 const TURB_AMPLITUDE: f32 = 8.0;
@@ -30,12 +32,34 @@ const SKY_MIN_DISTANCE: f32 = 0.001;
 const OPAQUE: f32 = 1.0;
 // The w of a position, which makes it a point the view matrix moves.
 const POINT: f32 = 1.0;
+// `glAlphaFunc(GL_GREATER, 0.666)` in `GL_Init`: a sprite's or a picture's texel is drawn
+// only when its alpha is above this (REND-11.2).
+const ALPHA_TEST: f32 = 0.666;
+// The 2D layer's clip space runs from -1 to 1 across the screen (`glOrtho`, HUD-1).
+const CLIP_SPAN: f32 = 2.0;
+const CLIP_START: f32 = -1.0;
+// A 2D vertex's clip depth: everything in the layer is at one depth, in front.
+const FLAT: f32 = 0.0;
 
 struct View {
     clip_from_world: mat4x4<f32>,
     // The eye's position, and the time in seconds.
     eye_time: vec4<f32>,
+    // The fog's colour, and `GL_FOG_DENSITY`, the density over 64 (REND-10.4).
+    fog: vec4<f32>,
+    // The water alpha (REND-9.1), the fog's share of the sky (REND-8.1), and the 2D layer's
+    // width and height in its own units (HUD-1).
+    params: vec4<f32>,
 };
+
+// REND-10.4: `GL_EXP2`, `1 - exp (-((density / 64) * z)^2)` of the fragment's distance from
+// the eye, mixing its colour toward the fog's; with no fog the mix is 0.
+fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
+    let z = distance(world, view.eye_time.xyz);
+    let exponent = view.fog.w * z;
+    let share = OPAQUE - exp(-(exponent * exponent));
+    return mix(colour, view.fog.rgb, share);
+}
 
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var lightmap: texture_2d<f32>;
@@ -76,20 +100,23 @@ fn vertex(input: In) -> Out {
 fn fragment(input: Out) -> @location(0) vec4<f32> {
     let colour = textureSample(surface, surface_sampler, input.texture);
     let light = textureSample(lightmap, lightmap_sampler, input.light).rgb;
-    return vec4<f32>(colour.rgb * light, OPAQUE);
+    return vec4<f32>(fogged(colour.rgb * light, input.world), OPAQUE);
 }
 
-// REND-2.2: `(s + 8 sin(t*0.125 + realtime)) / 64`, and t the same way round.
+// REND-2.2: `(s + 8 sin(t*0.125 + realtime)) / 64`, and t the same way round; REND-9.1:
+// blended over the scene with the water alpha.
 @fragment
 fn turbulent(input: Out) -> @location(0) vec4<f32> {
     let time = view.eye_time.w;
     let st = input.texture;
     let s = (st.x + TURB_AMPLITUDE * sin(st.y * TURB_FREQUENCY + time)) / TURB_TILE;
     let t = (st.y + TURB_AMPLITUDE * sin(st.x * TURB_FREQUENCY + time)) / TURB_TILE;
-    return vec4<f32>(textureSample(surface, surface_sampler, vec2<f32>(s, t)).rgb, OPAQUE);
+    let colour = textureSample(surface, surface_sampler, vec2<f32>(s, t)).rgb;
+    return vec4<f32>(fogged(colour, input.world), view.params.x);
 }
 
-// REND-2.3: the solid layer scrolling under the alpha layer, both seen from the eye.
+// REND-2.3: the solid layer scrolling under the alpha layer, both seen from the eye;
+// REND-8.1: the fog's colour over it by its share of the sky.
 @fragment
 fn sky(input: Out) -> @location(0) vec4<f32> {
     var dir = input.world - view.eye_time.xyz;
@@ -99,7 +126,8 @@ fn sky(input: Out) -> @location(0) vec4<f32> {
     let time = view.eye_time.w;
     let solid = textureSample(surface, surface_sampler, sky_st(flat, time * SKY_SOLID_SPEED));
     let alpha = textureSample(sky_alpha, surface_sampler, sky_st(flat, time * SKY_ALPHA_SPEED));
-    return vec4<f32>(mix(solid.rgb, alpha.rgb, alpha.a), OPAQUE);
+    let layers = mix(solid.rgb, alpha.rgb, alpha.a);
+    return vec4<f32>(mix(layers, view.fog.rgb, view.params.y), OPAQUE);
 }
 
 // One sky layer's coordinates, `(speedscale + dir) / 128`, the scroll kept within 128 texels.
@@ -119,6 +147,7 @@ struct AliasOut {
     @location(0) texture: vec2<f32>,
     // Interpolated across the triangle, `glShadeModel (GL_SMOOTH)` (REND-4.8).
     @location(1) shade: f32,
+    @location(2) world: vec3<f32>,
 };
 
 @vertex
@@ -127,6 +156,7 @@ fn alias_vertex(input: AliasIn) -> AliasOut {
     out.clip = view.clip_from_world * vec4<f32>(input.position, POINT);
     out.texture = input.texture;
     out.shade = input.shade;
+    out.world = input.position;
     return out;
 }
 
@@ -134,5 +164,107 @@ fn alias_vertex(input: AliasIn) -> AliasOut {
 @fragment
 fn alias_fragment(input: AliasOut) -> @location(0) vec4<f32> {
     let colour = textureSample(surface, surface_sampler, input.texture);
-    return vec4<f32>(colour.rgb * input.shade, OPAQUE);
+    return vec4<f32>(fogged(colour.rgb * input.shade, input.world), OPAQUE);
+}
+
+struct SpriteIn {
+    @location(0) position: vec3<f32>,
+    @location(1) texture: vec2<f32>,
+};
+
+struct SpriteOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) texture: vec2<f32>,
+    @location(1) world: vec3<f32>,
+};
+
+@vertex
+fn sprite_vertex(input: SpriteIn) -> SpriteOut {
+    var out: SpriteOut;
+    out.clip = view.clip_from_world * vec4<f32>(input.position, POINT);
+    out.texture = input.texture;
+    out.world = input.position;
+    return out;
+}
+
+// REND-11.2: the frame's texel, its transparent texels cut by the alpha test.
+@fragment
+fn sprite_fragment(input: SpriteOut) -> @location(0) vec4<f32> {
+    let colour = textureSample(surface, surface_sampler, input.texture);
+    if colour.a <= ALPHA_TEST {
+        discard;
+    }
+    return vec4<f32>(fogged(colour.rgb, input.world), OPAQUE);
+}
+
+struct ParticleIn {
+    @location(0) position: vec3<f32>,
+    @location(1) texture: vec2<f32>,
+    @location(2) colour: vec4<f32>,
+};
+
+struct ParticleOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) texture: vec2<f32>,
+    @location(1) colour: vec4<f32>,
+    @location(2) world: vec3<f32>,
+};
+
+@vertex
+fn particle_vertex(input: ParticleIn) -> ParticleOut {
+    var out: ParticleOut;
+    out.clip = view.clip_from_world * vec4<f32>(input.position, POINT);
+    out.texture = input.texture;
+    out.colour = input.colour;
+    out.world = input.position;
+    return out;
+}
+
+// PART-3.2: the particle's colour through the particle texture, `GL_MODULATE`, blended.
+@fragment
+fn particle_fragment(input: ParticleOut) -> @location(0) vec4<f32> {
+    let texel = textureSample(surface, surface_sampler, input.texture);
+    return vec4<f32>(fogged(input.colour.rgb * texel.rgb, input.world), input.colour.a * texel.a);
+}
+
+struct FlatIn {
+    @location(0) position: vec2<f32>,
+    @location(1) texture: vec2<f32>,
+    @location(2) colour: vec4<f32>,
+};
+
+struct FlatOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) texture: vec2<f32>,
+    @location(1) colour: vec4<f32>,
+};
+
+// HUD-1: `glOrtho (0, vid.width, vid.height, 0, ...)`: the layer's units from the top left.
+@vertex
+fn flat_vertex(input: FlatIn) -> FlatOut {
+    var out: FlatOut;
+    let x = CLIP_START + input.position.x / view.params.z * CLIP_SPAN;
+    let y = -(CLIP_START + input.position.y / view.params.w * CLIP_SPAN);
+    out.clip = vec4<f32>(x, y, FLAT, POINT);
+    out.texture = input.texture;
+    out.colour = input.colour;
+    return out;
+}
+
+// A picture or a character: its texel times the colour, transparent texels cut by the alpha
+// test `GL_Set2D` turns on (HUD-1).
+@fragment
+fn flat_fragment(input: FlatOut) -> @location(0) vec4<f32> {
+    let texel = textureSample(surface, surface_sampler, input.texture) * input.colour;
+    if texel.a <= ALPHA_TEST {
+        discard;
+    }
+    return texel;
+}
+
+// A blend over the screen: the view blend (VIEW-4.6) and `Draw_FadeScreen`, with no alpha
+// test.
+@fragment
+fn blend_fragment(input: FlatOut) -> @location(0) vec4<f32> {
+    return textureSample(surface, surface_sampler, input.texture) * input.colour;
 }

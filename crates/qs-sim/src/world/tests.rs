@@ -55,6 +55,22 @@ void(entity e) makestatic = #69;
 float() random = #7;
 void(float style, string value) lightstyle = #35;
 entity() spawn = #14;
+void(entity e, float chan, string samp, float vol, float atten) sound = #8;
+string(string s) precache_sound = #19;
+void(entity client, string s) stuffcmd = #21;
+void(string s) bprint = #23;
+void(entity client, string s) sprint = #24;
+void(vector o, vector d, float color, float count) particle = #48;
+void(float to, float f) WriteByte = #52;
+void(float to, float f) WriteChar = #53;
+void(float to, float f) WriteShort = #54;
+void(float to, float f) WriteLong = #55;
+void(float to, float f) WriteCoord = #56;
+void(float to, float f) WriteAngle = #57;
+void(float to, string s) WriteString = #58;
+void(float to, entity s) WriteEntity = #59;
+void(entity client, string s) centerprint = #73;
+void(vector pos, string samp, float vol, float atten) ambientsound = #74;
 .float gravity;
 .float count;
 .float dmg;
@@ -67,11 +83,11 @@ const ENTRY_POINTS: &str = "void() main = {};\nvoid() StartFrame = {};\n\
     void() PlayerPreThink = {};\nvoid() PlayerPostThink = {};\nvoid() ClientKill = {};\n\
     void() ClientConnect = {};\nvoid() PutClientInServer = {};\n\
     void() ClientDisconnect = {};\nvoid() SetNewParms = {};\nvoid() SetChangeParms = {};\n\
-    void() worldspawn = {};\n";
+    void() worldspawn = { precache_model(\"progs/player.mdl\"); };\n";
 
 /// The progs `qc-codegen` writes for `source` after the system defs, the builtins and the
 /// entry points.
-fn compile(source: &str) -> Vec<u8> {
+pub(crate) fn compile(source: &str) -> Vec<u8> {
     let mut defs = String::new();
     for var in SYSTEM_GLOBALS {
         writeln!(defs, "{} {};", type_name(var.etype), var.name).unwrap();
@@ -90,7 +106,17 @@ fn compile(source: &str) -> Vec<u8> {
     let files = [
         ("defs.qc", defs),
         ("entry.qc", entry),
-        ("t.qc", format!("{source}vector padding;\n")),
+        // Every progs precaches the player's model, which the baselines need (NET-2.1).
+        (
+            "t.qc",
+            format!(
+                "{}vector padding;\n",
+                source.replace(
+                    "void() worldspawn = {",
+                    "void() worldspawn = { precache_model(\"progs/player.mdl\");"
+                )
+            ),
+        ),
     ];
     let mut db = Db::new();
     let mut input = ModuleInput::default();
@@ -115,12 +141,12 @@ fn compile(source: &str) -> Vec<u8> {
 
 /// A floor at z = 0 for x below 100, and a pit floor at z = -30 past it; for the player's
 /// hull, 24 and -6, with the edge at x = 116.
-fn ledge() -> MapSpec {
+pub(crate) fn ledge() -> MapSpec {
     ledge_over(30.0)
 }
 
 /// The ledge with its pit floor `pit` below the floor.
-fn ledge_over(pit: f32) -> MapSpec {
+pub(crate) fn ledge_over(pit: f32) -> MapSpec {
     MapSpec {
         planes: vec![
             plane([1.0, 0.0, 0.0], 100.0, 0),
@@ -151,7 +177,7 @@ fn ledge_over(pit: f32) -> MapSpec {
 
 /// The world of `source`'s progs on the ledge, with `entities` after the worldspawn, reading
 /// model files from `files`.
-fn world_with(source: &str, entities: &str, files: Vec<(String, Vec<u8>)>) -> World {
+pub(crate) fn world_with(source: &str, entities: &str, files: Vec<(String, Vec<u8>)>) -> World {
     world_on(&ledge(), source, entities, files)
 }
 
@@ -161,14 +187,14 @@ fn world_on(spec: &MapSpec, source: &str, entities: &str, files: Vec<(String, Ve
 }
 
 /// A world and the progs it runs, so it can run frames.
-struct Running {
-    world: World,
-    progs: Vec<u8>,
+pub(crate) struct Running {
+    pub(crate) world: World,
+    pub(crate) progs: Vec<u8>,
 }
 
 impl Running {
     /// Runs `count` frames of `frametime`.
-    fn frames(&mut self, count: usize, frametime: f64) -> Result<(), WorldError> {
+    pub(crate) fn frames(&mut self, count: usize, frametime: f64) -> Result<(), WorldError> {
         let progs = Progs::read(&self.progs).map_err(|e| WorldError::Progs(e.to_string()))?;
         for _ in 0..count {
             self.world.frame(&progs, frametime)?;
@@ -177,7 +203,12 @@ impl Running {
     }
 }
 
-fn running(spec: &MapSpec, source: &str, entities: &str, files: Vec<(String, Vec<u8>)>) -> Running {
+pub(crate) fn running(
+    spec: &MapSpec,
+    source: &str,
+    entities: &str,
+    files: Vec<(String, Vec<u8>)>,
+) -> Running {
     let progs_bytes = compile(source);
     let progs = Progs::read(&progs_bytes).unwrap();
     let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{entities}");
@@ -196,25 +227,25 @@ fn running(spec: &MapSpec, source: &str, entities: &str, files: Vec<(String, Vec
     }
 }
 
-fn world(source: &str, entities: &str) -> World {
+pub(crate) fn world(source: &str, entities: &str) -> World {
     world_with(source, entities, Vec::new())
 }
 
 /// An entity of `classname` at `origin` with `keys`. The map's entities start at edict 2,
 /// after the client's (EDICT-4).
-fn entity(classname: &str, origin: &str, keys: &str) -> String {
+pub(crate) fn entity(classname: &str, origin: &str, keys: &str) -> String {
     format!("{{\n\"classname\" \"{classname}\"\n\"origin\" \"{origin}\"\n{keys}}}\n")
 }
 
 impl World {
-    fn float(&self, n: usize, name: &str) -> f32 {
+    pub(crate) fn float(&self, n: usize, name: &str) -> f32 {
         self.machine
             .edicts()
             .field(EdictNumber::new(n), field_slot(name))
             .map_or(f32::NAN, Slot::as_f32)
     }
 
-    fn vector(&self, n: usize, name: &str) -> [f32; 3] {
+    pub(crate) fn vector(&self, n: usize, name: &str) -> [f32; 3] {
         let first = field_slot(name);
         [0, 1, 2].map(|i| {
             self.machine
@@ -224,7 +255,7 @@ impl World {
         })
     }
 
-    fn entity_field(&self, n: usize, name: &str) -> i32 {
+    pub(crate) fn entity_field(&self, n: usize, name: &str) -> i32 {
         self.machine
             .edicts()
             .field(EdictNumber::new(n), field_slot(name))
@@ -236,7 +267,7 @@ impl World {
     }
 }
 
-const PLAYER_SIZE: &str = "setsize(self, '-16 -16 -24', '16 16 32');";
+pub(crate) const PLAYER_SIZE: &str = "setsize(self, '-16 -16 -24', '16 16 32');";
 
 // spec WORLD-8.5: droptofloor moves the box down to the floor it lands on, links it, sets
 // FL_ONGROUND and groundentity and returns 1; all solid or no floor returns 0, changing
@@ -1100,7 +1131,7 @@ fn a_flying_chaser_moves() {
     assert_eq!(world.vector(3, "origin")[0], 30.0);
 }
 
-fn run_on(spec: &MapSpec, source: &str, entities: &str) -> Running {
+pub(crate) fn run_on(spec: &MapSpec, source: &str, entities: &str) -> Running {
     running(spec, source, entities, Vec::new())
 }
 
@@ -1441,7 +1472,7 @@ fn client_slots_and_none() {
 
 impl Running {
     /// The player enters the game.
-    fn connect(&mut self) {
+    pub(crate) fn connect(&mut self) {
         let progs = Progs::read(&self.progs).unwrap();
         self.world.connect(&progs).unwrap();
     }
@@ -1449,7 +1480,7 @@ impl Running {
 
 /// A connected player on `spec`: `PutClientInServer` makes a walking, living player of the
 /// player's size and runs `put`; `PlayerPreThink` runs `pre`. `more` is further source.
-fn player(spec: &MapSpec, put: &str, pre: &str, more: &str) -> Running {
+pub(crate) fn player(spec: &MapSpec, put: &str, pre: &str, more: &str) -> Running {
     let source = format!(
         "{more}void() PutClientInServer = {{ self.health = 100; self.solid = 3; \
          self.movetype = 3; self.view_ofs = '0 0 22'; {PLAYER_SIZE} {put} }};\n\
@@ -1461,7 +1492,7 @@ fn player(spec: &MapSpec, put: &str, pre: &str, more: &str) -> Running {
 }
 
 /// The player with the command `cmd` after `count` frames of `frametime`.
-fn moved(run: &mut Running, cmd: UserCmd, count: usize, frametime: f64) -> &World {
+pub(crate) fn moved(run: &mut Running, cmd: UserCmd, count: usize, frametime: f64) -> &World {
     run.world.set_command(cmd);
     run.frames(count, frametime).unwrap();
     &run.world
@@ -1514,13 +1545,23 @@ fn fixangle_turns_the_view_once() {
         "",
         "",
     );
-    let w = moved(&mut run, UserCmd::default(), 1, 0.1);
-    assert_eq!(w.vector(P, "angles")[1], 100.0);
-    assert_eq!(w.float(P, "fixangle"), 0.0);
+    // The spawn message carries the setangle (NET-2.4) and clears fixangle.
+    assert_eq!(run.world.vector(P, "angles")[1], 100.0);
+    assert_eq!(run.world.float(P, "fixangle"), 0.0);
     assert_eq!(run.world.take_set_angle(), Some([0.0, 99.843_75, 0.0]));
-    run.frames(1, 0.1).unwrap();
+    let turned = UserCmd {
+        angles: [0.0, 100.0, 0.0],
+        ..UserCmd::default()
+    };
+    let w = moved(&mut run, turned, 1, 0.1);
+    assert_eq!(
+        w.vector(P, "angles")[1],
+        99.843_75,
+        "the view's yaw through the wire"
+    );
     assert_eq!(run.world.take_set_angle(), None);
     // Unfixed, the yaw follows the view.
+    moved(&mut run, UserCmd::default(), 1, 0.1);
     assert_eq!(run.world.vector(P, "angles")[1], 0.0);
 }
 

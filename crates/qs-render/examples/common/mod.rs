@@ -1,37 +1,62 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! What the examples share: reading a map from a Quake install and where to stand in it.
+//! What the examples share: reading a map from a Quake install, running its server and its
+//! client, and where to stand in it.
 
 use std::io::Write as _;
 
 use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader, Lit};
+use qs_client::{Client, Game, ModelInfo, Models, Random};
+use qs_mdl::mdl::Mdl;
+use qs_mdl::spr::Sprite;
 use qs_render::{
-    AliasDraw, AliasEntity, AliasModel, Camera, Extras, GAMMA, Image, LightStyles, MapMesh,
-    MeshBuilder, ModelFrame, Palette, Placement, Surface, bob_rotate, light_point,
+    Camera, Extras, GAMMA, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
 };
 use qs_sim::World;
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
 /// The height of a player's eyes above its origin, `view_ofs` in id's QuakeC `client.qc`.
 const EYE_HEIGHT: f32 = 22.0;
+/// QuakeSpasm's `r_nolerp_list`: the models whose animation is not interpolated
+/// (CLIENT-7.3).
+const NOLERP: [&str; 9] = [
+    "progs/flame.mdl",
+    "progs/flame2.mdl",
+    "progs/braztall.mdl",
+    "progs/brazshrt.mdl",
+    "progs/longtrch.mdl",
+    "progs/flame_pyre.mdl",
+    "progs/v_saw.mdl",
+    "progs/v_xfist.mdl",
+    "progs/h2stuff/newfire.mdl",
+];
+/// The 2D pictures the HUD reads from files rather than `gfx.wad` (HUD-2).
+const LMPS: [&str; 4] = [
+    "gfx/ranking.lmp",
+    "gfx/complete.lmp",
+    "gfx/inter.lmp",
+    "gfx/finale.lmp",
+];
 
-/// A map read from an install: its name, its mesh, its alias models and where its player
+/// A map read from an install: its name, its mesh, its play assets and where its player
 /// starts.
 pub(crate) struct Loaded {
     pub(crate) map: String,
     pub(crate) mesh: MapMesh,
-    pub(crate) models: Models,
+    pub(crate) play: Play,
     pub(crate) camera: Camera,
     pub(crate) sim: Sim,
+    pub(crate) client: Client,
+    pub(crate) bsp: Bsp<'static>,
+    pub(crate) describer: Describer,
+    pub(crate) rand: Rand,
 }
 
-/// The map's server: its world, and the progs and map it runs on, kept for the life of the
-/// viewer.
+/// The map's server: its world and the progs it runs on, kept for the life of the viewer.
 pub(crate) struct Sim {
     world: World,
     progs: &'static [u8],
-    bsp: Bsp<'static>,
 }
 
 /// `Host_FilterTime`: no frame comes sooner than 1/72 of a second after the last.
@@ -41,18 +66,19 @@ const LONGEST: f64 = 0.1;
 
 impl Sim {
     /// `Host_FilterTime`: when 1/72 of a second has passed since the last frame, one frame of
-    /// the time that passed, at most 0.1.
-    pub(crate) fn advance(&mut self, seconds: f64, behind: &mut f64) -> Result<(), String> {
+    /// the time that passed, at most 0.1; the frame's length, 0 when none ran.
+    pub(crate) fn advance(&mut self, seconds: f64, behind: &mut f64) -> Result<f64, String> {
         *behind += seconds;
         if *behind < FRAME {
-            return Ok(());
+            return Ok(0.0);
         }
         let frametime = behind.min(LONGEST);
         *behind = 0.0;
         let progs = Progs::read(self.progs).map_err(|e| e.to_string())?;
         self.world
             .frame(&progs, frametime)
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        Ok(frametime)
     }
 
     /// The player enters the game.
@@ -66,143 +92,48 @@ impl Sim {
         self.world.set_command(cmd);
     }
 
-    /// The player's eye, if one is in the game.
-    pub(crate) fn eye(&self) -> Option<[f32; 3]> {
-        self.world.player_view().map(|(eye, _)| eye)
-    }
-
-    /// Angles the server turned the view to.
-    pub(crate) fn set_angle(&mut self) -> Option<[f32; 3]> {
-        self.world.take_set_angle()
-    }
-
-    /// The server's time.
-    pub(crate) fn time(&self) -> f64 {
-        self.world.time()
-    }
-
-    /// The light styles' values at the server's time, from the strings its progs set
-    /// (REND-5).
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "the server's time in seconds, far inside f32's range"
-    )]
-    pub(crate) fn light_styles(&self) -> LightStyles {
-        LightStyles::at(
-            |style| self.world.light_style(style).map(str::as_bytes),
-            self.world.time() as f32,
-        )
+    /// The packets the server wrote to the client since the last call.
+    pub(crate) fn packets(&mut self) -> Vec<Vec<u8>> {
+        self.world.take_messages().packets
     }
 }
 
-/// The alias models the map's entities show.
-#[derive(Default)]
-pub(crate) struct Models {
-    /// Each model, with the index of its first skin image in `skins`.
-    models: Vec<(String, AliasModel, usize)>,
-    /// Every model's skin images.
-    pub(crate) skins: Vec<Image>,
-    /// Each entity: its number, its model's index in `models`, and what it is drawn with.
-    entities: Vec<(usize, usize, AliasEntity)>,
-    /// The entity each of the mesh's models stands for, `None` for the world (REND-1.9).
-    brushes: Vec<Option<usize>>,
-    /// Each mesh model's matrix as the server last had it.
-    placed: Vec<[[f32; 4]; 4]>,
-    /// QuakeSpasm's `gl_zfix` (REND-1.12): on unless `-nozfix` asks for GLQuake's flicker.
-    zfix: bool,
+/// A file of the install by name, `None` when it is not on the search path.
+type Reader = Box<dyn Fn(&str) -> Option<Vec<u8>>>;
+
+/// The models the client asks about, read from the install.
+pub(crate) struct Describer {
+    read: Reader,
 }
 
-impl Models {
-    /// Each entity's place, frame and skin as the server has them now, and the light below it.
-    pub(crate) fn update(&mut self, sim: &Sim) {
-        let now = sim.world.entities();
-        self.placed = self
-            .brushes
-            .iter()
-            .map(|entity| {
-                let found = entity.and_then(|n| now.iter().find(|e| e.number == n));
-                found
-                    .map_or(Placement::WORLD, |e| {
-                        let placed = Placement {
-                            model: 0,
-                            origin: e.origin,
-                            angles: e.angles,
-                        };
-                        if self.zfix { placed.zfixed() } else { placed }
-                    })
-                    .matrix()
-            })
-            .collect();
-        for (number, _, entity) in &mut self.entities {
-            if let Some(e) = now.iter().find(|e| e.number == *number) {
-                if e.origin.map(f32::to_bits) != entity.origin.map(f32::to_bits) {
-                    entity.light = light_point(&sim.bsp, &sim.light_styles(), e.origin);
-                }
-                entity.origin = e.origin;
-                entity.angles = e.angles;
-                entity.frame = index_of(e.frame);
-                entity.skin = index_of(e.skin);
-            }
+impl Models for Describer {
+    fn describe(&mut self, name: &str) -> Option<ModelInfo> {
+        if name.starts_with('*') || name.ends_with(".bsp") {
+            return Some(ModelInfo::brush());
         }
-    }
-
-    /// Every entity's triangles at `time` seconds, an `EF_ROTATE` model turned as the client
-    /// turns it (REND-4.9).
-    pub(crate) fn frame(&self, time: f64) -> ModelFrame {
-        let mut out = ModelFrame::default();
-        for (_, index, entity) in &self.entities {
-            let Some((_, model, first_skin)) = self.models.get(*index) else {
-                continue;
-            };
-            let mut entity = *entity;
-            if model.rotates() {
-                entity.angles[1] = bob_rotate(time);
-            }
-            let first = out.vertices.len();
-            let image = model.draw(&entity, time, &mut out.vertices);
-            let (Ok(first), Ok(count)) = (
-                u32::try_from(first),
-                u32::try_from(out.vertices.len().saturating_sub(first)),
-            ) else {
-                continue;
-            };
-            out.draws.push(AliasDraw {
-                skin: first_skin.saturating_add(image),
-                first,
-                count,
-            });
+        let bytes = (self.read)(name)?;
+        if name.ends_with(".spr") {
+            return Some(ModelInfo::sprite(&Sprite::read(&bytes).ok()?));
         }
-        out
-    }
-
-    /// Each mesh model's matrix now, the world's first.
-    pub(crate) fn placements(&self) -> Vec<[[f32; 4]; 4]> {
-        self.placed.clone()
-    }
-
-    /// The number of entities drawn with an alias model.
-    pub(crate) const fn len(&self) -> usize {
-        self.entities.len()
+        let mut info = ModelInfo::alias(&Mdl::read(&bytes).ok()?);
+        info.nolerp = NOLERP.contains(&name);
+        Some(info)
     }
 }
 
-/// A progs float as the index the client keeps, toward zero; a negative one is out of every
-/// model's range, which draws frame or skin 0 (REND-4.2, REND-4.4).
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "C's (int) of the float, which truncates; a negative one is handled first"
-)]
-fn index_of(value: f32) -> usize {
-    if value >= 0.0 {
-        value as usize
-    } else {
-        usize::MAX
+/// `rand ()` for the client: a linear congruential generator over C's `RAND_MAX`.
+pub(crate) struct Rand(u32);
+
+impl Random for Rand {
+    fn rand(&mut self) -> i32 {
+        self.0 = self.0.wrapping_mul(1_103_515_245).wrapping_add(12345);
+        i32::try_from((self.0 >> 1) & 0x7fff_ffff).unwrap_or(0)
     }
 }
 
 /// Reads the map the command line names (`e1m1` by default) from the install that `-basedir`
-/// and `-game` name, the engine's own options, which every other argument is passed on as.
+/// and `-game` name, the engine's own options, which every other argument is passed on as;
+/// starts its server, connects its client and reads the models the server precached.
 #[expect(
     clippy::too_many_lines,
     reason = "one pass from the command line to a loaded map reads best in the order it runs"
@@ -259,60 +190,56 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     let progs_bytes: &'static [u8] = Vec::leak(read("progs.dat")?);
     let progs = Progs::read(progs_bytes).map_err(|e| format!("progs.dat: {e}"))?;
     // The world reads the other models the progs precaches, such as the health boxes, from the
-    // same search path.
-    let files = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
-    let read_file = Box::new(move |name: &str| {
-        files
-            .load(name.as_bytes())
-            .ok()
-            .flatten()
-            .map(LoadedFile::into_bytes)
-    });
-    let world = World::load(&progs, &map, &bsp, read_file).map_err(|e| e.to_string())?;
-    // The world, then each brush entity: a submodel `*n` of the map at its entity's origin,
-    // or model 0 of a BSP of its own, such as a health box.
-    let mut placements = vec![Placement::WORLD];
-    let mut brushes = vec![None];
-    let mut others: Vec<(String, Vec<(Placement, usize)>)> = Vec::new();
-    let mut models = Models::default();
-    for entity in world.entities().into_iter().skip(1) {
-        if entity.model.ends_with(".mdl") {
-            let found = models
-                .models
-                .iter()
-                .position(|(n, _, _)| *n == entity.model);
-            let index = match found {
-                Some(index) => index,
-                None => {
-                    let model = AliasModel::read(&entity.model, &read(&entity.model)?, &palette)
-                        .map_err(|e| e.to_string())?;
-                    let first = models.skins.len();
-                    models.skins.extend_from_slice(model.images());
-                    models.models.push((entity.model.clone(), model, first));
-                    models.models.len().saturating_sub(1)
-                }
-            };
-            models.entities.push((
-                entity.number,
-                index,
-                AliasEntity {
-                    origin: entity.origin,
-                    angles: entity.angles,
-                    frame: index_of(entity.frame),
-                    skin: index_of(entity.skin),
-                    light: light_point(&bsp, &LightStyles::unset(), entity.origin),
-                },
-            ));
-            continue;
+    // same search path; so do the client and the renderer.
+    let reader = || -> Result<Reader, String> {
+        let files = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
+        Ok(Box::new(move |name: &str| {
+            files
+                .load(name.as_bytes())
+                .ok()
+                .flatten()
+                .map(LoadedFile::into_bytes)
+        }))
+    };
+    let mut world = World::load(&progs, &map, &bsp, reader()?).map_err(|e| e.to_string())?;
+    world.settle(&progs).map_err(|e| e.to_string())?;
+    let mut sim = Sim {
+        world,
+        progs: progs_bytes,
+    };
+    sim.connect()?;
+    // The client reads the serverinfo and the spawn messages the connection wrote.
+    let mut client = Client::new(Game::Standard);
+    let mut describer = Describer { read: reader()? };
+    let mut rand = Rand(1);
+    let packets = sim.packets();
+    client
+        .frame(0.0, &packets, &mut describer, &mut rand)
+        .map_err(|e| format!("client: {e}"))?;
+    let mut pics = Pics::new();
+    pics.add_wad(&read("gfx.wad")?, &palette)
+        .map_err(|e| e.to_string())?;
+    for lmp in LMPS {
+        if let Ok(bytes) = read(lmp) {
+            pics.add_lmp(lmp, &bytes, &palette)
+                .map_err(|e| e.to_string())?;
         }
-        if let Some(n) = entity.model.strip_prefix('*').and_then(|n| n.parse().ok()) {
-            placements.push(Placement {
-                model: n,
-                origin: entity.origin,
-                angles: entity.angles,
-            });
-            brushes.push(Some(entity.number));
-        } else if entity.model.ends_with(".bsp") {
+    }
+    let mut play = Play::new(palette.clone(), pics, bsp.entities());
+    play.zfix = zfix;
+    play.load_models(client.model_names(), &reader()?)
+        .map_err(|e| e.to_string())?;
+    // The world, then every brush submodel `*n` at the origin, so the mesh's model `n` is the
+    // submodel `n`; then each entity showing a BSP of its own, such as a health box.
+    let placements: Vec<Placement> = (0..bsp.models.len())
+        .map(|model| Placement {
+            model,
+            ..Placement::WORLD
+        })
+        .collect();
+    let mut others: Vec<(String, Vec<(Placement, usize)>)> = Vec::new();
+    for entity in sim.world.entities().into_iter().skip(1) {
+        if entity.model.ends_with(".bsp") && !entity.model.starts_with("maps/") {
             let placement = Placement {
                 model: 0,
                 origin: entity.origin,
@@ -345,18 +272,18 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     builder
         .add_with(&bsp, &extras, &placements)
         .map_err(|e| e.to_string())?;
-    brushes.extend(
-        others
-            .iter()
-            .flat_map(|(_, list)| list.iter().map(|(_, n)| Some(*n))),
-    );
-    models.brushes = brushes;
-    models.zfix = zfix;
+    let mut next = placements.len();
     for (name, list) in &others {
         let bytes = read(name)?;
         let other = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(name))?;
         let list: Vec<Placement> = list.iter().map(|(p, _)| *p).collect();
         builder.add(&other, &list).map_err(|e| e.to_string())?;
+    }
+    for (_, list) in &others {
+        for (_, entity) in list {
+            play.add_instance(*entity, next);
+            next = next.saturating_add(1);
+        }
     }
     let mesh = builder.finish();
     let placed = at.map(|[x, y, z, yaw]| {
@@ -373,16 +300,16 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
             Camera::new([(a + x) / 2.0, (b + y) / 2.0, (c + z) / 2.0], 0.0)
         });
     let bsp_bytes: &'static [u8] = Vec::leak(bytes.clone());
-    let sim = Sim {
-        world,
-        progs: progs_bytes,
-        bsp: Bsp::read(bsp_bytes, BspLoader::default()).map_err(|e| e.message(&name))?,
-    };
+    let bsp = Bsp::read(bsp_bytes, BspLoader::default()).map_err(|e| e.message(&name))?;
     Ok(Loaded {
         map,
         mesh,
-        models,
+        play,
         sim,
+        client,
+        bsp,
+        describer,
+        rand,
         camera,
     })
 }

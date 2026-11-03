@@ -3026,6 +3026,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-client"
+version = "2026.10.0"
+dependencies = [
+ "qc-builtins",
+ "qc-vm",
+ "qs-mdl",
+ "qs-sim",
+]
+
+[[package]]
 name = "qs-commands"
 version = "2026.10.0"
 dependencies = [
@@ -3135,9 +3145,11 @@ dependencies = [
  "epaint",
  "qc-progs",
  "qs-bsp",
+ "qs-client",
  "qs-mdl",
  "qs-sim",
  "qs-vfs",
+ "qs-wad",
 ]
 
 [[package]]

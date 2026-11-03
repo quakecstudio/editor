@@ -185,6 +185,10 @@ The client keeps `NUM_CSHIFTS` shifts, each a colour and a percent: `CSHIFT_CONT
   the result is the colour over 255 and `a` clamped to 0 to 1, drawn over the whole view. The
   software renderer instead shifts the palette, each entry `c += (percent * (destcolor - c))
   >> 8` per shift in order, through the gamma table; the preview host draws the blend.
+- **VIEW-4.8** `cshift_t.percent` is an `int`: `V_ParseDamage`'s `percent += 3*count` and
+  `V_UpdatePalette`'s `percent -= host_frametime*150` (damage) and `*100` (bonus) compute
+  the float and truncate it toward zero back into the int each frame, and `V_CalcBlend` reads
+  the int.
 - **VIEW-4.7** The gamma table maps `i` to `(int) (255 * pow ((i + 0.5) / 255.5, gamma) +
   0.5)` clamped to 0 to 255, the identity at gamma 1 (the default).
 
