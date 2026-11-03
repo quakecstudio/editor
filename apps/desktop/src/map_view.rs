@@ -7,9 +7,11 @@
 //! The renderer is kept in egui-wgpu's callback resources; [`install`] puts it there for a
 //! mesh, on the device and formats of the window's render state.
 
-use eframe::egui::{Sense, Ui};
+use eframe::egui::{Sense, Ui, WidgetInfo, WidgetType};
 use eframe::egui_wgpu::{self, RenderState, wgpu};
 use qs_render::{Camera, MapCallback, MapMesh, MapRenderer, View};
+
+use crate::strings::Text;
 
 /// The depth buffer the window draws with, which the map view's depth test needs:
 /// `depth_buffer: 32` in the app's `NativeOptions`.
@@ -46,6 +48,7 @@ impl MapView {
     pub fn ui(&mut self, ui: &mut Ui) {
         let rect = ui.available_rect_before_wrap();
         let response = ui.allocate_rect(rect, Sense::drag());
+        response.widget_info(|| WidgetInfo::labeled(WidgetType::Other, true, Text::MapView.get()));
         let drag = response.drag_delta();
         self.camera.turn(-drag.x * TURN, drag.y * TURN);
         if response.hovered() {

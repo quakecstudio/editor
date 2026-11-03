@@ -22,6 +22,10 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`symbol.hover`](#symbolhover) | Says what the name at a place is: its declaration and its comment. |
 | [`symbol.references`](#symbolreferences) | Finds every declaration and use of the name at a place, in every file. |
 | [`symbol.rename`](#symbolrename) | Renames the name at a place everywhere it is written, in the editor's text of each file; nothing is saved. |
+| [`view.focus_bottom_panel`](#viewfocus_bottom_panel) | Shows the bottom panel, Problems, Console and the debugger, if it is hidden and gives it the keyboard. |
+| [`view.focus_editor`](#viewfocus_editor) | Gives the keyboard to the editor in the centre. |
+| [`view.focus_left_panel`](#viewfocus_left_panel) | Shows the left panel, Project and Entities, if it is hidden and gives it the keyboard. |
+| [`view.focus_right_panel`](#viewfocus_right_panel) | Shows the right panel, Properties and the agent, if it is hidden and gives it the keyboard. |
 | [`view.resize_panel`](#viewresize_panel) | Sets the width of the left or right panel, or the height of the bottom panel, in points. |
 | [`view.toggle_panel`](#viewtoggle_panel) | Shows or hides a panel: Project and Entities on the left, Properties and the agent on the right, or Problems, Console and the debugger at the bottom. |
 
@@ -535,6 +539,70 @@ Parameters:
     "name"
   ],
   "title": "RenameParams",
+  "type": "object"
+}
+```
+
+## `view.focus_bottom_panel`
+
+Shows the bottom panel, Problems, Console and the debugger, if it is hidden and gives it the keyboard.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.focus_editor`
+
+Gives the keyboard to the editor in the centre.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.focus_left_panel`
+
+Shows the left panel, Project and Entities, if it is hidden and gives it the keyboard.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.focus_right_panel`
+
+Shows the right panel, Properties and the agent, if it is hidden and gives it the keyboard.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```

@@ -13,7 +13,7 @@ use std::ops::Range;
 use eframe::egui::text::{LayoutJob, TextFormat};
 use eframe::egui::{
     self, Align, Align2, Color32, FontFamily, FontId, Id, Key, Layout, Modifiers, Order, RichText,
-    Sense, TextEdit, Ui, Vec2,
+    Sense, TextEdit, Ui, Vec2, WidgetInfo, WidgetType, accesskit,
 };
 use qs_commands::palette::{PaletteMatch, search};
 use qs_commands::params::{self, Field, FieldKind, Input};
@@ -22,6 +22,7 @@ use serde_json::Value;
 
 use crate::icons::Icon;
 use crate::keymap;
+use crate::shell::name_field;
 use crate::strings::{Text, command_count};
 use crate::theme::{Theme, Token};
 
@@ -116,6 +117,10 @@ impl Palette {
                     .corner_radius(theme.radius.card)
                     .inner_margin(theme.space(2))
                     .show(ui, |ui| {
+                        ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
+                            node.set_role(accesskit::Role::Dialog);
+                            node.set_label(Text::CommandPalette.get());
+                        });
                         ui.set_width(WIDTH);
                         ui.set_max_width(WIDTH);
                         chosen = match self.prompt.take() {
@@ -165,6 +170,7 @@ impl Palette {
                 .frame(egui::Frame::NONE)
                 .desired_width(WIDTH - 200.0);
             let response = ui.add(field);
+            name_field(ui, &response, Text::SearchCommands);
             if self.focus {
                 response.request_focus();
                 self.focus = false;
@@ -285,6 +291,11 @@ fn row(ui: &mut Ui, theme: &Theme, item: &PaletteMatch<'_>, selected: bool) -> e
     let height = theme.size.row;
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::click());
+    // The row's name says the id, which tells commands with alike summaries apart.
+    response.widget_info(|| {
+        let name = format!("{}: {}", item.info.id().as_str(), item.info.summary());
+        WidgetInfo::selected(WidgetType::Button, true, selected, name)
+    });
     if selected || response.hovered() {
         let fill = if selected {
             theme.color(Token::SelectFocus)
