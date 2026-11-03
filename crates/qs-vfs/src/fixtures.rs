@@ -21,6 +21,7 @@ use miniz_oxide::deflate::compress_to_vec;
 use qc_progs::crc::{crc_block, crc_process_byte};
 use qs_pak::{PAK_PAK0_COUNT, PAK_PAK0_CRC};
 
+use crate::zip::crc32;
 use crate::{DirEntry, EntryKind, FS_POP_TABLE, HostFs};
 
 /// A case-sensitive filesystem in memory, as on Linux. Paths are normalised lexically: `.`
@@ -223,7 +224,8 @@ pub(crate) fn zip(files: &[(&str, &[u8])], deflate: bool) -> Vec<u8> {
         fixed.extend_from_slice(&20_u16.to_le_bytes());
         fixed.extend_from_slice(&0_u16.to_le_bytes());
         fixed.extend_from_slice(&method.to_le_bytes());
-        fixed.extend_from_slice(&[0; 8]);
+        fixed.extend_from_slice(&[0; 4]);
+        fixed.extend_from_slice(&crc32(data).to_le_bytes());
         fixed.extend_from_slice(&(body.len() as u32).to_le_bytes());
         fixed.extend_from_slice(&(data.len() as u32).to_le_bytes());
         fixed.extend_from_slice(&(name.len() as u16).to_le_bytes());

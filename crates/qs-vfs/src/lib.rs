@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 
 use qs_pak::{Pak, PakError};
 use qs_wad::{Wad, WadError};
-use zip::{Zip, ZipError};
+use zip::Zip;
 
 pub use host::{DirEntry, EntryKind, HostFs, StdFs, find_entry};
 use host::{components, resolve};
@@ -103,14 +103,6 @@ pub enum VfsError {
         /// What was wrong.
         error: WadError,
     },
-    /// `QuakeEX.kpf` is in the base directory but is no zip this reads, or its member could not
-    /// be read (FS-5.5).
-    Kpf {
-        /// The archive's host path.
-        path: PathBuf,
-        /// What was wrong.
-        error: ZipError,
-    },
     /// A loose file was found but could not be read.
     Io {
         /// The file's host path.
@@ -131,7 +123,6 @@ impl fmt::Display for VfsError {
             }
             Self::WadNotFound { name } => write!(f, "W_LoadWadFile: couldn't load {name}"),
             Self::Wad { name, error } => write!(f, "Wad file {name} {error}"),
-            Self::Kpf { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Io { path, kind } => write!(f, "{} could not be read: {kind}", path.display()),
         }
     }
@@ -607,39 +598,41 @@ impl<H: HostFs> Vfs<H> {
 
     /// Finds and reads `name` as the rerelease's engine reads a file it keeps beside its game
     /// directories, QuakeSpasm's `LOC_LoadFile`: on the search path (FS-3), else as
-    /// `<basedir>/<name>`, else as the member `name` of `<basedir>/QuakeEX.kpf` (FS-5.5); `None`
-    /// when none has it, or when the base directory's own file is empty.
+    /// `<basedir>/<name>`, else as the member `name` of `<basedir>/QuakeEX.kpf` (FS-5.5), each
+    /// path found as FS-3.7 finds a name in a directory. `None` when none has it, and wherever
+    /// `LOC_LoadFile` goes to `fail`: a base directory file that is empty or cannot be read, and
+    /// an archive that is no zip this reads or whose member cannot be read.
     ///
     /// Implements RRE-1.10.
     ///
     /// # Errors
     ///
-    /// As [`Vfs::read`]; [`VfsError::Io`] when a file in the base directory opens but cannot
-    /// be read; [`VfsError::Kpf`] when `QuakeEX.kpf` is no zip or its member is unreadable.
+    /// As [`Vfs::read`], for a file on the search path.
     pub fn load_rerelease(&self, name: &str) -> Result<Option<Vec<u8>>, VfsError> {
         if let Some(file) = self.load(name.as_bytes())? {
             return Ok(Some(file.into_bytes()));
         }
-        let loose = self.basedir.join(name);
-        if let Ok(mut file) = self.host.open(&loose) {
+        let parts: Vec<&str> = name.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
+        // A file that does not open is `rw == NULL`, and the archive is tried; one that opens
+        // and is empty is `sz <= 0`, `goto fail`; one whose read fails leaves `calloc`'s
+        // zeros, no text.
+        let loose = resolve(&self.host, &self.basedir, &parts, EntryKind::File)
+            .and_then(|path| self.host.open(&path).ok());
+        if let Some(mut file) = loose {
             let mut bytes = Vec::new();
-            file.read_to_end(&mut bytes).map_err(|e| VfsError::Io {
-                path: loose.clone(),
-                kind: e.kind(),
-            })?;
-            // `sz <= 0` is `goto fail`, with no look in the archive.
-            return Ok((!bytes.is_empty()).then_some(bytes));
+            let read = file.read_to_end(&mut bytes);
+            return Ok((read.is_ok() && !bytes.is_empty()).then_some(bytes));
         }
-        let kpf = self.basedir.join(RRE_KPF);
+        let Some(kpf) = resolve(&self.host, &self.basedir, &[RRE_KPF], EntryKind::File) else {
+            return Ok(None);
+        };
         let Ok(file) = self.host.open(&kpf) else {
             return Ok(None);
         };
-        let kpf_error = |error| VfsError::Kpf {
-            path: kpf.clone(),
-            error,
-        };
-        let mut archive = Zip::open(file).map_err(kpf_error)?;
-        archive.read(name).map_err(kpf_error)
+        Ok(Zip::open(file)
+            .and_then(|mut archive| archive.read(name))
+            .ok()
+            .flatten())
     }
 
     /// Loads the WAD2 file `name` through the search path and checks that it loads, as id's

@@ -40,6 +40,7 @@ fn qs_vfs::host::HostFs::read_dir
 fn qs_vfs::host::find_entry
 fn qs_vfs::zip::Zip::open
 fn qs_vfs::zip::Zip::read
+fn qs_vfs::zip::crc32
 impl qs_vfs::VfsError: core::error::Error
 impl qs_vfs::VfsError: fmt::Display
 impl qs_vfs::host::StdFs: HostFs
@@ -70,7 +71,6 @@ variant qs_vfs::VfsError::Archive
 variant qs_vfs::VfsError::CorruptedDataFile
 variant qs_vfs::VfsError::CouldntLoadPackfile
 variant qs_vfs::VfsError::Io
-variant qs_vfs::VfsError::Kpf
 variant qs_vfs::VfsError::ModifiedShareware
 variant qs_vfs::VfsError::Wad
 variant qs_vfs::VfsError::WadNotFound
@@ -80,12 +80,15 @@ variant qs_vfs::host::EntryKind::Other
 variant qs_vfs::zip::ZipError::CentralOutside
 variant qs_vfs::zip::ZipError::CentralTruncated
 variant qs_vfs::zip::ZipError::Corrupt
+variant qs_vfs::zip::ZipError::Crc
 variant qs_vfs::zip::ZipError::Encrypted
 variant qs_vfs::zip::ZipError::Io
 variant qs_vfs::zip::ZipError::Larger
 variant qs_vfs::zip::ZipError::LocalHeader
 variant qs_vfs::zip::ZipError::Method
+variant qs_vfs::zip::ZipError::Multidisk
 variant qs_vfs::zip::ZipError::NotZip
+variant qs_vfs::zip::ZipError::Patch
 variant qs_vfs::zip::ZipError::Size
 variant qs_vfs::zip::ZipError::TooLarge
 variant qs_vfs::zip::ZipError::Truncated

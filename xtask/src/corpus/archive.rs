@@ -9,7 +9,6 @@ use std::io::{self, Read};
 
 use miniz_oxide::inflate::stream::{InflateState, inflate};
 use miniz_oxide::{DataFormat, MZError, MZFlush, MZStatus};
-pub(crate) use qs_vfs::zip::Zip;
 
 /// RFC 1952's magic, and its only compression method (deflate).
 const GZIP_MAGIC: [u8; 3] = [0x1f, 0x8b, 8];

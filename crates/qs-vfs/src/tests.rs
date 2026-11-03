@@ -14,7 +14,6 @@ use qs_wad::WadError;
 use crate::fixtures::{MemFs, pak, pak_with_extra, pop_lmp, unmodified_pak, wad, zip};
 use crate::{
     Element, FS_GAMENAME, FS_POP_PATH, FS_POP_SIZE, FS_POP_TABLE, FileRef, Location, Vfs, VfsError,
-    zip::ZipError,
 };
 
 /// No command-line arguments.
@@ -811,16 +810,29 @@ fn a_rerelease_file_is_looked_up_as_loc_loadfile_does() {
     let other = zip(&[("x", b"y")], false);
     let without = MemFs::default().dir("q/id1").file("q/QuakeEX.kpf", &other);
     assert_eq!(load(without).unwrap(), None);
+    // Where LOC_LoadFile goes to `fail`, nothing is loaded and nothing is an error.
     let broken = MemFs::default()
         .dir("q/id1")
         .file("q/QuakeEX.kpf", b"not a zip");
-    assert!(matches!(
-        load(broken),
-        Err(VfsError::Kpf {
-            error: ZipError::NotZip,
-            ..
-        })
-    ));
+    assert_eq!(load(broken).unwrap(), None);
+    // A stored member's first data byte changed: only its CRC tells.
+    let mut corrupt = zip(&[(LOC, b"from kpf")], false);
+    corrupt[30 + LOC.len()] ^= 0x20;
+    let damaged = MemFs::default()
+        .dir("q/id1")
+        .file("q/QuakeEX.kpf", &corrupt);
+    assert_eq!(load(damaged).unwrap(), None);
+    // FS-3.7: the base directory's names are found whatever their case.
+    let cased = MemFs::default().dir("q/id1").file(
+        "q/quakeex.kpf",
+        &zip(&[("LOCALIZATION/Loc_English.txt", b"cased")], false),
+    );
+    assert_eq!(load(cased).unwrap().unwrap(), b"cased");
+    let loose_cased = MemFs::default()
+        .dir("q/id1")
+        .file("q/Localization/LOC_english.txt", b"loose");
+    assert_eq!(load(loose_cased).unwrap().unwrap(), b"loose");
+    // A base directory file that does not open is no file: the archive is read.
     let unreadable = base()
         .file("q/localization/loc_english.txt", b"x")
         .unreadable("q/localization/loc_english.txt");
