@@ -50,7 +50,7 @@ of `xtask`, `plan`, `adr`, `spec`, `agents`, `deps`.
   `Closes #<issue>`. It describes only what is in the diff, not earlier attempts.
 - For an issue the PR must leave open, write `Refs #N`. Never put a closing verb (close,
   fix, resolve, in any form) next to `#N` in any phrasing: GitHub reads "does not close #84"
-  as `close #84` and closes the issue on merge. `land.sh` refuses to queue a body that has a
+  as `close #84` and closes the issue on merge. `land.sh` refuses to merge a body that has a
   closing keyword and an issue in a negated or hedged sentence
   (`.claude/skills/work-issue/scripts/check-pr-body.sh`).
 - A port lists `Spec:` IDs and the upstream commit ([`porting.md`](porting.md)).

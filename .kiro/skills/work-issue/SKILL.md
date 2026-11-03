@@ -1,6 +1,6 @@
 ---
 name: work-issue
-description: Take one QuakeC Studio GitHub issue from open to merged - read it, check its dependencies, implement it on a branch to its acceptance criteria and the definition of done, open a PR, wait for CI and add it to the merge queue. Use for any single plan issue.
+description: Take one QuakeC Studio GitHub issue from open to merged - read it, check its dependencies, implement it on a branch to its acceptance criteria and the definition of done, open a PR, wait for CI and squash-merge it. Use for any single plan issue.
 triggers: work-issue, work issue, /work-issue
 ---
 
@@ -15,8 +15,8 @@ it step by step. This file only records the Kiro-specific translations.
 - **Scripts (referenced in place, never copied):**
   - Mark the issue In Progress: `.claude/skills/work-issue/scripts/start.sh <issue-number>`
     (the `.claude/` text calls this `${CLAUDE_SKILL_DIR}/scripts/start.sh`).
-  - Land the PR: `.claude/skills/work-issue/scripts/land.sh <pr-number>` (waits for CI, adds
-    the PR to the merge queue, waits for the merge).
+  - Land the PR: `.claude/skills/work-issue/scripts/land.sh <pr-number>` (waits for CI and
+    squash-merges the PR, or queues it if the merge queue is turned back on).
 - **Tools:** the `allowed-tools` list in the source is the intended scope: `gh issue`,
   `gh pr`, `python3 plan/*`, and the two scripts above.
 - **Guardrails apply:** no panics in shipped code, no upward layer dependencies, specs

@@ -19,6 +19,6 @@ A decision belongs to a person. Your job is to make it a five-minute read.
    - two to four real options, each with its consequences for the plan (which issues, layers or phases it changes);
    - your recommendation and why, in one paragraph;
    - what changes in `plan/` if the recommendation is accepted.
-5. Open it as a **draft** PR: `gh pr create --draft --title "docs(adr): propose <decision>" --body "Proposes a decision for #$ARGUMENTS ..."`. Do not add it to the merge queue.
+5. Open it as a **draft** PR: `gh pr create --draft --title "docs(adr): propose <decision>" --body "Proposes a decision for #$ARGUMENTS ..."`. Do not merge it.
 6. Comment on the issue with the question, the options in one line each, the recommendation, and the PR link, then mention @jplock.
 7. Stop. The issue stays open until Justin decides, marks the ADR Accepted and merges.

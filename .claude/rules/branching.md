@@ -14,19 +14,20 @@ Branch names carry the Conventional Commit type of the work and the issue number
 
 ## Workflow
 
-- **Never push to `main`.** It accepts changes only through the merge queue, which
-  squash-merges; the PR title becomes the commit subject on `main`.
+- **Never push to `main`.** It accepts changes only through a pull request, squash-merged;
+  the PR title becomes the commit subject on `main`. The merge queue is off (docs/ci.md).
+  After a PR merges, merge `main` into every other open branch before landing it.
 - Branch from an up-to-date `main`: `git switch main && git pull --ff-only`, then
   `git switch -c <branch>`.
 - **One writer per working tree.** Agents working in parallel each use their own worktree
-  (`wt switch <branch>`, or `isolation: "worktree"` for subagents). Before handing in-flight
+  (`wt switch <branch>`). Before handing in-flight
   work to another agent, stop the first one and save its diff
   ([`development-discipline.md`](development-discipline.md)).
 - Never amend or rebase commits that are already pushed to a shared branch.
-- An agent may add its own PR to the merge queue once CI passes
-  (`.claude/skills/work-issue/scripts/land.sh`), except for `needs:human` issues, which wait
-  for Justin. An implementer first reviews its own diff with the `code-review` skill and
-  records the outcome in the PR body (`work-issue`, "Land it").
+- An agent squash-merges its own PR once CI passes
+  (`.claude/skills/work-issue/scripts/land.sh`), except for `needs:human` issues Justin has
+  not decided, which wait for him. It first reviews its own diff with the `code-review` skill
+  and records the outcome in the PR body (`work-issue`, "Land it").
 
 ## Before opening a PR
 

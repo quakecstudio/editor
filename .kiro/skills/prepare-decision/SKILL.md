@@ -15,8 +15,7 @@ follow it step by step. This file only records the Kiro-specific translations.
 - **Scripts (referenced in place):** mark In Progress with
   `.claude/skills/work-issue/scripts/start.sh <issue-number>`.
 - **Guardrails apply:** a decision belongs to Justin. You research, draft and recommend; you
-  never decide and never merge. The ADR is opened as a draft PR and is not added to the merge
-  queue; the issue stays open until Justin decides. See `.kiro/steering/guardrails.md`.
+  never decide and never merge. The ADR is opened as a draft PR and is not merged; the issue stays open until Justin decides. See `.kiro/steering/guardrails.md`.
 
 The shape of the work, unchanged from the source: read the issue with its comments (update
 an existing draft ADR PR rather than opening a second); read the requirement IDs and the

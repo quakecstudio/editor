@@ -64,7 +64,7 @@ distilled from `CLAUDE.md` ("What not to do") and `.claude/rules/`.
     `gh run watch <id> --exit-status --interval 60`, never a long `sleep`. See `.claude/rules/development-discipline.md`.
 
 11. **Never push to `main` or edit an issue body on GitHub.** `main` takes changes only
-    through the merge queue; work on a `<type>/<issue>-<slug>` branch and open a PR with
+    through a squash-merged pull request; work on a `<type>/<issue>-<slug>` branch and open a PR with
     `Closes #<issue>`. Issue bodies are generated from `plan/`; change the plan with the
     `plan-change` skill, not the GitHub UI. See `.claude/rules/branching.md` and
     `.claude/rules/commits-and-issues.md`.

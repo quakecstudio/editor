@@ -51,8 +51,7 @@ unused-allowed-license = "allow"
 
 [bans]
 # Duplicate versions are reported but do not fail the check: a dependency bump
-# that transiently splits a crate would otherwise block unrelated PRs in the
-# merge queue. Wildcards always fail; the workspace pins exact versions.
+# that transiently splits a crate would otherwise block unrelated PRs. Wildcards always fail; the workspace pins exact versions.
 multiple-versions = "warn"
 wildcards = "deny"
 # Path dependencies between this workspace's own unpublished crates carry no
