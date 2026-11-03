@@ -932,12 +932,13 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
 - **DIFF-14.3** The short run, 200 programs of seed 1, runs in the `Test Assets (linux)` job
   of every pull request after the fast compiler differential; the long run, 10000 programs of
   seed 1, is a job of the nightly Differential workflow.
-- **DIFF-14.4** The oracles include a second FTEQCC, `fteqcc-fixed`, built from the pinned
-  tree with each defect of DIFF-14.6 and DIFF-14.7 fixed in `engine/qclib/qcc_pr_comp.c` and
-  nothing else changed (ADR-0020, tier 3). The fixes are texts the build replaces
-  (`xtask/src/oracles/defects.rs`); a fix whose text the pinned file does not hold exactly as
-  often as it says stops the build, so a changed upstream cannot build an unfixed oracle.
-  Each generated program is compiled by it as well as by the pinned FTEQCC.
+- **DIFF-14.4** **Withdrawn** 2026-11-03: it named the defects fixed, DIFF-14.6 and DIFF-14.7,
+  so each new fix changed it. Replaced by DIFF-14.12. The oracles include a second FTEQCC,
+  `fteqcc-fixed`, built from the pinned tree with each defect of DIFF-14.6 and DIFF-14.7 fixed
+  in `engine/qclib/qcc_pr_comp.c` and nothing else changed (ADR-0020, tier 3). The fixes are
+  texts the build replaces (`xtask/src/oracles/defects.rs`); a fix whose text the pinned file
+  does not hold exactly as often as it says stops the build, so a changed upstream cannot build
+  an unfixed oracle. Each generated program is compiled by it as well as by the pinned FTEQCC.
 - **DIFF-14.5** A generated program whose pinned FTEQCC progs diverges from ours passes as an
   FTEQCC defect proved when the fixed FTEQCC's progs agrees with ours on every call; it fails
   when the fixed FTEQCC's progs diverges from ours, also where the pinned one agrees, since a
@@ -961,7 +962,7 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
 - **DIFF-14.8** `cargo xtask compiler-diff --generated <count> [--seed <n>]` writes the
   programs `0` to `count - 1` of the seed, 1 unless given, under
   `target/compiler-diff/generated/<seed>/<n>/` with a `progs.src` naming `t.qc`, compiles each
-  with the pinned FTEQCC (`-Tid -srcfile progs.src`), with the fixed FTEQCC of DIFF-14.4 and
+  with the pinned FTEQCC (`-Tid -srcfile progs.src`), with the fixed FTEQCC of DIFF-14.12 and
   with `qc-codegen` in the FTEQCC
   dialect with `--opt fold` off and on, lists the pairs in `pairs.tsv`, and has the
   `compiler-diff` binary compare every pair in one process (`--pairs`) with the fast rounds of
@@ -972,6 +973,25 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
   rejects, which is a defect of a fix, on a program FTEQCC compiles and `qc-codegen` refuses, which is
   a defect of the compiler, and on a form used by fewer than one program in a hundred; each
   failure names the program's directory, whose `t.qc` is the case to keep.
+- **DIFF-14.10** FTEQCC defect: a constant `if` whose stripped arm makes no label is parsed and
+  then rewound with `QCC_UngenerateStatements(oldnumst)` (`QCC_PR_ParseStatement`), which
+  forgets every `case` recorded at or after the statement it rewinds to (`if (pr_cases[i] >=
+  newstatementcount)`). A `case` whose first statement is that `if` was recorded at exactly that
+  statement, so its label is forgotten and the `switch` never reaches it, though its statements
+  stay. Generated program 2269 of seed 1 has such a `case 2:`. The fix forgets only the labels
+  after that statement.
+- **DIFF-14.11** FTEQCC defect: `QCC_CollapseStore` folds a store into the statement before it
+  when that statement wrote the stored temporary at the same offset (`opt_assignments`),
+  whatever the width of the statement's result. A store of a vector's first word, `f = (u +
+  v).x`, makes the `ADD_V` write its three words from `f`, the two globals after it included.
+  Generated program 6294 of seed 1 reads a string global it overwrote. The fix does not fold
+  when the statement's result type (`type_c`) is wider than the stored type.
+- **DIFF-14.12** The oracles include a second FTEQCC, `fteqcc-fixed`, built from the pinned tree
+  with each FTEQCC defect a statement of DIFF-14 names fixed in `engine/qclib/qcc_pr_comp.c` and
+  nothing else changed (ADR-0020, tier 3). The fixes are texts the build replaces
+  (`xtask/src/oracles/defects.rs`); a fix whose text the pinned file does not hold exactly as
+  often as it says stops the build, so a changed upstream cannot build an unfixed oracle. Each
+  generated program is compiled by it as well as by the pinned FTEQCC.
 
 ## Test vectors
 

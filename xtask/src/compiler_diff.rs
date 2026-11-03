@@ -148,7 +148,7 @@ fn fteqcc_in(oracles: &Oracles, fteqcc: &Path, dir: &Path) -> Result<String, Str
 
 /// The generated-program differential (DIFF-14): the `compiler-diff` binary writes `count`
 /// programs of `seed` under `target/compiler-diff/generated/<seed>/`, each is compiled with
-/// the pinned FTEQCC, the fixed FTEQCC (DIFF-14.4) and `qc-codegen` in the FTEQCC dialect with `--opt fold` off and
+/// the pinned FTEQCC, the fixed FTEQCC (DIFF-14.12) and `qc-codegen` in the FTEQCC dialect with `--opt fold` off and
 /// on, and the binary compares every pair in one process. A program FTEQCC rejects is a
 /// defect of the generator and fails the run; each divergence names the program's directory,
 /// whose `t.qc` is the case to keep. The forms every program used are totalled in
@@ -185,7 +185,7 @@ fn generated(root: &Path, count: u64, seed: u64) -> Result<bool, String> {
     let mut refused = Vec::new();
     for n in 0..count {
         let program = dir.join(n.to_string());
-        // DIFF-14.4: the fixed FTEQCC first, its progs kept as `fixed.dat`, then the pinned one.
+        // DIFF-14.12: the fixed FTEQCC first, its progs kept as `fixed.dat`, then the pinned one.
         let fixed = program.join("fixed.dat");
         let fixed_log = fteqcc_in(&oracles, &oracles.fteqcc_fixed, &program)?;
         let built = program.join("progs.dat");

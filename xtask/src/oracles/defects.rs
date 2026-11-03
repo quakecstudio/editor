@@ -5,7 +5,7 @@
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_StatementFlags, QCC_PR_RefExpression
 
 //! The patched FTEQCC that proves a divergence is an FTEQCC defect (ADR-0020 tier 3,
-//! DIFF-14.4, DIFF-14.5): the pinned `qcc_pr_comp.c` with each defect this module names fixed, and
+//! DIFF-14.12, DIFF-14.5): the pinned `qcc_pr_comp.c` with each defect this module names fixed, and
 //! nothing else changed. A generated program on which qc-codegen and the pinned FTEQCC
 //! diverge is an FTEQCC defect only when this build agrees with qc-codegen.
 
@@ -32,8 +32,12 @@ pub(crate) struct Fix {
 /// its operands before it takes its result's temporary, so a vector result may take the slot
 /// of an operand the opcode reads again after writing its first word (`MUL_VF` reads its float
 /// operand for each component); those multiplies free their operands only after they have taken
-/// the result's temporary.
-pub(crate) const FIXES: [Fix; 4] = [
+/// the result's temporary. DIFF-14.10: stripping a constant `if` forgets the `case` labels at
+/// the statement it rewinds to, its own included; only those after it are forgotten.
+/// DIFF-14.11: `opt_assignments` folds the store of one word of a wider result into the
+/// statement that made it, which then writes every word of it; a result wider than the store is
+/// not folded.
+pub(crate) const FIXES: [Fix; 6] = [
     Fix {
         statement: "DIFF-14.6",
         find: "r = QCC_MakeSRefForce(QCC_PR_DummyDef(r.cast=val.cast, \"ternary\", pr_scope, 0, NULL, 0, false, GDF_STRIP), 0, val.cast);",
@@ -57,6 +61,18 @@ pub(crate) const FIXES: [Fix; 4] = [
         times: 1,
         find: "\tif (flags&STFL_DISCARDRESULT)\n\t{\n\t\tQCC_FreeTemp(var_c);\n\t\tvar_c = nullsref;\n\t}\n\treturn var_c;\n}\n",
         replace: "\tif (qs_free_later)\n\t{\n\t\tQCC_FreeTemp(var_a);\n\t\tQCC_FreeTemp(var_b);\n\t}\n\tif (flags&STFL_DISCARDRESULT)\n\t{\n\t\tQCC_FreeTemp(var_c);\n\t\tvar_c = nullsref;\n\t}\n\treturn var_c;\n}\n",
+    },
+    Fix {
+        statement: "DIFF-14.10",
+        times: 1,
+        find: "\t\tif (pr_cases[i] >= newstatementcount)\n",
+        replace: "\t\tif (pr_cases[i] > newstatementcount)\n",
+    },
+    Fix {
+        statement: "DIFF-14.11",
+        times: 1,
+        find: "\tif (opt_assignments && OpAssignsToC(statements[numstatements-1].op) && source.sym == statements[numstatements-1].c.sym && source.ofs == statements[numstatements-1].c.ofs)\n",
+        replace: "\tif (opt_assignments && OpAssignsToC(statements[numstatements-1].op) && source.sym == statements[numstatements-1].c.sym && source.ofs == statements[numstatements-1].c.ofs && !(pr_opcodes[statements[numstatements-1].op].type_c && *pr_opcodes[statements[numstatements-1].op].type_c && (*pr_opcodes[statements[numstatements-1].op].type_c)->size > type->size))\n",
     },
 ];
 
@@ -105,10 +121,12 @@ mod tests {
             .collect()
     }
 
-    // spec DIFF-14.4: every fix is applied to the text it names, and nothing else changes
+    // spec DIFF-14.12: every fix is applied to the text it names, and nothing else changes
     // spec DIFF-14.6: the `?:` local's two definitions are made vectors
     // spec DIFF-14.7: the vector multiplies free their operands after taking the result's
     // temporary
+    // spec DIFF-14.10: a case label at the rewound statement is kept
+    // spec DIFF-14.11: a store of one word of a wider result is not folded
     #[test]
     fn each_fix_replaces_its_text_once() {
         let fixed = String::from_utf8(apply(pinned().as_bytes()).unwrap()).unwrap();
@@ -120,7 +138,7 @@ mod tests {
         assert_eq!(fixed.matches("/* between */").count(), between);
     }
 
-    // spec DIFF-14.4: a pinned file without a fix's text, or with it twice, is an error, so a
+    // spec DIFF-14.12: a pinned file without a fix's text, or with it twice, is an error, so a
     // changed upstream cannot build an unfixed oracle
     #[test]
     fn a_missing_or_repeated_text_is_an_error() {
