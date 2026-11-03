@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://quakecstudio.org/spec/bridge-schema/event.progs.loaded.json",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/event.progs.loaded.json",
   "title": "progs/loaded notification params (BRIDGE-3)",
   "type": "object",
   "properties": {

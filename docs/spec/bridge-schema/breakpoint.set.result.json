@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://quakecstudio.org/spec/bridge-schema/breakpoint.set.result.json",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/breakpoint.set.result.json",
   "title": "breakpoint/set response result (BRIDGE-4)",
   "type": "object",
   "properties": {
@@ -9,7 +9,7 @@
       "minimum": 0
     },
     "location": {
-      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/location"
+      "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/location"
     }
   },
   "required": [

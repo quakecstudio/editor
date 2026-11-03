@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://quakecstudio.org/spec/bridge-schema/initialize.params.json",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/initialize.params.json",
   "title": "initialize request params (BRIDGE-2.1)",
   "type": "object",
   "properties": {

@@ -706,6 +706,21 @@ fn an_ifnot_of_a_not_is_shortened_to_an_if() {
     assert_eq!(t[14], st(IfNot, t[13].c, 3, 0));
 }
 
+// spec FTEF-34.16: the NOT of `if (c ? a : !x)` writes the `?:`'s temporary, referenced by both
+// arms, so the IFNOT keeps it
+#[test]
+fn an_ifnot_of_a_ternarys_not_keeps_the_not() {
+    let p = fte_progs("float c, a, x, n;\nvoid() t = { if (c ? a : !x) n = 1; };\n");
+    let x = global(&p, "x");
+    let t = body(&p, "t");
+    assert_eq!(
+        opcodes(&t),
+        ops(&[IfNot, StoreF, Goto, NotF, IfNot, StoreF, Done])
+    );
+    assert_eq!(t[3], st(NotF, x, 0, t[1].b));
+    assert_eq!(t[4], st(IfNot, t[1].b, 2, 0));
+}
+
 // spec FTEF-34.16: id's qcc has no `shortenifs`; `if (!f)` stays NOT_F and IFNOT
 #[test]
 fn qcc_keeps_the_not_of_a_condition() {
@@ -1492,6 +1507,17 @@ fn a_null_is_stored_by_the_targets_type() {
     assert_eq!(t[0], st(Opcode::StoreFnc, null, global(&p, "g"), 0));
     assert_eq!(t[1].op, u32::from(Opcode::Address.number()));
     assert_eq!(t[2], st(Opcode::StorepFnc, null, t[1].c, 0));
+}
+
+// spec FTE-20.5: a number's immediate is shared by its bits, so `'-0 0 0'` and `'0 0 0'` are
+// two immediates
+#[test]
+fn immediates_are_shared_by_their_bits() {
+    let p = fte_progs("vector v;\nvoid() t = { v = '-0 0 0'; v = '0 0 0'; };\n");
+    let t = body(&p, "t");
+    assert_ne!(t[0].a, t[1].a);
+    assert_eq!(words(&p, t[0].a, 3), [(-0.0_f32).to_bits(), 0, 0]);
+    assert_eq!(words(&p, t[1].a, 3), [0, 0, 0]);
 }
 
 // spec FTE-20.5: a literal never shares a variable's word, so an element of an array is still
@@ -2819,14 +2845,14 @@ fn a_noref_definition_initialised_again_keeps_its_first_value() {
     );
 }
 
-// spec FTEF-26.14: BITOR_F, BITAND_F and EQ_F of two constants fold, as do AND_F and OR_F, and
-// a constant vector's component is a constant
+// spec FTEF-26.14: BITOR_F, BITAND_F, EQ_F and NE_F of two constants fold, a named constant
+// counting, as do AND_F and OR_F, and a constant vector's component is a constant
 #[test]
 fn bit_operators_and_comparisons_of_two_constants_fold() {
     let p = fte_progs(
-        "float x; vector k = '1 2 3';\n\
+        "float x; vector k = '1 2 3'; const float K1 = 5;\n\
          void() t = { x = 3 | 4; x = 7 & 5; x = 3 == 3; x = 3 == 4; x = x & (1 | 2);\n\
-         x = 16 * k_y; x = (1 && 2); x = (0 || 0); };\n",
+         x = 16 * k_y; x = (1 && 2); x = (0 || 0); x = (K1 != 65536) & 1; x = K1 != 5; };\n",
     );
     let x = global(&p, "x");
     let store = |f: f32| st(StoreF, immediate(&p, f), x, 0);
@@ -2839,6 +2865,8 @@ fn bit_operators_and_comparisons_of_two_constants_fold() {
             store(0.0),
             st(BitAnd, x, immediate(&p, 3.0), x),
             store(32.0),
+            store(1.0),
+            store(0.0),
             store(1.0),
             store(0.0),
             st(Done, 0, 0, 0)
@@ -3063,6 +3091,48 @@ fn a_parenthesised_vector_fields_component_is_a_word_of_its_copy() {
     );
 }
 
+// spec FTE-9.6: a component of a call's vector value is the word of the alias, read from the
+// temporary a later clobber copies the value to, not from the return global
+#[test]
+fn a_components_of_a_calls_value_follows_the_alias_to_its_copy() {
+    let p = fte_progs(
+        "vector gv0; float gf0; vector(vector v) normalize = #9; float(float f) ff1 = #1;\n\
+         void() t = { gf0 = (normalize(gv0)).y + ff1(1); gf0 = (normalize(gv0)).z; };\n",
+    );
+    let (gv0, gf0, normalize, ff1) = (
+        global(&p, "gv0"),
+        global(&p, "gf0"),
+        global(&p, "normalize"),
+        global(&p, "ff1"),
+    );
+    let t = body(&p, "t");
+    let copy = t[3].b;
+    assert_eq!(
+        t,
+        [
+            st(Opcode::StoreV, gv0, 4, 0),
+            st(Opcode::Call1, normalize, 0, 0),
+            st(StoreF, immediate(&p, 1.0), 4, 0),
+            st(Opcode::StoreV, 1, copy, 0),
+            st(Opcode::Call1, ff1, 0, 0),
+            st(AddF, copy + 1, 1, gf0),
+            st(Opcode::StoreV, gv0, 4, 0),
+            st(Opcode::Call1, normalize, 0, 0),
+            st(StoreF, 3, gf0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-27.4: an int constant, the fold of `||` of two constants, returned from a float
+// function is the float constant
+#[test]
+fn an_int_constant_returned_from_a_float_function_is_a_float() {
+    let p = fte_progs("const float K0 = 3;\nfloat() t = { return (K0 || 777); };\n");
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(Opcode::Return, immediate(&p, 1.0), 0, 0));
+}
+
 // spec FTEF-27.4: an int constant, the fold of `&&` of two constants, stored to a float field
 // or passed to a float parameter is the float constant
 #[test]
@@ -3089,5 +3159,157 @@ fn an_int_constant_stored_to_a_field_or_passed_to_a_float_parameter_is_a_float()
             st(Opcode::StoreS, 1, s, 0),
             st(Done, 0, 0, 0),
         ]
+    );
+}
+
+// spec FTE-9.6: a word of a call's value is a word of its alias: a component field statement
+// of a call's entity copies nothing, a shortened `NOT` of a component revives the alias and
+// tests the copy's word, and a cast keeps the word
+#[test]
+fn a_word_of_a_calls_value_follows_its_alias() {
+    let p = fte_progs(
+        "entity self; .vector fv; vector(vector v) normalize = #9; entity() fe = { return self; };\n\
+         void() g = {}; float x; vector v;\n\
+         void() a = { fe().fv.y; g(); };\n\
+         void() b = { if (!(normalize(v)).y) x = 1; };\n\
+         void() c = { x = (float)(normalize(v)).y; };\n",
+    );
+    let (fe, g, x) = (global(&p, "fe"), global(&p, "g"), global(&p, "x"));
+    assert_eq!(
+        body(&p, "a"),
+        [
+            st(Opcode::Call0, fe, 0, 0),
+            st(Opcode::Call0, g, 0, 0),
+            st(Done, 0, 0, 0)
+        ]
+    );
+    let b = body(&p, "b");
+    assert_eq!(b[2].op, u32::from(Opcode::StoreV.number()));
+    assert_eq!(b[2].a, 1);
+    assert_eq!(b[3], st(Opcode::If, b[2].b + 1, 2, 0));
+    assert_eq!(body(&p, "c")[2], st(StoreF, 2, x, 0));
+}
+
+// spec FTE-13.18: a field access as a statement reads the entity and loads nothing; a
+// parenthesised field with a component loads the vector
+#[test]
+fn a_field_access_as_a_statement_loads_nothing() {
+    let p = fte_progs(
+        "entity self; entity ge0; .float ff; .vector fv; .entity fe;\nvoid() t = { self.ff; \
+         (self.fe).ff; self.fv.y; (self.fv).y; ge0 = self; };\n",
+    );
+    let (this, fe, fv, ge0) = (
+        global(&p, "self"),
+        global(&p, "fe"),
+        global(&p, "fv"),
+        global(&p, "ge0"),
+    );
+    let t = body(&p, "t");
+    assert_eq!(
+        t,
+        [
+            st(Opcode::LoadEnt, this, fe, t[0].c),
+            st(Opcode::LoadV, this, fv, t[1].c),
+            st(Opcode::StoreEnt, this, ge0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-30.3: a `?:`'s temporary is written by both arms, so no store folds into its
+// last arm's statement; a later statement that reuses the temporary is folded into as any
+#[test]
+fn a_store_folds_into_a_statement_that_reuses_a_ternarys_temporary() {
+    let p = fte_progs(
+        "float x; vector gv2;\nvoid() t = { local float n; n = 0; x = n ? 1 : 2; \
+         while (n < 1 && gv2.y) { n = n + 1; } };\n",
+    );
+    let t = body(&p, "t");
+    let adds: Vec<&Statement> = t
+        .iter()
+        .filter(|s| s.op == u32::from(AddF.number()))
+        .collect();
+    assert_eq!(adds.len(), 1, "{t:?}");
+    assert_eq!(adds[0].a, adds[0].c, "ADD_F n 1 n, the store folded");
+    assert_eq!(
+        t.iter()
+            .filter(|s| s.op == u32::from(StoreF.number()))
+            .count(),
+        4,
+        "n = 0, the two arms and x: {t:?}"
+    );
+}
+
+// spec FTEF-26.3: `!` of a float or vector constant folds to the float, `!` of a string
+// constant does not
+#[test]
+fn not_of_a_constant_folds() {
+    let p = fte_progs(
+        "float f; string s;\nvoid() t = { f = !0.117; f = !0; f = !'1 0 0'; f = !'0 0 0'; \
+         f = !\"x\"; };\n",
+    );
+    let f = global(&p, "f");
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, immediate(&p, 0.0), f, 0));
+    assert_eq!(t[1], st(StoreF, immediate(&p, 1.0), f, 0));
+    assert_eq!(t[2], st(StoreF, immediate(&p, 0.0), f, 0));
+    assert_eq!(t[3], st(StoreF, immediate(&p, 1.0), f, 0));
+    assert_eq!(t[4].op, u32::from(Opcode::NotS.number()));
+    assert_eq!(t[4].c, f);
+}
+
+// spec FTEF-32.14: `floor`, `ceil`, `sin`, `cos`, `log` and `sqrt` of a constant float fold to
+// the constant, a folded argument too; of a value, or by another name, they are called
+#[test]
+fn some_builtins_of_a_constant_fold() {
+    let p = fte_progs(
+        "float f; const float K = 2.5; float(float v) ceil = #38; float(float v) floor = #37; \
+         float(float v) sqrt = #99; float(float v) rint = #36;\n\
+         void() t = { f = ceil(0.4); f = floor(K); f = sqrt((16)); f = rint(0.4); f = ceil(f); \
+         f = ceil(!0.117); f = sqrt(2 * 2); f = floor(-K); };\n",
+    );
+    let (f, rint, ceil) = (global(&p, "f"), global(&p, "rint"), global(&p, "ceil"));
+    let t = body(&p, "t");
+    assert_eq!(t[0], st(StoreF, immediate(&p, 1.0), f, 0));
+    assert_eq!(t[1], st(StoreF, immediate(&p, 2.0), f, 0));
+    assert_eq!(t[2], st(StoreF, immediate(&p, 4.0), f, 0));
+    assert_eq!(t[3], st(StoreF, immediate(&p, 0.4), 4, 0));
+    assert_eq!(t[4], st(Opcode::Call1, rint, 0, 0));
+    assert_eq!(t[6], st(StoreF, f, 4, 0));
+    assert_eq!(t[7], st(Opcode::Call1, ceil, 0, 0));
+    assert_eq!(t[9], st(StoreF, immediate(&p, 0.0), f, 0));
+    assert_eq!(t[10], st(StoreF, immediate(&p, 2.0), f, 0));
+    assert_eq!(t[11], st(StoreF, immediate(&p, -3.0), f, 0));
+}
+
+// spec FTEF-27.17: `!` of an int constant folds to the int, stored as the float; `!` of an
+// int value is `EQ_FNC` with the int 0; a vector times an int constant is `MUL_VF` or `MUL_FV`
+// of the float
+#[test]
+fn not_of_an_int_and_a_vector_times_an_int_follow_the_vanilla_emulation() {
+    let p = fte_progs(
+        "vector gv0, gv1; float f; int i; const float K0 = 4096; const float K1 = -1;\n\
+         void() t = { gv1 = gv0 * (K0 || 16354432); gv1 = (K0 || 16354432) * gv0; \
+         f = !(K1 || 512); f = !i; };\n",
+    );
+    let (gv0, gv1, f, i) = (
+        global(&p, "gv0"),
+        global(&p, "gv1"),
+        global(&p, "f"),
+        global(&p, "i"),
+    );
+    let t = body(&p, "t");
+    assert_eq!(
+        opcodes(&t),
+        ops(&[Opcode::MulVf, Opcode::MulFv, StoreF, Opcode::EqFnc, Done])
+    );
+    assert_eq!(t[0], st(Opcode::MulVf, gv0, immediate(&p, 1.0), gv1));
+    assert_eq!(t[1], st(Opcode::MulFv, immediate(&p, 1.0), gv0, gv1));
+    assert_eq!(t[2], st(StoreF, immediate(&p, 0.0), f, 0));
+    assert_eq!((t[3].a, t[3].c), (i, f));
+    assert_eq!(
+        p.globals[usize::try_from(t[3].b).unwrap()].bits(),
+        0,
+        "the int 0"
     );
 }

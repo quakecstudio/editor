@@ -1,17 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://quakecstudio.org/spec/bridge-schema/field.set.params.json",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/field.set.params.json",
   "title": "field/set request params (BRIDGE-4)",
   "type": "object",
   "properties": {
     "edict": {
-      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/edict"
+      "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/edict"
     },
     "field": {
       "type": "string"
     },
     "value": {
-      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/value"
+      "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/value"
     }
   },
   "required": [

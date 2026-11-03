@@ -10,6 +10,10 @@
     clippy::indexing_slicing,
     reason = "test code: a failed unwrap, index or panic is a failed test"
 )]
+#![expect(
+    clippy::print_stderr,
+    reason = "test code: the ignored debug tests print what they replay"
+)]
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -19,6 +23,7 @@ use qc_builtins::EngineProfile;
 use qc_codegen::{Options, compile_module};
 use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
 use qc_progs::Progs;
+use qc_progs::opcode::Opcode;
 use qc_sema::{Db, FileId, ModuleInput};
 use qc_types::Etype;
 use qc_vm::ServerState;
@@ -1441,4 +1446,446 @@ fn a_va_list_elements_other_words_are_compared() {
         |n: u32| format!("void(string a, ...) v = {{ }};\nvoid() f = {{ v(\"x\", {n}); }};\n");
     assert_eq!(against_fteqcc(&float(5), &float(5)), []);
     assert!(!against_fteqcc(&float(5), &float(6)).is_empty());
+}
+
+#[test]
+#[ignore = "debug: GEN_DIR names a generated program's directory"]
+fn debug_pairing() {
+    let Ok(dir) = std::env::var("GEN_DIR") else {
+        return;
+    };
+    let theirs = std::fs::read(format!("{dir}/progs.dat")).unwrap();
+    let ours = std::fs::read(format!("{dir}/ours.dat")).unwrap();
+    let (tp, op) = (Progs::read(&theirs).unwrap(), Progs::read(&ours).unwrap());
+    let (a, b) = (super::Program::new(&tp), super::Program::new(&op));
+    eprintln!("fields equal: {}", a.fields.keys().eq(b.fields.keys()));
+    let fa: Vec<_> = a
+        .fields
+        .keys()
+        .map(|k| String::from_utf8_lossy(k).into_owned())
+        .collect();
+    let fb: Vec<_> = b
+        .fields
+        .keys()
+        .map(|k| String::from_utf8_lossy(k).into_owned())
+        .collect();
+    if fa != fb {
+        eprintln!("theirs fields {fa:?}\nours fields {fb:?}");
+    }
+    let mut rest = b
+        .globals
+        .iter()
+        .enumerate()
+        .filter(|(_, g)| !b.is_local(g))
+        .peekable();
+    for (i, g) in a.globals.iter().enumerate() {
+        if g.2 == 0 || a.is_local(g) {
+            continue;
+        }
+        let found = rest.find(|(_, o)| o.0 == g.0);
+        if found.is_none() {
+            eprintln!(
+                "unpaired theirs #{i} {:?} type {:?} ofs {}",
+                String::from_utf8_lossy(&g.0),
+                g.1,
+                g.2
+            );
+            let ctx: Vec<String> = a.globals[i.saturating_sub(3)..(i + 4).min(a.globals.len())]
+                .iter()
+                .map(|g| {
+                    format!(
+                        "{}@{}{}",
+                        String::from_utf8_lossy(&g.0),
+                        g.2,
+                        if a.is_local(g) { "L" } else { "" }
+                    )
+                })
+                .collect();
+            eprintln!("theirs ctx {ctx:?}");
+            let ours_all: Vec<String> = b
+                .globals
+                .iter()
+                .map(|g| {
+                    format!(
+                        "{}@{}{}",
+                        String::from_utf8_lossy(&g.0),
+                        g.2,
+                        if b.is_local(g) { "L" } else { "" }
+                    )
+                })
+                .collect();
+            let pos = ours_all
+                .iter()
+                .position(|s| s.starts_with(&format!("{}@", String::from_utf8_lossy(&g.0))));
+            eprintln!(
+                "ours around the name {:?}",
+                pos.map(|p| &ours_all[p.saturating_sub(3)..(p + 4).min(ours_all.len())])
+            );
+            return;
+        }
+    }
+    let pairs = super::Oracle::Fteqcc.pair_globals(&a, &b).unwrap();
+    for (i, j) in &pairs {
+        let (ga, gb) = (&a.globals[*i], &b.globals[*j]);
+        if ga.1 != gb.1 {
+            eprintln!(
+                "type mismatch {:?}: theirs {:?} ours {:?}",
+                String::from_utf8_lossy(&ga.0),
+                ga.1,
+                gb.1
+            );
+            return;
+        }
+    }
+    eprintln!("all paired, same types");
+}
+
+/// The store opcodes, whose result is their `b`.
+const STORES: [Opcode; 6] = [
+    Opcode::StoreF,
+    Opcode::StoreV,
+    Opcode::StoreS,
+    Opcode::StoreEnt,
+    Opcode::StoreFld,
+    Opcode::StoreFnc,
+];
+
+/// The call opcodes, whose `a` is a function, not a value.
+const CALLS: [Opcode; 9] = [
+    Opcode::Call0,
+    Opcode::Call1,
+    Opcode::Call2,
+    Opcode::Call3,
+    Opcode::Call4,
+    Opcode::Call5,
+    Opcode::Call6,
+    Opcode::Call7,
+    Opcode::Call8,
+];
+
+/// Whether the stored opcode `op` is one of `set`.
+fn opcode_in(op: u32, set: &[Opcode]) -> bool {
+    set.iter().any(|o| u32::from(o.number()) == op)
+}
+
+/// One executed statement as the value replay records it: its index, opcode, the words at
+/// its `a` and `b` after it ran, its function and the words at its result.
+type ValuedStep = (i32, u16, [u32; 3], [u32; 3], i32, [u32; 3]);
+
+#[test]
+#[ignore = "debug: GEN_DIR, FN, ROUND and SCENARIO replay one call of a generated program"]
+#[expect(
+    clippy::too_many_lines,
+    reason = "test code: one debug replay, its inputs, traces and value comparison together"
+)]
+fn debug_replay() {
+    let Ok(dir) = std::env::var("GEN_DIR") else {
+        return;
+    };
+    let fn_name = std::env::var("FN").unwrap();
+    let round: u32 = std::env::var("ROUND").unwrap().parse().unwrap();
+    let which = std::env::var("SCENARIO").unwrap();
+    let theirs = std::fs::read(format!("{dir}/progs.dat")).unwrap();
+    let ours = std::fs::read(format!("{dir}/ours.dat")).unwrap();
+    let (tp, op) = (Progs::read(&theirs).unwrap(), Progs::read(&ours).unwrap());
+    let spec = scenarios("").into_iter().find(|s| s.name == which).unwrap();
+    let text = format!("progs progs.dat\n{}", spec.directives);
+    let scenario = scenario::read(text.as_bytes(), Path::new(".")).unwrap();
+    let entities = spec.entities.unwrap_or_default();
+    let mut tw = World::new(&tp, &scenario, &entities, EngineProfile::Id).unwrap();
+    let mut ow = World::new(&op, &scenario, &entities, EngineProfile::Id).unwrap();
+    let pair = super::Pair::new(Oracle::Fteqcc, &tw, &ow);
+    let drawer = Drawer::new(&tw);
+    let function = tp.ed_find_function(fn_name.as_bytes()).unwrap();
+    let their_index = tp
+        .functions()
+        .iter()
+        .position(|f| f.first_statement == function.first_statement)
+        .unwrap();
+    let our_index = ow.program.functions[fn_name.as_bytes()][0];
+    let pools = drawer.pools(function);
+    let context = drawer.draw(
+        &mut Rng::new(fn_name.as_bytes(), round),
+        (function, &pools),
+        round,
+    );
+    eprintln!(
+        "self {} other {} server {:?}",
+        context.self_edict, context.other_edict, context.server
+    );
+    for (e, name, draw) in &context.fields {
+        eprintln!("  field {e}.{} = {draw:?}", String::from_utf8_lossy(name));
+    }
+    for (name, draw) in &context.globals {
+        eprintln!("  global {} = {draw:?}", String::from_utf8_lossy(name));
+    }
+    eprintln!("  parms {:?}", context.parms);
+    let t = tw.call(i32::try_from(their_index).unwrap(), &context);
+    let o = ow.call(our_index, &context);
+    eprintln!(
+        "theirs: {:?} {} statements; ours: {:?} {} statements",
+        t.error,
+        t.executed.len(),
+        o.error,
+        o.executed.len()
+    );
+    // The operands' values before each statement: the first step whose values differ shows
+    // which earlier statement computed, or named, something else.
+    struct Values {
+        statements: Vec<qc_progs::Statement>,
+        steps: Vec<ValuedStep>,
+    }
+    impl qc_vm::Observer for Values {
+        fn run(&mut self, _machine: &qc_vm::Machine, _function: i32) {}
+        fn step(&mut self, m: &qc_vm::Machine, f: i32, s: i32, op: u16, _b: Option<u32>) {
+            let st = self.statements.get(usize::try_from(s).unwrap()).copied();
+            let read = |ofs: i32| {
+                let w = |k: i32| m.global(ofs.wrapping_add(k)).map_or(0, |v| v.bits());
+                [w(0), w(1), w(2)]
+            };
+            // `step` runs after the statement: the operands and the result, its `c` or a
+            // store's `b`, are read as the statement left them.
+            let (a, b, c) = st.map_or(([0; 3], [0; 3], [0; 3]), |st| {
+                let target = if opcode_in(st.op, &STORES) {
+                    st.b
+                } else {
+                    st.c
+                };
+                (read(st.a), read(st.b), read(target))
+            });
+            self.steps.push((s, op, a, b, f, c));
+        }
+        fn exit(&mut self, _machine: &qc_vm::Machine) {}
+        fn error(&mut self, _machine: &qc_vm::Machine, _error: &qc_vm::RunError) {}
+    }
+    let values = |p: &Progs<'_>| Values {
+        statements: p.statements().iter().collect(),
+        steps: Vec::new(),
+    };
+    let skip: usize = std::env::var("SKIP")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let (_, tv) = tw.call_observed(i32::try_from(their_index).unwrap(), &context, values(&tp));
+    let (_, ov) = ow.call_observed(our_index, &context, values(&op));
+    let fn_name_of = |p: &Progs<'_>, f: i32| {
+        p.functions()
+            .get(usize::try_from(f).unwrap_or(usize::MAX))
+            .and_then(|f| p.string(f.s_name))
+            .map(|n| String::from_utf8_lossy(n).into_owned())
+            .unwrap_or_default()
+    };
+    let show = |p: &Progs<'_>, v: &Values, i: usize| -> String {
+        let Some(step) = v.steps.get(i) else {
+            return String::new();
+        };
+        let st = p
+            .statements()
+            .get(usize::try_from(step.0).unwrap())
+            .unwrap();
+        let f = |w: u32| format!("{w}={}", f32::from_bits(w));
+        format!(
+            "{}:{} op{} a@{}={} b@{}={} -> {}",
+            fn_name_of(p, step.4),
+            step.0,
+            step.1,
+            st.a,
+            f(step.2[0]),
+            st.b,
+            f(step.3[0]),
+            f(step.5[0])
+        )
+    };
+    let mut k = 0;
+    let mut skipped = 0;
+    while k < tv.steps.len().min(ov.steps.len()) {
+        let (a, b) = (&tv.steps[k], &ov.steps[k]);
+        use Opcode as O;
+        let op_a = u32::from(a.1);
+        let vector_a = opcode_in(
+            op_a,
+            &[
+                O::MulV,
+                O::MulVf,
+                O::AddV,
+                O::SubV,
+                O::EqV,
+                O::NeV,
+                O::StoreV,
+                O::StorepV,
+                O::NotV,
+            ],
+        );
+        let vector_b = opcode_in(op_a, &[O::MulV, O::MulFv, O::AddV, O::SubV, O::EqV, O::NeV]);
+        // Two string offsets naming the same text are the same value: the tables differ.
+        let text = |p: &Progs<'_>, w: &World<'_, '_, '_>, n: u32| {
+            let n = i32::from_ne_bytes(n.to_ne_bytes());
+            if n > 0 {
+                p.string(n).map(<[u8]>::to_vec)
+            } else if n < 0 {
+                w.host.builtins.engine().strings.text(n).map(<[u8]>::to_vec)
+            } else {
+                None
+            }
+        };
+        let same_word = |x: u32, y: u32| {
+            x == y || (text(&tp, &tw, x).is_some() && text(&tp, &tw, x) == text(&op, &ow, y))
+        };
+        let same = |x: &[u32; 3], y: &[u32; 3], v: bool| {
+            if v { x == y } else { same_word(x[0], y[0]) }
+        };
+        // A jump's offset and a call's function number are not values.
+        let (check_a, check_b) = if opcode_in(op_a, &CALLS) || opcode_in(op_a, &[O::Goto]) {
+            (false, false)
+        } else if opcode_in(op_a, &[O::If, O::IfNot]) {
+            (true, false)
+        } else {
+            (true, true)
+        };
+        // An operand the statement itself overwrote shows the result, compared on its own.
+        let clobbered = |p: &Progs<'_>, step: &ValuedStep| {
+            let st = p
+                .statements()
+                .get(usize::try_from(step.0).unwrap())
+                .unwrap();
+            let target = if opcode_in(st.op, &STORES) {
+                st.b
+            } else {
+                st.c
+            };
+            let three = [O::MulFv, O::MulVf, O::AddV, O::SubV, O::LoadV, O::StoreV];
+            let words = if opcode_in(st.op, &three) { 3 } else { 1 };
+            let hit = |x: i32| x >= target && x < target + words;
+            (hit(st.a), hit(st.b))
+        };
+        let (ca, cb) = clobbered(&tp, a);
+        let (check_a, check_b) = (check_a && !ca, check_b && !cb);
+        let no_result = [
+            O::StorepF,
+            O::StorepV,
+            O::StorepS,
+            O::StorepEnt,
+            O::StorepFld,
+            O::StorepFnc,
+            O::If,
+            O::IfNot,
+            O::Goto,
+            O::State,
+        ];
+        let result_differs =
+            !opcode_in(op_a, &no_result) && !opcode_in(op_a, &CALLS) && !same_word(a.5[0], b.5[0]);
+        if a.1 != b.1
+            || (check_a && !same(&a.2, &b.2, vector_a))
+            || (check_b && !same(&a.3, &b.3, vector_b))
+            || result_differs
+        {
+            if skipped < skip {
+                skipped += 1;
+                k += 1;
+                continue;
+            }
+            eprintln!("first operand value difference at executed statement {k}:");
+            for i in k.saturating_sub(8)..(k + 2) {
+                eprintln!("  {i:4} {:<60} | {}", show(&tp, &tv, i), show(&op, &ov, i));
+            }
+            break;
+        }
+        k += 1;
+    }
+    if k == tv.steps.len().min(ov.steps.len()) {
+        eprintln!("no operand value difference in {k} steps");
+    }
+    let name = |p: &Progs<'_>, f: i32| {
+        p.functions()
+            .get(usize::try_from(f).unwrap_or(usize::MAX))
+            .and_then(|f| p.string(f.s_name))
+            .map(|n| String::from_utf8_lossy(n).into_owned())
+            .unwrap_or_default()
+    };
+    let seq = |p: &Progs<'_>, ex: &[super::Executed]| -> Vec<String> {
+        ex.iter()
+            .map(|e| {
+                let st = p
+                    .statements()
+                    .get(usize::try_from(e.statement).unwrap())
+                    .unwrap();
+                format!(
+                    "{}:{} op{} {} {} {}{}",
+                    name(p, e.function),
+                    e.statement,
+                    st.op,
+                    st.a,
+                    st.b,
+                    st.c,
+                    e.builtin.map(|b| format!(" #{b}")).unwrap_or_default()
+                )
+            })
+            .collect()
+    };
+    let (ts, os) = (seq(&tp, &t.executed), seq(&op, &o.executed));
+    let ops = |s: &str| s.split(' ').nth(1).unwrap_or("").to_owned();
+    let mut i = 0;
+    while i < ts.len().min(os.len()) && ops(&ts[i]) == ops(&os[i]) {
+        i += 1;
+    }
+    eprintln!("first opcode difference at executed statement {i}");
+    for k in i.saturating_sub(6)..(i + 6).min(ts.len().max(os.len())) {
+        eprintln!(
+            "  {:<52} | {}",
+            ts.get(k).cloned().unwrap_or_default(),
+            os.get(k).cloned().unwrap_or_default()
+        );
+    }
+    if let Ok(range) = std::env::var("SHOW") {
+        let (from, to) = range.split_once("..").unwrap();
+        let (from, to): (usize, usize) = (from.parse().unwrap(), to.parse().unwrap());
+        for k in from..to.min(ts.len().max(os.len())) {
+            eprintln!(
+                "  {k:3} {:<52} | {}",
+                ts.get(k).cloned().unwrap_or_default(),
+                os.get(k).cloned().unwrap_or_default()
+            );
+        }
+    }
+    if let Ok(slot) = std::env::var("SLOT") {
+        let slot: i32 = slot.parse().unwrap();
+        for (k, e) in o.executed.iter().enumerate() {
+            let st = op
+                .statements()
+                .get(usize::try_from(e.statement).unwrap())
+                .unwrap();
+            if st.b == slot || st.c == slot || st.a == slot {
+                eprintln!(
+                    "  ours touches slot {slot} at executed {k}: {} | theirs {}",
+                    os[k],
+                    ts.get(k).cloned().unwrap_or_default()
+                );
+            }
+        }
+    }
+    eprintln!("differ: {:?}", pair.differ(&tw, &t, &ow, &o));
+}
+
+#[test]
+#[ignore = "debug: GEN_FILE names a generated t.qc to compile to ours-dbg.dat beside it"]
+fn debug_compile_file() {
+    let Ok(file) = std::env::var("GEN_FILE") else {
+        return;
+    };
+    let text = std::fs::read(&file).unwrap();
+    let mut db = Db::new();
+    db.set_dialect(qc_syntax::Dialect::Fteqcc);
+    let mut input = ModuleInput::default();
+    db.set_file(FileId::new(0), PathBuf::from("t.qc"), text);
+    input.compiled.push(FileId::new(0));
+    let compiled = compile_module(
+        &mut db,
+        &input,
+        |_| "t.qc".to_owned(),
+        Options { fold: false },
+    )
+    .unwrap_or_else(|e| panic!("did not compile: {e:?}"));
+    let out = std::path::Path::new(&file).with_file_name("ours-dbg.dat");
+    std::fs::write(&out, qc_progs::write(&compiled.progs).unwrap()).unwrap();
+    eprintln!("wrote {}", out.display());
 }
