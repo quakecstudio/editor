@@ -108,8 +108,10 @@ view size leaves: 24 shows the bar alone and more shows the inventory too.
   above 0 or an intermission is on, and only while the game has the keys. Each line is at
   most 40 characters, centred (`x = (width - 8 * length) / 2`), 8 pixels per row from
   `y = 0.35 * height` for up to four lines and `y = 48` for more.
-- **HUD-3.3** During an intermission the characters appear one at a time: at most
-  `scr_printspeed * (cl.time - centertime_start)` of them are drawn.
+- **HUD-3.3** During an intermission the characters appear one at a time: `remaining =
+  (int) (scr_printspeed * (cl.time - centertime_start))`, and `remaining + 1` characters are
+  drawn, since the count is tested after each character is drawn (`if (!remaining--)
+  return`), so the first appears at once.
 
 ### Constants
 

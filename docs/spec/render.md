@@ -113,7 +113,7 @@ turbulent surfaces ripple, and the sky's two layers scroll.
   `t = (speedscale + dir[1]*length) / 128`, where `speedscale` is `realtime*8` for the solid
   layer and `realtime*16` for the alpha layer, less `(int)speedscale & ~127`. The alpha layer
   is blended over the solid one (`EmitSkyPolys`, `R_DrawSkyChain`).
-- **REND-2.4** **Withdrawn** 2026-11-03: it said GLQuake cuts the faces at 64-unit
+- **REND-2.4** **Withdrawn** 2026-11-02: it said GLQuake cuts the faces at 64-unit
   boundaries; the size is `gl_subdivide_size`, 128 by default (`gl_model.c`). Replaced by
   REND-2.5.
 - **REND-2.5** GLQuake computes REND-2.2 and REND-2.3 at the vertices of faces it cuts at
@@ -377,8 +377,9 @@ id's sky are REND-2.3.
   skybox name and loads the six faces `gfx/env/<name><side>` for the sides `rt`, `bk`, `lf`,
   `ft`, `up`, `dn`; a map with one draws the box where its sky faces are instead of the
   layers, and its `skyfog` key (the `r_skyfog` setting, 0.5, when absent) is the fraction of
-  the fog colour (REND-10) blended over the sky. The preview host draws a skybox when the map
-  names one, under ADR-0012.
+  the fog colour (REND-10) blended over the sky, only while the fog density is above 0 and
+  `skyfog` is above 0 (`Fog_GetDensity() > 0 && skyfog > 0`). The preview host draws a skybox
+  when the map names one, under ADR-0012.
 
 ### Constants
 

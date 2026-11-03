@@ -373,6 +373,72 @@ fn q_atof_spec_examples_and_empty_prefixes() {
     assert_eq!(math::q_atof(".5"), 0.5);
 }
 
+// spec BUILTIN-18.19: C's atof reads a `+` sign, and a hexadecimal number's binary exponent
+// with its sign
+#[test]
+fn atof_signs() {
+    use crate::atof::atof;
+    assert_eq!(atof(b"+5"), 5.0);
+    assert_eq!(atof(b"+0x10"), 16.0);
+    assert_eq!(atof(b"0x1p-1"), 0.5);
+    assert_eq!(atof(b"0x1p+1"), 2.0);
+    assert_eq!(atof(b"0x1p1"), 2.0);
+    assert_eq!(atof(b"0x1p"), 1.0);
+    assert_eq!(atof(b"0x1p-"), 1.0);
+    assert_eq!(atof(b"0x.8"), 0.5);
+}
+
+// spec BUILTIN-18.17: each row of strconv's table is reached by a byte of its own: the white,
+// red, special (`rednum` 3 and 4) digit rows, each case of each half of the letters, and the
+// punctuation of each half; a control byte (under 16 in its half) is kept whatever the
+// colouring, and so is punctuation when no colouring is asked
+#[test]
+fn strconv_reaches_every_row() {
+    use crate::strconv::strconv;
+    for (ccase, redalpha, rednum, text, expected) in [
+        (0, 0, 1, &b"\xB1"[..], &b"1"[..]),
+        (0, 0, 1, b"\x92", b"0"),
+        (0, 0, 2, b"1", b"\xB1"),
+        (0, 0, 3, b"\xB5", b"\x17"),
+        (0, 0, 4, b"0", b"\x92"),
+        (0, 0, 0, b"\xB1", b"\xB1"),
+        (1, 0, 0, b"A", b"a"),
+        (2, 0, 0, b"a", b"A"),
+        (1, 0, 0, b"\xC1", b"\xE1"),
+        (2, 0, 0, b"\xE1", b"\xC1"),
+        (0, 1, 0, b"\xC1", b"A"),
+        (0, 2, 0, b"a", b"\xE1"),
+        (0, 1, 0, b"\xA1", b"!"),
+        (0, 2, 0, b"!", b"\xA1"),
+        (0, 0, 0, b"\xA1", b"\xA1"),
+        (0, 2, 0, b"\x05", b"\x05"),
+        (0, 1, 0, b"\x85", b"\x85"),
+        (0, 2, 0, b"\x10", b"\x90"),
+        (0, 1, 0, b"\x90", b"\x10"),
+    ] {
+        assert_eq!(
+            strconv(ccase, redalpha, rednum, text),
+            expected,
+            "{ccase} {redalpha} {rednum} {text:?}"
+        );
+    }
+}
+
+// spec BUILTIN-18.22: q_strncasecmp compares lowered bytes up to the first difference or the
+// end of the first string, and at most n of them; n of 0 compares nothing
+#[test]
+fn strncasecmp_stops_at_a_difference_an_end_or_n() {
+    use crate::cstring::strncasecmp;
+    assert_eq!(strncasecmp(b"ab", b"ac", None), -1);
+    assert_eq!(strncasecmp(b"ab", b"AB", None), 0);
+    assert_eq!(strncasecmp(b"ab", b"ac", Some(1)), 0);
+    assert_eq!(strncasecmp(b"ab", b"ac", Some(2)), -1);
+    assert_eq!(strncasecmp(b"ab", b"ac", Some(0)), 0);
+    assert_eq!(strncasecmp(b"", b"a", None), -97);
+    assert_eq!(strncasecmp(b"a", b"", None), 97);
+    assert_eq!(strncasecmp(b"a", b"ab", None), -98);
+}
+
 // spec BUILTIN-6.8: fabs clears the sign bit of a negative value (pins fabs against a 0.0
 // mutant: fabs(-3) is 3, not 0).
 #[test]
@@ -2047,7 +2113,7 @@ mod bodies {
     // offset from firstofs
     #[test]
     fn string_comparisons() {
-        let (strings, offsets) = string_table(&["Hello", "help", "hello", "é", "a", "l"]);
+        let (strings, offsets) = string_table(&["Hello", "help", "hello", "é", "a", "l", ""]);
         let run = |number: u32, args: &[(bool, usize, f32)]| {
             let argc = u16::try_from(args.len()).unwrap();
             let mut f = Fixture::new(number, argc, strings.clone(), 0);
@@ -2083,6 +2149,26 @@ mod bodies {
         assert_eq!(run(221, &[s(2), s(5), n(4.0)]), -1.0);
         assert_eq!(run(221, &[s(2), s(5), n(9.0)]), -1.0);
         assert_eq!(run(221, &[s(2), s(4)]), -1.0);
+        assert_eq!(run(221, &[s(2), s(5), n(-1.0)]), -1.0);
+        // An empty needle is found at the offset itself, the string's length included, and
+        // an offset past the end finds nothing.
+        assert_eq!(run(221, &[s(2), s(6), n(5.0)]), 5.0);
+        assert_eq!(run(221, &[s(2), s(6), n(9.0)]), -1.0);
+        assert_eq!(run(221, &[s(2), s(6)]), 0.0);
+        assert_eq!(run(228, &[s(2), s(5), n(1.0), n(-1.0)]), -f32::from(b'l'));
+        // Only the parameters the call passed are read: a stale offset after argc is not.
+        let stale = |number: u32, argc: u16, parm: u16| {
+            let mut f = Fixture::new(number, argc, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, offsets[2]);
+            f.set_parm_i(1, offsets[5]);
+            f.set_parm_f(2, 5.0);
+            f.set_parm_f(parm, 3.0);
+            f.run_ok(ServerState::Active);
+            f.return_f()
+        };
+        assert_eq!(stale(228, 3, 3), f32::from(b'h') - f32::from(b'l'));
+        assert_eq!(stale(221, 2, 2), 2.0);
     }
 
     // spec BUILTIN-18.21: strlen counts bytes; strcat joins up to 1023 bytes and reads no
@@ -2116,6 +2202,7 @@ mod bodies {
 
         for (start, length, expected) in [
             (1.0, 3.0, &b"ell"[..]),
+            (0.0, 3.0, b"hel"),
             (-3.0, 2.0, b"ll"),
             (1.0, -2.0, b"ell"),
             (-10.0, 2.0, b"he"),
@@ -2137,8 +2224,14 @@ mod bodies {
     // empty slot
     #[test]
     fn clienttype_of_slots() {
-        for (n, active, expected) in [(0, true, 3.0), (1, true, 1.0), (1, false, 0.0)] {
-            let mut f = Fixture::new(455, 1, vec![0], 1);
+        for (n, active, expected) in [
+            (0, true, 3.0),
+            (1, true, 1.0),
+            (1, false, 0.0),
+            // The second client edict exists, but the mock has one client slot.
+            (2, true, 3.0),
+        ] {
+            let mut f = Fixture::new(455, 1, vec![0], 2);
             f.builtins.engine_mut().profile = EngineProfile::VkQuake;
             f.builtins.engine_mut().clients_active = vec![active];
             let value = n * f.machine.edicts().layout().edict_size();
@@ -2296,6 +2389,45 @@ mod bodies {
         assert_eq!(run(96, &[0.0, 15.0, 10.0]), 10.0);
         assert_eq!(run(96, &[0.0, -5.0, 10.0]), 0.0);
         assert_eq!(run(96, &[10.0, 5.0, 0.0]), 10.0);
+        // An equal value does not replace: the signed zeros tell the two apart.
+        assert_eq!(run(94, &[0.0, -0.0]).to_bits(), 0.0_f32.to_bits());
+        assert_eq!(run(95, &[-0.0, 0.0]).to_bits(), (-0.0_f32).to_bits());
+        assert_eq!(run(96, &[0.0, -0.0, 0.0]).to_bits(), (-0.0_f32).to_bits());
+    }
+
+    // spec BUILTIN-18.8: sprintf (#627) reads its format from parameter 0 and each later
+    // parameter as the directives ask, a string by its offset, a float and a vector from their
+    // slots, counting only the parameters the call passed; a string parameter that is no string
+    // is the string error
+    #[test]
+    fn sprintf_reads_its_parameters() {
+        let (strings, offsets) = string_table(&["%s|%d|%v|%s", "ab"]);
+        let run = |argc: u16, second: i32| {
+            let mut f = Fixture::new(627, argc, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, offsets[0]);
+            f.set_parm_i(1, second);
+            f.set_parm_f(2, 7.0);
+            f.set_parm_v(3, [1.0, 2.5, -3.0]);
+            f.set_parm_i(4, offsets[1]);
+            let result = f.run(ServerState::Active);
+            (result, f)
+        };
+        let (result, f) = run(5, offsets[1]);
+        result.unwrap();
+        assert_eq!(
+            f.engine().strings.text(f.return_i()),
+            Some(&b"ab|7|1 2.5 -3|ab"[..])
+        );
+        let (result, f) = run(3, offsets[1]);
+        result.unwrap();
+        assert_eq!(
+            f.engine().strings.text(f.return_i()),
+            Some(&b"ab|7|0 0 0|"[..]),
+            "parameters past argc are missing"
+        );
+        let (result, _) = run(5, 999_999);
+        assert!(result.is_err(), "a bad string is an error");
     }
 
     // spec BUILTIN-18.14: checkextension is 1 for a listed extension, making its pr_ext_
@@ -2352,6 +2484,11 @@ mod bodies {
             "ip",
             "*spectator",
             "hostname",
+            "protocol",
+            "topcolor",
+            "bottomcolor",
+            "csqcactive",
+            "*VIP",
         ];
         let (strings, offsets) = string_table(&keys);
         let client = |f: &Fixture| f.machine.edicts().layout().edict_size();
@@ -2365,6 +2502,11 @@ mod bodies {
             (true, 5, Some(&b""[..])),
             (true, 6, None),
             (true, 0, None),
+            (true, 7, Some(&b"rmq999"[..])),
+            (true, 8, Some(&b"0"[..])),
+            (true, 9, Some(&b"0"[..])),
+            (true, 10, Some(&b"0"[..])),
+            (true, 11, Some(&b""[..])),
         ] {
             let mut f = Fixture::new(80, 2, strings.clone(), 1);
             f.builtins.engine_mut().profile = EngineProfile::VkQuake;

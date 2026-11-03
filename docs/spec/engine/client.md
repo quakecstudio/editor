@@ -118,9 +118,10 @@ eighth of a unit and angles to 1.40625 degrees.
 - **CLIENT-2.4** A model that differs from the slot's is set; a model with `synctype`
   `ST_RAND` gives the slot `syncbase = (rand () & 0x7fff) / 0x7fff` (a float from 0 to 1),
   any other model 0; no model forces the update ("hack to make null model players work").
-- **CLIENT-2.5** `U_NOLERP` (5) forces the update. A forced update copies the new origin and
-  angles into `msg_origins[1]`, `msg_angles[1]`, `origin` and `angles`, so the entity is
-  drawn at its new place with no interpolation.
+- **CLIENT-2.5** `U_NOLERP` (5) marks the slot `forcelink`, so CLIENT-5.4 draws it at
+  `msg_origins[0]` with no interpolation; nothing else is copied. An update forced by
+  CLIENT-2.2 or CLIENT-2.4 also copies the new origin and angles into `msg_origins[1]`,
+  `msg_angles[1]`, `origin` and `angles`, and marks the slot the same way.
 
 ## CLIENT-3 Client data
 
@@ -140,8 +141,9 @@ bits.
   data. `SU_WEAPONFRAME` (12) reads a byte into `STAT_WEAPONFRAME`, else 0; `SU_ARMOR` (13) a
   byte into `STAT_ARMOR`, else 0; `SU_WEAPON` (14) a byte into `STAT_WEAPON`, else 0. Then
   always: a short `STAT_HEALTH`, a byte `STAT_AMMO`, four bytes `STAT_SHELLS` to
-  `STAT_CELLS`, and a byte that is `STAT_ACTIVEWEAPON` in standard Quake and `1 << byte` under
-  Rogue's items.
+  `STAT_CELLS`, and a byte that is `STAT_ACTIVEWEAPON` in standard Quake and `1 << byte` when
+  the game runs as Rogue or Hipnotic (`-rogue` and `-hipnotic` both clear `standard_quake`,
+  `common.c`).
 - **CLIENT-3.3** `onground` is cleared at the start of every server message ("unless the
   server says otherwise") and set by `SU_ONGROUND`.
 
@@ -179,8 +181,11 @@ bits.
   (CLIENT-6.4).
 - **CLIENT-5.2** `CL_LerpPoint`: with `f = mtime[0] - mtime[1]`, when `f` is 0, or `cl_nolerp`
   is set, or a time demo plays, or the server is local (`sv.active`), `cl.time = mtime[0]` and
-  the fraction is 1. The preview host runs the server in its own process and is never local
-  to the client, so it interpolates. Otherwise `f` above 0.1 is treated as a dropped packet:
+  the fraction is 1. The preview host's client and server share one process, so by id's rule
+  it would never interpolate; it interpolates anyway, a deliberate divergence, because its
+  server ticks at a fixed rate below the display's (P3-02) while id's and QuakeSpasm's local
+  server runs once per drawn frame, which is what makes their rule harmless. Otherwise `f`
+  above 0.1 is treated as a dropped packet:
   `mtime[1] = mtime[0] - 0.1`, `f = 0.1`; `frac = (cl.time - mtime[1]) / f`; below 0 it is 0
   (and `cl.time = mtime[1]` when below -0.01), above 1 it is 1 (and `cl.time = mtime[0]`
   when above 1.01).
@@ -250,7 +255,13 @@ bits.
   (int) (atan2 (dist.z, |dist.xy|) * 180 / pi)`, each raised by 360 when negative. One
   temporary entity of the beam's model is placed every 30 units from `start` while the
   remaining length is above 0, with angles `(pitch, yaw, rand () % 360)`, up to
-  `CLIENT_MAX_TEMP_ENTITIES` and the visible list's limit.
+  `CLIENT_MAX_TEMP_ENTITIES` and the visible list's limit. id's loop reuses its beam index to
+  advance `org` (`for (i=0 ; i<3 ; i++)` inside `for (i=0, b=cl_beams ; i< MAX_BEAMS ; i++,
+  b++)`), so after a beam that placed a segment `i` is 4 while `b` keeps advancing past
+  `cl_beams` into whatever memory follows: undefined behaviour on x86 that stops once 24
+  consecutive slots neither have a model nor are live. The preview host walks every beam
+  with its own index, as QuakeSpasm does (`cl_tent.c`, `j`), a deliberate divergence from the
+  undefined read.
 
 ### Constants
 
@@ -280,8 +291,9 @@ behaviour the option, `r_lerpmodels 0` and `r_lerpmove 0`). The flags: `LERP_MOV
   slot dropped from the message sets `LERP_RESETMOVE | LERP_RESETANIM` for its next use, and
   so does a new slot. A muzzle flash sets `LERP_RESETANIM | LERP_RESETANIM2` on the entity
   (the weapon for the view entity), so no animation is interpolated for two frames. The
-  server marks a `MOVETYPE_STEP` entity's update with `U_STEP` (FitzQuake's bit 15), which sets
-  `LERP_MOVESTEP` and forces the update (CLIENT-2.5); without it the flag is cleared.
+  server marks a `MOVETYPE_STEP` entity's update with `U_STEP`, bit 5, id's `U_NOLERP` renamed
+  "since it's only used for MOVETYPE_STEP", which sets `LERP_MOVESTEP` and forces the update
+  (CLIENT-2.5); without it the flag is cleared.
 - **CLIENT-7.2** A teleport (CLIENT-5.4) sets `LERP_RESETMOVE`, and an entity with
   `LERP_MOVESTEP` under `r_lerpmove` is relinked with `f = 1` ("don't cl_lerp entities that
   will be r_lerped").
@@ -310,4 +322,4 @@ behaviour the option, `r_lerpmodels 0` and `r_lerpmove 0`). The flags: `LERP_MOV
 | `CLIENT_LERP_RESET_GAP` | 0.2 | `cl_parse.c`, `CL_ParseUpdate` |
 | `CLIENT_LERP_SINGLE_POSE` | 0.1 | `r_alias.c`, `R_SetupAliasFrame` |
 | `CLIENT_LERP_MOVE_TIME` | 0.1 | `r_alias.c`, `R_SetupEntityTransform` |
-| `CLIENT_U_STEP` | `1 << 15` | `protocol.h`, `U_STEP` (QuakeSpasm) |
+| `CLIENT_U_STEP` | `1 << 5` | `protocol.h`, `U_STEP` (QuakeSpasm; id's `U_NOLERP`) |

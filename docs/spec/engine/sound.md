@@ -164,7 +164,9 @@ are silent whatever a leaf's level for them (SND-4.3).
   plays the ambient sound of that index (SND-1), at the target `vol = ambient_level *
   leaf.ambient_level[i]` (a float, 0 when below 8), and its `master_vol` moves toward `vol`
   by `frametime * ambient_fade` per update, as an int, never past `vol`; `leftvol` and
-  `rightvol` are `master_vol`.
+  `rightvol` are `master_vol`. The step truncates to an int, so an update shorter than
+  `1 / ambient_fade` seconds (10 ms by default) moves the volume by 0: the preview host runs
+  this update once per server tick (P3-02), never per drawn frame.
 - **SND-4.4** `S_Update (origin, forward, right, up)` stores the listener, updates the ambient
   channels (SND-4.3), then spatializes every channel from the first dynamic one to
   `total_channels - 1` that has a sound. A static channel (index at or past the first static

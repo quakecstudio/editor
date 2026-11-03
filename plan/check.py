@@ -105,7 +105,16 @@ def add_readiness_dependencies(issues: list[dict]) -> None:
     Phase gates depend on every readiness issue in their phase.
     """
     by_key = {i["key"]: i for i in issues}
-    readiness = {(i["milestone"], layer_of(i)): i["key"] for i in issues if "type:readiness" in i.get("labels", [])}
+    # A layer's readiness issues in a phase: the review and its re-reviews, each of which depends
+    # on the review (plan/gen_readiness.py). Building on the layer waits for the review, which
+    # depends on no other readiness issue of its layer and phase; a gate waits for every one.
+    readiness: dict[tuple, list[str]] = {}
+    for i in issues:
+        if "type:readiness" in i.get("labels", []):
+            readiness.setdefault((i["milestone"], layer_of(i)), []).append(i["key"])
+    for keys in readiness.values():
+        order = list(keys)
+        keys.sort(key=lambda k: (any(d in order for d in by_key[k].get("depends", [])), order.index(k)))
     for x in issues:
         lx = layer_of(x)
         if lx is None or not BUILD_TYPES & set(x.get("labels", [])):
@@ -117,7 +126,7 @@ def add_readiness_dependencies(issues: list[dict]) -> None:
             ld = layer_of(di)
             if ld is None or ld == lx or LAYER_RANK[ld] > LAYER_RANK[lx]:
                 continue
-            r = readiness.get((di["milestone"], ld))
+            r = readiness.get((di["milestone"], ld), [None])[0]
             if r is None:
                 x.setdefault("_errors", []).append(
                     f"builds on {d} ({ld}, {di['milestone']}) but no readiness issue exists for that layer and phase; run plan/gen_readiness.py")
@@ -125,9 +134,10 @@ def add_readiness_dependencies(issues: list[dict]) -> None:
                 x["depends"].append(r)
     for i in issues:
         if "type:gate" in i.get("labels", []):
-            for (m, _), r in readiness.items():
-                if m == i["milestone"] and r not in i.setdefault("depends", []):
-                    i["depends"].append(r)
+            for (m, _), keys in readiness.items():
+                for r in keys:
+                    if m == i["milestone"] and r not in i.setdefault("depends", []):
+                        i["depends"].append(r)
 
 
 def add_gate_dependencies(issues: list[dict]) -> None:
