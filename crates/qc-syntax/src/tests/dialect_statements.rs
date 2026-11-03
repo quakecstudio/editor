@@ -107,10 +107,20 @@ fn state_parts_are_expressions() {
     assert!(state(&parsed).frame().is_some());
     assert_eq!(state(&parsed).next().unwrap().text(), b"f");
     let parsed = fte("void() f = [1 f] {};\n");
-    let warning = &parsed.diagnostics()[0];
-    assert_eq!(warning.code, Code::W0205);
-    assert_eq!(warning.message, "missing comma in state definition");
-    assert!(!warning.code.is_error());
+    // FTEF-16.15: the name after the frame's expression is "Expected punctuation" first.
+    let messages: Vec<(Code, &str)> = parsed
+        .diagnostics()
+        .iter()
+        .map(|d| (d.code, d.message.as_str()))
+        .collect();
+    assert_eq!(
+        messages,
+        [
+            (Code::W0205, "Expected punctuation"),
+            (Code::W0205, "missing comma in state definition")
+        ]
+    );
+    assert!(!Code::W0205.is_error());
     assert_eq!(state(&parsed).next().unwrap().text(), b"f");
     // Vanilla takes only a number and a name (QC-13.6).
     assert!(

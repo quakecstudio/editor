@@ -472,7 +472,9 @@ impl<'a> Compiler<'a> {
                 let Some(name) = declarator.name() else {
                     continue;
                 };
-                if matches!(init, Some(ast::Initializer::Body(_))) {
+                // A nested function's local is stored at run time (FTEF-18.2), a static one's
+                // word holds its record's number, so only the static takes storage now.
+                if matches!(init, Some(ast::Initializer::Body(_))) && !is_static {
                     continue;
                 }
                 let id = self.def_of(&name)?;
@@ -631,6 +633,10 @@ impl<'a> Compiler<'a> {
                         self.program.initialise_words(place, &[word]).at(span)?;
                     } else if let Some(literal) = literal_of(&expr, self.dialect) {
                         self.program.initialise(place, &literal).at(span)?;
+                        // FTE-15.9: the literal's `IMMEDIATE` record follows the constant's.
+                        if self.dialect.has_fteqcc_extensions() && self.constant(place) {
+                            self.program.alias_immediate(place).at(span)?;
+                        }
                     } else {
                         let value = self.index.initial_value(id).at(span)?;
                         self.program
@@ -720,9 +726,26 @@ impl<'a> Compiler<'a> {
                 .child_tokens()
                 .find(|t| t.kind() == qc_syntax::SyntaxKind::Name)
                 .at(item.span())?;
-            let place = self.declare(&name)?;
+            // FTE-15.9: under FTEQCC a float item's value is made an immediate first
+            // (`QCC_MakeFloatConst`, one shared by value) and the item a name for its global,
+            // so the `IMMEDIATE` record comes before the item's and the two share the slot.
             let id = self.def_of(&name)?;
             let value = self.index.initial_value(id).at(name.span())?;
+            if self.dialect.has_fteqcc_extensions()
+                && self.program.place(id).is_none()
+                && let [word] = value.words()
+                && self.enum_item_is_float(id)
+            {
+                let immediate = self
+                    .program
+                    .immediate(&Literal::Float(f32::from_bits(*word)))
+                    .at(name.span())?;
+                self.program
+                    .alias_def(self.index, id, immediate)
+                    .at(name.span())?;
+                continue;
+            }
+            let place = self.declare(&name)?;
             self.program
                 .initialise_words(place, value.words())
                 .at(name.span())?;
@@ -730,10 +753,28 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    /// Whether the enum item `id` is a float, as a plain `enum`'s items are (FTE-15.6), rather
+    /// than an `int` or another C scalar (FTE-15.7).
+    fn enum_item_is_float(&self, id: DefId) -> bool {
+        let Some(definition) = self.index.def(id) else {
+            return false;
+        };
+        let written = &definition.ty;
+        let ty = match self.index.alias(written) {
+            Some(alias) => alias.clone(),
+            None => written.clone(),
+        };
+        ty.fteqcc_scalar().is_none() && ValueType::Of(ty).etype() == Etype::Float
+    }
+
     /// A function definition, the function branch of `PR_ParseDefs` and
     /// `PR_ParseImmediateStatements` (QC-13): a body's parameters, state header and
     /// statements, or a builtin number; then the function's record (QC-13.9, QC-21.4,
     /// QC-25.2).
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one function definition is one unit: its storage, its body and its record"
+    )]
     fn function(
         &mut self,
         (written, declarator): (&Written, &ast::Declarator),
@@ -778,6 +819,12 @@ impl<'a> Compiler<'a> {
         }
         let locals_start = self.program.next_global().at(span)?;
         self.locals_end = locals_start;
+        // FTE-21.7: under FTEQCC the parameters, locals and temporaries of a body form a block
+        // laid out after every global, static and immediate of the module (`QCC_UnmarshalLocals`).
+        let block = self.dialect.has_fteqcc_extensions() && matches!(init, FunctionInit::Body(_));
+        if block {
+            self.program.open_block();
+        }
         let mut record_name = if written.nested {
             String::new()
         } else {
@@ -875,6 +922,14 @@ impl<'a> Compiler<'a> {
             .and_then(|l| i32::try_from(l).ok())
             .at(span)?;
         let mut parm_start = operand(locals_start).at(span)?;
+        if block {
+            // FTE-21.7: the block's words, temporaries among them, are the record's locals;
+            // its `parm_start` is set when the module's blocks are laid out.
+            let record = wrapped.unwrap_or(self.program.functions.len());
+            let len = self.program.close_block(record).at(span)?;
+            locals = i32::try_from(len).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
+            parm_start = 0;
+        }
         let mut numparms = numparms;
         // FTE-23.18: FTEQCC's `QCC_WriteData` writes a builtin's record with no parameter or
         // local slots and its named parameters' count, at most 8, whether or not it is

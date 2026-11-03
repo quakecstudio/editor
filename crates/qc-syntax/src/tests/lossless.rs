@@ -520,10 +520,14 @@ fn a_case_label_error_is_reported_once() {
         at("void() f = { switch (x) { case 1] } };"),
         [(32, "expected :, found ]".to_owned())]
     );
-    // The label after a broken one is read as a label.
+    // The label after a broken one is read as a label; the stray number is "Expected
+    // punctuation" first, as FTEQCC warns (FTEF-16.15).
     assert_eq!(
         at("void() f = { switch (x) { case 1 2 case 3: break; } };"),
-        [(33, "expected :, found 2".to_owned())]
+        [
+            (32, "Expected punctuation".to_owned()),
+            (33, "expected :, found 2".to_owned())
+        ]
     );
 }
 

@@ -176,6 +176,46 @@ pub(crate) enum LiteralSharing {
     Constants,
 }
 
+/// The first virtual offset of a function's block of private locals (FTE-21.7): parameters,
+/// locals and temporaries take offsets from here while the body is compiled, and real ones,
+/// after every global, static and immediate, when the module's blocks are laid out.
+const BLOCK_BASE: u32 = 1 << 20;
+
+/// The virtual offsets a closed block keeps until the module's blocks are laid out: its own
+/// range, so no two functions' definitions or temporaries share a virtual offset.
+const BLOCK_SPAN: u32 = 1 << 16;
+
+/// A function's block of private locals while its body is compiled (FTE-21.7).
+#[derive(Debug)]
+struct Block {
+    /// The next virtual offset.
+    next: u32,
+    /// The first definition made since the block opened.
+    defs_from: usize,
+    /// The first statement made since the block opened.
+    statements_from: usize,
+    /// The words written to the block's offsets, to be stored once they are real.
+    inits: Vec<(u32, Vec<u32>)>,
+}
+
+/// A function's block of private locals, closed and waiting for its real offsets
+/// (FTE-21.7).
+#[derive(Debug)]
+struct PendingBlock {
+    /// The function record whose `parm_start` the block becomes.
+    record: usize,
+    /// The definitions made while the block was open.
+    defs: std::ops::Range<usize>,
+    /// The statements made while the block was open.
+    statements: std::ops::Range<usize>,
+    /// The block's words.
+    len: u32,
+    /// The words written to the block's offsets while it was open.
+    inits: Vec<(u32, Vec<u32>)>,
+    /// The first virtual offset the block holds while it waits.
+    virtual_base: u32,
+}
+
 /// The program as compiled so far.
 #[derive(Debug)]
 pub(crate) struct Program {
@@ -201,6 +241,10 @@ pub(crate) struct Program {
     pub(crate) size_fields: u32,
     /// Which definitions a literal may share a word with.
     pub(crate) literal_sharing: LiteralSharing,
+    /// The block of the function whose body is being compiled, under FTEQCC (FTE-21.7).
+    block: Option<Block>,
+    /// The blocks closed so far, laid out by [`Program::resolve_blocks`] (FTE-21.7).
+    pending_blocks: Vec<PendingBlock>,
 }
 
 impl Program {
@@ -219,7 +263,122 @@ impl Program {
             functions: vec![Function::default()],
             size_fields: 0,
             literal_sharing: LiteralSharing::Initialised,
+            block: None,
+            pending_blocks: Vec::new(),
         }
+    }
+
+    /// FTE-21.7: opens the block of private locals of the function whose body follows: until
+    /// [`Program::close_block`], a local, a parameter or a temporary takes a virtual offset.
+    pub(crate) fn open_block(&mut self) {
+        self.block = Some(Block {
+            next: BLOCK_BASE,
+            defs_from: self.defs.len(),
+            statements_from: self.statements.len(),
+            inits: Vec::new(),
+        });
+    }
+
+    /// FTE-21.7: closes the open block as the one of function `record`, to be laid out with
+    /// the module's others; returns its words, the record's `locals`.
+    pub(crate) fn close_block(&mut self, record: usize) -> Result<u32, Internal> {
+        let block = self.block.take().ok_or(Internal::NoDefinition)?;
+        let len = block
+            .next
+            .checked_sub(BLOCK_BASE)
+            .ok_or(Internal::TooLarge)?;
+        if len > BLOCK_SPAN {
+            return Err(Internal::TooLarge);
+        }
+        // The block moves to a range of its own, so the next body's block, which starts at
+        // the same virtual offset, shares none with it.
+        let slot = u32::try_from(self.pending_blocks.len())
+            .ok()
+            .and_then(|n| n.checked_add(1))
+            .ok_or(Internal::TooLarge)?;
+        let virtual_base = slot
+            .checked_mul(BLOCK_SPAN)
+            .and_then(|o| o.checked_add(BLOCK_BASE))
+            .ok_or(Internal::TooLarge)?;
+        let mut pending = PendingBlock {
+            record,
+            defs: block.defs_from..self.defs.len(),
+            statements: block.statements_from..self.statements.len(),
+            len,
+            inits: block.inits,
+            virtual_base,
+        };
+        self.relocate_block(&mut pending, BLOCK_BASE, virtual_base)?;
+        self.pending_blocks.push(pending);
+        Ok(len)
+    }
+
+    /// Moves the offsets of `block`'s definitions, statement operands and pending words from
+    /// `from` up to `to`; an offset below `from` is not the block's.
+    fn relocate_block(
+        &mut self,
+        block: &mut PendingBlock,
+        from: u32,
+        to: u32,
+    ) -> Result<(), Internal> {
+        let relocate = |ofs: u32| -> Result<u32, Internal> {
+            if ofs < from {
+                return Ok(ofs);
+            }
+            ofs.checked_sub(from)
+                .and_then(|o| o.checked_add(to))
+                .ok_or(Internal::TooLarge)
+        };
+        for def in self
+            .defs
+            .get_mut(block.defs.clone())
+            .ok_or(Internal::NoDefinition)?
+        {
+            def.ofs = relocate(def.ofs)?;
+        }
+        // A jump's operand is an offset among the statements, not a global (QC-22).
+        let relocate_operand = |operand: i32| -> Result<i32, Internal> {
+            let Ok(ofs) = u32::try_from(operand) else {
+                return Ok(operand);
+            };
+            i32::try_from(relocate(ofs)?).map_err(|_| Internal::TooLarge)
+        };
+        for statement in self
+            .statements
+            .get_mut(block.statements.clone())
+            .ok_or(Internal::NoDefinition)?
+        {
+            statement.a = relocate_operand(statement.a)?;
+            statement.b = relocate_operand(statement.b)?;
+            statement.c = relocate_operand(statement.c)?;
+        }
+        for (ofs, _) in &mut block.inits {
+            *ofs = relocate(*ofs)?;
+        }
+        Ok(())
+    }
+
+    /// FTE-21.7: `QCC_UnmarshalLocals`: lays out every closed block after every global,
+    /// static and immediate made so far, in the order of the function records: each block's
+    /// definitions and statement operands take their real offsets and its record its
+    /// `parm_start`.
+    pub(crate) fn resolve_blocks(&mut self) -> Result<(), Internal> {
+        let mut pending = std::mem::take(&mut self.pending_blocks);
+        pending.sort_by_key(|block| block.record);
+        for mut block in pending {
+            let base = self.allocate_global(block.len)?;
+            let from = block.virtual_base;
+            self.relocate_block(&mut block, from, base)?;
+            let record = self
+                .functions
+                .get_mut(block.record)
+                .ok_or(Internal::NoDefinition)?;
+            record.parm_start = i32::try_from(base).map_err(|_| Internal::TooLarge)?;
+            for (ofs, words) in block.inits {
+                self.set_words(ofs, &words)?;
+            }
+        }
+        Ok(())
     }
 
     /// `numpr_globals`: the next free global offset.
@@ -227,8 +386,28 @@ impl Program {
         u32::try_from(self.globals.len()).map_err(|_| Internal::TooLarge)
     }
 
-    /// Takes the next `words` global offsets (QC-21.2); returns the first.
+    /// Takes the next `words` offsets (QC-21.2), of the open block for a local, a parameter or
+    /// a temporary (FTE-21.7), else of the globals; returns the first.
     pub(crate) fn allocate(&mut self, words: u32) -> Result<u32, Internal> {
+        if let Some(block) = &mut self.block {
+            let ofs = block.next;
+            block.next = ofs.checked_add(words).ok_or(Internal::TooLarge)?;
+            return Ok(ofs);
+        }
+        self.allocate_global(words)
+    }
+
+    /// The offset the next [`Program::allocate`] gives.
+    fn next_offset(&self) -> Result<u32, Internal> {
+        match &self.block {
+            Some(block) => Ok(block.next),
+            None => self.next_global(),
+        }
+    }
+
+    /// Takes the next `words` global offsets (QC-21.2), whatever block is open: a global, a
+    /// static, an immediate or a generated definition; returns the first.
+    pub(crate) fn allocate_global(&mut self, words: u32) -> Result<u32, Internal> {
         let ofs = self.next_global()?;
         let words = usize::try_from(words).map_err(|_| Internal::TooLarge)?;
         let len = self
@@ -251,6 +430,12 @@ impl Program {
 
     /// Writes `words` from global offset `ofs`.
     pub(crate) fn set_words(&mut self, ofs: u32, words: &[u32]) -> Result<(), Internal> {
+        // FTE-21.7: a word of the open block is written when the block is laid out.
+        if ofs >= BLOCK_BASE {
+            let block = self.block.as_mut().ok_or(Internal::TooLarge)?;
+            block.inits.push((ofs, words.to_vec()));
+            return Ok(());
+        }
         let start = usize::try_from(ofs).map_err(|_| Internal::TooLarge)?;
         let end = start.checked_add(words.len()).ok_or(Internal::TooLarge)?;
         let slots = self.globals.get_mut(start..end).ok_or(Internal::TooLarge)?;
@@ -317,7 +502,14 @@ impl Program {
                 _ => written.clone(),
             })
         });
-        let ofs = self.next_global()?;
+        // FTE-21.7: a function's own definition takes the open block's offsets, a global the
+        // globals' whatever block is open.
+        let in_block = definition.owner.is_some() && self.block.is_some();
+        let ofs = if in_block {
+            self.next_offset()?
+        } else {
+            self.next_global()?
+        };
         let place = self.defs.len();
         let count = index.array_len(id);
         self.defs.push(Def {
@@ -340,7 +532,11 @@ impl Program {
             let words = type_words(index, &ty)
                 .checked_mul(count)
                 .ok_or(Internal::TooLarge)?;
-            self.allocate(words)?;
+            if in_block {
+                self.allocate(words)?;
+            } else {
+                self.allocate_global(words)?;
+            }
             return Ok(place);
         }
         if ty.etype() == Etype::Vector {
@@ -348,8 +544,10 @@ impl Program {
                 let component = component(index, id, suffix).ok_or(Internal::NoDefinition)?;
                 self.get_def_typed(index, component, None)?;
             }
-        } else {
+        } else if in_block {
             self.allocate(type_words(index, &ty))?;
+        } else {
+            self.allocate_global(type_words(index, &ty))?;
         }
         if let Some(inner) = ty.field_inner() {
             self.set_words(ofs, &[self.size_fields])?;
@@ -411,6 +609,54 @@ impl Program {
         self.initialise_words(place, &words)
     }
 
+    /// FTE-15.9: the `IMMEDIATE` definition FTEQCC's `QCC_PR_ParseImmediate` makes for a
+    /// literal that an initialised constant at `place` holds, a second record at its offset.
+    pub(crate) fn alias_immediate(&mut self, place: usize) -> Result<(), Internal> {
+        let def = self.defs.get(place).ok_or(Internal::NoDefinition)?;
+        let (ty, ofs) = (def.ty.clone(), def.ofs);
+        self.defs.push(Def {
+            name: "IMMEDIATE".to_owned(),
+            ty,
+            ofs,
+            scope: None,
+            initialized: true,
+            constant: true,
+            count: None,
+            id: None,
+        });
+        Ok(())
+    }
+
+    /// FTE-15.9: the definition `id` as a name for the global of the definition at `at`, an
+    /// enum item for the `IMMEDIATE` of its value: a record at that offset, allocating nothing,
+    /// initialised and constant. Returns its place.
+    pub(crate) fn alias_def(
+        &mut self,
+        index: &ModuleIndex,
+        id: DefId,
+        at: usize,
+    ) -> Result<usize, Internal> {
+        if let Some(place) = self.place(id) {
+            return Ok(place);
+        }
+        let definition = index.def(id).ok_or(Internal::NoDefinition)?;
+        let shared = self.defs.get(at).ok_or(Internal::NoDefinition)?;
+        let (ty, ofs) = (shared.ty.clone(), shared.ofs);
+        let place = self.defs.len();
+        self.defs.push(Def {
+            name: definition.name.clone(),
+            ty,
+            ofs,
+            scope: definition.owner,
+            initialized: true,
+            constant: true,
+            count: None,
+            id: Some(id),
+        });
+        self.places.insert(id, place);
+        Ok(place)
+    }
+
     /// Makes a definition the compiler generates, `name` of type `ty` in the next `words`
     /// globals, that the program names nowhere: an array's getter (FTE-13.8) or its index
     /// parameter.
@@ -420,7 +666,7 @@ impl Program {
         ty: ValueType,
         words: u32,
     ) -> Result<usize, Internal> {
-        let ofs = self.allocate(words)?;
+        let ofs = self.allocate_global(words)?;
         let place = self.defs.len();
         self.defs.push(Def {
             name: name.to_owned(),
@@ -488,7 +734,7 @@ impl Program {
         if let Some(place) = found {
             return Ok(place);
         }
-        let ofs = self.allocate(ty.words())?;
+        let ofs = self.allocate_global(ty.words())?;
         let place = self.defs.len();
         self.defs.push(Def {
             name: "IMMEDIATE".to_owned(),
@@ -518,7 +764,7 @@ impl Program {
         if let Some(place) = found {
             return Ok(place);
         }
-        let ofs = self.allocate(1)?;
+        let ofs = self.allocate_global(1)?;
         let place = self.defs.len();
         self.defs.push(Def {
             name: "IMMEDIATE".to_owned(),

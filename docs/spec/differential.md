@@ -657,10 +657,10 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   So: (1) the fields must have the same names, as DIFF-12.3 says; (2) a global of either progs
   inside a QuakeC function's locals (from `parm_start`, `locals` slots) is a local and is not
   compared, unless it is a function definition whose value is a QuakeC function of its name,
-  as a state's `[frame, next]` declares `next` inside the body, and as ours gives an
-  `ArrayGet*NAME` or `ArraySet*NAME` made inside a body its slot among the body's locals;
-  several functions share such a name, one for each `for` statement that subscripts a local
-  array (FTEF-19.78), and the one judged is the function the slot holds; (3) every other named global of
+  as a state's `[frame, next]` declares `next` inside the body (an `ArrayGet*NAME` or
+  `ArraySet*NAME` made inside a body is a global below the body's block, FTE-21.7; several
+  functions share such a name, one for each `for` statement that subscripts a local array,
+  FTEF-19.78, and the one judged is the function the slot holds); (3) every other named global of
   the first progs at a slot other than 0 must be found among ours in the same order, the next
   one of its name, and is compared with it; ours may name more. FTEQCC also gives named
   constants of one value one slot, so DIFF-12.2's draw leaves out a float or string global whose
@@ -685,10 +685,10 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   So: (1) the fields must have the same names, as DIFF-12.3 says; (2) a global of either progs
   inside a QuakeC function's locals (from `parm_start`, `locals` slots) is a local and is not
   compared, unless it is a function definition whose value is a QuakeC function of its name,
-  as a state's `[frame, next]` declares `next` inside the body, and as ours gives an
-  `ArrayGet*NAME` or `ArraySet*NAME` made inside a body its slot among the body's locals;
-  several functions share such a name, one for each `for` statement that subscripts a local
-  array (FTEF-19.78), and the one judged is the function the slot holds; (3) every other named global of
+  as a state's `[frame, next]` declares `next` inside the body (an `ArrayGet*NAME` or
+  `ArraySet*NAME` made inside a body is a global below the body's block, FTE-21.7; several
+  functions share such a name, one for each `for` statement that subscripts a local array,
+  FTEF-19.78, and the one judged is the function the slot holds); (3) every other named global of
   the first progs at a slot other than 0 must be found among ours in the same order, the next
   one of its name, and is compared with it; ours may name more. FTEQCC also gives named
   constants of one value one slot, so DIFF-12.2's draw leaves out a float or string global whose

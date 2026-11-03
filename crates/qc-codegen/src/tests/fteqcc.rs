@@ -133,6 +133,76 @@ fn a_vector_literals_component_is_a_constant_index() {
     );
 }
 
+// spec FTE-15.9: a constant initialised with a literal is followed by the literal's IMMEDIATE
+// record at its slot, and an enum item's IMMEDIATE record comes before the item's
+#[test]
+fn constants_and_enum_items_share_their_slot_with_an_immediate_record() {
+    let p = fte_progs(
+        "const float K0 = 1;\nenum { EN_A, EN_B = 3 };\nfloat x;\nvoid() t = { x = 1; x = 0; };\n",
+    );
+    let records: Vec<(String, i32)> = p
+        .global_defs
+        .iter()
+        .map(|d| (string(&p, d.s_name), i32::try_from(d.ofs).unwrap()))
+        .skip_while(|(name, _)| name != "K0")
+        .take(7)
+        .collect();
+    let k0 = global(&p, "K0");
+    assert_eq!(
+        records,
+        [
+            ("K0".to_owned(), k0),
+            ("IMMEDIATE".to_owned(), k0),
+            ("IMMEDIATE".to_owned(), k0 + 1),
+            ("EN_A".to_owned(), k0 + 1),
+            ("IMMEDIATE".to_owned(), k0 + 2),
+            ("EN_B".to_owned(), k0 + 2),
+            ("x".to_owned(), k0 + 3),
+        ]
+    );
+    let x = global(&p, "x");
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(StoreF, k0, x, 0),
+            st(StoreF, k0 + 1, x, 0),
+            st(Done, 0, 0, 0)
+        ]
+    );
+}
+
+// spec FTE-21.7: a function's parameters, locals and temporaries are one block after every
+// immediate of the module, the temporaries counted in its locals, and the blocks follow the
+// records' order
+#[test]
+fn a_functions_locals_and_temporaries_are_one_block_after_the_immediates() {
+    let p = fte_progs(
+        "float x;\nvoid(float p) t = { local float a; a = 2; x = a * 3 + p; };\n\
+         void() u = { x = x * 4; };\n",
+    );
+    let (x, t, u) = (global(&p, "x"), function(&p, "t"), function(&p, "u"));
+    let (two, three, four) = (immediate(&p, 2.0), immediate(&p, 3.0), immediate(&p, 4.0));
+    let base = t.parm_start;
+    assert!(
+        two < base && three < base && four < base,
+        "{two} {three} {four} < {base}"
+    );
+    // `p`, `a`, the product's temporary and the sum's, which the fold into `x` leaves unused:
+    // this compiler reuses no temporary (FTEF-27.16).
+    assert_eq!(t.locals, 4);
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(StoreF, two, base + 1, 0),
+            st(MulF, base + 1, three, base + 2),
+            st(AddF, base + 2, base, x),
+            st(Done, 0, 0, 0),
+        ]
+    );
+    assert_eq!((u.parm_start, u.locals), (base + 4, 1));
+    assert_eq!(body(&p, "u"), [st(MulF, x, four, x), st(Done, 0, 0, 0)]);
+}
+
 // spec FTE-13.6: a constant index is the element's global, with no statement
 #[test]
 fn a_constant_index_is_the_elements_global() {

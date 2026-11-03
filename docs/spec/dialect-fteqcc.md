@@ -3417,7 +3417,8 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
 - **FTEF-19.43** A cast's type and `sizeof`'s are read with `QCC_PR_ParseType(false, true,
   false)`, `silentfail`, so a name that is no type makes no cast and no type: `(T *)0`, `(T)0`,
   `sizeof(T *)` and `sizeof(T)` with no type `T` are a parenthesised expression and an operand,
-  "Unknown value \"T\""; `sizeof(s)` after `struct S` is the type under `-Fcaseinsens`
+  "Unknown value \"T\"", and `(T *)0` then "\")\" - not a name" for the `*`'s missing
+  operand; `sizeof(s)` after `struct S` is the type under `-Fcaseinsens`
   (FTEF-19.33) and "Unknown value" without, and `(struct s *)0` is a pointer to the struct `s`, a
   tag, in either case (FTEF-6.8). This profile's parser reads the shapes `(name)` and `(name *)`
   before an operand, and `sizeof(name *)`, as a type, and the semantic model reports the name as

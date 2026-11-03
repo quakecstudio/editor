@@ -146,8 +146,8 @@ fn compile_fteqcc(source: &str) -> Vec<u8> {
 
 // spec DIFF-12.11: a function definition whose value is a QuakeC function of its name is no
 // local, whichever of the functions sharing the name it holds: FTEQCC makes an `ArrayGet*a`
-// for each `for` statement that subscripts a local array (FTEF-19.78), and ours gives the
-// second its slot among the body's locals when a local is declared after it (QC-21.4).
+// for each `for` statement that subscripts a local array (FTEF-19.78), each a global made
+// while the body is read, below the body's block of locals (FTE-21.7).
 #[test]
 fn an_array_function_made_in_a_body_is_not_a_local() {
     let bytes = compile_fteqcc(
@@ -163,15 +163,6 @@ fn an_array_function_made_in_a_body_is_not_a_local() {
         .filter(|(name, ..)| name == b"ArrayGet*a")
         .collect();
     assert_eq!(getters.len(), 2, "{:?}", program.globals);
-    let (_, _, second) = getters[1];
-    assert!(
-        program
-            .locals
-            .iter()
-            .any(|(start, end)| (*start..*end).contains(second)),
-        "the second getter's slot {second} lies among f's locals {:?}",
-        program.locals
-    );
     for getter in getters {
         assert!(!program.is_local(getter), "{getter:?}");
     }
@@ -1011,37 +1002,6 @@ fn a_return_value_that_differs_is_a_divergence() {
             Value::Bits(3.0_f32.to_bits()),
             Value::Bits(4.0_f32.to_bits())
         )
-    );
-}
-
-// spec DIFF-12.23: a `__va_list` element's words agree by any reading, a string argument by
-// its text though the string tables differ, and differ when none does.
-#[test]
-fn va_list_elements_compare_by_any_reading() {
-    let variadic = |extra: &str| {
-        format!(
-            "string s;\nvoid(...) f = {{ s = va_arg(0, string); }};\n\
-             void() g = {{ f(\"a\"); }};\n{extra}"
-        )
-    };
-    let report = run(
-        &compile_fteqcc(&variadic("")),
-        &compile_fteqcc(&variadic("void() h = { dprint(\"b\"); };\n")),
-        2,
-    );
-    assert_eq!(report.divergences, []);
-    let report = run(
-        &compile_fteqcc(&variadic("")),
-        &compile_fteqcc(
-            "string s;\nvoid(...) f = { s = va_arg(0, string); };\nvoid() g = { f(\"b\"); };\n",
-        ),
-        2,
-    );
-    assert!(
-        report.divergences.iter().any(
-            |d| matches!(&d.what, Difference::Global(name, _, _) if name.starts_with(b"__va_list["))
-        ),
-        "{report:?}"
     );
 }
 

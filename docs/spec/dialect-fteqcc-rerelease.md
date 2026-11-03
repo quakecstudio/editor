@@ -583,6 +583,16 @@ Vanilla `qcc` has no `enum`; the word is read as a name and is "not a type" (QC-
 - **FTE-15.8** A number literal initialising an `int` or `unsigned` global is the integer C's
   conversion of the float gives (`QCC_SupplyConversion` of a constant), not the float's bits.
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_SupplyConversion`.
+- **FTE-15.9** A literal is a definition named `IMMEDIATE` (`QCC_PR_ParseImmediate`), so a
+  constant initialised with one has two records at its offset: `const float K0 = 1;` writes
+  `K0` and then `IMMEDIATE`, both at `K0`'s slot, and `x = 1` reads that slot. An `enum`
+  item's value is made an immediate first (`QCC_MakeFloatConst(iv)`) and the item a name
+  for it, which the progs never lists: `enum { EN_A, EN_B = 3, EN_C }` writes three
+  `IMMEDIATE` records, `0`, `3` and `4`. This compiler writes the item's own record after its
+  `IMMEDIATE`, so a slot's first record is the same as FTEQCC's; a definition nothing refers
+  to, which FTEQCC leaves out (DIFF-12.11), keeps its record here. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseImmediate`, `QCC_PR_ParseEnum`, `QCC_PR_ParseDefs`.
 
 ## FTE-16 `#pragma` directive
 
@@ -1012,6 +1022,22 @@ empty (QC-14.2).
   `numparms` 0 and `float(float a, ...) g` 1, where id's `qcc` writes -1 for any variadic
   function (QC-13.3), so `PR_EnterFunction` copies the named parameters of a variadic call.
 
+- **FTE-21.7** A function's parameters, locals and temporaries form one block of globals laid
+  out when the progs is written, after every global, static and immediate of the module:
+  `QCC_UnmarshalLocals` finalises first every global and static (`if (!d->localscope ||
+  d->isstatic) QCC_FinaliseDef(d);`), then each function's static and initialised constant
+  locals, then, in the order of the function records, each function's private locals (`for (d
+  = functions[i].firstlocal; d; d = d->nextlocal) if (!d->isstatic && !(d->constant &&
+  d->initialized)) QCC_FinaliseDef(d);`), its temporaries among them, so an immediate a body
+  makes sits below every block and a block's words are contiguous: in a program whose `fn0`
+  reads `n < 2`, the immediate `2` is at 236 and `fn0`'s block at 249 to 258, its parameters,
+  then its locals, then its temporaries, with `locals` 10. A statement that writes three words
+  to a one-word temporary (FTE-9.3's `LOAD_V` into a `?:`'s temporary) therefore reaches the
+  next temporaries, never an immediate. This compiler lays its blocks out the same way but
+  reuses no temporary (FTEF-27.16), so a block is wider than FTEQCC's where FTEQCC reuses
+  one, and the blocks after it start later. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
+  `QCC_UnmarshalLocals`; `engine/qclib/qcc_pr_comp.c`, `QCC_GetTemp`.
 ## FTE-22 Name resolution
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_GetDef`, `QCC_PR_ParseInitializerType_Internal`,

@@ -476,8 +476,13 @@ fn an_accessors_base_is_checked() {
 // `-Fcaseinsens`; `struct s` is a tag in either case
 #[test]
 fn a_casts_type_name_is_a_type() {
+    // `(T *)0` is FTEQCC's "Unknown value \"T\"" and "\")\" - not a name"; the parser's
+    // message comes first here.
+    assert_eq!(
+        errors("void() g = { (T *)0; };", &[]),
+        [Code::E0201, Code::E0301]
+    );
     for (source, code) in [
-        ("void() g = { (T *)0; };", Code::E0203),
         ("void() g = { local float x = sizeof(T *); };", Code::E0203),
         ("void() g = { local float x = sizeof(T); };", Code::E0301),
     ] {
@@ -486,7 +491,7 @@ fn a_casts_type_name_is_a_type() {
     // FTEF-16.15: a lone name that is no type is a value in parentheses, here an unknown one.
     assert_eq!(
         errors("void() g = { (T)0; };", &[]),
-        [Code::E0301, Code::E0204]
+        [Code::E0204, Code::E0301]
     );
     let sizeof_s = "struct S { float a; }; void() g = { local float x = sizeof(s); };";
     assert_eq!(errors(sizeof_s, &["-Fcaseinsens"]), []);
