@@ -142,7 +142,7 @@ fn fteqcc_in(oracles: &Oracles, fteqcc: &Path, dir: &Path) -> Result<String, Str
 
 /// The generated-program differential (DIFF-14): the `compiler-diff` binary writes `count`
 /// programs of `seed` under `target/compiler-diff/generated/<seed>/`, each is compiled with
-/// the pinned FTEQCC and with `qc-codegen` in the FTEQCC dialect with `--opt fold` off and
+/// the pinned FTEQCC, the fixed FTEQCC (DIFF-14.4) and `qc-codegen` in the FTEQCC dialect with `--opt fold` off and
 /// on, and the binary compares every pair in one process. A program FTEQCC rejects is a
 /// defect of the generator and fails the run; each divergence names the program's directory,
 /// whose `t.qc` is the case to keep. The forms every program used are totalled in
@@ -175,12 +175,13 @@ fn generated(root: &Path, count: u64, seed: u64) -> Result<bool, String> {
     }
     let mut pairs = String::new();
     let mut rejected = Vec::new();
+    let mut fixed_rejected = Vec::new();
     let mut refused = Vec::new();
     for n in 0..count {
         let program = dir.join(n.to_string());
         // DIFF-14.4: the fixed FTEQCC first, its progs kept as `fixed.dat`, then the pinned one.
         let fixed = program.join("fixed.dat");
-        fteqcc_in(&oracles, &oracles.fteqcc_fixed, &program)?;
+        let fixed_log = fteqcc_in(&oracles, &oracles.fteqcc_fixed, &program)?;
         let built = program.join("progs.dat");
         if built.is_file() {
             fs::rename(&built, &fixed).map_err(|e| format!("{}: {e}", fixed.display()))?;
@@ -189,6 +190,12 @@ fn generated(root: &Path, count: u64, seed: u64) -> Result<bool, String> {
         let theirs = program.join("progs.dat");
         if !theirs.is_file() {
             rejected.push((n, log));
+            continue;
+        }
+        // DIFF-14.8: a program the pinned FTEQCC compiles and the fixed one does not is a
+        // defect of a fix, reported on its own.
+        if !fixed.is_file() {
+            fixed_rejected.push((n, fixed_log));
             continue;
         }
         let profile = Profile::Fteqcc { autoproto: false };
@@ -216,6 +223,13 @@ fn generated(root: &Path, count: u64, seed: u64) -> Result<bool, String> {
     for (n, log) in &rejected {
         eprintln!(
             "compiler-diff: FTEQCC rejected program {n} ({}): {}",
+            dir.join(n.to_string()).join("t.qc").display(),
+            log.lines().find(|l| l.contains("error")).unwrap_or("")
+        );
+    }
+    for (n, log) in &fixed_rejected {
+        eprintln!(
+            "FAIL  generated-{seed}-{n}: the fixed FTEQCC rejected what FTEQCC compiled ({}): {}",
             dir.join(n.to_string()).join("t.qc").display(),
             log.lines().find(|l| l.contains("error")).unwrap_or("")
         );
@@ -267,7 +281,11 @@ fn generated(root: &Path, count: u64, seed: u64) -> Result<bool, String> {
             "divergences above"
         }
     );
-    Ok(compared && rejected.is_empty() && refused.is_empty() && rare.is_empty())
+    Ok(compared
+        && rejected.is_empty()
+        && fixed_rejected.is_empty()
+        && refused.is_empty()
+        && rare.is_empty())
 }
 
 /// Runs the `compiler-diff` binary with `args`, as [`run_suite`] does; true when it exits 0.
@@ -674,7 +692,7 @@ mod tests {
         assert_eq!(matrix, Mode::Full.codebases());
     }
 
-    // spec DIFF-14.2: `--generated <count> [--seed <n>]` names how many programs and the seed,
+    // spec DIFF-14.8: `--generated <count> [--seed <n>]` names how many programs and the seed,
     // 1 unless given
     #[test]
     fn the_generated_run_takes_a_count_and_a_seed() {

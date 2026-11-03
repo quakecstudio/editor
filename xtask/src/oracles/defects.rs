@@ -27,17 +27,17 @@ pub(crate) struct Fix {
 
 /// The defects fixed. DIFF-14.6: a `?:`'s result is a one-word local named `ternary` when its
 /// arms are one word, and `opt_assignments` folds the statement that made an arm into it, so a
-/// `LOAD_V` (FTE-9.3's `(e.v).x`) writes the two globals after it; the local is given three
-/// words. DIFF-14.7: a statement frees
+/// `LOAD_V` (FTE-9.3's `(e.v).x`) writes the two globals after it; the local is made a vector,
+/// three words, read and written as the arm's type. DIFF-14.7: a statement frees
 /// its operands before it takes its result's temporary, so a vector result may take the slot
 /// of an operand the opcode reads again after writing its first word (`MUL_VF` reads its float
-/// operand for each component); a statement with a result wider than a word frees its operands
-/// only after it has taken the result's temporary.
+/// operand for each component); those multiplies free their operands only after they have taken
+/// the result's temporary.
 pub(crate) const FIXES: [Fix; 4] = [
     Fix {
         statement: "DIFF-14.6",
         find: "r = QCC_MakeSRefForce(QCC_PR_DummyDef(r.cast=val.cast, \"ternary\", pr_scope, 0, NULL, 0, false, GDF_STRIP), 0, val.cast);",
-        replace: "r = QCC_MakeSRefForce(QCC_PR_DummyDef(r.cast=val.cast, \"ternary\", pr_scope, (val.cast->size < 3) ? 3 : 0, NULL, 0, false, GDF_STRIP), 0, val.cast);",
+        replace: "r = QCC_MakeSRefForce(QCC_PR_DummyDef((r.cast=val.cast, val.cast->size < 3 ? type_vector : val.cast), \"ternary\", pr_scope, 0, NULL, 0, false, GDF_STRIP), 0, val.cast);",
         times: 2,
     },
     Fix {
@@ -50,7 +50,7 @@ pub(crate) const FIXES: [Fix; 4] = [
         statement: "DIFF-14.7",
         times: 1,
         find: "\telse\n\t{\n\t\tQCC_FreeTemp(var_a);\n\t\tQCC_FreeTemp(var_b);\n\t}\n\n\tif (outstatement)\n\t\tQCC_ClobberDef(NULL);\n",
-        replace: "\telse if (*op->type_c && (*op->type_c)->size > 1)\n\t\tqs_free_later = true;\n\telse\n\t{\n\t\tQCC_FreeTemp(var_a);\n\t\tQCC_FreeTemp(var_b);\n\t}\n\n\tif (outstatement)\n\t\tQCC_ClobberDef(NULL);\n",
+        replace: "\telse if (op == &pr_opcodes[OP_MUL_VF] || op == &pr_opcodes[OP_MUL_FV] || op == &pr_opcodes[OP_MUL_VI] || op == &pr_opcodes[OP_MUL_IV])\n\t\tqs_free_later = true;\n\telse\n\t{\n\t\tQCC_FreeTemp(var_a);\n\t\tQCC_FreeTemp(var_b);\n\t}\n\n\tif (outstatement)\n\t\tQCC_ClobberDef(NULL);\n",
     },
     Fix {
         statement: "DIFF-14.7",
@@ -106,9 +106,9 @@ mod tests {
     }
 
     // spec DIFF-14.4: every fix is applied to the text it names, and nothing else changes
-    // spec DIFF-14.6: the `?:` local's two definitions are given three words
-    // spec DIFF-14.7: a statement with a result wider than a word frees its operands after
-    // taking the result's temporary
+    // spec DIFF-14.6: the `?:` local's two definitions are made vectors
+    // spec DIFF-14.7: the vector multiplies free their operands after taking the result's
+    // temporary
     #[test]
     fn each_fix_replaces_its_text_once() {
         let fixed = String::from_utf8(apply(pinned().as_bytes()).unwrap()).unwrap();

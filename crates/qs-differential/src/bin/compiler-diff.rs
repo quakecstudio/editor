@@ -31,7 +31,8 @@
 //! `--generate` writes program `n` of the seed to `<dir>/<n>/t.qc` with a `progs.src` that
 //! lists it, and the forms every program used, with their counts, to `<dir>/forms.tsv`.
 //! `--pairs` compares each line's pair, `name`, the oracle's progs and ours separated by tabs,
-//! and optionally the oracle with its defects fixed (DIFF-14.5), in one process, printing one line per pair, and exits 0 when no pair diverges: a generated
+//! and optionally the oracle with its defects fixed (DIFF-14.5), in one process,
+//! printing one line per pair, and exits 0 when no pair diverges: a generated
 //! program's calls need not reach 90% of its statements, since every function of it is
 //! called and a bounded loop is left early by its counter.
 
@@ -100,7 +101,7 @@ enum Run {
     Suite(Options),
     /// Programs of a seed written out (DIFF-14.1).
     Generate(Generate),
-    /// The pairs a file lists, each compared (DIFF-14.2).
+    /// The pairs a file lists, each compared (DIFF-14.8).
     Pairs {
         file: PathBuf,
         rounds: u32,
@@ -213,7 +214,7 @@ fn generate(generate: &Generate) -> Result<bool, String> {
             .map_err(|e| format!("{}: {e}", dir.display()))?;
         std::fs::write(dir.join("t.qc"), &program.source)
             .map_err(|e| format!("{}: {e}", dir.display()))?;
-        // DIFF-14.2: how many programs use each form, however often each uses it.
+        // DIFF-14.8: how many programs use each form, however often each uses it.
         for form in program.forms.keys() {
             let entry = forms.entry(form).or_insert(0);
             *entry = entry.saturating_add(1);
@@ -235,7 +236,7 @@ fn generate(generate: &Generate) -> Result<bool, String> {
     Ok(true)
 }
 
-/// DIFF-14.2: compares every pair `file` lists, one per line as `name`, the oracle's progs and
+/// DIFF-14.8: compares every pair `file` lists, one per line as `name`, the oracle's progs and
 /// ours separated by tabs; a pair passes when no call diverges. DIFF-14.5: a line may name a
 /// fourth progs, the oracle with its known defects fixed, and then a pair whose oracle
 /// diverges passes when the fixed oracle agrees with ours, as an oracle defect proved; it
@@ -266,13 +267,12 @@ fn pairs(
         let report = run_codebase(oracle, &theirs, &ours, rounds, engine, &quiet)
             .map_err(|e| format!("{name}: {e}"))?;
         compared = compared.saturating_add(1);
-        let fixed_report = match fixed {
-            Some(path) => Some(
+        let fixed_report = fixed
+            .map(|path| {
                 run_codebase(oracle, &read(path)?, &ours, rounds, engine, &quiet)
-                    .map_err(|e| format!("{name}, the fixed oracle: {e}"))?,
-            ),
-            None => None,
-        };
+                    .map_err(|e| format!("{name}, the fixed oracle: {e}"))
+            })
+            .transpose()?;
         let divergences = report.divergences();
         let fixed_divergences = fixed_report.as_ref().map(CodebaseReport::divergences);
         match Outcome::of(divergences, fixed_divergences) {
@@ -545,7 +545,7 @@ mod tests {
         assert!(add_row(&dir.join("no/such/dir.md"), &options, &summary, &report).is_err());
     }
 
-    // spec DIFF-14.2: `--generate` names the directory, the seed and the count, `--pairs` the
+    // spec DIFF-14.8: `--generate` names the directory, the seed and the count, `--pairs` the
     // file, with the rounds, the oracle and the engine of a suite run; either leaves the
     // suite's own arguments unrequired
     #[test]

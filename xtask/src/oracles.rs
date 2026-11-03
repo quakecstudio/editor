@@ -208,6 +208,10 @@ fn run(
             println!("oracles: qcc at {}", oracles.qcc.display());
             println!("oracles: vm-oracle at {}", oracles.vm.display());
             println!("oracles: fteqcc at {}", oracles.fteqcc.display());
+            println!(
+                "oracles: fteqcc-fixed at {}",
+                oracles.fteqcc_fixed.display()
+            );
             Ok(true)
         }
         ["id101", dir] => {
@@ -490,7 +494,7 @@ fn build_with<'a>(root: &Path, exec: &'a dyn Exec, net: &dyn Net) -> Result<Orac
     fs::write(&stamp_file, format!("{stamp_now}\n"))
         .map_err(|e| format!("{}: {e}", stamp_file.display()))?;
     println!(
-        "oracles: built qcc, vm-oracle and fteqcc in {}",
+        "oracles: built qcc, vm-oracle, fteqcc and fteqcc-fixed in {}",
         bin.display()
     );
     Ok(oracles)

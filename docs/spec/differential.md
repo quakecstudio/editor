@@ -927,18 +927,8 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
   or of a value past `int`'s range is the platform's (`INT_MIN` on x86, `INT_MAX` on arm64),
   so `'4 8388608 403' * '66 32768 8' & 3` would index one element on CI's x86-64 oracle and
   another on an arm64 one.
-- **DIFF-14.2** `cargo xtask compiler-diff --generated <count> [--seed <n>]` writes the
-  programs `0` to `count - 1` of the seed, 1 unless given, under
-  `target/compiler-diff/generated/<seed>/<n>/` with a `progs.src` naming `t.qc`, compiles each
-  with the pinned FTEQCC (`-Tid -srcfile progs.src`) and with `qc-codegen` in the FTEQCC
-  dialect with `--opt fold` off and on, lists the pairs in `pairs.tsv`, and has the
-  `compiler-diff` binary compare every pair in one process (`--pairs`) with the fast rounds of
-  DIFF-12.6. A pair passes when no call diverges: a generated program's calls need not reach
-  90% of its statements, since every function of it is called directly and a bounded loop is
-  left by its counter. The run fails on any divergence, on a program FTEQCC rejects, which is
-  a defect of the generator, on a program FTEQCC compiles and `qc-codegen` refuses, which is
-  a defect of the compiler, and on a form used by fewer than one program in a hundred; each
-  failure names the program's directory, whose `t.qc` is the case to keep.
+- **DIFF-14.2** **Withdrawn** 2026-11-03: it compiled with the pinned FTEQCC only and failed
+  on every divergence, before the fixed FTEQCC of ADR-0020's tier 3; replaced by DIFF-14.8.
 - **DIFF-14.3** The short run, 200 programs of seed 1, runs in the `Test Assets (linux)` job
   of every pull request after the fast compiler differential; the long run, 10000 programs of
   seed 1, is a job of the nightly Differential workflow.
@@ -959,13 +949,29 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
   An arm `(e.v).x` is `LOAD_V` into a temporary (FTE-9.3), so the fold makes the `LOAD_V`
   write three words from the local, the two globals after it included: another local, or the
   first local of the next function's block (FTE-21.7). Generated programs 555 and 1108 of seed
-  1 read a value it overwrote. The fix gives the local three words (`arraysize` 3).
+  1 read a value it overwrote. The fix makes a one-word arm's local a vector, three words of
+  storage, read and written as the arm's type.
 - **DIFF-14.7** FTEQCC defect: `QCC_PR_StatementFlags` frees a statement's operands before it
   takes its result's temporary (`QCC_GetTemp`), so a vector result can take the slot of an
   operand; `MUL_VF` and `MUL_FV` read their float operand again for each component (VM-5.4), so
   `v * (w * f).x` reads, for its second and third components, the word its first one wrote.
-  Generated program 1230 of seed 1 does. The fix frees the operands of a statement whose result
-  is wider than a word only after its result's temporary is taken.
+  Generated program 1230 of seed 1 does. The fix frees the operands of `MUL_VF`, `MUL_FV`,
+  `MUL_VI` and `MUL_IV`, the opcodes that read a word operand after writing a result word,
+  only after their result's temporary is taken.
+- **DIFF-14.8** `cargo xtask compiler-diff --generated <count> [--seed <n>]` writes the
+  programs `0` to `count - 1` of the seed, 1 unless given, under
+  `target/compiler-diff/generated/<seed>/<n>/` with a `progs.src` naming `t.qc`, compiles each
+  with the pinned FTEQCC (`-Tid -srcfile progs.src`), with the fixed FTEQCC of DIFF-14.4 and
+  with `qc-codegen` in the FTEQCC
+  dialect with `--opt fold` off and on, lists the pairs in `pairs.tsv`, and has the
+  `compiler-diff` binary compare every pair in one process (`--pairs`) with the fast rounds of
+  DIFF-12.6. A pair passes when no call diverges, or as DIFF-14.5 allows: a generated program's calls need not reach
+  90% of its statements, since every function of it is called directly and a bounded loop is
+  left by its counter. The run fails on any divergence DIFF-14.5 does not allow, on a program FTEQCC rejects, which
+  is a defect of the generator, on a program the pinned FTEQCC compiles and the fixed one
+  rejects, which is a defect of a fix, on a program FTEQCC compiles and `qc-codegen` refuses, which is
+  a defect of the compiler, and on a form used by fewer than one program in a hundred; each
+  failure names the program's directory, whose `t.qc` is the case to keep.
 
 ## Test vectors
 
