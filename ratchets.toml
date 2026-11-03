@@ -246,15 +246,16 @@ equivalent_mutants = { "crates/qs-map/src/check.rs: replace > with == in MapFile
 # qc-builtins (L1 VM): the P1-65 (#393) work raised line coverage to 91% and
 # mutation to 97% (724 of 743 viable caught) with new tests, and the P1-R1
 # readiness re-run (run 39062046197) set the minimums, which the P2-R1
-# re-review (docs/readiness/p2-r1.md) holds. P2-150 (#639) added vkQuake's
-# extension builtins, whose mutants the tests of #659 kill
-# (docs/readiness/p2-r1-qc-builtins.md); the survivors below are equivalent on
+# re-review (docs/readiness/p2-r1.md) held. P2-150 (#654) added vkQuake's
+# extension builtins, whose mutants the tests of #659 kill; the P2-R1B
+# re-review (docs/readiness/p2-r1b.md) re-measured the crate and holds the
+# minimums now. The survivors below are equivalent on
 # every input the mock dispatch can receive: guards whose equal case is rejected
 # or clamped the same way downstream, comparisons whose boundary reassigns the
 # value already held, bit operations on disjoint or always-clear bits, and
 # parses whose failure returns the 0 the guard returns.
 [crates.qc-builtins]
-readiness = "P2-R1"
+readiness = "P2-R1B"
 lines = 94
 branches = 84
 mutation = 97

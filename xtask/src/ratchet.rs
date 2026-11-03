@@ -280,8 +280,7 @@ pub(crate) fn check_change(
         let reviewed = before.recorded() || after.recorded();
         if reviewed && after.readiness == before.readiness {
             problems.push(format!(
-                "{name}: minimums changed without naming the readiness issue that set them \
-                 (readiness is still {})",
+                "{name}: {UNREVIEWED} (readiness is still {})",
                 after.readiness.as_deref().unwrap_or("absent")
             ));
         }
@@ -356,6 +355,12 @@ fn git(root: &Path, args: &[&str]) -> Result<String, String> {
 }
 
 /// The problems of every change between consecutive versions.
+///
+/// A change to a reviewed crate's table that named no new readiness issue is a
+/// problem at its commit; `main` is squash-merged and never rewritten, so a
+/// later version that does name a new readiness issue for that crate, the
+/// re-review that measured the change, settles it. The lowering of a minimum
+/// without a reason stays a problem.
 pub(crate) fn history_problems(versions: &[Version], members: &BTreeSet<String>) -> Vec<String> {
     let mut problems = Vec::new();
     let mut previous = Ratchets::default();
@@ -368,6 +373,15 @@ pub(crate) fn history_problems(versions: &[Version], members: &BTreeSet<String>)
                 continue;
             }
         };
+        for (name, after) in &current.crates {
+            let reviewed_again = previous
+                .crates
+                .get(name)
+                .is_some_and(|before| before.readiness != after.readiness);
+            if reviewed_again {
+                problems.retain(|problem| !unreviewed_change(problem, name));
+            }
+        }
         let short = label.get(..12).unwrap_or(label);
         for problem in check_change(&previous, &current, members) {
             problems.push(format!("{FILE} at {short}: {problem}"));
@@ -376,6 +390,16 @@ pub(crate) fn history_problems(versions: &[Version], members: &BTreeSet<String>)
     }
     problems
 }
+
+/// Whether `problem`, from [`history_problems`], says that crate `name`'s table
+/// changed without naming the readiness issue that reviewed the change.
+fn unreviewed_change(problem: &str, name: &str) -> bool {
+    problem.contains(&format!("{name}: {UNREVIEWED}"))
+}
+
+/// The problem of a reviewed crate's table changing under the same readiness
+/// issue.
+const UNREVIEWED: &str = "minimums changed without naming the readiness issue that set them";
 
 /// Every measurement by crate, check and OS.
 type Measured = BTreeMap<String, BTreeMap<Check, BTreeMap<String, Score>>>;

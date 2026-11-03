@@ -180,6 +180,28 @@ fn a_lowering_committed_in_git_history_fails() {
     assert!(problems[0].starts_with("ratchets.toml at "), "{problems:?}");
 }
 
+// A table changed under its old readiness key is a problem at that commit until a later
+// commit names a new readiness key for the crate, the re-review of the change; a lowered
+// minimum without a reason is a problem whatever comes after.
+#[test]
+fn a_later_review_settles_an_unreviewed_change() {
+    let changed = edit("lines = 95", "lines = 96");
+    let reviewed = edit("lines = 95", "lines = 96").replace("P1-R0", "P1-R1");
+    let dir = repository("settled", &[BASE, &changed, &reviewed]);
+    let all = versions(&dir).unwrap();
+    assert_eq!(all.len(), 3, "{all:?}");
+    let unsettled = history_problems(&all[..2], &members());
+    assert_eq!(unsettled.len(), 1, "{unsettled:?}");
+    assert!(unsettled[0].contains("without naming the readiness issue"));
+    assert!(history_problems(&all, &members()).is_empty());
+    let lowered = edit("lines = 95", "lines = 91");
+    let lowered_reviewed = lowered.replace("P1-R0", "P1-R1");
+    let dir = repository("still-lowered", &[BASE, &lowered, &lowered_reviewed]);
+    let problems = history_problems(&versions(&dir).unwrap(), &members());
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].contains("without a new reason"), "{problems:?}");
+}
+
 #[test]
 fn an_uncommitted_lowering_fails_too() {
     let dir = repository("uncommitted", &[BASE]);
