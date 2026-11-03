@@ -122,7 +122,10 @@ impl Checker<'_> {
                     && self.load_from_array(&value, &element.index, element.vector, span)?;
                 // A constant index is the array's own definition at that word; any other is
                 // loaded into a temporary, and by the `ArrayGet` function into its return.
+                // A constant vector's component at a constant index is still the immediate it
+                // folded to (FTEF-31.9), a constant as `sym->constant` of the vector says.
                 let sym = match element.index.known().and_then(eval_int) {
+                    _ if element.vector && value.known().is_some() => value.sym,
                     Some(words) => value.sym.at(u32::from_le_bytes(words.to_le_bytes())),
                     None => Sym::Temp,
                 };

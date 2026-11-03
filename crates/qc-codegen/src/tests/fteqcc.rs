@@ -6,8 +6,8 @@
 
 use qc_diag::Code;
 use qc_progs::opcode::Opcode::{
-    self, AddF, And, BitAnd, BitOr, Call1, Call2, Call3, DivF, Done, EqF, Goto, If, IfNot, Lt,
-    MulF, MulV, MulVf, NotF, NotS, NotV, Return, StoreF, StoreS, StoreV, SubF, SubV,
+    self, AddF, And, BitAnd, BitOr, Call1, Call2, Call3, DivF, Done, EqF, Goto, If, IfNot, LoadV,
+    Lt, MulF, MulV, MulVf, NotF, NotS, NotV, Return, StoreF, StoreS, StoreV, SubF, SubV,
 };
 use qc_progs::{ProgsFile, Statement};
 
@@ -3389,4 +3389,30 @@ fn a_call_of_a_vector_component_is_made() {
         "3 + 1 folds to 4"
     );
     assert_eq!(f[6].b, a);
+}
+
+// spec DIFF-14.11: a field's vector loaded whole by LOAD_V (FTE-9.3) and read at its first
+// word is stored, not folded, as the vector product is
+#[test]
+fn a_loaded_vectors_first_word_is_stored_not_folded() {
+    let p = fte_progs(".vector fv; entity e; float a; void() t = { a = (e.fv).x; };\n");
+    let f = body(&p, "t");
+    assert_eq!(opcodes(&f), ops(&[LoadV, StoreF, Done]));
+    assert_eq!((f[1].a, f[1].b), (f[0].c, global(&p, "a")));
+}
+
+// spec FTEF-32.17: the component at a non-zero constant index is the call's argument, its own
+// word, and the call is made
+#[test]
+fn a_call_of_a_later_component_passes_that_component() {
+    let p = fte_progs(
+        "float(float f) floor = #37; float a;\nvoid() t = { a = floor(('3 4 5')[1]) + 1; };\n",
+    );
+    let f = body(&p, "t");
+    assert_eq!(opcodes(&f), ops(&[StoreF, Call1, AddF, Done]));
+    assert_eq!(
+        words(&p, f[0].a, 1),
+        [4.0_f32.to_bits()],
+        "the second word is passed"
+    );
 }

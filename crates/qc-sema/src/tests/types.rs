@@ -380,7 +380,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
             Op::AddF,
             Operand::Input(Input::Left),
             Operand::Input(Input::Right),
-            [None, constant(1.0)]
+            [None, None]
         )),
         "ADD_F: a literal operand is an input too"
     );
@@ -444,7 +444,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
             immediates: Vec::new(),
             temps: (0..4).map(Temp::Made).collect(),
             value: Some(Operand::Temp(TempId::new(3))),
-            inputs: [None, constant(2.0)],
+            inputs: [None, None],
         }),
         "DIV_F, BITOR, MUL_F, SUB_F"
     );

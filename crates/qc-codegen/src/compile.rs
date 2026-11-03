@@ -2803,8 +2803,7 @@ impl<'a> Compiler<'a> {
         for statement in &fragment.statements {
             let row = u32::try_from(statement.op.number())
                 .ok()
-                .and_then(Opcode::from_number)
-                .and_then(|op| ops::ROWS.iter().find(|row| row.opcode == op))?;
+                .and_then(ops::row_of)?;
             let operands_ok = [statement.a, statement.b]
                 .iter()
                 .flatten()
@@ -2819,7 +2818,7 @@ impl<'a> Compiler<'a> {
             {
                 return None;
             }
-            rows.push(*row);
+            rows.push(row);
         }
         Some(rows)
     }
@@ -3676,9 +3675,8 @@ impl<'a> Compiler<'a> {
         // DIFF-14.11: a result wider than the value stored, a vector whose first word is
         // stored (`(u * v).x`), is not folded, or the statement would write every word of it
         // from `to`. FTEQCC folds it (`QCC_CollapseStore`), an oracle defect (ADR-0020).
-        let wider = Opcode::from_number(last.op)
-            .and_then(|op| ops::ROWS.iter().find(|row| row.opcode == op))
-            .is_some_and(|row| ValueType::simple(row.c).words() > stored);
+        let wider =
+            ops::row_of(last.op).is_some_and(|row| ValueType::simple(row.c).words() > stored);
         if wider {
             return false;
         }

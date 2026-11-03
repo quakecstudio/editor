@@ -149,8 +149,9 @@ pub struct Fragment {
     pub temps: Vec<Temp>,
     /// The construct's value: an input, a temporary, or a constant.
     pub value: Option<Operand>,
-    /// The constant each input was when the fragment was lowered, left then right: what its
-    /// folds read. A writer whose inputs are other values does not hold the fragment.
+    /// The constant each input was when a fold consumed it, left then right: an input no
+    /// statement or value names, which the fragment then depends on being that constant. A
+    /// writer whose inputs are other values does not hold the fragment.
     pub inputs: [Option<Immediate>; 2],
 }
 
@@ -252,13 +253,22 @@ impl Builder {
         self.held = false;
     }
 
-    /// The fragment, valued `value`, its inputs the constants `inputs`, if every step was
-    /// held.
+    /// The fragment, valued `value`, if every step was held; of the constants `inputs` the
+    /// inputs were, those of the inputs it does not name, which a fold consumed.
     pub(crate) fn finish(
         self,
         value: Option<Operand>,
         inputs: [Option<Immediate>; 2],
     ) -> Option<Fragment> {
+        let names = |side: Input| {
+            let named = |operand: &Option<Operand>| matches!(operand, Some(Operand::Input(n) | Operand::Word(Whole::Input(n), _)) if *n == side);
+            named(&value) || self.statements.iter().any(|s| named(&s.a) || named(&s.b))
+        };
+        let [left, right] = inputs;
+        let inputs = [
+            left.filter(|_| !names(Input::Left)),
+            right.filter(|_| !names(Input::Right)),
+        ];
         self.held.then_some(Fragment {
             statements: self.statements,
             immediates: self.immediates,

@@ -950,3 +950,24 @@ fn temporaries_are_named_by_their_offset() {
     // A vector's temporary is three words, so the next one is at offset 3.
     assert_eq!(itof("v = (v + v) * c8;"), [unsafe_("temp_3")]);
 }
+
+// spec FTEF-31.9: a constant vector's component at a constant index, `v[0]` or `v.x`, is a
+// constant as an immediate is, so the comparison warnings read it as one (FTEF-28.3)
+#[test]
+fn a_constant_vectors_component_compares_as_a_constant() {
+    for statement in ["a = a || X;", "a = X < 3;"] {
+        let immediate = typed(&statement.replace('X', "3"));
+        assert_eq!(
+            immediate,
+            [d(Code::W0239, "Result of comparison is constant")],
+            "{statement}"
+        );
+        for component in ["('3 0 0')[0]", "('3 0 0').x"] {
+            assert_eq!(
+                typed(&statement.replace('X', component)),
+                immediate,
+                "{component}"
+            );
+        }
+    }
+}
