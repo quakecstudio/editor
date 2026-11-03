@@ -28,7 +28,7 @@ use qc_sema::{Db, FileId, ModuleInput};
 use qc_types::Etype;
 use qc_vm::ServerState;
 
-use super::draw::{Draw, Drawer, Pools, Rng};
+use super::draw::{Draw, Drawer, Name, NameKind, Pools, Rng};
 use super::{
     COVERAGE_BAR, CallsError, CodebaseReport, Difference, Oracle, Report, Value, World, coverage,
     run_calls, run_codebase,
@@ -773,6 +773,14 @@ fn with_drawer_of(source: &str, test: impl FnOnce(&Drawer<'_, '_>, &Progs<'_>)) 
     test(&drawer, &progs);
 }
 
+/// A compared name of `kind` (DIFF-12.28).
+fn name(kind: NameKind, name: &[u8]) -> Name {
+    Name {
+        kind,
+        name: name.to_vec(),
+    }
+}
+
 fn function(progs: &Progs<'_>, name: &[u8]) -> qc_progs::Function {
     progs.ed_find_function(name).unwrap()
 }
@@ -876,11 +884,10 @@ fn compared_values_are_mined_and_drawn() {
         let mut armor = numbers(b"armorvalue");
         armor.sort_by(f32::total_cmp);
         assert_eq!(armor, [-1.0, 0.0, 1.0]);
-        assert!(
-            pools
-                .pairs
-                .contains(&(b"armorvalue".to_vec(), b"x".to_vec()))
-        );
+        assert!(pools.pairs.contains(&(
+            name(NameKind::Field, b"armorvalue"),
+            name(NameKind::Variable, b"x")
+        )));
         // Every ordering opcode draws the neighbours.
         for (name, want) in [
             (&b"armortype"[..], [1.0, 2.0, 3.0]),
@@ -893,11 +900,10 @@ fn compared_values_are_mined_and_drawn() {
         }
         // An ordering of two fields pairs them and draws no neighbours.
         assert!(numbers(b"ammo_shells").is_empty());
-        assert!(
-            pools
-                .pairs
-                .contains(&(b"ammo_shells".to_vec(), b"ammo_nails".to_vec()))
-        );
+        assert!(pools.pairs.contains(&(
+            name(NameKind::Field, b"ammo_shells"),
+            name(NameKind::Field, b"ammo_nails")
+        )));
         assert_eq!(
             pools.compared[&b"netname"[..]].texts,
             BTreeSet::from([b"carrier".to_vec()])
@@ -913,12 +919,14 @@ fn compared_values_are_mined_and_drawn() {
             BTreeSet::from([b"go".to_vec()])
         );
         // Two names compared pair them.
-        assert!(
-            pools
-                .pairs
-                .contains(&(b"team".to_vec(), b"lastteam".to_vec()))
-        );
-        assert!(pools.pairs.contains(&(b"x".to_vec(), b"y".to_vec())));
+        assert!(pools.pairs.contains(&(
+            name(NameKind::Field, b"team"),
+            name(NameKind::Field, b"lastteam")
+        )));
+        assert!(pools.pairs.contains(&(
+            name(NameKind::Variable, b"x"),
+            name(NameKind::Variable, b"y")
+        )));
         let draw = |round| drawer.draw(&mut Rng::new(b"h", round), (h, &pools), round);
         let contexts: Vec<_> = (1..32).map(draw).collect();
         let last_field = |c: &super::draw::Context, edict: usize, name: &[u8]| {
@@ -1448,6 +1456,231 @@ fn a_va_list_elements_other_words_are_compared() {
     assert!(!against_fteqcc(&float(5), &float(6)).is_empty());
 }
 
+// spec DIFF-12.24: an accessor is called once for every index of its array after its rounds,
+// so every leaf of its tree runs; a function that is not an accessor gets no such calls
+#[test]
+fn accessors_are_called_for_every_index() {
+    let source = "float arr[40]; float x;\nvoid() worldspawn = { x = 1; };\n\
+        float(float i) get = { return arr[i]; };\nvoid(float i, float v) set = { arr[i] = v; };\n";
+    let bytes = compile_fteqcc(source);
+    let progs = Progs::read(&bytes).unwrap();
+    let report = run(&bytes, &bytes, 1);
+    assert!(report.divergences.is_empty(), "{:?}", report.divergences);
+    let functions = progs.functions();
+    let body = |name: &[u8]| {
+        let (i, f) = functions
+            .iter()
+            .enumerate()
+            .find(|(_, f)| progs.string(f.s_name) == Some(name))
+            .unwrap_or_else(|| panic!("no {}", String::from_utf8_lossy(name)));
+        let end = functions
+            .iter()
+            .skip(i + 1)
+            .map(|g| g.first_statement)
+            .filter(|&s| s > f.first_statement)
+            .min()
+            .unwrap_or(i32::try_from(progs.statements().len()).unwrap());
+        f.first_statement..end
+    };
+    for name in [&b"ArrayGet*arr"[..], &b"ArraySet*arr"[..]] {
+        let body = body(name);
+        let missed: Vec<i32> = body
+            .clone()
+            .filter(|s| !report.executed.contains(s))
+            .collect();
+        assert!(body.len() > 40, "a tree over 40 elements: {}", body.len());
+        // Every leaf runs; what may stay is the bound check's error call at the end, which
+        // ends the call before its statement is recorded, and the trailing DONE.
+        assert!(
+            missed.iter().all(|s| *s >= body.end - 3),
+            "{} missed {missed:?}",
+            String::from_utf8_lossy(name)
+        );
+    }
+    // One round of `get` plus the accessor calls: 42 each for the getter and the setter.
+    assert!(report.calls >= 2 * 42 + 3, "{}", report.calls);
+    assert!(super::draw::is_accessor(b"ArrayGet*arr"));
+    assert!(super::draw::is_accessor(b"ArraySet*tab"));
+    assert!(!super::draw::is_accessor(b"get"));
+}
+
+// spec DIFF-12.25: a function that precaches runs with the server loading in every round,
+// so its statements past the precache execute
+#[test]
+fn precaching_functions_run_loading() {
+    let source = "float x;\nvoid() worldspawn = { x = 1; };\n\
+        void(string s) precache_model = #20;\n\
+        void() spawn_thing = { precache_model(\"progs/t.mdl\"); x = 2; x = 3; x = 4; };\n";
+    let bytes = compile(source, false);
+    let progs = Progs::read(&bytes).unwrap();
+    let report = run(&bytes, &bytes, 4);
+    assert!(report.divergences.is_empty(), "{:?}", report.divergences);
+    let f = progs
+        .functions()
+        .iter()
+        .find(|f| progs.string(f.s_name) == Some(b"spawn_thing"))
+        .unwrap();
+    // Its eighth round runs with the server active, the reverse of any other function.
+    with_drawer_of(source, |drawer, progs| {
+        for (name, precaches) in [(&b"spawn_thing"[..], true), (&b"worldspawn"[..], false)] {
+            let f = function(progs, name);
+            let pools = drawer.pools(f);
+            assert_eq!(pools.precaches, precaches);
+            let server = |round| {
+                drawer
+                    .draw(&mut Rng::new(name, round), (f, &pools), round)
+                    .server
+            };
+            let (usual, eighth) = if precaches {
+                (ServerState::Loading, ServerState::Active)
+            } else {
+                (ServerState::Active, ServerState::Loading)
+            };
+            assert_eq!(server(3), usual);
+            assert_eq!(server(7), eighth);
+        }
+    });
+    // Every statement of the body ran in rounds 0 to 3, none of which is an eighth round.
+    let body = f.first_statement..f.first_statement + 6;
+    let missed: Vec<i32> = body.filter(|s| !report.executed.contains(s)).collect();
+    assert!(missed.is_empty(), "{missed:?}");
+}
+
+// spec DIFF-12.25: a function that precaches through another function it calls runs with the
+// server loading in every round too
+#[test]
+fn precaching_through_a_wrapper_runs_loading() {
+    let source = "float x;\nvoid() worldspawn = { x = 1; };\n\
+        void(string s) precache_model = #20;\n\
+        void(string s) precache_safe = { precache_model(s); };\n\
+        void(string s) precache_twice = { precache_safe(s); };\n\
+        void() spawn_thing = { precache_twice(\"progs/t.mdl\"); x = 2; x = 3; x = 4; };\n";
+    let bytes = compile(source, false);
+    let progs = Progs::read(&bytes).unwrap();
+    let report = run(&bytes, &bytes, 4);
+    assert!(report.divergences.is_empty(), "{:?}", report.divergences);
+    with_drawer_of(source, |drawer, progs| {
+        assert!(drawer.pools(function(progs, b"spawn_thing")).precaches);
+        assert!(drawer.pools(function(progs, b"precache_twice")).precaches);
+        assert!(!drawer.pools(function(progs, b"worldspawn")).precaches);
+    });
+    let f = progs
+        .functions()
+        .iter()
+        .find(|f| progs.string(f.s_name) == Some(b"spawn_thing"))
+        .unwrap();
+    let body = f.first_statement..f.first_statement + 6;
+    let missed: Vec<i32> = body.filter(|s| !report.executed.contains(s)).collect();
+    assert!(missed.is_empty(), "{missed:?}");
+}
+
+// spec DIFF-12.26: a builtin number the profile does not implement does nothing and returns
+// 0 in the compiler differential, so the call runs on
+#[test]
+fn unimplemented_builtins_return_zero() {
+    let source = "float x;\nvoid() worldspawn = { x = 1; };\n\
+        float(float a) mystery = #5;\n\
+        void() f = { x = mystery(2) + 5; x = x + 1; };\n";
+    let bytes = compile(source, false);
+    let progs = Progs::read(&bytes).unwrap();
+    let report = run(&bytes, &bytes, 1);
+    assert!(report.divergences.is_empty(), "{:?}", report.divergences);
+    let f = progs
+        .functions()
+        .iter()
+        .find(|f| progs.string(f.s_name) == Some(b"f"))
+        .unwrap();
+    let body = f.first_statement..f.first_statement + 4;
+    let missed: Vec<i32> = body.filter(|s| !report.executed.contains(s)).collect();
+    assert!(missed.is_empty(), "{missed:?}");
+}
+
+// spec DIFF-12.28: a pair of names of two types passes no value: a float field paired with an
+// entity field leaves the entity field's draws entities, and a pair of one type still passes
+#[test]
+fn a_pair_passes_values_only_between_one_type() {
+    let source = "float x; .float fx; .float fy; .float fz; .entity owner;\n\
+        void() worldspawn = { x = 1; };\n\
+        void() f = { x = self.fx + self.fy + self.fz; x = self.owner.fx; };\n";
+    with_drawer_of(source, |drawer, progs| {
+        let f = function(progs, b"f");
+        let mut pools = drawer.pools(f);
+        let field = |name: &[u8]| Name {
+            kind: NameKind::Field,
+            name: name.to_vec(),
+        };
+        let parm = Name {
+            kind: NameKind::Parm,
+            name: b"fx".to_vec(),
+        };
+        pools.pairs = vec![
+            (field(b"fx"), field(b"owner")),
+            (field(b"fx"), field(b"fy")),
+        ];
+        let parm_pair = (parm, field(b"fz"));
+        let mut passed = false;
+        for round in 0..256 {
+            let c = drawer.draw(&mut Rng::new(b"f", round), (f, &pools), round);
+            for (edict, name, draw) in &c.fields {
+                if name == b"owner" {
+                    assert!(matches!(draw, Draw::Entity(_)), "round {round}: {draw:?}");
+                }
+
+                if name == b"fy"
+                    && c.fields
+                        .iter()
+                        .any(|(e, n, d)| e == edict && n == b"fx" && d == draw)
+                {
+                    passed = true;
+                }
+            }
+        }
+        assert!(passed, "a float pair passes its value");
+        // A pair of a parameter and a field draws exactly what no pair does.
+        let mut crossed = drawer.pools(f);
+        crossed.pairs = vec![(parm_pair.0.clone(), parm_pair.1.clone())];
+        let mut none = drawer.pools(f);
+        none.pairs = Vec::new();
+        for round in 0..64 {
+            let a = drawer.draw(&mut Rng::new(b"f", round), (f, &crossed), round);
+            let b = drawer.draw(&mut Rng::new(b"f", round), (f, &none), round);
+            assert_eq!(a.fields, b.fields, "round {round}");
+        }
+    });
+}
+
+// spec DIFF-12.27: an entity variable a function's statements name is drawn, so a guard on
+// it against the world is passed in some round
+#[test]
+fn entity_variables_are_drawn() {
+    let source = "float x; entity keeper;\nvoid() worldspawn = { x = 1; };\n\
+        void() f = { if (keeper == world) return; x = 2; x = 3; };\n";
+    let bytes = compile(source, false);
+    let progs = Progs::read(&bytes).unwrap();
+    let report = run(&bytes, &bytes, 16);
+    assert!(report.divergences.is_empty(), "{:?}", report.divergences);
+    with_drawer_of(source, |drawer, progs| {
+        let f = function(progs, b"f");
+        let pools = drawer.pools(f);
+        assert_eq!(pools.variables, [b"keeper".to_vec(), b"x".to_vec()]);
+        // Its comparison with the world marks the world among its values.
+        assert!(pools.compared[&b"keeper".to_vec()].world);
+        let drawn = (1..8).filter(|&round| {
+            let c = drawer.draw(&mut Rng::new(b"f", round), (f, &pools), round);
+            c.globals.iter().any(|(name, _)| name == b"keeper")
+        });
+        assert!(drawn.count() > 0);
+    });
+    let f = progs
+        .functions()
+        .iter()
+        .find(|f| progs.string(f.s_name) == Some(b"f"))
+        .unwrap();
+    let body = f.first_statement..f.first_statement + 5;
+    let missed: Vec<i32> = body.filter(|s| !report.executed.contains(s)).collect();
+    assert!(missed.is_empty(), "{missed:?}");
+}
+
 #[test]
 #[ignore = "debug: GEN_DIR names a generated program's directory"]
 fn debug_pairing() {
@@ -1592,8 +1825,12 @@ fn debug_replay() {
     let text = format!("progs progs.dat\n{}", spec.directives);
     let scenario = scenario::read(text.as_bytes(), Path::new(".")).unwrap();
     let entities = spec.entities.unwrap_or_default();
-    let mut tw = World::new(&tp, &scenario, &entities, EngineProfile::Id).unwrap();
-    let mut ow = World::new(&op, &scenario, &entities, EngineProfile::Id).unwrap();
+    let profile = match std::env::var("ENGINE").as_deref() {
+        Ok("vkquake") => EngineProfile::VkQuake,
+        _ => EngineProfile::Id,
+    };
+    let mut tw = World::new(&tp, &scenario, &entities, profile).unwrap();
+    let mut ow = World::new(&op, &scenario, &entities, profile).unwrap();
     let pair = super::Pair::new(Oracle::Fteqcc, &tw, &ow);
     let drawer = Drawer::new(&tw);
     let function = tp.ed_find_function(fn_name.as_bytes()).unwrap();
@@ -1604,11 +1841,19 @@ fn debug_replay() {
         .unwrap();
     let our_index = ow.program.functions[fn_name.as_bytes()][0];
     let pools = drawer.pools(function);
-    let context = drawer.draw(
+    let mut context = drawer.draw(
         &mut Rng::new(fn_name.as_bytes(), round),
         (function, &pools),
         round,
     );
+    // DIFF-12.24: an accessor's index call, at round cap + position, takes its index.
+    if let Some(index) = std::env::var("INDEX")
+        .ok()
+        .and_then(|i| i.parse::<f32>().ok())
+        && let Some(first) = context.parms.first_mut()
+    {
+        *first = Draw::Float(index);
+    }
     eprintln!(
         "self {} other {} server {:?}",
         context.self_edict, context.other_edict, context.server

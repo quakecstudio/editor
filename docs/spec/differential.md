@@ -797,6 +797,63 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   agrees under DIFF-12.7's readings and their other two words hold the same bits. So crmod7's
   `score_check_sudden_death`, which passes strings on to a variadic, is no divergence by its
   `__va_list[1]`.
+- **DIFF-12.24** FTEQCC's getter and setter of an array, `ArrayGet*NAME` and `ArraySet*NAME`
+  (FTEF-19.78), are a tree over the index: `QCC_PR_ArrayRecurseDivideRegular` and
+  `QCC_PR_ArraySetRecurseDivide` split `min..max` at `mid = min + (max-min)/2` with `LT_F
+  index, mid+1` while `max-min > 4`, and each leaf of one or two elements tests `LT_F index,
+  min+1` and returns or stores element `min`; with `flag_boundchecks` (`defaultflag`, so on)
+  the getter first jumps on `index < 0` (`OP_IF_I` of `OP_LT_F index, 0`) to an `error` call
+  after the tree, which an index past the last leaf also falls through to; the `GE_F numslots`
+  test is only in the commented-out `vectortrick` branch. A round's draws reach one
+  leaf each, so a large array's accessor stays mostly unexecuted. After its rounds, an
+  accessor (a function whose name starts with `ArrayGet*` or `ArraySet*`) is called once more
+  for each index from -1 up to the largest float constant its statements compare its first
+  parameter with, the array's size (a constant as DIFF-12.22 reads one), each from the context
+  of the round numbered from the rounds' cap on (DIFF-12.16), the cap plus the index's
+  position, with that index as the first parameter; a divergence's round so names its index
+  as well as its context. Every index is called: each reaches a leaf of its own, and the error
+  call after the tree is never reached by an index in range. An accessor whose statements
+  compare the index with no constant gets no such calls. So crmod7's
+  `ArrayGet*warpmap` and the others of its large arrays, half of its unexecuted statements,
+  run every leaf.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_EmitArrayGetFunction`, `QCC_PR_ArrayRecurseDivideRegular`,
+  `QCC_PR_EmitArraySetFunction`, `QCC_PR_ArraySetRecurseDivide`; `engine/qclib/qccmain.c`,
+  the `boundchecks` entry of `compiler_flag`.
+- **DIFF-12.25** A function whose statements call a precache builtin (`precache_sound`,
+  `precache_model`, `precache_file` or their `2` forms, BUILTIN-10), or call a function that
+  does, through any depth of calls, runs with the server
+  loading in every round but the eighth, which runs it active, the reverse of every other
+  function (DIFF-12.2): the game runs a spawn function
+  only while it loads, and the mock refuses a precache outside it (BUILTIN-10.1), which ended
+  seven calls in eight at the function's first precache, leaving what follows, Arcane
+  Dimensions' spawn functions among them, unexecuted.
+- **DIFF-12.26** In the compiler differential the mock engine runs a builtin number its
+  profile's dispatch does not implement, within the profile's table (every number under
+  vkQuake's profile, which has no limit; a number below `LIMIT_NUM_BUILTINS` under id's,
+  past which the VM's `BadBuiltin` stands, VM-13.4, BUILTIN-18.1), as a call that does nothing
+  and returns 0, counted
+  among the builtins called (DIFF-12.3), instead of the engine's `PF_Fixme` error
+  (BUILTIN-1.2, BUILTIN-18.2): the differential compares two compilers, and a mod's function
+  written for another engine's builtins, such as the CSQC drawing of Arcane Dimensions'
+  `Hud_Draw*` compiled into its server module, then runs to its end in both progs. The VM
+  differential (DIFF-1 to DIFF-11) keeps the error.
+- **DIFF-12.27** The variables DIFF-12.2 and DIFF-12.21 draw include the entity globals
+  (a global of entity type at a slot other than 0 whose value in the progs is 0, alone at its
+  slot, other than `self`, `other` and `world`, which every call sets), each drawn as
+  DIFF-12.2 draws an entity: an edict in use, a client one time in three. A mod keeps its state in entity globals, crmod7 its `boss`, `team_first_place` and
+  `crmod_qtag_it`, and a function guarded by `if (crmod_qtag_it == world) return;` never ran
+  past the guard while only float and string variables were drawn. An entity variable is a
+  name whose compared values DIFF-12.22 records too: `EQ_E` and `NE_E` with it pair it with the
+  other operand when that is a name (another variable, a parameter or a field read), and mark
+  the world among its values; `self`, `other` and `world` are no names.
+- **DIFF-12.28** A pair (DIFF-12.22) passes a drawn value from one name to the other only when
+  both are fields, or both variables, of one drawn type, each name kept with what it names (a
+  field read, a variable or a parameter): a name the statements give a
+  parameter and a field alike, crmod7's entity parameter `client` and its string field
+  `.client`, would otherwise copy an entity's number into a string field, which each progs
+  reads as a different offset of its own string table, a difference of the drawing and not of
+  the compilers.
 - **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and
   Arcane Dimensions, are set up and called with the mock engine under vkQuake's profile
   (BUILTIN-18): crmod7 calls extension builtins while it sets up its world, and Arcane

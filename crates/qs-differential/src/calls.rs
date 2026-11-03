@@ -20,7 +20,7 @@ use qc_edict::EdictNumber;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use qc_builtins::{EngineProfile, MockBuiltins};
+use qc_builtins::{EngineProfile, MockBuiltins, Unimplemented};
 use qc_progs::{Def, Progs};
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::{ErrorKind, Machine, Observer, RunError};
@@ -32,7 +32,7 @@ use crate::scenario::{self, Scenario};
 mod draw;
 
 pub(crate) use draw::Rng;
-use draw::{Context, Drawer};
+use draw::{Context, Draw, Drawer, is_accessor};
 
 /// `OFS_RETURN` (VM-14.1): the return value's first slot.
 const OFS_RETURN: usize = 1;
@@ -525,11 +525,9 @@ fn run_calls_reporting(
         let mut limit = rounds;
         let mut before = reached(&report.executed);
         let mut round = 0;
-        while round < limit {
-            let mut rng = Rng::new(name, round);
-            let context = drawer.draw(&mut rng, (function, &pools), round);
-            let theirs = their_world.call(their_index, &context);
-            let ours = our_world.call(our_index, &context);
+        let mut compare = |context: &Context, round: u32, report: &mut Report| {
+            let theirs = their_world.call(their_index, context);
+            let ours = our_world.call(our_index, context);
             report.calls = report.calls.saturating_add(1);
             report
                 .executed
@@ -541,6 +539,11 @@ fn run_calls_reporting(
                     what,
                 });
             }
+        };
+        while round < limit {
+            let mut rng = Rng::new(name, round);
+            let context = drawer.draw(&mut rng, (function, &pools), round);
+            compare(&context, round, &mut report);
             round = round.saturating_add(1);
             if round == limit && limit < cap {
                 let now = reached(&report.executed);
@@ -548,6 +551,21 @@ fn run_calls_reporting(
                     limit = limit.saturating_add(batch).min(cap);
                 }
                 before = now;
+            }
+        }
+        // DIFF-12.24: an accessor is also called once for every index of its array, each from
+        // the context of a round past the cap, so each element's leaf of its tree runs.
+        if is_accessor(name)
+            && let Some(indexes) = drawer.accessor_indexes(function)
+        {
+            for (i, index) in indexes.into_iter().enumerate() {
+                let round = cap.saturating_add(u32::try_from(i).unwrap_or(u32::MAX));
+                let mut rng = Rng::new(name, round);
+                let mut context = drawer.draw(&mut rng, (function, &pools), round);
+                if let Some(first) = context.parms.first_mut() {
+                    *first = Draw::Float(index);
+                }
+                compare(&context, round, &mut report);
             }
         }
     }
@@ -793,8 +811,8 @@ struct Program<'a, 'p> {
     progs: &'a Progs<'p>,
     /// The named globals, in definition order.
     globals: Vec<Global>,
-    /// The slot of each name a context writes by name: its first float or string global
-    /// outside every function's locals, else its first (DIFF-12.11).
+    /// The slot of each name a context writes by name: its first float, string or entity
+    /// global outside every function's locals, else its first (DIFF-12.11, DIFF-12.27).
     global_slots: BTreeMap<Vec<u8>, usize>,
     /// The named fields, by name: the type and slot of the first definition of each.
     fields: BTreeMap<Vec<u8>, (DefType, usize)>,
@@ -859,9 +877,15 @@ impl<'a, 'p> Program<'a, 'p> {
             functions,
             locals,
         };
-        // DIFF-12.11: a context writes a global by name, a float or a string, to its first
-        // float or string definition outside every function's locals, else to its first.
-        let scalar = |g: &&Global| matches!(g.1, DefType::Known(Etype::Float | Etype::String));
+        // DIFF-12.11: a context writes a global by name, a float, a string or an entity
+        // (DIFF-12.27), to its first such definition outside every function's locals, else
+        // to its first.
+        let scalar = |g: &&Global| {
+            matches!(
+                g.1,
+                DefType::Known(Etype::Float | Etype::String | Etype::Entity)
+            )
+        };
         let mut global_slots = BTreeMap::new();
         for global in program
             .globals
@@ -939,6 +963,9 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
     ) -> Result<Self, CallsError> {
         let mut host = Host::new(scenario, progs).map_err(CallsError::Refused)?;
         host.builtins.engine_mut().profile = profile;
+        // DIFF-12.26: a builtin the profile lacks does nothing here, so a function a mod
+        // compiles for another engine runs to its end.
+        host.builtins.engine_mut().unimplemented = Unimplemented::ReturnsZero;
         host.start_map(progs, entities)
             .map_err(|e| CallsError::Setup(format!("{e:?}")))?;
         for slot in 0..scenario.clients {
