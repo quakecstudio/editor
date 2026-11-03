@@ -22,6 +22,7 @@ const qs_client::client::CLIENT_ROTATE_SPEED
 const qs_client::client::CLIENT_SIGNONS
 const qs_client::client::CLIENT_TELEPORT_DISTANCE
 const qs_client::client::CLIENT_TENT_SOUNDS
+const qs_client::client::HUD_DEFAULT_LINES
 const qs_client::client::stat::ACTIVEWEAPON
 const qs_client::client::stat::AMMO
 const qs_client::client::stat::ARMOR
@@ -37,6 +38,19 @@ const qs_client::client::stat::TOTALMONSTERS
 const qs_client::client::stat::TOTALSECRETS
 const qs_client::client::stat::WEAPON
 const qs_client::client::stat::WEAPONFRAME
+const qs_client::hud::HUD_CENTERTIME
+const qs_client::hud::HUD_CENTER_LINE_LENGTH
+const qs_client::hud::HUD_CENTER_MAX
+const qs_client::hud::HUD_FLASH_FRAMES
+const qs_client::hud::HUD_GAME_DEATHMATCH
+const qs_client::hud::HUD_ITEMS
+const qs_client::hud::HUD_LOW_AMMO
+const qs_client::hud::HUD_LOW_ARMOR
+const qs_client::hud::HUD_LOW_HEALTH
+const qs_client::hud::HUD_NUM_WIDTH
+const qs_client::hud::HUD_PRINTSPEED
+const qs_client::hud::HUD_SBAR_HEIGHT
+const qs_client::hud::HUD_WEAPONS
 const qs_client::models::SYNCTYPE_RAND
 const qs_client::models::flags::GIB
 const qs_client::models::flags::GRENADE
@@ -75,9 +89,14 @@ enum qs_client::client::Event
 enum qs_client::client::Game
 enum qs_client::client::ParseError
 enum qs_client::client::SoundRef
+enum qs_client::hud::Anchor
+enum qs_client::hud::HudItem
 enum qs_client::models::ModelKind
 enum qs_client::particles::ParticleType
 enum qs_client::view::Contents
+field qs_client::client::Hud.bar
+field qs_client::client::Hud.center
+field qs_client::client::Hud.overlay
 field qs_client::client::LerpSettings.models
 field qs_client::client::LerpSettings.moves
 field qs_client::client::Score.colors
@@ -124,6 +143,22 @@ field qs_client::entity::LerpFlags.movestep
 field qs_client::entity::LerpFlags.reset_anim
 field qs_client::entity::LerpFlags.reset_anim2
 field qs_client::entity::LerpFlags.reset_move
+field qs_client::hud::HudInput.completed_time
+field qs_client::hud::HudInput.faceanimtime
+field qs_client::hud::HudInput.gametype
+field qs_client::hud::HudInput.intermission
+field qs_client::hud::HudInput.item_gettime
+field qs_client::hud::HudInput.items
+field qs_client::hud::HudInput.levelname
+field qs_client::hud::HudInput.lines
+field qs_client::hud::HudInput.maxclients
+field qs_client::hud::HudInput.scores
+field qs_client::hud::HudInput.showscores
+field qs_client::hud::HudInput.stats
+field qs_client::hud::HudInput.time
+field qs_client::hud::HudInput.viewentity
+field qs_client::hud::Placed.anchor
+field qs_client::hud::Placed.item
 field qs_client::models::FrameInfo.first_pose
 field qs_client::models::FrameInfo.interval
 field qs_client::models::FrameInfo.poses
@@ -197,6 +232,7 @@ fn qs_client::client::Client::completed_time
 fn qs_client::client::Client::entities
 fn qs_client::client::Client::frame
 fn qs_client::client::Client::gametype
+fn qs_client::client::Client::hud
 fn qs_client::client::Client::idealpitch
 fn qs_client::client::Client::intermission
 fn qs_client::client::Client::inwater
@@ -213,10 +249,13 @@ fn qs_client::client::Client::particles
 fn qs_client::client::Client::paused
 fn qs_client::client::Client::scene
 fn qs_client::client::Client::scores
+fn qs_client::client::Client::set_bar_lines
 fn qs_client::client::Client::set_contents
 fn qs_client::client::Client::set_forwardmove
 fn qs_client::client::Client::set_gravity
 fn qs_client::client::Client::set_lerp
+fn qs_client::client::Client::set_screen
+fn qs_client::client::Client::set_showscores
 fn qs_client::client::Client::set_view_settings
 fn qs_client::client::Client::set_viewangles
 fn qs_client::client::Client::signon
@@ -231,6 +270,13 @@ fn qs_client::client::Client::viewangles
 fn qs_client::client::Client::viewentity
 fn qs_client::entity::Entity::has_model
 fn qs_client::entity::Entity::new
+fn qs_client::hud::CenterPrint::draw
+fn qs_client::hud::CenterPrint::lines
+fn qs_client::hud::CenterPrint::set
+fn qs_client::hud::color_for_map
+fn qs_client::hud::intermission_overlay
+fn qs_client::hud::sort_frags
+fn qs_client::hud::status_bar
 fn qs_client::message::Reader::angle
 fn qs_client::message::Reader::bad
 fn qs_client::message::Reader::byte
@@ -285,6 +331,7 @@ impl qs_client::view::ViewState: Default
 mod qs_client::client::stat
 mod qs_client::models::flags
 struct qs_client::client::Client
+struct qs_client::client::Hud
 struct qs_client::client::LerpSettings
 struct qs_client::client::Score
 struct qs_client::client::SoundStart
@@ -292,6 +339,9 @@ struct qs_client::entity::Baseline
 struct qs_client::entity::Entity
 struct qs_client::entity::Lerp
 struct qs_client::entity::LerpFlags
+struct qs_client::hud::CenterPrint
+struct qs_client::hud::HudInput
+struct qs_client::hud::Placed
 struct qs_client::message::Reader
 struct qs_client::models::FrameInfo
 struct qs_client::models::ModelInfo
@@ -310,6 +360,7 @@ struct qs_client::view::ViewState
 struct qs_client::view::Weapon
 trait qs_client::models::Models
 trait qs_client::models::Random
+use qs_client::Anchor = hud::Anchor
 use qs_client::Baseline = entity::Baseline
 use qs_client::CLIENT_BEAM_MODELS = client::CLIENT_BEAM_MODELS
 use qs_client::CLIENT_BEAM_STEP = client::CLIENT_BEAM_STEP
@@ -335,6 +386,7 @@ use qs_client::CLIENT_ROTATE_SPEED = client::CLIENT_ROTATE_SPEED
 use qs_client::CLIENT_SIGNONS = client::CLIENT_SIGNONS
 use qs_client::CLIENT_TELEPORT_DISTANCE = client::CLIENT_TELEPORT_DISTANCE
 use qs_client::CLIENT_TENT_SOUNDS = client::CLIENT_TENT_SOUNDS
+use qs_client::CenterPrint = hud::CenterPrint
 use qs_client::Client = client::Client
 use qs_client::Contents = view::Contents
 use qs_client::DynamicLight = scene::DynamicLight
@@ -342,6 +394,23 @@ use qs_client::Entity = entity::Entity
 use qs_client::Event = client::Event
 use qs_client::FrameInfo = models::FrameInfo
 use qs_client::Game = client::Game
+use qs_client::HUD_CENTERTIME = hud::HUD_CENTERTIME
+use qs_client::HUD_CENTER_LINE_LENGTH = hud::HUD_CENTER_LINE_LENGTH
+use qs_client::HUD_CENTER_MAX = hud::HUD_CENTER_MAX
+use qs_client::HUD_DEFAULT_LINES = client::HUD_DEFAULT_LINES
+use qs_client::HUD_FLASH_FRAMES = hud::HUD_FLASH_FRAMES
+use qs_client::HUD_GAME_DEATHMATCH = hud::HUD_GAME_DEATHMATCH
+use qs_client::HUD_ITEMS = hud::HUD_ITEMS
+use qs_client::HUD_LOW_AMMO = hud::HUD_LOW_AMMO
+use qs_client::HUD_LOW_ARMOR = hud::HUD_LOW_ARMOR
+use qs_client::HUD_LOW_HEALTH = hud::HUD_LOW_HEALTH
+use qs_client::HUD_NUM_WIDTH = hud::HUD_NUM_WIDTH
+use qs_client::HUD_PRINTSPEED = hud::HUD_PRINTSPEED
+use qs_client::HUD_SBAR_HEIGHT = hud::HUD_SBAR_HEIGHT
+use qs_client::HUD_WEAPONS = hud::HUD_WEAPONS
+use qs_client::Hud = client::Hud
+use qs_client::HudInput = hud::HudInput
+use qs_client::HudItem = hud::HudItem
 use qs_client::Lerp = entity::Lerp
 use qs_client::LerpFlags = entity::LerpFlags
 use qs_client::LerpSettings = client::LerpSettings
@@ -360,6 +429,7 @@ use qs_client::ParseError = client::ParseError
 use qs_client::Particle = particles::Particle
 use qs_client::ParticleType = particles::ParticleType
 use qs_client::Particles = particles::Particles
+use qs_client::Placed = hud::Placed
 use qs_client::PoseBlend = scene::PoseBlend
 use qs_client::Random = models::Random
 use qs_client::Reader = message::Reader
@@ -396,9 +466,13 @@ use qs_client::Weapon = view::Weapon
 use qs_client::angledelta = view::angledelta
 use qs_client::calc_bob = view::calc_bob
 use qs_client::calc_roll = view::calc_roll
+use qs_client::color_for_map = hud::color_for_map
 use qs_client::flags = models::flags
 use qs_client::gamma_table = view::gamma_table
+use qs_client::intermission_overlay = hud::intermission_overlay
+use qs_client::sort_frags = hud::sort_frags
 use qs_client::stat = client::stat
+use qs_client::status_bar = hud::status_bar
 variant qs_client::client::Event::CdTrack
 variant qs_client::client::Event::CenterPrint
 variant qs_client::client::Event::Disconnect
@@ -431,6 +505,13 @@ variant qs_client::client::ParseError::TooManyStatics
 variant qs_client::client::ParseError::Version
 variant qs_client::client::SoundRef::Index
 variant qs_client::client::SoundRef::Name
+variant qs_client::hud::Anchor::Bar
+variant qs_client::hud::Anchor::Centered
+variant qs_client::hud::Anchor::Screen
+variant qs_client::hud::HudItem::Char
+variant qs_client::hud::HudItem::Fill
+variant qs_client::hud::HudItem::Lmp
+variant qs_client::hud::HudItem::Pic
 variant qs_client::models::ModelKind::Alias
 variant qs_client::models::ModelKind::Brush
 variant qs_client::models::ModelKind::Sprite

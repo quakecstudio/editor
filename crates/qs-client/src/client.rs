@@ -21,6 +21,7 @@ use qc_builtins::math::{anglemod, makevectors, vector_normalize};
 use qc_vm::convert::{double_to_float, double_to_int, int_to_float};
 
 use crate::entity::{Baseline, Entity};
+use crate::hud::{CenterPrint, HudInput, HudItem, Placed, intermission_overlay, status_bar};
 use crate::message::Reader;
 use crate::models::{FrameInfo, ModelInfo, ModelKind, Models, Random, flags};
 use crate::particles::{PART_GRAVITY, Particles};
@@ -65,6 +66,8 @@ pub const CLIENT_BEAM_STEP: f32 = 30.0;
 pub const CLIENT_DEFAULT_VIEWHEIGHT: f32 = 22.0;
 /// `MAX_CL_STATS` (CLIENT-1.4).
 pub const CLIENT_MAX_STATS: usize = 32;
+/// `sb_lines` at the default view size of 100: the bar and the inventory (HUD-1.1).
+pub const HUD_DEFAULT_LINES: i32 = 48;
 /// The gap after which an update restarts the animation lerp (CLIENT-7.1).
 pub const CLIENT_LERP_RESET_GAP: f32 = 0.2;
 /// A single pose's lerp time (CLIENT-7.3).
@@ -356,6 +359,17 @@ pub enum Event {
     SellScreen,
 }
 
+/// What is drawn over the view this frame (HUD-1 to HUD-3).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Hud {
+    /// The status bar, the inventory and the frag list, or the scoreboard (HUD-1, HUD-2.1).
+    pub bar: Vec<Placed>,
+    /// The intermission, deathmatch or finale overlay (HUD-2.2, HUD-2.3).
+    pub overlay: Vec<Placed>,
+    /// The centre print's characters, on the screen (HUD-3).
+    pub center: Vec<HudItem>,
+}
+
 /// One scoreboard entry, `scoreboard_t` (CLIENT-1.4).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Score {
@@ -475,6 +489,16 @@ pub struct Client {
     gravity: f32,
     /// The command's `forwardmove`, for the pitch drift (VIEW-2.2).
     forwardmove: f32,
+    /// The centre print (HUD-3).
+    center: CenterPrint,
+    /// This frame's centre print characters.
+    center_items: Vec<HudItem>,
+    /// The screen's size in pixels, for the centre print and the frag list.
+    screen: (i32, i32),
+    /// `+showscores` (HUD-1.1).
+    showscores: bool,
+    /// `sb_lines`: how many rows of the bar the view size leaves (HUD-1.1).
+    bar_lines: i32,
 }
 
 impl Default for Client {
@@ -531,6 +555,11 @@ impl Client {
             contents: Contents::Empty,
             gravity: PART_GRAVITY,
             forwardmove: 0.0,
+            center: CenterPrint::default(),
+            center_items: Vec::new(),
+            screen: (320, 200),
+            showscores: false,
+            bar_lines: HUD_DEFAULT_LINES,
         }
     }
 
@@ -541,10 +570,14 @@ impl Client {
         let lerp = self.lerp;
         let view_settings = self.view_settings;
         let gravity = self.gravity;
+        let screen = self.screen;
+        let bar_lines = self.bar_lines;
         *self = Self::new(game);
         self.lerp = lerp;
         self.view_settings = view_settings;
         self.gravity = gravity;
+        self.screen = screen;
+        self.bar_lines = bar_lines;
         self.particles.clear();
     }
 
@@ -578,6 +611,52 @@ impl Client {
     /// The command's forward move, for the pitch drift (VIEW-2.2).
     pub const fn set_forwardmove(&mut self, forwardmove: f32) {
         self.forwardmove = forwardmove;
+    }
+
+    /// The screen's size in pixels, which places the centre print and the frag list.
+    pub const fn set_screen(&mut self, width: i32, height: i32) {
+        self.screen = (width, height);
+    }
+
+    /// `+showscores` and `-showscores` (HUD-1.1).
+    pub const fn set_showscores(&mut self, shown: bool) {
+        self.showscores = shown;
+    }
+
+    /// `sb_lines`: 0 at a view size of 120, 24 at 110, else 48 (HUD-1.1).
+    pub const fn set_bar_lines(&mut self, lines: i32) {
+        self.bar_lines = lines;
+    }
+
+    /// The status bar, the overlays and the centre print for this frame (HUD-1 to HUD-3).
+    #[must_use]
+    pub fn hud(&self) -> Hud {
+        let input = HudInput {
+            time: self.time,
+            items: self.items,
+            item_gettime: &self.item_gettime,
+            stats: &self.stats,
+            faceanimtime: self.view.faceanimtime,
+            maxclients: self.maxclients,
+            gametype: self.gametype,
+            scores: &self.scores,
+            viewentity: self.viewentity,
+            levelname: &self.levelname,
+            intermission: self.intermission,
+            completed_time: self.completed_time,
+            showscores: self.showscores,
+            lines: self.bar_lines,
+        };
+        let (bar, overlay) = if self.intermission == 0 {
+            (status_bar(&input, self.screen.1), Vec::new())
+        } else {
+            (Vec::new(), intermission_overlay(&input))
+        };
+        Hud {
+            bar,
+            overlay,
+            center: self.center_items.clone(),
+        }
     }
 
     /// `cl.viewangles`.
@@ -782,6 +861,15 @@ impl Client {
         let frametime = self.time - self.oldtime;
         self.particles.update(self.time, frametime, self.gravity);
         self.update_palette(frametime);
+        for event in &events {
+            if let Event::CenterPrint(text) = event {
+                self.center.set(text, self.time);
+            }
+        }
+        let (width, height) = self.screen;
+        self.center_items =
+            self.center
+                .draw(frametime, self.time, self.intermission != 0, width, height);
         Ok(events)
     }
 

@@ -2352,3 +2352,609 @@ fn colour_shifts_and_the_blend() {
         angledelta(-10.0)
     );
 }
+
+use crate::{
+    Anchor, CenterPrint, HudInput, HudItem, Placed, Score, intermission_overlay, sort_frags,
+    status_bar,
+};
+
+fn hud_input<'a>(
+    stats: &'a [i32; 32],
+    gettime: &'a [f32; 32],
+    scores: &'a [Score],
+) -> HudInput<'a> {
+    HudInput {
+        time: 10.0,
+        items: 0,
+        item_gettime: gettime,
+        stats,
+        faceanimtime: 0.0,
+        maxclients: 1,
+        gametype: 0,
+        scores,
+        viewentity: 1,
+        levelname: b"Test",
+        intermission: 0,
+        completed_time: 0.0,
+        showscores: false,
+        lines: 48,
+    }
+}
+
+fn pics(items: &[Placed]) -> Vec<(String, i32, i32)> {
+    items
+        .iter()
+        .filter_map(|p| match &p.item {
+            HudItem::Pic { name, x, y } => Some((name.clone(), *x, *y)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn chars(items: &[Placed]) -> Vec<(i32, i32, u8)> {
+    items
+        .iter()
+        .filter_map(|p| match &p.item {
+            HudItem::Char { x, y, ch } => Some((*x, *y, *ch)),
+            _ => None,
+        })
+        .collect()
+}
+
+// spec HUD-1.1: nothing with no lines; the bar alone at 24; the inventory above 24 and the
+// frag list with more than one client; the scoreboard with the scores shown or dead
+// spec HUD-1.2: the armour number and picture, 666 and the disc when invulnerable, the health
+// and ammo numbers, red when low, and the ammo icon by the first ammo item
+// spec HUD-1.6: a number keeps its last digits and right-aligns short ones by 24 a digit
+#[test]
+fn the_status_bar_shows_the_player() {
+    let mut stats = [0; 32];
+    stats[stat::HEALTH] = 100;
+    stats[stat::ARMOR] = 7;
+    stats[stat::AMMO] = 1234;
+    let gettime = [0.0; 32];
+    let scores = [Score {
+        name: b"me".to_vec(),
+        frags: 0,
+        colors: 0,
+    }];
+    let mut input = hud_input(&stats, &gettime, &scores);
+    input.items = 8192 | 256;
+    input.lines = 0;
+    assert!(status_bar(&input, 200).is_empty());
+    input.lines = 24;
+    let bar = status_bar(&input, 200);
+    let p = pics(&bar);
+    assert_eq!(p[0], ("sbar".to_owned(), 0, 0));
+    assert!(
+        p.contains(&("anum_7".to_owned(), 24 + 48, 0)),
+        "7 armour, red, right-aligned: {p:?}"
+    );
+    assert!(p.contains(&("sb_armor1".to_owned(), 0, 0)));
+    assert!(p.contains(&("face1".to_owned(), 112, 0)));
+    assert!(p.contains(&("num_1".to_owned(), 136, 0)) && p.contains(&("num_0".to_owned(), 160, 0)));
+    assert!(p.contains(&("sb_shells".to_owned(), 224, 0)));
+    assert!(
+        p.contains(&("num_2".to_owned(), 248, 0)) && p.contains(&("num_4".to_owned(), 296, 0)),
+        "1234 keeps 234"
+    );
+    assert!(
+        !p.iter().any(|(n, _, _)| n == "ibar"),
+        "no inventory at 24 lines"
+    );
+    assert!(bar.iter().all(|p| p.anchor == Anchor::Bar));
+    input.lines = 48;
+    input.items = 32768 | 2048 | 1_048_576;
+    let mut stats2 = stats;
+    stats2[stat::AMMO] = 9;
+    stats2[stat::ARMOR] = -5;
+    let input2 = HudInput {
+        stats: &stats2,
+        ..input.clone()
+    };
+    let p = pics(&status_bar(&input2, 200));
+    assert!(p.iter().any(|(n, _, _)| n == "ibar"));
+    assert!(
+        p.contains(&("anum_6".to_owned(), 24, 0)) && p.contains(&("disc".to_owned(), 0, 0)),
+        "invulnerable: 666 in red"
+    );
+    assert!(p.contains(&("sb_cells".to_owned(), 224, 0)));
+    assert!(
+        p.contains(&("anum_9".to_owned(), 248 + 48, 0)),
+        "9 ammo is low"
+    );
+    let input4 = HudInput {
+        items: 32768 | 16384,
+        ..input2.clone()
+    };
+    let p = pics(&status_bar(&input4, 200));
+    assert!(
+        p.contains(&("sb_armor3".to_owned(), 0, 0)),
+        "the armour picture by the first bit set"
+    );
+    let input3 = HudInput {
+        items: 16384,
+        ..input2.clone()
+    };
+    let p = pics(&status_bar(&input3, 200));
+    assert!(p.contains(&("sb_armor2".to_owned(), 0, 0)));
+    assert!(
+        p.contains(&("anum_minus".to_owned(), 24 + 24, 0))
+            && p.contains(&("anum_5".to_owned(), 24 + 48, 0)),
+        "-5: {p:?}"
+    );
+    let mut stats3 = stats;
+    stats3[stat::HEALTH] = 0;
+    let dead = HudInput {
+        stats: &stats3,
+        ..input.clone()
+    };
+    let p = pics(&status_bar(&dead, 200));
+    assert!(p.contains(&("scorebar".to_owned(), 0, 0)));
+    assert!(!p.iter().any(|(n, _, _)| n == "sbar"));
+    stats3[stat::HEALTH] = 50;
+    let shown = HudInput {
+        stats: &stats3,
+        showscores: true,
+        ..input.clone()
+    };
+    assert!(
+        pics(&status_bar(&shown, 200))
+            .iter()
+            .any(|(n, _, _)| n == "scorebar")
+    );
+}
+
+// spec HUD-1.3: the face by the powerups, else by the health in fifths, the pain face while
+// the damage animation runs
+#[test]
+fn the_face_follows_health_and_powerups() {
+    let mut stats = [0; 32];
+    let gettime = [0.0; 32];
+    let scores = [];
+    let mut face = |health: i32, items: i32, pain: bool| {
+        stats[stat::HEALTH] = health;
+        let mut input = hud_input(&stats, &gettime, &scores);
+        input.items = items;
+        input.faceanimtime = if pain { 11.0 } else { 0.0 };
+        pics(&status_bar(&input, 200))
+            .into_iter()
+            .find(|(n, x, _)| n.starts_with("face") && *x == 112)
+            .unwrap()
+            .0
+    };
+    assert_eq!(face(100, 0, false), "face1");
+    assert_eq!(face(99, 0, false), "face1", "99 / 20 is 4");
+    assert_eq!(face(79, 0, false), "face2");
+    assert_eq!(face(45, 0, false), "face3");
+    assert_eq!(face(1, 0, false), "face5");
+    assert_eq!(face(45, 0, true), "face_p3");
+    assert_eq!(face(50, 524_288 | 1_048_576, false), "face_inv2");
+    assert_eq!(face(50, 4_194_304, false), "face_quad");
+    assert_eq!(face(50, 524_288, false), "face_invis");
+    assert_eq!(face(50, 1_048_576, false), "face_invul2");
+}
+
+// spec HUD-1.4: each owned weapon's picture, flashing for a second after it is taken and
+// highlighted when active; the ammo counts as small yellow digits; the items and sigils
+#[test]
+fn the_inventory_lists_weapons_ammo_and_items() {
+    let mut stats = [0; 32];
+    stats[stat::SHELLS] = 25;
+    stats[stat::NAILS] = 100;
+    stats[stat::CELLS] = 7;
+    stats[stat::ACTIVEWEAPON] = 4;
+    let mut gettime = [0.0; 32];
+    gettime[0] = 10.0;
+    gettime[2] = 9.0;
+    let scores = [];
+    let mut input = hud_input(&stats, &gettime, &scores);
+    input.items = 1 | 4 | 64 | (1 << 17) | (1 << 22) | (1 << 28) | (1 << 31);
+    let bar = status_bar(&input, 200);
+    let p = pics(&bar);
+    assert!(p.contains(&("ibar".to_owned(), 0, -24)));
+    assert!(
+        p.contains(&("inva1_shotgun".to_owned(), 0, -16)),
+        "just taken: frame (0 % 5) + 2: {p:?}"
+    );
+    assert!(
+        p.contains(&("inv2_nailgun".to_owned(), 48, -16)),
+        "the active weapon, a second on"
+    );
+    assert!(p.contains(&("inv_lightng".to_owned(), 144, -16)));
+    assert!(!p.iter().any(|(n, _, _)| n.contains("sshotgun")));
+    assert!(p.contains(&("sb_key1".to_owned(), 192, -16)));
+    assert!(p.contains(&("sb_quad".to_owned(), 192 + 80, -16)));
+    assert!(
+        p.contains(&("sb_sigil1".to_owned(), 288, -16))
+            && p.contains(&("sb_sigil4".to_owned(), 288 + 24, -16))
+    );
+    let c = chars(&bar);
+    // " 25": the 2 at column 2 and the 5 at column 3 of the first group, as characters 20 and 23.
+    assert!(c.contains(&((2 * 8 - 2) + 4, -24, 20)), "{c:?}");
+    assert!(c.contains(&((3 * 8 - 2) + 4, -24, 23)));
+    assert!(
+        c.contains(&((7 * 8 - 2) + 4, -24, 19)),
+        "100 fills all three"
+    );
+    assert!(
+        !c.iter().any(|&(x, _, _)| x == 8 - 2 + 4),
+        "a leading space is not drawn"
+    );
+    input.time = 10.35;
+    let p = pics(&status_bar(&input, 200));
+    assert!(
+        p.contains(&("inva4_shotgun".to_owned(), 0, -16)),
+        "frame (3 % 5) + 2: {p:?}"
+    );
+    input.time = 10.72;
+    let p = pics(&status_bar(&input, 200));
+    assert!(
+        p.contains(&("inva3_shotgun".to_owned(), 0, -16)),
+        "frame (7 % 5) + 2"
+    );
+}
+
+// spec HUD-1.5: up to four clients by frags, colour blocks and the frags, the local one
+// bracketed
+#[test]
+fn the_frag_list_ranks_the_clients() {
+    let stats = [0; 32];
+    let gettime = [0.0; 32];
+    let scores = [
+        Score {
+            name: b"a".to_vec(),
+            frags: 3,
+            colors: 0x4d,
+        },
+        Score {
+            name: b"b".to_vec(),
+            frags: 7,
+            colors: 0,
+        },
+        Score {
+            name: Vec::new(),
+            frags: 99,
+            colors: 0,
+        },
+        Score {
+            name: b"d".to_vec(),
+            frags: 7,
+            colors: 0,
+        },
+    ];
+    assert_eq!(
+        sort_frags(&scores),
+        [1, 3, 0],
+        "ties keep slot order; the unnamed is left out"
+    );
+    let mut input = hud_input(&stats, &gettime, &scores);
+    input.maxclients = 4;
+    input.viewentity = 1;
+    let bar = status_bar(&input, 400);
+    let fills: Vec<_> = bar
+        .iter()
+        .filter_map(|p| match p.item {
+            HudItem::Fill { x, y, w, h, color } => Some((x, y, w, h, color)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills[0],
+        (23 * 8 + 10, -23, 28, 4, 8),
+        "b's shirt row 0 plus 8"
+    );
+    assert_eq!(fills[1], (23 * 8 + 10, -19, 28, 3, 8));
+    assert_eq!(fills[4], (31 * 8 + 10, -23, 28, 4, 0x40 + 8), "a's shirt");
+    assert_eq!(fills[5].4, 0xd0 + 8, "a's trousers");
+    let c = chars(&bar);
+    assert!(c.contains(&((24 * 8) + 4, -24, b' ')) && c.contains(&((26 * 8) + 4, -24, b'7')));
+    assert!(
+        c.contains(&((31 * 8 + 2) + 4, -24, 16)) && c.contains(&((35 * 8 - 4) + 4, -24, 17)),
+        "a, the local client, is bracketed: {c:?}"
+    );
+}
+
+// spec HUD-2.1: the solo scoreboard's monsters, secrets, time and level name
+// spec HUD-2.2: the deathmatch overlay: the ranking picture, each named client's blocks,
+// frags and name, the local one marked
+#[test]
+fn the_scoreboards() {
+    let mut stats = [0; 32];
+    stats[stat::MONSTERS] = 3;
+    stats[stat::TOTALMONSTERS] = 10;
+    stats[stat::SECRETS] = 1;
+    stats[stat::TOTALSECRETS] = 2;
+    let gettime = [0.0; 32];
+    let scores = [
+        Score {
+            name: b"me".to_vec(),
+            frags: 2,
+            colors: 0x30,
+        },
+        Score {
+            name: b"you".to_vec(),
+            frags: 5,
+            colors: 0x01,
+        },
+    ];
+    let mut input = hud_input(&stats, &gettime, &scores);
+    input.showscores = true;
+    input.time = 65.0;
+    input.levelname = b"the Slipgate";
+    let bar = status_bar(&input, 200);
+    let c = chars(&bar);
+    let text = |y: i32, x0: i32| -> String {
+        let mut s: Vec<(i32, u8)> = c
+            .iter()
+            .filter(|&&(_, cy, _)| cy == y)
+            .map(|&(x, _, ch)| (x, ch))
+            .collect();
+        s.sort_unstable();
+        s.iter()
+            .filter(|&&(x, _)| x >= x0)
+            .map(|&(_, ch)| char::from(ch))
+            .collect()
+    };
+    assert_eq!(text(4, 8), "Monsters:  3 / 10Time :  1:05");
+    assert_eq!(text(12, 8), "Secrets :  1 /  2the Slipgate");
+    assert!(
+        c.contains(&(232 - 12 * 4, 12, b't')),
+        "the level name centred on 232"
+    );
+    assert!(
+        !bar.iter().any(|p| matches!(p.item, HudItem::Lmp { .. })),
+        "no overlay in single player"
+    );
+    input.gametype = 1;
+    input.maxclients = 2;
+    input.viewentity = 2;
+    let bar = status_bar(&input, 200);
+    let lmp = bar
+        .iter()
+        .find(|p| matches!(p.item, HudItem::Lmp { .. }))
+        .unwrap();
+    assert_eq!(
+        lmp,
+        &Placed {
+            anchor: Anchor::Screen,
+            item: HudItem::Lmp {
+                path: "gfx/ranking.lmp".to_owned(),
+                x: None,
+                y: 8
+            }
+        }
+    );
+    let centered: Vec<_> = bar
+        .iter()
+        .filter(|p| p.anchor == Anchor::Centered)
+        .collect();
+    assert!(
+        matches!(
+            centered[0].item,
+            HudItem::Fill {
+                x: 80,
+                y: 40,
+                w: 40,
+                h: 4,
+                color: 8
+            }
+        ),
+        "you first: {:?}",
+        centered[0]
+    );
+    assert!(
+        matches!(
+            centered[1].item,
+            HudItem::Fill {
+                x: 80,
+                y: 44,
+                w: 40,
+                h: 4,
+                color: 24
+            }
+        ),
+        "{:?}",
+        centered[1]
+    );
+    assert!(
+        centered.iter().any(|p| matches!(
+            p.item,
+            HudItem::Char {
+                x: 72,
+                y: 40,
+                ch: 12
+            }
+        )),
+        "the local client, slot 1, is marked"
+    );
+    assert!(centered.iter().any(|p| matches!(
+        p.item,
+        HudItem::Char {
+            x: 144,
+            y: 40,
+            ch: b'y'
+        }
+    )));
+    assert!(
+        centered.iter().any(|p| matches!(
+            p.item,
+            HudItem::Fill {
+                x: 80,
+                y: 50,
+                w: 40,
+                h: 4,
+                color: 0x38
+            }
+        )),
+        "me second, shirt 3"
+    );
+}
+
+// spec HUD-2.3: the intermission overlay's pictures and numbers, the deathmatch overlay in
+// deathmatch, the finale picture centred
+#[test]
+fn the_intermission_overlay() {
+    let mut stats = [0; 32];
+    stats[stat::MONSTERS] = 12;
+    stats[stat::TOTALMONSTERS] = 100;
+    stats[stat::SECRETS] = 1;
+    stats[stat::TOTALSECRETS] = 3;
+    let gettime = [0.0; 32];
+    let scores = [Score {
+        name: b"me".to_vec(),
+        frags: 0,
+        colors: 0,
+    }];
+    let mut input = hud_input(&stats, &gettime, &scores);
+    input.intermission = 1;
+    input.completed_time = 125.0;
+    let overlay = intermission_overlay(&input);
+    assert!(overlay.iter().all(|p| p.anchor == Anchor::Screen));
+    let lmps: Vec<_> = overlay
+        .iter()
+        .filter_map(|p| match &p.item {
+            HudItem::Lmp { path, x, y } => Some((path.clone(), *x, *y)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        lmps,
+        [
+            ("gfx/complete.lmp".to_owned(), Some(64), 24),
+            ("gfx/inter.lmp".to_owned(), Some(0), 56)
+        ]
+    );
+    let p = pics(&overlay);
+    assert!(
+        p.contains(&("num_2".to_owned(), 160 + 48, 64)),
+        "2 minutes: {p:?}"
+    );
+    assert!(p.contains(&("num_colon".to_owned(), 234, 64)));
+    assert!(
+        p.contains(&("num_0".to_owned(), 246, 64)) && p.contains(&("num_5".to_owned(), 266, 64))
+    );
+    assert!(
+        p.contains(&("num_1".to_owned(), 160 + 48, 104))
+            && p.contains(&("num_slash".to_owned(), 232, 104))
+            && p.contains(&("num_3".to_owned(), 240 + 48, 104))
+    );
+    assert!(
+        p.contains(&("num_1".to_owned(), 160 + 24, 144))
+            && p.contains(&("num_2".to_owned(), 160 + 48, 144))
+    );
+    assert!(
+        p.contains(&("num_1".to_owned(), 240, 144)) && p.contains(&("num_0".to_owned(), 264, 144))
+    );
+    input.gametype = 1;
+    let overlay = intermission_overlay(&input);
+    assert!(matches!(&overlay[0].item, HudItem::Lmp { path, .. } if path == "gfx/ranking.lmp"));
+    input.intermission = 2;
+    let overlay = intermission_overlay(&input);
+    assert_eq!(overlay.len(), 1);
+    assert!(
+        matches!(&overlay[0].item, HudItem::Lmp { path, x: None, y: 16 } if path == "gfx/finale.lmp")
+    );
+    assert_eq!(crate::color_for_map(0x90), 0x98);
+}
+
+// spec HUD-3.1: a centre print keeps at most 1023 bytes, resets its time and counts lines
+// spec HUD-3.2: it is drawn while its time lasts or in an intermission, each line centred
+// and cut at 40 characters, from 0.35 of the height for up to four lines and 48 for more
+// spec HUD-3.3: in an intermission the characters appear at 8 a second, the first at once
+#[test]
+fn the_centre_print() {
+    let mut center = CenterPrint::default();
+    assert!(
+        center.draw(0.1, 1.0, false, 640, 480).is_empty(),
+        "nothing set"
+    );
+    center.set(b"hello\nworld", 1.0);
+    assert_eq!(center.lines(), 2);
+    let items = center.draw(0.1, 1.1, false, 640, 480);
+    assert_eq!(items.len(), 10);
+    assert_eq!(
+        items[0],
+        HudItem::Char {
+            x: 300,
+            y: 168,
+            ch: b'h'
+        }
+    );
+    assert_eq!(
+        items[5],
+        HudItem::Char {
+            x: 300,
+            y: 176,
+            ch: b'w'
+        }
+    );
+    center.draw(1.0, 2.1, false, 640, 480);
+    assert!(
+        center.draw(1.0, 3.1, false, 640, 480).is_empty(),
+        "two seconds are up"
+    );
+    center.set(b"a\nb\nc\nd\ne", 3.1);
+    assert_eq!(
+        center.draw(0.0, 3.1, false, 640, 480)[0],
+        HudItem::Char {
+            x: 316,
+            y: 48,
+            ch: b'a'
+        },
+        "five lines start at 48"
+    );
+    let long = [b'x'; 50];
+    center.set(&long, 4.0);
+    assert_eq!(
+        center.draw(0.0, 4.0, false, 640, 480).len(),
+        40,
+        "cut at 40"
+    );
+    let huge = vec![b'y'; 2000];
+    center.set(&huge, 5.0);
+    assert_eq!(center.draw(0.0, 5.0, false, 640, 480).len(), 40);
+    center.set(b"the end", 10.0);
+    assert_eq!(
+        center.draw(0.0, 10.0, true, 320, 200).len(),
+        1,
+        "the first character at once"
+    );
+    assert_eq!(
+        center.draw(0.0, 10.5, true, 320, 200).len(),
+        5,
+        "8 a second: 4 more"
+    );
+    assert_eq!(
+        center.draw(5.0, 20.0, true, 320, 200).len(),
+        7,
+        "all of it, and the time no longer matters"
+    );
+}
+
+// spec HUD-1.1, HUD-3.2: the client's hud: the bar, the overlay in an intermission and the
+// centre print the messages set
+#[test]
+fn the_client_builds_its_hud() {
+    let mut client = connected();
+    client.set_screen(640, 480);
+    let hud = client.hud();
+    assert!(!hud.bar.is_empty() && hud.overlay.is_empty() && hud.center.is_empty());
+    let mut m = msg();
+    m.write_byte(26);
+    m.write_string(b"Hi");
+    frame(&mut client, 0.0, &[m.take()]);
+    assert_eq!(client.hud().center.len(), 2);
+    client.set_bar_lines(0);
+    client.set_showscores(true);
+    assert!(
+        pics(&client.hud().bar)
+            .iter()
+            .any(|(n, _, _)| n == "scorebar")
+    );
+    let mut m = msg();
+    m.write_byte(30);
+    frame(&mut client, 0.0, &[m.take()]);
+    let hud = client.hud();
+    assert!(hud.bar.is_empty() && !hud.overlay.is_empty());
+}

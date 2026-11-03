@@ -10,6 +10,7 @@
 
 mod client;
 mod entity;
+mod hud;
 mod message;
 mod models;
 mod particles;
@@ -25,9 +26,16 @@ pub use client::{
     CLIENT_MAX_MODELS, CLIENT_MAX_SCOREBOARD, CLIENT_MAX_SOUNDS, CLIENT_MAX_STATIC_ENTITIES,
     CLIENT_MAX_STATS, CLIENT_MAX_TEMP_ENTITIES, CLIENT_MAX_VISEDICTS, CLIENT_PROTOCOL_VERSION,
     CLIENT_ROTATE_SPEED, CLIENT_SIGNONS, CLIENT_TELEPORT_DISTANCE, CLIENT_TENT_SOUNDS, Client,
-    Event, Game, LerpSettings, ParseError, Score, SoundRef, SoundStart, stat,
+    Event, Game, HUD_DEFAULT_LINES, Hud, LerpSettings, ParseError, Score, SoundRef, SoundStart,
+    stat,
 };
 pub use entity::{Baseline, Entity, Lerp, LerpFlags};
+pub use hud::{
+    Anchor, CenterPrint, HUD_CENTER_LINE_LENGTH, HUD_CENTER_MAX, HUD_CENTERTIME, HUD_FLASH_FRAMES,
+    HUD_GAME_DEATHMATCH, HUD_ITEMS, HUD_LOW_AMMO, HUD_LOW_ARMOR, HUD_LOW_HEALTH, HUD_NUM_WIDTH,
+    HUD_PRINTSPEED, HUD_SBAR_HEIGHT, HUD_WEAPONS, HudInput, HudItem, Placed, color_for_map,
+    intermission_overlay, sort_frags, status_bar,
+};
 pub use message::Reader;
 pub use models::{FrameInfo, ModelInfo, ModelKind, Models, Random, SYNCTYPE_RAND, flags};
 pub use particles::{
