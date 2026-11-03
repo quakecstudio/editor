@@ -20,7 +20,16 @@ targets = [
 
 [advisories]
 # Every ignore names the advisory and says in a comment why it does not apply.
-ignore = []
+ignore = [
+    # zvariant, zvariant_derive and zbus_names are "unmaintained" only because their code
+    # moved into zbus 6; AccessKit's Linux backend (accesskit_unix through
+    # accesskit_atspi_common) still depends on them, and screen readers need AccessKit (QA-9,
+    # P2-23). They are notices, not vulnerabilities. Decided 2026-11-02 (#79); the ignores
+    # come out when AccessKit moves to zbus 6.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant moved into zbus 6; AccessKit's Linux backend has not moved yet (#79)" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names moved into zbus 6; AccessKit's Linux backend has not moved yet (#79)" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive moved into zbus 6; AccessKit's Linux backend has not moved yet (#79)" },
+]
 
 [licenses]
 confidence-threshold = 0.8

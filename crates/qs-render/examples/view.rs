@@ -10,7 +10,10 @@
 //! The map defaults to `e1m1`. You play it: W, A, S and D move, Space jumps, Q and E swim
 //! down and up, Shift runs, and dragging with the mouse looks around. `-fly` gives a free
 //! camera instead, Space and C rising and sinking. `-gamma <g>` is GLQuake's, 0.7 by default, and
-//! `-show water` or `-show sky` starts at the map's first water or sky.
+//! `-show water` or `-show sky` starts at the map's first water or sky. `-benchmark <seconds>`
+//! presents without vsync, turns a free camera slowly and, after that many seconds, prints the
+//! average frame rate, the slowest frame and the time the frames' work took on the CPU, then
+//! exits (P2-152); `-position <x> <y>` opens the window at that point, on a chosen display.
 
 use std::io::Write as _;
 use std::time::Instant;
@@ -31,6 +34,21 @@ fn main() -> Result<(), String> {
     // `-fly`: a free camera instead of the player.
     let fly = args.iter().any(|a| a == "-fly");
     args.retain(|a| a != "-fly");
+    // `-benchmark <seconds>`: no vsync, a free camera turning slowly, and after that many
+    // seconds the average frame rate on stdout and exit (P2-152).
+    let benchmark = take_numbers(&mut args, "-benchmark", 1)?.and_then(|v| match v.as_slice() {
+        [seconds] => Some(*seconds),
+        _ => None,
+    });
+    if benchmark.is_some_and(|seconds| !seconds.is_finite() || seconds <= 0.0) {
+        return Err("-benchmark needs a positive number of seconds".to_owned());
+    }
+    let fly = fly || benchmark.is_some();
+    // `-position <x> <y>`: where the window opens, to put it on a chosen display.
+    let position = take_numbers(&mut args, "-position", 2)?.and_then(|v| match v.as_slice() {
+        [x, y] => Some([*x, *y]),
+        _ => None,
+    });
     let common::Loaded {
         map,
         mesh,
@@ -41,12 +59,21 @@ fn main() -> Result<(), String> {
     if !fly {
         sim.connect()?;
     }
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title(format!("qs-render: {map}"))
+        .with_inner_size([1280.0, 800.0]);
+    if let Some(at) = position {
+        viewport = viewport.with_position(at);
+    }
+    let mut wgpu_options = egui_wgpu::WgpuConfiguration::default();
+    if benchmark.is_some() {
+        wgpu_options.surface.present_mode = wgpu::PresentMode::AutoNoVsync;
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title(format!("qs-render: {map}"))
-            .with_inner_size([1280.0, 800.0]),
+        viewport,
         renderer: eframe::Renderer::Wgpu,
         depth_buffer: 32,
+        wgpu_options,
         ..eframe::NativeOptions::default()
     };
     let triangles = mesh.indices.len().checked_div(3).unwrap_or(0);
@@ -77,10 +104,36 @@ fn main() -> Result<(), String> {
                 behind: 0.0,
                 started: Instant::now(),
                 last: Instant::now(),
+                benchmark,
+                frames: 0,
+                slowest: 0.0,
+                worked: 0.0,
+                longest_work: 0.0,
             }))
         }),
     )
     .map_err(|e| e.to_string())
+}
+
+/// Takes the flag `name` and the `count` numbers after it out of `args`, when it is there.
+fn take_numbers(
+    args: &mut Vec<String>,
+    name: &str,
+    count: usize,
+) -> Result<Option<Vec<f32>>, String> {
+    let Some(i) = args.iter().position(|a| a == name) else {
+        return Ok(None);
+    };
+    let end = i.saturating_add(count);
+    let values: Vec<f32> = args
+        .get(i.saturating_add(1)..=end)
+        .ok_or_else(|| format!("{name} needs {count} number(s)"))?
+        .iter()
+        .map(|s| s.parse::<f32>())
+        .collect::<Result<_, _>>()
+        .map_err(|e| format!("{name}: {e}"))?;
+    args.drain(i..=end);
+    Ok(Some(values))
 }
 
 struct Viewer {
@@ -94,12 +147,24 @@ struct Viewer {
     behind: f64,
     started: Instant,
     last: Instant,
+    /// The seconds a benchmark runs, when it is one.
+    benchmark: Option<f32>,
+    /// The frames drawn so far.
+    frames: u32,
+    /// The longest frame so far, in seconds.
+    slowest: f32,
+    /// The seconds the frames' work on the CPU took so far: the simulation, the relighting
+    /// and the paint callback's recording, without the wait for the display.
+    worked: f32,
+    /// The longest such work, in seconds.
+    longest_work: f32,
 }
 
 impl eframe::App for Viewer {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let now = Instant::now();
-        let seconds = now.duration_since(self.last).as_secs_f32().min(0.1);
+        let frame = now.duration_since(self.last).as_secs_f32();
+        let seconds = frame.min(0.1);
         self.last = now;
         let rect = ui.max_rect();
         let response = ui.allocate_rect(rect, egui::Sense::drag());
@@ -114,6 +179,17 @@ impl eframe::App for Viewer {
             }
         }
         let aspect = rect.width() / rect.height().max(1.0);
+        if self.benchmark.is_some() {
+            // A slow turn, so the whole view around the start is drawn. The first frame
+            // starts the clock: the window's own appearance is not the renderer's.
+            self.camera.turn(seconds * 30.0, 0.0);
+            if self.frames == 0 {
+                self.started = now;
+            } else {
+                self.slowest = self.slowest.max(frame);
+            }
+            self.frames = self.frames.saturating_add(1);
+        }
         let time = now.duration_since(self.started);
 
         self.models.update(&self.sim);
@@ -146,6 +222,30 @@ impl eframe::App for Viewer {
                 1.0 / seconds.max(1e-3)
             )));
         ui.ctx().request_repaint();
+        if let Some(limit) = self.benchmark {
+            let work = now.elapsed().as_secs_f32();
+            self.worked += work;
+            self.longest_work = self.longest_work.max(work);
+            let elapsed = time.as_secs_f32();
+            if elapsed >= limit && self.frames > 1 {
+                let frames = f64::from(self.frames.saturating_sub(1));
+                let mut out = std::io::stdout().lock();
+                writeln!(
+                    out,
+                    "benchmark: {} {:.0} fps average over {} frames in {elapsed:.1} s, slowest \
+                     frame {:.1} ms, work per frame {:.2} ms average and {:.2} ms longest",
+                    self.map,
+                    frames / f64::from(elapsed),
+                    self.frames.saturating_sub(1),
+                    self.slowest * 1000.0,
+                    f64::from(self.worked) / frames * 1000.0,
+                    self.longest_work * 1000.0
+                )
+                .ok();
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                self.benchmark = None;
+            }
+        }
     }
 }
 
