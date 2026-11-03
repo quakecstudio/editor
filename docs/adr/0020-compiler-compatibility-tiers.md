@@ -85,6 +85,9 @@ and gives the later requirements somewhere to live.
 - A new issue, L-14 ([#685](https://github.com/quakecstudio/editor/issues/685)), builds the
   intermediate layer and moves temporary allocation and layout into its passes. Justin placed
   it in Phase 2, to be worked next; L-04 (dead-code removal and deduplication) depends on it.
+- Since decided: 1108 is the same defect as 555 and 1230 a second one, a vector multiply
+  written over its own operand (`docs/spec/differential.md`, DIFF-14.6 and DIFF-14.7); Justin
+  chose a patched FTEQCC build as the proof (DIFF-14.4, DIFF-14.5).
 - The rule of 2026-10-30, zero divergences with quirks ported rather than excused, keeps its
   force for tiers 1 and 2. Tier 3 is the only exception, and only with proof.
 - FTE-21.7 and FTEF-27.16 describe this compiler's temporaries; where they state FTEQCC's

@@ -39,6 +39,7 @@
 mod builtins;
 pub(crate) mod codegen;
 mod compile;
+mod defects;
 mod extract;
 mod fuzz;
 mod grammar;
@@ -131,6 +132,9 @@ pub(crate) struct Oracles<'a> {
     pub(crate) qcc: PathBuf,
     pub(crate) vm: PathBuf,
     pub(crate) fteqcc: PathBuf,
+    /// FTEQCC with the defects of [`defects::FIXES`] fixed, which proves a divergence an
+    /// FTEQCC defect (DIFF-14.4).
+    pub(crate) fteqcc_fixed: PathBuf,
     pub(crate) work: PathBuf,
     pub(crate) rerelease: PathBuf,
     /// What runs them: the system, or a test's fake.
@@ -204,6 +208,10 @@ fn run(
             println!("oracles: qcc at {}", oracles.qcc.display());
             println!("oracles: vm-oracle at {}", oracles.vm.display());
             println!("oracles: fteqcc at {}", oracles.fteqcc.display());
+            println!(
+                "oracles: fteqcc-fixed at {}",
+                oracles.fteqcc_fixed.display()
+            );
             Ok(true)
         }
         ["id101", dir] => {
@@ -337,6 +345,7 @@ fn stamp(root: &Path, compiler: &Compiler) -> Result<String, String> {
         sha256::hex_digest(include_str!("oracles.rs").as_bytes()),
         sha256::hex_digest(include_str!("oracles/extract.rs").as_bytes()),
         sha256::hex_digest(include_str!("oracles/compile.rs").as_bytes()),
+        sha256::hex_digest(include_str!("oracles/defects.rs").as_bytes()),
     ];
     let mut files = Vec::new();
     collect_files(&root.join("oracles"), &mut files)?;
@@ -373,6 +382,7 @@ fn locate<'a>(root: &Path, exec: &'a dyn Exec) -> Oracles<'a> {
         qcc: bin.join(Compiler::executable("qcc")),
         vm: bin.join(Compiler::executable("vm-oracle")),
         fteqcc: bin.join(Compiler::executable("fteqcc")),
+        fteqcc_fixed: bin.join(Compiler::executable("fteqcc-fixed")),
         work: out.join("work"),
         rerelease: out.join("rerelease"),
         exec,
@@ -411,6 +421,7 @@ fn build_with<'a>(root: &Path, exec: &'a dyn Exec, net: &dyn Net) -> Result<Orac
     if oracles.qcc.is_file()
         && oracles.vm.is_file()
         && oracles.fteqcc.is_file()
+        && oracles.fteqcc_fixed.is_file()
         && fs::read_to_string(&stamp_file).is_ok_and(|s| s.trim() == stamp_now)
     {
         println!("oracles: up to date in {}", bin.display());
@@ -452,34 +463,88 @@ fn build_with<'a>(root: &Path, exec: &'a dyn Exec, net: &dyn Net) -> Result<Orac
     } else {
         &["NO_ZLIB"]
     };
-    let mut fteqcc_objects = Vec::new();
+    build_fteqcc(
+        &compiler,
+        &fteqcc_dir,
+        &objects,
+        "fteqcc",
+        fteqcc_defines,
+        &oracles.fteqcc,
+    )?;
+
+    // The VM oracle: pr_exec.c whole, id's extracted functions, and our harness.
+    let vm_objects = compile_vm(root, &sources, &cache, &objects, &compiler, &[])?;
+    compiler.link(&vm_objects, &oracles.vm)?;
+    // DIFF-14.4: the same FTEQCC with its defects fixed, from a copy of the tree whose
+    // `qcc_pr_comp.c` has every fix of `defects::FIXES` applied.
+    let fixed_dir = cache.join("fteqcc-fixed");
+    copy_tree(&fteqcc_dir, &fixed_dir)?;
+    let file = fixed_dir.join(defects::FILE);
+    let pinned = fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let fixed = defects::apply(&pinned)?;
+    fs::write(&file, fixed).map_err(|e| format!("{}: {e}", file.display()))?;
+    build_fteqcc(
+        &compiler,
+        &fixed_dir,
+        &objects,
+        "fteqcc_fixed",
+        fteqcc_defines,
+        &oracles.fteqcc_fixed,
+    )?;
+    fs::write(&stamp_file, format!("{stamp_now}\n"))
+        .map_err(|e| format!("{}: {e}", stamp_file.display()))?;
+    println!(
+        "oracles: built qcc, vm-oracle, fteqcc and fteqcc-fixed in {}",
+        bin.display()
+    );
+    Ok(oracles)
+}
+
+/// Compiles FTEQCC's files from the tree `dir` into objects named after `prefix` and links
+/// them to `out`.
+fn build_fteqcc(
+    compiler: &Compiler<'_>,
+    dir: &Path,
+    objects: &Path,
+    prefix: &str,
+    defines: &[&str],
+    out: &Path,
+) -> Result<(), String> {
+    let mut built = Vec::new();
     for file in FTEQCC_FILES {
-        let source = fteqcc_dir.join(file);
-        let object = objects.join(format!("fteqcc_{}.o", stem(&source)));
+        let source = dir.join(file);
+        let object = objects.join(format!("{prefix}_{}.o", stem(&source)));
         compiler.object(
             &Unit {
                 source: &source,
                 code: Code::Upstream,
                 includes: &[],
-                defines: fteqcc_defines,
+                defines,
                 forced_include: None,
             },
             &object,
         )?;
-        fteqcc_objects.push(object);
+        built.push(object);
     }
-    compiler.link(&fteqcc_objects, &oracles.fteqcc)?;
+    compiler.link(&built, out)
+}
 
-    // The VM oracle: pr_exec.c whole, id's extracted functions, and our harness.
-    let vm_objects = compile_vm(root, &sources, &cache, &objects, &compiler, &[])?;
-    compiler.link(&vm_objects, &oracles.vm)?;
-    fs::write(&stamp_file, format!("{stamp_now}\n"))
-        .map_err(|e| format!("{}: {e}", stamp_file.display()))?;
-    println!(
-        "oracles: built qcc, vm-oracle and fteqcc in {}",
-        bin.display()
-    );
-    Ok(oracles)
+/// Copies the tree `from` to `to`, replacing what `to` held.
+fn copy_tree(from: &Path, to: &Path) -> Result<(), String> {
+    if to.exists() {
+        fs::remove_dir_all(to).map_err(|e| format!("{}: {e}", to.display()))?;
+    }
+    let mut files = Vec::new();
+    collect_files(from, &mut files)?;
+    for file in files {
+        let relative = file.strip_prefix(from).map_err(|e| e.to_string())?;
+        let target = to.join(relative);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
+        fs::copy(&file, &target).map_err(|e| format!("{}: {e}", target.display()))?;
+    }
+    Ok(())
 }
 
 /// Compiles the VM oracle's objects into `objects`: `pr_exec.c` whole, id's extracted
