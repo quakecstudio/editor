@@ -23,6 +23,7 @@ use qc_builtins::EngineProfile;
 use qc_codegen::{Options, compile_module};
 use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
 use qc_progs::Progs;
+use qc_progs::opcode::Opcode;
 use qc_sema::{Db, FileId, ModuleInput};
 use qc_types::Etype;
 use qc_vm::ServerState;
@@ -1539,6 +1540,34 @@ fn debug_pairing() {
     eprintln!("all paired, same types");
 }
 
+/// The store opcodes, whose result is their `b`.
+const STORES: [Opcode; 6] = [
+    Opcode::StoreF,
+    Opcode::StoreV,
+    Opcode::StoreS,
+    Opcode::StoreEnt,
+    Opcode::StoreFld,
+    Opcode::StoreFnc,
+];
+
+/// The call opcodes, whose `a` is a function, not a value.
+const CALLS: [Opcode; 9] = [
+    Opcode::Call0,
+    Opcode::Call1,
+    Opcode::Call2,
+    Opcode::Call3,
+    Opcode::Call4,
+    Opcode::Call5,
+    Opcode::Call6,
+    Opcode::Call7,
+    Opcode::Call8,
+];
+
+/// Whether the stored opcode `op` is one of `set`.
+fn opcode_in(op: u32, set: &[Opcode]) -> bool {
+    set.iter().any(|o| u32::from(o.number()) == op)
+}
+
 /// One executed statement as the value replay records it: its index, opcode, the words at
 /// its `a` and `b` after it ran, its function and the words at its result.
 type ValuedStep = (i32, u16, [u32; 3], [u32; 3], i32, [u32; 3]);
@@ -1617,7 +1646,7 @@ fn debug_replay() {
             // `step` runs after the statement: the operands and the result, its `c` or a
             // store's `b`, are read as the statement left them.
             let (a, b, c) = st.map_or(([0; 3], [0; 3], [0; 3]), |st| {
-                let target = if (31..=36).contains(&st.op) {
+                let target = if opcode_in(st.op, &STORES) {
                     st.b
                 } else {
                     st.c
@@ -1671,8 +1700,23 @@ fn debug_replay() {
     let mut skipped = 0;
     while k < tv.steps.len().min(ov.steps.len()) {
         let (a, b) = (&tv.steps[k], &ov.steps[k]);
-        let vector_a = matches!(a.1, 2 | 4 | 7 | 9 | 11 | 16 | 32 | 39 | 45);
-        let vector_b = matches!(a.1, 2 | 3 | 7 | 9 | 11 | 16);
+        use Opcode as O;
+        let op_a = u32::from(a.1);
+        let vector_a = opcode_in(
+            op_a,
+            &[
+                O::MulV,
+                O::MulVf,
+                O::AddV,
+                O::SubV,
+                O::EqV,
+                O::NeV,
+                O::StoreV,
+                O::StorepV,
+                O::NotV,
+            ],
+        );
+        let vector_b = opcode_in(op_a, &[O::MulV, O::MulFv, O::AddV, O::SubV, O::EqV, O::NeV]);
         // Two string offsets naming the same text are the same value: the tables differ.
         let text = |p: &Progs<'_>, w: &World<'_, '_, '_>, n: u32| {
             let n = i32::from_ne_bytes(n.to_ne_bytes());
@@ -1691,10 +1735,12 @@ fn debug_replay() {
             if v { x == y } else { same_word(x[0], y[0]) }
         };
         // A jump's offset and a call's function number are not values.
-        let (check_a, check_b) = match a.1 {
-            51..=58 | 60 | 61 => (false, false),
-            49 | 50 => (true, false),
-            _ => (true, true),
+        let (check_a, check_b) = if opcode_in(op_a, &CALLS) || opcode_in(op_a, &[O::Goto]) {
+            (false, false)
+        } else if opcode_in(op_a, &[O::If, O::IfNot]) {
+            (true, false)
+        } else {
+            (true, true)
         };
         // An operand the statement itself overwrote shows the result, compared on its own.
         let clobbered = |p: &Progs<'_>, step: &ValuedStep| {
@@ -1702,22 +1748,32 @@ fn debug_replay() {
                 .statements()
                 .get(usize::try_from(step.0).unwrap())
                 .unwrap();
-            let target = if (31..=36).contains(&st.op) {
+            let target = if opcode_in(st.op, &STORES) {
                 st.b
             } else {
                 st.c
             };
-            let words = if matches!(st.op, 3 | 4 | 7 | 9 | 25 | 32) {
-                3
-            } else {
-                1
-            };
+            let three = [O::MulFv, O::MulVf, O::AddV, O::SubV, O::LoadV, O::StoreV];
+            let words = if opcode_in(st.op, &three) { 3 } else { 1 };
             let hit = |x: i32| x >= target && x < target + words;
             (hit(st.a), hit(st.b))
         };
         let (ca, cb) = clobbered(&tp, a);
         let (check_a, check_b) = (check_a && !ca, check_b && !cb);
-        let result_differs = !matches!(a.1, 37..=42 | 49..=61) && !same_word(a.5[0], b.5[0]);
+        let no_result = [
+            O::StorepF,
+            O::StorepV,
+            O::StorepS,
+            O::StorepEnt,
+            O::StorepFld,
+            O::StorepFnc,
+            O::If,
+            O::IfNot,
+            O::Goto,
+            O::State,
+        ];
+        let result_differs =
+            !opcode_in(op_a, &no_result) && !opcode_in(op_a, &CALLS) && !same_word(a.5[0], b.5[0]);
         if a.1 != b.1
             || (check_a && !same(&a.2, &b.2, vector_a))
             || (check_b && !same(&a.3, &b.3, vector_b))

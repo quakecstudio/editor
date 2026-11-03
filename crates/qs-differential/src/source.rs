@@ -631,12 +631,12 @@ impl Gen {
                     self.expr(Ty::Float, depth.saturating_add(1)),
                 );
                 let op = self.choose(&["+", "-", "*", "/"], "+");
-                // A constant divisor may be 0, and C divides a constant by 0 before the
-                // oracle's platform rounds the infinity (DIFF-14.1).
-                let op = if op == "/" && is_constant_text(&b) {
-                    "+"
+                // FTEQCC folds constants in C (DIFF-14.1): a product or quotient of two
+                // constants takes a variable for its second operand instead.
+                let b = if matches!(op, "*" | "/") && is_constant_text(&a) && is_constant_text(&b) {
+                    "gst.a".to_owned()
                 } else {
-                    op
+                    b
                 };
                 self.form("arithmetic");
                 format!("({a} {op} {b})")
@@ -704,6 +704,11 @@ impl Gen {
                     self.expr(Ty::Vector, depth.saturating_add(1)),
                     self.expr(Ty::Vector, depth.saturating_add(1)),
                 );
+                let b = if is_constant_text(&a) && is_constant_text(&b) {
+                    "gst.v".to_owned()
+                } else {
+                    b
+                };
                 self.form("dot-product");
                 format!("({a} * {b})")
             }
@@ -738,6 +743,11 @@ impl Gen {
                     self.expr(Ty::Vector, depth.saturating_add(1)),
                     self.expr(Ty::Float, depth.saturating_add(1)),
                 );
+                let f = if is_constant_text(&v) && is_constant_text(&f) {
+                    "gst.a".to_owned()
+                } else {
+                    f
+                };
                 self.form("vector-scale");
                 if self.chance(50) {
                     format!("({v} * {f})")
@@ -836,16 +846,19 @@ impl Gen {
     }
 }
 
-/// Whether an expression's text is a literal or a named constant, which FTEQCC folds.
+/// Whether an expression's text is one FTEQCC folds to a constant: every name in it is a
+/// constant (`K0` to `K2`), an enum item (`EN_`) or `floor` or `ceil`, the builtins it folds
+/// of a constant (FTEF-32.14); literals, operators and parentheses are constant.
 fn is_constant_text(text: &str) -> bool {
-    let number = text
-        .chars()
-        .all(|c| c.is_ascii_digit() || matches!(c, '-' | '.'));
-    let constant = text.starts_with('K')
-        && text
-            .get(1..)
-            .is_some_and(|r| r.chars().all(|c| c.is_ascii_digit()));
-    number || constant || text.starts_with("EN_")
+    let mut names = text
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|word| word.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_'));
+    names.all(|name| {
+        let constant = name
+            .strip_prefix('K')
+            .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()));
+        constant || name.starts_with("EN_") || matches!(name, "floor" | "ceil")
+    })
 }
 
 /// A float as QuakeC source writes it, whole numbers without a fraction.

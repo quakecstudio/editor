@@ -3162,6 +3162,34 @@ fn an_int_constant_stored_to_a_field_or_passed_to_a_float_parameter_is_a_float()
     );
 }
 
+// spec FTE-9.6: a word of a call's value is a word of its alias: a component field statement
+// of a call's entity copies nothing, a shortened `NOT` of a component revives the alias and
+// tests the copy's word, and a cast keeps the word
+#[test]
+fn a_word_of_a_calls_value_follows_its_alias() {
+    let p = fte_progs(
+        "entity self; .vector fv; vector(vector v) normalize = #9; entity() fe = { return self; };\n\
+         void() g = {}; float x; vector v;\n\
+         void() a = { fe().fv.y; g(); };\n\
+         void() b = { if (!(normalize(v)).y) x = 1; };\n\
+         void() c = { x = (float)(normalize(v)).y; };\n",
+    );
+    let (fe, g, x) = (global(&p, "fe"), global(&p, "g"), global(&p, "x"));
+    assert_eq!(
+        body(&p, "a"),
+        [
+            st(Opcode::Call0, fe, 0, 0),
+            st(Opcode::Call0, g, 0, 0),
+            st(Done, 0, 0, 0)
+        ]
+    );
+    let b = body(&p, "b");
+    assert_eq!(b[2].op, u32::from(Opcode::StoreV.number()));
+    assert_eq!(b[2].a, 1);
+    assert_eq!(b[3], st(Opcode::If, b[2].b + 1, 2, 0));
+    assert_eq!(body(&p, "c")[2], st(StoreF, 2, x, 0));
+}
+
 // spec FTE-13.18: a field access as a statement reads the entity and loads nothing; a
 // parenthesised field with a component loads the vector
 #[test]
@@ -3230,14 +3258,15 @@ fn not_of_a_constant_folds() {
     assert_eq!(t[4].c, f);
 }
 
-// spec FTEF-18.36: `floor`, `ceil`, `sin`, `cos`, `log` and `sqrt` of a constant float fold to
-// the constant; of a value, or by another name, they are called
+// spec FTEF-32.14: `floor`, `ceil`, `sin`, `cos`, `log` and `sqrt` of a constant float fold to
+// the constant, a folded argument too; of a value, or by another name, they are called
 #[test]
 fn some_builtins_of_a_constant_fold() {
     let p = fte_progs(
         "float f; const float K = 2.5; float(float v) ceil = #38; float(float v) floor = #37; \
          float(float v) sqrt = #99; float(float v) rint = #36;\n\
-         void() t = { f = ceil(0.4); f = floor(K); f = sqrt((16)); f = rint(0.4); f = ceil(f); };\n",
+         void() t = { f = ceil(0.4); f = floor(K); f = sqrt((16)); f = rint(0.4); f = ceil(f); \
+         f = ceil(!0.117); f = sqrt(2 * 2); f = floor(-K); };\n",
     );
     let (f, rint, ceil) = (global(&p, "f"), global(&p, "rint"), global(&p, "ceil"));
     let t = body(&p, "t");
@@ -3248,6 +3277,9 @@ fn some_builtins_of_a_constant_fold() {
     assert_eq!(t[4], st(Opcode::Call1, rint, 0, 0));
     assert_eq!(t[6], st(StoreF, f, 4, 0));
     assert_eq!(t[7], st(Opcode::Call1, ceil, 0, 0));
+    assert_eq!(t[9], st(StoreF, immediate(&p, 0.0), f, 0));
+    assert_eq!(t[10], st(StoreF, immediate(&p, 2.0), f, 0));
+    assert_eq!(t[11], st(StoreF, immediate(&p, -3.0), f, 0));
 }
 
 // spec FTEF-27.17: `!` of an int constant folds to the int, stored as the float; `!` of an

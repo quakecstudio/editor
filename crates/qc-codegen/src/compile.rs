@@ -1204,17 +1204,9 @@ impl<'a> Compiler<'a> {
                         let value = self.expr(&value)?;
                         // FTEF-27.4: an `int` returned where a float is converted
                         // (`QCC_EvaluateCast(e, pr_scope->type->aux_type, true)`).
-                        let returns_float = self
-                            .body_return
-                            .as_ref()
-                            .is_some_and(|ty| ty.etype() == Etype::Float)
-                            && self.body_return.as_ref().is_some_and(|ty| {
-                                !matches!(ty, ValueType::Of(t) if t.fteqcc_scalar() == Some(CScalar::Integer))
-                            });
-                        let value = if returns_float && self.is_integer(&value) {
-                            self.int_as_float(&value, span)?
-                        } else {
-                            value
+                        let value = match self.body_return.clone() {
+                            Some(ty) => self.float_of_int(value, &ty, span)?,
+                            None => value,
                         };
                         operand(self.operand_of(&value)).at(span)?
                     }
@@ -1831,8 +1823,9 @@ impl<'a> Compiler<'a> {
             // (FTE-9.5), read through its entity alone.
             if let Some(which) = self.component_selector(field)
                 && let Some(base) = field.base()
-                && self.entity_component_slot(&base, which, span)?.is_some()
+                && let Some(slot) = self.entity_component_slot(&base, which, span)?
             {
+                self.drop_value(&slot.entity);
                 return Ok(());
             }
             match self.member(field, span)? {
@@ -1994,12 +1987,19 @@ impl<'a> Compiler<'a> {
     fn unless(&mut self, condition: &Value, span: Span) -> Lowered<usize> {
         let (op, tested) = self.test(condition, false, span)?;
         if let Some(not) = self.shortened_not(op, condition) {
-            // FTE-18.13: the dropped `NOT` had read a call's value; the `IF` reads it again
-            // (`QCC_ForceUnFreeDef`), so the clobber of the jump copies it after all.
-            let not = if not == operand(OFS_RETURN).unwrap_or_default() {
-                operand(self.revive_last_alias(span)?).at(span)?
-            } else {
-                not
+            // FTE-18.13: the dropped `NOT` had read a call's value, or a word of it (FTE-9.6);
+            // the `IF` reads it again (`QCC_ForceUnFreeDef`), so the clobber of the jump copies
+            // the whole value after all and the `IF` reads its word of the copy.
+            let word = u32::try_from(not)
+                .ok()
+                .and_then(|ofs| ofs.checked_sub(OFS_RETURN))
+                .filter(|word| *word < 3);
+            let not = match word {
+                Some(word) if self.last_read.is_some() => {
+                    let copy = self.revive_last_alias(span)?;
+                    operand(copy.checked_add(word).at(span)?).at(span)?
+                }
+                Some(_) | None => not,
             };
             return Ok(self.program.emit(Opcode::If, not, 0));
         }
@@ -2452,7 +2452,9 @@ impl<'a> Compiler<'a> {
         let kind = match value.kind {
             ValueKind::Def(_) | ValueKind::Cast(_) => ValueKind::Cast(target),
             ValueKind::Temp(_) => ValueKind::Temp(target),
-            ValueKind::Return(_) | ValueKind::ReturnWord(..) => {
+            // A word of a call's value stays a word of its alias (FTE-9.6).
+            ValueKind::ReturnWord(alias, _) => ValueKind::ReturnWord(alias, target),
+            ValueKind::Return(_) => {
                 return Err(Abort::Internal(Internal::Unsupported, span));
             }
         };
@@ -3778,51 +3780,6 @@ impl Compiler<'_> {
     /// (FTE-19.13): the arguments read, then `random()` called and its value scaled, `MUL_F`
     /// of it and `a`, or `min + (max-min)*random()` as `SUB_F b a`, `MUL_F` and `ADD_F`.
     /// `None` for any other call.
-    /// FTEF-18.36: `floor`, `ceil`, `sin`, `cos`, `log` and `sqrt` of one constant float
-    /// argument, a literal or a constant's name, fold to the float constant of C's function
-    /// (`QCC_PR_GenerateFunctionCallRef` under `opt_constantarithmatic`).
-    fn folded_call(
-        &mut self,
-        name: Option<&str>,
-        slots: &[Option<ast::Expr>],
-        span: Span,
-    ) -> Lowered<Option<Value>> {
-        let Some(name) = name else {
-            return Ok(None);
-        };
-        if !self.dialect.has_fteqcc_extensions() || !FOLDED_BUILTINS.contains(&name) {
-            return Ok(None);
-        }
-        let [Some(argument)] = slots else {
-            return Ok(None);
-        };
-        let mut inner = argument.clone();
-        while let ast::Expr::Paren(paren) = &inner {
-            inner = paren.expr().at(span)?;
-        }
-        // A literal or a constant's name makes no statement, so reading it twice makes none.
-        let constant = match &inner {
-            ast::Expr::Literal(_) => literal_of(&inner, self.dialect),
-            ast::Expr::Name(_) => {
-                let value = self.expr(&inner)?;
-                self.constant_literal(&value)
-            }
-            _ => None,
-        };
-        let Some(Literal::Float(x)) = constant else {
-            return Ok(None);
-        };
-        let folded = match name {
-            "floor" => x.floor(),
-            "ceil" => x.ceil(),
-            "sin" => x.sin(),
-            "cos" => x.cos(),
-            "log" => x.ln(),
-            _ => x.sqrt(),
-        };
-        Ok(Some(self.float_literal(folded, span)?))
-    }
-
     fn random_call(
         &mut self,
         callee: &Value,
@@ -3988,9 +3945,6 @@ impl Compiler<'_> {
         span: Span,
     ) -> Lowered<Value> {
         if let Some(value) = self.random_call(callee, name, slots, span)? {
-            return Ok(value);
-        }
-        if let Some(value) = self.folded_call(name, slots, span)? {
             return Ok(value);
         }
         let fixed = (!function.variadic).then_some(function.params.len());
@@ -4242,9 +4196,6 @@ fn postfix_step(postfix: &ast::PostfixExpr) -> f32 {
 fn operand_index(index: usize) -> Result<i32, Internal> {
     i32::try_from(index).map_err(|_| Internal::TooLarge)
 }
-
-/// The functions FTEQCC folds when called with one constant float (FTEF-18.36).
-const FOLDED_BUILTINS: [&str; 6] = ["floor", "ceil", "sin", "cos", "log", "sqrt"];
 
 /// The literal an initialiser is (QC-11.3; QC-27.8 refuses any other).
 fn literal_of(expr: &ast::Expr, dialect: Dialect) -> Option<Literal> {

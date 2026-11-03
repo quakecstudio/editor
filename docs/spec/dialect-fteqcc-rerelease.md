@@ -318,7 +318,13 @@ only entity-field access); a vector has no members. The rerelease applies `.z` d
   call copied the whole value to. So `gf0 = (normalize(gv0)).y + ff1(1);` is `CALL1 normalize`,
   the argument store, `STORE_V` of the return global to a temporary `t`, `CALL1 ff1` and `ADD_F
   t+1, OFS_RETURN`, and `gf0 = (normalize(gv0)).z;` with no call after it reads
-  `OFS_RETURN+2`. A member of a call's struct value is the same. Source:
+  `OFS_RETURN+2`. A member of a call's struct value is the same, but the clobber copies a
+  struct's alias with one `STORE_F` (`QCC_ClobberDef` stores `OP_STORE_V` only for a vector
+  or a variant, `OP_STORE_I64` for a 64-bit type, else `OP_STORE_F`), so a member past the
+  first word read after a later call is a word the copy never wrote; this compiler copies the
+  same. A shortened `NOT` of a word of a call's value revives its alias (FTE-18.13), so
+  `if (!(normalize(v)).y)` is `STORE_V` of the return global to `t` and `IF t+1`. A cast
+  within one basic type keeps the word (FTEF-30.6). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseRefArrayPointer`, `QCC_RefToDef`, `QCC_GetAliasTemp`, `QCC_ClobberDef`.
 
