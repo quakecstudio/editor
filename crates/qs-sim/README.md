@@ -11,7 +11,8 @@ server runs them. Collision, monster movement, physics and the player all follow
   MOVE-1 to MOVE-5 of [`move.md`](../../docs/spec/engine/move.md), PHYS-1 to PHYS-10 of
   [`physics.md`](../../docs/spec/engine/physics.md), NET-1 to NET-5 of
   [`net.md`](../../docs/spec/engine/net.md), and the spawning of EDICT-8; the rerelease's
-  localization (RRE-1) is `qc-builtins`'.
+  localization (RRE-1) is `qc-builtins`', and its local sounds (RRE-2.1) and named builtins
+  (RRE-4) are here.
 - **Ported from:** id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`:
   `WinQuake/world.c`, `sv_move.c`, `sv_phys.c`, `sv_user.c`, `sv_main.c` (`SV_SpawnServer`
   and the message writers) and `host_cmd.c` (the signon commands), with parts of
@@ -44,3 +45,6 @@ server runs them. Collision, monster movement, physics and the player all follow
   given to the mock engine before the map spawns; with a file loaded the print builtins and
   `WriteString` send their text localized (RRE-1.9), with none as id's engine sends it
   (RRE-1.6).
+- `rerelease::patch_builtins`: QuakeSpasm's `PR_PatchRereleaseBuiltins` on a progs' bytes
+  before it is read (RRE-4.1); when it patched any, `LoadOptions::rerelease_builtins` puts
+  the rerelease's builtins 79 to 92 in the table (RRE-4.2).

@@ -10,7 +10,8 @@ them (NET), so the client knows exactly what id's client knows.
   its tests build packets with `qs-sim`'s writers.
 - **Spec sections:** CLIENT-1 to CLIENT-7 of [`client.md`](../../docs/spec/engine/client.md),
   PART-1 to PART-3 of [`particles.md`](../../docs/spec/engine/particles.md) and VIEW-1 to
-  VIEW-4 of [`view.md`](../../docs/spec/engine/view.md).
+  VIEW-4 of [`view.md`](../../docs/spec/engine/view.md), and the rerelease's
+  `svc_localsound` and `svc_achievement` (RRE-2.2, RRE-2.3).
 - **Ported from:** id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`:
   `WinQuake/cl_main.c`, `cl_parse.c`, `cl_tent.c`, `r_part.c`, `view.c` and `common.c`
   (the readers); and sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`:
