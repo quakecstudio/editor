@@ -29,8 +29,9 @@ use crate::math;
 use crate::mock::{
     BUILTIN_CHECKCLIENT_INTERVAL, BUILTIN_FL_FLY, BUILTIN_FL_NOTARGET, BUILTIN_FL_ONGROUND,
     BUILTIN_FL_SWIM, EngineProfile, LIMIT_MAX_DATAGRAM, LIMIT_MAX_LIGHTSTYLES, MessageDest,
-    MockEngine, Overflow, Precache,
+    MockEngine, Overflow, Precache, Unimplemented,
 };
+use crate::tokenize::MAX_SEPARATORS;
 use crate::{atof, cstring, printf, strconv, strftime};
 
 /// The builtin dispatch over a mock engine (DIFF-6, DIFF-7).
@@ -170,14 +171,20 @@ impl MockBuiltins {
             // 49 ChangeYaw is a pure movement builtin handled with movement.
             49 => self.b_changeyaw(context),
             // A number with no builtin is a PF_Fixme gap (BUILTIN-1.2); vkQuake's names the
-            // number and the function (BUILTIN-18.2).
-            _ => Err(BuiltinError::from(match self.engine.profile {
-                EngineProfile::Id => RuntimeError::Unimplemented,
-                EngineProfile::VkQuake => RuntimeError::UnimplementedBuiltin {
-                    number,
-                    name: called_name(context),
-                },
-            })),
+            // number and the function (BUILTIN-18.2). The compiler differential has it do
+            // nothing and return 0 (DIFF-12.26).
+            _ => match (self.engine.unimplemented, self.engine.profile) {
+                (Unimplemented::ReturnsZero, _) => write_return_vector(context, [0.0; 3]),
+                (Unimplemented::Error, EngineProfile::Id) => {
+                    Err(BuiltinError::from(RuntimeError::Unimplemented))
+                }
+                (Unimplemented::Error, EngineProfile::VkQuake) => {
+                    Err(BuiltinError::from(RuntimeError::UnimplementedBuiltin {
+                        number,
+                        name: called_name(context),
+                    }))
+                }
+            },
         }
     }
 }
@@ -1070,6 +1077,20 @@ fn c_str(text: &[u8]) -> &[u8] {
     text.split(|&b| b == 0).next().unwrap_or_default()
 }
 
+/// Which end of a token `argv_start_index` and `argv_end_index` name (BUILTIN-18.23).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Edge {
+    /// The byte it starts at.
+    Start,
+    /// The byte after it.
+    End,
+}
+
+/// A token count as `G_FLOAT` holds it: at most 64, exact.
+fn f32_of_count(count: usize) -> f32 {
+    int_to_float(i32::try_from(count).unwrap_or(i32::MAX))
+}
+
 /// The case `strtolower` and `strtoupper` give (BUILTIN-18.16).
 #[derive(Clone, Copy)]
 enum Case {
@@ -1229,7 +1250,12 @@ impl MockBuiltins {
             228 => Some(self.b_strncmp(context, Case::Upper)),
             229 | 230 => Some(self.b_strncmp(context, Case::Lower)),
             339 => Some(joined_string(context, &self.engine, 0).map(|_| ())),
+            441 | 514 => Some(self.b_tokenize(context)),
+            442 => Some(self.b_argv(context)),
             448 => Some(self.b_cvar_string(context)),
+            479 => Some(self.b_tokenizebyseparator(context)),
+            515 => Some(self.b_argv_index(context, Edge::Start)),
+            516 => Some(self.b_argv_index(context, Edge::End)),
             455 => Some(self.b_clienttype(context)),
             478 => Some(self.b_strftime(context)),
             480 => Some(self.b_strcase(context, Case::Lower)),
@@ -1565,6 +1591,58 @@ impl MockBuiltins {
             false
         };
         write_return_float(context, if found { 1.0 } else { 0.0 })
+    }
+
+    /// `tokenize(s)` (#441) and `tokenize_console(s)` (#514), vkQuake's `PF_Tokenize` and
+    /// `PF_tokenize_console`, both `tokenizeqc` (BUILTIN-18.23): the word count.
+    fn b_tokenize(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let text = read_parm_string(context, &self.engine, 0)?;
+        let count = self.engine.tokens.tokenize(&text);
+        write_return_float(context, f32_of_count(count))
+    }
+
+    /// `tokenizebyseparator(s, separator, ...)` (#479), vkQuake's `PF_tokenizebyseparator`
+    /// (BUILTIN-18.24): the separators are the arguments after `s`, at most seven.
+    fn b_tokenizebyseparator(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let text = read_parm_string(context, &self.engine, 0)?;
+        let given = context.machine().argc().saturating_sub(1);
+        let mut separators = Vec::new();
+        for n in 1..=given.min(MAX_SEPARATORS) {
+            let n = u16::try_from(n).unwrap_or(u16::MAX);
+            let sep = read_parm_string(context, &self.engine, n)?;
+            separators.push(c_str(&sep).to_vec());
+        }
+        let count = self.engine.tokens.split(c_str(&text), &separators);
+        write_return_float(context, f32_of_count(count))
+    }
+
+    /// `argv(n)` (#442), vkQuake's `PF_ArgV` (BUILTIN-18.23): a temporary string of token
+    /// `n`, or the null string 0.
+    fn b_argv(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let index = read_parm_int(context, 0)?;
+        match self.engine.tokens.argv(index) {
+            Some(text) => {
+                let value = self.engine.strings.make(text);
+                write_return_string(context, value)
+            }
+            None => write_return_string(context, 0),
+        }
+    }
+
+    /// `argv_start_index(n)` (#515) and `argv_end_index(n)` (#516), vkQuake's
+    /// `PF_argv_start_index` and `PF_argv_end_index` (BUILTIN-18.23): the byte, or -1.
+    fn b_argv_index(
+        &mut self,
+        context: &mut Context<'_, '_>,
+        edge: Edge,
+    ) -> Result<(), BuiltinError> {
+        let index = read_parm_int(context, 0)?;
+        let at = match edge {
+            Edge::Start => self.engine.tokens.start(index),
+            Edge::End => self.engine.tokens.end(index),
+        };
+        let at = i32::try_from(at).unwrap_or(i32::MAX);
+        write_return_float(context, int_to_float(at))
     }
 
     /// `fopen(name, mode)`, vkQuake's `PF_fopen` over the mock's empty game directory

@@ -15,12 +15,13 @@
 //! `changelevel` flag, the command buffer and the sizes of the three message buffers
 //! (DIFF-6.5), and the DIFF-6.2 random source.
 
+use crate::localization::Localization;
 /// The settings the mock keeps, with the texts of DIFF-2.4.
 ///
 /// `skill`, `deathmatch`, `coop` and `teamplay` start at `1`, `0`, `0`, `0`; a scenario's
 /// `cvar` line replaces a text. Any other name reads as 0 and `cvar_set` of it changes nothing
 /// (BUILTIN-11.8, DIFF-2.4).
-use crate::localization::Localization;
+use crate::tokenize::Tokens;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cvars {
@@ -141,6 +142,17 @@ pub const VKQUAKE_MAX_SOUNDS: usize = 2048;
 /// vkQuake's `MAX_MODELS` (BUILTIN-18.3).
 pub const VKQUAKE_MAX_MODELS: usize = 8192;
 
+/// What a builtin number the profile's dispatch does not implement does.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Unimplemented {
+    /// The engine's error: `PF_Fixme` (BUILTIN-1.2, BUILTIN-18.2).
+    #[default]
+    Error,
+    /// Nothing, returning 0: the compiler differential's choice, so a function a mod compiles
+    /// for another engine runs to its end in both progs (DIFF-12.26).
+    ReturnsZero,
+}
+
 /// Whose rules the mock follows where engines differ (BUILTIN-18).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum EngineProfile {
@@ -246,6 +258,11 @@ pub struct MockEngine {
     pub server_active: bool,
     /// Whose rules the mock follows (BUILTIN-18); id's unless the caller chooses another.
     pub profile: EngineProfile,
+    /// What a builtin number with no implementation does; the engine's error unless the
+    /// caller chooses otherwise (DIFF-12.26).
+    pub unimplemented: Unimplemented,
+    /// The token list vkQuake's tokenize builtins fill and `argv` reads (BUILTIN-18.23).
+    pub tokens: Tokens,
     /// The rerelease's localized strings, none unless the host loads them (RRE-1.6).
     pub localization: Localization,
     /// The server clock `sv.time`, a `double` (DIFF-3.2): 1.0 at map start.
@@ -429,6 +446,8 @@ impl MockEngine {
             clients_active: Vec::new(),
             server_active: false,
             profile: EngineProfile::Id,
+            unimplemented: Unimplemented::Error,
+            tokens: Tokens::default(),
             localization: Localization::default(),
             clock: 1.0,
         }

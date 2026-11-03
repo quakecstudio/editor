@@ -874,7 +874,7 @@ mod bodies {
         reason = "test code: a failed unwrap, index, expect or overflow is a failed test"
     )]
 
-    use crate::mock::{EngineProfile, MessageDest, MockEngine, Precache};
+    use crate::mock::{EngineProfile, MessageDest, MockEngine, Precache, Unimplemented};
     use crate::{MockBuiltins, math};
     use qc_edict::system::{SYSTEM_GLOBALS, field_by_name, global_by_name};
     use qc_edict::{EDICT_SYS_GLOBALS_END, EdictNumber};
@@ -2117,6 +2117,59 @@ mod bodies {
         assert!(run_profiled(7, "random", EngineProfile::VkQuake).is_ok());
     }
 
+    // spec DIFF-12.26: with `Unimplemented::ReturnsZero` a number past id's table stays the
+    // VM's error under id's profile; under vkQuake's it returns 0
+    #[test]
+    fn a_number_past_ids_table_stays_the_vms_error() {
+        for (profile, ok) in [(EngineProfile::Id, false), (EngineProfile::VkQuake, true)] {
+            let (strings, offsets) = string_table(&["ext"]);
+            let bytes = build_named_progs(500, 0, strings, offsets[0]);
+            let progs = Progs::read(&bytes).unwrap();
+            let mut machine = Machine::new(&progs, 0).unwrap();
+            let mut engine = MockEngine::new("test", 0, 1);
+            engine.profile = profile;
+            engine.unimplemented = Unimplemented::ReturnsZero;
+            let mut builtins = MockBuiltins::with_engine(engine);
+            let result = machine.execute_program(
+                &progs,
+                ServerState::Active,
+                &mut builtins,
+                &mut NoObserver,
+                1,
+            );
+            assert_eq!(result.is_ok(), ok, "{profile:?}: {result:?}");
+            if !ok {
+                assert_eq!(result.unwrap_err().kind, ErrorKind::BadBuiltin);
+            }
+        }
+    }
+
+    // spec DIFF-12.26: with `Unimplemented::ReturnsZero` a number with no builtin does nothing
+    // and returns 0, under either profile
+    #[test]
+    fn an_unimplemented_builtin_may_return_zero() {
+        for profile in [EngineProfile::Id, EngineProfile::VkQuake] {
+            let (strings, offsets) = string_table(&["gap"]);
+            let bytes = build_named_progs(5, 0, strings, offsets[0]);
+            let progs = Progs::read(&bytes).unwrap();
+            let mut machine = Machine::new(&progs, 0).unwrap();
+            let mut engine = MockEngine::new("test", 0, 1);
+            engine.profile = profile;
+            engine.unimplemented = Unimplemented::ReturnsZero;
+            let mut builtins = MockBuiltins::with_engine(engine);
+            machine
+                .execute_program(
+                    &progs,
+                    ServerState::Active,
+                    &mut builtins,
+                    &mut NoObserver,
+                    1,
+                )
+                .unwrap();
+            assert_eq!(machine.global(1).unwrap().as_i32(), 0, "OFS_RETURN is 0");
+        }
+    }
+
     // spec BUILTIN-18.2: a number with no builtin is PF_Fixme's error, naming the number and
     // the function called, id's gaps included
     #[test]
@@ -2155,6 +2208,50 @@ mod bodies {
         assert_eq!(player.engine().cvars.text("teamplay"), Some("0"));
         let (result, _) = run(edict * 1000, offsets[0]);
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
+    }
+
+    // spec BUILTIN-18.23: tokenize counts the words, argv returns each as an engine string and
+    // 0 past the end, and argv_start_index and argv_end_index their bytes or -1
+    #[test]
+    fn tokenize_and_argv_through_the_dispatch() {
+        let (strings, offsets) = string_table(&["vote map \"e1m1\""]);
+        // Each call runs in a fixture of its own number, on the engine the last one left.
+        let call = |engine: &mut MockEngine, number: u32, parm: Result<i32, f32>| {
+            let mut f = Fixture::new(number, 1, strings.clone(), 0);
+            *f.builtins.engine_mut() = engine.clone();
+            match parm {
+                Ok(string) => f.set_parm_i(0, string),
+                Err(float) => f.set_parm_f(0, float),
+            }
+            f.run_ok(ServerState::Active);
+            *engine = f.builtins.engine().clone();
+            (f.return_f(), f.return_i())
+        };
+        let mut engine = MockEngine::new("test", 0, 1);
+        engine.profile = EngineProfile::VkQuake;
+        assert_eq!(call(&mut engine, 441, Ok(offsets[0])).0, 3.0);
+        let value = call(&mut engine, 442, Err(2.0)).1;
+        assert_eq!(engine.strings.text(value), Some(&b"e1m1"[..]));
+        assert_eq!(call(&mut engine, 442, Err(3.0)).1, 0);
+        assert_eq!(call(&mut engine, 515, Err(-1.0)).0, 9.0);
+        assert_eq!(call(&mut engine, 516, Err(-1.0)).0, 15.0);
+        assert_eq!(call(&mut engine, 515, Err(5.0)).0, -1.0);
+        assert_eq!(call(&mut engine, 514, Ok(offsets[0])).0, 3.0);
+    }
+
+    // spec BUILTIN-18.24: tokenizebyseparator reads the separators from the arguments after
+    // the text
+    #[test]
+    fn tokenizebyseparator_through_the_dispatch() {
+        let (strings, offsets) = string_table(&["a;b,c", ";", ","]);
+        let mut f = Fixture::new(479, 3, strings, 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.set_parm_i(0, offsets[0]);
+        f.set_parm_i(1, offsets[1]);
+        f.set_parm_i(2, offsets[2]);
+        f.run_ok(ServerState::Active);
+        assert_eq!(f.return_f(), 3.0);
+        assert_eq!(f.builtins.engine().tokens.argv(2), Some(b"c".to_vec()));
     }
 
     // spec BUILTIN-18.22: strncmp and strcasecmp answer C's differences; strstrofs finds an

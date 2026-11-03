@@ -37,11 +37,12 @@ mod printf;
 mod strconv;
 mod strftime;
 pub mod table;
+pub mod tokenize;
 
 #[cfg(test)]
 mod tests;
 
 pub use dispatch::MockBuiltins;
 pub use error::{BuiltinError, FatalError, RuntimeError};
-pub use mock::{EngineProfile, MockEngine};
+pub use mock::{EngineProfile, MockEngine, Unimplemented};
 pub use table::{BUILTIN_MAX_NUMBER, Builtin, Class, lookup};

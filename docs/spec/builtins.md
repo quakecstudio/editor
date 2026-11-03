@@ -928,6 +928,36 @@ profile (DIFF-12.19); everything else runs under id's.
   as negative. A negative `len` is past any string. `strstrofs(s, sub, firstofs)` (#221) is
   `PF_strstrofs`: -1 when `firstofs` is not 0 and is negative or past `strlen (s)`; else the
   offset in `s` of `sub` found from `firstofs` (an empty `sub` at `firstofs`), or -1.
+- **BUILTIN-18.23** `tokenize(s)` (#441) and `tokenize_console(s)` (#514) are `PF_Tokenize` and
+  `PF_tokenize_console`, both `tokenizeqc (G_STRING (OFS_PARM0), ...)` (its `dpfuckage` flag is
+  read by nothing): the engine's one token list (`qctoken`, `MAXQCTOKENS` 64) is emptied, then
+  while it holds fewer than 64 the bytes up to `' '` are passed over as unsigned chars
+  (`*(const unsigned char *)str <= ' '`), the word's start is noted, and `COM_Parse` reads the
+  word, its end the byte `COM_Parse` stopped at; the text's end, or a `NULL` from `COM_Parse`,
+  ends the list, and the count is returned as a float. `COM_Parse` is `COM_ParseEx (data,
+  CPE_NOTRUNC)` (`Quake/common.c`): white space is a byte `c = *data` with `c <= ' '`, `char`
+  being signed, so a byte from 0x80 up is white space too; `//` comments to the line's end and
+  `/* */` comments are passed over, and the text's end there returns `NULL`; a `"` reads to the
+  next `"` or the end; `{`, `}`, `(`, `)`, `'` and `:` are a word of one byte; any other word
+  runs to a byte that is one of `{ } ( ) '` or not above 32 (`:` is not a stop, "so that
+  ip:port works"); a word past `COM_PARSE_MAX_TOKEN_SIZE - 1` bytes (4095) returns `NULL`.
+  `argv(n)` (#442) is `PF_ArgV`: `n` read as `(int) G_FLOAT`, a negative one counting from the
+  end (`idx += qctoken_count`), and the token's text in a temporary string (`q_strlcpy` into
+  `STRINGTEMP_LENGTH` 1024, so at most 1023 bytes), or 0, the null string, outside the list.
+  `argv_start_index(n)` (#515) and `argv_end_index(n)` (#516) are `PF_argv_start_index` and
+  `PF_argv_end_index`: the token's start or end as a float, or -1. The list stays until the
+  next tokenize; the compiler differential restores the engine before each call (DIFF-12.20).
+- **BUILTIN-18.24** `tokenizebyseparator(s, separator, ...)` (#479) is `PF_tokenizebyseparator`:
+  the separators are the arguments after `s` (`qcvm->argc - 1`, at most 7), the list is emptied
+  and, unless `s` is empty, `s` is scanned a byte at a time: at its end, or where a separator's
+  bytes start (`strncmp (str, sep[s], seplen[s])`, the first that does), the token from the last
+  start to here is made, the scan having moved past the separator; then, when the text goes on
+  and the list holds fewer than 64, the next token starts there, otherwise the scan ends; and
+  the scan always moves one byte on (`str++`), so the byte after a separator never starts one:
+  `a,,b` split at `,` is `a` and `,b`, and `a,` is `a` alone. The count is returned as a float.
+  Source: Novum/vkQuake@27789d7333a46674474d871137bb71e056719628, `Quake/pr_ext.c`, `tokenizeqc`,
+  `PF_Tokenize`, `PF_tokenize_console`, `PF_tokenizebyseparator`, `PF_ArgV`,
+  `PF_argv_start_index`, `PF_argv_end_index`; `Quake/common.c`, `COM_ParseEx`.
 
 ## Test vectors
 
