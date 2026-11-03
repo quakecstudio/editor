@@ -2780,10 +2780,12 @@ impl<'a> Compiler<'a> {
                 .iter()
                 .flatten()
                 .all(|o| !integer(o));
+            // FTE-19.10: `AND` and `OR` read any operand's word as it is, as `OP_AND_ANY` and
+            // `OP_OR_ANY` do on the vanilla opcodes.
+            let any = matches!(row.opcode, Opcode::And | Opcode::Or);
             if statement.c == ir::Destination::Nothing
                 || !operands_ok
-                || !fits(statement.a, row.a)
-                || !fits(statement.b, row.b)
+                || (!any && !(fits(statement.a, row.a) && fits(statement.b, row.b)))
             {
                 return None;
             }

@@ -257,6 +257,34 @@ impl Checker<'_> {
         }
     }
 
+    /// FTE-19.10: the operands `OP_AND_ANY` and `OP_OR_ANY` read: a vector, under
+    /// `vectorlogic`, its dot product with itself (`QCC_PR_StatementFlags(&pr_opcodes[OP_MUL_V],
+    /// var_a, var_a, ...)`), the left operand's first; any other operand as it is. A string
+    /// under `ifstring`, which FTEQCC compares with `""`, is read as it is too: neither this
+    /// model nor the code generator follows `ifstring` yet.
+    fn truths(
+        &mut self,
+        op: Op,
+        lhs: &Value,
+        rhs: &Value,
+        span: Span,
+    ) -> Result<(Value, Value), Fatal> {
+        if !matches!(op, Op::AndAny | Op::OrAny) {
+            return Ok((lhs.clone(), rhs.clone()));
+        }
+        let flags = self.env.flags_at(span.start);
+        let truth = |checker: &mut Self, value: &Value| -> Result<Value, Fatal> {
+            let etype = checker.env.shape(&value.ty).map(|shape| shape.etype);
+            if etype == Some(Etype::Vector) && flags.has(FteFlag::Vectorlogic) {
+                return checker.emit(Op::MulV, value, value, span);
+            }
+            Ok(value.clone())
+        };
+        let lhs = truth(self, lhs)?;
+        let rhs = truth(self, rhs)?;
+        Ok((lhs, rhs))
+    }
+
     /// FTEF-27.2: the emulation of `op`, which the target lacks.
     fn emulate(
         &mut self,
@@ -361,6 +389,7 @@ impl Checker<'_> {
                 self.emit(then, lhs, &reciprocal, span)
             }
             Emulation::Instead(other) => {
+                let (lhs, rhs) = &self.truths(op, lhs, rhs, span)?;
                 // `var_c.cast = type_uint;` (or `type_uint64`) after an unsigned operator's
                 // signed one, a comparison's truth value included (FTEF-27.12).
                 let value = self.emit(other, lhs, rhs, span)?;

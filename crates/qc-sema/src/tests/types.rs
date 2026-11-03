@@ -625,3 +625,30 @@ fn a_character_constant_is_its_code() {
         }))
     );
 }
+
+// spec FTE-19.10: `&&` and `||` of operands that are not both floats are `AND` and `OR` of
+// their words, a vector first its dot product with itself under `vectorlogic`
+#[test]
+fn logic_of_other_types_reads_their_truths() {
+    use crate::ir::{Destination, Input, Operand, Statement, TempId};
+    use qc_preproc::Op;
+    let source = "vector v; entity e; float a; void() t = { a = a && v; a = a || e; };";
+    let statement = |op, a, b| Statement {
+        op,
+        a: Some(a),
+        b: Some(b),
+        c: Destination::Value,
+    };
+    let (left, right) = (Operand::Input(Input::Left), Operand::Input(Input::Right));
+    assert_eq!(
+        fte_fragment_at(source, "a && v", "&&").statements,
+        [
+            statement(Op::MulV, right, right),
+            statement(Op::AndF, left, Operand::Temp(TempId::new(0))),
+        ]
+    );
+    assert_eq!(
+        fte_fragment_at(source, "a || e", "||").statements,
+        [statement(Op::OrF, left, right)]
+    );
+}
