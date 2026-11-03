@@ -1014,6 +1014,37 @@ fn a_return_value_that_differs_is_a_divergence() {
     );
 }
 
+// spec DIFF-12.23: a `__va_list` element's words agree by any reading, a string argument by
+// its text though the string tables differ, and differ when none does.
+#[test]
+fn va_list_elements_compare_by_any_reading() {
+    let variadic = |extra: &str| {
+        format!(
+            "string s;\nvoid(...) f = {{ s = va_arg(0, string); }};\n\
+             void() g = {{ f(\"a\"); }};\n{extra}"
+        )
+    };
+    let report = run(
+        &compile_fteqcc(&variadic("")),
+        &compile_fteqcc(&variadic("void() h = { dprint(\"b\"); };\n")),
+        2,
+    );
+    assert_eq!(report.divergences, []);
+    let report = run(
+        &compile_fteqcc(&variadic("")),
+        &compile_fteqcc(
+            "string s;\nvoid(...) f = { s = va_arg(0, string); };\nvoid() g = { f(\"b\"); };\n",
+        ),
+        2,
+    );
+    assert!(
+        report.divergences.iter().any(
+            |d| matches!(&d.what, Difference::Global(name, _, _) if name.starts_with(b"__va_list["))
+        ),
+        "{report:?}"
+    );
+}
+
 // spec DIFF-12.7: a return value agrees when any reading of its first word does: a string by
 // its text, though the string tables differ.
 #[test]

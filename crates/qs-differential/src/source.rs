@@ -79,7 +79,7 @@ const DEPTH: usize = 3;
 
 /// The builtins a program may call, as id's `defs.qc` declares them: each is pure or reads
 /// only the mock's state, so both progs' calls agree.
-const BUILTINS: &str = "float(vector v) vlen = #12;\nvector(vector v) normalize = #9;\n\
+const BUILTINS: &str = "void(string e) error = #10;\nfloat(vector v) vlen = #12;\nvector(vector v) normalize = #9;\n\
 float(vector v) vectoyaw = #13;\nfloat(float v) rint = #36;\nfloat(float v) floor = #37;\n\
 float(float v) ceil = #38;\nfloat(float f) fabs = #43;\nstring(float f) ftos = #26;\n\
 string(vector v) vtos = #27;\n";
@@ -116,6 +116,16 @@ impl Ty {
     }
 
     /// The prefix of the globals, fields, locals and parameters of this type.
+    /// The zero of the type, which a local is set to before it is read.
+    const fn zero(self) -> &'static str {
+        match self {
+            Self::Float => "0",
+            Self::Vector => "'0 0 0'",
+            Self::Str => "\"\"",
+            Self::Entity => "world",
+        }
+    }
+
     const fn tag(self) -> &'static str {
         match self {
             Self::Float => "f",
@@ -330,6 +340,14 @@ impl Gen {
         }
         // The counter every loop of this function bounds itself with.
         self.out.push_str("\tlocal float n;\n\tn = 0;\n");
+        // A local starts with whatever its slot held (VM-15.7), which the two layouts need not
+        // share, so each is stored before it is read.
+        for i in 0..locals {
+            let Some(local) = self.locals.get(params.len().saturating_add(i)) else {
+                break;
+            };
+            writeln!(self.out, "\t{} = {};", local.text, local.ty.zero()).unwrap_or(());
+        }
         let statements = self.below(6).saturating_add(1);
         self.depth = 0;
         for _ in 0..statements {
@@ -435,7 +453,9 @@ impl Gen {
                 self.form("for");
             }
             10 => {
-                let value = self.expr(Ty::Float, 1);
+                // A comparison is a bool to FTEQCC, which a float case does not match
+                // ("Implicit type mismatch. Needed bool, got float."), so the value is a name.
+                let value = self.leaf(Ty::Float);
                 writeln!(self.out, "{indent}switch ({value}) {{").unwrap_or(());
                 let cases = self.below(3).saturating_add(1);
                 for i in 0..cases {
@@ -619,7 +639,7 @@ impl Gen {
                 let ty = self.pick_type();
                 let a = self.expr(ty, depth.saturating_add(1));
                 self.form("not");
-                format!("!{a}")
+                format!("(!{a})")
             }
             5 => {
                 let a = self.expr(Ty::Float, depth.saturating_add(1));
@@ -637,7 +657,7 @@ impl Gen {
             }
             7 => {
                 let v = self.expr(Ty::Vector, depth.saturating_add(1));
-                let component = self.choose(&["_x", "_y", "_z"], "_x");
+                let component = self.choose(&[".x", ".y", ".z"], ".x");
                 self.form("vector-component");
                 format!("({v}){component}")
             }

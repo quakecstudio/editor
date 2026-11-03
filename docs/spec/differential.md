@@ -832,6 +832,53 @@ approved by Justin on 2026-10-20. The oracle is the pinned FTEQCC (`docs/porting
   `cargo xtask oracles --recorded` compare the profile with the recording without the oracle,
   and a program the generator no longer makes as recorded fails until it is recorded again.
 
+## DIFF-14 The generated-program differential
+
+**Source:** this project (P2-153, [#649](https://github.com/quakecstudio/editor/issues/649)).
+The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's.
+
+- **DIFF-14.1** `crates/qs-differential/src/source.rs` makes a QuakeC program from a seed and
+  a number, the same text for the same pair: the system globals and fields, the entry points
+  of EDICT-9.1, the builtins `error`, `vlen`, `normalize`, `vectoyaw`, `rint`, `floor`,
+  `ceil`, `fabs`, `ftos` and `vtos`, then one to three globals of each basic type, a field of
+  each, one to three float constants, in half the programs an `enum`, a float array of four
+  and a string array of three, a struct of a float, a vector and a string with a global of
+  it, and one to six functions, each with up to three parameters, the last float one with a
+  default in some, `...` in some, up to three locals, each stored its type's zero before any
+  statement reads it (VM-15.7: a local starts with what its slot held, which the two layouts
+  need not share), one to six statements and a `return` of
+  its type. The statements, nested to two levels, are assignments, compound assignments
+  (`+=`, `-=`, `*=`, `|=`, `&=`), field stores through `self`, `world` or an entity value,
+  element stores by a value index masked into the array, `++` and `--`, `if` and `if`-`else`,
+  `while`, `do`-`while` and `for`, each bounded by a counter `n` the function keeps, `switch`
+  on a name with cases, `break` and a `default`, `break` and `continue` in a loop, and
+  expression statements; the expressions, nested to three levels, are arithmetic,
+  comparisons, `&&` and `||`, `&` and `|`, `!`, negation, `?:`, vector components `.x` to
+  `.z`, dot products, vector scales, element and struct member reads, builtin calls, calls of
+  the program's earlier functions with arguments of their parameters' types, and leaves:
+  names in scope, fields of `self` and `world`, float, vector and string literals and
+  constants. Every form is counted by its name in [`FORMS`], and a run reports any form fewer
+  than one program in a hundred used. A `switch` value is a name, not a comparison, since
+  FTEQCC types a comparison as a bool a float case does not match ("Implicit type mismatch.
+  Needed bool, got float."); a vector component is written `(v).x`, since `(v)_x` is no
+  component; and no call of `random` or of the engine's state is made, so both progs' calls
+  end the same way.
+- **DIFF-14.2** `cargo xtask compiler-diff --generated <count> [--seed <n>]` writes the
+  programs `0` to `count - 1` of the seed, 1 unless given, under
+  `target/compiler-diff/generated/<seed>/<n>/` with a `progs.src` naming `t.qc`, compiles each
+  with the pinned FTEQCC (`-Tid -srcfile progs.src`) and with `qc-codegen` in the FTEQCC
+  dialect with `--opt fold` off and on, lists the pairs in `pairs.tsv`, and has the
+  `compiler-diff` binary compare every pair in one process (`--pairs`) with the fast rounds of
+  DIFF-12.6. A pair passes when no call diverges: a generated program's calls need not reach
+  90% of its statements, since every function of it is called directly and a bounded loop is
+  left by its counter. The run fails on any divergence, on a program FTEQCC rejects, which is
+  a defect of the generator, on a program FTEQCC compiles and `qc-codegen` refuses, which is
+  a defect of the compiler, and on a form used by fewer than one program in a hundred; each
+  failure names the program's directory, whose `t.qc` is the case to keep.
+- **DIFF-14.3** The short run, 200 programs of seed 1, runs in the `Test Assets (linux)` job
+  of every pull request after the fast compiler differential; the long run, 10000 programs of
+  seed 1, is a job of the nightly Differential workflow.
+
 ## Test vectors
 
 ### Scenario numbers
