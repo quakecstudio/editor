@@ -2649,8 +2649,7 @@ impl<'a> Compiler<'a> {
     /// makes it (FTEF-27.8). An emulation (FTEF-27) is written as lowered; a plain operator
     /// after this code generator's own folds, which follow FTEQCC's constants further than the
     /// checker does (a vector literal's component, FTEF-26.13). `None`, for
-    /// [`Compiler::operate`] to lower it, under the vanilla profile, and for
-    /// a fragment the model did not keep or [`Compiler::plan_fragment`] refuses.
+    /// [`Compiler::operate`] to lower it, for a fragment the model did not keep or [`Compiler::plan_fragment`] refuses.
     fn lowered_binary(
         &mut self,
         operator: Operator,
@@ -2658,9 +2657,6 @@ impl<'a> Compiler<'a> {
         right: &Value,
         (op_span, span): (Span, Span),
     ) -> Lowered<Option<Value>> {
-        if !self.dialect.has_fteqcc_extensions() {
-            return Ok(None);
-        }
         let Some(body) = self.typed_body() else {
             return Ok(None);
         };

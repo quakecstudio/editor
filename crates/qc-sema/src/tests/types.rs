@@ -267,6 +267,57 @@ fn a_checked_body_keeps_its_operators_opcodes() {
     );
 }
 
+// spec QC-16.1: under id's rules each binary operator keeps the opcode of its row, the first
+// whose operand types are the operands', and lowers to that opcode's one statement of its two
+// operands into a new temporary
+#[test]
+fn a_vanilla_operator_keeps_its_row_and_lowers_to_its_statement() {
+    use crate::ir::{Destination, Fragment, Input, Operand, Statement, Temp, TempId};
+    use qc_preproc::Op;
+    let source = "float a; vector v; string s; entity e; void() g = { a = a * a; a = v * v; \
+                  v = a * v; v = v * a; v = v - v; a = a / a; a = s != s; a = e == e; \
+                  a = a && a; a = a | a; };";
+    let index = super::index_of(source);
+    let g = index
+        .defs
+        .iter()
+        .position(|d| d.name == "g")
+        .map(DefId::new)
+        .unwrap();
+    let body = &index.bodies[&g];
+    let span = |text: &str| {
+        let start = source.find(text).unwrap() + 2;
+        let len = text.len() - 4;
+        Span::new(start, start + len)
+    };
+    for (text, op) in [
+        ("a * a", Op::MulF),
+        ("v * v", Op::MulV),
+        ("a * v", Op::MulFv),
+        ("v * a", Op::MulVf),
+        ("v - v", Op::SubV),
+        ("a / a", Op::DivF),
+        ("s != s", Op::NeS),
+        ("e == e", Op::EqE),
+        ("a && a", Op::AndF),
+        ("a | a", Op::BitorF),
+    ] {
+        assert_eq!(body.opcode_at(span(text)), Some(op), "{text}");
+        let fragment = Fragment {
+            statements: vec![Statement {
+                op,
+                a: Some(Operand::Input(Input::Left)),
+                b: Some(Operand::Input(Input::Right)),
+                c: Destination::Value,
+            }],
+            immediates: Vec::new(),
+            temps: vec![Temp::Made(0)],
+            value: Some(Operand::Temp(TempId::new(0))),
+        };
+        assert_eq!(body.fragment_at(span(text)), Some(&fragment), "{text}");
+    }
+}
+
 // spec FTEF-23.4: a binary operator lowers to the statement of the opcode chosen for it, its
 // operands the operator's inputs, its value the statement's temporary
 // spec FTEF-26.2: an operator of two constants folds, to an immediate with no statement

@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 
 use qc_diag::{Code, Span};
+use qc_preproc::Op;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp, LiteralKind};
 
 use crate::check::expr::Fatal;
@@ -46,25 +47,47 @@ impl Basic {
     }
 }
 
-/// The rows of `pr_opcodes` an operator of `spelling` has, each its operand types and its
-/// result's, in the table's order.
-fn rows(spelling: &str) -> &'static [(Basic, Basic, Basic)] {
+/// The rows of `pr_opcodes` an operator of `spelling` has, each its operand types, its
+/// result's and its opcode, in the table's order.
+fn rows(spelling: &str) -> &'static [(Basic, Basic, Basic, Op)] {
     use Basic::{Entity, Float, Function, String, Vector};
     match spelling {
         "*" => &[
-            (Float, Float, Float),
-            (Vector, Vector, Float),
-            (Float, Vector, Vector),
-            (Vector, Float, Vector),
+            (Float, Float, Float, Op::MulF),
+            (Vector, Vector, Float, Op::MulV),
+            (Float, Vector, Vector, Op::MulFv),
+            (Vector, Float, Vector, Op::MulVf),
         ],
-        "/" | "<=" | ">=" | "<" | ">" | "&&" | "||" | "&" | "|" => &[(Float, Float, Float)],
-        "+" | "-" => &[(Float, Float, Float), (Vector, Vector, Vector)],
-        "==" | "!=" => &[
-            (Float, Float, Float),
-            (Vector, Vector, Float),
-            (String, String, Float),
-            (Entity, Entity, Float),
-            (Function, Function, Float),
+        "/" => &[(Float, Float, Float, Op::DivF)],
+        "<=" => &[(Float, Float, Float, Op::LeF)],
+        ">=" => &[(Float, Float, Float, Op::GeF)],
+        "<" => &[(Float, Float, Float, Op::LtF)],
+        ">" => &[(Float, Float, Float, Op::GtF)],
+        "&&" => &[(Float, Float, Float, Op::AndF)],
+        "||" => &[(Float, Float, Float, Op::OrF)],
+        "&" => &[(Float, Float, Float, Op::BitandF)],
+        "|" => &[(Float, Float, Float, Op::BitorF)],
+        "+" => &[
+            (Float, Float, Float, Op::AddF),
+            (Vector, Vector, Vector, Op::AddV),
+        ],
+        "-" => &[
+            (Float, Float, Float, Op::SubF),
+            (Vector, Vector, Vector, Op::SubV),
+        ],
+        "==" => &[
+            (Float, Float, Float, Op::EqF),
+            (Vector, Vector, Float, Op::EqV),
+            (String, String, Float, Op::EqS),
+            (Entity, Entity, Float, Op::EqE),
+            (Function, Function, Float, Op::EqFnc),
+        ],
+        "!=" => &[
+            (Float, Float, Float, Op::NeF),
+            (Vector, Vector, Float, Op::NeV),
+            (String, String, Float, Op::NeS),
+            (Entity, Entity, Float, Op::NeE),
+            (Function, Function, Float, Op::NeFnc),
         ],
         _ => &[],
     }
@@ -99,6 +122,10 @@ type Typed = Result<Option<Type>, Fatal>;
 struct Vanilla<'e> {
     env: &'e mut dyn Env,
     types: HashMap<(usize, usize), Type>,
+    /// The opcode of each binary operator, by its token's span (QC-16.1).
+    opcodes: HashMap<(usize, usize), Op>,
+    /// Each binary operator's fragment, its one statement (`docs/design/back-end.md`).
+    fragments: ir::Fragments,
     /// The return value's type, `def_ret.type`, which each call sets (QC-18.9).
     returned: Option<Type>,
 }
@@ -109,6 +136,8 @@ pub(super) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
     let mut checker = Vanilla {
         env,
         types: HashMap::new(),
+        opcodes: HashMap::new(),
+        fragments: ir::Fragments::default(),
         returned: None,
     };
     if let Some(block) = body.block() {
@@ -116,8 +145,8 @@ pub(super) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
     }
     TypedBody {
         types: checker.types,
-        opcodes: HashMap::new(),
-        fragments: ir::Fragments::default(),
+        opcodes: checker.opcodes,
+        fragments: checker.fragments,
     }
 }
 
@@ -278,11 +307,26 @@ impl Vanilla<'_> {
         let Some(spelling) = spelling(op) else {
             return Ok(None);
         };
-        match rows(spelling).iter().find(|&&(x, y, _)| x == a && y == b) {
-            Some(&(_, _, result)) => Ok(Some(match result {
-                Basic::Vector => Type::Simple(SimpleType::Vector),
-                _ => Type::Simple(SimpleType::Float),
-            })),
+        match rows(spelling)
+            .iter()
+            .find(|&&(x, y, _, _)| x == a && y == b)
+        {
+            Some(&(_, _, result, opcode)) => {
+                self.opcodes.insert((span.start, span.end), opcode);
+                // QC-16.1: the operator is its opcode's one statement of its two operands,
+                // into a new temporary.
+                let mut fragment = ir::Builder::new();
+                let inputs =
+                    [ir::Input::Left, ir::Input::Right].map(|n| Some(Some(ir::Operand::Input(n))));
+                let made = fragment.push(opcode, inputs, ir::Destination::Value);
+                if let Some(fragment) = fragment.finish(made) {
+                    self.fragments.insert(span, fragment);
+                }
+                Ok(Some(match result {
+                    Basic::Vector => Type::Simple(SimpleType::Vector),
+                    _ => Type::Simple(SimpleType::Float),
+                }))
+            }
             None => self.mismatch(spelling, span),
         }
     }
