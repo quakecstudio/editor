@@ -17,6 +17,7 @@
 use std::collections::HashMap;
 
 use qc_diag::{Code, Diagnostic, Span};
+use qc_preproc::Op;
 use qc_progs::Function;
 use qc_progs::opcode::Opcode;
 use qc_sema::ir;
@@ -2664,14 +2665,14 @@ impl<'a> Compiler<'a> {
             return Ok(None);
         };
         let types = self.converted_types(operator, left, right);
-        let Some(rows) = self.plan_fragment(fragment, types) else {
+        let chosen = body.opcode_at(op_span);
+        let Some(rows) = self.plan_fragment(fragment, chosen, types) else {
             return Ok(None);
         };
         let (left, right) = &self.floats_of(operator, left, right, op_span)?;
         // An emulation is a fragment other than the one statement of the opcode chosen
         // (FTEF-23.4); an operand's conversion folded by the checker is this code generator's
         // own, so it is not one.
-        let chosen = body.opcode_at(op_span);
         let emulated = !matches!(fragment.statements.as_slice(), [only] if Some(only.op) == chosen);
         if let ([only], false) = (rows.as_slice(), emulated) {
             if self.both_constant(left, right)
@@ -2734,15 +2735,22 @@ impl<'a> Compiler<'a> {
     fn plan_fragment(
         &self,
         fragment: &ir::Fragment,
+        chosen: Option<Op>,
         types: (Etype, Etype),
     ) -> Option<Vec<ops::Row>> {
         let integer = |operand: &ir::Operand| matches!(operand, ir::Operand::Immediate(i) if i.kind == ir::ImmediateKind::Integer);
-        if fragment
+        // An integer immediate is held only as the truth `AND_F` and `OR_F` of two floats fold
+        // to with no statement (FTEF-26.14); the integer operators are not lowered from the
+        // layer yet.
+        let integers = fragment
             .immediates
             .iter()
             .any(|i| i.kind == ir::ImmediateKind::Integer)
-            || fragment.value.as_ref().is_none_or(integer)
-        {
+            || fragment.value.as_ref().is_some_and(integer);
+        let truth = matches!(chosen, Some(Op::AndF | Op::OrF))
+            && fragment.statements.is_empty()
+            && types == (Etype::Float, Etype::Float);
+        if fragment.value.is_none() || (integers && !truth) {
             return None;
         }
         let input = |side: ir::Input| match side {
@@ -2868,7 +2876,14 @@ impl<'a> Compiler<'a> {
         let [x, y, z] = immediate.words.map(f32::from_bits);
         let literal = match immediate.kind {
             ir::ImmediateKind::Vector => Literal::Vector([x, y, z]),
-            ir::ImmediateKind::Float | ir::ImmediateKind::Integer => Literal::Float(x),
+            ir::ImmediateKind::Float => Literal::Float(x),
+            // FTEF-26.14: an integer constant, such as the truth `&&` and `||` of two
+            // constants fold to (`QCC_MakeIntConst`).
+            ir::ImmediateKind::Integer => {
+                let [bits, _, _] = immediate.words;
+                let int = ValueType::Of(Type::Named(CScalar::Integer.name().into()));
+                return self.program.int_immediate(bits, int).at(span);
+            }
         };
         self.program.immediate(&literal).at(span)
     }
