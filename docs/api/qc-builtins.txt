@@ -1,3 +1,5 @@
+const qc_builtins::localization::RRE_LOC_FILE
+const qc_builtins::localization::RRE_VARSTRING_LEN
 const qc_builtins::mock::BUILTIN_CHECKCLIENT_INTERVAL
 const qc_builtins::mock::BUILTIN_CMD_TEXT_SIZE
 const qc_builtins::mock::BUILTIN_FL_FLY
@@ -36,6 +38,7 @@ field qc_builtins::mock::MockEngine.clock
 field qc_builtins::mock::MockEngine.command_buffer
 field qc_builtins::mock::MockEngine.cvars
 field qc_builtins::mock::MockEngine.lightstyles
+field qc_builtins::mock::MockEngine.localization
 field qc_builtins::mock::MockEngine.model_bounds
 field qc_builtins::mock::MockEngine.model_precache
 field qc_builtins::mock::MockEngine.profile
@@ -54,6 +57,13 @@ fn qc_builtins::dispatch::MockBuiltins::engine
 fn qc_builtins::dispatch::MockBuiltins::engine_mut
 fn qc_builtins::dispatch::MockBuiltins::with_engine
 fn qc_builtins::error::BuiltinError::message
+fn qc_builtins::localization::Localization::is_empty
+fn qc_builtins::localization::Localization::len
+fn qc_builtins::localization::Localization::loc_get_raw_string
+fn qc_builtins::localization::Localization::loc_get_string
+fn qc_builtins::localization::Localization::loc_has_placeholders
+fn qc_builtins::localization::Localization::loc_load_file
+fn qc_builtins::localization::Localization::pf_var_string
 fn qc_builtins::math::anglemod
 fn qc_builtins::math::ceil
 fn qc_builtins::math::fabs
@@ -99,10 +109,12 @@ impl qc_builtins::error::BuiltinError: fmt::Display
 impl qc_builtins::error::FatalError: fmt::Display
 impl qc_builtins::error::RuntimeError: fmt::Display
 impl qc_builtins::mock::Cvars: Default
+mod qc_builtins::localization
 mod qc_builtins::math
 mod qc_builtins::mock
 mod qc_builtins::table
 struct qc_builtins::dispatch::MockBuiltins
+struct qc_builtins::localization::Localization
 struct qc_builtins::mock::Buffers
 struct qc_builtins::mock::CheckClient
 struct qc_builtins::mock::Cvars

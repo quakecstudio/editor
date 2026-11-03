@@ -410,15 +410,28 @@ impl SimCall<'_, '_, '_> {
         }
     }
 
-    /// The joined text of the string parameters from `first` (BUILTIN-7.3).
+    /// The joined text of the string parameters from `first` (BUILTIN-7.3); with a
+    /// localization loaded, `PF_VarString`'s localized text (RRE-1.9, RRE-1.6).
     fn joined_text(&self, first: u16) -> Vec<u8> {
         let argc = u16::try_from(self.context.machine_view().argc()).unwrap_or(u16::MAX);
-        let mut text = Vec::new();
-        for n in first..argc {
-            let value = parm_raw(&self.context, n);
-            text.extend_from_slice(&self.string_text(value));
+        let parms: Vec<Vec<u8>> = (first..argc)
+            .map(|n| self.string_text(parm_raw(&self.context, n)))
+            .collect();
+        let localization = &self.sim.mock.engine().localization;
+        if localization.is_empty() {
+            return parms.concat();
         }
-        text
+        localization.pf_var_string(&parms)
+    }
+
+    /// `WriteString`'s string: localized when a localization is loaded (RRE-1.9, RRE-1.6).
+    fn written_text(&self, value: i32) -> Vec<u8> {
+        let text = self.string_text(value);
+        let localization = &self.sim.mock.engine().localization;
+        if localization.is_empty() {
+            return text;
+        }
+        localization.loc_get_string(&text).to_vec()
     }
 
     /// `SV_ModelIndex`: 0 for an empty name, else the precache entry; a name not precached
@@ -650,7 +663,7 @@ impl SimCall<'_, '_, '_> {
     pub(crate) fn mirror_write(&mut self, number: u32) {
         let value = parm_float(&self.context, 1);
         let raw = parm_raw(&self.context, 1);
-        let text = (number == 58).then(|| self.string_text(raw));
+        let text = (number == 58).then(|| self.written_text(raw));
         let entity = (number == 59).then(|| i32::try_from(self.edict_of(raw)).unwrap_or(0));
         let Some(message) = self.write_dest() else {
             return;

@@ -86,6 +86,7 @@ field qs_sim::world::Entity.model
 field qs_sim::world::Entity.number
 field qs_sim::world::Entity.origin
 field qs_sim::world::Entity.skin
+field qs_sim::world::LoadOptions.localization
 fn qs_sim::collision::Collision::add_brush
 fn qs_sim::collision::Collision::area
 fn qs_sim::collision::Collision::leafs_of
@@ -203,12 +204,14 @@ struct qs_sim::physics::Sound
 struct qs_sim::spawn::FieldDef
 struct qs_sim::spawn::Parser
 struct qs_sim::world::Entity
+struct qs_sim::world::LoadOptions
 struct qs_sim::world::World
 trait qs_sim::collision::Host
 trait qs_sim::spawn::SpawnHost
 type qs_sim::builtins::ModelFiles
 use qs_sim::ClientMessages = messages::ClientMessages
 use qs_sim::Entity = world::Entity
+use qs_sim::LoadOptions = world::LoadOptions
 use qs_sim::Message = messages::Message
 use qs_sim::ModelFiles = builtins::ModelFiles
 use qs_sim::NET_FAT_PVS_DISTANCE = messages::NET_FAT_PVS_DISTANCE
@@ -258,6 +261,7 @@ use qs_sim::collision::link_edict = area::link_edict
 use qs_sim::collision::recursive_hull_check = trace::recursive_hull_check
 use qs_sim::collision::sv_move = area::sv_move
 use qs_sim::collision::test_entity_position = area::test_entity_position
+use qs_sim::localization = qc_builtins::localization
 variant qs_sim::collision::CollisionError::BadNode
 variant qs_sim::collision::CollisionError::PushWithoutBsp
 variant qs_sim::collision::CollisionError::SolidBspWithoutPush

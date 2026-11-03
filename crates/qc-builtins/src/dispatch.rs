@@ -414,6 +414,27 @@ fn joined_string(
     Ok(text)
 }
 
+/// [`joined_string`] as `PF_VarString` makes it for the six builtins that read their text
+/// with it, `bprint`, `sprint`, `centerprint`, `dprint`, `error` and `objerror`: with a
+/// localization loaded, localized and formatted (RRE-1.9); with none, as it is (RRE-1.6).
+fn var_string(
+    context: &mut Context<'_, '_>,
+    engine: &MockEngine,
+    first: u16,
+) -> Result<Vec<u8>, BuiltinError> {
+    if engine.localization.is_empty() {
+        return joined_string(context, engine, first);
+    }
+    let argc = context.machine().argc();
+    let last = u16::try_from(argc).unwrap_or(u16::MAX);
+    let mut parms = Vec::new();
+    for n in first..last {
+        let value = read_parm_raw(context, n)?;
+        parms.push(resolve_string(context, engine, value)?);
+    }
+    Ok(engine.localization.pf_var_string(&parms))
+}
+
 /// A field value's slot, checked to be a field slot of the progs (BUILTIN-8.3): `invalid
 /// field` outside 0 to `entityfields - 1`.
 fn checked_field(context: &mut Context<'_, '_>, value: i32) -> Result<usize, BuiltinError> {
@@ -952,7 +973,7 @@ impl MockBuiltins {
     /// spawned client's reliable message, which the mock does not keep (DIFF-6.5).
     fn b_bprint(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         // The joined text is read (and checked) even though the reliable message is not kept.
-        let _text = joined_string(context, &self.engine, 0)?;
+        let _text = var_string(context, &self.engine, 0)?;
         Ok(())
     }
 
@@ -975,14 +996,14 @@ impl MockBuiltins {
             return Ok(());
         }
         // The joined text from PARM1 is read and checked; the reliable message is not kept.
-        let _text = joined_string(context, &self.engine, 1)?;
+        let _text = var_string(context, &self.engine, 1)?;
         Ok(())
     }
 
     /// `dprint(s)` (BUILTIN-11.3): console only when `developer` is set; the mock has no
     /// `developer` setting, so it only reads and checks the text.
     fn b_dprint(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let _text = joined_string(context, &self.engine, 0)?;
+        let _text = var_string(context, &self.engine, 0)?;
         Ok(())
     }
 
@@ -1785,6 +1806,12 @@ impl MockBuiltins {
     fn b_write_string(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let dest = self.write_dest(context)?;
         let text = read_parm_string(context, &self.engine, 1)?;
+        // RRE-1.9: `MSG_WriteString (WriteDest(), LOC_GetString (G_STRING (OFS_PARM1)))`.
+        let text = if self.engine.localization.is_empty() {
+            text
+        } else {
+            self.engine.localization.loc_get_string(&text).to_vec()
+        };
         self.write_bytes(dest, text.len().saturating_add(1))
     }
 
@@ -2052,7 +2079,7 @@ fn checked_self(context: &mut Context<'_, '_>) -> Result<EdictNumber, BuiltinErr
 impl MockBuiltins {
     /// `error(s)` (BUILTIN-16.1): a host error carrying the joined text (DIFF-8.2).
     fn b_error(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let text = joined_string(context, &self.engine, 0)?;
+        let text = var_string(context, &self.engine, 0)?;
         Err(BuiltinError::Host(
             String::from_utf8_lossy(&text).into_owned(),
         ))
@@ -2060,7 +2087,7 @@ impl MockBuiltins {
 
     /// `objerror(s)` (BUILTIN-16.2): frees `self`, then a host error with the joined text.
     fn b_objerror(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let text = joined_string(context, &self.engine, 0)?;
+        let text = var_string(context, &self.engine, 0)?;
         if let Ok(self_num) = checked_self(context) {
             let now = self.engine.clock;
             context.machine().edicts_mut().free(self_num, now);
