@@ -166,3 +166,17 @@ fn an_assignment_row_keeps_its_target() {
     ));
     assert!(matches!(store(&[Op::StoreP], f, p), Choice::Mismatch(_)));
 }
+
+// spec FTEF-27.16: a statement takes a temporary for its result unless it is a store or has no
+// result
+#[test]
+fn a_store_and_a_jump_make_no_value() {
+    use crate::check::opcodes::row;
+    assert!(row(Op::AddF).unwrap().makes_value());
+    assert!(!row(Op::StoreF).unwrap().makes_value());
+    assert!(!row(Op::IfF).unwrap().makes_value());
+    assert!(
+        !row(Op::Return).unwrap().makes_value(),
+        "left-associative, no result"
+    );
+}

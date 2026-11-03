@@ -2614,6 +2614,14 @@ impl<'a> Compiler<'a> {
             ast::BinaryOp::Rem => {
                 let left = self.left_operand(&binary.lhs().at(span)?)?;
                 let right = self.expr(&binary.rhs().at(span)?)?;
+                // FTEF-27.4: the remainder's emulation as the semantic model lowered it, else the
+                // call of the program's `mod`.
+                if let Some(fragment) = self.fragment(op_span)
+                    && !fragment.statements.is_empty()
+                    && let Some(value) = self.write_fragment(&fragment, &left, &right, span)?
+                {
+                    return Ok(value);
+                }
                 return self.modulo(&left, &right, (op_span, span));
             }
             op @ (ast::BinaryOp::Shl | ast::BinaryOp::Shr) => {
@@ -2664,15 +2672,7 @@ impl<'a> Compiler<'a> {
         if self.fold || !self.dialect.has_fteqcc_extensions() {
             return Ok(None);
         }
-        let Some(fragment) = self
-            .scope
-            .and_then(|function| self.index.body(function))
-            .and_then(|body| body.fragment_at(op_span))
-            .cloned()
-        else {
-            return Ok(None);
-        };
-        let Some(ir::Operand::Temp(last)) = fragment.value else {
+        let Some(fragment) = self.fragment(op_span) else {
             return Ok(None);
         };
         // So far a fragment of one statement, after this code generator's own folds, which
@@ -2695,6 +2695,23 @@ impl<'a> Compiler<'a> {
         if let Some(value) = self.folded_with_one_constant(opcode, left, right, span)? {
             return Ok(Some(value));
         }
+        self.write_fragment(&fragment, left, right, span)
+    }
+
+    /// The statements of `fragment` written with `left` and `right` as its inputs, its value
+    /// a temporary its last statement made; `None` when this code generator cannot write it
+    /// yet: a statement with no value or of an opcode outside id's table, an integer
+    /// immediate, or an input of another type than its row reads.
+    fn write_fragment(
+        &mut self,
+        fragment: &ir::Fragment,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> Lowered<Option<Value>> {
+        let Some(ir::Operand::Temp(last)) = fragment.value else {
+            return Ok(None);
+        };
         let mut rows = Vec::with_capacity(fragment.statements.len());
         for statement in &fragment.statements {
             let row = Opcode::from_number(u32::from(statement.op))
@@ -2733,6 +2750,14 @@ impl<'a> Compiler<'a> {
             ofs,
             kind: ValueKind::Temp(ValueType::simple(c)),
         }))
+    }
+
+    /// The fragment the semantic model lowered the operator whose token is at `op_span` to.
+    fn fragment(&self, op_span: Span) -> Option<ir::Fragment> {
+        self.scope
+            .and_then(|function| self.index.body(function))
+            .and_then(|body| body.fragment_at(op_span))
+            .cloned()
     }
 
     /// The global a fragment's `operand` is: an input's, a temporary an earlier statement of

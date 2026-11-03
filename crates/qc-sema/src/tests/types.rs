@@ -273,8 +273,7 @@ fn a_checked_body_keeps_its_operators_opcodes() {
 #[test]
 fn a_binary_operator_lowers_to_a_fragment() {
     use crate::ir::{Fragment, Immediate, ImmediateKind, Operand, Statement};
-    let source =
-        "float a; vector v; void() t = { a = a + 1; v = v * a; a = 2 + 3; a = a % 2; };";
+    let source = "float a; vector v; void() t = { a = a + 1; v = v * a; a = 2 + 3; a = a % 2; };";
     let index = super::fte_index_of(source);
     let t = index
         .defs
@@ -339,5 +338,25 @@ fn a_binary_operator_lowers_to_a_fragment() {
             value: Some(Operand::Temp(3)),
         }),
         "DIV_F, BITOR, MUL_F, SUB_F"
+    );
+}
+
+// spec FTEF-27.4: with a `mod` function defined, `a % b` calls it, which the intermediate layer
+// does not hold yet, so the operator has no fragment
+#[test]
+fn a_helper_call_is_no_fragment_yet() {
+    let source =
+        "float(float a, float b) mod = { return a; };\nfloat a; void() t = { a = a % 2; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let start = source.find("a % 2").unwrap() + 2;
+    assert_eq!(
+        index.bodies[&t].fragment_at(Span::new(start, start + 1)),
+        None
     );
 }

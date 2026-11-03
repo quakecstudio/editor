@@ -101,19 +101,27 @@ impl Builder {
         }
     }
 
-    /// Adds a statement; the operand its value is, when it makes one.
+    /// Adds the statement `op` of the operands it `reads`, each `None` when the opcode has no
+    /// such operand and `Some(None)` when the fragment cannot name it, which leaves the
+    /// fragment one the layer does not hold; the operand its value is, when it `makes` one.
     pub(crate) fn push(
         &mut self,
         op: u16,
-        a: Option<Operand>,
-        b: Option<Operand>,
+        reads: [Option<Option<Operand>>; 2],
         makes: bool,
     ) -> Option<Operand> {
+        let [a, b] = reads;
         let index = u16::try_from(self.statements.len()).ok();
-        if index.is_none() {
+        if index.is_none() || a == Some(None) || b == Some(None) {
             self.held = false;
+            return None;
         }
-        self.statements.push(Statement { op, a, b, makes });
+        self.statements.push(Statement {
+            op,
+            a: a.flatten(),
+            b: b.flatten(),
+            makes,
+        });
         index.filter(|_| makes).map(Operand::Temp)
     }
 
@@ -128,5 +136,56 @@ impl Builder {
             statements: self.statements,
             value,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Builder, Fragment, Operand, Statement};
+
+    // A statement's value is the next temporary; one that makes none, a store, names none; and
+    // an operand the fragment cannot name leaves it unheld.
+    #[test]
+    fn a_builder_numbers_values_and_refuses_an_unnamed_operand() {
+        let mut builder = Builder::new();
+        let made = builder.push(
+            6,
+            [Some(Some(Operand::Input(0))), Some(Some(Operand::Input(1)))],
+            true,
+        );
+        assert_eq!(made, Some(Operand::Temp(0)));
+        assert_eq!(
+            builder.push(31, [made.map(Some), Some(Some(Operand::Input(1)))], false),
+            None
+        );
+        let one = builder.clone().finish(Some(Operand::Temp(0)));
+        assert_eq!(
+            one,
+            Some(Fragment {
+                statements: vec![
+                    Statement {
+                        op: 6,
+                        a: Some(Operand::Input(0)),
+                        b: Some(Operand::Input(1)),
+                        makes: true
+                    },
+                    Statement {
+                        op: 31,
+                        a: Some(Operand::Temp(0)),
+                        b: Some(Operand::Input(1)),
+                        makes: false
+                    },
+                ],
+                value: Some(Operand::Temp(0)),
+            })
+        );
+        for reads in [[Some(None), None], [None, Some(None)]] {
+            let mut unnamed = builder.clone();
+            assert_eq!(unnamed.push(1, reads, true), None);
+            assert_eq!(unnamed.finish(None), None);
+        }
+        let mut given_up = Builder::new();
+        given_up.give_up();
+        assert_eq!(given_up.finish(None), None);
     }
 }

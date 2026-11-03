@@ -388,8 +388,7 @@ impl<'e> Checker<'e> {
         if let Some(fragment) = builder.and_then(|builder| builder.finish(value.operand())) {
             self.fragments.insert(span, fragment);
         }
-        // The value is an operand of the fragment it was lowered in only.
-        Ok(Some(Value { ir: None, ..value }))
+        Ok(Some(value))
     }
 
     /// [`Checker::operator_at`] once its inputs are tagged.
