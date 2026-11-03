@@ -30,14 +30,15 @@ Readiness workflow run: [41574437732](https://github.com/quakecstudio/editor/act
 
 | Crate | Lines (bar 90%) | Branches (bar 80%) | Mutation (bar 90%) | Spec citations (bar 100%) |
 | --- | --- | --- | --- | --- |
-| `qc-builtins` | 97.6% (2592 of 2655) [min 94] | 92.7% (423 of 456) [min 84] | 98.1% (1137 of 1158) [min 97] | 100.0% (89 of 89) |
+| `qc-builtins` | 97.6% (2592 of 2655) [min 94] | 92.7% (423 of 456) [min 84] | 98.3% (1139 of 1158) [min 97] | 100.0% (89 of 89) |
 
 Local measurement before the run, `cargo mutants -p qc-builtins --profile mutants --test-tool
 nextest` (cargo-mutants 27.1.0, the version the workflow pins): 1179 mutants, 1131 caught,
 5 timeouts (infinite loops in the C string readers, counted as caught), 21 unviable, 22
 missed, then one more killed by `the_reader_s_corners`' `%v` cases and two by
-`string_comparisons`' empty needle: 19 survivors, 98.4% (1139 of 1158), to be confirmed by the
-next Readiness run.
+`string_comparisons`' empty needle: 19 survivors, 98.3% (1139 of 1158), which the run
+[41576620095](https://github.com/quakecstudio/editor/actions/runs/41576620095) on this branch
+confirms (`ratchet: 7 checks passed`).
 
 Surviving mutants (TEST-2), by file:
 
