@@ -436,3 +436,55 @@ fn a_constant_vectors_component_is_a_constant() {
         }))
     );
 }
+
+// spec FTE-19.7: `a ^ b` is `(a & ~b) | (b & ~a)`, each `~` `SUB_F` of the immediate -1 and its
+// operand, a vector's `SUB_V` of '-1 -1 -1'
+#[test]
+fn xor_lowers_with_complements_of_minus_one() {
+    use crate::ir::{Destination, Immediate, ImmediateKind, Operand, Statement};
+    let source = "float a, b; vector v, w; void() t = { a = a ^ b; v = v ^ w; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let at = |text: &str| {
+        let start = source.find(text).unwrap() + 2;
+        index.bodies[&t]
+            .fragment_at(Span::new(start, start + 1))
+            .cloned()
+            .unwrap()
+    };
+    let minus_one = |kind: ImmediateKind| Immediate {
+        kind,
+        words: match kind {
+            ImmediateKind::Vector => [(-1.0_f32).to_bits(); 3],
+            ImmediateKind::Float | ImmediateKind::Integer => [(-1.0_f32).to_bits(), 0, 0],
+        },
+    };
+    let floats = at("a ^ b");
+    assert_eq!(
+        floats.statements.first(),
+        Some(&Statement {
+            op: 8,
+            a: Some(Operand::Immediate(minus_one(ImmediateKind::Float))),
+            b: Some(Operand::Input(1)),
+            c: Destination::Value,
+        }),
+        "SUB_F of -1 and b"
+    );
+    assert_eq!(floats.immediates, [minus_one(ImmediateKind::Float); 2]);
+    let vectors = at("v ^ w");
+    assert_eq!(
+        vectors.statements.first(),
+        Some(&Statement {
+            op: 9,
+            a: Some(Operand::Immediate(minus_one(ImmediateKind::Vector))),
+            b: Some(Operand::Input(1)),
+            c: Destination::Value,
+        }),
+        "SUB_V of '-1 -1 -1' and w"
+    );
+}
