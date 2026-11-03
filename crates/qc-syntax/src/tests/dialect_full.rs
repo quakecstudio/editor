@@ -44,6 +44,12 @@ fn in_body(body: &str) -> String {
     format!("float a, b, c;\nentity e;\nvoid() f =\n{{\n{indented}}};\n")
 }
 
+/// [`in_body`] after a `typedef` of `Thing`, the type the cast tests cast to (FTEF-16.2: a
+/// cast names a declared type).
+fn in_body_typed(body: &str) -> String {
+    format!("typedef entity Thing;\n{}", in_body(body))
+}
+
 /// The statements of the function `f` of `parsed`.
 fn statements(parsed: &Parse) -> Vec<ast::Stmt> {
     let file = parsed.tree().unwrap();
@@ -613,15 +619,24 @@ fn locals_by_shape() {
 // spec FTEF-16.2: casts to any type, and the shapes that stay parenthesised calls.
 #[test]
 fn casts_parse() {
-    assert_eq!(first_expr("e = (Thing)e;"), "(= e (cast e))");
+    let typed = |stmt: &str| {
+        let parsed = fte_ok(&in_body_typed(stmt));
+        match statements(&parsed).first() {
+            Some(ast::Stmt::Expr(expr)) => sexpr(&expr.expr().unwrap()),
+            other => panic!("not an expression statement: {other:?}"),
+        }
+    };
+    assert_eq!(typed("e = (Thing)e;"), "(= e (cast e))");
     assert_eq!(first_expr("a = (int)b;"), "(= a (cast b))");
     assert_eq!(first_expr("a = (float(entity e))b;"), "(= a (cast b))");
-    assert_eq!(first_expr("e = (Thing *)e;"), "(= e (cast e))");
+    assert_eq!(typed("e = (Thing *)e;"), "(= e (cast e))");
     // Shapes vanilla accepts too, which stay parenthesised expressions.
     for (stmt, want) in [
         ("a = (visible(e));", "(= a ((call visible e)))"),
         ("a = (sin(b * 2));", "(= a ((call sin (* b 2))))"),
         ("a = (b) - c;", "(= a (- (b) c))"),
+        ("a = (b) & c;", "(= a (& (b) c))"),
+        ("a = (visible(e)) & 1;", "(= a (& ((call visible e)) 1))"),
     ] {
         let parsed = fte(&in_body(stmt));
         assert_eq!(parsed.errors().count(), 0, "{stmt}");

@@ -543,3 +543,22 @@ fn nested_unary_operands_warn_once_per_operator() {
     assert_eq!(warned.len(), 2);
     assert!(warned.iter().all(|&at| Some(at) == semicolon), "{warned:?}");
 }
+
+// spec FTEF-16.2: a parenthesised name is a cast only when the name is a type: a variable or
+// a call in parentheses before `&` is the operand of a `&`, a declared type a cast
+#[test]
+fn a_parenthesised_name_is_a_cast_only_when_it_names_a_type() {
+    let source = b"typedef float T; float gf0; float arr[4];\n\
+        float() f = { return arr[(gf0) & 3] + ((f()) & 1) + (T) &gf0; };";
+    let tree = crate::parse_with(source, crate::Dialect::Fteqcc)
+        .syntax()
+        .debug_tree();
+    let binaries = tree.matches("BinaryExpr@").count();
+    let casts = tree.matches("CastExpr@").count();
+    assert_eq!(casts, 1, "{tree}");
+    assert!(binaries >= 4, "{tree}");
+    assert!(
+        !tree.contains("AddressOfExpr@") || tree.matches("AddressOfExpr@").count() == 1,
+        "{tree}"
+    );
+}

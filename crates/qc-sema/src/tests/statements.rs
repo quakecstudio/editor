@@ -937,7 +937,7 @@ fn a_constant_condition_picks_its_arm_at_global_scope() {
 }
 
 // spec FTEF-34.14: the profile's own text for a program FTEQCC refuses too: `typedef ;` at its own
-// line, and `(T *)` of a name that is no type as a type
+// line; and FTEF-16.2: `(T *)0` with `T` no type is no cast, so FTEQCC's two errors follow
 #[test]
 fn programs_both_refuse_keep_this_profile_s_text() {
     assert_eq!(
@@ -946,7 +946,10 @@ fn programs_both_refuse_keep_this_profile_s_text() {
     );
     assert_eq!(
         lined("void() f = { local float y = (T *)0; };\n"),
-        [(1, "\"T\" is not a type".to_owned())]
+        [
+            (1, "\")\" - not a name".to_owned()),
+            (1, "Unknown value \"T\".".to_owned())
+        ]
     );
 }
 

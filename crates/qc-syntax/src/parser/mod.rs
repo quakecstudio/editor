@@ -2830,7 +2830,28 @@ impl<'a> Parser<'a> {
     /// the operators it reads are not warned of (FTEF-21.6).
     fn expression(&mut self) -> Option<Expr> {
         let top = self.precedence().top();
-        self.operand(top, false)
+        let errors = self.errors.len();
+        let expr = self.operand(top, false);
+        // FTEF-16.15: under FTEQCC a name or a literal after the expression, where
+        // `QCC_PR_RefExpression` at `TOP_PRIORITY` finds `pr_token_type != tt_punct`, is
+        // "Expected punctuation" before whatever the expression's reader wants next; an
+        // expression whose own error ended it (`QCC_PR_ParseError` leaves the statement) is
+        // not warned of.
+        if self.fteqcc()
+            && self.errors.len() == errors
+            && let Some(token) = self.current()
+            && matches!(
+                token.kind,
+                K::Name | K::FloatLit | K::VectorLit | K::StringLit | K::FrameRef
+            )
+        {
+            // At the expression's end, as FTEQCC reports it before what the reader wants
+            // next (a definition's "Missing semicolon" is reported there too).
+            let _ = token;
+            let span = Span::new(self.last_end, self.last_end);
+            self.warning_at(Code::W0205, "Expected punctuation", span);
+        }
+        expr
     }
 
     /// The operator priorities at the current token (FTEF-21.4): under an FTEQCC dialect those

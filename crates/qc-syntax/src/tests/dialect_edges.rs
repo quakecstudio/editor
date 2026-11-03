@@ -469,16 +469,26 @@ fn local_declaration_shapes() {
     assert!(!declares_local("Thing(a } b) c;"));
 }
 
-// spec FTEF-16.2: a cast to a type name, to a pointer to one, or to a function type of one,
-// before a term; a parenthesised product or call is no cast
+// spec FTEF-16.2: a cast to a declared type name, to a pointer to one, or to a function type
+// of one, before a term; a parenthesised product, call or variable is no cast, a `&` after
+// one its operator
 #[test]
 fn cast_shapes() {
     let cast = |stmt: &str| {
-        let source = in_body(stmt);
+        let source = format!(
+            "typedef float Thing;\ntypedef float Other;\n{}",
+            in_body(stmt)
+        );
         fte(&source)
             .syntax()
             .descendants()
             .any(|n| n.kind() == SyntaxKind::CastExpr)
+    };
+    let codes = |stmt: &str| {
+        fte_codes(&format!(
+            "typedef float Thing;\ntypedef float Other;\n{}",
+            in_body(stmt)
+        ))
     };
     for stmt in [
         "a = (Thing) b;",
@@ -498,11 +508,15 @@ fn cast_shapes() {
         "a = (Thing) !b;",
     ] {
         assert!(cast(stmt), "{stmt}");
-        assert_eq!(body_codes(stmt), [], "{stmt}");
+        assert_eq!(codes(stmt), [], "{stmt}");
     }
     for stmt in [
         "a = (b);",
         "a = (b) - c;",
+        "a = (b) & c;",
+        "a = (b) & 3;",
+        "a = (f()) & 1;",
+        "a = (Undeclared) b;",
         "a = (b * (c));",
         "a = (b * c);",
         "a = (b * c) - d;",
