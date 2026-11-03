@@ -165,6 +165,7 @@ We write our own QuakeC compiler in Rust and run it in-process. The IDE never in
 - **One front end.** The semantic core (parser, CST, resolution, types) feeds `qc-codegen`, which emits progs.dat v6, FTE's extended format when a project targets it, and `.lno` line maps for the debugger. The errors you see while typing are exactly the errors the build reports.
 - **Dialects, in order.** Vanilla (id 1.01/1.06), then the FTEQCC features the 2021 rerelease QuakeC uses, then the rest of FTEQCC, with GMQCC syntax last. The rerelease is the MVP bar because id's README says it needs a modern compiler.
 - **Correct means same behaviour.** A program compiled by us and run in `qc-vm` must leave the same globals and edicts as id's VM running qcc's output. Byte-identical files are not a goal.
+- **Compatibility in tiers** ([ADR-0020](../adr/0020-compiler-compatibility-tiers.md)). The language's defined behaviour matches the oracles exactly, and so do the oracles' quirks that real mods depend on. A program the oracle miscompiles counts as an oracle defect only when the test harness proves it. Code is generated through an intermediate layer, whose passes allocate temporaries and lay out memory for each dialect.
 - **Optimizations after correctness.** Constant folding, dead-code removal and string/global deduplication, each behind a flag and covered by the differential suite.
 - **Fast enough for live preview.** Incremental recompile of id1-sized code in under 200 ms (target, to be measured).
 

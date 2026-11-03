@@ -788,12 +788,41 @@ groups:
     - MVP-3
     depends:
     - P2-08
+    - L-14
     deliverable:
-    - Optimizations behind --opt flags
+    - Optimizations behind --opt flags, as passes over the intermediate layer of L-14
     acceptance:
     - No divergence in the differential suite with each flag on
     verify:
     - Differential suite
+  - key: L-14
+    title: Generate code through an intermediate layer with back-end passes
+    labels:
+    - L4-bridges
+    - area:compiler
+    - type:feature
+    size: L
+    reqs:
+    - COMP-3
+    - COMP-5
+    - COMP-6
+    - MVP-3
+    summary: |
+      ADR-0020. qc-codegen walks each file's syntax tree and emits statements as it goes, works out types again rather than reading the semantic model's `TypedBody` per function, and carries FTEQCC's behaviour as dialect branches through `compile.rs`. This issue lowers each checked body into an intermediate layer whose values and their lifetimes are explicit, and moves temporary allocation and memory layout into back-end passes chosen by each dialect's profile, where optimizations (L-04), an FTEQCC-exact allocation mode if a mod ever needs one, and GMQCC's code generation can be added as passes.
+    depends:
+    - P2-153
+    deliverable:
+    - 'crates/qc-codegen: an intermediate layer lowered from the semantic model''s typed bodies, with explicit values, their lifetimes and the statements that read and write them, and the progs written from it'
+    - 'crates/qc-codegen: temporary allocation and the layout of locals and temporaries as passes over the layer, selected by the dialect profile, each pass with its spec statements in docs/spec/'
+    - 'docs/design/: the back end''s design (the layer, its passes and how a dialect profile chooses them), beside docs/design/semantic-model.md'
+    acceptance:
+    - 'The vanilla and FTEQCC differentials (DIFF-12, DIFF-13) and the corpus runs find no divergence beyond the oracle defects ADR-0020 lets the harness prove, before and after the change'
+    - 'qc-codegen reads each function''s types from the semantic model''s typed body, and no type is worked out a second time in the code generator'
+    - 'A test per pass shows its effect on the layer for a program of its own'
+    verify:
+    - cargo xtask compiler-diff --fast
+    - cargo xtask compiler-diff --generated 10000 --seed 1
+    - cargo test -p qc-codegen
   - key: L-06
     title: Embedded game view
     labels:
