@@ -17,7 +17,7 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
 use crate::check::fold::{Folded, fold};
-use crate::check::opcodes::{Assoc, row};
+use crate::check::opcodes::{Assoc, Opcode, row};
 use crate::check::{Constness, Sym, Value};
 use crate::ty::Type;
 
@@ -141,8 +141,12 @@ impl Checker<'_> {
             self.env.temps().free(offset);
         }
         let Some(row) = row(op) else {
+            if let Some(builder) = &mut self.fragment {
+                builder.give_up();
+            }
             return result;
         };
+        let result = self.lowered(op, row, lhs, rhs, result);
         let words = match row.types[2].etype() {
             Etype::Void => return result,
             Etype::Vector => 3,
@@ -155,6 +159,41 @@ impl Checker<'_> {
         let temp = Some(self.env.temps().take(words));
         self.last_temp = temp;
         Value { temp, ..result }
+    }
+
+    /// The statement `op` of `lhs` and `rhs` added to the fragment being lowered, when there is
+    /// one: an operand its row reads that the fragment cannot name means it holds the
+    /// operator no longer. `result` is given the statement's value as its operand.
+    fn lowered(
+        &mut self,
+        op: Op,
+        row: &Opcode,
+        lhs: &Value,
+        rhs: &Value,
+        result: Value,
+    ) -> Value {
+        let Some(builder) = &mut self.fragment else {
+            return result;
+        };
+        let reads = |value: &Value, slot: usize| {
+            row.types
+                .get(slot)
+                .is_some_and(|t| t.etype() != Etype::Void)
+                .then(|| value.operand())
+        };
+        let (a, b) = (reads(lhs, 0), reads(rhs, 1));
+        if a == Some(None) || b == Some(None) {
+            builder.give_up();
+            return result;
+        }
+        let makes =
+            row.assoc != Assoc::Right && row.types.get(2).is_some_and(|t| t.etype() != Etype::Void);
+        let Ok(number) = u16::try_from(op.number()) else {
+            builder.give_up();
+            return result;
+        };
+        let ir = builder.push(number, a.flatten(), b.flatten(), makes);
+        Value { ir, ..result }
     }
 
     /// FTEF-34.9: the store a value of basic type `etype` is copied by, `OP_STORE_*`.
@@ -193,7 +232,22 @@ impl Checker<'_> {
         span: Span,
         result: Value,
     ) -> Result<Value, Fatal> {
-        match emulation(op) {
+        let emulation = emulation(op);
+        // The intermediate layer holds the emulations that are statements emitted in turn;
+        // the others the code generator still lowers itself.
+        if !matches!(
+            emulation,
+            Emulation::ConvertRight(..)
+                | Emulation::ConvertLeft(..)
+                | Emulation::Expand(_)
+                | Emulation::Remainder(_)
+                | Emulation::Instead(_)
+                | Emulation::Swapped(_)
+        ) && let Some(builder) = &mut self.fragment
+        {
+            builder.give_up();
+        }
+        match emulation {
             Emulation::ConvertRight(conv, then) => {
                 let rhs = self.emit(conv, rhs, &Value::unknown(), span)?;
                 self.emit(then, lhs, &rhs, span)

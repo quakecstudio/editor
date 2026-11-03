@@ -1,6 +1,8 @@
 enum qc_sema::cast::Cast
 enum qc_sema::cast::Kind
 enum qc_sema::cast::Source
+enum qc_sema::ir::ImmediateKind
+enum qc_sema::ir::Operand
 enum qc_sema::lower::decl::LiteralValue
 enum qc_sema::lower::decl::Qualifier
 enum qc_sema::lower::decl::ValueKind
@@ -23,6 +25,14 @@ field qc_sema::expand::ModuleInput.dir
 field qc_sema::expand::ModuleInput.include_dirs
 field qc_sema::expand::ModuleInput.names
 field qc_sema::expand::ModuleInput.prelude
+field qc_sema::ir::Fragment.statements
+field qc_sema::ir::Fragment.value
+field qc_sema::ir::Immediate.kind
+field qc_sema::ir::Immediate.words
+field qc_sema::ir::Statement.a
+field qc_sema::ir::Statement.b
+field qc_sema::ir::Statement.makes
+field qc_sema::ir::Statement.op
 field qc_sema::lower::FileDecls.decls
 field qc_sema::lower::FileDecls.diagnostics
 field qc_sema::lower::FileDecls.members
@@ -87,6 +97,7 @@ fn qc_sema::cast::Source::kind
 fn qc_sema::cast::Source::name
 fn qc_sema::cast::Type::fteqcc_name
 fn qc_sema::cast::Type::fteqcc_scalar
+fn qc_sema::check::TypedBody::fragment_at
 fn qc_sema::check::TypedBody::opcode_at
 fn qc_sema::check::TypedBody::type_at
 fn qc_sema::check::fold::fold_builtin_call
@@ -110,6 +121,7 @@ fn qc_sema::db::ModuleAnalysis::diagnostics
 fn qc_sema::expand::ModuleInput::from_graph
 fn qc_sema::expand::ModuleInput::from_module
 fn qc_sema::expand::OriginMap::locate
+fn qc_sema::ir::Fragments::at
 fn qc_sema::lower::decl::LiteralValue::builtin_function
 fn qc_sema::lower::decl::RawDecl::literal
 fn qc_sema::lower::decl::declares
@@ -144,6 +156,7 @@ impl qc_sema::ty::ParamLabels: std::hash::Hash
 mod qc_sema::cast
 mod qc_sema::db
 mod qc_sema::expand
+mod qc_sema::ir
 mod qc_sema::lower
 mod qc_sema::nav
 mod qc_sema::resolve
@@ -156,6 +169,10 @@ struct qc_sema::db::ModuleAnalysis
 struct qc_sema::db::QueryCounts
 struct qc_sema::expand::ModuleInput
 struct qc_sema::expand::OriginMap
+struct qc_sema::ir::Fragment
+struct qc_sema::ir::Fragments
+struct qc_sema::ir::Immediate
+struct qc_sema::ir::Statement
 struct qc_sema::lower::FileDecls
 struct qc_sema::lower::decl::BuiltinFunction
 struct qc_sema::lower::decl::RawDecl
@@ -224,6 +241,12 @@ variant qc_sema::cast::Kind::Vector
 variant qc_sema::cast::Kind::Void
 variant qc_sema::cast::Source::Literal
 variant qc_sema::cast::Source::Typed
+variant qc_sema::ir::ImmediateKind::Float
+variant qc_sema::ir::ImmediateKind::Integer
+variant qc_sema::ir::ImmediateKind::Vector
+variant qc_sema::ir::Operand::Immediate
+variant qc_sema::ir::Operand::Input
+variant qc_sema::ir::Operand::Temp
 variant qc_sema::lower::decl::LiteralValue::Builtin
 variant qc_sema::lower::decl::LiteralValue::Float
 variant qc_sema::lower::decl::LiteralValue::String

@@ -60,6 +60,7 @@ pub mod cast;
 mod check;
 pub mod db;
 pub mod expand;
+pub mod ir;
 pub mod lower;
 pub mod nav;
 pub mod resolve;

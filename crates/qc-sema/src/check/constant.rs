@@ -11,6 +11,7 @@
 use qc_lexer::{LexFlags, atof};
 
 use crate::cast::{ConstType, Literal};
+use crate::ir;
 
 impl Constant {
     /// The words a global this constant initialises holds (FTEF-34.9): a float, an integer or
@@ -107,6 +108,25 @@ impl Constant {
                 0,
             ],
         }
+    }
+
+    /// The immediate a fragment names for this constant: a float, a vector or an integer;
+    /// `None` for the kinds the layer does not hold yet.
+    pub(crate) const fn immediate(self) -> Option<ir::Immediate> {
+        let kind = match self.ty {
+            ConstType::Float => ir::ImmediateKind::Float,
+            ConstType::Vector => ir::ImmediateKind::Vector,
+            ConstType::Integer => ir::ImmediateKind::Integer,
+            ConstType::Uint
+            | ConstType::String
+            | ConstType::Int64
+            | ConstType::Uint64
+            | ConstType::Double => return None,
+        };
+        Some(ir::Immediate {
+            kind,
+            words: self.words,
+        })
     }
 
     /// `eval->_float`.

@@ -23,6 +23,7 @@ use crate::check::statement::Case;
 
 use crate::check::flow::Layout;
 use crate::check::{Constness, Env, FunctionFacts, Reference, Sym, TypedBody, Value};
+use crate::ir;
 use crate::symbol::{DefId, DefKind};
 use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
 
@@ -31,6 +32,10 @@ pub(super) struct Checker<'e> {
     pub(super) env: &'e mut dyn Env,
     types: HashMap<(usize, usize), Type>,
     opcodes: HashMap<(usize, usize), u16>,
+    /// The binary operators' fragments lowered so far.
+    fragments: ir::Fragments,
+    /// The fragment of the binary operator being checked, if any.
+    pub(super) fragment: Option<ir::Builder>,
     /// Whether the checker is in a condition of `if`, `while` or `do`, outside parentheses
     /// (FTEQCC's `conditional`).
     pub(super) in_condition: bool,
@@ -83,6 +88,8 @@ impl<'e> Checker<'e> {
             env,
             types: HashMap::new(),
             opcodes: HashMap::new(),
+            fragments: ir::Fragments::default(),
+            fragment: None,
             in_condition: false,
             addressed: HashSet::new(),
             returned: false,
@@ -112,6 +119,7 @@ impl<'e> Checker<'e> {
         TypedBody {
             types: self.types,
             opcodes: self.opcodes,
+            fragments: self.fragments,
         }
     }
 
@@ -354,8 +362,38 @@ impl<'e> Checker<'e> {
         self.operator_at(op, span, lhs, rhs)
     }
 
-    /// [`Checker::operator`] of the operator `op` at `span`.
+    /// [`Checker::operator`] of the operator `op` at `span`, its statements lowered to a
+    /// fragment of the intermediate layer kept by `span` when the layer holds every step.
     pub(super) fn operator_at(
+        &mut self,
+        op: BinaryOp,
+        span: Span,
+        lhs: &Value,
+        rhs: &Value,
+    ) -> Result<Option<Value>, Fatal> {
+        let lhs = Value {
+            ir: Some(ir::Operand::Input(0)),
+            ..lhs.clone()
+        };
+        let rhs = Value {
+            ir: Some(ir::Operand::Input(1)),
+            ..rhs.clone()
+        };
+        let outer = self.fragment.replace(ir::Builder::new());
+        let checked = self.operator_lowered(op, span, &lhs, &rhs);
+        let builder = std::mem::replace(&mut self.fragment, outer);
+        let Ok(Some(value)) = checked else {
+            return checked;
+        };
+        if let Some(fragment) = builder.and_then(|builder| builder.finish(value.operand())) {
+            self.fragments.insert(span, fragment);
+        }
+        // The value is an operand of the fragment it was lowered in only.
+        Ok(Some(Value { ir: None, ..value }))
+    }
+
+    /// [`Checker::operator_at`] once its inputs are tagged.
+    fn operator_lowered(
         &mut self,
         op: BinaryOp,
         span: Span,

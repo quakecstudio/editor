@@ -265,3 +265,79 @@ fn a_checked_body_keeps_its_operators_opcodes() {
         "an assignment is chosen elsewhere"
     );
 }
+
+// spec FTEF-23.4: a binary operator lowers to the statement of the opcode chosen for it, its
+// operands the operator's inputs, its value the statement's temporary
+// spec FTEF-26.2: an operator of two constants folds, to an immediate with no statement
+// spec FTEF-27.4: an emulated `%` is its emulation's statements
+#[test]
+fn a_binary_operator_lowers_to_a_fragment() {
+    use crate::ir::{Fragment, Immediate, ImmediateKind, Operand, Statement};
+    let source =
+        "float a; vector v; void() t = { a = a + 1; v = v * a; a = 2 + 3; a = a % 2; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let body = &index.bodies[&t];
+    let at = |text: &str, operator: &str| {
+        let start = source.find(text).unwrap() + text.find(operator).unwrap();
+        body.fragment_at(Span::new(start, start + operator.len()))
+    };
+    let float = |value: f32| {
+        Operand::Immediate(Immediate {
+            kind: ImmediateKind::Float,
+            words: [value.to_bits(), 0, 0],
+        })
+    };
+    let one = |op: u16, a: Operand, b: Operand| Fragment {
+        statements: vec![Statement {
+            op,
+            a: Some(a),
+            b: Some(b),
+            makes: true,
+        }],
+        value: Some(Operand::Temp(0)),
+    };
+    assert_eq!(
+        at("a + 1", "+"),
+        Some(&one(6, Operand::Input(0), Operand::Input(1))),
+        "ADD_F: a literal operand is an input too"
+    );
+    assert_eq!(
+        at("v * a", "*"),
+        Some(&one(4, Operand::Input(0), Operand::Input(1))),
+        "MUL_VF"
+    );
+    assert_eq!(
+        at("2 + 3", "+"),
+        Some(&Fragment {
+            statements: Vec::new(),
+            value: Some(float(5.0)),
+        })
+    );
+    // FTEF-27.4: with no `mod` function, `a % b` is `a - b * (a / b)`, the quotient floored by
+    // `BITOR` of itself, each step a statement of the fragment.
+    let made = |op: u16, a: Operand, b: Operand| Statement {
+        op,
+        a: Some(a),
+        b: Some(b),
+        makes: true,
+    };
+    assert_eq!(
+        at("a % 2", "%"),
+        Some(&Fragment {
+            statements: vec![
+                made(5, Operand::Input(0), Operand::Input(1)),
+                made(65, Operand::Temp(0), Operand::Temp(0)),
+                made(1, Operand::Input(1), Operand::Temp(1)),
+                made(8, Operand::Input(0), Operand::Temp(2)),
+            ],
+            value: Some(Operand::Temp(3)),
+        }),
+        "DIV_F, BITOR, MUL_F, SUB_F"
+    );
+}

@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use qc_diag::{Code, Diagnostic, Span};
 use qc_progs::Function;
 use qc_progs::opcode::Opcode;
+use qc_sema::ir;
 use qc_sema::lower::{Qualifier, declares};
 use qc_sema::{DefId, DefKind, FileDiagnostic, FileId, FunctionType, ModuleIndex, Type};
 use qc_syntax::ast::{self, AstNode};
@@ -2640,7 +2641,125 @@ impl<'a> Compiler<'a> {
         };
         let left = self.left_operand(&binary.lhs().at(span)?)?;
         let right = self.expr(&binary.rhs().at(span)?)?;
+        if let Some(value) = self.lowered_binary(operator, &left, &right, (op_span, span))? {
+            return Ok(value);
+        }
         self.operate(operator, &left, &right, (op_span, span))
+    }
+
+    /// The binary operator whose token is at `op_span` as the semantic model lowered it
+    /// (`docs/design/back-end.md`): its fragment's statements emitted with `left` and `right`
+    /// as its inputs, after this code generator's own folds. `None`, for [`Compiler::operate`]
+    /// to lower it, under the vanilla profile, with `--opt fold`, and for a fragment the model
+    /// did not keep or this code generator does not write yet: one of no statement or of more
+    /// than one, a statement with no value or of an opcode outside id's table, or an integer
+    /// immediate.
+    fn lowered_binary(
+        &mut self,
+        operator: Operator,
+        left: &Value,
+        right: &Value,
+        (op_span, span): (Span, Span),
+    ) -> Lowered<Option<Value>> {
+        if self.fold || !self.dialect.has_fteqcc_extensions() {
+            return Ok(None);
+        }
+        let Some(fragment) = self
+            .scope
+            .and_then(|function| self.index.body(function))
+            .and_then(|body| body.fragment_at(op_span))
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        let Some(ir::Operand::Temp(last)) = fragment.value else {
+            return Ok(None);
+        };
+        // So far a fragment of one statement, after this code generator's own folds, which
+        // follow FTEQCC's constants further than the checker does (a vector literal's
+        // component, FTEF-26.13).
+        let [only] = fragment.statements.as_slice() else {
+            return Ok(None);
+        };
+        let Some(opcode) = Opcode::from_number(u32::from(only.op)) else {
+            return Ok(None);
+        };
+        // FTEF-27.8: an integer operand of a float operator is made a float first, as
+        // `Compiler::operate` makes it.
+        let (left, right) = &self.floats_of(operator, left, right, op_span)?;
+        if self.both_constant(left, right)
+            && let Some(value) = self.folded(opcode, left, right).at(span)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = self.folded_with_one_constant(opcode, left, right, span)? {
+            return Ok(Some(value));
+        }
+        let mut rows = Vec::with_capacity(fragment.statements.len());
+        for statement in &fragment.statements {
+            let row = Opcode::from_number(u32::from(statement.op))
+                .and_then(|op| ops::ROWS.iter().find(|row| row.opcode == op));
+            let integer = [statement.a, statement.b].into_iter().flatten().any(|operand| {
+                matches!(operand, ir::Operand::Immediate(i) if i.kind == ir::ImmediateKind::Integer)
+            });
+            // An input must have the type the row reads: the model does not yet lower every
+            // operand conversion the code generator does (a vector's truth, FTE-19.10).
+            let fits = |operand: Option<ir::Operand>, wanted: Etype| match operand {
+                Some(ir::Operand::Input(0)) => self.type_of(left).etype() == wanted,
+                Some(ir::Operand::Input(_)) => self.type_of(right).etype() == wanted,
+                Some(ir::Operand::Temp(_) | ir::Operand::Immediate(_)) | None => true,
+            };
+            match row {
+                Some(row)
+                    if statement.makes
+                        && !integer
+                        && fits(statement.a, row.a)
+                        && fits(statement.b, row.b) =>
+                {
+                    rows.push(*row);
+                }
+                Some(_) | None => return Ok(None),
+            }
+        }
+        let mut made: Vec<(u32, Etype)> = Vec::with_capacity(rows.len());
+        for (statement, row) in fragment.statements.iter().zip(&rows) {
+            let a = self.fragment_operand(statement.a, left, right, &made, span)?;
+            let b = self.fragment_operand(statement.b, left, right, &made, span)?;
+            let ofs = self.program.emit_result(row.opcode, a, b, row.c).at(span)?;
+            made.push((ofs, row.c));
+        }
+        let (ofs, c) = made.get(usize::from(last)).copied().at(span)?;
+        Ok(Some(Value {
+            ofs,
+            kind: ValueKind::Temp(ValueType::simple(c)),
+        }))
+    }
+
+    /// The global a fragment's `operand` is: an input's, a temporary an earlier statement of
+    /// the fragment `made`, or an immediate's; 0 for none.
+    fn fragment_operand(
+        &mut self,
+        operand: Option<ir::Operand>,
+        left: &Value,
+        right: &Value,
+        made: &[(u32, Etype)],
+        span: Span,
+    ) -> Lowered<u32> {
+        match operand {
+            None => Ok(0),
+            Some(ir::Operand::Input(0)) => Ok(self.operand_of(left)),
+            Some(ir::Operand::Input(_)) => Ok(self.operand_of(right)),
+            Some(ir::Operand::Temp(n)) => made.get(usize::from(n)).map(|(ofs, _)| *ofs).at(span),
+            Some(ir::Operand::Immediate(immediate)) => {
+                let [x, y, z] = immediate.words.map(f32::from_bits);
+                let literal = match immediate.kind {
+                    ir::ImmediateKind::Vector => Literal::Vector([x, y, z]),
+                    ir::ImmediateKind::Float | ir::ImmediateKind::Integer => Literal::Float(x),
+                };
+                let place = self.program.immediate(&literal).at(span)?;
+                Ok(self.program.def(place).at(span)?.ofs)
+            }
+        }
     }
 
     /// FTEQCC's `a ^ b` on the vanilla opcodes (FTE-19.7, FTE-19.12), `OP_BITXOR_F`'s and
