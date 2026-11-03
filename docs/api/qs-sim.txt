@@ -10,6 +10,8 @@ const qs_sim::collision::hull::CONTENTS_WATER
 const qs_sim::collision::hull::HULL1
 const qs_sim::collision::hull::HULL2
 const qs_sim::collision::trace::DIST_EPSILON
+const qs_sim::localization::RRE_LOC_FILE
+const qs_sim::localization::RRE_VARSTRING_LEN
 const qs_sim::messages::NET_FAT_PVS_DISTANCE
 const qs_sim::messages::NET_GAME_COOP
 const qs_sim::messages::NET_GAME_DEATHMATCH
@@ -128,6 +130,14 @@ fn qs_sim::collision::hull::hull_for_entity
 fn qs_sim::collision::trace::Trace::new
 fn qs_sim::collision::trace::clip_move_to_entity
 fn qs_sim::collision::trace::recursive_hull_check
+fn qs_sim::localization::Localization::get
+fn qs_sim::localization::Localization::has_placeholders
+fn qs_sim::localization::Localization::is_empty
+fn qs_sim::localization::Localization::is_loaded
+fn qs_sim::localization::Localization::len
+fn qs_sim::localization::Localization::parse
+fn qs_sim::localization::Localization::raw
+fn qs_sim::localization::Localization::var_string
 fn qs_sim::messages::Message::bytes
 fn qs_sim::messages::Message::clear
 fn qs_sim::messages::Message::is_empty
@@ -168,6 +178,7 @@ fn qs_sim::world::World::light_style
 fn qs_sim::world::World::load
 fn qs_sim::world::World::player_view
 fn qs_sim::world::World::set_command
+fn qs_sim::world::World::set_localization
 fn qs_sim::world::World::set_standard_quake
 fn qs_sim::world::World::settle
 fn qs_sim::world::World::take_messages
@@ -182,6 +193,7 @@ impl qs_sim::spawn::SpawnError: core::fmt::Display
 impl qs_sim::world::WorldError: core::error::Error
 impl qs_sim::world::WorldError: core::fmt::Display
 mod qs_sim::collision
+mod qs_sim::localization
 mod qs_sim::spawn
 struct qs_sim::builtins::SimBuiltins
 struct qs_sim::client::UserCmd
@@ -197,6 +209,7 @@ struct qs_sim::collision::hull::HullSet
 struct qs_sim::collision::hull::Plane
 struct qs_sim::collision::trace::Trace
 struct qs_sim::collision::trace::TracePlane
+struct qs_sim::localization::Localization
 struct qs_sim::messages::ClientMessages
 struct qs_sim::messages::Message
 struct qs_sim::physics::Sound

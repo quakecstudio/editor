@@ -14,6 +14,7 @@ use qs_render::{
     Camera, Extras, GAMMA, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
 };
 use qs_sim::World;
+use qs_sim::localization::{Localization, RRE_LOC_FILE};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
 /// The height of a player's eyes above its origin, `view_ofs` in id's QuakeC `client.qc`.
@@ -202,6 +203,10 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
         }))
     };
     let mut world = World::load(&progs, &map, &bsp, reader()?).map_err(|e| e.to_string())?;
+    // RRE-1.6: the rerelease's strings, when the game's files hold them.
+    if let Ok(text) = read(RRE_LOC_FILE) {
+        world.set_localization(Localization::parse(&text));
+    }
     world.settle(&progs).map_err(|e| e.to_string())?;
     let mut sim = Sim {
         world,

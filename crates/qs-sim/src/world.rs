@@ -23,6 +23,7 @@ use qs_bsp::Bsp;
 
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::UserCmd;
+use crate::localization::Localization;
 use crate::messages::ClientMessages;
 #[cfg(test)]
 use crate::messages::ServerMessages;
@@ -168,6 +169,13 @@ impl World {
     /// `svc_setangle` as the client reads it (PHYS-10.2, NET-4.3).
     pub fn take_set_angle(&mut self) -> Option<[f32; 3]> {
         self.builtins.messages.set_angle.take()
+    }
+
+    /// Localizes the print builtins' text and `WriteString`'s string with `localization`, the
+    /// rerelease's `localization/loc_english.txt` (RRE-1.5, RRE-1.6); a table with no entry
+    /// localizes nothing.
+    pub fn set_localization(&mut self, localization: Localization) {
+        self.builtins.localization = localization;
     }
 
     /// Whether the game is standard Quake, not `-rogue` or `-hipnotic`, which changes how the

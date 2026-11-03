@@ -10,6 +10,7 @@ mod client;
 pub mod collision;
 #[cfg(test)]
 mod fixtures;
+pub mod localization;
 mod messages;
 mod movement;
 mod physics;

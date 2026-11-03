@@ -7,6 +7,7 @@
     reason = "test code: a failed unwrap, index or overflow is a failed test"
 )]
 
+use crate::localization::Localization;
 use qc_progs::Progs;
 use qc_vm::convert::{double_to_float, float_to_int};
 
@@ -258,6 +259,33 @@ fn a_frame_sends_the_datagram_then_the_reliable_message() {
     let packets = run.packets();
     let (_, _, rest) = datagram(&packets[0]);
     assert_eq!(rest.len(), 12, "the last frame's particle is gone");
+}
+
+// spec RRE-1.5: with a localization loaded, bprint's text is its localized format with the
+// placeholders filled, and WriteString writes its string localized
+// spec RRE-1.6: with none, the text and the string are written as they are
+#[test]
+fn printed_and_written_strings_are_localized_with_a_file_loaded() {
+    let each = "bprint(\"$qc_hi\"); WriteString(2, \"$qc_hi\");";
+    let read = |run: &mut Running| {
+        run.packets();
+        run.frames(1, 0.1).unwrap();
+        let packets = run.packets();
+        let mut r = Reader::new(&packets[1]);
+        assert_eq!(r.byte(), 8, "svc_print");
+        let printed = r.string();
+        (printed, r.string())
+    };
+    let mut plain = framed(each, "");
+    assert_eq!(read(&mut plain), ("$qc_hi".to_owned(), "$qc_hi".to_owned()));
+    let mut localized = framed(each, "");
+    localized
+        .world
+        .set_localization(Localization::parse(b"qc_hi = \"Hi {}!\"\n"));
+    assert_eq!(
+        read(&mut localized),
+        ("Hi !".to_owned(), "Hi {}!".to_owned())
+    );
 }
 
 // spec NET-1.4: a change of frags sends svc_updatefrags to every active client, once, and
