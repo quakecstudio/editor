@@ -43,7 +43,10 @@ mod write;
 #[cfg(test)]
 mod tests;
 
+use std::collections::HashMap;
+
 use qc_diag::{Severity, Span};
+use qc_lexer::LineIndex;
 use qc_lno::LnoFile;
 use qc_progs::{Format, ProgsFile, WriteError};
 use qc_sema::lower::{FileDecls, lower_file};
@@ -153,13 +156,18 @@ pub fn compile(units: &[Unit<'_>], options: Options) -> Result<Compiled, Compile
         .iter()
         .map(|u| lower_file(u.parse, Dialect::Vanilla))
         .collect();
-    let texts: Vec<Vec<u8>> = units.iter().map(|u| u.parse.syntax().text()).collect();
+    let lines: Vec<LineIndex> = units
+        .iter()
+        .map(|u| LineIndex::new(&u.parse.syntax().text()))
+        .collect();
     let vanilla = ResolveOptions {
         dialect: Dialect::Vanilla,
         ..ResolveOptions::default()
     };
     compile_lowered(units, &decls, vanilla, options, |file, at| {
-        texts.get(file.index()).map_or(0, |text| line_at(text, at))
+        lines
+            .get(file.index())
+            .map_or(0, |index| line_at(index, at))
     })
 }
 
@@ -169,7 +177,7 @@ fn compile_lowered(
     decls: &[FileDecls],
     resolve: ResolveOptions,
     options: Options,
-    line_of: impl Fn(FileId, usize) -> i32,
+    mut line_of: impl FnMut(FileId, usize) -> i32,
 ) -> Result<Compiled, CompileError> {
     let index = resolve_module(decls, resolve);
     let mut errors: Vec<FileDiagnostic> = Vec::new();
@@ -320,6 +328,8 @@ pub fn compile_module(
         units.push(Unit { name, parse });
         decls.push(lowered.clone());
     }
+    // Each source file is indexed by line once, the first time a statement comes from it.
+    let mut lines: HashMap<FileId, LineIndex> = HashMap::new();
     let mut compiled = compile_lowered(&units, &decls, analysis.options, options, |file, at| {
         // QC-27.19: the line in the source file the expansion's text came from (QC-9.7).
         let id = input.compiled.get(file.index()).copied().unwrap_or(file);
@@ -327,7 +337,10 @@ pub fn compile_module(
             .expanded_origins(id)
             .and_then(|origins| origins.locate(Span::new(at, at)))
             .map_or((id, at), |location| (location.file, location.span.start));
-        line_at(db.file_text(source), at)
+        let index = lines
+            .entry(source)
+            .or_insert_with(|| LineIndex::new(db.file_text(source)));
+        line_at(index, at)
     })
     .map_err(|error| locate(db, input, error))?;
     // The analysis's warnings are at their source spans.
@@ -371,9 +384,8 @@ fn locate(db: &Db, input: &ModuleInput, error: CompileError) -> CompileError {
     }
 }
 
-/// The line of byte `at` of `text`, counted from 1 (LNO-3.1).
-fn line_at(text: &[u8], at: usize) -> i32 {
-    let before = text.get(..at).unwrap_or(text);
-    let newlines = before.iter().filter(|&&b| b == b'\n').count();
-    i32::try_from(newlines.saturating_add(1)).unwrap_or(i32::MAX)
+/// The line of byte `at` of the file `index` indexes, counted from 1 (LNO-3.1), as the .lno
+/// holds it.
+fn line_at(index: &LineIndex, at: usize) -> i32 {
+    i32::try_from(index.line(at)).unwrap_or(i32::MAX)
 }
