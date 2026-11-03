@@ -3124,3 +3124,35 @@ fn an_int_constant_stored_to_a_field_or_passed_to_a_float_parameter_is_a_float()
         ]
     );
 }
+
+// spec FTEF-27.17: `!` of an int constant folds to the int, stored as the float; `!` of an
+// int value is `EQ_FNC` with the int 0; a vector times an int constant is `MUL_VF` or `MUL_FV`
+// of the float
+#[test]
+fn not_of_an_int_and_a_vector_times_an_int_follow_the_vanilla_emulation() {
+    let p = fte_progs(
+        "vector gv0, gv1; float f; int i; const float K0 = 4096; const float K1 = -1;\n\
+         void() t = { gv1 = gv0 * (K0 || 16354432); gv1 = (K0 || 16354432) * gv0; \
+         f = !(K1 || 512); f = !i; };\n",
+    );
+    let (gv0, gv1, f, i) = (
+        global(&p, "gv0"),
+        global(&p, "gv1"),
+        global(&p, "f"),
+        global(&p, "i"),
+    );
+    let t = body(&p, "t");
+    assert_eq!(
+        opcodes(&t),
+        ops(&[Opcode::MulVf, Opcode::MulFv, StoreF, Opcode::EqFnc, Done])
+    );
+    assert_eq!(t[0], st(Opcode::MulVf, gv0, immediate(&p, 1.0), gv1));
+    assert_eq!(t[1], st(Opcode::MulFv, immediate(&p, 1.0), gv0, gv1));
+    assert_eq!(t[2], st(StoreF, immediate(&p, 0.0), f, 0));
+    assert_eq!((t[3].a, t[3].c), (i, f));
+    assert_eq!(
+        p.globals[usize::try_from(t[3].b).unwrap()].bits(),
+        0,
+        "the int 0"
+    );
+}

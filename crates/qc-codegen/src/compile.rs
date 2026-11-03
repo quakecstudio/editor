@@ -1463,6 +1463,9 @@ impl<'a> Compiler<'a> {
             ast::Expr::Not(not) => {
                 // QC-16.4: `NOT_*` by the operand's type.
                 let value = self.expr(&not.operand().at(span)?)?;
+                if self.is_integer(&value) {
+                    return self.not_integer(&value, span);
+                }
                 let ty = self.type_of(&value).etype();
                 let Some(op) = ops::not_opcode(ty) else {
                     return Self::error(Code::E0302, "type mismatch for !".to_owned(), span);
@@ -1523,17 +1526,61 @@ impl<'a> Compiler<'a> {
     }
 
     /// FTEF-27.8: the two operands of a float operator, an integer one of them made a float
-    /// (FTEF-27.4) when the other is a float.
-    fn floats_of(&mut self, left: &Value, right: &Value, span: Span) -> Lowered<(Value, Value)> {
+    /// (FTEF-27.4) when the other is a float; and FTEF-27.17: of `*`, when the other is a
+    /// vector (`OP_MUL_VI` and `OP_MUL_IV`'s emulation).
+    fn floats_of(
+        &mut self,
+        operator: Operator,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> Lowered<(Value, Value)> {
         let float = |c: &Self, v: &Value| c.type_of(v).etype() == Etype::Float;
-        if self.is_integer(left) && float(self, right) {
+        let scaled = |c: &Self, v: &Value| {
+            operator == Operator::Mul && c.type_of(v).etype() == Etype::Vector
+        };
+        if self.is_integer(left) && (float(self, right) || scaled(self, right)) {
             return Ok((self.int_as_float(left, span)?, right.clone()));
         }
-        if self.is_integer(right) && float(self, left) {
+        if self.is_integer(right) && (float(self, left) || scaled(self, left)) {
             let right = self.int_as_float(right, span)?;
             return Ok((left.clone(), right));
         }
         Ok((left.clone(), right.clone()))
+    }
+
+    /// FTEF-27.17: `!` of an FTEQCC `int`: a constant folds to the int `!v`
+    /// (`QCC_MakeIntConst(!eval_a->_int)`); else `OP_NOT_I`, which the vanilla target has not,
+    /// is `EQ_FNC` of the value and the int 0.
+    fn not_integer(&mut self, value: &Value, span: Span) -> Lowered<Value> {
+        let int = ValueType::Of(Type::Named(CScalar::Integer.name().into()));
+        if let ValueKind::Def(place) = value.kind
+            && self.constant(place)
+            && let Some(def) = self.program.def(place)
+        {
+            let word = self.program.word(def.ofs);
+            let place = self
+                .program
+                .int_immediate(u32::from(word == 0), int)
+                .at(span)?;
+            return self.def_value(place, span);
+        }
+        let zero = self.program.int_immediate(0, int).at(span)?;
+        let zero = self
+            .program
+            .def(zero)
+            .ok_or(Internal::NoDefinition)
+            .at(span)?
+            .ofs;
+        let from = self.operand_of(value);
+        let ofs = self
+            .program
+            .emit_result(Opcode::EqFnc, from, zero, Etype::Float)
+            .at(span)?;
+        Ok(Value {
+            ofs,
+            kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
+        })
     }
 
     /// FTEF-27.4: `OP_CONV_ITOF` on the vanilla target: a constant is the float it converts to
@@ -2572,7 +2619,7 @@ impl<'a> Compiler<'a> {
         (op_span, span): (Span, Span),
     ) -> Lowered<Value> {
         // FTEF-27.8: an integer operand of a float operator is made a float first.
-        let (left, right) = &self.floats_of(left, right, op_span)?;
+        let (left, right) = &self.floats_of(operator, left, right, op_span)?;
         // The types are read after both operands, as `PR_Expression` reads them: a call in the
         // right operand retypes the return value the left one may be (QC-18.6).
         let a = self.type_of(left).etype();
@@ -2990,9 +3037,7 @@ impl<'a> Compiler<'a> {
                 ValueKind::Return(id) | ValueKind::ReturnWord(id, _) => {
                     ValueKind::ReturnWord(id, ty)
                 }
-                ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Cast(_) => {
-                    ValueKind::Temp(ty)
-                }
+                ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Cast(_) => ValueKind::Temp(ty),
             };
             return Ok(Member::Done(Value {
                 ofs: base.ofs.checked_add(word).at(span)?,
@@ -3573,7 +3618,10 @@ impl<'a> Compiler<'a> {
         };
         let name = match &callee.kind {
             ValueKind::Def(place) => self.program.def(*place).map(|d| d.name.clone()),
-            ValueKind::Temp(_) | ValueKind::Return(_) | ValueKind::ReturnWord(..) | ValueKind::Cast(_) => None,
+            ValueKind::Temp(_)
+            | ValueKind::Return(_)
+            | ValueKind::ReturnWord(..)
+            | ValueKind::Cast(_) => None,
         };
         let fixed = (!function.variadic).then_some(function.params.len());
         let mut count = 0_usize;
@@ -3837,7 +3885,10 @@ impl Compiler<'_> {
                 .and_then(|id| self.defaults.get(&id))
                 .cloned()
                 .unwrap_or_default(),
-            ValueKind::Temp(_) | ValueKind::Return(_) | ValueKind::ReturnWord(..) | ValueKind::Cast(_) => Vec::new(),
+            ValueKind::Temp(_)
+            | ValueKind::Return(_)
+            | ValueKind::ReturnWord(..)
+            | ValueKind::Cast(_) => Vec::new(),
         };
         // FTE-18.7: an empty slot takes its parameter's default, and so does each parameter
         // after the last argument that has one and is not `optional`.

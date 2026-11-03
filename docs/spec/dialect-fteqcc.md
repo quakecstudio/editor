@@ -4752,6 +4752,19 @@ as far as they report.
   frees them all at each statement's end, so in a later function a number can differ. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_GetTemp`, `QCC_FreeTemp`, `QCC_PR_StatementFlags`, `QCC_VarAtOffset`.
+- **FTEF-27.17** `!` of an `int` is `OP_NOT_I` (`QCC_PR_GenerateLogicalNot`: `t == ev_integer
+  || t == ev_uint`): of a constant it folds to the int constant `!v` (`case OP_NOT_I:
+  return QCC_MakeIntConst(!eval_a->_int)` in `QCC_PR_StatementFlags`), so `!(K1 || 512)` is
+  the int 0 and `f = !(K1 || 512);` stores the float 0 (FTEF-27.4); of a value, on the vanilla
+  target, where `OP_NOT_I` is not valid, it is `OP_EQ_FNC` of the value and the int 0 (`case
+  OP_NOT_I: return QCC_PR_StatementFlags(&pr_opcodes[OP_EQ_FNC], var_a, QCC_MakeIntConst(0),
+  ...)`). `*` of a vector and an `int` is `OP_MUL_VI` or `OP_MUL_IV` (the operator table), which
+  the vanilla target emulates as `OP_CONV_ITOF` of the int, the float constant for a constant
+  (FTEF-26.3), then `OP_MUL_VF` or `OP_MUL_FV`; so `gv0 * (K0 || 16354432)` is `MUL_VF gv0, 1`.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateLogicalNot`, `QCC_PR_StatementFlags` (the `OP_NOT_I` fold and the vanilla
+  emulation of `OP_NOT_I`, `OP_MUL_VI` and `OP_MUL_IV`), `pr_opcodes`.
+
 ## FTEF-28 The warnings of an emitted comparison
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (the switch after the emulation),

@@ -337,9 +337,7 @@ impl Compiler<'_> {
             | ValueKind::Temp(_)
             | ValueKind::Return(_)
             | ValueKind::ReturnWord(..)
-            | ValueKind::Cast(_) => {
-                None
-            }
+            | ValueKind::Cast(_) => None,
         };
         if let Some(i) = constant {
             let element = element_number(i, array.count).at(span)?;
