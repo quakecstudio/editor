@@ -137,11 +137,27 @@ pub enum Text {
     Map,
     /// The map view with no map shown.
     NoMap,
+    /// The toolbar's name to a screen reader.
+    Toolbar,
+    /// The status bar's name to a screen reader.
+    StatusBar,
+    /// The left panel's name to a screen reader.
+    LeftPanel,
+    /// The right panel's name to a screen reader.
+    RightPanel,
+    /// The bottom panel's name to a screen reader.
+    BottomPanel,
+    /// The centre's name to a screen reader.
+    Centre,
+    /// The map view's name to a screen reader.
+    MapView,
+    /// The command palette's name to a screen reader.
+    CommandPalette,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 65] = [
+    pub const ALL: [Self; 73] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -207,6 +223,14 @@ impl Text {
         Self::MatchCase,
         Self::Map,
         Self::NoMap,
+        Self::Toolbar,
+        Self::StatusBar,
+        Self::LeftPanel,
+        Self::RightPanel,
+        Self::BottomPanel,
+        Self::Centre,
+        Self::MapView,
+        Self::CommandPalette,
     ];
 
     /// The string, in English.
@@ -278,6 +302,14 @@ impl Text {
             Self::MatchCase => "Match case",
             Self::Map => "Map",
             Self::NoMap => "No map open.",
+            Self::Toolbar => "Toolbar",
+            Self::StatusBar => "Status bar",
+            Self::LeftPanel => "Left panel: Project and Entities",
+            Self::RightPanel => "Right panel: Properties and Agent",
+            Self::BottomPanel => "Bottom panel: Problems, Console and Debugger",
+            Self::Centre => "Centre: Editor, Game and Map",
+            Self::MapView => "Map view: drag to turn, scroll to move",
+            Self::CommandPalette => "Command palette",
         }
     }
 }

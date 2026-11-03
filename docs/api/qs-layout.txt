@@ -1,10 +1,17 @@
+const qs_layout::FOCUS_BOTTOM_PANEL
+const qs_layout::FOCUS_EDITOR
+const qs_layout::FOCUS_LEFT_PANEL
+const qs_layout::FOCUS_RIGHT_PANEL
 const qs_layout::MIN_PANEL_SIZE
 const qs_layout::Panel::ALL
 const qs_layout::RESIZE_PANEL
 const qs_layout::TOGGLE_PANEL
+enum qs_layout::Focus
 enum qs_layout::LayoutError
 enum qs_layout::Panel
 field qs_layout::Layout.bottom
+field qs_layout::Layout.focus
+field qs_layout::Layout.focus_requests
 field qs_layout::Layout.left
 field qs_layout::Layout.right
 field qs_layout::PanelState.size
@@ -13,6 +20,7 @@ field qs_layout::ResizePanelParams.panel
 field qs_layout::ResizePanelParams.size
 field qs_layout::TogglePanelParams.panel
 fn qs_layout::HasLayout::layout_mut
+fn qs_layout::Layout::as_written
 fn qs_layout::Layout::panel
 fn qs_layout::Layout::panel_mut
 fn qs_layout::Layout::read
@@ -28,6 +36,8 @@ struct qs_layout::PanelState
 struct qs_layout::ResizePanelParams
 struct qs_layout::TogglePanelParams
 trait qs_layout::HasLayout
+variant qs_layout::Focus::Editor
+variant qs_layout::Focus::Panel
 variant qs_layout::LayoutError::Encode
 variant qs_layout::LayoutError::Parse
 variant qs_layout::LayoutError::Read
