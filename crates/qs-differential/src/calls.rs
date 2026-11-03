@@ -554,15 +554,11 @@ fn run_calls_reporting(
             }
         }
         // DIFF-12.24: an accessor is also called once for every index of its array, each from
-        // the context of a round past the cap, so each element's leaf of its tree runs; once
-        // every statement of its body has run, the rest of the indexes add nothing.
+        // the context of a round past the cap, so each element's leaf of its tree runs.
         if is_accessor(name)
             && let Some(indexes) = drawer.accessor_indexes(function)
         {
             for (i, index) in indexes.into_iter().enumerate() {
-                if reached(&report.executed) >= whole {
-                    break;
-                }
                 let round = cap.saturating_add(u32::try_from(i).unwrap_or(u32::MAX));
                 let mut rng = Rng::new(name, round);
                 let mut context = drawer.draw(&mut rng, (function, &pools), round);

@@ -28,7 +28,7 @@ use qc_sema::{Db, FileId, ModuleInput};
 use qc_types::Etype;
 use qc_vm::ServerState;
 
-use super::draw::{Draw, Drawer, Pools, Rng};
+use super::draw::{Draw, Drawer, Name, NameKind, Pools, Rng};
 use super::{
     COVERAGE_BAR, CallsError, CodebaseReport, Difference, Oracle, Report, Value, World, coverage,
     run_calls, run_codebase,
@@ -773,6 +773,14 @@ fn with_drawer_of(source: &str, test: impl FnOnce(&Drawer<'_, '_>, &Progs<'_>)) 
     test(&drawer, &progs);
 }
 
+/// A compared name of `kind` (DIFF-12.28).
+fn name(kind: NameKind, name: &[u8]) -> Name {
+    Name {
+        kind,
+        name: name.to_vec(),
+    }
+}
+
 fn function(progs: &Progs<'_>, name: &[u8]) -> qc_progs::Function {
     progs.ed_find_function(name).unwrap()
 }
@@ -876,11 +884,10 @@ fn compared_values_are_mined_and_drawn() {
         let mut armor = numbers(b"armorvalue");
         armor.sort_by(f32::total_cmp);
         assert_eq!(armor, [-1.0, 0.0, 1.0]);
-        assert!(
-            pools
-                .pairs
-                .contains(&(b"armorvalue".to_vec(), b"x".to_vec()))
-        );
+        assert!(pools.pairs.contains(&(
+            name(NameKind::Field, b"armorvalue"),
+            name(NameKind::Variable, b"x")
+        )));
         // Every ordering opcode draws the neighbours.
         for (name, want) in [
             (&b"armortype"[..], [1.0, 2.0, 3.0]),
@@ -893,11 +900,10 @@ fn compared_values_are_mined_and_drawn() {
         }
         // An ordering of two fields pairs them and draws no neighbours.
         assert!(numbers(b"ammo_shells").is_empty());
-        assert!(
-            pools
-                .pairs
-                .contains(&(b"ammo_shells".to_vec(), b"ammo_nails".to_vec()))
-        );
+        assert!(pools.pairs.contains(&(
+            name(NameKind::Field, b"ammo_shells"),
+            name(NameKind::Field, b"ammo_nails")
+        )));
         assert_eq!(
             pools.compared[&b"netname"[..]].texts,
             BTreeSet::from([b"carrier".to_vec()])
@@ -913,12 +919,14 @@ fn compared_values_are_mined_and_drawn() {
             BTreeSet::from([b"go".to_vec()])
         );
         // Two names compared pair them.
-        assert!(
-            pools
-                .pairs
-                .contains(&(b"team".to_vec(), b"lastteam".to_vec()))
-        );
-        assert!(pools.pairs.contains(&(b"x".to_vec(), b"y".to_vec())));
+        assert!(pools.pairs.contains(&(
+            name(NameKind::Field, b"team"),
+            name(NameKind::Field, b"lastteam")
+        )));
+        assert!(pools.pairs.contains(&(
+            name(NameKind::Variable, b"x"),
+            name(NameKind::Variable, b"y")
+        )));
         let draw = |round| drawer.draw(&mut Rng::new(b"h", round), (h, &pools), round);
         let contexts: Vec<_> = (1..32).map(draw).collect();
         let last_field = |c: &super::draw::Context, edict: usize, name: &[u8]| {
@@ -1512,6 +1520,26 @@ fn precaching_functions_run_loading() {
         .iter()
         .find(|f| progs.string(f.s_name) == Some(b"spawn_thing"))
         .unwrap();
+    // Its eighth round runs with the server active, the reverse of any other function.
+    with_drawer_of(source, |drawer, progs| {
+        for (name, precaches) in [(&b"spawn_thing"[..], true), (&b"worldspawn"[..], false)] {
+            let f = function(progs, name);
+            let pools = drawer.pools(f);
+            assert_eq!(pools.precaches, precaches);
+            let server = |round| {
+                drawer
+                    .draw(&mut Rng::new(name, round), (f, &pools), round)
+                    .server
+            };
+            let (usual, eighth) = if precaches {
+                (ServerState::Loading, ServerState::Active)
+            } else {
+                (ServerState::Active, ServerState::Loading)
+            };
+            assert_eq!(server(3), usual);
+            assert_eq!(server(7), eighth);
+        }
+    });
     // Every statement of the body ran in rounds 0 to 3, none of which is an eighth round.
     let body = f.first_statement..f.first_statement + 6;
     let missed: Vec<i32> = body.filter(|s| !report.executed.contains(s)).collect();
@@ -1571,16 +1599,25 @@ fn unimplemented_builtins_return_zero() {
 // entity field leaves the entity field's draws entities, and a pair of one type still passes
 #[test]
 fn a_pair_passes_values_only_between_one_type() {
-    let source = "float x; .float fx; .float fy; .entity owner;\n\
+    let source = "float x; .float fx; .float fy; .float fz; .entity owner;\n\
         void() worldspawn = { x = 1; };\n\
-        void() f = { x = self.fx + self.fy; x = self.owner.fx; };\n";
+        void() f = { x = self.fx + self.fy + self.fz; x = self.owner.fx; };\n";
     with_drawer_of(source, |drawer, progs| {
         let f = function(progs, b"f");
         let mut pools = drawer.pools(f);
+        let field = |name: &[u8]| Name {
+            kind: NameKind::Field,
+            name: name.to_vec(),
+        };
+        let parm = Name {
+            kind: NameKind::Parm,
+            name: b"fx".to_vec(),
+        };
         pools.pairs = vec![
-            (b"fx".to_vec(), b"owner".to_vec()),
-            (b"fx".to_vec(), b"fy".to_vec()),
+            (field(b"fx"), field(b"owner")),
+            (field(b"fx"), field(b"fy")),
         ];
+        let parm_pair = (parm, field(b"fz"));
         let mut passed = false;
         for round in 0..256 {
             let c = drawer.draw(&mut Rng::new(b"f", round), (f, &pools), round);
@@ -1588,6 +1625,7 @@ fn a_pair_passes_values_only_between_one_type() {
                 if name == b"owner" {
                     assert!(matches!(draw, Draw::Entity(_)), "round {round}: {draw:?}");
                 }
+
                 if name == b"fy"
                     && c.fields
                         .iter()
@@ -1598,6 +1636,16 @@ fn a_pair_passes_values_only_between_one_type() {
             }
         }
         assert!(passed, "a float pair passes its value");
+        // A pair of a parameter and a field draws exactly what no pair does.
+        let mut crossed = drawer.pools(f);
+        crossed.pairs = vec![(parm_pair.0.clone(), parm_pair.1.clone())];
+        let mut none = drawer.pools(f);
+        none.pairs = Vec::new();
+        for round in 0..64 {
+            let a = drawer.draw(&mut Rng::new(b"f", round), (f, &crossed), round);
+            let b = drawer.draw(&mut Rng::new(b"f", round), (f, &none), round);
+            assert_eq!(a.fields, b.fields, "round {round}");
+        }
     });
 }
 
@@ -1793,11 +1841,19 @@ fn debug_replay() {
         .unwrap();
     let our_index = ow.program.functions[fn_name.as_bytes()][0];
     let pools = drawer.pools(function);
-    let context = drawer.draw(
+    let mut context = drawer.draw(
         &mut Rng::new(fn_name.as_bytes(), round),
         (function, &pools),
         round,
     );
+    // DIFF-12.24: an accessor's index call, at round cap + position, takes its index.
+    if let Some(index) = std::env::var("INDEX")
+        .ok()
+        .and_then(|i| i.parse::<f32>().ok())
+        && let Some(first) = context.parms.first_mut()
+    {
+        *first = Draw::Float(index);
+    }
     eprintln!(
         "self {} other {} server {:?}",
         context.self_edict, context.other_edict, context.server

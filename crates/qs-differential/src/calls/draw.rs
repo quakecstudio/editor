@@ -132,17 +132,32 @@ pub(super) struct Pools {
 /// The compared values of a function's statements, by name (DIFF-12.22).
 type ComparedByName = BTreeMap<Vec<u8>, Compared>;
 /// The pairs of names a function's statements compare with each other (DIFF-12.22).
-type Pairs = Vec<(Vec<u8>, Vec<u8>)>;
+type Pairs = Vec<(Name, Name)>;
+
+/// What a compared name names (DIFF-12.28): a field, a variable or a parameter, which may share
+/// one spelling.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum NameKind {
+    /// A field a `LOAD` read.
+    Field,
+    /// A global variable.
+    Variable,
+    /// A parameter of the called function.
+    Parm,
+}
+
+/// A compared name and what it names (DIFF-12.22, DIFF-12.28).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct Name {
+    pub(super) kind: NameKind,
+    pub(super) name: Vec<u8>,
+}
 
 /// The entity system globals every call sets itself, `self`, `other` and `world`
 /// (DIFF-12.2), which DIFF-12.27 leaves out of the variables.
 fn is_entity_system_global(name: &[u8]) -> bool {
     matches!(name, b"self" | b"other" | b"world")
 }
-
-/// The precache builtins' numbers (BUILTIN-10): a function calling one is a spawn function
-/// (DIFF-12.25).
-const PRECACHE_BUILTINS: [i32; 6] = [19, 20, 68, 75, 76, 77];
 
 /// The function `statement` calls, when it is a `CALL` of a function global.
 fn called_function(progs: &Progs<'_>, statement: &Statement) -> Option<Function> {
@@ -166,40 +181,53 @@ fn called_function(progs: &Progs<'_>, statement: &Statement) -> Option<Function>
     progs.functions().get(index)
 }
 
-/// Whether `function` is a precache builtin: `precache_sound` (19), `precache_model` (20),
-/// `precache_file` (68) or their `2` forms (75, 76, 77) (DIFF-12.25).
+/// Whether `function` is a precache builtin, one the builtin table gives a `PF_precache_*`
+/// function (BUILTIN-5.1, BUILTIN-10): `precache_sound`, `precache_model`, `precache_file` and
+/// their `2` forms (DIFF-12.25).
 fn is_precache_builtin(function: Function) -> bool {
-    let number = function.first_statement.checked_neg().unwrap_or(0);
-    function.first_statement <= 0 && PRECACHE_BUILTINS.contains(&number)
+    function.first_statement < 0
+        && function
+            .first_statement
+            .checked_neg()
+            .and_then(|number| u32::try_from(number).ok())
+            .and_then(qc_builtins::table::lookup)
+            .is_some_and(|builtin| builtin.c_function.starts_with("PF_precache_"))
 }
 
 /// DIFF-12.25: the first statement of every QuakeC function that calls a precache builtin,
-/// itself or through the functions it calls, to any depth; `bodies` is [`bodies`]'s.
+/// itself or through the functions it calls, to any depth; `bodies` is [`bodies`]'s. Each
+/// body's calls are read once, into the callers of each function, which are walked from the
+/// functions that call a precache builtin.
 fn precaching(progs: &Progs<'_>, bodies: &BTreeMap<i32, i32>) -> BTreeSet<i32> {
     let statements = progs.statements();
-    let calls = |first: i32| {
-        let end = bodies.get(&first).copied().unwrap_or(first);
-        (first..end)
-            .filter_map(move |n| statements.get(usize::try_from(n).ok()?))
-            .filter_map(|s| called_function(progs, &s))
-    };
-    let mut set: BTreeSet<i32> = bodies
-        .keys()
-        .copied()
-        .filter(|&first| calls(first).any(is_precache_builtin))
-        .collect();
-    loop {
-        let more: Vec<i32> = bodies
-            .keys()
-            .copied()
-            .filter(|first| !set.contains(first))
-            .filter(|&first| calls(first).any(|f| set.contains(&f.first_statement)))
-            .collect();
-        if more.is_empty() {
-            return set;
+    let mut callers: BTreeMap<i32, Vec<i32>> = BTreeMap::new();
+    let mut set = BTreeSet::new();
+    let mut queue = Vec::new();
+    for (&first, &end) in bodies {
+        let calls = (first..end)
+            .filter_map(|n| statements.get(usize::try_from(n).ok()?))
+            .filter_map(|s| called_function(progs, &s));
+        for callee in calls {
+            if is_precache_builtin(callee) {
+                if set.insert(first) {
+                    queue.push(first);
+                }
+            } else {
+                callers
+                    .entry(callee.first_statement)
+                    .or_default()
+                    .push(first);
+            }
         }
-        set.extend(more);
     }
+    while let Some(callee) = queue.pop() {
+        for &caller in callers.get(&callee).map_or(&[][..], Vec::as_slice) {
+            if set.insert(caller) {
+                queue.push(caller);
+            }
+        }
+    }
+    set
 }
 
 /// The most indexes an accessor is called with (DIFF-12.24): past this an array is larger
@@ -246,10 +274,10 @@ impl Compared {
 /// What an operand of a statement is, for the compared values (DIFF-12.22).
 enum Operand {
     /// A field a `LOAD` read into the slot, a variable, or a parameter, by name.
-    Named(Vec<u8>),
+    Named(Name),
     /// A global whose value is 0 and which no `IMMEDIATE` names, `FALSE` or an uninitialised
     /// variable, by name: compared with as a name, and an ordering against it draws around 0.
-    Zero(Vec<u8>),
+    Zero(Name),
     /// A float constant, by its bits.
     Number(u32),
     /// A string constant.
@@ -259,8 +287,8 @@ enum Operand {
 }
 
 /// Records that `name` is compared with `other`: a constant among its values, a name a pair.
-fn record(compared: &mut ComparedByName, pairs: &mut Pairs, name: Vec<u8>, other: &Operand) {
-    let entry = compared.entry(name.clone()).or_default();
+fn record(compared: &mut ComparedByName, pairs: &mut Pairs, name: Name, other: &Operand) {
+    let entry = compared.entry(name.name.clone()).or_default();
     match other {
         Operand::Number(bits) => {
             entry.numbers.insert(*bits);
@@ -293,8 +321,8 @@ fn mine_compared(
 ) -> (ComparedByName, Pairs) {
     let mut compared = ComparedByName::new();
     let mut pairs = Pairs::new();
-    let mut loaded: BTreeMap<i32, Vec<u8>> = BTreeMap::new();
-    let operand = |loaded: &BTreeMap<i32, Vec<u8>>, slot: i32| -> Operand {
+    let mut loaded: BTreeMap<i32, Name> = BTreeMap::new();
+    let operand = |loaded: &BTreeMap<i32, Name>, slot: i32| -> Operand {
         if let Some(name) = loaded.get(&slot) {
             return Operand::Named(name.clone());
         }
@@ -306,19 +334,28 @@ fn mine_compared(
         };
         let name = names.get(&ofs);
         let immediate = name.is_some_and(|name| name == b"IMMEDIATE");
+        let kind = if parms.contains(&slot) {
+            NameKind::Parm
+        } else {
+            NameKind::Variable
+        };
+        let tagged = |name: &Vec<u8>| Name {
+            kind,
+            name: name.clone(),
+        };
         match types.get(&ofs) {
             Some(DefType::Known(Etype::Float)) => {
                 if parms.contains(&slot) {
-                    name.cloned().map_or(Operand::Other, Operand::Named)
+                    name.map(tagged).map_or(Operand::Other, Operand::Named)
                 } else if value.bits() == 0 && !immediate && ofs != 0 {
-                    name.cloned().map_or(Operand::Other, Operand::Zero)
+                    name.map(tagged).map_or(Operand::Other, Operand::Zero)
                 } else {
                     Operand::Number(value.bits())
                 }
             }
             Some(DefType::Known(Etype::String)) => {
                 if parms.contains(&slot) || (value.bits() == 0 && !immediate && ofs != 0) {
-                    name.cloned().map_or(Operand::Other, Operand::Named)
+                    name.map(tagged).map_or(Operand::Other, Operand::Named)
                 } else {
                     progs
                         .string(value.as_i32())
@@ -333,7 +370,7 @@ fn mine_compared(
                     && ofs != 0
                     && name.is_some_and(|name| !is_entity_system_global(name));
                 if parms.contains(&slot) || variable {
-                    name.cloned().map_or(Operand::Other, Operand::Named)
+                    name.map(tagged).map_or(Operand::Other, Operand::Named)
                 } else {
                     Operand::Other
                 }
@@ -359,7 +396,13 @@ fn mine_compared(
                     .and_then(|ofs| names.get(&ofs).cloned());
                 match field {
                     Some(name) => {
-                        loaded.insert(c, name);
+                        loaded.insert(
+                            c,
+                            Name {
+                                kind: NameKind::Field,
+                                name,
+                            },
+                        );
                     }
                     None => {
                         loaded.remove(&c);
@@ -423,7 +466,7 @@ fn mine_compared(
             }
             Opcode::If | Opcode::IfNot | Opcode::NotF | Opcode::NotS | Opcode::NotEnt => {
                 if let Operand::Named(name) | Operand::Zero(name) = operand(&loaded, a) {
-                    let entry = compared.entry(name).or_default();
+                    let entry = compared.entry(name.name).or_default();
                     entry.numbers.insert(0);
                     entry.numbers.insert(1.0_f32.to_bits());
                     entry.texts.insert(Vec::new());
@@ -440,7 +483,7 @@ fn mine_compared(
                         continue;
                     };
                     record(&mut compared, &mut pairs, name.clone(), other);
-                    compared.entry(name.clone()).or_default().world = true;
+                    compared.entry(name.name.clone()).or_default().world = true;
                 }
                 loaded.remove(&c);
             }
@@ -590,10 +633,14 @@ impl<'a, 'p> Drawer<'a, 'p> {
                 Some(Etype::Float | Etype::String | Etype::Entity)
             )
         };
-        let mut named_by: BTreeMap<u32, usize> = BTreeMap::new();
+        // A slot two definitions of one drawn type name, FTEQCC's merged constants, holds no
+        // variable; a definition of another type at the slot changes nothing.
+        let mut named_by: BTreeMap<(u32, Option<Etype>), usize> = BTreeMap::new();
         for def in progs.global_defs().iter() {
             if scalar(def.def_type()) {
-                let count = named_by.entry(def.ofs).or_default();
+                let count = named_by
+                    .entry((def.ofs, drawable(def.def_type())))
+                    .or_default();
                 *count = count.saturating_add(1);
             }
         }
@@ -602,8 +649,9 @@ impl<'a, 'p> Drawer<'a, 'p> {
             .globals
             .iter()
             .filter(|(name, def_type, ofs)| {
-                let alone = u32::try_from(*ofs)
-                    .is_ok_and(|ofs| ofs != 0 && named_by.get(&ofs).copied() == Some(1));
+                let alone = u32::try_from(*ofs).is_ok_and(|ofs| {
+                    ofs != 0 && named_by.get(&(ofs, drawable(*def_type))).copied() == Some(1)
+                });
                 scalar(*def_type)
                     && alone
                     && !is_entity_system_global(name)
@@ -693,6 +741,8 @@ impl<'a, 'p> Drawer<'a, 'p> {
         let index = function.parm_start;
         let end = self.body_end(function.first_statement);
         let statements = self.progs.statements();
+        // A constant as DIFF-12.22 reads one: a float slot whose value is not 0, or an
+        // immediate, whatever type the first definition at its slot has.
         let immediate = |slot: i32| {
             let ofs = u32::try_from(slot).ok()?;
             let named = self
@@ -700,10 +750,8 @@ impl<'a, 'p> Drawer<'a, 'p> {
                 .get(&ofs)
                 .is_some_and(|name| name == b"IMMEDIATE");
             let float = self.types.get(&ofs) == Some(&DefType::Known(Etype::Float));
-            (named && float)
-                .then(|| self.progs.globals().get(usize::try_from(slot).ok()?))
-                .flatten()
-                .map(|value| f32::from_bits(value.bits()))
+            let value = self.progs.globals().get(usize::try_from(slot).ok()?)?;
+            (named || (float && value.bits() != 0)).then(|| f32::from_bits(value.bits()))
         };
         let largest = (function.first_statement..end)
             .filter_map(|n| statements.get(usize::try_from(n).ok()?))
@@ -892,37 +940,47 @@ impl<'a, 'p> Drawer<'a, 'p> {
                     globals.push((name.clone(), draw));
                 }
             }
-            // DIFF-12.22: a name compared with another takes its value one time in two.
+            // DIFF-12.22: a name compared with another takes its value one time in two;
+            // DIFF-12.28: only between two fields or two variables of one drawn type, so a
+            // parameter that shares a field's name passes nothing to the field.
+            let same = |a: Option<&DefType>, b: Option<&DefType>| {
+                a.and_then(|t| drawable(*t)).is_some()
+                    && a.and_then(|t| drawable(*t)) == b.and_then(|t| drawable(*t))
+            };
             for (first, second) in &own.pairs {
-                if rng.below(2) != 0 {
+                if first.kind != second.kind || rng.below(2) != 0 {
                     continue;
                 }
-                let found: Vec<(usize, Draw)> = fields
-                    .iter()
-                    .filter(|(_, name, _)| name == first)
-                    .map(|(edict, _, draw)| (*edict, draw.clone()))
-                    .collect();
-                // DIFF-12.28: only between names of one type, so a parameter that shares a
-                // field's name passes no entity to a string field.
-                let same = |a: Option<&DefType>, b: Option<&DefType>| {
-                    a.and_then(|t| drawable(*t)).is_some()
-                        && a.and_then(|t| drawable(*t)) == b.and_then(|t| drawable(*t))
-                };
-                for (edict, draw) in found {
-                    if same(self.fields.get(first), self.fields.get(second)) {
-                        fields.push((edict, second.clone(), draw));
+                let kind = first.kind;
+                let (first, second) = (&first.name, &second.name);
+                match kind {
+                    NameKind::Field if same(self.fields.get(first), self.fields.get(second)) => {
+                        let found: Vec<(usize, Draw)> = fields
+                            .iter()
+                            .filter(|(_, name, _)| name == first)
+                            .map(|(edict, _, draw)| (*edict, draw.clone()))
+                            .collect();
+                        for (edict, draw) in found {
+                            fields.push((edict, second.clone(), draw));
+                        }
                     }
-                }
-                if let Some((_, draw)) = globals.iter().rev().find(|(name, _)| name == first)
-                    && same(self.variables.get(first), self.variables.get(second))
-                {
-                    globals.push((second.clone(), draw.clone()));
+                    NameKind::Variable
+                        if same(self.variables.get(first), self.variables.get(second)) =>
+                    {
+                        if let Some((_, draw)) =
+                            globals.iter().rev().find(|(name, _)| name == first)
+                        {
+                            globals.push((second.clone(), draw.clone()));
+                        }
+                    }
+                    NameKind::Field | NameKind::Variable | NameKind::Parm => {}
                 }
             }
         }
         // DIFF-12.25: a function that precaches runs while the server loads, as the game
-        // only ever runs it.
-        let server = if round % 8 == 7 || own.precaches {
+        // runs it, but for every eighth round, which runs it with the server active.
+        let eighth = round % 8 == 7;
+        let server = if eighth != own.precaches {
             ServerState::Loading
         } else {
             ServerState::Active
