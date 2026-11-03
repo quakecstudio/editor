@@ -17,7 +17,7 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
 use crate::check::fold::{Folded, fold};
-use crate::check::opcodes::{Assoc, Opcode, row};
+use crate::check::opcodes::{Opcode, row};
 use crate::check::{Constness, Sym, Value};
 use crate::ty::Type;
 
@@ -43,9 +43,10 @@ enum Emulation {
     /// on their high words, each cast to `int`, joined by the second (FTEF-27.13).
     Words(Op, Op),
     /// `a % b` as `a - b * (a / b)`: the division, the floor (`d | d`) for a float one, the
-    /// product of `b` and the quotient and the difference from `a`, each emitted in turn
-    /// (FTEF-27.4).
-    Remainder(&'static [Op]),
+    /// product of `b` and the quotient and the difference from `a`, each emitted in turn, when
+    /// the program defines no function of the name given (`QCC_PR_EmulationFunc`), which is
+    /// otherwise called (FTEF-27.4).
+    Remainder(&'static str, &'static [Op]),
     /// `return QCC_PR_StatementFlags(OTHER, a, b, ...)`: this opcode instead, folded, emitted or
     /// emulated in turn.
     Instead(Op),
@@ -147,15 +148,14 @@ impl Checker<'_> {
             return result;
         };
         let result = self.lowered(op, row, lhs, rhs, result);
+        if !row.makes_value() {
+            return result;
+        }
         let words = match row.types[2].etype() {
-            Etype::Void => return result,
             Etype::Vector => 3,
             Etype::Int64 | Etype::Uint64 | Etype::Double => 2,
             _ => 1,
         };
-        if row.assoc == Assoc::Right {
-            return result;
-        }
         let temp = Some(self.env.temps().take(words));
         self.last_temp = temp;
         Value { temp, ..result }
@@ -164,14 +164,7 @@ impl Checker<'_> {
     /// The statement `op` of `lhs` and `rhs` added to the fragment being lowered, when there is
     /// one: an operand its row reads that the fragment cannot name means it holds the
     /// operator no longer. `result` is given the statement's value as its operand.
-    fn lowered(
-        &mut self,
-        op: Op,
-        row: &Opcode,
-        lhs: &Value,
-        rhs: &Value,
-        result: Value,
-    ) -> Value {
+    fn lowered(&mut self, op: Op, row: &Opcode, lhs: &Value, rhs: &Value, result: Value) -> Value {
         let Some(builder) = &mut self.fragment else {
             return result;
         };
@@ -181,18 +174,13 @@ impl Checker<'_> {
                 .is_some_and(|t| t.etype() != Etype::Void)
                 .then(|| value.operand())
         };
-        let (a, b) = (reads(lhs, 0), reads(rhs, 1));
-        if a == Some(None) || b == Some(None) {
-            builder.give_up();
-            return result;
-        }
-        let makes =
-            row.assoc != Assoc::Right && row.types.get(2).is_some_and(|t| t.etype() != Etype::Void);
-        let Ok(number) = u16::try_from(op.number()) else {
-            builder.give_up();
-            return result;
+        let ir = match u16::try_from(op.number()) {
+            Ok(number) => builder.push(number, [reads(lhs, 0), reads(rhs, 1)], row.makes_value()),
+            Err(_) => {
+                builder.give_up();
+                None
+            }
         };
-        let ir = builder.push(number, a.flatten(), b.flatten(), makes);
         Value { ir, ..result }
     }
 
@@ -240,7 +228,7 @@ impl Checker<'_> {
             Emulation::ConvertRight(..)
                 | Emulation::ConvertLeft(..)
                 | Emulation::Expand(_)
-                | Emulation::Remainder(_)
+                | Emulation::Remainder(..)
                 | Emulation::Instead(_)
                 | Emulation::Swapped(_)
         ) && let Some(builder) = &mut self.fragment
@@ -290,7 +278,14 @@ impl Checker<'_> {
                 let high = self.emit(compare, &lhs, &rhs, span)?;
                 self.emit(join, &low, &high, span)
             }
-            Emulation::Remainder(steps) => {
+            Emulation::Remainder(helper, steps) => {
+                // The call of the helper is not held by the intermediate layer yet.
+                if self.env.defines(helper) {
+                    if let Some(builder) = &mut self.fragment {
+                        builder.give_up();
+                    }
+                    return Ok(result);
+                }
                 let &[div, ref rest @ .., mul, sub] = steps else {
                     return Ok(result);
                 };
@@ -814,11 +809,11 @@ const fn emulation(op: Op) -> Emulation {
         Op::PowI => Helper(&["pow", "powf"], "int*^int"),
         Op::PowFi => Helper(&["pow", "powf"], "float*^int"),
         Op::PowIf => Helper(&["pow", "powf"], "int*^float"),
-        Op::ModF => Remainder(&[Op::DivF, Op::BitorF, Op::MulF, Op::SubF]),
-        Op::ModI => Remainder(&[Op::DivI, Op::MulI, Op::SubI]),
-        Op::ModU => Remainder(&[Op::DivU, Op::MulU, Op::SubU]),
-        Op::ModFi => Remainder(&[Op::DivFi, Op::BitorF, Op::MulIf, Op::SubF]),
-        Op::ModIf => Remainder(&[Op::DivIf, Op::BitorF, Op::MulF, Op::SubIf]),
+        Op::ModF => Remainder("mod", &[Op::DivF, Op::BitorF, Op::MulF, Op::SubF]),
+        Op::ModI => Remainder("ModInt", &[Op::DivI, Op::MulI, Op::SubI]),
+        Op::ModU => Remainder("ModInt", &[Op::DivU, Op::MulU, Op::SubU]),
+        Op::ModFi => Remainder("mod", &[Op::DivFi, Op::BitorF, Op::MulIf, Op::SubF]),
+        Op::ModIf => Remainder("mod", &[Op::DivIf, Op::BitorF, Op::MulF, Op::SubIf]),
         // `(a & ~b) | (b & ~a)`.
         Op::BitxorF => Expand(&[
             Op::BitnotF,
