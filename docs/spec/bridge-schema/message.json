@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/message.json",
+  "title": "The JSON-RPC 2.0 envelope of every message (BRIDGE-1.4)",
+  "type": "object",
+  "properties": {
+    "jsonrpc": {
+      "const": "2.0"
+    },
+    "id": {
+      "type": [
+        "integer",
+        "string",
+        "null"
+      ],
+      "description": "Null only in a response to a request whose id could not be read (JSON-RPC 2.0, section 5)"
+    },
+    "method": {
+      "type": "string"
+    },
+    "params": {
+      "type": "object"
+    },
+    "result": {},
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "data": {}
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    }
+  },
+  "required": [
+    "jsonrpc"
+  ],
+  "oneOf": [
+    {
+      "required": [
+        "method",
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": [
+            "integer",
+            "string"
+          ]
+        }
+      },
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "result"
+            ]
+          },
+          {
+            "required": [
+              "error"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "required": [
+        "method"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "id"
+            ]
+          },
+          {
+            "required": [
+              "result"
+            ]
+          },
+          {
+            "required": [
+              "error"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "required": [
+        "id",
+        "result"
+      ],
+      "not": {
+        "required": [
+          "method"
+        ]
+      }
+    },
+    {
+      "required": [
+        "id",
+        "error"
+      ],
+      "not": {
+        "required": [
+          "method"
+        ]
+      }
+    }
+  ]
+}

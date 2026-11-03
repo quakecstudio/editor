@@ -1,0 +1,23 @@
+{
+  "message": "NULL function",
+  "location": {
+    "function": "Ember_Touch",
+    "file": "src/weapons.qc",
+    "line": 35,
+    "statement": 1180
+  },
+  "stack": [
+    {
+      "index": 0,
+      "function": "Ember_Touch",
+      "file": "src/weapons.qc",
+      "line": 35
+    },
+    {
+      "index": 1,
+      "function": "SV_Impact",
+      "engine": true
+    }
+  ],
+  "time": 21.07
+}

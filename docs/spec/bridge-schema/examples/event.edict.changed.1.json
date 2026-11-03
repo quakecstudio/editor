@@ -1,0 +1,24 @@
+{
+  "edict": 212,
+  "fields": [
+    {
+      "name": "velocity",
+      "value": {
+        "type": "vector",
+        "value": [
+          480,
+          -18,
+          52
+        ]
+      }
+    },
+    {
+      "name": "bounces",
+      "value": {
+        "type": "float",
+        "value": 1
+      }
+    }
+  ],
+  "time": 21.07
+}

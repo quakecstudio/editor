@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/entity.spawn.result.json",
+  "title": "entity/spawn response result (BRIDGE-4)",
+  "type": "object",
+  "properties": {
+    "edict": {
+      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/edict"
+    }
+  },
+  "required": [
+    "edict"
+  ]
+}

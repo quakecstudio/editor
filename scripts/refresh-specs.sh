@@ -94,7 +94,7 @@ verify() {
 }
 
 # Fetch every row. A row whose fetch fails or returns something other than plain
-# text keeps its file and values, so one bad origin cannot damage the cache.
+# text or HTML keeps its file and values, so one bad origin cannot damage the cache.
 refresh() {
   local mode="$1" meta code ct path spec url sha bytes fetched new_sha new_bytes
   local updated=0 unchanged=0 rejected=0 today body="$tmp/body"
@@ -113,7 +113,7 @@ refresh() {
     fi
     code=$(printf '%s' "$meta" | cut -f1)
     ct=$(printf '%s' "$meta" | cut -f2 | cut -d';' -f1)
-    if [[ "$code" != "200" || "$ct" != "text/plain" || ! -s "$body" ]]; then
+    if [[ "$code" != "200" || ("$ct" != "text/plain" && "$ct" != "text/html") || ! -s "$body" ]]; then
       log "$path: rejected (HTTP $code, $ct)"
       rejected=$((rejected + 1))
       printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$path" "$spec" "$url" "$sha" "$bytes" "$fetched" >>"$tmp/manifest"

@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "1.0",
+    "client": {
+      "name": "QuakeC Studio",
+      "version": "2026.11.0"
+    }
+  }
+}

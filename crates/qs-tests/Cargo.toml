@@ -14,6 +14,7 @@ name = "it"
 path = "tests/it/main.rs"
 
 [dev-dependencies]
+jsonschema = { workspace = true }
 qc-builtins = { workspace = true }
 qc-diag = { workspace = true }
 qc-edict = { workspace = true }
@@ -25,6 +26,7 @@ qc-vm = { workspace = true }
 qs-bsp = { workspace = true }
 qs-map = { workspace = true }
 qs-paths = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

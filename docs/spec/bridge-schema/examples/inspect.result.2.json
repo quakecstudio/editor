@@ -1,0 +1,17 @@
+{
+  "stack": [
+    {
+      "index": 0,
+      "function": "Ember_Touch",
+      "file": "src/weapons.qc",
+      "line": 33,
+      "statement": 1177
+    },
+    {
+      "index": 1,
+      "function": "SV_Impact",
+      "engine": true
+    }
+  ],
+  "time": 21.07
+}

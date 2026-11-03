@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/entity.edit.result.json",
+  "title": "entity/edit response result (BRIDGE-4)",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "enum": [
+        "now",
+        "on_resume"
+      ]
+    }
+  },
+  "required": [
+    "applied"
+  ]
+}

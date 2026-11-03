@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/event.qc.error.json",
+  "title": "qc/error notification params (BRIDGE-3)",
+  "type": "object",
+  "properties": {
+    "message": {
+      "type": "string"
+    },
+    "location": {
+      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/location"
+    },
+    "stack": {
+      "type": "array",
+      "items": {
+        "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/stackFrame"
+      }
+    },
+    "time": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "message",
+    "time"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "protocolVersion": "1.0",
+    "host": {
+      "name": "preview-host",
+      "version": "2026.11.0"
+    },
+    "capabilities": {
+      "pause": true
+    }
+  }
+}

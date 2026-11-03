@@ -1,0 +1,20 @@
+{
+  "protocolVersion": "1.0",
+  "host": {
+    "name": "preview-host",
+    "version": "2026.11.0",
+    "engine": "qs-sim"
+  },
+  "capabilities": {
+    "pause": true,
+    "resume": true,
+    "field/set": true,
+    "pick": false,
+    "entity/spawn": false,
+    "entity/remove": false,
+    "entity/edit": false,
+    "player/spawn_at": true,
+    "screenshot": true,
+    "evaluate": true
+  }
+}

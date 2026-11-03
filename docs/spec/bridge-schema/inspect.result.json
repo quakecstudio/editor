@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/inspect.result.json",
+  "title": "inspect response result (BRIDGE-4)",
+  "type": "object",
+  "properties": {
+    "edict": {
+      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/edict"
+    },
+    "classname": {
+      "type": "string"
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/fieldValue"
+      }
+    },
+    "globals": {
+      "type": "array",
+      "items": {
+        "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/fieldValue"
+      }
+    },
+    "stack": {
+      "type": "array",
+      "items": {
+        "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/stackFrame"
+      }
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "edict": {
+            "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/edict"
+          },
+          "classname": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/vector"
+          }
+        },
+        "required": [
+          "edict",
+          "classname"
+        ]
+      }
+    },
+    "time": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "time"
+  ]
+}
