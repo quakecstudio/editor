@@ -10,7 +10,7 @@
 # design_doc_sha256 is the SHA-256 of docs/design/design-doc.md (LF line endings) that these
 # requirements were last reviewed against. plan/check.py fails when the design doc changes until
 # the requirements are reviewed and the new hash, which the failure prints, is recorded here.
-design_doc_sha256: 8c52ab7a9afd54e8f57e935674ac8af19d45de8d213040f239789295c6fa79cd
+design_doc_sha256: b13ac37e694293ff227f603dd9790daff617874fd5ead475a8b721415790ecc7
 
 sections:
   - id: GOAL
@@ -106,6 +106,8 @@ sections:
       - {id: COMP-7, kind: stated, text: "id qcc built from GPL source is the vanilla oracle in CI only"}
       - {id: COMP-8, kind: stated, text: "Extended-dialect conformance by compiling the rerelease and public mods and checking runtime behaviour"}
       - {id: COMP-9, kind: stated, text: "Published compatibility list of mods that compile and behave correctly"}
+      - {id: COMP-10, kind: stated, text: "Compatibility in tiers: defined behaviour and the quirks real mods depend on match the oracles; an oracle miscompile counts only when the harness proves it (ADR-0020)"}
+      - {id: COMP-11, kind: stated, text: "Code is generated through an intermediate layer whose passes allocate temporaries and lay out memory per dialect (ADR-0020)"}
 
   - id: ENG
     title: Engine bridge and live preview

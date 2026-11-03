@@ -1628,6 +1628,7 @@ issues:
   - MVP-2
   - OPEN-5
   depends:
+  - L-14
   - P5-05
   - P2-01
   - P2-02
@@ -3066,6 +3067,7 @@ issues:
   size: M
   reqs:
   - COMP-8
+  - COMP-10
   summary: |
     Found while working P2-150 (#639). The FTEQCC differential (DIFF-12) compares behaviour on real codebases only, whose calls reach about 90% of their statements from one set-up world, so a lowering no corpus uses, or uses only in code the calls do not reach, is never compared. A generator of well-formed QuakeC source, typed and in the dialect the semantic model accepts, makes many small programs that combine the language's forms (expressions of every operator and type, assignments and compound assignments, calls with defaults and varargs, arrays, structs, fields, vectors and their components, control flow, nested functions, wrap and accumulate); each is compiled by the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `-Tid`) and by qc-codegen, and run through the DIFF-12 call comparison. The existing generator, `crates/qs-differential/src/generate.rs`, builds progs for the VM fuzz target (FND-10), not source, so this is a new source generator. Real code is the second input: each function of each corpus codebase (corpus/manifest.toml, fetched at its pinned commit and checksum with its license recorded, never committed) is cut out with the declarations it depends on into a program of its own and compared the same way with more rounds than a whole-codebase run gives one function, reaching the code those runs leave unexecuted; and the corpus is widened with further public QuakeC projects that FTEQCC compiles, each added through the manifest's license and checksum checks.
   depends:
@@ -3075,10 +3077,12 @@ issues:
   - 'xtask: cargo xtask compiler-diff --generated <count> [--seed <n>] compiles each program with the pinned FTEQCC and qc-codegen and holds it to DIFF-12.5''s comparison, printing the seed and source of each divergence; a short run in PR CI and a long one in the nightly'
   - 'xtask: cargo xtask compiler-diff --functions <codebase>... cuts each function of a corpus codebase into a program with the declarations it depends on and compares it the same way, printing the function and codebase of each divergence'
   - 'corpus/manifest.toml: further public QuakeC projects FTEQCC compiles, each with its license evidence and checksums (LIC-7), and their rows in the results table'
+  - 'xtask: the oracle-defect proof of ADR-0020 tier 3, with its statement in docs/spec/differential.md: a divergence is reported as an FTEQCC defect only when the harness shows FTEQCC''s progs reading a global that a statement unrelated to the value wrote (as generated program 555 of seed 1 reads the array index a `LOAD_V` into its one-word `ternary` local overwrote); every other divergence fails the run'
   acceptance:
-  - 'A run of 10,000 generated programs from a fixed seed finds no divergence, every form DIFF-13 names appearing in at least 100 of them'
+  - 'A run of 10,000 generated programs from a fixed seed finds no divergence but the FTEQCC defects the harness proves (ADR-0020), every form DIFF-13 names appearing in at least 100 of them'
   - 'Every function of every corpus codebase FTEQCC compiles, run on its own, finds no divergence, and the statements executed across the per-function runs reach at least 98% of each codebase'
-  - 'Each divergence a run finds is fixed in qc-codegen or qc-sema with a citing test, and its program kept as a regression case'
+  - 'Each divergence a run finds is fixed in qc-codegen or qc-sema with a citing test, or proved an FTEQCC defect by the harness, and its program kept as a regression case'
+  - 'The proof rejects a divergence that is not an oracle defect: a mutant of qc-codegen that changes a value is still reported as a divergence'
   - 'A deliberately broken lowering (a mutant) is caught by the short PR run'
   verify:
   - cargo xtask compiler-diff --generated 10000 --seed 1
@@ -3237,6 +3241,35 @@ issues:
   - 'Every `equivalent_mutants` key under `[crates.qc-builtins]` names a mutant cargo-mutants still produces on the current code, and the measured mutation score is at or above the recorded minimum'
   verify:
   - cargo xtask ratchet
+- key: L-14
+  title: Generate code through an intermediate layer with back-end passes
+  labels:
+  - L4-bridges
+  - area:compiler
+  - type:feature
+  size: L
+  reqs:
+  - COMP-3
+  - COMP-5
+  - COMP-6
+  - COMP-11
+  summary: |
+    ADR-0020; moved from the post-MVP backlog to Phase 2 by Justin on 2026-11-03, to clean up the boundary between the semantic model and the code generator next. qc-codegen walks each file's syntax tree and emits statements as it goes, works out types again rather than reading the semantic model's `TypedBody` per function, and carries FTEQCC's behaviour as dialect branches through `compile.rs`. This issue lowers each checked body into an intermediate layer whose values and their lifetimes are explicit, and moves temporary allocation and memory layout into back-end passes chosen by each dialect's profile, where optimizations (L-04), an FTEQCC-exact allocation mode if a mod ever needs one, and GMQCC's code generation can be added as passes.
+  depends:
+  - P2-07
+  - P2-08
+  deliverable:
+  - 'crates/qc-codegen: an intermediate layer lowered from the semantic model''s typed bodies, with explicit values, their lifetimes and the statements that read and write them, and the progs written from it'
+  - 'crates/qc-codegen: temporary allocation and the layout of locals and temporaries as passes over the layer, selected by the dialect profile, each pass with its spec statements in docs/spec/'
+  - 'docs/design/: the back end''s design (the layer, its passes and how a dialect profile chooses them), beside docs/design/semantic-model.md'
+  acceptance:
+  - 'The vanilla and FTEQCC differentials (DIFF-12, DIFF-13) and the corpus runs find no divergence beyond the oracle defects ADR-0020 lets the harness prove, before and after the change'
+  - 'qc-codegen reads each function''s types from the semantic model''s typed body, and no type is worked out a second time in the code generator'
+  - 'A test per pass shows its effect on the layer for a program of its own'
+  verify:
+  - cargo xtask compiler-diff --fast
+  - cargo xtask compiler-diff --generated 10000 --seed 1
+  - cargo test -p qc-codegen
 - key: P2-158
   title: "Report a #define body lexical error at its use, not the stored body, so repeated uses do not collide"
   labels:

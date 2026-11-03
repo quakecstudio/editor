@@ -788,8 +788,9 @@ groups:
     - MVP-3
     depends:
     - P2-08
+    - L-14
     deliverable:
-    - Optimizations behind --opt flags
+    - Optimizations behind --opt flags, as passes over the intermediate layer of L-14
     acceptance:
     - No divergence in the differential suite with each flag on
     verify:
