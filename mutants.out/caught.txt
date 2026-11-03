@@ -1,6 +1,0 @@
-crates/qc-sema/src/check/mod.rs:685:9: replace TypedBody::opcode_at -> Option<u16> with None
-crates/qc-sema/src/check/mod.rs:685:9: replace TypedBody::opcode_at -> Option<u16> with Some(0)
-crates/qc-sema/src/check/mod.rs:685:9: replace TypedBody::opcode_at -> Option<u16> with Some(1)
-crates/qc-sema/src/check/expr.rs:112:9: replace Checker<'e>::finish -> TypedBody with Default::default()
-crates/qc-sema/src/check/expr.rs:365:9: replace Checker<'e>::operator_at -> Result<Option<Value>, Fatal> with Ok(None)
-crates/qc-sema/src/check/vanilla.rs:108:5: replace check_body -> TypedBody with Default::default()
