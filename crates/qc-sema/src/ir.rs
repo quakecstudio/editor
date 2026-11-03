@@ -57,11 +57,16 @@ pub struct Statement {
     pub makes: bool,
 }
 
-/// The statements a construct lowers to, in emission order, and the operand its value is.
+/// The statements a construct lowers to, in emission order, the immediates its lowering made,
+/// and the operand its value is.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Fragment {
     /// The statements.
     pub statements: Vec<Statement>,
+    /// The immediates the lowering made, in order: a constant an emulation names
+    /// (`QCC_MakeFloatConst`) and each folded value, which FTEQCC makes a global of whether or
+    /// not a statement reads it (FTEF-26.2).
+    pub immediates: Vec<Immediate>,
     /// The construct's value: an input, a temporary a statement made, or a constant.
     pub value: Option<Operand>,
 }
@@ -89,6 +94,7 @@ impl Fragments {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Builder {
     statements: Vec<Statement>,
+    immediates: Vec<Immediate>,
     held: bool,
 }
 
@@ -97,6 +103,7 @@ impl Builder {
     pub(crate) const fn new() -> Self {
         Self {
             statements: Vec::new(),
+            immediates: Vec::new(),
             held: true,
         }
     }
@@ -125,6 +132,11 @@ impl Builder {
         index.filter(|_| makes).map(Operand::Temp)
     }
 
+    /// Records an immediate the lowering made.
+    pub(crate) fn made(&mut self, immediate: Immediate) {
+        self.immediates.push(immediate);
+    }
+
     /// Marks the fragment as one the layer does not hold.
     pub(crate) const fn give_up(&mut self) {
         self.held = false;
@@ -134,6 +146,7 @@ impl Builder {
     pub(crate) fn finish(self, value: Option<Operand>) -> Option<Fragment> {
         self.held.then_some(Fragment {
             statements: self.statements,
+            immediates: self.immediates,
             value,
         })
     }
@@ -176,6 +189,7 @@ mod tests {
                         makes: false
                     },
                 ],
+                immediates: Vec::new(),
                 value: Some(Operand::Temp(0)),
             })
         );

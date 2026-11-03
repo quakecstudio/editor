@@ -47,6 +47,10 @@ enum Emulation {
     /// the program defines no function of the name given (`QCC_PR_EmulationFunc`), which is
     /// otherwise called (FTEF-27.4).
     Remainder(&'static str, &'static [Op]),
+    /// `v / f` as `v * (1 / f)` (FTE-19.9): the first opcode of the float constant 1
+    /// (`QCC_MakeFloatConst(1)`) and the right operand, then the second of the left operand and
+    /// that quotient.
+    Reciprocal(Op, Op),
     /// `return QCC_PR_StatementFlags(OTHER, a, b, ...)`: this opcode instead, folded, emitted or
     /// emulated in turn.
     Instead(Op),
@@ -115,7 +119,11 @@ impl Checker<'_> {
             self.env.report(notice.code, span, notice.message);
         }
         match folded {
-            Some(Folded::Constant(constant)) => return Ok(Value::constant(constant)),
+            Some(Folded::Constant(constant)) => {
+                // FTEF-26.2: a folded value is an immediate FTEQCC makes (`QCC_MakeFloatConst`).
+                self.made(constant);
+                return Ok(Value::constant(constant));
+            }
             Some(Folded::Left) => return Ok(lhs.clone()),
             Some(Folded::Right) => return Ok(rhs.clone()),
             None => {}
@@ -159,6 +167,18 @@ impl Checker<'_> {
         let temp = Some(self.env.temps().take(words));
         self.last_temp = temp;
         Value { temp, ..result }
+    }
+
+    /// Records `constant` as an immediate the fragment being lowered made, when there is one; a
+    /// kind of constant the layer does not hold leaves the fragment unheld.
+    fn made(&mut self, constant: Constant) {
+        let Some(builder) = &mut self.fragment else {
+            return;
+        };
+        match constant.immediate() {
+            Some(immediate) => builder.made(immediate),
+            None => builder.give_up(),
+        }
     }
 
     /// The statement `op` of `lhs` and `rhs` added to the fragment being lowered, when there is
@@ -229,6 +249,7 @@ impl Checker<'_> {
                 | Emulation::ConvertLeft(..)
                 | Emulation::Expand(_)
                 | Emulation::Remainder(..)
+                | Emulation::Reciprocal(..)
                 | Emulation::Instead(_)
                 | Emulation::Swapped(_)
         ) && let Some(builder) = &mut self.fragment
@@ -295,6 +316,12 @@ impl Checker<'_> {
                 }
                 let product = self.emit(mul, rhs, &quotient, span)?;
                 self.emit(sub, lhs, &product, span)
+            }
+            Emulation::Reciprocal(div, then) => {
+                let one = Constant::float(1.0);
+                self.made(one);
+                let reciprocal = self.emit(div, &Value::constant(one), rhs, span)?;
+                self.emit(then, lhs, &reciprocal, span)
             }
             Emulation::Instead(other) => {
                 // `var_c.cast = type_uint;` (or `type_uint64`) after an unsigned operator's
@@ -783,8 +810,8 @@ impl Checker<'_> {
 )]
 const fn emulation(op: Op) -> Emulation {
     use Emulation::{
-        Conversion, ConvertLeft, ConvertRight, Emitted, Expand, Forced, Helper, Instead, Refuse,
-        Remainder, Simple, Special, Words,
+        Conversion, ConvertLeft, ConvertRight, Emitted, Expand, Forced, Helper, Instead,
+        Reciprocal, Refuse, Remainder, Simple, Special, Words,
     };
     if let Some(substitution) = substitution(op) {
         return substitution;
@@ -829,7 +856,7 @@ const fn emulation(op: Op) -> Emulation {
             Op::BitandI,
             Op::BitorI,
         ]),
-        Op::DivVf => Expand(&[Op::DivF, Op::MulVf]),
+        Op::DivVf => Reciprocal(Op::DivF, Op::MulVf),
         Op::CrossV | Op::SpaceshipF => Expand(&[Op::MulF, Op::SubF]),
         Op::ConvItof | Op::StoreIf | Op::ConvFtoi | Op::StoreFi | Op::ConvUf => Conversion,
         Op::ConvFu => Instead(Op::ConvFtoi),

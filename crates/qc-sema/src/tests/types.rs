@@ -270,10 +270,12 @@ fn a_checked_body_keeps_its_operators_opcodes() {
 // operands the operator's inputs, its value the statement's temporary
 // spec FTEF-26.2: an operator of two constants folds, to an immediate with no statement
 // spec FTEF-27.4: an emulated `%` is its emulation's statements
+// spec FTE-19.9: `v / f` is `v * (1 / f)`
 #[test]
 fn a_binary_operator_lowers_to_a_fragment() {
     use crate::ir::{Fragment, Immediate, ImmediateKind, Operand, Statement};
-    let source = "float a; vector v; void() t = { a = a + 1; v = v * a; a = 2 + 3; a = a % 2; };";
+    let source = "float a; vector v; void() t = { a = a + 1; v = v * a; a = 2 + 3; a = a % 2; \
+                  v = v / a; };";
     let index = super::fte_index_of(source);
     let t = index
         .defs
@@ -299,6 +301,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
             b: Some(b),
             makes: true,
         }],
+        immediates: Vec::new(),
         value: Some(Operand::Temp(0)),
     };
     assert_eq!(
@@ -315,8 +318,13 @@ fn a_binary_operator_lowers_to_a_fragment() {
         at("2 + 3", "+"),
         Some(&Fragment {
             statements: Vec::new(),
+            immediates: vec![Immediate {
+                kind: ImmediateKind::Float,
+                words: [5.0_f32.to_bits(), 0, 0],
+            }],
             value: Some(float(5.0)),
-        })
+        }),
+        "the folded value is an immediate the lowering made"
     );
     // FTEF-27.4: with no `mod` function, `a % b` is `a - b * (a / b)`, the quotient floored by
     // `BITOR` of itself, each step a statement of the fragment.
@@ -335,9 +343,26 @@ fn a_binary_operator_lowers_to_a_fragment() {
                 made(1, Operand::Input(1), Operand::Temp(1)),
                 made(8, Operand::Input(0), Operand::Temp(2)),
             ],
+            immediates: Vec::new(),
             value: Some(Operand::Temp(3)),
         }),
         "DIV_F, BITOR, MUL_F, SUB_F"
+    );
+    // FTE-19.9: `v / f` is `v * (1 / f)`, the constant 1 an immediate the lowering made.
+    assert_eq!(
+        at("v / a", "/"),
+        Some(&Fragment {
+            statements: vec![
+                made(5, float(1.0), Operand::Input(1)),
+                made(4, Operand::Input(0), Operand::Temp(0)),
+            ],
+            immediates: vec![Immediate {
+                kind: ImmediateKind::Float,
+                words: [1.0_f32.to_bits(), 0, 0],
+            }],
+            value: Some(Operand::Temp(1)),
+        }),
+        "DIV_F of 1, MUL_VF"
     );
 }
 
@@ -358,5 +383,32 @@ fn a_helper_call_is_no_fragment_yet() {
     assert_eq!(
         index.bodies[&t].fragment_at(Span::new(start, start + 1)),
         None
+    );
+}
+
+// spec FTEF-26.13: a word of a constant vector is a constant, so an operator of it and a
+// constant folds, to an immediate with no statement
+#[test]
+fn a_constant_vectors_component_is_a_constant() {
+    use crate::ir::{Immediate, ImmediateKind, Operand};
+    let source = "float a; void() t = { a = ('7 16384 3').y & 1; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let start = source.find(" & 1").unwrap() + 1;
+    let fragment = index.bodies[&t]
+        .fragment_at(Span::new(start, start + 1))
+        .unwrap();
+    assert!(fragment.statements.is_empty(), "{fragment:?}");
+    assert_eq!(
+        fragment.value,
+        Some(Operand::Immediate(Immediate {
+            kind: ImmediateKind::Float,
+            words: [0.0_f32.to_bits(), 0, 0],
+        }))
     );
 }

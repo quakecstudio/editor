@@ -43,7 +43,7 @@ const EMULATED: &[(Op, &str)] = &[
     (Op::IfnotS, "Special"),
     (Op::IfS, "Special"),
     (Op::NotI, "Special"),
-    (Op::DivVf, "Expand([DivF, MulVf])"),
+    (Op::DivVf, "Reciprocal(DivF, MulVf)"),
     (
         Op::BitxorI,
         "Expand([BitnotI, BitandI, BitnotI, BitandI, BitorI])",

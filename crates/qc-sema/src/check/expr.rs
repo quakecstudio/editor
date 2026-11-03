@@ -31,7 +31,7 @@ use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
 pub(super) struct Checker<'e> {
     pub(super) env: &'e mut dyn Env,
     types: HashMap<(usize, usize), Type>,
-    opcodes: HashMap<(usize, usize), u16>,
+    pub(super) opcodes: HashMap<(usize, usize), u16>,
     /// The binary operators' fragments lowered so far.
     fragments: ir::Fragments,
     /// The fragment of the binary operator being checked, if any.
@@ -371,6 +371,20 @@ impl<'e> Checker<'e> {
         lhs: &Value,
         rhs: &Value,
     ) -> Result<Option<Value>, Fatal> {
+        self.lowering(span, lhs, rhs, |checker, lhs, rhs| {
+            checker.operator_lowered(op, span, lhs, rhs)
+        })
+    }
+
+    /// `lower` of `lhs` and `rhs` tagged as the inputs of a fragment of the intermediate layer,
+    /// kept by `span` when the layer holds every step of it.
+    pub(super) fn lowering(
+        &mut self,
+        span: Span,
+        lhs: &Value,
+        rhs: &Value,
+        lower: impl FnOnce(&mut Self, &Value, &Value) -> Result<Option<Value>, Fatal>,
+    ) -> Result<Option<Value>, Fatal> {
         let lhs = Value {
             ir: Some(ir::Operand::Input(0)),
             ..lhs.clone()
@@ -380,7 +394,7 @@ impl<'e> Checker<'e> {
             ..rhs.clone()
         };
         let outer = self.fragment.replace(ir::Builder::new());
-        let checked = self.operator_lowered(op, span, &lhs, &rhs);
+        let checked = lower(self, &lhs, &rhs);
         let builder = std::mem::replace(&mut self.fragment, outer);
         let Ok(Some(value)) = checked else {
             return checked;
