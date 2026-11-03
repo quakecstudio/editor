@@ -304,7 +304,7 @@ The MVP is done when a modder can open the rerelease QuakeC, ask the agent for a
 **Out (later)**
 
 - GMQCC dialect, CSQC and MenuQC modules.
-- Compiler optimizations beyond constant folding.
+- Compiler optimizations behind `--opt` flags, constant folding among them.
 - Embedded game view, web build, and the map editor (Phases 5 to 7).
 
 ## Milestones

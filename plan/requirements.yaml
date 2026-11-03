@@ -10,7 +10,7 @@
 # design_doc_sha256 is the SHA-256 of docs/design/design-doc.md (LF line endings) that these
 # requirements were last reviewed against. plan/check.py fails when the design doc changes until
 # the requirements are reviewed and the new hash, which the failure prints, is recorded here.
-design_doc_sha256: b13ac37e694293ff227f603dd9790daff617874fd5ead475a8b721415790ecc7
+design_doc_sha256: 94ca6524c77540c9e71b5b675291acf79955cfa188ad81ce812e90e696d1051a
 
 sections:
   - id: GOAL

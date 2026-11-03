@@ -777,7 +777,7 @@ groups:
     verify:
     - Conformance suite
   - key: L-04
-    title: Dead-code removal and string and global deduplication
+    title: Constant folding, dead-code removal and string and global deduplication
     labels:
     - L4-bridges
     - area:compiler
@@ -790,7 +790,7 @@ groups:
     - P2-08
     - L-14
     deliverable:
-    - Optimizations behind --opt flags, as passes over the intermediate layer of L-14
+    - Optimizations behind --opt flags, as passes over the intermediate layer of L-14, constant folding beyond FTEQCC's (FTEF-26.2) among them, replacing the --opt fold removed from P2-08
     acceptance:
     - No divergence in the differential suite with each flag on
     verify:
