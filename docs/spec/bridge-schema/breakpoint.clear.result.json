@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/breakpoint.clear.result.json",
+  "title": "breakpoint/clear response result (BRIDGE-4)",
+  "type": "object",
+  "properties": {}
+}

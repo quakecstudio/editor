@@ -3,7 +3,7 @@
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_cmds.c, PF_makevectors, PF_normalize, PF_vlen, PF_vectoyaw, PF_vectoangles, PF_random, PF_rint, PF_floor, PF_ceil, PF_fabs, PF_ftos, PF_vtos
-// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/mathlib.c, AngleVectors, anglemod
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/mathlib.c, AngleVectors, anglemod, VectorNormalize
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/common.c, Q_atof
 
 //! The pure math and string builtins, exact without an engine (BUILTIN-4.1).
@@ -63,6 +63,20 @@ pub fn makevectors(ang: [f32; 3]) -> ([f32; 3], [f32; 3], [f32; 3]) {
 pub fn vlen(v: [f32; 3]) -> f32 {
     let sum = (v[0] * v[0]) + (v[1] * v[1]) + (v[2] * v[2]);
     double_to_float(f64::from(sum).sqrt())
+}
+
+/// `VectorNormalize` (`mathlib.c`): the vector scaled to length 1 and its length, with the
+/// sum of squares and the reciprocal in single precision; a vector of length 0 is returned as
+/// it is. The engine's own normalisation, as `SND_Spatialize` (SND-3.2) and the client's
+/// movement use it; `normalize` is the builtin, which differs at length 0.
+#[must_use]
+pub fn vector_normalize(v: [f32; 3]) -> ([f32; 3], f32) {
+    let length = vlen(v);
+    if is_zero_f32(length) {
+        return (v, length);
+    }
+    let ilength = 1.0 / length;
+    ([v[0] * ilength, v[1] * ilength, v[2] * ilength], length)
 }
 
 /// `normalize(v)` (BUILTIN-6.3): `'0 0 0'` at length 0, else `(x,y,z) * (f32)(1/len)`.

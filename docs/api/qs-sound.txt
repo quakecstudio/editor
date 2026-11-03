@@ -1,0 +1,180 @@
+const qs_sound::mixer::Ambient::ALL
+const qs_sound::mixer::SND_AMBIENT_FADE
+const qs_sound::mixer::SND_AMBIENT_LEVEL
+const qs_sound::mixer::SND_AMBIENT_MIN_VOLUME
+const qs_sound::mixer::SND_BUFFER_FRAMES
+const qs_sound::mixer::SND_DEFAULT_VOLUME
+const qs_sound::mixer::SND_FIRST_STATIC
+const qs_sound::mixer::SND_MAX_CHANNELS
+const qs_sound::mixer::SND_MAX_DYNAMIC_CHANNELS
+const qs_sound::mixer::SND_MIXAHEAD
+const qs_sound::mixer::SND_NOMINAL_CLIP_DIST
+const qs_sound::mixer::SND_NUM_AMBIENTS
+const qs_sound::mixer::SND_ORACLE_SPEED
+const qs_sound::mixer::SND_PACKET_ATTENUATION
+const qs_sound::mixer::SND_PACKET_VOLUME
+const qs_sound::mixer::SND_PAINTBUFFER_SIZE
+const qs_sound::mixer::SND_STATIC_ATTENUATION_DIVISOR
+const qs_sound::music::RRE_MUSIC_DIR
+const qs_sound::music::RRE_MUSIC_EXTENSIONS
+const qs_sound::sfx::SND_MAX_NAME
+const qs_sound::sfx::SND_MAX_SFX
+enum qs_sound::mixer::Ambient
+enum qs_sound::mixer::ListenerLeaf
+enum qs_sound::mixer::LoopPaint
+enum qs_sound::sfx::Loaded
+enum qs_sound::sfx::SoundError
+enum qs_sound::sfx::Width
+field qs_sound::mixer::Channel.dist_mult
+field qs_sound::mixer::Channel.end
+field qs_sound::mixer::Channel.entchannel
+field qs_sound::mixer::Channel.entnum
+field qs_sound::mixer::Channel.leftvol
+field qs_sound::mixer::Channel.master_vol
+field qs_sound::mixer::Channel.origin
+field qs_sound::mixer::Channel.pos
+field qs_sound::mixer::Channel.rightvol
+field qs_sound::mixer::Channel.sfx
+field qs_sound::mixer::Listener.forward
+field qs_sound::mixer::Listener.origin
+field qs_sound::mixer::Listener.right
+field qs_sound::mixer::Listener.up
+field qs_sound::mixer::MixerSpec.buffer_frames
+field qs_sound::mixer::MixerSpec.settings
+field qs_sound::mixer::MixerSpec.speed
+field qs_sound::mixer::MixerSpec.stereo
+field qs_sound::mixer::MixerSpec.view_entity
+field qs_sound::mixer::Settings.ambient_fade
+field qs_sound::mixer::Settings.ambient_level
+field qs_sound::mixer::Settings.loop_paint
+field qs_sound::mixer::Settings.mixahead
+field qs_sound::mixer::Settings.nosound
+field qs_sound::mixer::Settings.volume
+field qs_sound::mixer::Start.attenuation
+field qs_sound::mixer::Start.entchannel
+field qs_sound::mixer::Start.entnum
+field qs_sound::mixer::Start.fvol
+field qs_sound::mixer::Start.origin
+field qs_sound::mixer::Start.sfx
+field qs_sound::music::Track.looping
+field qs_sound::music::Track.number
+fn qs_sound::mixer::Ambient::index
+fn qs_sound::mixer::Ambient::sound_name
+fn qs_sound::mixer::Mixer::channels
+fn qs_sound::mixer::Mixer::listener
+fn qs_sound::mixer::Mixer::local_sound
+fn qs_sound::mixer::Mixer::new
+fn qs_sound::mixer::Mixer::paint_channels
+fn qs_sound::mixer::Mixer::painted
+fn qs_sound::mixer::Mixer::precache_ambients
+fn qs_sound::mixer::Mixer::set_settings
+fn qs_sound::mixer::Mixer::settings
+fn qs_sound::mixer::Mixer::sound_time
+fn qs_sound::mixer::Mixer::speed
+fn qs_sound::mixer::Mixer::start_sound
+fn qs_sound::mixer::Mixer::static_sound
+fn qs_sound::mixer::Mixer::stop_all
+fn qs_sound::mixer::Mixer::stop_sound
+fn qs_sound::mixer::Mixer::take_messages
+fn qs_sound::mixer::Mixer::total_channels
+fn qs_sound::mixer::Mixer::update
+fn qs_sound::mixer::Random::rand
+fn qs_sound::music::track_files
+fn qs_sound::output::NullOutput::frames
+fn qs_sound::output::Output::write
+fn qs_sound::sfx::SfxId::index
+fn qs_sound::sfx::SoundData::length
+fn qs_sound::sfx::SoundData::loopstart
+fn qs_sound::sfx::SoundData::resample
+fn qs_sound::sfx::SoundData::sample_16
+fn qs_sound::sfx::SoundData::sample_8
+fn qs_sound::sfx::SoundData::width
+fn qs_sound::sfx::SoundTable::data
+fn qs_sound::sfx::SoundTable::find
+fn qs_sound::sfx::SoundTable::is_empty
+fn qs_sound::sfx::SoundTable::len
+fn qs_sound::sfx::SoundTable::load
+fn qs_sound::sfx::SoundTable::loaded
+fn qs_sound::sfx::SoundTable::name
+fn qs_sound::sfx::SoundTable::new
+fn qs_sound::sfx::SoundTable::precache
+fn qs_sound::sfx::SoundTable::speed
+impl qs_sound::mixer::Listener: Default
+impl qs_sound::mixer::MixerSpec: Default
+impl qs_sound::mixer::Settings: Default
+impl qs_sound::output::NullOutput: Output
+impl qs_sound::sfx::SoundError: fmt::Display
+impl qs_sound::sfx::SoundError: std::error::Error
+impl qs_sound::sfx::SoundTable: fmt::Debug
+struct qs_sound::mixer::Channel
+struct qs_sound::mixer::Listener
+struct qs_sound::mixer::Mixer
+struct qs_sound::mixer::MixerSpec
+struct qs_sound::mixer::Settings
+struct qs_sound::mixer::Start
+struct qs_sound::music::Track
+struct qs_sound::output::NullOutput
+struct qs_sound::sfx::SfxId
+struct qs_sound::sfx::SoundData
+struct qs_sound::sfx::SoundTable
+trait qs_sound::mixer::Random
+trait qs_sound::output::Output
+type qs_sound::sfx::Reader
+use qs_sound::Ambient = mixer::Ambient
+use qs_sound::Channel = mixer::Channel
+use qs_sound::Listener = mixer::Listener
+use qs_sound::ListenerLeaf = mixer::ListenerLeaf
+use qs_sound::Loaded = sfx::Loaded
+use qs_sound::LoopPaint = mixer::LoopPaint
+use qs_sound::Mixer = mixer::Mixer
+use qs_sound::MixerSpec = mixer::MixerSpec
+use qs_sound::NullOutput = output::NullOutput
+use qs_sound::Output = output::Output
+use qs_sound::RRE_MUSIC_DIR = music::RRE_MUSIC_DIR
+use qs_sound::RRE_MUSIC_EXTENSIONS = music::RRE_MUSIC_EXTENSIONS
+use qs_sound::Random = mixer::Random
+use qs_sound::Reader = sfx::Reader
+use qs_sound::SND_AMBIENT_FADE = mixer::SND_AMBIENT_FADE
+use qs_sound::SND_AMBIENT_LEVEL = mixer::SND_AMBIENT_LEVEL
+use qs_sound::SND_AMBIENT_MIN_VOLUME = mixer::SND_AMBIENT_MIN_VOLUME
+use qs_sound::SND_BUFFER_FRAMES = mixer::SND_BUFFER_FRAMES
+use qs_sound::SND_DEFAULT_VOLUME = mixer::SND_DEFAULT_VOLUME
+use qs_sound::SND_FIRST_STATIC = mixer::SND_FIRST_STATIC
+use qs_sound::SND_MAX_CHANNELS = mixer::SND_MAX_CHANNELS
+use qs_sound::SND_MAX_DYNAMIC_CHANNELS = mixer::SND_MAX_DYNAMIC_CHANNELS
+use qs_sound::SND_MAX_NAME = sfx::SND_MAX_NAME
+use qs_sound::SND_MAX_SFX = sfx::SND_MAX_SFX
+use qs_sound::SND_MIXAHEAD = mixer::SND_MIXAHEAD
+use qs_sound::SND_NOMINAL_CLIP_DIST = mixer::SND_NOMINAL_CLIP_DIST
+use qs_sound::SND_NUM_AMBIENTS = mixer::SND_NUM_AMBIENTS
+use qs_sound::SND_ORACLE_SPEED = mixer::SND_ORACLE_SPEED
+use qs_sound::SND_PACKET_ATTENUATION = mixer::SND_PACKET_ATTENUATION
+use qs_sound::SND_PACKET_VOLUME = mixer::SND_PACKET_VOLUME
+use qs_sound::SND_PAINTBUFFER_SIZE = mixer::SND_PAINTBUFFER_SIZE
+use qs_sound::SND_STATIC_ATTENUATION_DIVISOR = mixer::SND_STATIC_ATTENUATION_DIVISOR
+use qs_sound::Settings = mixer::Settings
+use qs_sound::SfxId = sfx::SfxId
+use qs_sound::SoundData = sfx::SoundData
+use qs_sound::SoundError = sfx::SoundError
+use qs_sound::SoundTable = sfx::SoundTable
+use qs_sound::Start = mixer::Start
+use qs_sound::Track = music::Track
+use qs_sound::Width = sfx::Width
+use qs_sound::track_files = music::track_files
+variant qs_sound::mixer::Ambient::Lava
+variant qs_sound::mixer::Ambient::Sky
+variant qs_sound::mixer::Ambient::Slime
+variant qs_sound::mixer::Ambient::Water
+variant qs_sound::mixer::ListenerLeaf::In
+variant qs_sound::mixer::ListenerLeaf::NoWorld
+variant qs_sound::mixer::ListenerLeaf::Outside
+variant qs_sound::mixer::LoopPaint::Fixed
+variant qs_sound::mixer::LoopPaint::Id
+variant qs_sound::sfx::Loaded::Data
+variant qs_sound::sfx::Loaded::Missing
+variant qs_sound::sfx::Loaded::Refused
+variant qs_sound::sfx::Loaded::Stereo
+variant qs_sound::sfx::SoundError::NameTooLong
+variant qs_sound::sfx::SoundError::OutOfSfx
+variant qs_sound::sfx::Width::Eight
+variant qs_sound::sfx::Width::Sixteen

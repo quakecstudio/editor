@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/entity.edit.params.json",
+  "title": "entity/edit request params (BRIDGE-4)",
+  "type": "object",
+  "properties": {
+    "edict": {
+      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/edict"
+    },
+    "keyvalues": {
+      "type": "array",
+      "items": {
+        "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/keyvalue"
+      }
+    }
+  },
+  "required": [
+    "edict",
+    "keyvalues"
+  ]
+}

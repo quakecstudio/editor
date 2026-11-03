@@ -111,6 +111,7 @@ Each section holds, in this order:
 
 | Prefix | File | What it covers | Issue |
 | --- | --- | --- | --- |
+| `BRIDGE` | [`bridge-protocol.md`](bridge-protocol.md) | The preview bridge protocol: the socket and LSP-style framing, JSON-RPC 2.0 envelope, initialize and capabilities, events, commands, typed values, versioning and error codes, with the JSON Schemas under `bridge-schema/` | [#89](https://github.com/quakecstudio/editor/issues/89) |
 | `BSP` | [`bsp.md`](bsp.md) | BSP29 maps: the header and every lump and field, what id's loader checks, visibility, lightmaps and hulls; the two BSP2 variants; `.lit` and `.ent` files; the FitzQuake lineage's loader, the default | [#142](https://github.com/quakecstudio/editor/issues/142) |
 | `BUILTIN` | [`builtins.md`](builtins.md) | Every vanilla builtin, numbers 1 to 78: prototype, arguments, result, effects on edicts, globals and the engine, failures, and how faithfully each can be mocked | [#28](https://github.com/quakecstudio/editor/issues/28) |
 | `CLIENT` | [`engine/client.md`](engine/client.md) | The client's side of the world: the entity slots and their two latest states, baselines and delta updates, the client data, server messages, interpolation between server frames, dynamic lights, temporary entities and beams, and the FitzQuake lineage's animation and movement interpolation | [#236](https://github.com/quakecstudio/editor/issues/236) |

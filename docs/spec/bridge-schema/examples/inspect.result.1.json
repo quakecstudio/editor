@@ -1,0 +1,32 @@
+{
+  "edict": 212,
+  "classname": "ember",
+  "fields": [
+    {
+      "name": "origin",
+      "value": {
+        "type": "vector",
+        "value": [
+          412,
+          -96,
+          88
+        ]
+      }
+    },
+    {
+      "name": "touch",
+      "value": {
+        "type": "function",
+        "value": "Ember_Touch"
+      }
+    },
+    {
+      "name": "owner",
+      "value": {
+        "type": "entity",
+        "value": 1
+      }
+    }
+  ],
+  "time": 21.07
+}

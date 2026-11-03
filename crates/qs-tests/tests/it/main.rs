@@ -2,6 +2,7 @@
 
 //! The single cross-crate integration test binary. Each area is a module.
 
+mod bridge_schema;
 mod builtins;
 mod deep_nesting;
 mod diagnostics_unified;

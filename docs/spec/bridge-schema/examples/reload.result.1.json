@@ -1,0 +1,11 @@
+{
+  "migrated": 3115,
+  "lost": [
+    {
+      "name": "ember_old",
+      "kind": "global",
+      "reason": "no global of that name in the new progs"
+    }
+  ],
+  "time": 21.07
+}

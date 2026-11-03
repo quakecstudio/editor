@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.org/spec/bridge-schema/breakpoint.set.params.json",
+  "title": "breakpoint/set request params (BRIDGE-4)",
+  "type": "object",
+  "properties": {
+    "file": {
+      "type": "string"
+    },
+    "line": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "file",
+    "line"
+  ]
+}
