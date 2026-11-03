@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://quakecstudio.org/spec/bridge-schema/field.set.result.json",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/field.set.result.json",
   "title": "field/set response result (BRIDGE-4)",
   "type": "object",
   "properties": {

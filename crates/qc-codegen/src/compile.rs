@@ -14,7 +14,7 @@
 //! (QC-16 to QC-19): an operator's operands select its opcode by their basic types, a call's
 //! arguments must have its parameters' types.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use qc_diag::{Code, Diagnostic, Span};
 use qc_progs::Function;
@@ -89,6 +89,11 @@ enum ValueKind {
     /// A definition read as another type of its basic type by a cast, with no statement
     /// (FTEF-30.6).
     Cast(ValueType),
+    /// A word of a call's vector or struct value, `(f()).y`, of the member's type: the alias
+    /// of `Return` read at `ofs - OFS_RETURN` words into wherever the alias is when a
+    /// statement reads it, the return global or the temporary a clobber copied it to
+    /// (FTE-9.6).
+    ReturnWord(AliasId, ValueType),
 }
 
 /// The index of an [`Alias`] in [`Compiler::aliases`].
@@ -230,9 +235,10 @@ pub(crate) struct Compiler<'a> {
     aliases: Vec<Alias>,
     /// The alias a statement read last, which a dropped `NOT` gives back to an `IF`.
     last_read: Option<AliasId>,
-    /// The temporaries both arms of a `?:` write (FTEF-30.3), which no store folds into the
-    /// statement that wrote them last, since the other arm wrote them too.
-    joined: HashSet<u32>,
+    /// The temporaries both arms of a `?:` write (FTEF-30.3), each with the index of the
+    /// `?:`'s last statement: no store folds into that statement, since the other arm wrote
+    /// the temporary too; a later statement that reuses the temporary is folded into as any.
+    joined: HashMap<u32, usize>,
     /// The first statement of the body being compiled, `pr_scope->code`.
     body_first: usize,
     /// Each file's `s_file`, which a getter's function record takes from its array's file.
@@ -284,7 +290,7 @@ impl<'a> Compiler<'a> {
             array_functions: Vec::new(),
             aliases: Vec::new(),
             last_read: None,
-            joined: HashSet::new(),
+            joined: HashMap::new(),
             body_first: 0,
             prior: None,
             extra_parms: HashMap::new(),
@@ -500,7 +506,7 @@ impl<'a> Compiler<'a> {
                 .program
                 .def(*place)
                 .map_or(ValueType::simple(Etype::Void), |d| d.ty.clone()),
-            ValueKind::Temp(ty) | ValueKind::Cast(ty) => ty.clone(),
+            ValueKind::Temp(ty) | ValueKind::Cast(ty) | ValueKind::ReturnWord(_, ty) => ty.clone(),
             ValueKind::Return(alias) => {
                 if self.dialect.has_fteqcc_extensions()
                     && let Some(alias) = self.aliases.get(alias.0)
@@ -532,13 +538,15 @@ impl<'a> Compiler<'a> {
     /// the temporary a clobber copied it to, else the return global (FTE-18.5).
     fn operand_of(&mut self, value: &Value) -> u32 {
         match value.kind {
-            ValueKind::Return(id) => {
+            ValueKind::Return(id) | ValueKind::ReturnWord(id, _) => {
                 let Some(alias) = self.aliases.get_mut(id.0) else {
                     return value.ofs;
                 };
                 alias.live = false;
                 self.last_read = Some(id);
-                alias.temp.unwrap_or(OFS_RETURN)
+                // FTE-9.6: a word of the value is the same word of wherever the alias is.
+                let word = value.ofs.saturating_sub(OFS_RETURN);
+                alias.temp.unwrap_or(OFS_RETURN).saturating_add(word)
             }
             ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Cast(_) => value.ofs,
         }
@@ -579,7 +587,7 @@ impl<'a> Compiler<'a> {
 
     /// Marks `value` read by nothing more, so no clobber copies it (`QCC_FreeTemp`).
     fn drop_value(&mut self, value: &Value) {
-        if let ValueKind::Return(alias) = value.kind
+        if let ValueKind::Return(alias) | ValueKind::ReturnWord(alias, _) = value.kind
             && let Some(alias) = self.aliases.get_mut(alias.0)
         {
             alias.live = false;
@@ -1194,6 +1202,12 @@ impl<'a> Compiler<'a> {
                 let a = match ret.value() {
                     Some(value) => {
                         let value = self.expr(&value)?;
+                        // FTEF-27.4: an `int` returned where a float is converted
+                        // (`QCC_EvaluateCast(e, pr_scope->type->aux_type, true)`).
+                        let value = match self.body_return.clone() {
+                            Some(ty) => self.float_of_int(value, &ty, span)?,
+                            None => value,
+                        };
                         operand(self.operand_of(&value)).at(span)?
                     }
                     None => operand(self.bare_return(span)?).at(span)?,
@@ -1456,6 +1470,21 @@ impl<'a> Compiler<'a> {
             ast::Expr::Not(not) => {
                 // QC-16.4: `NOT_*` by the operand's type.
                 let value = self.expr(&not.operand().at(span)?)?;
+                if self.is_integer(&value) {
+                    return self.not_integer(&value, span);
+                }
+                // FTEF-26.3: `NOT_F` and `NOT_V` of a constant fold to the float
+                // (`QCC_MakeFloatConst(!eval_a->_float)`, `!x && !y && !z`); `NOT_S` does not.
+                if self.dialect.has_fteqcc_extensions() {
+                    let folded = match self.constant_literal(&value) {
+                        Some(Literal::Float(x)) => Some(x == 0.0),
+                        Some(Literal::Vector([x, y, z])) => Some(x == 0.0 && y == 0.0 && z == 0.0),
+                        Some(Literal::String(_)) | None => None,
+                    };
+                    if let Some(truth) = folded {
+                        return self.float_literal(if truth { 1.0 } else { 0.0 }, span);
+                    }
+                }
                 let ty = self.type_of(&value).etype();
                 let Some(op) = ops::not_opcode(ty) else {
                     return Self::error(Code::E0302, "type mismatch for !".to_owned(), span);
@@ -1516,17 +1545,61 @@ impl<'a> Compiler<'a> {
     }
 
     /// FTEF-27.8: the two operands of a float operator, an integer one of them made a float
-    /// (FTEF-27.4) when the other is a float.
-    fn floats_of(&mut self, left: &Value, right: &Value, span: Span) -> Lowered<(Value, Value)> {
+    /// (FTEF-27.4) when the other is a float; and FTEF-27.17: of `*`, when the other is a
+    /// vector (`OP_MUL_VI` and `OP_MUL_IV`'s emulation).
+    fn floats_of(
+        &mut self,
+        operator: Operator,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> Lowered<(Value, Value)> {
         let float = |c: &Self, v: &Value| c.type_of(v).etype() == Etype::Float;
-        if self.is_integer(left) && float(self, right) {
+        let scaled = |c: &Self, v: &Value| {
+            operator == Operator::Mul && c.type_of(v).etype() == Etype::Vector
+        };
+        if self.is_integer(left) && (float(self, right) || scaled(self, right)) {
             return Ok((self.int_as_float(left, span)?, right.clone()));
         }
-        if self.is_integer(right) && float(self, left) {
+        if self.is_integer(right) && (float(self, left) || scaled(self, left)) {
             let right = self.int_as_float(right, span)?;
             return Ok((left.clone(), right));
         }
         Ok((left.clone(), right.clone()))
+    }
+
+    /// FTEF-27.17: `!` of an FTEQCC `int`: a constant folds to the int `!v`
+    /// (`QCC_MakeIntConst(!eval_a->_int)`); else `OP_NOT_I`, which the vanilla target has not,
+    /// is `EQ_FNC` of the value and the int 0.
+    fn not_integer(&mut self, value: &Value, span: Span) -> Lowered<Value> {
+        let int = ValueType::Of(Type::Named(CScalar::Integer.name().into()));
+        if let ValueKind::Def(place) = value.kind
+            && self.constant(place)
+            && let Some(def) = self.program.def(place)
+        {
+            let word = self.program.word(def.ofs);
+            let place = self
+                .program
+                .int_immediate(u32::from(word == 0), int)
+                .at(span)?;
+            return self.def_value(place, span);
+        }
+        let zero = self.program.int_immediate(0, int).at(span)?;
+        let zero = self
+            .program
+            .def(zero)
+            .ok_or(Internal::NoDefinition)
+            .at(span)?
+            .ofs;
+        let from = self.operand_of(value);
+        let ofs = self
+            .program
+            .emit_result(Opcode::EqFnc, from, zero, Etype::Float)
+            .at(span)?;
+        Ok(Value {
+            ofs,
+            kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
+        })
     }
 
     /// FTEF-27.4: `OP_CONV_ITOF` on the vanilla target: a constant is the float it converts to
@@ -1741,6 +1814,33 @@ impl<'a> Compiler<'a> {
             // nothing, as a reference nothing converts to a value (`QCC_FreeTemp` of the
             // reference's index).
             self.slot(&array, &index.index().at(span)?, 0)?;
+        } else if self.dialect.has_fteqcc_extensions()
+            && let ast::Expr::Field(field) = &inner
+        {
+            // FTE-13.18: a field access as a statement of its own reads its entity (and a
+            // computed field) and loads nothing: `QCC_PR_DiscardRef` frees the reference's
+            // base and index and converts it to no value. `e.v.y` names the component field
+            // (FTE-9.5), read through its entity alone.
+            if let Some(which) = self.component_selector(field)
+                && let Some(base) = field.base()
+                && let Some(slot) = self.entity_component_slot(&base, which, span)?
+            {
+                self.drop_value(&slot.entity);
+                return Ok(());
+            }
+            match self.member(field, span)? {
+                Member::Done(value) => self.drop_value(&value),
+                Member::Base(base) => {
+                    self.drop_value(&base);
+                    if self.type_of(&base).etype() == Etype::Entity
+                        && let Some(selector) = field.field()
+                        && !matches!(selector, ast::Expr::Name(_))
+                    {
+                        let selector = self.expr(&selector)?;
+                        self.drop_value(&selector);
+                    }
+                }
+            }
         } else {
             let value = self.expr(expr)?;
             // FTE-18.13: a value nothing reads is freed (`QCC_FreeTemp(e)`), so no clobber
@@ -1887,12 +1987,19 @@ impl<'a> Compiler<'a> {
     fn unless(&mut self, condition: &Value, span: Span) -> Lowered<usize> {
         let (op, tested) = self.test(condition, false, span)?;
         if let Some(not) = self.shortened_not(op, condition) {
-            // FTE-18.13: the dropped `NOT` had read a call's value; the `IF` reads it again
-            // (`QCC_ForceUnFreeDef`), so the clobber of the jump copies it after all.
-            let not = if not == operand(OFS_RETURN).unwrap_or_default() {
-                operand(self.revive_last_alias(span)?).at(span)?
-            } else {
-                not
+            // FTE-18.13: the dropped `NOT` had read a call's value, or a word of it (FTE-9.6);
+            // the `IF` reads it again (`QCC_ForceUnFreeDef`), so the clobber of the jump copies
+            // the whole value after all and the `IF` reads its word of the copy.
+            let word = u32::try_from(not)
+                .ok()
+                .and_then(|ofs| ofs.checked_sub(OFS_RETURN))
+                .filter(|word| *word < 3);
+            let not = match word {
+                Some(word) if self.last_read.is_some() => {
+                    let copy = self.revive_last_alias(span)?;
+                    operand(copy.checked_add(word).at(span)?).at(span)?
+                }
+                Some(_) | None => not,
             };
             return Ok(self.program.emit(Opcode::If, not, 0));
         }
@@ -2027,6 +2134,9 @@ impl<'a> Compiler<'a> {
         if self.dialect != Dialect::Fteqcc
             || op != Opcode::IfNot
             || !matches!(condition.kind, ValueKind::Temp(_))
+            // A `?:`'s temporary that its last arm's `NOT` wrote has a reference from each
+            // arm (`refcount == 1` fails), so its test keeps the `NOT`.
+            || self.is_joined(condition)
         {
             return None;
         }
@@ -2107,7 +2217,6 @@ impl<'a> Compiler<'a> {
         let store_last = ops::select(Operator::Assign, ty.etype(), ty.etype(), None)
             .map_or(Opcode::StoreF, |row| row.opcode);
         let result = self.program.allocate(words).at(span)?;
-        self.joined.insert(result);
         // FTE-18.12: an arm the statement before made is written to the temporary by that
         // statement (`opt_assignments` returns before any clobber); otherwise, FTEF-30.13: the
         // first arm's store is a statement asked for (`&truthstore`), so the aliases still to
@@ -2141,10 +2250,18 @@ impl<'a> Compiler<'a> {
         if let Some(s) = self.program.statements.get_mut(skip) {
             s.a = past;
         }
+        self.joined
+            .insert(result, self.program.statements.len().saturating_sub(1));
         Ok(Value {
             ofs: result,
             kind: ValueKind::Temp(ty),
         })
+    }
+
+    /// Whether `value` is a `?:`'s temporary whose last arm's statement is the last one made,
+    /// which no store folds into (FTEF-30.3).
+    fn is_joined(&self, value: &Value) -> bool {
+        self.joined.get(&value.ofs) == Some(&self.program.statements.len().saturating_sub(1))
     }
 
     /// The float literal `value`'s global (QC-20).
@@ -2335,7 +2452,11 @@ impl<'a> Compiler<'a> {
         let kind = match value.kind {
             ValueKind::Def(_) | ValueKind::Cast(_) => ValueKind::Cast(target),
             ValueKind::Temp(_) => ValueKind::Temp(target),
-            ValueKind::Return(_) => return Err(Abort::Internal(Internal::Unsupported, span)),
+            // A word of a call's value stays a word of its alias (FTE-9.6).
+            ValueKind::ReturnWord(alias, _) => ValueKind::ReturnWord(alias, target),
+            ValueKind::Return(_) => {
+                return Err(Abort::Internal(Internal::Unsupported, span));
+            }
         };
         Ok(Value {
             ofs: value.ofs,
@@ -2563,7 +2684,7 @@ impl<'a> Compiler<'a> {
         (op_span, span): (Span, Span),
     ) -> Lowered<Value> {
         // FTEF-27.8: an integer operand of a float operator is made a float first.
-        let (left, right) = &self.floats_of(left, right, op_span)?;
+        let (left, right) = &self.floats_of(operator, left, right, op_span)?;
         // The types are read after both operands, as `PR_Expression` reads them: a call in the
         // right operand retypes the return value the left one may be (QC-18.6).
         let a = self.type_of(left).etype();
@@ -2766,20 +2887,22 @@ impl<'a> Compiler<'a> {
                 Literal::Vector(each(v, &|_, c| s * c))
             }
             // FTEF-26.14: `BITOR_F` and `BITAND_F` of two constants fold on each one's `int`
-            // (`QCC_PR_RoundFloatConst`), `EQ_F` to 1 or 0.
+            // (`QCC_PR_RoundFloatConst`), `EQ_F` and `NE_F` to 1 or 0.
             (Opcode::BitOr, Literal::Float(x), Literal::Float(y)) => {
                 Literal::Float(int_to_float(float_to_int(x) | float_to_int(y)))
             }
             (Opcode::BitAnd, Literal::Float(x), Literal::Float(y)) => {
                 Literal::Float(int_to_float(float_to_int(x) & float_to_int(y)))
             }
-            (Opcode::EqF, Literal::Float(x), Literal::Float(y)) => {
+            (Opcode::EqF | Opcode::NeF, Literal::Float(x), Literal::Float(y)) => {
                 #[expect(
                     clippy::float_cmp,
-                    reason = "spec FTEF-26.14: FTEQCC folds `eval_a->_float == eval_b->_float`"
+                    reason = "spec FTEF-26.14: FTEQCC folds `eval_a->_float == eval_b->_float` \
+                              and `!=`"
                 )]
                 let equal = x == y;
-                Literal::Float(if equal { 1.0 } else { 0.0 })
+                let truth = if opcode == Opcode::EqF { equal } else { !equal };
+                Literal::Float(if truth { 1.0 } else { 0.0 })
             }
             // FTEF-26.14: `AND_F` and `OR_F` of two constants fold to an int constant
             // (`QCC_MakeIntConst(eval_a->_float && eval_b->_float)`), made a float where a
@@ -2899,7 +3022,11 @@ impl<'a> Compiler<'a> {
                 }
                 return Some(Literal::Float(f32::from_bits(self.program.word(value.ofs))));
             }
-            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Cast(_) | ValueKind::Return(_) => {
+            ValueKind::Def(_)
+            | ValueKind::Temp(_)
+            | ValueKind::Cast(_)
+            | ValueKind::Return(_)
+            | ValueKind::ReturnWord(..) => {
                 return None;
             }
         };
@@ -2972,9 +3099,16 @@ impl<'a> Compiler<'a> {
         if let Some(name) = &name
             && let Some((word, ty)) = self.member_of(&self.type_of(&base), name)
         {
+            // FTE-9.6: a member of a call's struct value stays with its alias.
+            let kind = match base.kind {
+                ValueKind::Return(id) | ValueKind::ReturnWord(id, _) => {
+                    ValueKind::ReturnWord(id, ty)
+                }
+                ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Cast(_) => ValueKind::Temp(ty),
+            };
             return Ok(Member::Done(Value {
                 ofs: base.ofs.checked_add(word).at(span)?,
-                kind: ValueKind::Temp(ty),
+                kind,
             }));
         }
         Ok(Member::Base(base))
@@ -3033,9 +3167,15 @@ impl<'a> Compiler<'a> {
             Some("z") => 2,
             _ => return Ok(None),
         };
+        let ty = ValueType::simple(Etype::Float);
+        // FTE-9.6: a word of a call's value stays with its alias.
+        let kind = match base.kind {
+            ValueKind::Return(id) | ValueKind::ReturnWord(id, _) => ValueKind::ReturnWord(id, ty),
+            ValueKind::Def(_) | ValueKind::Temp(_) | ValueKind::Cast(_) => ValueKind::Temp(ty),
+        };
         Ok(Some(Value {
             ofs: base.ofs.checked_add(offset).at(span)?,
-            kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
+            kind,
         }))
     }
 
@@ -3277,7 +3417,7 @@ impl<'a> Compiler<'a> {
     fn is_definition_word(&self, value: &Value) -> bool {
         match value.kind {
             ValueKind::Def(_) | ValueKind::Cast(_) => true,
-            ValueKind::Return(_) => false,
+            ValueKind::Return(_) | ValueKind::ReturnWord(..) => false,
             ValueKind::Temp(_) => self.program.defs.iter().any(|def| {
                 let words = type_words(self.index, &def.ty).saturating_mul(def.count.unwrap_or(1));
                 def.name != "IMMEDIATE"
@@ -3294,7 +3434,7 @@ impl<'a> Compiler<'a> {
         if self.dialect != Dialect::Fteqcc
             || !self.is_definition_word(to)
             || !matches!(value.kind, ValueKind::Temp(_))
-            || self.joined.contains(&value.ofs)
+            || self.is_joined(value)
             || self.is_definition_word(value)
             || self.type_of(to) != self.type_of(value)
         {
@@ -3495,7 +3635,7 @@ impl<'a> Compiler<'a> {
 
     /// Marks a call's value live again after a statement read it, as a readable store does.
     fn keep_alive(&mut self, value: &Value) {
-        if let ValueKind::Return(alias) = value.kind
+        if let ValueKind::Return(alias) | ValueKind::ReturnWord(alias, _) = value.kind
             && let Some(alias) = self.aliases.get_mut(alias.0)
         {
             alias.live = true;
@@ -3545,7 +3685,10 @@ impl<'a> Compiler<'a> {
         };
         let name = match &callee.kind {
             ValueKind::Def(place) => self.program.def(*place).map(|d| d.name.clone()),
-            ValueKind::Temp(_) | ValueKind::Return(_) | ValueKind::Cast(_) => None,
+            ValueKind::Temp(_)
+            | ValueKind::Return(_)
+            | ValueKind::ReturnWord(..)
+            | ValueKind::Cast(_) => None,
         };
         let fixed = (!function.variadic).then_some(function.params.len());
         let mut count = 0_usize;
@@ -3765,7 +3908,7 @@ impl Compiler<'_> {
     fn fold_into(&mut self, value: &Value, to: u32) -> bool {
         if !self.dialect.has_fteqcc_extensions()
             || !matches!(value.kind, ValueKind::Temp(_))
-            || self.joined.contains(&value.ofs)
+            || self.is_joined(value)
             || self.is_definition_word(value)
         {
             return false;
@@ -3789,6 +3932,10 @@ impl Compiler<'_> {
     /// out of the return global (FTE-18.13), and `CALLn` made. The semantic model
     /// has judged the call (FTEF-32.3): fewer arguments than parameters leave the rest as the
     /// slots hold them, and an argument past the last parameter is read and ignored.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one call's lowering reads best in the order FTEQCC makes it: the folds, the arguments, the clobber, the call"
+    )]
     fn fteqcc_call(
         &mut self,
         callee: &Value,
@@ -3809,7 +3956,10 @@ impl Compiler<'_> {
                 .and_then(|id| self.defaults.get(&id))
                 .cloned()
                 .unwrap_or_default(),
-            ValueKind::Temp(_) | ValueKind::Return(_) | ValueKind::Cast(_) => Vec::new(),
+            ValueKind::Temp(_)
+            | ValueKind::Return(_)
+            | ValueKind::ReturnWord(..)
+            | ValueKind::Cast(_) => Vec::new(),
         };
         // FTE-18.7: an empty slot takes its parameter's default, and so does each parameter
         // after the last argument that has one and is not `optional`.

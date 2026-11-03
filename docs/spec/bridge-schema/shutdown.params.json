@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://quakecstudio.org/spec/bridge-schema/shutdown.params.json",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/shutdown.params.json",
   "title": "shutdown request params (BRIDGE-2.5)",
   "type": "object",
   "properties": {}

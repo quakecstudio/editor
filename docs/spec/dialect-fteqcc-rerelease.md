@@ -310,6 +310,24 @@ only entity-field access); a vector has no members. The rerelease applies `.z` d
   loaded and its word taken. SWAB's `w_rockets.qc` reads `other.angles.y`, the rerelease's
   `doors.qc` `self.movedir[0]`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseArrayPointer`, `QCC_PR_ParseValue`.
 
+- **FTE-9.6** A component of a call's vector value, `(f()).y`, is a word of the call's alias
+  of the return global (FTE-18.13): `QCC_PR_ParseRefArrayPointer`'s `vectorarrayindex` makes
+  the member a constant index into the alias, and `QCC_RefToDef` moves the alias's offset by
+  it (`ret.ofs += QCC_Eval_Int (idxeval, ...)`), so the word is read from wherever the alias
+  is when the statement is made: the return global, or the temporary a clobber before a later
+  call copied the whole value to. So `gf0 = (normalize(gv0)).y + ff1(1);` is `CALL1 normalize`,
+  the argument store, `STORE_V` of the return global to a temporary `t`, `CALL1 ff1` and `ADD_F
+  t+1, OFS_RETURN`, and `gf0 = (normalize(gv0)).z;` with no call after it reads
+  `OFS_RETURN+2`. A member of a call's struct value is the same, but the clobber copies a
+  struct's alias with one `STORE_F` (`QCC_ClobberDef` stores `OP_STORE_V` only for a vector
+  or a variant, `OP_STORE_I64` for a 64-bit type, else `OP_STORE_F`), so a member past the
+  first word read after a later call is a word the copy never wrote; this compiler copies the
+  same. A shortened `NOT` of a word of a call's value revives its alias (FTE-18.13), so
+  `if (!(normalize(v)).y)` is `STORE_V` of the return global to `t` and `IF t+1`. A cast
+  within one basic type keeps the word (FTEF-30.6). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseRefArrayPointer`, `QCC_RefToDef`, `QCC_GetAliasTemp`, `QCC_ClobberDef`.
+
 ## FTE-10 `const` declarations
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseDefs` (the `const` keyword), fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
@@ -502,6 +520,14 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   writes past an element, such as `MUL_FV` into `arr[3]` (FTE-13.15), reaches those
   neighbours. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_IntConstExpr`.
+- **FTE-13.18** A field access as a statement of its own, `self.ff;` or `e.v.y;`
+  (parenthesised or not), reads its entity, and a computed field `e.(f);` its field, and loads
+  nothing: the statement's expression is a reference that nothing converts to a value, and
+  `QCC_PR_DiscardRef` frees its base and index (`QCC_FreeTemp(ref->base); if
+  (ref->index.cast) QCC_FreeTemp(ref->index);`). A parenthesised field with a component,
+  `(e.v).y;`, loads the vector first, as FTE-9.3 converts the parenthesised field. The
+  warning is FTEF-18.25's. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_DiscardExpression`, `QCC_PR_DiscardRef`.
 - **FTE-13.17** A subscript by a value as a statement of its own, `arr[i];` (parenthesised or
   not), computes its index (FTE-13.12: `BITAND` for `i & 3`, and `MUL_F` by the element's
   words for a vector array) and calls no getter: the statement's expression is a reference

@@ -1,16 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://quakecstudio.org/spec/bridge-schema/event.edict.changed.json",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/event.edict.changed.json",
   "title": "edict/changed notification params (BRIDGE-3)",
   "type": "object",
   "properties": {
     "edict": {
-      "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/edict"
+      "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/edict"
     },
     "fields": {
       "type": "array",
       "items": {
-        "$ref": "https://quakecstudio.org/spec/bridge-schema/value.json#/$defs/fieldValue"
+        "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/fieldValue"
       }
     },
     "time": {

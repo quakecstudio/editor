@@ -1022,12 +1022,26 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
 
     /// Restores the world, applies `context` and calls `function` (DIFF-12.2).
     fn call(&mut self, function: i32, context: &Context) -> Outcome {
+        let (outcome, observer) = self.call_observed(function, context, Statements::default());
+        Outcome {
+            executed: observer.executed,
+            ..outcome
+        }
+    }
+
+    /// [`Self::call`] watched by `observer` too, which is returned with the outcome, whose
+    /// executed statements are empty.
+    fn call_observed<O: Observer>(
+        &mut self,
+        function: i32,
+        context: &Context,
+        mut observer: O,
+    ) -> (Outcome, O) {
         self.host.machine.clone_from(&self.machine);
         self.host.builtins.clone_from(&self.builtins);
         // A call's trace records are never read; dropping them keeps a run's memory flat.
         self.host.trace.clear();
         context.apply(&mut self.host, &self.program);
-        let mut observer = Statements::default();
         let result = self.host.machine.execute_program(
             self.program.progs,
             context.server,
@@ -1035,11 +1049,12 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
             &mut observer,
             function,
         );
-        Outcome {
+        let outcome = Outcome {
             kind: result.as_ref().err().map(|e| e.kind.clone()),
             error: result.err().map(|e| e.message()),
-            executed: observer.executed,
-        }
+            executed: Vec::new(),
+        };
+        (outcome, observer)
     }
 
     /// The value of the global of type `def_type` at slot `ofs` (DIFF-12.3).

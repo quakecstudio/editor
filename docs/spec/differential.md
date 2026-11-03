@@ -907,7 +907,14 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
   FTEQCC types a comparison as a bool a float case does not match ("Implicit type mismatch.
   Needed bool, got float."); a vector component is written `(v).x`, since `(v)_x` is no
   component; and no call of `random` or of the engine's state is made, so both progs' calls
-  end the same way.
+  end the same way. Every literal and constant has a magnitude under 1024, and a product,
+  quotient, dot product or vector scale of two constant operands (each made only of literals,
+  constants, enum items, `floor` and `ceil`, which FTEQCC folds) takes `gst.a`, or `gst.v`,
+  as its second operand instead, so a folded constant is a sum, comparison or bit operation
+  of small values, since FTEQCC folds constants in C: `(int)` of an infinity
+  or of a value past `int`'s range is the platform's (`INT_MIN` on x86, `INT_MAX` on arm64),
+  so `'4 8388608 403' * '66 32768 8' & 3` would index one element on CI's x86-64 oracle and
+  another on an arm64 one.
 - **DIFF-14.2** `cargo xtask compiler-diff --generated <count> [--seed <n>]` writes the
   programs `0` to `count - 1` of the seed, 1 unless given, under
   `target/compiler-diff/generated/<seed>/<n>/` with a `progs.src` naming `t.qc`, compiles each

@@ -22,7 +22,7 @@ use jsonschema::draft202012::meta;
 use jsonschema::{Draft, Retrieve, Uri, Validator};
 use serde_json::{Value, json};
 
-const BASE: &str = "https://quakecstudio.org/spec/bridge-schema/";
+const BASE: &str = "https://quakecstudio.com/spec/bridge-schema/";
 
 fn schema_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/spec/bridge-schema")

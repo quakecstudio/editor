@@ -273,7 +273,7 @@ impl Gen {
         }
         let count = self.below(3).saturating_add(1);
         for i in 0..count {
-            let value = self.rng.float();
+            let value = self.small_float();
             let text = format!("K{i}");
             writeln!(self.out, "const float {text} = {};", literal(value)).unwrap_or(());
             self.constants.push(Name {
@@ -315,7 +315,7 @@ impl Gen {
             write!(head, "{} {text}", ty.word()).unwrap_or(());
             // A trailing parameter may carry a default (FTE-18.7).
             if i.saturating_add(1) == params.len() && *ty == Ty::Float && self.chance(30) {
-                write!(head, " = {}", literal(self.rng.float())).unwrap_or(());
+                write!(head, " = {}", literal(self.small_float())).unwrap_or(());
                 self.form("default-parameter");
             }
             self.locals.push(Name { text, ty: *ty });
@@ -590,16 +590,16 @@ impl Gen {
                         let constants = self.constants.clone();
                         self.pick_name(&constants).text
                     } else {
-                        literal(self.rng.float())
+                        literal(self.small_float())
                     }
                 }
                 Ty::Vector => {
                     self.form("vector-literal");
                     format!(
                         "'{} {} {}'",
-                        literal(self.rng.float()),
-                        literal(self.rng.float()),
-                        literal(self.rng.float())
+                        literal(self.small_float()),
+                        literal(self.small_float()),
+                        literal(self.small_float())
                     )
                 }
                 Ty::Str => {
@@ -612,6 +612,17 @@ impl Gen {
         }
     }
 
+    /// A literal of magnitude under 1024: a fold of constants then stays within `int`, whose
+    /// overflow C leaves to the platform the oracle runs on (DIFF-14.1).
+    fn small_float(&mut self) -> f32 {
+        let value = self.rng.float();
+        if value.abs() < 1024.0 {
+            value
+        } else {
+            value.rem_euclid(1024.0)
+        }
+    }
+
     fn float_expr(&mut self, depth: usize) -> String {
         match self.below(14) {
             0 => {
@@ -620,6 +631,13 @@ impl Gen {
                     self.expr(Ty::Float, depth.saturating_add(1)),
                 );
                 let op = self.choose(&["+", "-", "*", "/"], "+");
+                // FTEQCC folds constants in C (DIFF-14.1): a product or quotient of two
+                // constants takes a variable for its second operand instead.
+                let b = if matches!(op, "*" | "/") && is_constant_text(&a) && is_constant_text(&b) {
+                    "gst.a".to_owned()
+                } else {
+                    b
+                };
                 self.form("arithmetic");
                 format!("({a} {op} {b})")
             }
@@ -686,6 +704,11 @@ impl Gen {
                     self.expr(Ty::Vector, depth.saturating_add(1)),
                     self.expr(Ty::Vector, depth.saturating_add(1)),
                 );
+                let b = if is_constant_text(&a) && is_constant_text(&b) {
+                    "gst.v".to_owned()
+                } else {
+                    b
+                };
                 self.form("dot-product");
                 format!("({a} * {b})")
             }
@@ -720,6 +743,11 @@ impl Gen {
                     self.expr(Ty::Vector, depth.saturating_add(1)),
                     self.expr(Ty::Float, depth.saturating_add(1)),
                 );
+                let f = if is_constant_text(&v) && is_constant_text(&f) {
+                    "gst.a".to_owned()
+                } else {
+                    f
+                };
                 self.form("vector-scale");
                 if self.chance(50) {
                     format!("({v} * {f})")
@@ -816,6 +844,21 @@ impl Gen {
         self.form("call");
         format!("{}({})", function.name, args.join(", "))
     }
+}
+
+/// Whether an expression's text is one FTEQCC folds to a constant: every name in it is a
+/// constant (`K0` to `K2`), an enum item (`EN_`) or `floor` or `ceil`, the builtins it folds
+/// of a constant (FTEF-32.14); literals, operators and parentheses are constant.
+fn is_constant_text(text: &str) -> bool {
+    let mut names = text
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|word| word.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_'));
+    names.all(|name| {
+        let constant = name
+            .strip_prefix('K')
+            .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()));
+        constant || name.starts_with("EN_") || matches!(name, "floor" | "ceil")
+    })
 }
 
 /// A float as QuakeC source writes it, whole numbers without a fraction.

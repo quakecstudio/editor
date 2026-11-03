@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://quakecstudio.org/spec/bridge-schema/message.json",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/message.json",
   "title": "The JSON-RPC 2.0 envelope of every message (BRIDGE-1.4)",
   "type": "object",
   "properties": {
