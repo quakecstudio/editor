@@ -46,3 +46,23 @@ nothing higher.
 
 The table, the mock classes, the pure math and string builtins and the class state, output and
 world builtin bodies against the mock fixture are complete.
+
+## Properties
+
+`src/properties.rs` holds the proptest properties of the readers of outside text, the
+invariants the `qc-builtins` fuzz target (`fuzz/fuzz_targets/qc_builtins.rs`) checks on
+arbitrary bytes:
+
+- `Localization::loc_load_file` reads a file only up to its first zero, skips a UTF-8 byte
+  order mark, and reads `key = "value"` entries back by `$key`, the first of a repeated key
+  kept (RRE-1.7, RRE-1.2).
+- `pf_var_string` fits its 1024-byte buffer with its terminator, and with no file loaded is
+  the parameters joined and cut to 1023 bytes (RRE-1.9).
+- `Tokens::tokenize` and `Tokens::split` keep at most 64 tokens, each inside the text after
+  the one before, `argv` at most 1023 bytes and the same from a negative index, and -1 or the
+  null string outside the list; a split token is the text from its start to its end
+  (BUILTIN-18.23, BUILTIN-18.24).
+- `sprintf`'s text stops at 1023 bytes for any format and arguments, and a format with no
+  directive is itself (BUILTIN-18.8).
+- `atof` reads back every finite double Rust writes, after white space and a sign, ignoring
+  what follows the number (BUILTIN-18.19).

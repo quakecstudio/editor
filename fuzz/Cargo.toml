@@ -13,6 +13,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = { version = "=0.4.13", default-features = false, features = ["link_libfuzzer"] }
+qc-builtins = { path = "../crates/qc-builtins" }
 qc-engines = { path = "../crates/qc-engines" }
 qc-lexer = { path = "../crates/qc-lexer" }
 qc-progs = { path = "../crates/qc-progs" }
@@ -37,6 +38,13 @@ serde_json = { version = "=1.0.151", default-features = false, features = ["std"
 [[bin]]
 name = "parser"
 path = "fuzz_targets/parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "qc-builtins"
+path = "fuzz_targets/qc_builtins.rs"
 test = false
 doc = false
 bench = false
