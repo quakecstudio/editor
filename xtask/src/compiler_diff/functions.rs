@@ -31,10 +31,6 @@ use crate::oracles::{self, Oracles, rerelease};
 /// How many cut programs one run of the binary compares (DIFF-15.4).
 const BATCH: usize = 64;
 
-/// The function every cut keeps with what it calls (DIFF-15.2): the map's world entity's spawn
-/// function, whose precaches the world's setup needs, or `setmodel` and `sound` fail in it.
-const WORLDSPAWN: &[u8] = b"worldspawn";
-
 /// What an emptied body becomes (DIFF-15.1).
 const STUB: &[u8] = b"{}";
 
@@ -96,13 +92,18 @@ fn codebase(root: &Path, oracles: &Oracles, codebases: &Path, id: &str) -> Resul
     if work.exists() {
         fs::remove_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
     }
-    let [whole, _] = write_progs(oracles, codebases, id, &work)?;
-    let whole = fs::read(&whole).map_err(|e| format!("{}: {e}", whole.display()))?;
+    let [whole_path, _] = write_progs(oracles, codebases, id, &work)?;
+    let whole = fs::read(&whole_path).map_err(|e| format!("{}: {e}", whole_path.display()))?;
     let source = codebases.join(id);
     let (_, db) = codegen::compile_analysed(&source, profile(id))?;
     let (bodies, sources) = bodies(&db);
     let progs = Progs::read(&whole).map_err(|e| format!("{id}: {e}"))?;
     let graph = calls(&progs);
+    // DIFF-15.2: every cut keeps what the world's setup runs, and what that calls.
+    let mut setup = BTreeSet::new();
+    for name in setup_functions(root, &whole_path, id)? {
+        setup.extend(closure(&graph, &name));
+    }
     let mut functions: Vec<&[u8]> = Vec::new();
     for body in &bodies {
         if graph.contains_key(&body.name) && !functions.contains(&body.name.as_slice()) {
@@ -121,7 +122,7 @@ fn codebase(root: &Path, oracles: &Oracles, codebases: &Path, id: &str) -> Resul
             &work,
             &dir,
             names,
-            (&bodies, &sources, &graph),
+            (&bodies, &sources, &graph, &setup),
         )? {
             let program = dir.join(n.to_string());
             let label = String::from_utf8_lossy(name).into_owned();
@@ -187,6 +188,7 @@ type Codebase<'a> = (
     &'a [Body],
     &'a BTreeMap<PathBuf, Vec<u8>>,
     &'a BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>,
+    &'a BTreeSet<Vec<u8>>,
 );
 
 /// One function's cut compiled: its place in its batch, its name and the outcome.
@@ -202,7 +204,7 @@ fn compile_batch<'n>(
     work: &Path,
     dir: &Path,
     names: &[&'n [u8]],
-    (bodies, sources, graph): Codebase<'_>,
+    (bodies, sources, graph, setup): Codebase<'_>,
 ) -> Result<Vec<Compiled<'n>>, String> {
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let results: Vec<Result<Vec<Compiled<'n>>, String>> = std::thread::scope(|scope| {
@@ -212,7 +214,7 @@ fn compile_batch<'n>(
                     let mut done = Vec::new();
                     for (n, name) in names.iter().enumerate().skip(thread).step_by(threads) {
                         let mut keep = closure(graph, name);
-                        keep.extend(closure(graph, WORLDSPAWN));
+                        keep.extend(setup.iter().cloned());
                         let files = cut(bodies, sources, &keep);
                         let label = String::from_utf8_lossy(name);
                         let log = work.join("failed").join(format!("{label}.log"));
@@ -238,6 +240,42 @@ fn compile_batch<'n>(
     }
     all.sort_by_key(|(n, _, _)| *n);
     Ok(all)
+}
+
+/// The functions the scenarios' setups run in the whole codebase's progs at `whole`, as the
+/// `compiler-diff` binary lists them (DIFF-15.2).
+fn setup_functions(root: &Path, whole: &Path, id: &str) -> Result<Vec<Vec<u8>>, String> {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let output = Command::new(cargo)
+        .current_dir(root)
+        .args([
+            "run",
+            "--release",
+            "--locked",
+            "-p",
+            "qs-differential",
+            "--bin",
+            "compiler-diff",
+            "--",
+            "--engine",
+            engine(id),
+            "--setup-functions",
+        ])
+        .arg(whole)
+        .output()
+        .map_err(|e| format!("cannot run the compiler differential: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "{id}: the setup's functions could not be listed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(output
+        .stdout
+        .split(|&b| b == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(<[u8]>::to_vec)
+        .collect())
 }
 
 /// Adds a failure for batch `batch` when its run of the binary found a divergence.

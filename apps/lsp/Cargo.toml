@@ -24,5 +24,8 @@ qs-paths = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
 [lints]
 workspace = true

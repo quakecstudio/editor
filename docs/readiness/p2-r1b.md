@@ -7,7 +7,7 @@
 - **Commit measured:** `551b1fc6` (`docs/676-p2-r1b-rereview`: `main` at `cf169599` with this
   round's tests)
 - **Verdict:** Not ready. Every number meets the bar and the minimums, and the two defects of
-  the first round are fixed, but this round found P2-161: vkQuake's `stof` (C's `atof`) gives
+  the first round are fixed, but this round found P2-168: vkQuake's `stof` (C's `atof`) gives
   NaN, or the wrong float, for a hexadecimal number that C rounds correctly. It blocks
   readiness until it is fixed and re-reviewed (TEST-9).
 
@@ -55,7 +55,7 @@ since the first round, so no new mutant exists.
 
 | Crate | Property tests (TEST-4) | Fuzzing (TEST-5) | Differential (TEST-6) |
 | --- | --- | --- | --- |
-| `qc-builtins` | `src/properties.rs`: seven properties, one per invariant the README's Properties section lists (RRE-1.7 twice, RRE-1.9, BUILTIN-18.23, BUILTIN-18.24, BUILTIN-18.8, BUILTIN-18.19). The `atof` property covers decimal input only, which is how P2-161 went unseen | `fuzz/fuzz_targets/qc_builtins.rs`: the localization file and `PF_VarString`, both tokenizers, `sprintf` and `stof` through `MockBuiltins` on the vkQuake profile, checking no panic and the stated bounds. Fuzz run [41880839404](https://github.com/quakecstudio/editor/actions/runs/41880839404) on #703's branch (`6688ced1`: the target as merged, the crate less #702's README and `use` lines): 659667 runs in 601 s from an empty corpus, no crash; every other target and the oracle fuzzing also passed. No scheduled Fuzz run on `main` has run since #703 merged. The target checks bounds, not values, so it cannot see P2-161 | id VM oracle: the `Differential` job of run [41836249897](https://github.com/quakecstudio/editor/actions/runs/41836249897) at `bdae8fea`, whose `qc-builtins`, `qc-vm` and `qs-differential` sources equal the measured commit's less this review's tests, passed. The id oracle runs the id profile only; nothing differential checks the vkQuake builtins or the localization (no vkQuake or QuakeSpasm oracle, ADR-0005), so the C was read by hand |
+| `qc-builtins` | `src/properties.rs`: seven properties, one per invariant the README's Properties section lists (RRE-1.7 twice, RRE-1.9, BUILTIN-18.23, BUILTIN-18.24, BUILTIN-18.8, BUILTIN-18.19). The `atof` property covers decimal input only, which is how P2-168 went unseen | `fuzz/fuzz_targets/qc_builtins.rs`: the localization file and `PF_VarString`, both tokenizers, `sprintf` and `stof` through `MockBuiltins` on the vkQuake profile, checking no panic and the stated bounds. Fuzz run [41880839404](https://github.com/quakecstudio/editor/actions/runs/41880839404) on #703's branch (`6688ced1`: the target as merged, the crate less #702's README and `use` lines): 659667 runs in 601 s from an empty corpus, no crash; every other target and the oracle fuzzing also passed. No scheduled Fuzz run on `main` has run since #703 merged. The target checks bounds, not values, so it cannot see P2-168 | id VM oracle: the `Differential` job of run [41836249897](https://github.com/quakecstudio/editor/actions/runs/41836249897) at `bdae8fea`, whose `qc-builtins`, `qc-vm` and `qs-differential` sources equal the measured commit's less this review's tests, passed. The id oracle runs the id profile only; nothing differential checks the vkQuake builtins or the localization (no vkQuake or QuakeSpasm oracle, ADR-0005), so the C was read by hand |
 
 ## 4. Flakes
 
@@ -93,7 +93,7 @@ No test waits on the wall clock: the tests added here are pure functions of thei
   - `crates/qc-builtins/src/tests.rs`: `rereview_atof_hexadecimal_edges` (BUILTIN-18.19: `0x`
     with no digit, `-0x.p1`, case, a fraction, leading white space).
 - **Defects found:**
-  - P2-161: `atof::hexadecimal` accumulates every hex digit into one f64, rounding after each
+  - P2-168: `atof::hexadecimal` accumulates every hex digit into one f64, rounding after each
     (`value.mul_add(16.0, digit)`), and scales once at the end (`value *
     2.0_f64.powi(scale)`). C99 (N1256) 7.20.1.3 paragraph 5: "If the subject sequence has the
     hexadecimal form and FLT_RADIX is a power of 2, the value resulting from the conversion is
@@ -111,8 +111,8 @@ No test waits on the wall clock: the tests added here are pure functions of thei
 
 No change in this round. The measured numbers (lines 98, branches 94, mutation 98, spec 100)
 are above the minimums `ratchets.toml` holds under `P2-R1B`, and its 16 equivalent mutants are
-exactly the survivors. The re-review that passes, after P2-161, commits the values the run
-printed (or that run's own, if P2-161 changes them):
+exactly the survivors. The re-review that passes, after P2-168, commits the values the run
+printed (or that run's own, if P2-168 changes them):
 
 ```toml
 [crates.qc-builtins]
@@ -127,6 +127,6 @@ spec = 100
 
 | Gap | Issue | Why it does not block |
 | --- | --- | --- |
-| A hexadecimal `stof` is not correctly rounded and can be NaN | P2-161 | it blocks: the review stays open until it is fixed |
+| A hexadecimal `stof` is not correctly rounded and can be NaN | P2-168 | it blocks: the review stays open until it is fixed |
 | TEST-5's 24 hours: the nightly Fuzz workflow gives each target 600 s, and #699's acceptance asked for 24 hours "or the sum of its nightly runs" | none | the same standing as every earlier review (`p2-r1.md`, `p2-r5.md`): each nightly run gives every target 600 s |
 | No oracle for the vkQuake builtins or the localization | none | ADR-0005 keeps id's engine the oracle; QuakeSpasm and vkQuake are ported from, not run (ADR-0018). The ports were read against the C by two independent reviews |
