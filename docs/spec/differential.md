@@ -1060,9 +1060,10 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
 - **DIFF-15.4** The `compiler-diff` binary's `--function-pairs <file> --executed <file>` reads
   lines of the function, the pinned FTEQCC's progs, ours and the fixed FTEQCC's, and calls only
   that function, in `FUNCTION_ROUNDS` (256) rounds, twice DIFF-12.29's nightly 128, with
-  DIFF-12.16's further batches, from the world of the first scenario of DIFF-12.20 alone,
-  comparing the calls as DIFF-12.3 and DIFF-12.11 say and a divergence the fixed FTEQCC agrees
-  with as DIFF-14.5 says. The xtask passes the cut programs 64 at a time.
+  DIFF-12.16's further batches, from the world of each scenario of DIFF-12.20, as a
+  whole-codebase run calls every function, comparing the calls as DIFF-12.3 and DIFF-12.11 say
+  and a divergence the fixed FTEQCC agrees with as DIFF-14.5 says. The xtask passes the cut
+  programs 64 at a time.
 - **DIFF-15.5** Each run adds the statements of the pinned FTEQCC's progs its calls and its
   world's setup executed to the `--executed` file as `<name>\t<offset>` lines: the function
   whose body holds the statement, a body running from its first statement to the next
