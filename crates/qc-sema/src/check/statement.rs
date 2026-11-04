@@ -151,6 +151,9 @@ impl Checker<'_> {
         // A value the statement before left is discarded with it (FTE-18.13).
         self.live_return = None;
         let ended = self.statement_parts(stmt);
+        // So is a value the statement itself leaves, which a test after it does not copy.
+        self.live_return = None;
+        self.live_call = None;
         self.env.temps().release_all();
         // FTEF-24.10: a fatal error before the token ends the statement first.
         if let Some((message, span)) = self.pending.take()
@@ -221,12 +224,15 @@ impl Checker<'_> {
                 self.layout.continue_(line, made);
             }
             ast::Stmt::Label(s) => {
+                // Labels and `goto`s are not followed statement by statement.
+                self.followed = false;
                 if let Some(name) = s.name() {
                     let made = self.next_made();
                     self.layout.label(name.text_lossless(), made);
                 }
             }
             ast::Stmt::Goto(s) => {
+                self.followed = false;
                 let name = s.label().map(|t| t.text_lossless()).unwrap_or_default();
                 let made = self.goto_made(Op::Goto);
                 self.layout.goto(name, line, made);
@@ -360,8 +366,12 @@ impl Checker<'_> {
 
     /// The constant value of a condition, `QCC_SRef_EvalConst`, read as zero or not: a float as
     /// `_float`, anything else as `_int`.
-    fn constant_zero(&self, value: &Value) -> Option<bool> {
+    fn constant_zero(&mut self, value: &Value) -> Option<bool> {
         let constant = value.known()?;
+        // A string constant's test is not followed statement by statement.
+        if self.etype_of(&value.ty) == Some(Etype::String) {
+            self.followed = false;
+        }
         Some(if self.etype_of(&value.ty) == Some(Etype::Float) {
             constant.f() == 0.0
         } else {
@@ -586,6 +596,8 @@ impl Checker<'_> {
     /// else a comparison of each `case` with the value after the body; each case value is made
     /// the switch's type, and a type no comparison takes is "Bad switch type".
     fn switch(&mut self, s: &ast::SwitchStmt, line: u32) -> Result<(), Fatal> {
+        // A switch's table of cases is not followed statement by statement.
+        self.followed = false;
         let span = s.syntax().span();
         let breaks = self.layout.marks().0;
         let value = self.condition(s.scrutinee())?;

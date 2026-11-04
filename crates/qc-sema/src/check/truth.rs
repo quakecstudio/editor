@@ -197,6 +197,15 @@ impl Checker<'_> {
         } else {
             Op::IfnotI
         });
+        // FTE-18.13: a call's value still live is copied before the jump looks for a `NOT` to
+        // drop, which the copy then follows; a `NOT` it drops makes its own call's value live
+        // again, copied below.
+        let live = self.live_return.is_some();
+        let call = self.live_call;
+        self.clobber_return();
+        if live {
+            condition = self.copied(condition, call);
+        }
         if jump == Jump::IfNot
             && let Some(operand) = self.drops_not(value)
         {
@@ -411,6 +420,10 @@ impl Checker<'_> {
         span: Span,
     ) -> Checked {
         let stored = other.clone();
+        // Arms of two basic types are reconciled in ways the body does not follow.
+        if self.etype_of(&kept.ty) != self.etype_of(&other.ty) {
+            self.followed = false;
+        }
         let value = self.arms(kept, kept_null, other, span)?;
         self.arm_store(op, &stored, before, result, span)?;
         Ok(value)
@@ -470,6 +483,8 @@ impl Checker<'_> {
         self.emit(op, &operand, &operand, span)?;
         let stored = into.or_else(|| self.last_made());
         self.name_last(op, named, stored.map(ir::Name::Made));
+        // The store made no temporary a later store folds into.
+        self.last_temp = None;
         Ok(stored)
     }
 

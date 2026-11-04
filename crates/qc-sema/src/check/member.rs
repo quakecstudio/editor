@@ -20,6 +20,7 @@ use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::pointer;
 use crate::check::reference::expected_after;
 use crate::check::{Bitfield, Constness, ElementRef, FieldRef, MemberArray, Reference, Value};
+use crate::ir;
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -311,6 +312,16 @@ impl Checker<'_> {
         });
         Ok(match (base.constness, word) {
             (Constness::Known(constant), Some(word)) if constant.is_vector() => {
+                // Where FTEQCC reads the word as a constant the body does not follow (FTEF-31.9).
+                self.followed = false;
+                // The vector is placed before its word is read.
+                if !self.global
+                    && let Some(immediate) = constant.immediate()
+                {
+                    let at = self.next_made();
+                    self.effects
+                        .push((at, ir::Effect::Make(ir::Name::Immediate(immediate))));
+                }
                 let value = constant.v().get(word).copied().unwrap_or_default();
                 Value {
                     reference: Reference::element(
@@ -347,11 +358,15 @@ impl Checker<'_> {
                 let read = self.read(base.clone(), span)?;
                 let word = u32::try_from(word).unwrap_or_default();
                 match read.made {
-                    Some(made) => Value {
-                        made: Some(made),
-                        word,
-                        ..component
-                    },
+                    // Which stores fold into the load of the vector the body does not follow.
+                    Some(made) => {
+                        self.followed = false;
+                        Value {
+                            made: Some(made),
+                            word,
+                            ..component
+                        }
+                    }
                     // A call's vector is the return global, whose word the component is.
                     None if read.returned => Value {
                         returned: true,

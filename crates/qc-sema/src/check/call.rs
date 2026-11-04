@@ -200,6 +200,13 @@ impl Checker<'_> {
                 }
                 value = self.cast_to(&value, param, arg_span)?;
             }
+            // A field argument of a call's entity stays referenced across later calls, which
+            // the body does not follow (FTE-18.13).
+            if let Reference::Field(field) = &reference.reference
+                && field.entity_call.is_some()
+            {
+                self.followed = false;
+            }
             passed.push(Some(reference));
             self.record_call_path(&name, at, arg);
             values.push(value);

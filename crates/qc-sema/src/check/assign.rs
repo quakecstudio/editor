@@ -838,6 +838,10 @@ impl Checker<'_> {
         if self.global {
             return;
         }
+        // A store through a call's entity is not followed (FTE-18.13).
+        if field.entity_call.is_some() {
+            self.followed = false;
+        }
         let storep = self.storep_op(target);
         let address = u32::try_from(self.generated.len()).ok().map(ir::Name::Made);
         self.generated.push(ir::BodyStatement {
@@ -966,6 +970,17 @@ impl Checker<'_> {
         self.last_temp = None;
     }
 
+    /// A local array's getter or setter, which a `for` forgets at its end (FTEF-19.78), is not
+    /// followed statement by statement.
+    pub(super) fn local_array_function(&mut self, array: Option<crate::DefId>) {
+        if array
+            .and_then(|def| self.env.definition(def))
+            .is_some_and(|d| d.owner.is_some())
+        {
+            self.followed = false;
+        }
+    }
+
     /// A store's read of `value`: a call's value is then out of the return global's keeping.
     fn read_returned(&mut self, value: &Value) {
         if value.returned {
@@ -1019,6 +1034,7 @@ impl Checker<'_> {
             ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
         });
         self.clobber_return();
+        self.local_array_function(lhs.sym.def());
         self.generated.push(ir::BodyStatement {
             a: lhs.sym.def().map(ir::Name::ArraySet),
             ..ir::BodyStatement::bare(Op::Call2)

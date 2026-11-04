@@ -404,7 +404,8 @@ impl Checker<'_> {
             return Ok(false);
         }
         // A vector array's getter takes the element's index, its words' divided by 3.
-        let float = if self.etype_of(&element.ty) == Some(Etype::Vector) && !self.global {
+        let divided = self.etype_of(&element.ty) == Some(Etype::Vector) && !self.global;
+        let float = if divided {
             let three = Value::constant(Constant::float(3.0));
             self.emit(Op::DivF, &float, &three, span)?
         } else {
@@ -426,7 +427,9 @@ impl Checker<'_> {
         // FTEF-19.78: the read is `ArrayGet*`'s call: the index stored to its parameter unless
         // it folds, `CALL1`, the value the call's in the return global.
         if !self.global {
-            if float.temp.is_some() && float.temp == self.last_temp && !self.index_held {
+            // A held index is not folded into, but the quotient of a vector array's is new.
+            if float.temp.is_some() && float.temp == self.last_temp && (!self.index_held || divided)
+            {
                 self.fold_into(&float, Some(ir::Name::Parameter(0)));
             } else {
                 self.generated.push(ir::BodyStatement {
@@ -441,6 +444,7 @@ impl Checker<'_> {
                 }
             }
             self.clobber_return();
+            self.local_array_function(element.sym.def());
             self.generated.push(ir::BodyStatement {
                 a: element.sym.def().map(ir::Name::ArrayGet),
                 ..ir::BodyStatement::bare(Op::Call1)
