@@ -298,6 +298,7 @@ impl Checker<'_> {
             };
             self.generated.push(Op::Address);
             self.generated.push(storep);
+            self.last_temp = None;
         }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
         if lhs.readonly {
@@ -826,6 +827,7 @@ impl Checker<'_> {
             let folded = value.temp.is_some() && value.temp == self.last_temp;
             if !folded {
                 self.generated.push(Checker::store_op(self.etype(&ty)));
+                self.last_temp = None;
             }
         }
         // FTEF-2.12: an 8- or 16-bit local is initialised as a bitfield at bit 0

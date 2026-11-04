@@ -371,6 +371,7 @@ impl Checker<'_> {
             if let Some(&call) = call.get(passed) {
                 self.clobber_return();
                 self.generated.push(call);
+                self.last_temp = None;
             }
         }
         let mut builder = ir::Builder::new();
@@ -430,6 +431,7 @@ impl Checker<'_> {
         }
         self.clobber_return();
         self.generated.push(Op::Call0);
+        self.last_temp = None;
         if count == 0 {
             self.live_return = Some(1);
         }

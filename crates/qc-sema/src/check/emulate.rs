@@ -262,6 +262,7 @@ impl Checker<'_> {
         if let Some(words) = self.live_return.take() {
             self.generated
                 .push(if words == 3 { Op::StoreV } else { Op::StoreF });
+            self.last_temp = None;
         }
     }
 
