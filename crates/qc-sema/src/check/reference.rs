@@ -135,6 +135,11 @@ impl Checker<'_> {
                     statement.a = entity;
                     statement.b = field.def.map(|def| ir::Name::Def(def, 0));
                 }
+                // A load of a call's entity reads it out of the return global.
+                if entity == Some(ir::Name::Return) {
+                    self.live_return = None;
+                    self.live_call = None;
+                }
                 // The loaded value is the load's, which no later read loads again.
                 Ok(Value {
                     temp: loaded.temp,
