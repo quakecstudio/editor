@@ -177,6 +177,7 @@ impl Checker<'_> {
         let value = self.value(Some(expr.clone()))?;
         self.generated(&expr, &value, line, before);
         self.jump(Step::Return, Op::Return, None, line);
+        self.name_last(Op::Return, value.name(), None);
         if value.ty == Type::Unknown || ret == Type::Unknown || value.null() {
             return Ok(());
         }

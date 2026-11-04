@@ -233,7 +233,7 @@ impl Checker<'_> {
         }
         self.verify_arguments(&name, &values, span);
         self.generate_call(&values, span);
-        self.call_fragment(&function, count, &values, &field_loads, span);
+        self.call_fragment(&function, count, (func.name(), &values), &field_loads, span);
         // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
         for (reference, param) in passed.iter().zip(&params) {
             let Some(reference) = reference.as_ref().filter(|_| param.out) else {
@@ -318,7 +318,7 @@ impl Checker<'_> {
         &mut self,
         function: &FunctionType,
         count: usize,
-        values: &[Value],
+        (callee, values): (Option<ir::Name>, &[Value]),
         field_loads: &[(usize, Vec<ir::BodyStatement>)],
         span: Span,
     ) {
@@ -381,7 +381,10 @@ impl Checker<'_> {
             ];
             if let Some(&call) = call.get(passed) {
                 self.clobber_return();
-                self.generated.push(ir::BodyStatement::bare(call));
+                self.generated.push(ir::BodyStatement {
+                    a: callee,
+                    ..ir::BodyStatement::bare(call)
+                });
                 self.last_temp = None;
             }
         }

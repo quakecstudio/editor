@@ -226,7 +226,7 @@ impl<'e> Checker<'e> {
         })
     }
 
-    fn literal(&mut self, literal: &ast::Literal) -> Value {
+    pub(super) fn literal(&mut self, literal: &ast::Literal) -> Value {
         let Some(token) = literal.token() else {
             return Value::unknown();
         };

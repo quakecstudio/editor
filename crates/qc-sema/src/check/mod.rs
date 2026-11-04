@@ -784,10 +784,20 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         .skip(1)
         .any(|node| node.kind() == qc_syntax::SyntaxKind::FunctionBody);
     // QC-13.6: `[frame, think]` is the body's first statement, `STATE`.
-    if body.state().is_some() {
-        checker
-            .generated
-            .push(ir::BodyStatement::bare(qc_preproc::Op::State));
+    // QC-13.6: `STATE` of the frame number and the think function.
+    if let Some(state) = body.state() {
+        let frame = state
+            .frame()
+            .and_then(|frame| checker.literal(&frame).name());
+        let think = state
+            .next()
+            .and_then(|next| checker.env.reference(next.span().start))
+            .map(|def| ir::Name::Def(def, 0));
+        checker.generated.push(ir::BodyStatement {
+            a: frame,
+            b: think,
+            ..ir::BodyStatement::bare(qc_preproc::Op::State)
+        });
     }
     if let Some(block) = body.block()
         && checker.start_function(block.syntax().span())
