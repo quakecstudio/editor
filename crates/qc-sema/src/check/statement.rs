@@ -254,6 +254,11 @@ impl Checker<'_> {
                 self.returned = true;
             }
             self.jump(Step::Return, Op::Return, None, line);
+            // FTE-18.10: in a function that returns a value it returns the `ret*` local.
+            if !void && ret != Type::Unknown {
+                self.name_last(Op::Return, Some(ir::Name::RetLocal), None);
+                self.ret_local = true;
+            }
             return Ok(());
         };
         let before = self.emitted;

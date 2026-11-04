@@ -54,6 +54,10 @@ pub(super) struct Checker<'e> {
     /// Where each statement of the source starts, by the index of the first generated
     /// statement after it starts: the line each generated statement is recorded at.
     pub(super) origins: Vec<(u32, usize)>,
+    /// Each local the body declares, by the index of the next generated statement then.
+    pub(super) locals: Vec<(u32, DefId)>,
+    /// Whether a bare `return` returned the function's `ret*` local (FTE-18.10).
+    pub(super) ret_local: bool,
     /// The generated `CALL` whose value [`Checker::live_return`] is.
     pub(super) live_call: Option<u32>,
     /// Each call whose value a statement copied out of the return global, and the copy, which
@@ -122,6 +126,8 @@ impl<'e> Checker<'e> {
             strings: Vec::new(),
             index_held: false,
             origins: Vec::new(),
+            locals: Vec::new(),
+            ret_local: false,
             live_call: None,
             copies: Vec::new(),
             fragment: None,
@@ -158,6 +164,7 @@ impl<'e> Checker<'e> {
             generated: self.generated,
             strings: self.strings,
             origins: self.origins,
+            locals: self.locals,
         }
     }
 

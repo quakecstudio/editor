@@ -902,6 +902,14 @@ impl Checker<'_> {
 
     /// [`Checker::local`] of one declarator: its size, then its value cast to its type.
     fn local_declarator(&mut self, declarator: &ast::Declarator) -> Result<(), Fatal> {
+        // The local is declared before its value is read, where the next statement goes.
+        if let Some(def) = declarator
+            .name()
+            .and_then(|name| self.env.reference(name.span().start))
+        {
+            let at = self.next_made();
+            self.locals.push((at, def));
+        }
         self.local_size(declarator)?;
         let Some(ast::Initializer::Value(init)) = declarator.initializer() else {
             return Ok(());

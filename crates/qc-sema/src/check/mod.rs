@@ -735,6 +735,7 @@ pub struct TypedBody {
     generated: Vec<ir::BodyStatement>,
     strings: Vec<Vec<u8>>,
     origins: Vec<(u32, usize)>,
+    locals: Vec<(u32, DefId)>,
 }
 
 impl TypedBody {
@@ -763,6 +764,13 @@ impl TypedBody {
     #[must_use]
     pub fn generated(&self) -> &[ir::BodyStatement] {
         &self.generated
+    }
+
+    /// Each local the body declares, in order, with the index of the generated statement it is
+    /// declared before.
+    #[must_use]
+    pub fn locals(&self) -> &[(u32, DefId)] {
+        &self.locals
     }
 
     /// Where the source statement the generated statement `index` was recorded at starts, a
@@ -856,6 +864,13 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
             .token_of(qc_syntax::SyntaxKind::RBrace)
             .map_or_else(|| block.syntax().span(), |brace| brace.span());
         checker.finish_function(end);
+    }
+    // FTE-18.10: a body that made the `ret*` local returns it once more before its `DONE`.
+    if checker.ret_local {
+        checker.generated.push(ir::BodyStatement {
+            a: Some(ir::Name::RetLocal),
+            ..ir::BodyStatement::bare(qc_preproc::Op::Return)
+        });
     }
     // QC-13.7: the body ends with `DONE`.
     checker

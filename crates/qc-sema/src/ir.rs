@@ -13,6 +13,8 @@ use std::collections::HashMap;
 use qc_preproc::Op;
 
 use crate::DefId;
+use crate::check::etype::Etype;
+use crate::check::opcodes::row as opcode_row;
 
 /// What a statement reads or what a fragment's value is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -185,6 +187,8 @@ pub enum Name {
     VaList(u32),
     /// The default value of this parameter of the function the next `CALL` calls (FTE-18.7).
     Default(u8),
+    /// The function's `ret*` local, which a bare `return` returns (FTE-18.10).
+    RetLocal,
     /// The body's statement at this index, a jump's target; the body's length is its end.
     Jump(u32),
     /// The string immediate of the body's string literal at this index
@@ -221,6 +225,44 @@ impl BodyStatement {
             b: None,
             c: None,
         }
+    }
+
+    /// Whether the opcode reads or writes each operand, which a writer needs named: `a` and `b`
+    /// where its row in `pr_opcodes` types them, `c` where the row makes a value of its own, a
+    /// jump's offset (`b` of a conditional jump, `a` of `GOTO`), and none of `RETURN`, whose
+    /// value a bare `return` leaves 0.
+    #[must_use]
+    pub fn uses(&self) -> [bool; 3] {
+        let Some(row) = opcode_row(self.op) else {
+            return [false; 3];
+        };
+        let [a, b, _] = row.types.map(|ty| ty.etype() != Etype::Void);
+        let c = row.makes_value();
+        match self.op {
+            Op::Goto => [true, false, false],
+            Op::IfI | Op::IfnotI | Op::IfS | Op::IfnotS | Op::IfF | Op::IfnotF => [a, true, c],
+            Op::Return | Op::Done => [false; 3],
+            _ => [a, b, c],
+        }
+    }
+
+    /// The words of the value this statement, at `index`, makes: its result's for a value of
+    /// its own, `c`, and a copy's for a store into a value of its own, `b`.
+    #[must_use]
+    pub fn made_words(&self, index: u32) -> Option<u32> {
+        let made = Some(Name::Made(index));
+        let etype = if self.c == made {
+            opcode_row(self.op)?.types[2].etype()
+        } else if self.b == made {
+            opcode_row(self.op)?.types[1].etype()
+        } else {
+            return None;
+        };
+        Some(match etype {
+            Etype::Vector => 3,
+            Etype::Int64 | Etype::Uint64 | Etype::Double => 2,
+            _ => 1,
+        })
     }
 
     /// Moves each value this statement names that a statement from `from` on made `by`

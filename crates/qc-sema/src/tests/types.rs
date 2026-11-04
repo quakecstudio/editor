@@ -1230,6 +1230,40 @@ fn a_generated_body_records_each_statements_origin() {
     assert_eq!(origins, [None, Some(first), Some(second), Some(second)]);
 }
 
+// FTE-18.10: a bare `return` of a function that returns a value returns the `ret*` local,
+// which the body returns once more before its `DONE`; the body's locals are listed where they
+// are declared, and each statement says which operands it uses and how many words it makes
+#[test]
+fn a_generated_body_lists_its_locals_and_returns_its_ret_local() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source =
+        "float k; float() t = { local float a; a = k * 2; if (a) return; local vector v; };";
+    let index = super::fte_index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let body = &index.bodies[&def("t")];
+    let generated = body.generated();
+    let ops: Vec<_> = generated.iter().map(|s| (s.op, s.a)).collect();
+    let ret = Some(Name::RetLocal);
+    assert_eq!(
+        &ops[2..],
+        [(Op::Return, ret), (Op::Return, ret), (Op::Done, None)]
+    );
+    let locals: Vec<_> = body.locals().iter().map(|&(at, _)| at).collect();
+    assert_eq!(locals, [0, 3]);
+    assert_eq!(generated[0].uses(), [true, true, true]);
+    assert_eq!(generated[0].made_words(0), None, "the product folds into a");
+    assert_eq!(generated[1].uses(), [true, true, false]);
+    assert_eq!(generated[2].uses(), [false; 3]);
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]
