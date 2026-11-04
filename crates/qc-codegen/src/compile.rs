@@ -1484,6 +1484,9 @@ impl<'a> Compiler<'a> {
                         return self.float_literal(if truth { 1.0 } else { 0.0 }, span);
                     }
                 }
+                if let Some(lowered) = self.lowered_unary(&value, span)? {
+                    return Ok(lowered);
+                }
                 let ty = self.type_of(&value).etype();
                 let Some(op) = ops::not_opcode(ty) else {
                     return Self::error(Code::E0302, "type mismatch for !".to_owned(), span);
@@ -2720,6 +2723,32 @@ impl<'a> Compiler<'a> {
             }
             (ir::ImmediateKind::Float | ir::ImmediateKind::Vector, _) => false,
         }
+    }
+
+    /// The unary operator at `span` as the semantic model lowered it, its fragment written with
+    /// `operand` as its input; `None` for one it did not keep or [`Compiler::plan_fragment`]
+    /// refuses, which the caller lowers.
+    fn lowered_unary(&mut self, operand: &Value, span: Span) -> Lowered<Option<Value>> {
+        let Some(body) = self.typed_body() else {
+            return Ok(None);
+        };
+        let Some(fragment) = body.fragment_at(span) else {
+            return Ok(None);
+        };
+        let [assumed, _] = fragment.inputs;
+        if !self.is_immediate(operand, assumed) {
+            return Ok(None);
+        }
+        let etype = self.type_of(operand).etype();
+        let Some(steps) = self.plan_fragment(fragment, None, (etype, etype)) else {
+            return Ok(None);
+        };
+        let value = self.emit_fragment(fragment, &steps, operand, operand, span)?;
+        if fragment.statements.is_empty() {
+            self.drop_value(operand);
+            self.keep_alive(&value);
+        }
+        Ok(Some(value))
     }
 
     /// The basic types `left` and `right` have once [`Compiler::floats_of`] has made an integer

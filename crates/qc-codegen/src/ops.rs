@@ -51,6 +51,8 @@ pub(crate) enum Operator {
     BitAnd,
     /// `|`.
     BitOr,
+    /// `!`, of one operand (QC-16.4).
+    Not,
 }
 
 impl Operator {
@@ -73,6 +75,7 @@ impl Operator {
             Self::Or => "||",
             Self::BitAnd => "&",
             Self::BitOr => "|",
+            Self::Not => "!",
         }
     }
 }
@@ -156,10 +159,22 @@ pub(crate) const ROWS: [Row; 46] = [
     row(Operator::BitOr, Opcode::BitOr, F, F, F),
 ];
 
-/// The row of the opcode numbered `number` in id's table (QC-16.1), if it has one.
+/// The `NOT_*` rows (QC-16.4): one operand, a float truth.
+const NOT_ROWS: [Row; 5] = [
+    row(Operator::Not, Opcode::NotF, Etype::Float, Etype::Void, Etype::Float),
+    row(Operator::Not, Opcode::NotV, Etype::Vector, Etype::Void, Etype::Float),
+    row(Operator::Not, Opcode::NotS, Etype::String, Etype::Void, Etype::Float),
+    row(Operator::Not, Opcode::NotEnt, Etype::Entity, Etype::Void, Etype::Float),
+    row(Operator::Not, Opcode::NotFnc, Etype::Function, Etype::Void, Etype::Float),
+];
+
+/// The row of the opcode numbered `number` in id's table (QC-16.1, QC-16.4), if it has one.
 pub(crate) fn row_of(number: u32) -> Option<Row> {
     let opcode = Opcode::from_number(number)?;
-    ROWS.iter().find(|row| row.opcode == opcode).copied()
+    ROWS.iter()
+        .chain(&NOT_ROWS)
+        .find(|row| row.opcode == opcode)
+        .copied()
 }
 
 /// The row `operator` selects for operands of basic types `a` and `b`, and for a field access

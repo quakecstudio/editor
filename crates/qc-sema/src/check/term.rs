@@ -88,7 +88,13 @@ impl Checker<'_> {
             return Ok(Value::unknown());
         }
         let span = not.syntax().span();
-        self.test(Test::Not, &operand, span, "Type mismatch: !%s")
+        // The `NOT_*` statement, or its fold, is the fragment kept by the expression's span.
+        let lowered = self.lowering(span, &operand, &Value::unknown(), |checker, operand, _| {
+            checker
+                .test(Test::Not, operand, span, "Type mismatch: !%s")
+                .map(Some)
+        })?;
+        Ok(lowered.unwrap_or_else(Value::unknown))
     }
 
     /// FTEF-30.4: `-e`, `0 - e` of the operand's type, a truth value taken for its parent's;

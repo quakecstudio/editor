@@ -693,3 +693,36 @@ fn logic_of_other_types_reads_their_truths() {
         [statement(Op::OrF, left, right)]
     );
 }
+
+// spec FTEF-30.1: `!e` lowers to the `NOT_*` of its operand's type, its operand the fragment's
+// input; FTEF-26.3: of a constant it folds to the float of its truth, with no statement
+#[test]
+fn a_not_lowers_to_a_fragment() {
+    use crate::ir::{Destination, Input, Operand, Statement};
+    use qc_preproc::Op;
+    let source = "float a; string s; void() t = { a = !a; a = !s; a = !0; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let at = |text: &str| {
+        let start = source.find(text).unwrap();
+        index.bodies[&t]
+            .fragment_at(Span::new(start, start + text.len()))
+            .cloned()
+    };
+    let not = |op| Statement {
+        op,
+        a: Some(Operand::Input(Input::Left)),
+        b: None,
+        c: Destination::Value,
+    };
+    assert_eq!(at("!a").unwrap().statements, [not(Op::NotF)]);
+    assert_eq!(at("!s").unwrap().statements, [not(Op::NotS)]);
+    let folded = at("!0").unwrap();
+    assert!(folded.statements.is_empty());
+    assert_eq!(folded.value, Some(Operand::Immediate(float_immediate(1.0))));
+}
