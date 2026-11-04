@@ -1067,6 +1067,8 @@ impl Checker<'_> {
         {
             let at = self.next_made();
             self.locals.push((at, def));
+            self.effects
+                .push((at, ir::Effect::Make(ir::Name::Def(def, 0))));
         }
         self.local_size(declarator)?;
         match declarator.initializer() {

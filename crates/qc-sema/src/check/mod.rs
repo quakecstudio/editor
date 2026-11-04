@@ -760,6 +760,7 @@ pub struct TypedBody {
     locals: Vec<(u32, DefId)>,
     start: usize,
     followed: bool,
+    effects: Vec<(u32, ir::Effect)>,
 }
 
 impl TypedBody {
@@ -796,6 +797,15 @@ impl TypedBody {
     #[must_use]
     pub const fn followed(&self) -> bool {
         self.followed
+    }
+
+    /// What the body makes without a statement that reads it, in order, each with the index of
+    /// the generated statement it is made before: each local it declares, the immediate a fold
+    /// makes (FTEF-26.2), and each definition, immediate, array function and temporary a
+    /// statement FTEQCC generates and takes out again named or took (FTE-3.6, FTEF-34.16).
+    #[must_use]
+    pub fn effects(&self) -> &[(u32, ir::Effect)] {
+        &self.effects
     }
 
     /// Where the body starts in its file, a byte offset: which of a definition's bodies it is.

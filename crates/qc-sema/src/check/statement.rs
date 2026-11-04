@@ -82,13 +82,34 @@ impl Checker<'_> {
         made
     }
 
+    /// What the generated statements from `from` on make: each one's operands and the temporary
+    /// it took, in order.
+    pub(super) fn dropped_effects(&self, from: usize) -> Vec<ir::Effect> {
+        let mut effects = Vec::new();
+        let statements = self.generated.get(from..).unwrap_or_default();
+        for (index, statement) in (u32::try_from(from).unwrap_or(u32::MAX)..).zip(statements) {
+            let make =
+                |name: Option<ir::Name>| name.filter(ir::Name::is_made_once).map(ir::Effect::Make);
+            effects.extend(make(statement.a));
+            effects.extend(make(statement.b));
+            effects.extend(statement.temp_words(index).map(ir::Effect::Temp));
+            effects.extend(make(statement.c));
+        }
+        effects
+    }
+
     /// `QCC_UngenerateStatements` back to `mark`: drops what the layout and the body generated
     /// after it.
     fn truncate(&mut self, mark: Mark) {
         self.layout.truncate(mark.at());
-        self.generated
-            .truncate(usize::try_from(mark.made()).unwrap_or(usize::MAX));
+        let from = usize::try_from(mark.made()).unwrap_or(usize::MAX);
+        // What the dropped statements named is still made, and the temporaries they took still
+        // taken, in their order.
+        let dropped = self.dropped_effects(from);
+        self.generated.truncate(from);
         let kept = self.next_made();
+        self.effects
+            .extend(dropped.into_iter().map(|effect| (kept, effect)));
         self.live_return = None;
         self.copies.retain(|&(call, _)| call < kept);
         // What follows is still recorded where the last statement read started.

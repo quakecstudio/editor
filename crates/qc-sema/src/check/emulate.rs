@@ -256,6 +256,13 @@ impl Checker<'_> {
     /// Records `constant` as an immediate the fragment being lowered made, when there is one; a
     /// kind of constant the layer does not hold leaves the fragment unheld.
     pub(super) fn made(&mut self, constant: Constant) {
+        if !self.global
+            && let Some(immediate) = constant.immediate()
+        {
+            let at = self.next_made();
+            self.effects
+                .push((at, ir::Effect::Make(ir::Name::Immediate(immediate))));
+        }
         let Some(builder) = &mut self.fragment else {
             return;
         };

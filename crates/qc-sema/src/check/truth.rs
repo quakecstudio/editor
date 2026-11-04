@@ -125,7 +125,13 @@ impl Checker<'_> {
         if !drops {
             return None;
         }
+        // The `NOT`'s temporary, and what it named, are still made.
+        let last = self.generated.len().saturating_sub(1);
+        let effects = self.dropped_effects(last);
         let dropped = self.generated.pop();
+        let at = self.next_made();
+        self.effects
+            .extend(effects.into_iter().map(|effect| (at, effect)));
         if let Some((words, call)) = self.not_of_return.take() {
             self.live_return = Some(words);
             self.live_call = call;

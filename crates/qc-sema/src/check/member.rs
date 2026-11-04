@@ -19,7 +19,7 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::pointer;
 use crate::check::reference::expected_after;
-use crate::check::{Bitfield, Constness, ElementRef, MemberArray, Reference, Value};
+use crate::check::{Bitfield, Constness, ElementRef, FieldRef, MemberArray, Reference, Value};
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -112,7 +112,10 @@ impl Checker<'_> {
                 }
                 value
             }
-            Etype::Vector => self.vector_component(&base, &selector)?,
+            Etype::Vector => {
+                let bare = !matches!(field.base(), Some(ast::Expr::Paren(_)));
+                self.vector_component(&base, &selector, bare)?
+            }
             Etype::Field if shape.holds == Some(Etype::Vector) => self.swizzle(
                 &selector,
                 Type::Field(Type::Simple(SimpleType::Float).into()),
@@ -298,7 +301,7 @@ impl Checker<'_> {
     /// A vector's component, `v.x` (FTEF-24.2): of a constant vector, a constant, its float
     /// (FTEF-26.13; `QCC_SRef_EvalConst` reads the word the reference names), read through the
     /// vector at the component's index (`REF_ARRAY`, FTEF-32.17).
-    fn vector_component(&mut self, base: &Value, selector: &ast::Expr) -> Checked {
+    fn vector_component(&mut self, base: &Value, selector: &ast::Expr, bare: bool) -> Checked {
         let component = self.swizzle(selector, Type::Simple(SimpleType::Float))?;
         let word = selector_name(selector).and_then(|(name, _)| match name.as_str() {
             "x" | "r" => Some(0),
@@ -316,6 +319,26 @@ impl Checker<'_> {
                         true,
                     ),
                     ..Value::constant(Constant::float(value))
+                }
+            }
+            // A field named bare, `e.fv.y`, is its component's field, which a statement of it
+            // alone does not load (FTE-13.18).
+            (_, Some(word))
+                if bare
+                    && !self.global
+                    && let Reference::Field(field) = &base.reference
+                    && let Some(component_def) = field.def.and_then(|def| {
+                        self.env
+                            .component(def, u32::try_from(word).unwrap_or(u32::MAX))
+                    }) =>
+            {
+                Value {
+                    reference: Reference::Field(Box::new(FieldRef {
+                        def: Some(component_def),
+                        ..field.as_ref().clone()
+                    })),
+                    readonly: base.readonly,
+                    ..component.clone()
                 }
             }
             // Another vector is read, a field's by `LOAD_V`, and the component is its word.

@@ -61,6 +61,9 @@ pub(super) struct Checker<'e> {
     /// Whether every statement the body generates is in [`Checker::generated`]: false once the
     /// checker reads a construct whose statements it does not follow.
     pub(super) followed: bool,
+    /// The names the body makes without a statement that reads them, by the index of the next
+    /// generated statement then: a fold's immediate, and what a dropped branch named.
+    pub(super) effects: Vec<(u32, ir::Effect)>,
     /// The generated `CALL` whose value [`Checker::live_return`] is.
     pub(super) live_call: Option<u32>,
     /// Each call whose value a statement copied out of the return global, and the copy, which
@@ -132,6 +135,7 @@ impl<'e> Checker<'e> {
             locals: Vec::new(),
             ret_local: false,
             followed: true,
+            effects: Vec::new(),
             live_call: None,
             copies: Vec::new(),
             fragment: None,
@@ -171,6 +175,7 @@ impl<'e> Checker<'e> {
             locals: self.locals,
             start: 0,
             followed: self.followed,
+            effects: self.effects,
         }
     }
 

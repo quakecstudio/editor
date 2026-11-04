@@ -204,6 +204,41 @@ pub enum Name {
     ArraySet(DefId),
 }
 
+/// What a body makes without a statement of its own that reads it (`TypedBody::effects`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Effect {
+    /// What the name names, made the first time it is named: a local declared, a fold's
+    /// immediate, or what a dropped statement named.
+    Make(Name),
+    /// A temporary of this many words a dropped statement took (QC-21.5).
+    Temp(u32),
+}
+
+impl Name {
+    /// Whether it names something the compiler makes the first time it is named: a
+    /// definition, an immediate, an array function, an extra parameter slot, the `ret*` local.
+    #[must_use]
+    pub const fn is_made_once(&self) -> bool {
+        match self {
+            Self::Def(..)
+            | Self::Immediate(_)
+            | Self::String(_)
+            | Self::ArrayGet(_)
+            | Self::ArraySet(_)
+            | Self::RetLocal => true,
+            Self::Parameter(slot) => *slot >= 8,
+            Self::Made(_)
+            | Self::MadeWord(..)
+            | Self::Return
+            | Self::ReturnWord(_)
+            | Self::Jump(_)
+            | Self::VaList(_)
+            | Self::Default(_)
+            | Self::Prior => false,
+        }
+    }
+}
+
 /// One statement of a whole body as the semantic model generated it: its opcode and what each
 /// operand names, `None` where the statement has no such operand or the model does not name
 /// it yet.
@@ -248,6 +283,26 @@ impl BodyStatement {
             Op::Return | Op::Done => [false; 3],
             _ => [a, b, c],
         }
+    }
+
+    /// The words of the temporary this statement, at `index`, takes as it is generated, used or
+    /// not (QC-21.5): its result's when its opcode makes a value, whatever a fold then makes `c`,
+    /// and a copy's for a store into a value of its own, `b`.
+    #[must_use]
+    pub fn temp_words(&self, index: u32) -> Option<u32> {
+        let row = opcode_row(self.op)?;
+        let etype = if row.makes_value() {
+            row.types[2].etype()
+        } else if self.b == Some(Name::Made(index)) {
+            row.types[1].etype()
+        } else {
+            return None;
+        };
+        Some(match etype {
+            Etype::Vector => 3,
+            Etype::Int64 | Etype::Uint64 | Etype::Double => 2,
+            _ => 1,
+        })
     }
 
     /// The words of the value this statement, at `index`, makes: its result's for a value of
