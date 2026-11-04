@@ -140,6 +140,9 @@ impl Checker<'_> {
         }
         let slots = call.args().map(|list| list.slots()).unwrap_or_default();
         let mut passed = Vec::new();
+        // FTE-18.11: a field argument is loaded straight into its slot after every argument is
+        // read, so its load is held back from the generated statements until then.
+        let mut field_loads: Vec<(usize, Vec<Op>)> = Vec::new();
         let mut values = Vec::new();
         for (at, slot) in slots.iter().enumerate() {
             let Some(arg) = slot else {
@@ -169,7 +172,12 @@ impl Checker<'_> {
                 );
                 self.env.report(Code::W0252, arg_span, message);
             }
+            let mark = self.generated.len();
             let mut value = self.read(reference.clone(), arg_span)?;
+            if matches!(reference.reference, Reference::Field(_)) {
+                let load = self.generated.split_off(mark.min(self.generated.len()));
+                field_loads.push((at, load));
+            }
             if let Some(param) = function.params.get(at)
                 && value.ty != Type::Unknown
                 && !self.env.typecmp(&value.ty, param)
@@ -225,7 +233,7 @@ impl Checker<'_> {
         }
         self.verify_arguments(&name, &values, span);
         self.generate_call(&values, span);
-        self.call_fragment(&function, count, &values, span);
+        self.call_fragment(&function, count, &values, &field_loads, span);
         // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
         for (reference, param) in passed.iter().zip(&params) {
             let Some(reference) = reference.as_ref().filter(|_| param.out) else {
@@ -306,6 +314,7 @@ impl Checker<'_> {
         function: &FunctionType,
         count: usize,
         values: &[Value],
+        field_loads: &[(usize, Vec<Op>)],
         span: Span,
     ) {
         // The arguments written and each parameter after them that takes its default
@@ -319,7 +328,13 @@ impl Checker<'_> {
         // In a function, the statements of the call: each argument a parameter takes stored to
         // its slot unless the statement before made it (FTE-18.12), then the call.
         if !self.global {
+            for (_, load) in field_loads.iter().filter(|(slot, _)| *slot < passed) {
+                self.generated.extend_from_slice(load);
+            }
             for (slot, value) in values.iter().take(passed).enumerate() {
+                if field_loads.iter().any(|(at, _)| *at == slot) {
+                    continue;
+                }
                 let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
                 let folded = value.temp.is_some()
                     && value.temp == self.last_temp
