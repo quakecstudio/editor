@@ -2976,8 +2976,16 @@ impl<'a> Compiler<'a> {
         // right operand retypes the return value the left one may be (QC-18.6).
         let a = self.type_of(left).etype();
         let b = self.type_of(right).etype();
-        let Some(row) =
-            ops::select(operator, a, b, None).or_else(|| self.null_row(operator, left, right))
+        // A source operator's opcode is the one the semantic model chose (FTEF-23.4, QC-16.1);
+        // an operation this code generator makes for another construct chooses its own.
+        let chosen = self
+            .typed_body()
+            .and_then(|body| body.opcode_at(op_span))
+            .and_then(|op| u32::try_from(op.number()).ok())
+            .and_then(ops::row_of);
+        let Some(row) = chosen
+            .or_else(|| ops::select(operator, a, b, None))
+            .or_else(|| self.null_row(operator, left, right))
         else {
             // FTE-19.9, FTE-19.10, FTE-19.12: FTEQCC's emulations of `v / f`, `&&` and `||` of
             // other types and `v & w` are the semantic model's (`lowered_binary`).
