@@ -41,6 +41,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # quakec-studio's UI tests render through wgpu with no window: on Linux with Mesa's
+      # software Vulkan driver, as ci.yml installs it (P2-167).
+      - name: Install a software Vulkan driver
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
       - name: Set up the Rust toolchains
         run: |
           rustup toolchain install
@@ -133,6 +140,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # quakec-studio's UI tests render through wgpu with no window: on Linux with Mesa's
+      # software Vulkan driver, as ci.yml installs it (P2-167).
+      - name: Install a software Vulkan driver
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
       - name: Set up the Rust toolchain
         run: rustup toolchain install
       - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
@@ -201,6 +215,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # quakec-studio's UI tests render through wgpu with no window: on Linux with Mesa's
+      # software Vulkan driver, as ci.yml installs it (P2-167).
+      - name: Install a software Vulkan driver
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
       - name: Set up the Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
