@@ -1178,6 +1178,32 @@ impl Checker<'_> {
         Ok(())
     }
 
+    /// FTEF-18.2: a local given a nested function's body: the function's number stored to it
+    /// each time the function runs, which the code generator numbers, or a `static` local's
+    /// value.
+    fn nested_local(&mut self, declarator: &ast::Declarator) {
+        let local = declarator
+            .name()
+            .and_then(|name| self.env.reference(name.span().start));
+        let is_static = declarator
+            .syntax()
+            .parent()
+            .is_some_and(|decl| declares(&decl, &Qualifier::Static));
+        match local {
+            Some(local) if is_static => {
+                let at = self.next_made();
+                self.effects
+                    .push((at, ir::Effect::Nested(ir::Name::Def(local, 0))));
+            }
+            Some(local) => self.generated.push(ir::BodyStatement {
+                a: Some(ir::Name::Nested(local)),
+                b: Some(ir::Name::Def(local, 0)),
+                ..ir::BodyStatement::bare(Op::StoreFnc)
+            }),
+            None => self.followed = false,
+        }
+    }
+
     /// [`Checker::local`] of one declarator: its size, then its value cast to its type.
     fn local_declarator(&mut self, declarator: &ast::Declarator) -> Result<(), Fatal> {
         // The local is declared before its value is read, where the next statement goes.
@@ -1195,7 +1221,12 @@ impl Checker<'_> {
             Some(ast::Initializer::Aggregate(aggregate)) => {
                 return self.vector_aggregate(declarator, &aggregate);
             }
-            // A nested function and a builtin local are compiled from the syntax tree.
+            // FTEF-18.2: a nested function is compiled after this one, its number stored to its
+            // local each time the function runs, or a `static` local's value.
+            Some(ast::Initializer::Body(_)) if self.env.fteqcc() && !self.global => {
+                self.nested_local(declarator);
+            }
+            // A builtin local and a nested function elsewhere are compiled from the syntax tree.
             Some(ast::Initializer::Body(_) | ast::Initializer::Builtin(_)) => {
                 self.followed = false;
             }

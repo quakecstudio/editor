@@ -281,6 +281,7 @@ variant qc_sema::ir::Effect::Constant
 variant qc_sema::ir::Effect::ForBegin
 variant qc_sema::ir::Effect::ForEnd
 variant qc_sema::ir::Effect::Make
+variant qc_sema::ir::Effect::Nested
 variant qc_sema::ir::Effect::Temp
 variant qc_sema::ir::Effect::Vector
 variant qc_sema::ir::ImmediateKind::Float
@@ -298,6 +299,7 @@ variant qc_sema::ir::Name::ImmediateWord
 variant qc_sema::ir::Name::Jump
 variant qc_sema::ir::Name::Made
 variant qc_sema::ir::Name::MadeWord
+variant qc_sema::ir::Name::Nested
 variant qc_sema::ir::Name::Parameter
 variant qc_sema::ir::Name::Prior
 variant qc_sema::ir::Name::RetLocal

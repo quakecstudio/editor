@@ -205,6 +205,9 @@ pub enum Name {
     ArrayGet(DefId),
     /// The array definition's setter, `ArraySet*NAME` (FTE-13.11).
     ArraySet(DefId),
+    /// The immediate holding the number of the nested function the local definition is given,
+    /// which the code generator numbers (FTEF-18.2).
+    Nested(DefId),
 }
 
 /// What a body makes without a statement of its own that reads it (`TypedBody::effects`).
@@ -221,6 +224,9 @@ pub enum Effect {
     /// The constant local the name names is given its aggregate initialiser's words at compile
     /// time, as a global is (FTEF-32.13).
     Constant(Name),
+    /// The `static` local the name names is given the number of the nested function its
+    /// declaration defines (FTEF-18.2).
+    Nested(Name),
     /// The `autocvar_NAME` global the name names, which `autocvar(NAME, default)` reads, given
     /// the default as its value when nothing initialised it before (FTEF-32.12).
     Autocvar(Name),
@@ -254,7 +260,8 @@ impl Name {
             | Self::Jump(_)
             | Self::String(_)
             | Self::ArrayGet(_)
-            | Self::ArraySet(_) => return None,
+            | Self::ArraySet(_)
+            | Self::Nested(_) => return None,
         })
     }
 
@@ -269,6 +276,7 @@ impl Name {
             | Self::String(_)
             | Self::ArrayGet(_)
             | Self::ArraySet(_)
+            | Self::Nested(_)
             | Self::RetLocal => true,
             Self::Parameter(slot) => *slot >= 8,
             Self::Made(_)

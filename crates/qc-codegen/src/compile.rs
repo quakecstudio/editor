@@ -200,6 +200,9 @@ pub(crate) struct Compiler<'a> {
     scope: Option<DefId>,
     /// Where the body being compiled starts, which of its function's bodies it is.
     body_start: Option<usize>,
+    /// The syntax of the body being written from the semantic model, whose declarations a name
+    /// or an effect of the model refers the writer to.
+    writing: Option<ast::FunctionBody>,
     /// The end of the last `local` declaration's globals, `locals_end` (QC-21.4).
     locals_end: u32,
     /// The type of the last call's value, `def_ret.type` (QC-18.4).
@@ -286,6 +289,7 @@ impl<'a> Compiler<'a> {
             s_file: 0,
             scope: None,
             body_start: None,
+            writing: None,
             locals_end: 0,
             return_type: ValueType::simple(Etype::Void),
             dialect: Dialect::Vanilla,
@@ -1089,16 +1093,10 @@ impl<'a> Compiler<'a> {
         body: &ast::FunctionBody,
     ) -> Lowered<()> {
         let span = name.span();
-        let number = self.next_nested;
-        let records = body
-            .syntax()
-            .descendants()
-            .filter(|node| node.kind() == SyntaxKind::FunctionBody)
-            .count();
-        self.next_nested = number.checked_add(records).at(span)?;
-        let word = u32::from_ne_bytes(operand_index(number).at(span)?.to_ne_bytes());
+        let nested = written.nested;
+        let word = self.register_nested(written, declarator, name, (id, place), body)?;
         let ofs = self.program.def(place).at(span)?.ofs;
-        if written.nested {
+        if nested {
             // `tmp = QCC_MakeIntConst(f - functions)`, stored as any local's initialiser.
             let constant = self
                 .program
@@ -1113,6 +1111,28 @@ impl<'a> Compiler<'a> {
         } else {
             self.program.set_words(ofs, &[word]).at(span)?;
         }
+        Ok(())
+    }
+
+    /// FTEF-18.2: numbers the nested function `body` the local `id` at `place` is given, and
+    /// each nested in it, and keeps it to compile after this one; the word of its number.
+    fn register_nested(
+        &mut self,
+        written: Written,
+        declarator: &ast::Declarator,
+        name: &SyntaxToken,
+        (id, place): (DefId, usize),
+        body: &ast::FunctionBody,
+    ) -> Lowered<u32> {
+        let span = name.span();
+        let number = self.next_nested;
+        let records = body
+            .syntax()
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::FunctionBody)
+            .count();
+        self.next_nested = number.checked_add(records).at(span)?;
+        let word = u32::from_ne_bytes(operand_index(number).at(span)?.to_ne_bytes());
         self.nested.push(Nested {
             written,
             declarator: declarator.clone(),
@@ -1120,7 +1140,7 @@ impl<'a> Compiler<'a> {
             def: (id, place),
             body: body.clone(),
         });
-        Ok(())
+        Ok(word)
     }
 
     /// FTEF-15.11: for a `wrap` definition's body, the function it wraps moves to a new

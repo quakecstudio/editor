@@ -12,10 +12,11 @@ use std::collections::HashMap;
 use qc_diag::Span;
 use qc_progs::opcode::Opcode;
 use qc_sema::ir::{BodyStatement, Effect, Name};
-use qc_sema::{FileId, TypedBody};
+use qc_sema::lower::{Qualifier, declares};
+use qc_sema::{DefId, FileId, TypedBody};
 use qc_syntax::ast::{self, AstNode as _};
 
-use super::{At, Compiler, Lowered};
+use super::{At, Compiler, Lowered, Written};
 use crate::Internal;
 use crate::program::{Literal, OFS_RETURN, operand, type_words};
 
@@ -35,6 +36,20 @@ impl Compiler<'_> {
         if !writable(body, ret_local) || !self.defaults_kept(body) {
             return Ok(false);
         }
+        self.writing = Some(syntax.clone());
+        let written = self.write_statements(body, syntax, named);
+        self.writing = None;
+        written.map(|()| true)
+    }
+
+    /// The statements of `body`, whose syntax is `syntax`, written in turn with what the body
+    /// makes between them.
+    fn write_statements(
+        &mut self,
+        body: &TypedBody,
+        syntax: &ast::FunctionBody,
+        named: Span,
+    ) -> Lowered<()> {
         let generated = body.generated();
         let mut slots: HashMap<u32, u32> = HashMap::new();
         // The global the first parameter slot was last stored from, which a precache records.
@@ -61,7 +76,10 @@ impl Compiler<'_> {
                     }
                     Effect::Constant(local) => self.constant_local(syntax, local, named)?,
                     Effect::Autocvar(cvar) => self.autocvar_default(syntax, cvar, named)?,
-                    Effect::Make(_) | Effect::Temp(_) => {
+                    Effect::Nested(Name::Def(local, _)) => {
+                        self.nested_local(syntax, local, named)?;
+                    }
+                    Effect::Make(_) | Effect::Temp(_) | Effect::Nested(_) => {
                         self.effect(effect, index, (body, &slots), named)?;
                     }
                 }
@@ -118,12 +136,66 @@ impl Compiler<'_> {
                 }
                 Effect::Constant(local) => self.constant_local(syntax, local, named)?,
                 Effect::Autocvar(cvar) => self.autocvar_default(syntax, cvar, named)?,
-                Effect::Make(_) | Effect::Temp(_) | Effect::Vector => {
+                Effect::Nested(Name::Def(local, _)) => {
+                    self.nested_local(syntax, local, named)?;
+                }
+                Effect::Make(_) | Effect::Temp(_) | Effect::Vector | Effect::Nested(_) => {
                     self.effect(effect, end, (body, &slots), named)?;
                 }
             }
         }
-        Ok(true)
+        Ok(())
+    }
+
+    /// FTEF-18.2: the nested function the local `local` of the body `syntax` is given, numbered
+    /// and kept to compile after this one: the immediate of its number when the local stores
+    /// it each time the function runs, else a `static` local's value, set now.
+    fn nested_local(
+        &mut self,
+        syntax: &ast::FunctionBody,
+        local: DefId,
+        span: Span,
+    ) -> Lowered<Option<usize>> {
+        let at = self.index.def(local).at(span)?.location.span.start;
+        let declarator = syntax
+            .syntax()
+            .descendants()
+            .filter_map(ast::Declarator::cast)
+            .find(|declarator| {
+                declarator
+                    .name()
+                    .is_some_and(|name| name.span().start == at)
+            })
+            .at(span)?;
+        let name = declarator.name().at(span)?;
+        let decl = declarator
+            .syntax()
+            .parent()
+            .and_then(ast::LocalDecl::cast)
+            .at(span)?;
+        let Some(ast::Initializer::Body(nested_body)) = declarator.initializer() else {
+            return Err(Internal::Unlowered).at(span);
+        };
+        let nested = !declares(decl.syntax(), &Qualifier::Static);
+        let written = Written {
+            ty: decl.ty(),
+            wrap: false,
+            nested,
+        };
+        let place = self.program.get_def(self.index, local).at(span)?;
+        let word =
+            self.register_nested(written, &declarator, &name, (local, place), &nested_body)?;
+        if !nested {
+            let ofs = self.program.def(place).at(span)?.ofs;
+            self.program.set_words(ofs, &[word]).at(span)?;
+            return Ok(None);
+        }
+        // `tmp = QCC_MakeIntConst(f - functions)`, stored as any local's initialiser.
+        let constant = self
+            .program
+            .immediate(&Literal::Float(f32::from_bits(word)))
+            .at(span)?;
+        Ok(Some(constant))
     }
 
     /// Makes what `effect` makes without a statement reading it (`TypedBody::effects`): a
@@ -147,7 +219,11 @@ impl Compiler<'_> {
                 self.program.allocate(3).at(span)?;
                 return Ok(());
             }
-            Effect::ForBegin | Effect::ForEnd | Effect::Constant(_) | Effect::Autocvar(_) => {
+            Effect::ForBegin
+            | Effect::ForEnd
+            | Effect::Constant(_)
+            | Effect::Autocvar(_)
+            | Effect::Nested(_) => {
                 return Ok(());
             }
         };
@@ -365,6 +441,12 @@ impl Compiler<'_> {
                 return i32::try_from(offset)
                     .map_err(|_| Internal::TooLarge)
                     .at(span);
+            }
+            // FTEF-18.2: the nested function's number, its immediate made as it is stored.
+            Name::Nested(local) => {
+                let syntax = self.writing.clone().at(span)?;
+                let place = self.nested_local(&syntax, local, span)?.at(span)?;
+                self.program.def(place).at(span)?.ofs
             }
             Name::Default(slot) => {
                 let at = usize::try_from(index)
