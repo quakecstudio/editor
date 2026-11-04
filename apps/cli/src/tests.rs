@@ -278,3 +278,91 @@ fn commands_lists_every_command() {
         assert!(ids.contains(&id), "{ids:?}");
     }
 }
+
+/// A writer that refuses every write, as a closed pipe does.
+struct Closed;
+
+impl std::io::Write for Closed {
+    fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::BrokenPipe,
+            "closed",
+        ))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+// P2-RA review: output that cannot be written is a failure, said on the error output, for
+// every subcommand that prints.
+#[test]
+fn output_that_cannot_be_written_is_a_failure() {
+    let dir = project("closed", &ProjectSpec::default());
+    for list in [
+        &["commands"][..],
+        &["check", text(&dir)][..],
+        &["build", text(&dir)][..],
+        &["run", "commands.list"][..],
+    ] {
+        let mut err = Vec::new();
+        let exit = run(&args(list), FsLoader, &mut Closed, &mut err);
+        assert_eq!(exit, Exit::Failure, "{list:?}");
+        let err = String::from_utf8(err).unwrap();
+        assert!(err.contains("cannot write the output"), "{list:?}: {err}");
+    }
+}
+
+// P2-RA review: a warning is printed and counted, and does not fail the build or the check.
+#[test]
+fn warnings_are_printed_and_counted_but_do_not_fail() {
+    let dir = project(
+        "warning",
+        &ProjectSpec {
+            world: "void() worldspawn = { local float speed; speed = 1; };\n",
+        },
+    );
+    let (exit, out, err) = cli(&["check", text(&dir)]);
+    assert_eq!(exit, Exit::Success, "{out}{err}");
+    let place = format!("{}:1:", dir.join("world.qc").display());
+    assert!(
+        out.contains(&place) && out.contains(": warning W0201: "),
+        "{out}"
+    );
+    assert!(out.ends_with("0 errors, 1 warnings\n"), "{out}");
+    let (exit, out, _) = cli(&["build", text(&dir)]);
+    assert_eq!(exit, Exit::Success, "{out}");
+    assert!(
+        out.contains(": warning W0201: ") && out.contains("built progs to "),
+        "{out}"
+    );
+}
+
+// PRJ-2.1: a project that does not open, a directory that does not exist or a project file
+// that is wrong, is a failure that says why, not a crash or an empty success.
+#[test]
+fn a_project_that_does_not_open_is_a_failure() {
+    let dir = project("broken-toml", &ProjectSpec::default());
+    let missing = dir.join("no-such-dir");
+    let (exit, out, err) = cli(&["build", text(&missing)]);
+    assert_eq!(exit, Exit::Failure, "{out}{err}");
+    assert!(out.is_empty() && !err.is_empty(), "{err}");
+    std::fs::write(dir.join("quakec.toml"), "[[module]]\nkind = \"nope\"\n").unwrap();
+    for verb in ["build", "check"] {
+        let (exit, out, err) = cli(&[verb, text(&dir)]);
+        assert_eq!(exit, Exit::Failure, "{verb}: {out}{err}");
+        assert!(err.contains("quakec.toml"), "{verb}: {err}");
+    }
+}
+
+// P2-RA review: the parameters of `run` are a JSON object; any other JSON is refused by the
+// command with a failure.
+#[test]
+fn run_refuses_parameters_that_are_not_an_object() {
+    for params in ["[1]", "3", "\"x\"", "null"] {
+        let (exit, out, err) = cli(&["run", "commands.list", params]);
+        assert_eq!(exit, Exit::Failure, "{params}: {out}");
+        assert!(err.starts_with("quakec-ide: "), "{params}: {err}");
+    }
+}

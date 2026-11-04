@@ -3283,6 +3283,7 @@ dependencies = [
 name = "quakec-lsp"
 version = "2026.10.0"
 dependencies = [
+ "proptest",
  "qc-ide",
  "qc-project",
  "qs-log",
