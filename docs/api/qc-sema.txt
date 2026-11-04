@@ -112,6 +112,7 @@ fn qc_sema::cast::Type::fteqcc_scalar
 fn qc_sema::check::TypedBody::fragment_at
 fn qc_sema::check::TypedBody::generated
 fn qc_sema::check::TypedBody::opcode_at
+fn qc_sema::check::TypedBody::string
 fn qc_sema::check::TypedBody::type_at
 fn qc_sema::check::fold::fold_builtin_call
 fn qc_sema::check::fold::fold_floats
@@ -269,11 +270,17 @@ variant qc_sema::ir::ImmediateKind::Vector
 variant qc_sema::ir::Input::Argument
 variant qc_sema::ir::Input::Left
 variant qc_sema::ir::Input::Right
+variant qc_sema::ir::Name::ArrayGet
+variant qc_sema::ir::Name::ArraySet
 variant qc_sema::ir::Name::Def
 variant qc_sema::ir::Name::Immediate
+variant qc_sema::ir::Name::Jump
 variant qc_sema::ir::Name::Made
+variant qc_sema::ir::Name::MadeWord
 variant qc_sema::ir::Name::Parameter
 variant qc_sema::ir::Name::Return
+variant qc_sema::ir::Name::String
+variant qc_sema::ir::Name::VaList
 variant qc_sema::ir::Operand::Def
 variant qc_sema::ir::Operand::Immediate
 variant qc_sema::ir::Operand::Input
