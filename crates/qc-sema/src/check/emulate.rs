@@ -412,6 +412,7 @@ impl Checker<'_> {
             let callee = [Some(Some(ir::Operand::Def(function))), None];
             builder.push(Op::Call2, callee, ir::Destination::Nothing);
         }
+        let call = self.helper_statements(function, lhs, rhs);
         for offset in [lhs.temp, rhs.temp].into_iter().flatten() {
             self.env.temps().free(offset);
         }
@@ -420,8 +421,45 @@ impl Checker<'_> {
         Value {
             ir: Some(ir::Operand::Return),
             temp,
+            returned: call.is_some(),
+            call,
+            made: None,
             ..result
         }
+    }
+
+    /// The generated statements of a call of the helper `function` with `lhs` and `rhs`: each
+    /// stored to its parameter, only the first folding into the statement that made it
+    /// (FTE-18.12), then `CALL2`; the call's index, its value then in the return global.
+    fn helper_statements(&mut self, function: DefId, lhs: &Value, rhs: &Value) -> Option<u32> {
+        if self.global {
+            return None;
+        }
+        for (slot, operand) in [(0, lhs), (1, rhs)] {
+            let parameter = Some(ir::Name::Parameter(slot));
+            if slot == 0 && operand.temp.is_some() && operand.temp == self.last_temp {
+                self.fold_into(operand, parameter);
+            } else {
+                self.generated.push(ir::BodyStatement {
+                    a: self.name_of(operand),
+                    b: parameter,
+                    ..ir::BodyStatement::bare(Op::StoreF)
+                });
+            }
+            if operand.returned {
+                self.live_return = None;
+                self.live_call = None;
+            }
+        }
+        self.clobber_return();
+        self.generated.push(ir::BodyStatement {
+            a: Some(ir::Name::Def(function, 0)),
+            ..ir::BodyStatement::bare(Op::Call2)
+        });
+        let call = self.last_made();
+        self.live_return = Some(1);
+        self.live_call = call;
+        call
     }
 
     /// FTEF-27.2: the emulation of `op`, which the target lacks.
