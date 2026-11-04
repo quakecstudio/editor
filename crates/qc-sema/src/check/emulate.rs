@@ -469,6 +469,19 @@ impl Checker<'_> {
         }
     }
 
+    /// The value of the call of the helper `function` of `operands`, `result` in the return
+    /// global (FTE-19.11).
+    fn helper_value(&mut self, function: DefId, operands: &[&Value], result: &Value) -> Value {
+        let call = self.helper_statements(function, operands);
+        Value {
+            returned: call.is_some(),
+            call,
+            made: None,
+            temp: None,
+            ..result.clone()
+        }
+    }
+
     /// The generated statements of a call of the helper `function` with `operands`: each
     /// stored to its parameter, only the first folding into the statement that made it
     /// (FTE-18.12), then `CALL1` or `CALL2`; the call's index, its value then in the return
@@ -1039,9 +1052,27 @@ impl Checker<'_> {
                     self.emit(int_op, &lhs, &rhs, span)?;
                     return Ok(result);
                 }
-                let pow = self.env.defines("powf") || self.env.defines("pow");
-                if (pow && self.env.defines("floor")) || self.env.defines("bitshift") {
-                    return Ok(result);
+                // FTE-19.11: `floor(a * pow(2, b))` or `floor(a / pow(2, b))` with `powf` or
+                // `pow` and `floor`; else `bitshift(a, b)` or `bitshift(a, 0 - b)`.
+                let pow = self.env.helper("powf").or_else(|| self.env.helper("pow"));
+                if let (Some(pow), Some(floor)) = (pow, self.env.helper("floor")) {
+                    let two = Value::constant(Constant::float(2.0));
+                    let power = self.helper_value(pow, &[&two, rhs], &result);
+                    let scale = if op == Op::LshiftF {
+                        Op::MulF
+                    } else {
+                        Op::DivF
+                    };
+                    let scaled = self.emit(scale, lhs, &power, span)?;
+                    return Ok(self.helper_value(floor, &[&scaled], &result));
+                }
+                if let Some(bitshift) = self.env.helper("bitshift") {
+                    if op == Op::LshiftF {
+                        return Ok(self.helper_value(bitshift, &[lhs, rhs], &result));
+                    }
+                    let zero = Value::constant(Constant::float(0.0));
+                    let negated = self.emit(Op::SubF, &zero, rhs, span)?;
+                    return Ok(self.helper_value(bitshift, &[lhs, &negated], &result));
                 }
                 let message = format!("bitshift function not defined: cannot emulate {what}");
                 self.env.report(Code::W0235, span, message);
