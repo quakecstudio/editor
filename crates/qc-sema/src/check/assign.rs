@@ -715,7 +715,9 @@ impl Checker<'_> {
         };
         // FTEF-29.13: a value the postfix gives is the old one, copied to a temporary first.
         let mut copy = None;
-        if !discarded && operand.reference == Reference::Global {
+        // The old value is copied first: a definition's, and an element's the getter left in
+        // the return global.
+        if !discarded && (operand.reference == Reference::Global || old.returned) {
             let store = Checker::store_op(self.etype(&operand.ty));
             self.emit(store, &old, &Value::unknown(), span)?;
             copy = self
@@ -1111,6 +1113,10 @@ impl Checker<'_> {
         };
         if value.ty == Type::Unknown {
             return Ok(());
+        }
+        // A struct's or a union's initialiser is copied in word groups the body does not follow.
+        if matches!(self.etype(&ty), Some(Etype::Struct | Etype::Union)) {
+            self.followed = false;
         }
         let span = init.syntax().span();
         let resolver_casts = match &init {

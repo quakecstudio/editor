@@ -193,6 +193,11 @@ impl Checker<'_> {
                 && value.ty != Type::Unknown
                 && !self.env.typecmp(&value.ty, param)
             {
+                // A field argument converted is loaded into the conversion's own slot
+                // (FTE-18.11), which the body does not follow.
+                if matches!(reference.reference, Reference::Field(_)) {
+                    self.followed = false;
+                }
                 value = self.cast_to(&value, param, arg_span)?;
             }
             passed.push(Some(reference));
