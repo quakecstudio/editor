@@ -284,20 +284,20 @@ impl Checker<'_> {
             if lhs.reference == Reference::Global && !folded {
                 self.emit(store, &stored, &Value::unknown(), span)?;
             }
-            // FTE-6.4: a field's store is its `ADDRESS`, made after the value, and `STOREP_*` of
-            // the field's type through it.
-            if matches!(lhs.reference, Reference::Field(_)) && !self.global {
-                let storep = match self.etype(&target) {
-                    Some(Etype::Vector) => Op::StorepV,
-                    Some(Etype::String) => Op::StorepS,
-                    Some(Etype::Entity) => Op::StorepEnt,
-                    Some(Etype::Field) => Op::StorepFld,
-                    Some(Etype::Function) => Op::StorepFnc,
-                    _ => Op::StorepF,
-                };
-                self.generated.push(Op::Address);
-                self.generated.push(storep);
-            }
+        }
+        // FTE-6.4: a field's store, a compound one's too, is its `ADDRESS`, made after the
+        // value, and `STOREP_*` of the field's type through it.
+        if matches!(lhs.reference, Reference::Field(_)) && !self.global {
+            let storep = match self.etype(&target) {
+                Some(Etype::Vector) => Op::StorepV,
+                Some(Etype::String) => Op::StorepS,
+                Some(Etype::Entity) => Op::StorepEnt,
+                Some(Etype::Field) => Op::StorepFld,
+                Some(Etype::Function) => Op::StorepFnc,
+                _ => Op::StorepF,
+            };
+            self.generated.push(Op::Address);
+            self.generated.push(storep);
         }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
         if lhs.readonly {
