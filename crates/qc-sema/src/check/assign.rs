@@ -317,6 +317,10 @@ impl Checker<'_> {
         if matches!(kind, Assign::Store) {
             self.pointer_store(&lhs, &stored, &target);
         }
+        // A struct's or a union's store is word groups the body does not follow (FTE-14.5).
+        if matches!(self.etype(&target), Some(Etype::Struct | Etype::Union)) {
+            self.followed = false;
+        }
         // An accessor's store, and a compound one through a pointer, are not followed.
         if matches!(lhs.reference, Reference::Accessor(_))
             || matches!(

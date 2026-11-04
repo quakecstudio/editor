@@ -1630,14 +1630,10 @@ fn a_generated_body_names_a_ternary() {
 // `low + (high - low) * value` reading the return global, the store folding into its last step
 #[test]
 fn a_generated_body_names_states_locals_strings_and_random() {
-    use crate::ir::{Immediate, ImmediateKind, Name};
+    use crate::ir::Name;
     use qc_preproc::Op;
-    let float = |value: f32| Immediate {
-        kind: ImmediateKind::Float,
-        words: [value.to_bits(), 0, 0],
-    };
-    let source = "float() random; void(string s) print; void() n; \
-        void() t = [1, n] { float l = 0; print(\"\\xff\"); l = random(2, 5); };";
+    let source = "float() random; void(string s) print; void() n; float h; \
+        void() t = [1, n] { float l = 0; print(\"\\xff\"); l = random(2, h); };";
     let index = super::fte_index_of(source);
     let def = |name: &str| {
         index
@@ -1675,7 +1671,7 @@ fn a_generated_body_names_states_locals_strings_and_random() {
     assert_eq!(
         scaling,
         [
-            (Op::SubF, Some(Name::Immediate(float(5.0))), made(1)),
+            (Op::SubF, named("h"), made(1)),
             (Op::MulF, Some(Name::Return), made(2)),
             (Op::AddF, made(2), named("l")),
         ]

@@ -180,7 +180,13 @@ impl Checker<'_> {
             self.generate(op, span);
             return Ok(self.statement_temps(op, lhs, rhs, result));
         }
+        let before = self.generated.len();
         let emulated = self.emulate(op, lhs, rhs, span, result)?;
+        // An emulation that generated no statement and left no constant is one the code
+        // generator lowers itself, which the body does not follow.
+        if self.generated.len() == before && emulated.known().is_none() && !self.global {
+            self.followed = false;
+        }
         // A refused opcode is still the statement it was (`badopcode`), its result a temporary;
         // a helper's call leaves its value in the return global instead.
         if emulated.temp.is_none()

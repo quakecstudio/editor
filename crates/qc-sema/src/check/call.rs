@@ -496,19 +496,24 @@ impl Checker<'_> {
                 .map(|def| ir::Name::Def(def, 0)),
             _ => None,
         };
-        Ok(self.random_statements(callee, &values))
+        self.random_statements(callee, &values, span)
     }
 
     /// The statements of `random` of `callee` with the arguments `args` in a function: the
     /// call of the builtin, then its value scaled, `* scale` for one argument and
     /// `low + (high - low) * value` for two; the value, the return global's with none.
-    fn random_statements(&mut self, callee: Option<ir::Name>, args: &[Value]) -> Value {
+    fn random_statements(
+        &mut self,
+        callee: Option<ir::Name>,
+        args: &[Value],
+        span: Span,
+    ) -> Checked {
         let float = Value {
             returned: args.is_empty(),
             ..Value::of(Type::Simple(SimpleType::Float))
         };
         if self.global {
-            return float;
+            return Ok(float);
         }
         self.clobber_return();
         self.generated.push(ir::BodyStatement {
@@ -517,27 +522,23 @@ impl Checker<'_> {
         });
         let call = self.last_made();
         self.last_temp = None;
-        let mut statement = |op, a, b| {
-            let made = u32::try_from(self.generated.len()).ok();
-            self.generated.push(ir::BodyStatement {
-                a,
-                b,
-                c: made.map(ir::Name::Made),
-                ..ir::BodyStatement::bare(op)
-            });
-            made
-        };
         let made = match args {
             [] => {
                 self.live_return = Some(1);
                 self.live_call = call;
                 None
             }
-            [scale] => statement(Op::MulF, Some(ir::Name::Return), scale.name()),
+            [scale] => self.push_made(Op::MulF, Some(ir::Name::Return), scale.name()),
             [low, high, ..] => {
-                let range = statement(Op::SubF, high.name(), low.name());
-                let scaled = statement(Op::MulF, Some(ir::Name::Return), range.map(ir::Name::Made));
-                statement(Op::AddF, scaled.map(ir::Name::Made), low.name())
+                // `high - low`, which folds when both are constants (`QCC_PR_StatementFlags`).
+                let range = match (high.known(), low.known()) {
+                    (Some(_), Some(_)) => self.emit(Op::SubF, high, low, span)?.name(),
+                    _ => self
+                        .push_made(Op::SubF, high.name(), low.name())
+                        .map(ir::Name::Made),
+                };
+                let scaled = self.push_made(Op::MulF, Some(ir::Name::Return), range);
+                self.push_made(Op::AddF, scaled.map(ir::Name::Made), low.name())
             }
         };
         // A scaled value is its last statement's temporary, which a store may fold into.
@@ -545,12 +546,24 @@ impl Checker<'_> {
         if temp.is_some() {
             self.last_temp = temp;
         }
-        Value {
+        Ok(Value {
             made,
             call,
             temp,
             ..float
-        }
+        })
+    }
+
+    /// Generates `op` of `a` and `b` into a value of its own; the statement's index.
+    fn push_made(&mut self, op: Op, a: Option<ir::Name>, b: Option<ir::Name>) -> Option<u32> {
+        let made = u32::try_from(self.generated.len()).ok();
+        self.generated.push(ir::BodyStatement {
+            a,
+            b,
+            c: made.map(ir::Name::Made),
+            ..ir::BodyStatement::bare(op)
+        });
+        made
     }
 
     pub(super) fn generate_call(&mut self, values: &[Value], span: Span) {
