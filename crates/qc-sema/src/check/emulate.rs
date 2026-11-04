@@ -427,7 +427,7 @@ impl Checker<'_> {
             let callee = [Some(Some(ir::Operand::Def(function))), None];
             builder.push(Op::Call2, callee, ir::Destination::Nothing);
         }
-        let call = self.helper_statements(function, lhs, rhs);
+        let call = self.helper_statements(function, &[lhs, rhs]);
         for offset in [lhs.temp, rhs.temp].into_iter().flatten() {
             self.env.temps().free(offset);
         }
@@ -445,14 +445,15 @@ impl Checker<'_> {
         }
     }
 
-    /// The generated statements of a call of the helper `function` with `lhs` and `rhs`: each
+    /// The generated statements of a call of the helper `function` with `operands`: each
     /// stored to its parameter, only the first folding into the statement that made it
-    /// (FTE-18.12), then `CALL2`; the call's index, its value then in the return global.
-    fn helper_statements(&mut self, function: DefId, lhs: &Value, rhs: &Value) -> Option<u32> {
+    /// (FTE-18.12), then `CALL1` or `CALL2`; the call's index, its value then in the return
+    /// global.
+    fn helper_statements(&mut self, function: DefId, operands: &[&Value]) -> Option<u32> {
         if self.global {
             return None;
         }
-        for (slot, operand) in [(0, lhs), (1, rhs)] {
+        for (slot, &operand) in (0_u8..).zip(operands) {
             let parameter = Some(ir::Name::Parameter(slot));
             if slot == 0 && operand.temp.is_some() && operand.temp == self.last_temp {
                 self.fold_into(operand, parameter);
@@ -469,9 +470,14 @@ impl Checker<'_> {
             }
         }
         self.clobber_return();
+        let op = if operands.len() == 1 {
+            Op::Call1
+        } else {
+            Op::Call2
+        };
         self.generated.push(ir::BodyStatement {
             a: Some(ir::Name::Def(function, 0)),
-            ..ir::BodyStatement::bare(Op::Call2)
+            ..ir::BodyStatement::bare(op)
         });
         let call = self.last_made();
         self.live_return = Some(1);
@@ -764,6 +770,19 @@ impl Checker<'_> {
             _ => return Ok(result),
         };
         if helpers.iter().any(|name| self.env.defines(name)) {
+            // FTE-19.8: a conversion opcode is the helper's call of the value; a store's
+            // conversion is not followed yet.
+            let helper = helpers.iter().find_map(|name| self.env.helper(name));
+            if let (Some(function), Op::ConvItof | Op::ConvFtoi | Op::ConvUf) = (helper, op) {
+                let call = self.helper_statements(function, &[value]);
+                return Ok(Value {
+                    returned: call.is_some(),
+                    call,
+                    made: None,
+                    temp: None,
+                    ..result
+                });
+            }
             return Ok(result);
         }
         if op == Op::ConvUf {
