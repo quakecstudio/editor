@@ -258,6 +258,7 @@ variant qc_sema::ir::Destination::Word
 variant qc_sema::ir::ImmediateKind::Float
 variant qc_sema::ir::ImmediateKind::Integer
 variant qc_sema::ir::ImmediateKind::Vector
+variant qc_sema::ir::Input::Argument
 variant qc_sema::ir::Input::Left
 variant qc_sema::ir::Input::Right
 variant qc_sema::ir::Operand::Def

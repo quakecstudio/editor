@@ -199,7 +199,7 @@ impl Checker<'_> {
 
     /// Records `constant` as an immediate the fragment being lowered made, when there is one; a
     /// kind of constant the layer does not hold leaves the fragment unheld.
-    fn made(&mut self, constant: Constant) {
+    pub(super) fn made(&mut self, constant: Constant) {
         let Some(builder) = &mut self.fragment else {
             return;
         };
@@ -357,7 +357,7 @@ impl Checker<'_> {
                 self.emit(then, &lhs, rhs, span)
             }
             Emulation::Helper(names, what) => {
-                if names.iter().any(|name| self.env.helper(name).is_some()) {
+                if names.iter().any(|name| self.env.defines(name)) {
                     return Ok(result);
                 }
                 let name = names.first().copied().unwrap_or_default();
@@ -392,7 +392,15 @@ impl Checker<'_> {
             }
             Emulation::Remainder(helper, steps) => {
                 if let Some(function) = self.env.helper(helper) {
-                    return Ok(self.helper_call(function, (lhs, rhs), result));
+                    // The layer holds the float remainder's call, whose value is a float; the
+                    // integer ones' calls the code generator does not lower from it yet.
+                    if op == Op::ModF {
+                        return Ok(self.helper_call(function, (lhs, rhs), result));
+                    }
+                    if let Some(builder) = &mut self.fragment {
+                        builder.give_up();
+                    }
+                    return Ok(result);
                 }
                 let &[div, ref rest @ .., mul, sub] = steps else {
                     return Ok(result);
@@ -554,7 +562,7 @@ impl Checker<'_> {
         span: Span,
         result: Value,
     ) -> Result<Value, Fatal> {
-        if helper.is_some_and(|helper| self.env.helper(helper).is_some()) {
+        if helper.is_some_and(|helper| self.env.defines(helper)) {
             if let Some(builder) = &mut self.fragment {
                 builder.give_up();
             }
@@ -595,7 +603,7 @@ impl Checker<'_> {
             ),
             _ => return Ok(result),
         };
-        if helpers.iter().any(|name| self.env.helper(name).is_some()) {
+        if helpers.iter().any(|name| self.env.defines(name)) {
             return Ok(result);
         }
         if op == Op::ConvUf {
@@ -645,7 +653,7 @@ impl Checker<'_> {
             }
             _ => ("RShiftUInt", Op::DivU),
         };
-        if self.env.helper(helper).is_some() {
+        if self.env.defines(helper) {
             return Ok(result);
         }
         // A shift by a constant is a product or quotient by `QCC_MakeIntConst(1<<n)`; by
@@ -695,7 +703,7 @@ impl Checker<'_> {
         let qccx = self.env.flags_at(span.start).has(FteFlag::Qccx);
         match op {
             Op::AddSf => {
-                if self.env.helper("AddStringFloat").is_some() {
+                if self.env.defines("AddStringFloat") {
                     return Ok(result);
                 }
                 if lhs.constness == Constness::Variable {
@@ -734,7 +742,7 @@ impl Checker<'_> {
                 if qccx {
                     let message = "qccx entity offsets are unsafe".to_owned();
                     self.env.report(Code::W0235, span, message);
-                } else if !self.env.helper("nextent").is_some() {
+                } else if !self.env.defines("nextent") {
                     let message = "the nextent builtin is not defined".to_owned();
                     self.env.report(Code::W0235, span, message);
                     self.refuse_emitted(op, span);
@@ -759,10 +767,8 @@ impl Checker<'_> {
                     self.emit(int_op, &lhs, &rhs, span)?;
                     return Ok(result);
                 }
-                let pow = self.env.helper("powf").is_some() || self.env.helper("pow").is_some();
-                if (pow && self.env.helper("floor").is_some())
-                    || self.env.helper("bitshift").is_some()
-                {
+                let pow = self.env.defines("powf") || self.env.defines("pow");
+                if (pow && self.env.defines("floor")) || self.env.defines("bitshift") {
                     return Ok(result);
                 }
                 let message = format!("bitshift function not defined: cannot emulate {what}");
@@ -771,7 +777,7 @@ impl Checker<'_> {
                 Ok(result)
             }
             Op::SpaceshipS => {
-                if self.env.helper("strcmp").is_some() {
+                if self.env.defines("strcmp") {
                     return Ok(result);
                 }
                 let message = "strcmp function not defined: cannot emulate string<=>string";
@@ -883,7 +889,7 @@ impl Checker<'_> {
                 if self.env.target_at(span.start).valid(Op::SubI) {
                     return Ok(replaced(Op::SubI));
                 }
-                if !self.env.helper("SubInt").is_some() {
+                if !self.env.defines("SubInt") {
                     let message = "SubInt function not defined: cannot emulate ~int";
                     self.env.report(Code::W0235, span, message.to_owned());
                     self.refuse_emitted(Op::SubI, span);

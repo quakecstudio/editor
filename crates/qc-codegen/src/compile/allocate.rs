@@ -29,7 +29,9 @@ pub(super) fn creation_order(
             ir::Temp::Vector(_) => Etype::Vector,
             ir::Temp::Made(index) => match steps.get(usize::from(index)) {
                 Some(Step::Row(row)) => row.c,
-                Some(Step::Parameter | Step::Call(_)) | None => return Err(Internal::Unlowered),
+                Some(Step::Parameter | Step::Word | Step::Call(_)) | None => {
+                    return Err(Internal::Unlowered);
+                }
             },
         };
         let words = if etype == Etype::Vector { 3 } else { 1 };

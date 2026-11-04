@@ -22,6 +22,7 @@ use crate::check::pointer::{Pointee, int, opaque_int};
 use crate::check::reference::{expected_after, in_definition};
 use crate::check::truth::Test;
 use crate::check::{Constness, Reference, Value};
+use crate::ir;
 use crate::symbol::DefId;
 use crate::ty::{SimpleType, Type};
 
@@ -131,6 +132,9 @@ impl Checker<'_> {
             Etype::Uint64 => (Op::SubU64, Constant::int64(0)),
             _ => return self.fatal(Code::E0302, span, "type mismatch for -".to_owned()),
         };
+        // The zero is an immediate made before the subtraction (`QCC_MakeFloatConst(0)`), also
+        // when the subtraction folds.
+        self.made(zero);
         self.emit(op, &Value::constant(zero), operand, span)
     }
 
@@ -191,6 +195,8 @@ impl Checker<'_> {
                 return self.fatal(Code::E0329, span, message);
             }
         };
+        // The step's opcode, which the code generator reads.
+        self.opcodes.insert((span.start, span.end), op);
         let updated = self.emit(op, &variable, &by, span)?;
         let updated = self.bit_copy(&updated, operand, span)?;
         self.store_reference(operand, &updated, span)?;
@@ -407,11 +413,39 @@ impl Checker<'_> {
                 }
             }));
         }
-        let Some(mut values) = components.into_iter().collect::<Option<Vec<Value>>>() else {
+        let Some(values) = components.into_iter().collect::<Option<Vec<Value>>>() else {
             return Ok(Value::of(Type::Simple(SimpleType::Vector)));
         };
+        // The components are the fragment's inputs, by their number; the constructor's
+        // statements the fragment kept by its span (`docs/design/back-end.md`).
+        let values: Vec<Value> = values
+            .into_iter()
+            .enumerate()
+            .map(|(at, value)| Value {
+                ir: u8::try_from(at)
+                    .ok()
+                    .map(|n| ir::Operand::Input(ir::Input::Argument(n))),
+                ..value
+            })
+            .collect();
+        let outer = self.fragment.replace(ir::Builder::new());
+        let built = self.vector_of(values, span);
+        let builder = std::mem::replace(&mut self.fragment, outer);
+        let value = built?;
+        if let Some(fragment) =
+            builder.and_then(|builder| builder.finish(value.operand(), [None, None]))
+        {
+            self.fragments.insert(span, fragment);
+        }
+        Ok(value)
+    }
+
+    /// [`Checker::vector`] of its components, each read and a float or an integer.
+    fn vector_of(&mut self, mut values: Vec<Value>, span: Span) -> Checked {
+        let float = Type::Simple(SimpleType::Float);
         // `[x]` and `[x, y]`: a component left out is `QCC_MakeFloatConst(0)`.
         while values.len() < 3 {
+            self.made(Constant::float(0.0));
             values.push(Value::constant(Constant::float(0.0)));
         }
         let known: Option<Vec<Constant>> = values.iter().map(Value::known).collect();
@@ -423,11 +457,9 @@ impl Checker<'_> {
                     c.f()
                 }
             };
-            return Ok(Value::constant(Constant::vector([
-                float_of(x),
-                float_of(y),
-                float_of(z),
-            ])));
+            let vector = Constant::vector([float_of(x), float_of(y), float_of(z)]);
+            self.made(vector);
+            return Ok(Value::constant(vector));
         }
         // Two null components make the vector the third times an axis, `OP_MUL_VF`.
         let null = |at: usize| values.get(at).is_some_and(Value::null);
@@ -442,19 +474,35 @@ impl Checker<'_> {
             {
                 let value = value.clone();
                 let float = self.supplied(&value, &float, span)?;
-                let axis = Value::constant(Constant::vector(axis));
-                self.emit(Op::MulVf, &axis, &float, span)?;
-                return Ok(Value::of(Type::Simple(SimpleType::Vector)));
+                let axis = Constant::vector(axis);
+                self.made(axis);
+                return self.emit(Op::MulVf, &Value::constant(axis), &float, span);
             }
         }
-        for value in &values {
+        // Each component stored to its word of a vector temporary (`QCC_GetTemp(type_vector)`).
+        let temp = self.fragment.as_mut().and_then(ir::Builder::vector);
+        for (word, value) in (0_u8..).zip(&values) {
             if self.etype_of(&value.ty) == Some(Etype::Integer) {
+                if let Some(builder) = &mut self.fragment {
+                    builder.give_up();
+                }
                 self.emit(Op::StoreIf, value, &Value::unknown(), span)?;
             } else {
                 self.generate(Op::StoreF, span);
+                if let (Some(builder), Some(temp)) = (&mut self.fragment, temp) {
+                    let to = ir::Operand::Temp(temp).word(word);
+                    builder.push(
+                        Op::StoreF,
+                        [Some(value.operand()), Some(to)],
+                        ir::Destination::Nothing,
+                    );
+                }
             }
         }
-        Ok(Value::of(Type::Simple(SimpleType::Vector)))
+        Ok(Value {
+            ir: temp.map(ir::Operand::Temp),
+            ..Value::of(Type::Simple(SimpleType::Vector))
+        })
     }
 
     /// FTEF-30.11: `sizeof(TYPE)` and `sizeof e`: an unsigned constant, a string immediate's

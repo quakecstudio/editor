@@ -313,6 +313,16 @@ impl Vanilla<'_> {
             if a != b || !stored {
                 return self.mismatch("=", span);
             }
+            // The `STORE_*` of the target's type, which the code generator reads.
+            let store = match a {
+                Basic::Vector => Op::StoreV,
+                Basic::String => Op::StoreS,
+                Basic::Entity => Op::StoreEnt,
+                Basic::Field => Op::StoreFld,
+                Basic::Function => Op::StoreFnc,
+                Basic::Float | Basic::Void => Op::StoreF,
+            };
+            self.opcodes.insert((span.start, span.end), store);
             return Ok(Some(rhs));
         }
         let Some(spelling) = spelling(op) else {
@@ -355,20 +365,37 @@ impl Vanilla<'_> {
         let (Some(base), Some(selector)) = (base, selector) else {
             return Ok(None);
         };
-        match (Basic::of(&base), &selector) {
+        let loaded = match (Basic::of(&base), &selector) {
             (Some(Basic::Entity), Type::Field(held))
                 if Basic::of(held).is_some_and(|b| b != Basic::Void) =>
             {
-                Ok(Some(held.as_ref().clone()))
+                held.as_ref().clone()
             }
             // QC-16.8: a `.void` field's `type_c` is `ev_void`, which the row loop does not
             // compare, so the first `.` row is taken, a float's (`PR_Expression`).
             (Some(Basic::Entity), Type::Field(held)) if Basic::of(held) == Some(Basic::Void) => {
-                Ok(Some(Type::Simple(SimpleType::Float)))
+                Type::Simple(SimpleType::Float)
             }
-            (None, _) => Ok(None),
-            _ => self.mismatch(".", span),
+            (None, _) => return Ok(None),
+            _ => return self.mismatch(".", span),
+        };
+        // QC-16.1: the `LOAD_*` of the field's type, of the entity and the field, the fragment
+        // kept by the `.`'s span, which a read of the field writes.
+        let opcode = match Basic::of(&loaded) {
+            Some(Basic::Vector) => Op::LoadV,
+            Some(Basic::String) => Op::LoadS,
+            Some(Basic::Entity) => Op::LoadEnt,
+            Some(Basic::Field) => Op::LoadFld,
+            Some(Basic::Function) => Op::LoadFnc,
+            Some(Basic::Float | Basic::Void) | None => Op::LoadF,
+        };
+        let mut fragment = ir::Builder::new();
+        let inputs = [ir::Input::Left, ir::Input::Right].map(|n| Some(Some(ir::Operand::Input(n))));
+        let made = fragment.push(opcode, inputs, ir::Destination::Value);
+        if let Some(fragment) = fragment.finish(made, [None, None]) {
+            self.fragments.insert(span, fragment);
         }
+        Ok(Some(loaded))
     }
 
     /// QC-18: `f(args)`: `f` a function, else "not a function"; with any arguments, one past a

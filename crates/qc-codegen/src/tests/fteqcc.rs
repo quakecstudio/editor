@@ -3437,3 +3437,18 @@ fn a_remainder_calls_the_programs_mod() {
         ]
     );
 }
+
+// spec FTEF-30.4: `-e` is `0 - e` with the zero an immediate made first, so a negated constant
+// folds to its value after the zero's immediate (`QCC_MakeFloatConst(0)`)
+#[test]
+fn a_negated_constant_folds_after_its_zero() {
+    let p = fte_progs("const float K = 3; float x; void() t = { x = -K; };\n");
+    let f = body(&p, "t");
+    assert_eq!(opcodes(&f), ops(&[StoreF, Done]));
+    assert_eq!(words(&p, f[0].a, 1), [(-3.0_f32).to_bits()]);
+    assert_eq!(
+        immediate(&p, 0.0),
+        f[0].a - 1,
+        "the zero is made just before the value"
+    );
+}

@@ -32,8 +32,8 @@ pub(super) struct Checker<'e> {
     pub(super) env: &'e mut dyn Env,
     types: HashMap<(usize, usize), Type>,
     pub(super) opcodes: HashMap<(usize, usize), Op>,
-    /// The binary operators' fragments lowered so far.
-    fragments: ir::Fragments,
+    /// The fragments lowered so far.
+    pub(super) fragments: ir::Fragments,
     /// The fragment of the binary operator being checked, if any.
     pub(super) fragment: Option<ir::Builder>,
     /// Whether the checker is in a condition of `if`, `while` or `do`, outside parentheses

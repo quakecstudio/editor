@@ -134,6 +134,9 @@ struct FieldSlot {
     load: Opcode,
     loaded: Etype,
     ty: ValueType,
+    /// The span of the `.` of `e.f` and the selector's value, by which the semantic model keeps
+    /// the load as a fragment of the intermediate layer.
+    selected: Option<(Span, Value)>,
 }
 
 impl FieldSlot {
@@ -1559,7 +1562,7 @@ impl<'a> Compiler<'a> {
         Ok(match self.converted_input(operator, left, right) {
             Some(ir::Input::Left) => (self.int_as_float(left, span)?, right.clone()),
             Some(ir::Input::Right) => (left.clone(), self.int_as_float(right, span)?),
-            None => (left.clone(), right.clone()),
+            Some(ir::Input::Argument(_)) | None => (left.clone(), right.clone()),
         })
     }
 
@@ -2370,6 +2373,9 @@ impl<'a> Compiler<'a> {
             }
             parts.push(value);
         }
+        if let Some(value) = self.lowered_vector(&parts, span)? {
+            return Ok(value);
+        }
         while parts.len() < 3 {
             parts.push(self.float_literal(0.0, span)?);
         }
@@ -2700,7 +2706,7 @@ impl<'a> Compiler<'a> {
                 return Ok(Some(value));
             }
         }
-        let value = self.emit_fragment(fragment, &rows, left, right, span)?;
+        let value = self.emit_fragment(fragment, &rows, left, right, &[], span)?;
         // FTEF-26.15: a fold to no statement frees the operands it drops (`QCC_FreeTemp`): a
         // call's value among them is read by nothing more, so no clobber copies it
         // (FTE-18.13); the operand that is the value stays live.
@@ -2749,12 +2755,71 @@ impl<'a> Compiler<'a> {
         let Some(steps) = self.plan_fragment(fragment, None, (etype, etype)) else {
             return Ok(None);
         };
-        let value = self.emit_fragment(fragment, &steps, operand, operand, span)?;
+        let value = self.emit_fragment(fragment, &steps, operand, operand, &[], span)?;
         if fragment.statements.is_empty() {
             self.drop_value(operand);
             self.keep_alive(&value);
         }
         Ok(Some(value))
+    }
+
+    /// The load of `selector` of `entity` kept by the `.` at `dot`, written from its fragment;
+    /// `None` for one the model did not keep or [`Compiler::plan_fragment`] refuses.
+    fn lowered_load(
+        &mut self,
+        entity: &Value,
+        selector: &Value,
+        dot: Span,
+        span: Span,
+    ) -> Lowered<Option<Value>> {
+        let Some(body) = self.typed_body() else {
+            return Ok(None);
+        };
+        let Some(fragment) = body.fragment_at(dot) else {
+            return Ok(None);
+        };
+        let types = (self.type_of(entity).etype(), self.type_of(selector).etype());
+        let Some(steps) = self.plan_fragment(fragment, None, types) else {
+            return Ok(None);
+        };
+        self.emit_fragment(fragment, &steps, entity, selector, &[], span)
+            .map(Some)
+    }
+
+    /// The vector constructor at `span` of the components `parts` as the semantic model lowered
+    /// it (FTEF-30.7); `None` for one it did not keep, a constant one whose components are not
+    /// all constants here, or one [`Compiler::plan_fragment`] refuses.
+    fn lowered_vector(&mut self, parts: &[Value], span: Span) -> Lowered<Option<Value>> {
+        let Some(body) = self.typed_body() else {
+            return Ok(None);
+        };
+        let Some(fragment) = body.fragment_at(span) else {
+            return Ok(None);
+        };
+        let Some(first) = parts.first() else {
+            return Ok(None);
+        };
+        if fragment.statements.is_empty() && parts.iter().any(|p| self.constant_word(p).is_none()) {
+            return Ok(None);
+        }
+        let Some(steps) = self.plan_fragment(fragment, None, (Etype::Float, Etype::Float)) else {
+            return Ok(None);
+        };
+        self.emit_fragment(fragment, &steps, first, first, parts, span)
+            .map(Some)
+    }
+
+    /// The opcode of the statement of the call at `span` the semantic model kept whose operand
+    /// b is `slot`: an argument's store to its parameter, or with `None` the `CALLn` itself.
+    fn lowered_call_op(&self, span: Span, slot: Option<ir::Operand>) -> Option<Opcode> {
+        let fragment = self.typed_body()?.fragment_at(span)?;
+        let statement = fragment
+            .statements
+            .iter()
+            .find(|statement| statement.b == slot)?;
+        u32::try_from(statement.op.number())
+            .ok()
+            .and_then(Opcode::from_number)
     }
 
     /// The basic types `left` and `right` have once [`Compiler::floats_of`] has made an integer
@@ -2764,7 +2829,7 @@ impl<'a> Compiler<'a> {
         match self.converted_input(operator, left, right) {
             Some(ir::Input::Left) => (Etype::Float, b),
             Some(ir::Input::Right) => (a, Etype::Float),
-            None => (a, b),
+            Some(ir::Input::Argument(_)) | None => (a, b),
         }
     }
 
@@ -2819,6 +2884,8 @@ impl<'a> Compiler<'a> {
         let input = |side: ir::Input| match side {
             ir::Input::Left => types.0,
             ir::Input::Right => types.1,
+            // A constructor's component, a float (FTEF-30.7).
+            ir::Input::Argument(_) => Etype::Float,
         };
         // An input must have the type the row reads, a vector's when a word of it is read: the
         // model does not yet lower every operand conversion the code generator does.
@@ -2851,6 +2918,11 @@ impl<'a> Compiler<'a> {
                         if fits(a, Etype::Float) =>
                     {
                         Step::Parameter
+                    }
+                    (Opcode::StoreF, a, Some(ir::Operand::Word(ir::Whole::Temp(_), _)))
+                        if fits(a, Etype::Float) =>
+                    {
+                        Step::Word
                     }
                     (
                         Opcode::Call0
@@ -2897,6 +2969,7 @@ impl<'a> Compiler<'a> {
         rows: &[Step],
         left: &Value,
         right: &Value,
+        arguments: &[Value],
         span: Span,
     ) -> Lowered<Value> {
         for immediate in &fragment.immediates {
@@ -2906,13 +2979,30 @@ impl<'a> Compiler<'a> {
         for (index, (statement, row)) in fragment.statements.iter().zip(rows).enumerate() {
             let index =
                 u16::try_from(index).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
-            let a = self.fragment_operand(statement.a, left, right, &temps, span)?;
-            let b = self.fragment_operand(statement.b, left, right, &temps, span)?;
+            let a = self.fragment_operand(statement.a, left, right, arguments, &temps, span)?;
+            let b = self.fragment_operand(statement.b, left, right, arguments, &temps, span)?;
             let row = match *row {
                 Step::Row(row) => row,
                 // FTE-18.12: the store of an argument, folded into the statement that made it.
                 Step::Parameter => {
                     self.store_word(a, b, Etype::Float, span)?;
+                    continue;
+                }
+                // FTE-18.12: a component's store, folded into the statement that made it.
+                Step::Word => {
+                    let part = match statement.a {
+                        Some(ir::Operand::Input(ir::Input::Argument(n))) => {
+                            arguments.get(usize::from(n))
+                        }
+                        _ => None,
+                    };
+                    if !part.is_some_and(|part| self.fold_into(part, b)) {
+                        self.program.emit(
+                            Opcode::StoreF,
+                            operand(a).at(span)?,
+                            operand(b).at(span)?,
+                        );
+                    }
                     continue;
                 }
                 // FTE-18.13: the aliases still to be read are copied out of the return global
@@ -2968,6 +3058,9 @@ impl<'a> Compiler<'a> {
             }
             Some(ir::Operand::Input(ir::Input::Left)) => Ok(left.clone()),
             Some(ir::Operand::Input(ir::Input::Right)) => Ok(right.clone()),
+            Some(ir::Operand::Input(ir::Input::Argument(n))) => {
+                arguments.get(usize::from(n)).cloned().at(span)
+            }
             Some(ir::Operand::Immediate(immediate)) => {
                 let place = self.immediate_place(immediate, span)?;
                 self.def_value(place, span)
@@ -3009,6 +3102,7 @@ impl<'a> Compiler<'a> {
         operand: Option<ir::Operand>,
         left: &Value,
         right: &Value,
+        arguments: &[Value],
         temps: &[allocate::Slot],
         span: Span,
     ) -> Lowered<u32> {
@@ -3032,6 +3126,10 @@ impl<'a> Compiler<'a> {
         let base = match whole {
             ir::Whole::Input(ir::Input::Left) => self.operand_of(left),
             ir::Whole::Input(ir::Input::Right) => self.operand_of(right),
+            ir::Whole::Input(ir::Input::Argument(n)) => {
+                let argument = arguments.get(usize::from(n)).at(span)?;
+                self.operand_of(argument)
+            }
             ir::Whole::Temp(n) => temps.get(n.index()).copied().at(span)?.0,
             ir::Whole::Immediate(immediate) => {
                 let place = self.immediate_place(immediate, span)?;
@@ -3069,7 +3167,8 @@ impl<'a> Compiler<'a> {
             .typed_body()
             .and_then(|body| body.opcode_at(op_span))
             .and_then(|op| u32::try_from(op.number()).ok())
-            .and_then(ops::row_of);
+            .and_then(ops::row_of)
+            .filter(|row| row.operator == operator && (row.a, row.b) == (a, b));
         let Some(row) = chosen
             .or_else(|| ops::select(operator, a, b, None))
             .or_else(|| self.null_row(operator, left, right))
@@ -3491,6 +3590,15 @@ impl<'a> Compiler<'a> {
 
     /// `LOAD_*` of the field `slot` into a temporary of its type (QC-16.1).
     fn read_field(&mut self, slot: &FieldSlot, span: Span) -> Lowered<Value> {
+        // The load as the semantic model lowered it, its value of the field's type.
+        if let Some((dot, selector)) = &slot.selected
+            && let Some(loaded) = self.lowered_load(&slot.entity, selector, *dot, span)?
+        {
+            return Ok(Value {
+                kind: ValueKind::Temp(slot.ty.clone()),
+                ..loaded
+            });
+        }
         let entity = self.operand_of(&slot.entity);
         let ofs = self
             .program
@@ -3534,7 +3642,20 @@ impl<'a> Compiler<'a> {
         // QC-16.8: `type_c == ev_void` turns the result's check off, so a field of `void`
         // takes the first row, `LOAD_F`.
         let c = Some(inner.etype()).filter(|&c| c != Etype::Void);
-        let Some(row) = ops::select(Operator::Dot, a, b, c) else {
+        // The load the semantic model lowered at the `.`, when it fits the operands.
+        let chosen = self
+            .typed_body()
+            .and_then(|body| body.fragment_at(op_span))
+            .and_then(|fragment| match fragment.statements.as_slice() {
+                [load] => u32::try_from(load.op.number()).ok().and_then(ops::row_of),
+                _ => None,
+            })
+            .filter(|row| {
+                row.operator == Operator::Dot
+                    && (row.a, row.b) == (a, b)
+                    && c.is_none_or(|c| row.c == c)
+            });
+        let Some(row) = chosen.or_else(|| ops::select(Operator::Dot, a, b, c)) else {
             return Self::mismatch(Operator::Dot, op_span);
         };
         // `if (type_c != ev_void) e->type = e2->type->aux_type;`: a `void` field's value keeps
@@ -3550,6 +3671,7 @@ impl<'a> Compiler<'a> {
             load: row.opcode,
             loaded: row.c,
             ty,
+            selected: Some((op_span, selector)),
         })
     }
 
@@ -3908,6 +4030,7 @@ impl<'a> Compiler<'a> {
             load: Opcode::LoadF,
             loaded: Etype::Float,
             ty: ValueType::simple(Etype::Float),
+            selected: None,
         }))
     }
 
@@ -3974,7 +4097,14 @@ impl<'a> Compiler<'a> {
         }
         let a = self.type_of(to).etype();
         let b = self.type_of(value).etype();
-        let Some(row) = ops::select(Operator::Assign, a, b, None) else {
+        // The store the semantic model chose for the `=` at `span`, when it fits the operands.
+        let chosen = self
+            .typed_body()
+            .and_then(|body| body.opcode_at(span))
+            .and_then(|op| u32::try_from(op.number()).ok())
+            .and_then(ops::row_of)
+            .filter(|row| row.operator == Operator::Assign && (row.a, row.b) == (a, b));
+        let Some(row) = chosen.or_else(|| ops::select(Operator::Assign, a, b, None)) else {
             return Self::mismatch(Operator::Assign, span);
         };
         let from = self.operand_of(value);
@@ -4368,6 +4498,18 @@ impl Compiler<'_> {
             }
         }
         let passed = fixed.map_or(values.len(), |n| n.min(values.len()));
+        // The call the semantic model kept, when it passes as many arguments as are stored here.
+        let kept = self
+            .typed_body()
+            .and_then(|body| body.fragment_at(span))
+            .is_some_and(|fragment| {
+                let stores = fragment
+                    .statements
+                    .iter()
+                    .filter(|s| matches!(s.b, Some(ir::Operand::Parameter(_))))
+                    .count();
+                stores == passed
+            });
         // FTE-18.11: a field still a reference is read straight into its slot, in argument
         // order, before any argument is stored.
         for (slot, (argument, arg_span)) in values.iter().take(passed).enumerate() {
@@ -4425,6 +4567,12 @@ impl Compiler<'_> {
             } else {
                 Opcode::StoreF
             };
+            // The store the semantic model lowered for the slot, when it kept the call.
+            let store = u8::try_from(slot)
+                .ok()
+                .filter(|_| kept)
+                .and_then(|slot| self.lowered_call_op(span, Some(ir::Operand::Parameter(slot))))
+                .unwrap_or(store);
             let from = self.operand_of(value);
             self.program.emit(
                 store,
@@ -4432,7 +4580,11 @@ impl Compiler<'_> {
                 operand(to).at(*arg_span)?,
             );
         }
-        let Some(op) = ops::call_opcode(passed) else {
+        let Some(op) = kept
+            .then(|| self.lowered_call_op(span, None))
+            .flatten()
+            .or_else(|| ops::call_opcode(passed))
+        else {
             return Self::error(Code::E0307, "More than eight parameters".to_owned(), span);
         };
         // FTE-18.13: `QCC_ClobberDef(&def_ret)` before the call: an earlier call's value still
@@ -4568,6 +4720,8 @@ enum Step {
     Row(ops::Row),
     /// The store of a float to the parameter slot the statement names (QC-18.3).
     Parameter,
+    /// The store of a float to a word of a vector temporary (FTEF-30.7).
+    Word,
     /// A call, by this opcode, of the function the statement names.
     Call(Opcode),
 }
