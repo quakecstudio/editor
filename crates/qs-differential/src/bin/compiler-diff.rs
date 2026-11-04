@@ -35,10 +35,10 @@
 //! printing one line per pair, and exits 0 when no pair diverges: a generated
 //! program's calls need not reach 90% of its statements, since every function of it is
 //! called and a bounded loop is left early by its counter. `--function-pairs` reads the same
-//! lines, each named by the one function of a cut program its comparison calls (DIFF-15.4),
-//! and adds the statements of the oracle's progs those calls executed to the `--executed`
+//! lines, each named by the functions of a cut program its comparison calls, separated by
+//! commas (DIFF-15.9), and adds the statements of the oracle's progs those calls executed to the `--executed`
 //! file, by function and offset (DIFF-15.5). `--setup-functions` prints the name of each
-//! function the scenarios' setups run in a progs, one a line (DIFF-15.2).
+//! function the scenarios' setups run in a progs, one a line (DIFF-15.8).
 
 #![expect(
     clippy::print_stdout,
@@ -53,7 +53,7 @@ use qc_builtins::EngineProfile;
 
 use qs_differential::calls::{
     CodebaseReport, FAST_ROUNDS, FULL_ROUNDS, FUNCTION_ROUNDS, Oracle, executed_by_function,
-    run_codebase, run_function, setup_functions, uncovered,
+    run_codebase, run_functions, setup_functions, uncovered,
 };
 use qs_differential::source::{self, FORMS};
 
@@ -108,12 +108,12 @@ enum Run {
     Suite(Options),
     /// Programs of a seed written out (DIFF-14.1).
     Generate(Generate),
-    /// The functions each scenario's setup runs in a progs, one name a line (DIFF-15.2).
+    /// The functions each scenario's setup runs in a progs, one name a line (DIFF-15.8).
     SetupFunctions {
         progs: PathBuf,
         engine: EngineProfile,
     },
-    /// The pairs a file lists, each compared (DIFF-14.9, DIFF-15.4).
+    /// The pairs a file lists, each compared (DIFF-14.9, DIFF-15.9).
     Pairs {
         file: PathBuf,
         calls: Calls,
@@ -126,8 +126,9 @@ enum Run {
 enum Calls {
     /// Every function, in this many rounds (DIFF-14.9).
     Every(u32),
-    /// The one function the line names, in [`FUNCTION_ROUNDS`] rounds, the statements of the
-    /// oracle's progs the calls executed added to this file (DIFF-15.4, DIFF-15.5).
+    /// The functions the line names, separated by commas, each in [`FUNCTION_ROUNDS`] rounds,
+    /// the statements of the oracle's progs the calls executed added to this file (DIFF-15.9,
+    /// DIFF-15.5).
     Named(PathBuf),
 }
 
@@ -306,14 +307,17 @@ fn pairs(
             Calls::Every(rounds) => {
                 run_codebase(oracle, oracle_progs, &ours, *rounds, engine, &quiet)
             }
-            Calls::Named(_) => run_function(
-                oracle,
-                oracle_progs,
-                &ours,
-                FUNCTION_ROUNDS,
-                engine,
-                name.as_bytes(),
-            ),
+            Calls::Named(_) => {
+                let functions = name.split(',').map(|f| f.as_bytes().to_vec()).collect();
+                run_functions(
+                    oracle,
+                    oracle_progs,
+                    &ours,
+                    FUNCTION_ROUNDS,
+                    engine,
+                    &functions,
+                )
+            }
         };
         let report = run(&theirs).map_err(|e| format!("{name}: {e}"))?;
         compared = compared.saturating_add(1);
@@ -640,7 +644,7 @@ mod tests {
                 unreachable!("not a pairs run")
             }
         }
-        // spec DIFF-15.4: a function-pairs run calls the function each line names and adds the
+        // spec DIFF-15.9: a function-pairs run calls the functions each line names and adds the
         // statements it executed to the file named
         match parse(&args(&[
             "--function-pairs",
@@ -667,7 +671,7 @@ mod tests {
             }
         }
         assert!(parse(&args(&["--function-pairs", "f.tsv"])).is_err());
-        // spec DIFF-15.2: the setup functions of a progs are listed on their own
+        // spec DIFF-15.8: the setup functions of a progs are listed on their own
         match parse(&args(&[
             "--setup-functions",
             "w.dat",

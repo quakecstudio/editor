@@ -212,9 +212,9 @@ pub type Progress<'a> = dyn Fn(&str, usize, usize) + Sync + 'a;
 pub const FAST_ROUNDS: u32 = 32;
 /// The rounds of calls to each function in the nightly run (DIFF-12.29).
 pub const FULL_ROUNDS: u32 = 128;
-/// The rounds of calls to the one function of a per-function run (DIFF-15.4): twice the
-/// nightly run's, since the run calls nothing else.
-pub const FUNCTION_ROUNDS: u32 = 256;
+/// The rounds of calls to each function of a per-function run (DIFF-15.9): the nightly run's,
+/// so a codebase's per-function runs take about as long as its nightly run.
+pub const FUNCTION_ROUNDS: u32 = FULL_ROUNDS;
 /// The most rounds a function is called in, as a multiple of the rounds asked for, when its
 /// body still has statements no call executed (DIFF-12.16).
 pub const EXTRA_ROUNDS: u32 = 4;
@@ -408,33 +408,33 @@ fn run_scenarios(
     Ok(result)
 }
 
-/// The function of a per-function run (DIFF-15.4), named `function`, called in `rounds` rounds
-/// from the world of each scenario of [`crate::runner::scenarios`], in `theirs` and `ours` as
-/// [`run_codebase`] calls every function.
+/// The functions of a per-function run (DIFF-15.9), named by `functions`, each called in
+/// `rounds` rounds from the world of each scenario of [`crate::runner::scenarios`], in `theirs`
+/// and `ours` as [`run_codebase`] calls every function.
 ///
 /// # Errors
 ///
 /// [`CallsError`] as [`run_codebase`].
-pub fn run_function(
+pub fn run_functions(
     oracle: Oracle,
     theirs: &[u8],
     ours: &[u8],
     rounds: u32,
     profile: EngineProfile,
-    function: &[u8],
+    functions: &BTreeSet<Vec<u8>>,
 ) -> Result<CodebaseReport, CallsError> {
     run_scenarios(
         oracle,
         (theirs, ours),
         (rounds, profile),
-        Called::Only(function),
+        Called::Only(functions),
         &|_, _, _| {},
     )
 }
 
 /// The functions the world of each scenario of [`crate::runner::scenarios`] runs while it is
 /// set up in the progs `bytes` (DIFF-12.20): the spawn functions of the map's entities, the
-/// client functions and the frames' functions, each by its name, once (DIFF-15.2). A setup
+/// client functions and the frames' functions, each by its name, once (DIFF-15.8). A setup
 /// that ends in an error gives the functions it ran before it.
 ///
 /// # Errors
@@ -472,8 +472,8 @@ pub fn setup_functions(
 enum Called<'a> {
     /// Every function with a body (DIFF-12.2).
     Every,
-    /// The functions of this name alone (DIFF-15.4).
-    Only(&'a [u8]),
+    /// The functions of these names alone (DIFF-15.9).
+    Only(&'a BTreeSet<Vec<u8>>),
 }
 
 /// Why a run could not start (DIFF-12.20).
@@ -616,7 +616,7 @@ fn run_calls_reporting(
             .and_modify(|n| *n = n.saturating_add(1))
             .or_insert(0_usize);
         if let Called::Only(only) = called
-            && name != only
+            && !only.contains(name)
         {
             continue;
         }
