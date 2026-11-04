@@ -1,0 +1,25 @@
+[package]
+name = "quakec-ide"
+description = "QuakeC Studio's command line: build and check a QuakeC project, and run any command of the IDE by its id"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "quakec_ide"
+path = "src/lib.rs"
+
+[[bin]]
+name = "quakec-ide"
+path = "src/main.rs"
+
+[dependencies]
+qs-commands = { workspace = true }
+qs-workbench = { workspace = true }
+serde_json = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

@@ -7,6 +7,7 @@
 qc-edict = "L1"
 qc-engines = "L3"
 qc-ide = "L3"
+quakec-ide = "apps"
 quakec-lsp = "apps"
 quakec-studio = "apps"
 qc-builtins = "L1"
