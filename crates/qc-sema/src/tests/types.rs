@@ -829,3 +829,22 @@ fn a_field_read_lowers_to_its_load() {
         }
     }
 }
+
+// spec FTEF-30.7: `[x, y, z]` of variables stores each component to its word of a vector
+// temporary, the fragment kept by the constructor's span
+#[test]
+fn a_vector_constructor_stores_its_components() {
+    use crate::ir::{Destination, Input, Operand, Statement, Temp, TempId, Whole};
+    use qc_preproc::Op;
+    let source = "float a; float b; vector v; void() t = { v = [a, b, a]; };";
+    let fragment = fte_fragment_at(source, "[a, b, a]", "[a, b, a]");
+    let store = |n: u8| Statement {
+        op: Op::StoreF,
+        a: Some(Operand::Input(Input::Argument(n))),
+        b: Some(Operand::Word(Whole::Temp(TempId::new(0)), n)),
+        c: Destination::Nothing,
+    };
+    assert_eq!(fragment.statements, [store(0), store(1), store(2)]);
+    assert_eq!(fragment.temps, [Temp::Vector(0)]);
+    assert_eq!(fragment.value, Some(Operand::Temp(TempId::new(0))));
+}

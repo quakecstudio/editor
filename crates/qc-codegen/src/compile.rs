@@ -1562,7 +1562,7 @@ impl<'a> Compiler<'a> {
         Ok(match self.converted_input(operator, left, right) {
             Some(ir::Input::Left) => (self.int_as_float(left, span)?, right.clone()),
             Some(ir::Input::Right) => (left.clone(), self.int_as_float(right, span)?),
-            None => (left.clone(), right.clone()),
+            Some(ir::Input::Argument(_)) | None => (left.clone(), right.clone()),
         })
     }
 
@@ -2373,6 +2373,9 @@ impl<'a> Compiler<'a> {
             }
             parts.push(value);
         }
+        if let Some(value) = self.lowered_vector(&parts, span)? {
+            return Ok(value);
+        }
         while parts.len() < 3 {
             parts.push(self.float_literal(0.0, span)?);
         }
@@ -2703,7 +2706,7 @@ impl<'a> Compiler<'a> {
                 return Ok(Some(value));
             }
         }
-        let value = self.emit_fragment(fragment, &rows, left, right, span)?;
+        let value = self.emit_fragment(fragment, &rows, left, right, &[], span)?;
         // FTEF-26.15: a fold to no statement frees the operands it drops (`QCC_FreeTemp`): a
         // call's value among them is read by nothing more, so no clobber copies it
         // (FTE-18.13); the operand that is the value stays live.
@@ -2752,7 +2755,7 @@ impl<'a> Compiler<'a> {
         let Some(steps) = self.plan_fragment(fragment, None, (etype, etype)) else {
             return Ok(None);
         };
-        let value = self.emit_fragment(fragment, &steps, operand, operand, span)?;
+        let value = self.emit_fragment(fragment, &steps, operand, operand, &[], span)?;
         if fragment.statements.is_empty() {
             self.drop_value(operand);
             self.keep_alive(&value);
@@ -2779,7 +2782,30 @@ impl<'a> Compiler<'a> {
         let Some(steps) = self.plan_fragment(fragment, None, types) else {
             return Ok(None);
         };
-        self.emit_fragment(fragment, &steps, entity, selector, span)
+        self.emit_fragment(fragment, &steps, entity, selector, &[], span)
+            .map(Some)
+    }
+
+    /// The vector constructor at `span` of the components `parts` as the semantic model lowered
+    /// it (FTEF-30.7); `None` for one it did not keep, a constant one whose components are not
+    /// all constants here, or one [`Compiler::plan_fragment`] refuses.
+    fn lowered_vector(&mut self, parts: &[Value], span: Span) -> Lowered<Option<Value>> {
+        let Some(body) = self.typed_body() else {
+            return Ok(None);
+        };
+        let Some(fragment) = body.fragment_at(span) else {
+            return Ok(None);
+        };
+        let Some(first) = parts.first() else {
+            return Ok(None);
+        };
+        if fragment.statements.is_empty() && parts.iter().any(|p| self.constant_word(p).is_none()) {
+            return Ok(None);
+        }
+        let Some(steps) = self.plan_fragment(fragment, None, (Etype::Float, Etype::Float)) else {
+            return Ok(None);
+        };
+        self.emit_fragment(fragment, &steps, first, first, parts, span)
             .map(Some)
     }
 
@@ -2790,7 +2816,7 @@ impl<'a> Compiler<'a> {
         match self.converted_input(operator, left, right) {
             Some(ir::Input::Left) => (Etype::Float, b),
             Some(ir::Input::Right) => (a, Etype::Float),
-            None => (a, b),
+            Some(ir::Input::Argument(_)) | None => (a, b),
         }
     }
 
@@ -2845,6 +2871,8 @@ impl<'a> Compiler<'a> {
         let input = |side: ir::Input| match side {
             ir::Input::Left => types.0,
             ir::Input::Right => types.1,
+            // A constructor's component, a float (FTEF-30.7).
+            ir::Input::Argument(_) => Etype::Float,
         };
         // An input must have the type the row reads, a vector's when a word of it is read: the
         // model does not yet lower every operand conversion the code generator does.
@@ -2877,6 +2905,11 @@ impl<'a> Compiler<'a> {
                         if fits(a, Etype::Float) =>
                     {
                         Step::Parameter
+                    }
+                    (Opcode::StoreF, a, Some(ir::Operand::Word(ir::Whole::Temp(_), _)))
+                        if fits(a, Etype::Float) =>
+                    {
+                        Step::Word
                     }
                     (
                         Opcode::Call0
@@ -2923,6 +2956,7 @@ impl<'a> Compiler<'a> {
         rows: &[Step],
         left: &Value,
         right: &Value,
+        arguments: &[Value],
         span: Span,
     ) -> Lowered<Value> {
         for immediate in &fragment.immediates {
@@ -2932,13 +2966,30 @@ impl<'a> Compiler<'a> {
         for (index, (statement, row)) in fragment.statements.iter().zip(rows).enumerate() {
             let index =
                 u16::try_from(index).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
-            let a = self.fragment_operand(statement.a, left, right, &temps, span)?;
-            let b = self.fragment_operand(statement.b, left, right, &temps, span)?;
+            let a = self.fragment_operand(statement.a, left, right, arguments, &temps, span)?;
+            let b = self.fragment_operand(statement.b, left, right, arguments, &temps, span)?;
             let row = match *row {
                 Step::Row(row) => row,
                 // FTE-18.12: the store of an argument, folded into the statement that made it.
                 Step::Parameter => {
                     self.store_word(a, b, Etype::Float, span)?;
+                    continue;
+                }
+                // FTE-18.12: a component's store, folded into the statement that made it.
+                Step::Word => {
+                    let part = match statement.a {
+                        Some(ir::Operand::Input(ir::Input::Argument(n))) => {
+                            arguments.get(usize::from(n))
+                        }
+                        _ => None,
+                    };
+                    if !part.is_some_and(|part| self.fold_into(part, b)) {
+                        self.program.emit(
+                            Opcode::StoreF,
+                            operand(a).at(span)?,
+                            operand(b).at(span)?,
+                        );
+                    }
                     continue;
                 }
                 // FTE-18.13: the aliases still to be read are copied out of the return global
@@ -2994,6 +3045,9 @@ impl<'a> Compiler<'a> {
             }
             Some(ir::Operand::Input(ir::Input::Left)) => Ok(left.clone()),
             Some(ir::Operand::Input(ir::Input::Right)) => Ok(right.clone()),
+            Some(ir::Operand::Input(ir::Input::Argument(n))) => {
+                arguments.get(usize::from(n)).cloned().at(span)
+            }
             Some(ir::Operand::Immediate(immediate)) => {
                 let place = self.immediate_place(immediate, span)?;
                 self.def_value(place, span)
@@ -3035,6 +3089,7 @@ impl<'a> Compiler<'a> {
         operand: Option<ir::Operand>,
         left: &Value,
         right: &Value,
+        arguments: &[Value],
         temps: &[allocate::Slot],
         span: Span,
     ) -> Lowered<u32> {
@@ -3058,6 +3113,10 @@ impl<'a> Compiler<'a> {
         let base = match whole {
             ir::Whole::Input(ir::Input::Left) => self.operand_of(left),
             ir::Whole::Input(ir::Input::Right) => self.operand_of(right),
+            ir::Whole::Input(ir::Input::Argument(n)) => {
+                let argument = arguments.get(usize::from(n)).at(span)?;
+                self.operand_of(argument)
+            }
             ir::Whole::Temp(n) => temps.get(n.index()).copied().at(span)?.0,
             ir::Whole::Immediate(immediate) => {
                 let place = self.immediate_place(immediate, span)?;
@@ -4626,6 +4685,8 @@ enum Step {
     Row(ops::Row),
     /// The store of a float to the parameter slot the statement names (QC-18.3).
     Parameter,
+    /// The store of a float to a word of a vector temporary (FTEF-30.7).
+    Word,
     /// A call, by this opcode, of the function the statement names.
     Call(Opcode),
 }

@@ -41,6 +41,8 @@ pub enum Input {
     Left,
     /// The right operand.
     Right,
+    /// One of a construct's other inputs, by its number: a vector constructor's components.
+    Argument(u8),
 }
 
 /// A temporary of a fragment: its number in [`Fragment::temps`], the order the lowering took
