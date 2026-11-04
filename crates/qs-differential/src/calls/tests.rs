@@ -1321,7 +1321,7 @@ fn uncovered_lists_each_functions_unexecuted_statements() {
     assert!(!lines.iter().any(|l| l.ends_with("\tb")), "{text}");
 }
 
-// spec DIFF-15.2: the setup's functions are those the scenarios' setups run, the spawn and
+// spec DIFF-15.8: the setup's functions are those the scenarios' setups run, the spawn and
 // client functions and the functions they call; a function nothing runs while the world is set
 // up is not one
 #[test]

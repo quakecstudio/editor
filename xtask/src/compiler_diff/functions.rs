@@ -3,13 +3,13 @@
 //! `cargo xtask compiler-diff --functions <codebase>...`: the per-function differential
 //! (`docs/spec/differential.md` DIFF-15, P2-153).
 //!
-//! Each function of a corpus codebase the pinned FTEQCC compiles is cut out of the codebase
-//! into a program of its own (DIFF-15.1): every declaration kept, the bodies of the function and
-//! of the functions it calls kept, and every other body emptied. Each such program is compiled
-//! with the pinned FTEQCC, the fixed FTEQCC and `qc-codegen` (DIFF-15.3), and the `compiler-diff`
-//! binary calls the one function in more rounds than a whole-codebase run gives it
-//! (DIFF-15.4), adding the statements it executed to a list by function and offset. The
-//! statements of the whole codebase that list reaches are its coverage (DIFF-15.5), held to
+//! The functions of a corpus codebase the pinned FTEQCC compiles are cut, 64 at a time, into a
+//! program for each group (DIFF-15.7): every declaration kept, the bodies of the group's
+//! functions, of what the world's setup runs and of the functions all of them call kept, and
+//! every other body emptied. Each program is compiled with the pinned FTEQCC, the fixed FTEQCC
+//! and `qc-codegen` (DIFF-15.3), and the `compiler-diff` binary calls the group's functions
+//! alone, adding the statements they executed to a list by function and offset (DIFF-15.9).
+//! The statements of the whole codebase that list reaches are its coverage (DIFF-15.5), held to
 //! the bar of DIFF-15.6.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -28,10 +28,15 @@ use crate::differential::asset_root;
 use crate::oracles::codegen::{self, Profile};
 use crate::oracles::{self, Oracles, rerelease};
 
-/// How many cut programs one run of the binary compares (DIFF-15.4).
-const BATCH: usize = 64;
+/// How many functions one cut program holds and calls (DIFF-15.7, DIFF-15.9).
+const GROUP: usize = 64;
 
-/// What an emptied body becomes (DIFF-15.1).
+/// How many cut programs one run of the binary compares: as many as are compiled at once.
+fn batch() -> usize {
+    std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
+}
+
+/// What an emptied body becomes (DIFF-15.7).
 const STUB: &[u8] = b"{}";
 
 /// The coverage the per-function runs of codebase `id` must reach (DIFF-15.6): DIFF-12.5's
@@ -40,7 +45,7 @@ fn bar(id: &str) -> f64 {
     if id == "crmod7" { 0.877 } else { 0.9 }
 }
 
-/// One function body of a codebase's source (DIFF-15.1): the function's name, and the file and
+/// One function body of a codebase's source (DIFF-15.7): the function's name, and the file and
 /// bytes of its block, `{` to `}`.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Body {
@@ -99,7 +104,7 @@ fn codebase(root: &Path, oracles: &Oracles, codebases: &Path, id: &str) -> Resul
     let (bodies, sources) = bodies(&db);
     let progs = Progs::read(&whole).map_err(|e| format!("{id}: {e}"))?;
     let graph = calls(&progs);
-    // DIFF-15.2: every cut keeps what the world's setup runs, and what that calls.
+    // DIFF-15.8: every cut keeps what the world's setup runs, and what that calls.
     let mut setup = BTreeSet::new();
     for name in setup_functions(root, &whole_path, id)? {
         setup.extend(closure(&graph, &name));
@@ -112,10 +117,11 @@ fn codebase(root: &Path, oracles: &Oracles, codebases: &Path, id: &str) -> Resul
     }
     let executed = work.join("executed.tsv");
     let mut failures = Vec::new();
-    for (batch, names) in functions.chunks(BATCH).enumerate() {
+    let groups: Vec<&[&[u8]]> = functions.chunks(GROUP).collect();
+    for (batch, names) in groups.chunks(batch()).enumerate() {
         let dir = work.join(format!("batch-{batch}"));
         let mut pairs = String::new();
-        for (n, name, cut) in compile_batch(
+        for (n, group, cut) in compile_batch(
             oracles,
             id,
             &source,
@@ -125,7 +131,11 @@ fn codebase(root: &Path, oracles: &Oracles, codebases: &Path, id: &str) -> Resul
             (&bodies, &sources, &graph, &setup),
         )? {
             let program = dir.join(n.to_string());
-            let label = String::from_utf8_lossy(name).into_owned();
+            let label = group
+                .iter()
+                .map(|name| String::from_utf8_lossy(name))
+                .collect::<Vec<_>>()
+                .join(",");
             match cut {
                 Cut::Compiled => pairs.push_str(&format!(
                     "{label}\t{}\t{}\t{}\n",
@@ -134,8 +144,10 @@ fn codebase(root: &Path, oracles: &Oracles, codebases: &Path, id: &str) -> Resul
                     program.join("fixed.dat").display()
                 )),
                 Cut::Failed(why) => {
-                    eprintln!("FAIL  {id}: {label}: {why}");
-                    failures.push(format!("{label}: {why}"));
+                    let first = group.first().map(|name| String::from_utf8_lossy(name));
+                    let first = first.unwrap_or_default();
+                    eprintln!("FAIL  {id}: the cut from {first}: {why}");
+                    failures.push(format!("the cut from {first}: {why}"));
                 }
             }
         }
@@ -173,10 +185,11 @@ fn codebase(root: &Path, oracles: &Oracles, codebases: &Path, id: &str) -> Resul
     }
     let passed = failures.is_empty() && share >= bar(id);
     eprintln!(
-        "{}  {id}: {} functions run on their own, {covered} of {total} statements ({:.1}%, the bar \
+        "{}  {id}: {} functions run in {} cuts, {covered} of {total} statements ({:.1}%, the bar \
          {:.1}%)",
         if passed { "ok  " } else { "FAIL" },
         functions.len(),
+        groups.len(),
         share * 100.0,
         bar(id) * 100.0
     );
@@ -191,36 +204,40 @@ type Codebase<'a> = (
     &'a BTreeSet<Vec<u8>>,
 );
 
-/// One function's cut compiled: its place in its batch, its name and the outcome.
-type Compiled<'n> = (usize, &'n [u8], Cut);
+/// One group's cut compiled: its place in its batch, its functions and the outcome.
+type Compiled<'g, 'n> = (usize, &'g [&'n [u8]], Cut);
 
-/// Cuts and compiles the program of each function `names` lists in `dir/<n>`, `n` its place in
-/// the list (DIFF-15.1, DIFF-15.3), on as many threads as the machine runs at once; the
-/// outcomes are in the list's order, each with its place and name.
-fn compile_batch<'n>(
+/// Cuts and compiles the program of each group of functions `groups` lists in `dir/<n>`, `n`
+/// its place in the list (DIFF-15.7, DIFF-15.3), on as many threads as the machine runs at
+/// once; the outcomes are in the list's order, each with its place and functions.
+fn compile_batch<'g, 'n>(
     oracles: &Oracles,
     id: &str,
     source: &Path,
     work: &Path,
     dir: &Path,
-    names: &[&'n [u8]],
+    groups: &[&'g [&'n [u8]]],
     (bodies, sources, graph, setup): Codebase<'_>,
-) -> Result<Vec<Compiled<'n>>, String> {
+) -> Result<Vec<Compiled<'g, 'n>>, String> {
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
-    let results: Vec<Result<Vec<Compiled<'n>>, String>> = std::thread::scope(|scope| {
+    let results: Vec<Result<Vec<Compiled<'g, 'n>>, String>> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..threads)
             .map(|thread| {
                 scope.spawn(move || {
                     let mut done = Vec::new();
-                    for (n, name) in names.iter().enumerate().skip(thread).step_by(threads) {
-                        let mut keep = closure(graph, name);
-                        keep.extend(setup.iter().cloned());
+                    for (n, group) in groups.iter().enumerate().skip(thread).step_by(threads) {
+                        let mut keep = setup.clone();
+                        for name in *group {
+                            keep.extend(closure(graph, name));
+                        }
                         let files = cut(bodies, sources, &keep);
-                        let label = String::from_utf8_lossy(name);
-                        let log = work.join("failed").join(format!("{label}.log"));
+                        let first = group.first().map(|name| String::from_utf8_lossy(name));
+                        let log = work
+                            .join("failed")
+                            .join(format!("{}.log", first.unwrap_or_default()));
                         let program = dir.join(n.to_string());
                         let outcome = compile_cut(oracles, id, source, &program, &files, &log)?;
-                        done.push((n, *name, outcome));
+                        done.push((n, *group, outcome));
                     }
                     Ok(done)
                 })
@@ -234,7 +251,7 @@ fn compile_batch<'n>(
             })
             .collect()
     });
-    let mut all = Vec::with_capacity(names.len());
+    let mut all = Vec::with_capacity(groups.len());
     for result in results {
         all.extend(result?);
     }
@@ -243,7 +260,7 @@ fn compile_batch<'n>(
 }
 
 /// The functions the scenarios' setups run in the whole codebase's progs at `whole`, as the
-/// `compiler-diff` binary lists them (DIFF-15.2).
+/// `compiler-diff` binary lists them (DIFF-15.8).
 fn setup_functions(root: &Path, whole: &Path, id: &str) -> Result<Vec<Vec<u8>>, String> {
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let output = Command::new(cargo)
@@ -285,7 +302,7 @@ fn ok_or_fail(failures: &mut Vec<String>, compared: bool, batch: usize) {
     }
 }
 
-/// Every function body at file level of the codebase `db` analysed (DIFF-15.1), each located
+/// Every function body at file level of the codebase `db` analysed (DIFF-15.7), each located
 /// in its source file, with the source of each file; a body whose block is not one span of one
 /// file from `{` to `}` with its conditional directives balanced, and a `__wrap` or
 /// `__accumulate` body, is left out, and so never emptied.
@@ -349,7 +366,7 @@ fn bodies(db: &Db) -> (Vec<Body>, BTreeMap<PathBuf, Vec<u8>>) {
     (bodies.into_iter().collect(), sources)
 }
 
-/// Whether `text` is a block that can be emptied (DIFF-15.1): it starts with `{`, ends with
+/// Whether `text` is a block that can be emptied (DIFF-15.7): it starts with `{`, ends with
 /// `}`, and every `#if`, `#ifdef` and `#ifndef` line in it is closed by an `#endif` in it.
 fn is_whole_block(text: &[u8]) -> bool {
     if !(text.starts_with(b"{") && text.ends_with(b"}")) {
@@ -374,7 +391,7 @@ fn is_whole_block(text: &[u8]) -> bool {
     depth == 0
 }
 
-/// The functions each function of `progs` calls by name (DIFF-15.2): for each body, the
+/// The functions each function of `progs` calls by name (DIFF-15.8): for each body, the
 /// functions whose index the global a `CALL0` to `CALL8` of it calls holds; a call through a
 /// variable or field, whose global holds no function, adds none.
 fn calls(progs: &Progs<'_>) -> BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>> {
@@ -424,7 +441,7 @@ fn body_ranges(progs: &Progs<'_>) -> Vec<(Range<usize>, Vec<u8>)> {
     ranges
 }
 
-/// `root` and every function it calls, through any depth of calls (DIFF-15.2).
+/// `root` and every function it calls, through any depth of calls (DIFF-15.8).
 fn closure(graph: &BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>, root: &[u8]) -> BTreeSet<Vec<u8>> {
     let mut keep = BTreeSet::new();
     let mut next = vec![root.to_vec()];
@@ -437,7 +454,7 @@ fn closure(graph: &BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>, root: &[u8]) -> BTreeSe
     keep
 }
 
-/// The files of the program cut for the functions `keep` (DIFF-15.1): each file of `sources`
+/// The files of the program cut for the functions `keep` (DIFF-15.7): each file of `sources`
 /// with a body of `bodies` whose function `keep` does not name, every such body emptied.
 fn cut(
     bodies: &[Body],

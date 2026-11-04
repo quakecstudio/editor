@@ -1033,41 +1033,19 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
 **Source:** this project (P2-153, [#649](https://github.com/quakecstudio/editor/issues/649)).
 The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's.
 
-- **DIFF-15.1** `cargo xtask compiler-diff --functions <codebase>...` cuts each function of a
-  codebase the pinned FTEQCC compiles (a rerelease codebase or a corpus mod) into a program of
-  its own: the codebase's files, every declaration kept, with the body of every function at file
-  level emptied to `{}` but those of the functions DIFF-15.2 keeps. A body is found from the
-  semantic model's parse of each compiled file's expansion, its block located in a source file
-  (QC-9.7); one whose block is not one span of one file from `{` to `}` with each `#if`,
-  `#ifdef` and `#ifndef` in it closed by an `#endif` in it (a body a macro writes, or one a
-  directive splits), and the body of a `__wrap` or `__accumulate` definition, is never emptied:
-  FTEQCC refuses a wrapper that does not call `prior` ("Wrapper function ... does not refer to
-  its prior function"). An emptied function that returns a value returns nothing, which FTEQCC
-  warns of (Q206) and both compilers compile.
-- **DIFF-15.2** The functions kept for a function `f` are `f`, the functions the setup of each
-  scenario of DIFF-12.20 runs in the codebase's whole progs (the spawn functions of the map's
-  entities, `worldspawn` among them, the client functions and the frames' functions, which the
-  `compiler-diff` binary's `--setup-functions <progs>` lists), and every function any of them
-  calls by name, through any depth of calls, so each call starts from the world a whole-codebase
-  run starts from: with the setup's bodies emptied, `worldspawn` precaches nothing, the mock
-  refuses `setmodel` and `sound`, and no entity holds the functions a `touch` or `think` names
-  (DIFF-12.15). The calls of a function are read from the codebase's progs compiled by the
-  pinned FTEQCC, the function whose index is held by the global each `CALL0` to `CALL8` of its
-  body calls; a call through a variable or a field, whose global holds no function, keeps none,
-  so the function such a call reaches is emptied in the cut and called empty.
+- **DIFF-15.1** **Withdrawn** 2026-11-04: it cut one program per function, which, once every cut
+  kept the world's setup (DIFF-15.8), compiled nearly the whole codebase once per function;
+  replaced by DIFF-15.7.
+- **DIFF-15.2** **Withdrawn** 2026-11-04: it kept the functions for one function; replaced by
+  DIFF-15.8, which keeps them for a group.
 - **DIFF-15.3** Each cut program is compiled in a copy of the codebase's directory by the fixed
   FTEQCC (DIFF-14.12) and the pinned FTEQCC with the arguments the codebase is compiled with
   (DIFF-12.30, DIFF-12.18), and by `qc-codegen` in the FTEQCC dialect. A cut either FTEQCC
   refuses is a defect of the cut, and one `qc-codegen` refuses when FTEQCC compiled it is a
   divergence; either fails the run, its function named and what the compiler printed kept in
   `failed/<function>.log`.
-- **DIFF-15.4** The `compiler-diff` binary's `--function-pairs <file> --executed <file>` reads
-  lines of the function, the pinned FTEQCC's progs, ours and the fixed FTEQCC's, and calls only
-  that function, in `FUNCTION_ROUNDS` (256) rounds, twice DIFF-12.29's nightly 128, with
-  DIFF-12.16's further batches, from the world of each scenario of DIFF-12.20, as a
-  whole-codebase run calls every function, comparing the calls as DIFF-12.3 and DIFF-12.11 say
-  and a divergence the fixed FTEQCC agrees with as DIFF-14.5 says. The xtask passes the cut
-  programs 64 at a time.
+- **DIFF-15.4** **Withdrawn** 2026-11-04: it called one function per cut in 256 rounds; replaced
+  by DIFF-15.9, a group per cut in the nightly 128.
 - **DIFF-15.5** Each run adds the statements of the pinned FTEQCC's progs its calls and its
   world's setup executed to the `--executed` file as `<name>\t<offset>` lines: the function
   whose body holds the statement, a body running from its first statement to the next
@@ -1079,6 +1057,38 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
   and its coverage (DIFF-15.5) is at least DIFF-12.5's 90%, crmod7 its accepted 87.7% (#661);
   decided by Justin on 2026-11-04 for #649.
 
+- **DIFF-15.7** `cargo xtask compiler-diff --functions <codebase>...` cuts the functions of a
+  codebase the pinned FTEQCC compiles (a rerelease codebase or a corpus mod), in groups of 64 in
+  the order their bodies are found, into a program for each group: the codebase's files, every
+  declaration kept, with the body of every function at file level emptied to `{}` but those of
+  the functions DIFF-15.8 keeps. A body is found from the semantic model's parse of each
+  compiled file's expansion, its block located in a source file (QC-9.7); one whose block is not
+  one span of one file from `{` to `}` with each `#if`, `#ifdef` and `#ifndef` in it closed by
+  an `#endif` in it (a body a macro writes, or one a directive splits), and the body of a
+  `__wrap` or `__accumulate` definition, is never emptied: FTEQCC refuses a wrapper that does
+  not call `prior` ("Wrapper function ... does not refer to its prior function"). An emptied
+  function that returns a value returns nothing, which FTEQCC warns of (Q206) and both compilers
+  compile.
+- **DIFF-15.8** The functions kept for a group are the group's functions, the functions the
+  setup of each scenario of DIFF-12.20 runs in the codebase's whole progs (the spawn functions
+  of the map's entities, `worldspawn` among them, the client functions and the frames'
+  functions, which the `compiler-diff` binary's `--setup-functions <progs>` lists), and every
+  function any of them calls by name, through any depth of calls, so each call starts from the
+  world a whole-codebase run starts from: with the setup's bodies emptied, `worldspawn`
+  precaches nothing, the mock refuses `setmodel` and `sound`, and no entity holds the functions
+  a `touch` or `think` names (DIFF-12.15). The calls of a function are read from the codebase's
+  progs compiled by the pinned FTEQCC, the function whose index is held by the global each
+  `CALL0` to `CALL8` of its body calls; a call through a variable or a field, whose global holds
+  no function, keeps none, so the function such a call reaches is emptied in the cut and called
+  empty.
+- **DIFF-15.9** The `compiler-diff` binary's `--function-pairs <file> --executed <file>` reads
+  lines of the group's functions separated by commas, the pinned FTEQCC's progs, ours and the
+  fixed FTEQCC's, and calls only those functions, each in `FUNCTION_ROUNDS` rounds, DIFF-12.29's
+  nightly 128, with DIFF-12.16's further batches, from the world of each scenario of DIFF-12.20,
+  as a whole-codebase run calls every function, comparing the calls as DIFF-12.3 and DIFF-12.11
+  say and a divergence the fixed FTEQCC agrees with as DIFF-14.5 says. The xtask compiles as
+  many groups' programs at once as the machine runs threads, and passes them to one run of the
+  binary.
 ## Test vectors
 
 ### Scenario numbers
