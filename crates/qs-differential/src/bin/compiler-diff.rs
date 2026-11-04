@@ -34,7 +34,10 @@
 //! and optionally the oracle with its defects fixed (DIFF-14.5), in one process,
 //! printing one line per pair, and exits 0 when no pair diverges: a generated
 //! program's calls need not reach 90% of its statements, since every function of it is
-//! called and a bounded loop is left early by its counter.
+//! called and a bounded loop is left early by its counter. `--function-pairs` reads the same
+//! lines, each named by the one function of a cut program its comparison calls (DIFF-15.4),
+//! and adds the statements of the oracle's progs those calls executed to the `--executed`
+//! file, by function and offset (DIFF-15.5).
 
 #![expect(
     clippy::print_stdout,
@@ -48,7 +51,8 @@ use std::process::ExitCode;
 use qc_builtins::EngineProfile;
 
 use qs_differential::calls::{
-    CodebaseReport, FAST_ROUNDS, FULL_ROUNDS, Oracle, run_codebase, uncovered,
+    CodebaseReport, FAST_ROUNDS, FULL_ROUNDS, FUNCTION_ROUNDS, Oracle, executed_by_function,
+    run_codebase, run_function, uncovered,
 };
 use qs_differential::source::{self, FORMS};
 
@@ -60,7 +64,8 @@ const USAGE: &str = "usage: compiler-diff --mode <fast|full> --codebase <id> \
                      --theirs <progs> \
                      --ours <progs> [--ours <progs>...]\n\
        compiler-diff --generate <dir> --seed <n> --count <n>\n\
-       compiler-diff --pairs <file> [--mode <fast|full>] [--oracle <qcc|fteqcc>] [--engine <id|vkquake>]";
+       compiler-diff --pairs <file> [--mode <fast|full>] [--oracle <qcc|fteqcc>] [--engine <id|vkquake>]\n\
+       compiler-diff --function-pairs <file> --executed <file> [--oracle <qcc|fteqcc>] [--engine <id|vkquake>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -101,13 +106,22 @@ enum Run {
     Suite(Options),
     /// Programs of a seed written out (DIFF-14.1).
     Generate(Generate),
-    /// The pairs a file lists, each compared (DIFF-14.9).
+    /// The pairs a file lists, each compared (DIFF-14.9, DIFF-15.4).
     Pairs {
         file: PathBuf,
-        rounds: u32,
+        calls: Calls,
         oracle: Oracle,
         engine: EngineProfile,
     },
+}
+
+/// The functions each pair's comparison calls.
+enum Calls {
+    /// Every function, in this many rounds (DIFF-14.9).
+    Every(u32),
+    /// The one function the line names, in [`FUNCTION_ROUNDS`] rounds, the statements of the
+    /// oracle's progs the calls executed added to this file (DIFF-15.4, DIFF-15.5).
+    Named(PathBuf),
 }
 
 fn parse(args: &[String]) -> Result<Run, String> {
@@ -123,6 +137,8 @@ fn parse(args: &[String]) -> Result<Run, String> {
     let mut seed = None;
     let mut count = None;
     let mut pairs = None;
+    let mut function_pairs = None;
+    let mut executed = None;
     let mut rest = args.iter();
     while let Some(flag) = rest.next() {
         let mut value = || rest.next().ok_or_else(|| format!("{flag} needs a value"));
@@ -169,6 +185,8 @@ fn parse(args: &[String]) -> Result<Run, String> {
                 );
             }
             "--pairs" => pairs = Some(PathBuf::from(value()?)),
+            "--function-pairs" => function_pairs = Some(PathBuf::from(value()?)),
+            "--executed" => executed = Some(PathBuf::from(value()?)),
             other => return Err(format!("unknown argument {other:?}\n{USAGE}")),
         }
     }
@@ -182,7 +200,15 @@ fn parse(args: &[String]) -> Result<Run, String> {
     if let Some(file) = pairs {
         return Ok(Run::Pairs {
             file,
-            rounds,
+            calls: Calls::Every(rounds),
+            oracle,
+            engine,
+        });
+    }
+    if let Some(file) = function_pairs {
+        return Ok(Run::Pairs {
+            file,
+            calls: Calls::Named(executed.ok_or(USAGE)?),
             oracle,
             engine,
         });
@@ -243,7 +269,7 @@ fn generate(generate: &Generate) -> Result<bool, String> {
 /// fails when the fixed oracle diverges from ours, whatever the oracle did.
 fn pairs(
     file: &PathBuf,
-    rounds: u32,
+    calls: &Calls,
     oracle: Oracle,
     engine: EngineProfile,
 ) -> Result<bool, String> {
@@ -264,15 +290,35 @@ fn pairs(
         let fixed = fields.next();
         let read = |path: &str| std::fs::read(path).map_err(|e| format!("{path}: {e}"));
         let (theirs, ours) = (read(theirs)?, read(ours)?);
-        let report = run_codebase(oracle, &theirs, &ours, rounds, engine, &quiet)
-            .map_err(|e| format!("{name}: {e}"))?;
+        let run = |oracle_progs: &[u8]| match calls {
+            Calls::Every(rounds) => {
+                run_codebase(oracle, oracle_progs, &ours, *rounds, engine, &quiet)
+            }
+            Calls::Named(_) => run_function(
+                oracle,
+                oracle_progs,
+                &ours,
+                FUNCTION_ROUNDS,
+                engine,
+                name.as_bytes(),
+            ),
+        };
+        let report = run(&theirs).map_err(|e| format!("{name}: {e}"))?;
         compared = compared.saturating_add(1);
         let fixed_report = fixed
-            .map(|path| {
-                run_codebase(oracle, &read(path)?, &ours, rounds, engine, &quiet)
-                    .map_err(|e| format!("{name}, the fixed oracle: {e}"))
-            })
+            .map(|path| run(&read(path)?).map_err(|e| format!("{name}, the fixed oracle: {e}")))
             .transpose()?;
+        if let Calls::Named(executed) = calls {
+            let text = executed_by_function(&theirs, &report.executed)
+                .map_err(|e| format!("{name}: {e}"))?;
+            let mut out = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(executed)
+                .map_err(|e| format!("{}: {e}", executed.display()))?;
+            std::io::Write::write_all(&mut out, text.as_bytes())
+                .map_err(|e| format!("{}: {e}", executed.display()))?;
+        }
         let divergences = report.divergences();
         let fixed_divergences = fixed_report.as_ref().map(CodebaseReport::divergences);
         match Outcome::of(divergences, fixed_divergences) {
@@ -372,10 +418,10 @@ fn run(args: &[String]) -> Result<bool, String> {
         Run::Generate(request) => return generate(&request),
         Run::Pairs {
             file,
-            rounds,
+            calls,
             oracle,
             engine,
-        } => return pairs(&file, rounds, oracle, engine),
+        } => return pairs(&file, &calls, oracle, engine),
     };
     let read = |path: &PathBuf| std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()));
     let theirs = read(&options.theirs)?;
@@ -504,7 +550,7 @@ mod tests {
     use qc_builtins::EngineProfile;
     use qs_differential::calls::{CodebaseReport, FULL_ROUNDS, Oracle};
 
-    use super::{Generate, Options, Outcome, Run, add_row, parse};
+    use super::{Calls, Generate, Options, Outcome, Run, add_row, parse};
 
     // spec DIFF-12.30: each pair compared adds its row to the results table, after the rows
     // already there.
@@ -559,7 +605,7 @@ mod tests {
         {
             Run::Pairs {
                 file,
-                rounds,
+                calls: Calls::Every(rounds),
                 oracle,
                 engine,
             } => {
@@ -568,8 +614,37 @@ mod tests {
                 assert_eq!(oracle, Oracle::Fteqcc);
                 assert_eq!(engine, EngineProfile::Id);
             }
-            Run::Suite(_) | Run::Generate(_) => unreachable!("not a pairs run"),
+            Run::Pairs { .. } | Run::Suite(_) | Run::Generate(_) => {
+                unreachable!("not a pairs run")
+            }
         }
+        // spec DIFF-15.4: a function-pairs run calls the function each line names and adds the
+        // statements it executed to the file named
+        match parse(&args(&[
+            "--function-pairs",
+            "f.tsv",
+            "--executed",
+            "e.tsv",
+            "--engine",
+            "vkquake",
+        ]))
+        .unwrap()
+        {
+            Run::Pairs {
+                file,
+                calls: Calls::Named(executed),
+                engine,
+                ..
+            } => {
+                assert_eq!(file, PathBuf::from("f.tsv"));
+                assert_eq!(executed, PathBuf::from("e.tsv"));
+                assert_eq!(engine, EngineProfile::VkQuake);
+            }
+            Run::Pairs { .. } | Run::Suite(_) | Run::Generate(_) => {
+                unreachable!("not a function-pairs run")
+            }
+        }
+        assert!(parse(&args(&["--function-pairs", "f.tsv"])).is_err());
     }
 
     // spec DIFF-14.5: a divergence from the oracle passes only when the fixed oracle agrees with

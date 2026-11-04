@@ -133,6 +133,17 @@ pub(crate) fn compiles(id: &str) -> bool {
     CODEBASES.iter().any(|c| c.id == id)
 }
 
+/// The arguments the pinned FTEQCC compiles the rerelease codebase or corpus mod `id` with, in
+/// a copy of its directory: [`FLAGS`] and the codebase's own; `None` for any other codebase.
+pub(crate) fn fteqcc_args(id: &str) -> Option<Vec<&'static str>> {
+    let extra = match CODEBASES.iter().find(|c| c.id == id) {
+        Some(codebase) => codebase.extra,
+        None if MODS.contains(&id) => &[],
+        None => return None,
+    };
+    Some(FLAGS.iter().chain(extra).copied().collect())
+}
+
 /// Whether FTEQCC compiles the rerelease codebase `id` with `-Fautoproto` (FTE-1.2).
 pub(crate) fn autoprototypes(id: &str) -> bool {
     CODEBASES
@@ -265,7 +276,8 @@ fn compile(
     Ok(())
 }
 
-fn copy_tree(from: &Path, to: &Path) -> Result<(), String> {
+/// Copies the directory `from` to `to`, every file and subdirectory.
+pub(crate) fn copy_tree(from: &Path, to: &Path) -> Result<(), String> {
     fs::create_dir_all(to).map_err(|e| format!("{}: {e}", to.display()))?;
     for entry in fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))? {
         let path = entry.map_err(|e| e.to_string())?.path();

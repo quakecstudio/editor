@@ -129,6 +129,47 @@ impl Report {
 ///
 /// [`CallsError::Refused`] when the progs is refused.
 pub fn uncovered(bytes: &[u8], executed: &BTreeSet<i32>) -> Result<String, CallsError> {
+    let mut rows: Vec<(usize, usize, String)> = Vec::new();
+    for (body, name) in bodies(bytes)? {
+        let of = usize::try_from(body.end.saturating_sub(body.start)).unwrap_or(0);
+        let missed = body.filter(|s| !executed.contains(s)).count();
+        if missed > 0 {
+            rows.push((missed, of, String::from_utf8_lossy(&name).into_owned()));
+        }
+    }
+    rows.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.2.cmp(&b.2)));
+    Ok(rows
+        .iter()
+        .map(|(missed, of, name)| format!("{missed}\t{of}\t{name}\n"))
+        .collect())
+}
+
+/// The statements of `executed` in the progs `bytes`, each as `<name>\t<offset>` with the
+/// function whose body holds it and its offset from that body's first statement, a body
+/// running to the next function's (DIFF-15.5): statements two progs of one codebase both hold
+/// in a function of one name, wherever each placed it.
+///
+/// # Errors
+///
+/// [`CallsError::Refused`] when the progs cannot be read.
+pub fn executed_by_function(bytes: &[u8], executed: &BTreeSet<i32>) -> Result<String, CallsError> {
+    let mut text = String::new();
+    for (body, name) in bodies(bytes)? {
+        let start = body.start;
+        for statement in body.filter(|s| executed.contains(s)) {
+            let name = String::from_utf8_lossy(&name);
+            text.push_str(&format!("{name}\t{}\n", statement.saturating_sub(start)));
+        }
+    }
+    Ok(text)
+}
+
+/// A function's body, its statements from its first to the next function's first, and its name.
+type Body = (core::ops::Range<i32>, Vec<u8>);
+
+/// The body of each function of the progs `bytes` with one, the last running to the progs'
+/// end, in statement order.
+fn bodies(bytes: &[u8]) -> Result<Vec<Body>, CallsError> {
     let progs =
         Progs::read(bytes).map_err(|e| CallsError::Refused(RunRefused::Progs(e.to_string())))?;
     let mut starts: Vec<(i32, Vec<u8>)> = progs
@@ -145,20 +186,12 @@ pub fn uncovered(bytes: &[u8], executed: &BTreeSet<i32>) -> Result<String, Calls
         .collect();
     starts.sort();
     let end = i32::try_from(progs.statements().len()).unwrap_or(i32::MAX);
-    let mut rows: Vec<(usize, usize, String)> = Vec::new();
+    let mut bodies = Vec::with_capacity(starts.len());
     for (k, (start, name)) in starts.iter().enumerate() {
         let next = starts.get(k.saturating_add(1)).map_or(end, |(s, _)| *s);
-        let of = usize::try_from(next.saturating_sub(*start)).unwrap_or(0);
-        let missed = (*start..next).filter(|s| !executed.contains(s)).count();
-        if missed > 0 {
-            rows.push((missed, of, String::from_utf8_lossy(name).into_owned()));
-        }
+        bodies.push((*start..next, name.clone()));
     }
-    rows.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.2.cmp(&b.2)));
-    Ok(rows
-        .iter()
-        .map(|(missed, of, name)| format!("{missed}\t{of}\t{name}\n"))
-        .collect())
+    Ok(bodies)
 }
 
 /// The fraction `executed` is of `total` statements (DIFF-12.5); 0 when `total` is 0.
@@ -179,6 +212,9 @@ pub type Progress<'a> = dyn Fn(&str, usize, usize) + Sync + 'a;
 pub const FAST_ROUNDS: u32 = 32;
 /// The rounds of calls to each function in the nightly run (DIFF-12.29).
 pub const FULL_ROUNDS: u32 = 128;
+/// The rounds of calls to the one function of a per-function run (DIFF-15.4): twice the
+/// nightly run's, since the run calls nothing else.
+pub const FUNCTION_ROUNDS: u32 = 256;
 /// The most rounds a function is called in, as a multiple of the rounds asked for, when its
 /// body still has statements no call executed (DIFF-12.16).
 pub const EXTRA_ROUNDS: u32 = 4;
@@ -319,7 +355,13 @@ pub fn run_codebase(
                 let handle = scope.spawn(move || {
                     let report = |done, of| progress(name, done, of);
                     run_calls_reporting(
-                        oracle, theirs, ours, scenario, entities, rounds, profile, &report,
+                        oracle,
+                        theirs,
+                        ours,
+                        (scenario, entities),
+                        (rounds, profile),
+                        Called::Every,
+                        &report,
                     )
                 });
                 (*name, handle)
@@ -347,6 +389,54 @@ pub fn run_codebase(
         result.scenarios.push((name, report));
     }
     Ok(result)
+}
+
+/// The function of a per-function run (DIFF-15.4), named `function`, called in `rounds` rounds
+/// from the world of the first scenario of [`crate::runner::scenarios`] alone, in `theirs` and
+/// `ours` as [`run_codebase`] calls every function; its report holds that one scenario.
+///
+/// # Errors
+///
+/// [`CallsError`] as [`run_codebase`].
+pub fn run_function(
+    oracle: Oracle,
+    theirs: &[u8],
+    ours: &[u8],
+    rounds: u32,
+    profile: EngineProfile,
+    function: &[u8],
+) -> Result<CodebaseReport, CallsError> {
+    let spec = scenarios("")
+        .into_iter()
+        .next()
+        .ok_or_else(|| CallsError::Scenario("no scenario".to_owned()))?;
+    let text = format!("progs progs.dat\n{}", spec.directives);
+    let scenario = scenario::read(text.as_bytes(), Path::new("."))
+        .map_err(|e| CallsError::Scenario(format!("{}: {e}", spec.name)))?;
+    let entities = spec.entities.unwrap_or_default();
+    let report = run_calls_reporting(
+        oracle,
+        theirs,
+        ours,
+        (&scenario, &entities),
+        (rounds, profile),
+        Called::Only(function),
+        &|_, _| {},
+    )?;
+    Ok(CodebaseReport {
+        executed: report.executed.clone(),
+        total_statements: report.total_statements,
+        scenarios: vec![(spec.name, report)],
+    })
+}
+
+/// The functions a run calls.
+#[derive(Clone, Copy, Debug)]
+enum Called<'a> {
+    /// Every function with a body (DIFF-12.2).
+    Every,
+    /// The functions of this name alone (DIFF-15.4).
+    Only(&'a [u8]),
 }
 
 /// Why a run could not start (DIFF-12.20).
@@ -396,10 +486,9 @@ pub fn run_calls(
         oracle,
         theirs,
         ours,
-        scenario,
-        entities,
-        rounds,
-        profile,
+        (scenario, entities),
+        (rounds, profile),
+        Called::Every,
         &|_, _| {},
     )
 }
@@ -407,20 +496,16 @@ pub fn run_calls(
 /// How often a scenario reports its progress: after every this many functions.
 const PROGRESS_EVERY: usize = 250;
 
-/// [`run_calls`], reporting to `progress` the functions called so far and the functions to
-/// call after every `PROGRESS_EVERY` functions and at the end.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the run's inputs, each one named; a struct would only rename them"
-)]
+/// [`run_calls`] of the functions `called` names, the world that of `scenario` and `entities`,
+/// `rounds` rounds each on `profile`'s engine, reporting to `progress` the functions called so
+/// far and the functions to call after every `PROGRESS_EVERY` functions and at the end.
 fn run_calls_reporting(
     oracle: Oracle,
     theirs: &[u8],
     ours: &[u8],
-    scenario: &Scenario,
-    entities: &[u8],
-    rounds: u32,
-    profile: EngineProfile,
+    (scenario, entities): (&Scenario, &[u8]),
+    (rounds, profile): (u32, EngineProfile),
+    called: Called<'_>,
     progress: &dyn Fn(usize, usize),
 ) -> Result<Report, CallsError> {
     let refused = |e: qc_progs::ReadError| CallsError::Refused(RunRefused::Progs(e.to_string()));
@@ -489,14 +574,19 @@ fn run_calls_reporting(
         if function.first_statement <= 0 {
             continue;
         }
-        // DIFF-12.7: a function the second progs does not have is a divergence, not a skip.
-        // A name both progs give several functions, FTEQCC's accessors of local arrays named
-        // alike (`ArrayGet*tab`), pairs the k-th of the name in the first progs with the k-th
-        // of it in the second, so each accessor meets its own.
         let occurrence = *seen
             .entry(name)
             .and_modify(|n| *n = n.saturating_add(1))
             .or_insert(0_usize);
+        if let Called::Only(only) = called
+            && name != only
+        {
+            continue;
+        }
+        // DIFF-12.7: a function the second progs does not have is a divergence, not a skip.
+        // A name both progs give several functions, FTEQCC's accessors of local arrays named
+        // alike (`ArrayGet*tab`), pairs the k-th of the name in the first progs with the k-th
+        // of it in the second, so each accessor meets its own.
         let Some(our_index) = our_world
             .program
             .functions

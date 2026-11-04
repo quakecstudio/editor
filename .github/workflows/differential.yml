@@ -9,7 +9,9 @@
 # runs the compiler differential's nightly run (P2-09, P2-10, DIFF-12,
 # `cargo xtask compiler-diff --full <codebase>`), one job per codebase in
 # parallel over id 1.01, the rerelease and the corpus mods at the bar, each
-# publishing its results table in the run's summary (DIFF-12.14).
+# publishing its results table in the run's summary (DIFF-12.14), and the
+# per-function differential (DIFF-15, `cargo xtask compiler-diff --functions
+# <codebase>`), one job per codebase the pinned FTEQCC compiles.
 #
 # It does not run on pull requests or in the merge queue, and is not a required
 # check (docs/ci.md): the full corpus takes minutes and the fast subset already
@@ -199,3 +201,73 @@ jobs:
           if [[ -f "target/compiler-diff/$CODEBASE/summary.md" ]]; then
             cat "target/compiler-diff/$CODEBASE/summary.md" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # DIFF-15: each function of each codebase the pinned FTEQCC compiles, cut into a program of
+  # its own and called alone, the statements the runs reach held to DIFF-12.5's bar, crmod7 to
+  # its accepted 87.7%.
+  functions:
+    name: Per-function differential (${{ matrix.codebase }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        codebase:
+          - rerelease
+          - rerelease-hipnotic
+          - rerelease-rogue
+          - rerelease-mg1
+          - rerelease-mg3
+          - rerelease-ctf
+          - arcane-dimensions
+          - copper
+          - crmod7
+          - librequake
+          - qc-conduit
+          - swab
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: differential-${{ runner.os }}
+          save-if: false
+      - name: Point QS_TEST_ASSETS outside the source tree
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/test-assets/downloads
+          key: test-assets-${{ runner.os }}-${{ hashFiles('corpus/manifest.toml') }}
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            target/oracles/src
+            target/oracles/bin
+          key: oracles-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**') }}
+      - name: Build and check the oracles
+        run: cargo xtask oracles
+      - name: Write the codebase to the asset cache
+        env:
+          CODEBASE: ${{ matrix.codebase }}
+        run: cargo xtask corpus fetch "$CODEBASE"
+      - name: Run each function on its own
+        env:
+          CODEBASE: ${{ matrix.codebase }}
+        run: cargo xtask compiler-diff --functions "$CODEBASE"
+      - name: Upload the logs of refused cuts
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: per-function-${{ matrix.codebase }}
+          path: target/compiler-diff/functions/${{ matrix.codebase }}/failed/
+          if-no-files-found: ignore
