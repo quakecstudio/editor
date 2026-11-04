@@ -366,3 +366,33 @@ fn run_refuses_parameters_that_are_not_an_object() {
         assert!(err.starts_with("quakec-ide: "), "{params}: {err}");
     }
 }
+
+// PRJ-2.8 and the README: `--dialect` reads a project with no `quakec.toml` in that dialect,
+// so a project file's dialect, vanilla when it names none, wins over the option.
+#[test]
+fn the_project_file_dialect_wins_over_the_option() {
+    let dir = project(
+        "toml-dialect",
+        &ProjectSpec {
+            world: "void() worldspawn = { float x = 1; x += 2; };\n",
+        },
+    );
+    std::fs::write(
+        dir.join("quakec.toml"),
+        "[[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        cli(&["check", text(&dir), "--dialect", "fteqcc"]).0,
+        Exit::Problems
+    );
+    std::fs::write(
+        dir.join("quakec.toml"),
+        "[project]\ndialect = \"fteqcc\"\n\n[[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        cli(&["check", text(&dir), "--dialect", "vanilla"]).0,
+        Exit::Success
+    );
+}

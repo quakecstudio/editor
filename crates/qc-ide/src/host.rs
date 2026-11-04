@@ -20,14 +20,16 @@ use qc_project::{Dialect, Loader, ModuleKind, Project, ProjectError, Target, nor
 use qc_sema::{Db, FileId, ModuleAnalysis, ModuleInput};
 use qc_syntax::Parse;
 
-/// What the editor or the user says about the project, over what its files say.
+/// What the editor or the user says about the project where its files say nothing.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Config {
-    /// The dialect every module is read in, over the project file's (PRJ-2.8). A project with
-    /// no `quakec.toml` is vanilla otherwise, as `qc_project::open` gives it.
+    /// The dialect a project with no `quakec.toml` is read in, vanilla otherwise as
+    /// `qc_project::open` gives it, and an open file no module compiles; a project file's
+    /// dialect, vanilla when it names none, wins (PRJ-2.8).
     pub dialect: Option<Dialect>,
-    /// The engine every module targets, over the project file's (PRJ-2.9): the engine whose
-    /// builtin table the hover and `W0311` read.
+    /// The engine a project with no `quakec.toml` targets, and an open file no module
+    /// compiles: the engine whose builtin table the hover and `W0311` read; a project file's
+    /// target wins (PRJ-2.9).
     pub target: Option<Target>,
     /// Whether modules resolve with FTEQCC's autoprototyping, `-Fautoproto` (FTE-22.3), which
     /// a project file cannot say.
@@ -289,9 +291,18 @@ impl<L: Loader> AnalysisHost<L> {
     /// Adds a module for each of `project`'s modules, taking from `old` the state of a module
     /// that is the same.
     fn add_project(&mut self, project: &Project, old: &mut Vec<ModuleState>) {
+        // A project file says the dialect and the target, its defaults when it names neither;
+        // the editor's say them only for a project with none.
+        let bare = project.manifest.is_none();
         for module in &project.modules {
-            let dialect = self.config.dialect.unwrap_or(module.dialect);
-            let target = self.config.target.unwrap_or(module.target);
+            let dialect = match self.config.dialect {
+                Some(dialect) if bare => dialect,
+                Some(_) | None => module.dialect,
+            };
+            let target = match self.config.target {
+                Some(target) if bare => target,
+                Some(_) | None => module.target,
+            };
             let files: Vec<PathBuf> = module
                 .graph
                 .files
