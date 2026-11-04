@@ -1160,6 +1160,30 @@ fn a_generated_vector_test_flips_its_jump() {
     );
 }
 
+// FTE-6.4, FTEF-29.5: a postfix on a field stores the stepped value through the field's
+// `ADDRESS` by `STOREP_F`, as an assignment does
+#[test]
+fn a_generated_postfix_on_a_field_stores_through_its_address() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "entity self; .float f; void() t = { self.f--; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let statements: Vec<_> = index.bodies[&t]
+        .generated()
+        .iter()
+        .map(|s| (s.op, s.a, s.b))
+        .collect();
+    let made = |at| Some(Name::Made(at));
+    assert_eq!(statements[2].0, Op::Address);
+    assert_eq!(statements[3], (Op::StorepF, made(1), made(2)));
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]

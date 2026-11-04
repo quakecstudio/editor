@@ -322,33 +322,7 @@ impl Checker<'_> {
         if matches!(kind, Assign::Store | Assign::Compound(..)) {
             self.array_set(&lhs, &stored, &target);
         }
-        // FTE-6.4: a field's store, a compound one's too, is its `ADDRESS`, made after the
-        // value, and `STOREP_*` of the field's type through it.
-        if matches!(lhs.reference, Reference::Field(_)) && !self.global {
-            let storep = match self.etype(&target) {
-                Some(Etype::Vector) => Op::StorepV,
-                Some(Etype::String) => Op::StorepS,
-                Some(Etype::Entity) => Op::StorepEnt,
-                Some(Etype::Field) => Op::StorepFld,
-                Some(Etype::Function) => Op::StorepFnc,
-                _ => Op::StorepF,
-            };
-            if let Reference::Field(field) = &lhs.reference {
-                let address = u32::try_from(self.generated.len()).ok().map(ir::Name::Made);
-                self.generated.push(ir::BodyStatement {
-                    a: self.copied(field.entity, field.entity_call),
-                    b: field.def.map(|def| ir::Name::Def(def, 0)),
-                    c: address,
-                    ..ir::BodyStatement::bare(Op::Address)
-                });
-                self.generated.push(ir::BodyStatement {
-                    a: self.name_of(&stored),
-                    b: address,
-                    ..ir::BodyStatement::bare(storep)
-                });
-            }
-            self.last_temp = None;
-        }
+        self.field_store(&lhs, &stored, &target);
         // FTEF-29.3: `QCC_StoreSRefToRef`.
         if lhs.readonly {
             let message = format!("Assignment to constant {}", lhs.label());
@@ -800,11 +774,45 @@ impl Checker<'_> {
         };
         self.store_mismatch(&updated, operand, &target, span)?;
         self.array_set(operand, &updated, &target);
+        self.field_store(operand, &updated, &target);
         let updated = self.bit_copy(&updated, operand, span)?;
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
         self.freed_again(operand, span);
         Ok(copy)
+    }
+
+    /// FTE-6.4: the store of `stored` to the field `lhs` of type `target`, a compound one's
+    /// and a postfix's too: its `ADDRESS`, made after the value, and `STOREP_*` of the field's
+    /// type through it.
+    fn field_store(&mut self, lhs: &Value, stored: &Value, target: &Type) {
+        let Reference::Field(field) = &lhs.reference else {
+            return;
+        };
+        if self.global {
+            return;
+        }
+        let storep = match self.etype(target) {
+            Some(Etype::Vector) => Op::StorepV,
+            Some(Etype::String) => Op::StorepS,
+            Some(Etype::Entity) => Op::StorepEnt,
+            Some(Etype::Field) => Op::StorepFld,
+            Some(Etype::Function) => Op::StorepFnc,
+            _ => Op::StorepF,
+        };
+        let address = u32::try_from(self.generated.len()).ok().map(ir::Name::Made);
+        self.generated.push(ir::BodyStatement {
+            a: self.copied(field.entity, field.entity_call),
+            b: field.def.map(|def| ir::Name::Def(def, 0)),
+            c: address,
+            ..ir::BodyStatement::bare(Op::Address)
+        });
+        self.generated.push(ir::BodyStatement {
+            a: self.name_of(stored),
+            b: address,
+            ..ir::BodyStatement::bare(storep)
+        });
+        self.last_temp = None;
     }
 
     /// FTEF-19.78: the store of `stored` to the element `lhs` at an index that is no constant,
