@@ -3416,3 +3416,24 @@ fn a_call_of_a_later_component_passes_that_component() {
         "the second word is passed"
     );
 }
+
+// spec FTE-19.8: with a `mod` function, `a % b` is a call of it, each operand stored to its
+// parameter and the value its return, as the semantic model lowered it
+#[test]
+fn a_remainder_calls_the_programs_mod() {
+    let p = fte_progs(
+        "float(float a, float b) mod = { return a; };\nfloat x; float y;\n\
+         void() t = { x = x % y; };\n",
+    );
+    let (x, y, m) = (global(&p, "x"), global(&p, "y"), global(&p, "mod"));
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(StoreF, x, 4, 0),
+            st(StoreF, y, 7, 0),
+            st(Call2, m, 0, 0),
+            st(StoreF, 1, x, 0),
+            st(Done, 0, 0, 0)
+        ]
+    );
+}

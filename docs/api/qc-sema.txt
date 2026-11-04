@@ -260,8 +260,11 @@ variant qc_sema::ir::ImmediateKind::Integer
 variant qc_sema::ir::ImmediateKind::Vector
 variant qc_sema::ir::Input::Left
 variant qc_sema::ir::Input::Right
+variant qc_sema::ir::Operand::Def
 variant qc_sema::ir::Operand::Immediate
 variant qc_sema::ir::Operand::Input
+variant qc_sema::ir::Operand::Parameter
+variant qc_sema::ir::Operand::Return
 variant qc_sema::ir::Operand::Temp
 variant qc_sema::ir::Operand::Word
 variant qc_sema::ir::Temp::Made

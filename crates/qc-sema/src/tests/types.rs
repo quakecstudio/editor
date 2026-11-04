@@ -490,24 +490,45 @@ fn a_binary_operator_lowers_to_a_fragment() {
     );
 }
 
-// spec FTEF-27.4: with a `mod` function defined, `a % b` calls it, which the intermediate layer
-// does not hold yet, so the operator has no fragment
+// spec FTE-19.8: with a `mod` function defined, `a % b` is a call of it: each operand stored
+// to its parameter, then `CALL2` of the function, the value its return
 #[test]
-fn a_helper_call_is_no_fragment_yet() {
+fn a_helper_call_is_its_fragment() {
+    use crate::ir::{Destination, Input, Operand, Statement};
+    use qc_preproc::Op;
     let source =
         "float(float a, float b) mod = { return a; };\nfloat a; void() t = { a = a % 2; };";
     let index = super::fte_index_of(source);
-    let t = index
+    let function = index
         .defs
         .iter()
-        .position(|d| d.name == "t")
+        .position(|d| d.name == "mod")
         .map(DefId::new)
         .unwrap();
-    let start = source.find("a % 2").unwrap() + 2;
+    let fragment = fte_fragment_at(source, "a % 2", "%");
+    let statement = |op, a, b| Statement {
+        op,
+        a,
+        b,
+        c: Destination::Nothing,
+    };
     assert_eq!(
-        index.bodies[&t].fragment_at(Span::new(start, start + 1)),
-        None
+        fragment.statements,
+        [
+            statement(
+                Op::StoreF,
+                Some(Operand::Input(Input::Left)),
+                Some(Operand::Parameter(0))
+            ),
+            statement(
+                Op::StoreF,
+                Some(Operand::Input(Input::Right)),
+                Some(Operand::Parameter(1))
+            ),
+            statement(Op::Call2, Some(Operand::Def(function)), None),
+        ]
     );
+    assert_eq!(fragment.value, Some(Operand::Return));
 }
 
 // spec FTEF-26.13: a word of a constant vector is a constant, so an operator of it and a

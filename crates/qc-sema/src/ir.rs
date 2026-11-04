@@ -12,6 +12,8 @@ use std::collections::HashMap;
 
 use qc_preproc::Op;
 
+use crate::DefId;
+
 /// What a statement reads or what a fragment's value is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Operand {
@@ -24,6 +26,12 @@ pub enum Operand {
     Immediate(Immediate),
     /// One word of a vector input, temporary or immediate: `var.ofs++` (FTE-9.3).
     Word(Whole, u8),
+    /// A call's parameter slot by its number, `OFS_PARM0 + 3 * n` (QC-18.3).
+    Parameter(u8),
+    /// A definition, by its identity: the function a call calls.
+    Def(DefId),
+    /// The return global after a call (`OFS_RETURN`, QC-18.4), the call's value.
+    Return,
 }
 
 /// An operand of the operator a fragment is lowered from.
@@ -73,7 +81,7 @@ impl Operand {
             Self::Input(n) => Whole::Input(n),
             Self::Temp(n) => Whole::Temp(n),
             Self::Immediate(immediate) => Whole::Immediate(immediate),
-            Self::Word(..) => return None,
+            Self::Word(..) | Self::Parameter(_) | Self::Def(_) | Self::Return => return None,
         };
         Some(Self::Word(whole, word))
     }

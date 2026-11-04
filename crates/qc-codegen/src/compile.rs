@@ -2604,14 +2604,11 @@ impl<'a> Compiler<'a> {
             ast::BinaryOp::Rem => {
                 let left = self.left_operand(&binary.lhs().at(span)?)?;
                 let right = self.expr(&binary.rhs().at(span)?)?;
-                // FTEF-27.4: the remainder's emulation as the semantic model lowered it, else the
-                // call of the program's `mod`.
-                if let Some(value) =
-                    self.lowered_binary(Operator::Div, &left, &right, (op_span, span))?
-                {
-                    return Ok(value);
-                }
-                return self.modulo(&left, &right, (op_span, span));
+                // FTEF-27.4, FTE-19.8: the remainder's emulation, or the call of the program's
+                // `mod`, as the semantic model lowered it.
+                return self
+                    .lowered_binary(Operator::Div, &left, &right, (op_span, span))?
+                    .ok_or(Abort::Internal(Internal::Unlowered, op_span));
             }
             op @ (ast::BinaryOp::Shl | ast::BinaryOp::Shr) => {
                 let left = self.left_operand(&binary.lhs().at(span)?)?;
@@ -2683,7 +2680,7 @@ impl<'a> Compiler<'a> {
         // (FTEF-23.4); an operand's conversion folded by the checker is this code generator's
         // own, so it is not one.
         let emulated = !matches!(fragment.statements.as_slice(), [only] if Some(only.op) == chosen);
-        if let ([only], false) = (rows.as_slice(), emulated) {
+        if let ([Step::Row(only)], false) = (rows.as_slice(), emulated) {
             if self.both_constant(left, right)
                 && let Some(value) = self.folded(only.opcode, left, right).at(span)?
             {
@@ -2767,7 +2764,7 @@ impl<'a> Compiler<'a> {
         fragment: &ir::Fragment,
         chosen: Option<Op>,
         types: (Etype, Etype),
-    ) -> Option<Vec<ops::Row>> {
+    ) -> Option<Vec<Step>> {
         let integer = |operand: &ir::Operand| matches!(operand, ir::Operand::Immediate(i) if i.kind == ir::ImmediateKind::Integer);
         // An integer immediate is held only as the truth `AND_F` and `OR_F` of two floats fold
         // to with no statement (FTEF-26.14); the integer operators are not lowered from the
@@ -2798,16 +2795,48 @@ impl<'a> Compiler<'a> {
                 | ir::Operand::Word(ir::Whole::Temp(_) | ir::Whole::Immediate(_), _),
             )
             | None => true,
+            // A slot, a function or the return global is no operand a row reads.
+            Some(ir::Operand::Parameter(_) | ir::Operand::Def(_) | ir::Operand::Return) => false,
         };
         let mut rows = Vec::with_capacity(fragment.statements.len());
         for statement in &fragment.statements {
-            let row = u32::try_from(statement.op.number())
-                .ok()
-                .and_then(ops::row_of)?;
             let operands_ok = [statement.a, statement.b]
                 .iter()
                 .flatten()
                 .all(|o| !integer(o));
+            // A call of a helper (FTE-19.8): each operand stored to its parameter, then the
+            // call of the function.
+            if statement.c == ir::Destination::Nothing && operands_ok {
+                let opcode = u32::try_from(statement.op.number())
+                    .ok()
+                    .and_then(Opcode::from_number)?;
+                let step = match (opcode, statement.a, statement.b) {
+                    (Opcode::StoreF, a, Some(ir::Operand::Parameter(_)))
+                        if fits(a, Etype::Float) =>
+                    {
+                        Step::Parameter
+                    }
+                    (
+                        Opcode::Call0
+                        | Opcode::Call1
+                        | Opcode::Call2
+                        | Opcode::Call3
+                        | Opcode::Call4
+                        | Opcode::Call5
+                        | Opcode::Call6
+                        | Opcode::Call7
+                        | Opcode::Call8,
+                        Some(ir::Operand::Def(_)),
+                        None,
+                    ) => Step::Call(opcode),
+                    _ => return None,
+                };
+                rows.push(step);
+                continue;
+            }
+            let row = u32::try_from(statement.op.number())
+                .ok()
+                .and_then(ops::row_of)?;
             // FTE-19.10: `AND` and `OR` read any operand's word as it is, as `OP_AND_ANY` and
             // `OP_OR_ANY` do on the vanilla opcodes.
             let any = self.dialect.has_fteqcc_extensions()
@@ -2818,7 +2847,7 @@ impl<'a> Compiler<'a> {
             {
                 return None;
             }
-            rows.push(row);
+            rows.push(Step::Row(row));
         }
         Some(rows)
     }
@@ -2829,7 +2858,7 @@ impl<'a> Compiler<'a> {
     fn emit_fragment(
         &mut self,
         fragment: &ir::Fragment,
-        rows: &[ops::Row],
+        rows: &[Step],
         left: &Value,
         right: &Value,
         span: Span,
@@ -2849,6 +2878,21 @@ impl<'a> Compiler<'a> {
             }
             let a = self.fragment_operand(statement.a, left, right, &temps, span)?;
             let b = self.fragment_operand(statement.b, left, right, &temps, span)?;
+            let row = match *row {
+                Step::Row(row) => row,
+                // FTE-18.12: the store of an argument, folded into the statement that made it.
+                Step::Parameter => {
+                    self.store_word(a, b, Etype::Float, span)?;
+                    continue;
+                }
+                // FTE-18.13: the aliases still to be read are copied out of the return global
+                // before the call writes it.
+                Step::Call(opcode) => {
+                    self.clobber_aliases(span)?;
+                    self.program.emit(opcode, operand(a).at(span)?, 0);
+                    continue;
+                }
+            };
             match statement.c {
                 ir::Destination::Value => {
                     let ofs = self.program.emit_result(row.opcode, a, b, row.c).at(span)?;
@@ -2898,7 +2942,10 @@ impl<'a> Compiler<'a> {
                 let place = self.immediate_place(immediate, span)?;
                 self.def_value(place, span)
             }
-            Some(ir::Operand::Word(..)) | None => Err(Abort::Internal(Internal::Unlowered, span)),
+            // A helper's value (FTE-19.8): the return global, a float.
+            Some(ir::Operand::Return) => Ok(self.alias(ValueType::simple(Etype::Float))),
+            Some(ir::Operand::Word(..) | ir::Operand::Parameter(_) | ir::Operand::Def(_))
+            | None => Err(Abort::Internal(Internal::Unlowered, span)),
         }
     }
 
@@ -2937,6 +2984,16 @@ impl<'a> Compiler<'a> {
     ) -> Lowered<u32> {
         let (whole, word) = match operand {
             None => return Ok(0),
+            Some(ir::Operand::Parameter(slot)) => {
+                return OFS_PARM0
+                    .checked_add(u32::from(slot).saturating_mul(3))
+                    .at(span);
+            }
+            Some(ir::Operand::Def(id)) => {
+                let place = self.program.place(id).at(span)?;
+                return Ok(self.program.def(place).at(span)?.ofs);
+            }
+            Some(ir::Operand::Return) => return Ok(OFS_RETURN),
             Some(ir::Operand::Input(n)) => (ir::Whole::Input(n), 0),
             Some(ir::Operand::Temp(n)) => (ir::Whole::Temp(n), 0),
             Some(ir::Operand::Immediate(immediate)) => (ir::Whole::Immediate(immediate), 0),
@@ -4472,6 +4529,17 @@ fn literal_of_token(literal: &ast::Literal, dialect: Dialect) -> Option<Literal>
         | qc_lexer::TokenKind::Frames(_)
         | qc_lexer::TokenKind::FrameCommand(_) => None,
     }
+}
+
+/// How [`Compiler::emit_fragment`] writes one statement of a fragment.
+#[derive(Clone, Copy, Debug)]
+enum Step {
+    /// A value, or a word of a vector temporary, by this row of id's table.
+    Row(ops::Row),
+    /// The store of a float to the parameter slot the statement names (QC-18.3).
+    Parameter,
+    /// A call, by this opcode, of the function the statement names.
+    Call(Opcode),
 }
 
 /// Component `i` of `v`, 0 for none.

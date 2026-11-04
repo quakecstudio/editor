@@ -845,45 +845,6 @@ impl Compiler<'_> {
         Ok(self.alias(float))
     }
 
-    /// FTEQCC's `a % b` of floats on the vanilla opcodes (FTE-19.8), `OP_MOD_F`'s emulation:
-    /// a call of the program's `mod(a, b)` when it has one, else `a - b * (a/b | a/b)`.
-    pub(super) fn modulo(
-        &mut self,
-        left: &Value,
-        right: &Value,
-        (op_span, span): (Span, Span),
-    ) -> Lowered<Value> {
-        if self.type_of(left).etype() != Etype::Float || self.type_of(right).etype() != Etype::Float
-        {
-            return Err(Abort::Internal(Internal::Unsupported, op_span));
-        }
-        if let Some(function) = self.defined("mod") {
-            let (a, b) = (self.operand_of(left), self.operand_of(right));
-            for (slot, arg) in [(OFS_PARM0, a), (OFS_PARM0 + 3, b)] {
-                self.store_word(arg, slot, Etype::Float, span)?;
-            }
-            self.clobber_aliases(span)?;
-            self.program
-                .emit(Opcode::Call2, operand(function).at(span)?, 0);
-            return Ok(self.alias(ValueType::simple(Etype::Float)));
-        }
-        let emit = |compiler: &mut Self, op, a, b| {
-            compiler
-                .program
-                .emit_result(op, a, b, Etype::Float)
-                .at(span)
-        };
-        let (a, b) = (self.operand_of(left), self.operand_of(right));
-        let quotient = emit(self, Opcode::DivF, a, b)?;
-        let whole = emit(self, Opcode::BitOr, quotient, quotient)?;
-        let product = emit(self, Opcode::MulF, b, whole)?;
-        let ofs = emit(self, Opcode::SubF, a, product)?;
-        Ok(Value {
-            ofs,
-            kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
-        })
-    }
-
     /// The global offset of the global `name` the program has made, as
     /// `QCC_PR_GetSRef(NULL, name, NULL, false, ...)` finds it.
     fn defined(&self, name: &str) -> Option<u32> {
@@ -899,7 +860,13 @@ impl Compiler<'_> {
     }
 
     /// `STORE_*` of the value of basic type `etype` at `from` to `to`.
-    fn store_word(&mut self, from: u32, to: u32, etype: Etype, span: Span) -> Lowered<()> {
+    pub(super) fn store_word(
+        &mut self,
+        from: u32,
+        to: u32,
+        etype: Etype,
+        span: Span,
+    ) -> Lowered<()> {
         // FTE-18.12: a temporary the statement before made is written to `to` by that
         // statement instead (`opt_assignments`).
         if self.fold_word_into(from, to) {
