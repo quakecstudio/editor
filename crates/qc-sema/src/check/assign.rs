@@ -916,6 +916,7 @@ impl Checker<'_> {
                 b: parameter(0),
                 ..ir::BodyStatement::bare(Op::StoreF)
             });
+            self.read_returned(&element.index);
         }
         let words = self.env.layout(target).map_or(1, |l| l.words);
         self.generated.push(ir::BodyStatement {

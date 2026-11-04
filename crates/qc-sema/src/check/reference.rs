@@ -385,6 +385,11 @@ impl Checker<'_> {
                     b: Some(ir::Name::Parameter(0)),
                     ..ir::BodyStatement::bare(Op::StoreF)
                 });
+                // The store reads a call's value, which the getter's call need not copy.
+                if float.returned {
+                    self.live_return = None;
+                    self.live_call = None;
+                }
             }
             self.clobber_return();
             self.generated.push(ir::BodyStatement {
