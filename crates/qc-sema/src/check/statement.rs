@@ -568,6 +568,8 @@ impl Checker<'_> {
         let hcstyle = op.is_some_and(|op| target.valid(op));
         let step = if hcstyle { Step::Branch } else { Step::Goto };
         let switch_op = op.filter(|_| hcstyle).unwrap_or(Op::Goto);
+        // FTE-18.13: the jump copies a call's value the cases still read.
+        self.clobber_return();
         let patch1 = self.jump(step, switch_op, None, line);
         let body = self.here();
         // FTEF-16.16: each `case` read while the body is, at any depth, is this switch's.
