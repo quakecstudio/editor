@@ -31,6 +31,10 @@ use crate::oracles::{self, Oracles, rerelease};
 /// How many cut programs one run of the binary compares (DIFF-15.4).
 const BATCH: usize = 64;
 
+/// The function every cut keeps with what it calls (DIFF-15.2): the map's world entity's spawn
+/// function, whose precaches the world's setup needs, or `setmodel` and `sound` fail in it.
+const WORLDSPAWN: &[u8] = b"worldspawn";
+
 /// What an emptied body becomes (DIFF-15.1).
 const STUB: &[u8] = b"{}";
 
@@ -207,7 +211,9 @@ fn compile_batch<'n>(
                 scope.spawn(move || {
                     let mut done = Vec::new();
                     for (n, name) in names.iter().enumerate().skip(thread).step_by(threads) {
-                        let files = cut(bodies, sources, &closure(graph, name));
+                        let mut keep = closure(graph, name);
+                        keep.extend(closure(graph, WORLDSPAWN));
+                        let files = cut(bodies, sources, &keep);
                         let label = String::from_utf8_lossy(name);
                         let log = work.join("failed").join(format!("{label}.log"));
                         let program = dir.join(n.to_string());
