@@ -129,6 +129,12 @@ pub enum Internal {
     Unsupported,
     /// A part of a construct the parser left out.
     Unlowered,
+    /// A body the semantic model did not follow in full, which no statement of the
+    /// intermediate layer writes (`docs/design/back-end.md`).
+    Unfollowed,
+    /// A call that passes, or stops before, a parameter default this compiler keeps and the
+    /// semantic model did not know of (FTE-18.7, FTE-18.8).
+    DefaultUnknown,
     /// A table or offset past what the format's integers hold.
     TooLarge,
 }

@@ -25,9 +25,11 @@ variant qc_codegen::CompileError::Dialect
 variant qc_codegen::CompileError::Internal
 variant qc_codegen::CompileError::NotAnalysed
 variant qc_codegen::CompileError::Write
+variant qc_codegen::Internal::DefaultUnknown
 variant qc_codegen::Internal::NoDefinition
 variant qc_codegen::Internal::TooLarge
 variant qc_codegen::Internal::Unallocated
+variant qc_codegen::Internal::Unfollowed
 variant qc_codegen::Internal::Unlowered
 variant qc_codegen::Internal::Unresolved
 variant qc_codegen::Internal::Unsupported
