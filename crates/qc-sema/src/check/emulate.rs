@@ -432,7 +432,9 @@ impl Checker<'_> {
             self.env.temps().free(offset);
         }
         let temp = Some(self.env.temps().take(1));
-        self.last_temp = temp;
+        // In a function the value is the call's, in the return global, which no store folds
+        // into.
+        self.last_temp = if call.is_some() { None } else { temp };
         Value {
             ir: Some(ir::Operand::Return),
             temp,
