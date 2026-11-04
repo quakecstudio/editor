@@ -25,6 +25,7 @@ use crate::check::truth::Test;
 use crate::check::truth::words;
 use crate::check::{Constness, Reference, Value};
 use crate::ir;
+use crate::lower::{Qualifier, declares};
 use crate::ty::{SimpleType, Type};
 
 /// What an assignment operator stores (FTEF-29.2).
@@ -841,6 +842,12 @@ impl Checker<'_> {
         if self.global {
             return Ok(());
         }
+        let local = self.env.reference(start);
+        let array = local.is_some_and(|def| self.env.is_array(def));
+        let nested = aggregate.syntax().children().count() != elements.len();
+        if array && !vector && !nested && !self.env.local_static(start) {
+            return self.array_aggregate(declarator, local, &elements);
+        }
         if !vector || self.env.local_static(start) || elements.len() != 3 {
             self.followed = false;
             return Ok(());
@@ -995,6 +1002,62 @@ impl Checker<'_> {
         });
         self.read_returned(stored);
         self.last_temp = None;
+    }
+
+    /// A local array's aggregate initialiser: a constant one is its value at compile time, as a
+    /// global's is (FTEF-32.13), which the body does not follow; any other stores each element's
+    /// value to its element in turn by the `STORE_*` of its type, or folds it into the statement
+    /// that made it (FTEF-32.15, FTEF-29.13).
+    fn array_aggregate(
+        &mut self,
+        declarator: &ast::Declarator,
+        local: Option<crate::DefId>,
+        elements: &[ast::Expr],
+    ) -> Result<(), Fatal> {
+        let constant = declarator
+            .syntax()
+            .parent()
+            .is_some_and(|decl| declares(&decl, &Qualifier::Const));
+        // Its words are set where the code generator declares the local, which the writer does
+        // not do yet.
+        if constant {
+            self.followed = false;
+            return Ok(());
+        }
+        let Some(ty) = declarator
+            .name()
+            .and_then(|name| self.env.local_type(name.span().start))
+        else {
+            self.followed = false;
+            return Ok(());
+        };
+        let width = self.env.layout(&ty).map_or(1, |l| l.words);
+        let store = Checker::store_op(self.etype(&ty));
+        for (at, element) in (0_u32..).zip(elements) {
+            let value = self.value(Some(element.clone()))?;
+            // An element of another type is converted as it is stored, which the body does not
+            // follow; the check reports one no cast takes.
+            if self.etype(&value.ty) != self.etype(&ty) {
+                self.followed = false;
+            }
+            let to = local.map(|def| ir::Name::Def(def, at.saturating_mul(width)));
+            let wider = self.generated.last().is_some_and(|last| {
+                let made = opcodes::row(last.op).map(|row| row.types[2].etype());
+                made.map_or(1, words) > self.etype(&ty).map_or(1, words)
+            });
+            if value.temp.is_some() && value.temp == self.last_temp && !wider {
+                self.fold_into(&value, to);
+            } else {
+                self.generated.push(ir::BodyStatement {
+                    a: self.name_of(&value),
+                    b: to,
+                    ..ir::BodyStatement::bare(store)
+                });
+            }
+            self.read_returned(&value);
+            self.last_temp = None;
+        }
+        Ok(())
     }
 
     /// A local array's getter or setter, which a `for` forgets at its end (FTEF-19.78), is not
