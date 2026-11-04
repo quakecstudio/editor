@@ -16,7 +16,7 @@ use qc_sema::lower::{Qualifier, declares};
 use qc_sema::{DefId, FileId, TypedBody};
 use qc_syntax::ast::{self, AstNode as _};
 
-use super::{At, Compiler, Lowered, Written};
+use super::{At, Compiler, Lowered, Written, literal_of};
 use crate::Internal;
 use crate::program::{Literal, OFS_RETURN, operand, type_words};
 
@@ -236,8 +236,9 @@ impl Compiler<'_> {
         Ok(())
     }
 
-    /// FTEF-32.13: the constant local `local` of the body `syntax` holds its aggregate
-    /// initialiser's words at compile time, as a global does.
+    /// FTEF-32.13, QC-11.10: the local `local` of the body `syntax` holds its initialiser's
+    /// words at compile time, as a global does: a constant's aggregate, or under id's `qcc` any
+    /// local's literal.
     fn constant_local(
         &mut self,
         syntax: &ast::FunctionBody,
@@ -248,7 +249,7 @@ impl Compiler<'_> {
             return Err(Internal::Unlowered).at(span);
         };
         let at = self.index.def(id).at(span)?.location.span.start;
-        let aggregate = syntax
+        let initializer = syntax
             .syntax()
             .descendants()
             .filter_map(ast::Declarator::cast)
@@ -257,12 +258,20 @@ impl Compiler<'_> {
                     .name()
                     .is_some_and(|name| name.span().start == at)
             })
-            .and_then(|declarator| match declarator.initializer() {
-                Some(ast::Initializer::Aggregate(aggregate)) => Some(aggregate),
-                _ => None,
-            })
+            .and_then(|declarator| declarator.initializer())
             .at(span)?;
         let place = self.program.get_def(self.index, id).at(span)?;
+        let aggregate = match initializer {
+            ast::Initializer::Aggregate(aggregate) => aggregate,
+            ast::Initializer::Value(expr) => {
+                let literal = literal_of(&expr, self.dialect).at(span)?;
+                self.program.initialise(place, &literal).at(span)?;
+                return Ok(());
+            }
+            ast::Initializer::Body(_) | ast::Initializer::Builtin(_) => {
+                return Err(Internal::Unlowered).at(span);
+            }
+        };
         let def = self.program.def(place).at(span)?;
         let (ty, count) = (def.ty.clone(), def.count);
         let words = self.aggregate_words(&ty, count, &aggregate)?;

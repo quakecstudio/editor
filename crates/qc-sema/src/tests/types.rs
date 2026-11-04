@@ -954,12 +954,12 @@ fn a_vanilla_body_is_generated_as_qcc_emits_it() {
     assert_eq!(generated[16].a, a);
 }
 
-// spec QC-17.4, QC-11.10: a vanilla body is not followed where a field load before a plain
-// name's assignment retypes the name, or a local is initialised once as a global is; a call's
-// value is the return global
+// spec QC-27.11, QC-11.10, QC-18.6: a vanilla body leaves an earlier field load as it is
+// before a plain name's assignment, initialises a local once as a global is, and reads a call's
+// value from the return global
 #[test]
-fn a_vanilla_body_declines_what_it_does_not_follow() {
-    use crate::ir::Name;
+fn a_vanilla_body_keeps_qcc_quirks_it_follows() {
+    use crate::ir::{Effect, Name};
     let source = "entity e; .float fl; float a; float() g; \
         void() t = { e.fl; a = 2; };\
         void() u = { local float x = 1; a = x; };\
@@ -973,8 +973,23 @@ fn a_vanilla_body_declines_what_it_does_not_follow() {
             .map(DefId::new)
             .unwrap()
     };
-    assert!(!index.bodies[&def("t")].followed());
-    assert!(!index.bodies[&def("u")].followed());
+    let t = &index.bodies[&def("t")];
+    assert!(t.followed());
+    assert_eq!(
+        t.generated().iter().map(|s| s.op).collect::<Vec<_>>(),
+        [
+            qc_preproc::Op::LoadF,
+            qc_preproc::Op::StoreF,
+            qc_preproc::Op::Done
+        ]
+    );
+    let u = &index.bodies[&def("u")];
+    assert!(u.followed());
+    assert!(
+        u.effects()
+            .iter()
+            .any(|(_, effect)| matches!(effect, Effect::Constant(_)))
+    );
     let w = &index.bodies[&def("w")];
     assert!(w.followed());
     let add = w

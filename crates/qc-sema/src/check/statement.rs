@@ -384,9 +384,10 @@ impl Checker<'_> {
     /// `_float`, anything else as `_int`.
     fn constant_zero(&mut self, value: &Value) -> Option<bool> {
         let constant = value.known()?;
-        // A string constant's test is not followed statement by statement.
+        // FTE-3.6: a string constant's word is its offset in the string table, which no string,
+        // the empty one included, has at 0.
         if self.etype_of(&value.ty) == Some(Etype::String) {
-            self.followed = false;
+            return Some(false);
         }
         Some(if self.etype_of(&value.ty) == Some(Etype::Float) {
             constant.f() == 0.0

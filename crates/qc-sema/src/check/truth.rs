@@ -207,6 +207,7 @@ impl Checker<'_> {
             condition = self.copied(condition, call);
         }
         if jump == Jump::IfNot
+            && !self.keeps_condition
             && let Some(operand) = self.drops_not(value)
         {
             self.branch_op = Some(Op::IfI);
@@ -341,7 +342,11 @@ impl Checker<'_> {
         test: &mut Option<u32>,
         span: Span,
     ) -> Result<(Value, bool, Option<u32>), Fatal> {
-        *test = self.test_condition(&condition, span)?;
+        // FTEF-34.16: the condition is the value too, so the `NOT` that made it is kept.
+        self.keeps_condition = true;
+        let tested = self.test_condition(&condition, span);
+        self.keeps_condition = false;
+        *test = tested?;
         let null = condition.known().is_some_and(Constant::null);
         // `(r.cast->size>=3)?OP_STORE_V:OP_STORE_F`, after the `IFNOT`.
         let words = self.env.layout(&condition.ty).map_or(1, |l| l.words);

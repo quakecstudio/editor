@@ -265,20 +265,26 @@ impl Vanilla<'_> {
     }
 
     /// A `local` declaration: each local declared where it is (QC-11.10); one with an
-    /// initialiser is initialised once, as a global is, which the body does not follow.
+    /// initialiser is initialised once, as a global is, which the code generator writes.
     fn local(&mut self, local: &ast::LocalDecl) {
         for declarator in local.declarators() {
-            if declarator.initializer().is_some() {
-                self.followed = false;
-            }
-            if let Some(def) = declarator
+            let def = declarator
                 .name()
-                .and_then(|name| self.env.reference(name.span().start))
-            {
+                .and_then(|name| self.env.reference(name.span().start));
+            if let Some(def) = def {
                 let at = self.next();
                 self.locals.push((at, def));
                 self.effects
                     .push((at, ir::Effect::Make(ir::Name::Def(def, 0))));
+            }
+            match (declarator.initializer(), def) {
+                (None, _) => {}
+                (Some(ast::Initializer::Value(_)), Some(def)) => {
+                    let at = self.next();
+                    self.effects
+                        .push((at, ir::Effect::Constant(ir::Name::Def(def, 0))));
+                }
+                (Some(_), _) => self.followed = false,
             }
         }
     }
@@ -336,9 +342,12 @@ impl Vanilla<'_> {
 
     /// QC-17.3: turns the last statement, a `LOAD_*` of the assignment's `target`, into
     /// `ADDRESS`, whether it did; a vector's keeps the three words its value took (QC-17.7).
-    /// A last `LOAD_*` that is not the target's retypes the target (QC-17.4), which the model
-    /// does not follow.
     fn address_of_last(&mut self, target: Option<&ast::Expr>) -> bool {
+        // QC-27.11: only a field on the left is made an address; an earlier statement's load is
+        // never rewritten, where id's `qcc` retypes the target (QC-17.4).
+        if !target.is_some_and(is_field) {
+            return false;
+        }
         let Some(last) = self.generated.last_mut() else {
             return false;
         };
@@ -351,9 +360,6 @@ impl Vanilla<'_> {
         if words > 0 {
             let at = self.next();
             self.effects.push((at, ir::Effect::Temp(words)));
-        }
-        if !target.is_some_and(is_field) {
-            self.followed = false;
         }
         true
     }

@@ -310,7 +310,14 @@ impl Checker<'_> {
             made.map_or(1, words) > stored.map_or(1, words)
         });
         let folded = stored.temp.is_some() && stored.temp == self.last_temp && !wider;
-        if matches!(kind, Assign::Store) {
+        let structured = matches!(self.etype(&target), Some(Etype::Struct | Etype::Union));
+        // FTE-14.6: a struct stored to a definition is copied by `STORE_V` for each three words
+        // and `STORE_F` for the rest, from a definition's or a block's words.
+        let copied = matches!(kind, Assign::Store)
+            && structured
+            && lhs.reference == Reference::Global
+            && self.copy_struct(&stored, lhs.name(), &target);
+        if matches!(kind, Assign::Store) && !copied {
             let store = Checker::store_op(self.etype(&target));
             // The store chosen for the `=`, which the code generator reads.
             self.opcodes.insert((span.start, span.end), store);
@@ -349,8 +356,9 @@ impl Checker<'_> {
         if matches!(kind, Assign::Store) {
             self.pointer_store(&lhs, &stored, &target);
         }
-        // A struct's or a union's store is word groups the body does not follow (FTE-14.5).
-        if matches!(self.etype(&target), Some(Etype::Struct | Etype::Union)) {
+        // Any other store of a struct or a union is word groups the body does not follow
+        // (FTE-14.5).
+        if structured && !copied {
             self.followed = false;
         }
         // An accessor's store, and a compound one through a pointer, are not followed.
@@ -1002,6 +1010,38 @@ impl Checker<'_> {
         });
         self.read_returned(stored);
         self.last_temp = None;
+    }
+
+    /// FTE-14.6: the struct `stored` of type `target` copied to the definition `to` by `STORE_V`
+    /// for each three words and `STORE_F` for the rest, when it is a definition's or a block's
+    /// words; whether it was.
+    fn copy_struct(&mut self, stored: &Value, to: Option<ir::Name>, target: &Type) -> bool {
+        let from = self
+            .name_of(stored)
+            .filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
+        let (Some(from), Some(to)) = (from, to) else {
+            return false;
+        };
+        if self.global {
+            return false;
+        }
+        let size = self.env.layout(target).map_or(0, |l| l.words);
+        let mut word = 0;
+        while word < size {
+            let (op, step) = if size.saturating_sub(word) >= 3 {
+                (Op::StoreV, 3)
+            } else {
+                (Op::StoreF, 1)
+            };
+            self.generated.push(ir::BodyStatement {
+                a: from.word(word),
+                b: to.word(word),
+                ..ir::BodyStatement::bare(op)
+            });
+            word = word.saturating_add(step);
+        }
+        self.last_temp = None;
+        true
     }
 
     /// A local array's aggregate initialiser: a constant one is its value at compile time, as a

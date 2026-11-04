@@ -185,6 +185,7 @@ impl Checker<'_> {
             }
             let mark = self.generated.len();
             let mut value = self.read(reference.clone(), arg_span)?;
+            let mut continue_after_conversion = false;
             if let Reference::Field(field) = &reference.reference {
                 let load = self.generated.split_off(mark.min(self.generated.len()));
                 // FTE-18.13: an entity that is a call's value stays referenced until the field is
@@ -203,12 +204,29 @@ impl Checker<'_> {
                 && value.ty != Type::Unknown
                 && !self.env.typecmp(&value.ty, param)
             {
-                // A field argument converted is loaded into the conversion's own slot
-                // (FTE-18.11), which the body does not follow.
-                if matches!(reference.reference, Reference::Field(_)) {
-                    self.followed = false;
+                // FTEF-26.3: a float field of an `int` parameter is loaded straight into the
+                // slot of `ftoi`, whose value is the argument; any other converted field
+                // argument is not followed.
+                let ftoi = (self.etype_of(&value.ty) == Some(Etype::Float)
+                    && self.etype_of(param) == Some(Etype::Integer))
+                .then(|| self.env.helper("ftoi"))
+                .flatten();
+                let held = field_loads.last().is_some_and(|field| field.slot == at);
+                match ftoi.filter(|_| held && !self.global) {
+                    Some(ftoi) => {
+                        let field = field_loads.pop();
+                        value = self.ftoi_field(field, ftoi, param);
+                        continue_after_conversion = true;
+                    }
+                    None => {
+                        if matches!(reference.reference, Reference::Field(_)) {
+                            self.followed = false;
+                        }
+                    }
                 }
-                value = self.cast_to(&value, param, arg_span)?;
+                if !continue_after_conversion {
+                    value = self.cast_to(&value, param, arg_span)?;
+                }
             }
             // A field argument of a call's entity stays referenced across later calls, which
             // the body does not follow (FTE-18.13).
@@ -276,10 +294,12 @@ impl Checker<'_> {
         {
             passed_count = passed_count.saturating_add(1);
         }
+        // FTE-18.7: an empty slot is given its parameter's default.
+        let defaulted: Vec<bool> = passed.iter().map(Option::is_none).collect();
         self.call_fragment(
             &function,
             passed_count,
-            (callee, &values),
+            (callee, &values, &defaulted),
             &field_loads,
             span,
         );
@@ -369,7 +389,7 @@ impl Checker<'_> {
         &mut self,
         function: &FunctionType,
         count: usize,
-        (callee, values): (Option<ir::Name>, &[Value]),
+        (callee, values, defaulted): (Option<ir::Name>, &[Value], &[bool]),
         field_loads: &[FieldLoad],
         span: Span,
     ) {
@@ -424,8 +444,15 @@ impl Checker<'_> {
                     self.fold_into(value, slot);
                 }
                 if !folded {
+                    // An empty slot's value is its parameter's default, which the code generator
+                    // reads (FTE-18.7).
+                    let from = if defaulted.get(slot).copied().unwrap_or(false) {
+                        u8::try_from(slot).ok().map(ir::Name::Default)
+                    } else {
+                        self.name_of(value)
+                    };
                     self.generated.push(ir::BodyStatement {
-                        a: self.name_of(value),
+                        a: from,
                         b: u8::try_from(slot).ok().map(ir::Name::Parameter),
                         ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
                     });
@@ -1074,6 +1101,37 @@ pub(super) const fn call_opcode(passed: usize) -> Option<Op> {
         8 => Op::Call8,
         _ => return None,
     })
+}
+
+impl Checker<'_> {
+    /// FTEF-26.3: the held field load `field` into the first slot, then `CALL1` of `ftoi`, whose
+    /// value, an `int` of type `param`, is the argument.
+    fn ftoi_field(&mut self, field: Option<FieldLoad>, ftoi: crate::DefId, param: &Type) -> Value {
+        if let Some(field) = field {
+            for statement in field.load {
+                self.generated.push(ir::BodyStatement {
+                    op: Op::LoadF,
+                    a: self.copied(statement.a, field.entity_call),
+                    c: Some(ir::Name::Parameter(0)),
+                    ..statement
+                });
+            }
+        }
+        self.clobber_return();
+        self.generated.push(ir::BodyStatement {
+            a: Some(ir::Name::Def(ftoi, 0)),
+            ..ir::BodyStatement::bare(Op::Call1)
+        });
+        let call = self.last_made();
+        self.last_temp = None;
+        self.live_return = Some(1);
+        self.live_call = call;
+        Value {
+            returned: true,
+            call,
+            ..Value::of(param.clone())
+        }
+    }
 }
 
 /// A field argument's load, held back until every argument is read (FTE-18.11): its parameter

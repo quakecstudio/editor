@@ -70,6 +70,9 @@ pub(super) struct Checker<'e> {
     /// The words of a call's value a statement read word by word and freed not, which the
     /// next statement's clobber copies out of the return global (FTE-18.13).
     pub(super) unfreed: Option<u32>,
+    /// Whether the condition being tested is also the value read after, as `c ?: b`'s is, so
+    /// that the `NOT` that made it is kept (FTEF-34.16).
+    pub(super) keeps_condition: bool,
     /// The generated `CALL` whose value [`Checker::live_return`] is.
     pub(super) live_call: Option<u32>,
     /// Each call whose value a statement copied out of the return global, and the copy, which
@@ -144,6 +147,7 @@ impl<'e> Checker<'e> {
             effects: Vec::new(),
             block_read: None,
             unfreed: None,
+            keeps_condition: false,
             live_call: None,
             copies: Vec::new(),
             fragment: None,
