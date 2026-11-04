@@ -16,13 +16,13 @@
 //! (DIFF-6.5), and the DIFF-6.2 random source.
 
 use crate::localization::Localization;
+use crate::tokenize::Tokens;
+
 /// The settings the mock keeps, with the texts of DIFF-2.4.
 ///
 /// `skill`, `deathmatch`, `coop` and `teamplay` start at `1`, `0`, `0`, `0`; a scenario's
 /// `cvar` line replaces a text. Any other name reads as 0 and `cvar_set` of it changes nothing
 /// (BUILTIN-11.8, DIFF-2.4).
-use crate::tokenize::Tokens;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cvars {
     entries: Vec<(String, String)>,
