@@ -46,7 +46,7 @@ use std::path::PathBuf;
 pub use completion::Completion;
 pub use highlight::{Highlight, HighlightKind, Modifier, Modifiers, SyntaxClass};
 pub use hints::ParameterHint;
-pub use host::{AnalysisHost, Config};
+pub use host::{AnalysisHost, Config, ModuleBuild};
 pub use hover::{BuiltinInfo, Hover};
 pub use qc_diag::{Code, Diagnostic, Severity, Span};
 pub use qc_engines::{Builtin, BuiltinRef, Engine};

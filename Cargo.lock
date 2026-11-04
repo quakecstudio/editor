@@ -3242,13 +3242,25 @@ dependencies = [
 name = "qs-workbench"
 version = "2026.10.0"
 dependencies = [
+ "qc-codegen",
  "qc-ide",
+ "qc-progs",
  "qc-project",
+ "qc-sema",
  "qs-commands",
  "schemars",
  "serde",
  "serde_json",
  "tracing",
+]
+
+[[package]]
+name = "quakec-ide"
+version = "2026.10.0"
+dependencies = [
+ "qs-commands",
+ "qs-workbench",
+ "serde_json",
 ]
 
 [[package]]

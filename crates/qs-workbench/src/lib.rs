@@ -10,8 +10,10 @@
 //!
 //! # Layer
 //!
-//! L5 commands. It depends on `qs-commands` (L5), `qc-ide` (L3) and `qc-project` (L2).
+//! L5 commands. It depends on `qs-commands` (L5), `qc-codegen` (L4), `qc-ide` and `qc-sema`
+//! (L3), `qc-project` (L2), and `qc-progs` (L0).
 
+mod build;
 mod commands;
 mod editing;
 #[cfg(test)]
@@ -28,11 +30,12 @@ pub use qc_ide::{
     Code, Completion, Config, DefKind, Diagnostic, FileEdit, FileRange, Highlight, HighlightKind,
     Hover, Modifier, Modifiers, RenameError, Severity, Span, Symbol, SymbolKind, SyntaxClass,
 };
-pub use qc_project::{Dialect, FsLoader, Target};
+pub use qc_project::{Dialect, FsLoader, Loader, Target};
 
+pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
-use qc_project::{Loader, ProjectError, normalize};
+use qc_project::{ProjectError, normalize};
 use serde::{Deserialize, Serialize};
 
 /// A place in a file as a person reads it: a line and a column, both from 1, the column
@@ -420,6 +423,8 @@ pub enum WorkbenchError {
         /// The file.
         path: PathBuf,
     },
+    /// No project is open.
+    NoProject,
     /// The offset is past the end of the file.
     Offset {
         /// The file.
@@ -440,6 +445,7 @@ impl fmt::Display for WorkbenchError {
                 write!(f, "{}: cannot be written: {error}", path.display())
             }
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
+            Self::NoProject => f.write_str("no project is open"),
             Self::Offset { path, offset, len } => write!(
                 f,
                 "{}: offset {offset} is past the end of the file, {len} bytes",
@@ -455,7 +461,7 @@ impl Error for WorkbenchError {
             Self::Project(error) => Some(error),
             Self::Rename(error) => Some(error),
             Self::Save { error, .. } => Some(error),
-            Self::NoFile { .. } | Self::Offset { .. } => None,
+            Self::NoFile { .. } | Self::NoProject | Self::Offset { .. } => None,
         }
     }
 }

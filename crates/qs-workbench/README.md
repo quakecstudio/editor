@@ -1,11 +1,11 @@
 # qs-workbench
 
 The workbench (UI-2): the open project and the open file, what the Project, Symbols and
-Problems panels list, and the commands that open a project or a file, `project.open` and
-`file.open`.
+Problems panels list, the commands that open a project or a file, `project.open` and
+`file.open`, and those that build and check the project, `project.build` and `project.check`.
 
-- **Layer:** L5 commands. It depends on `qs-commands` (L5), `qc-ide` (L3), `qc-project` (L2),
-  `schemars`, `serde` and `tracing`.
+- **Layer:** L5 commands. It depends on `qs-commands` (L5), `qc-codegen` (L4), `qc-ide` and
+  `qc-sema` (L3), `qc-project` (L2), `qc-progs` (L0), `schemars`, `serde` and `tracing`.
 - **Decision:** plan requirement UI-2, P2-19 (#75); not engine behaviour.
 - **Spec sections:** none; it implements a plan requirement, not engine behaviour. A
   diagnostic's line counts LF bytes only, as the lexer does (QC-1.2).
@@ -26,6 +26,10 @@ an edit, so both commands run outside the edit history
   and every symbol (`project_symbols`), worked out when the project opens so a frame only
   reads them; `OpenFile` holds the open file's text, caret and outline.
 - `Location`, `Problem`, `TreeEntry` and `EntryKind`, `OpenFile` and `WorkbenchError`.
+- `build` and `check`: each module of the open project compiled with `qc-codegen` from the
+  editor's text of each open file, its progs.dat written to its output and its .lno beside it
+  (PRJ-3.2, LNO-1.4), a module with errors writing nothing; and the project's problems, as
+  `ModuleBuilt` and `Reported` values the commands return.
 - `HasWorkbench` and `register`: the commands for any context with a `Workbench`.
 - `OPEN_PROJECT`, `OPEN_FILE` and their parameter types, so the app runs them without
   spelling their ids.

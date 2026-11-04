@@ -6,12 +6,15 @@
 use std::path::PathBuf;
 
 use qc_project::{Loader, normalize};
-use qs_commands::{BoxError, Command, Outcome, RegisterError, Registry, UndoStep};
+use qs_commands::{BoxError, Command, NoParams, Outcome, RegisterError, Registry, UndoStep};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::editing::{Change, Source};
-use crate::{Caution, DefKind, EntryKind, FileRange, Location, Workbench, WorkbenchError};
+use crate::{
+    Caution, DefKind, EntryKind, FileRange, Location, ModuleBuilt, Reported, Workbench,
+    WorkbenchError,
+};
 
 /// A context the workbench commands work on: one that has a [`Workbench`].
 pub trait HasWorkbench {
@@ -32,6 +35,12 @@ impl<L: Loader> HasWorkbench for Workbench<L> {
 
 /// The id of the command that opens a project.
 pub const OPEN_PROJECT: &str = "project.open";
+
+/// The id of the command that builds the open project.
+pub const BUILD_PROJECT: &str = "project.build";
+
+/// The id of the command that reports the open project's problems.
+pub const CHECK_PROJECT: &str = "project.check";
 
 /// The id of the command that opens a file.
 pub const OPEN_FILE: &str = "file.open";
@@ -66,6 +75,8 @@ pub fn register<C: HasWorkbench + 'static>(
     registry: &mut Registry<C>,
 ) -> Result<(), RegisterError> {
     registry.register(OpenProject)?;
+    registry.register(BuildProject)?;
+    registry.register(CheckProject)?;
     registry.register(OpenFileCommand)?;
     registry.register(UpdateFile)?;
     registry.register(SaveFile)?;
@@ -116,6 +127,46 @@ impl<C: HasWorkbench + 'static> Command<C> for OpenProject {
             .filter(|entry| matches!(entry.kind, EntryKind::File(_)))
             .count();
         Ok(Outcome::outside_history(ProjectOpened { files }))
+    }
+}
+
+/// `project.build`: builds the open project.
+struct BuildProject;
+
+impl<C: HasWorkbench + 'static> Command<C> for BuildProject {
+    const ID: &'static str = BUILD_PROJECT;
+    const SUMMARY: &'static str = "Compiles each module of the open project, with the editor's \
+        text of each open file, and writes its progs.dat and .lno.";
+    type Params = NoParams;
+    type Output = Vec<ModuleBuilt>;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        NoParams {}: NoParams,
+    ) -> Result<Outcome<Vec<ModuleBuilt>, C>, WorkbenchError> {
+        Ok(Outcome::outside_history(context.workbench().build()?))
+    }
+}
+
+/// `project.check`: reports the open project's problems.
+struct CheckProject;
+
+impl<C: HasWorkbench + 'static> Command<C> for CheckProject {
+    const ID: &'static str = CHECK_PROJECT;
+    const SUMMARY: &'static str = "Lists every error and warning in the open project, as the \
+        Problems panel does.";
+    type Params = NoParams;
+    type Output = Vec<Reported>;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        NoParams {}: NoParams,
+    ) -> Result<Outcome<Vec<Reported>, C>, WorkbenchError> {
+        Ok(Outcome::outside_history(context.workbench().check()?))
     }
 }
 

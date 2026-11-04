@@ -12,6 +12,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`file.open`](#fileopen) | Opens a file in the editor, with the caret at a byte offset or at the start. |
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
 | [`file.update`](#fileupdate) | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
+| [`project.build`](#projectbuild) | Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno. |
+| [`project.check`](#projectcheck) | Lists every error and warning in the open project, as the Problems panel does. |
 | [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
 | [`settings.get`](#settingsget) | Gives one setting's value and where it comes from. |
 | [`settings.list`](#settingslist) | Lists every setting with its default, its value and where the value comes from. |
@@ -163,6 +165,38 @@ Parameters:
     "text"
   ],
   "title": "UpdateFileParams",
+  "type": "object"
+}
+```
+
+## `project.build`
+
+Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `project.check`
+
+Lists every error and warning in the open project, as the Problems panel does.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```
