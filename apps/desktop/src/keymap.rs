@@ -65,6 +65,30 @@ pub const BINDINGS: [Binding; 6] = [
     },
 ];
 
+/// Every binding in the order its keys are matched, the most modifiers first: egui's
+/// `consume_shortcut` takes a shortcut whatever extra Shift is held ("you should match most
+/// specific shortcuts first"), so Shift+Cmd+Z is matched as redo before Cmd+Z can take it as
+/// undo.
+#[must_use]
+pub fn in_match_order() -> Vec<Binding> {
+    let mut bindings = BINDINGS.to_vec();
+    bindings.sort_by_key(|binding| std::cmp::Reverse(held(binding.shortcut.modifiers)));
+    bindings
+}
+
+/// How many modifier keys `modifiers` holds; `COMMAND` is the platform's Cmd or Ctrl, counted
+/// once.
+fn held(modifiers: Modifiers) -> usize {
+    [
+        modifiers.alt,
+        modifiers.shift,
+        modifiers.command || modifiers.ctrl || modifiers.mac_cmd,
+    ]
+    .into_iter()
+    .filter(|&down| down)
+    .count()
+}
+
 /// The shortcut bound to `command`, if any.
 #[must_use]
 pub fn shortcut(command: &str) -> Option<KeyboardShortcut> {
