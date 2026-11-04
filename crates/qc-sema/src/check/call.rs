@@ -428,6 +428,9 @@ impl Checker<'_> {
         }
         self.clobber_return();
         self.generated.push(Op::Call0);
+        if count == 0 {
+            self.live_return = Some(1);
+        }
         match count {
             1 => self.generated.push(Op::MulF),
             2 => self.generated.extend([Op::SubF, Op::MulF, Op::AddF]),
@@ -589,7 +592,11 @@ impl Checker<'_> {
                     }
                 }
                 self.random_statements(args.len());
-                Ok(Some(Value::of(Type::Simple(SimpleType::Float))))
+                // With no argument the value is the call's, in the return global.
+                Ok(Some(Value {
+                    returned: args.is_empty(),
+                    ..Value::of(Type::Simple(SimpleType::Float))
+                }))
             }
             "alloca" => {
                 if let Some(arg) = args.first() {
