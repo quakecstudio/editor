@@ -726,3 +726,33 @@ fn a_not_lowers_to_a_fragment() {
     assert!(folded.statements.is_empty());
     assert_eq!(folded.value, Some(Operand::Immediate(float_immediate(1.0))));
 }
+
+// spec FTEF-30.4: `-e` lowers to the subtraction of its operand from its type's zero
+// spec FTEF-27.9: `~e` of a float on the vanilla opcodes is `-1 - e`
+#[test]
+fn a_negation_and_a_complement_lower_to_fragments() {
+    use crate::ir::{Destination, Input, Operand, Statement};
+    use qc_preproc::Op;
+    let source = "float a; void() t = { a = -a; a = ~a; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let at = |text: &str| {
+        let start = source.find(text).unwrap();
+        index.bodies[&t]
+            .fragment_at(Span::new(start, start + text.len()))
+            .cloned()
+    };
+    let minus = |from: f32| Statement {
+        op: Op::SubF,
+        a: Some(Operand::Immediate(float_immediate(from))),
+        b: Some(Operand::Input(Input::Left)),
+        c: Destination::Value,
+    };
+    assert_eq!(at("-a").unwrap().statements, [minus(0.0)]);
+    assert_eq!(at("~a").unwrap().statements, [minus(-1.0)]);
+}

@@ -52,8 +52,20 @@ impl Checker<'_> {
             }
         };
         match op {
-            UnaryOp::BitNot => self.test(Test::BitNot, &operand, span, "Type mismatch: ~%s"),
-            UnaryOp::Neg => self.negate(&operand, span),
+            // `~e` and `-e` are fragments kept by the expression's span, as `!e` is.
+            UnaryOp::BitNot | UnaryOp::Neg => {
+                let lowered =
+                    self.lowering(span, &operand, &Value::unknown(), |checker, operand, _| {
+                        if op == UnaryOp::Neg {
+                            checker.negate(operand, span).map(Some)
+                        } else {
+                            checker
+                                .test(Test::BitNot, operand, span, "Type mismatch: ~%s")
+                                .map(Some)
+                        }
+                    })?;
+                Ok(lowered.unwrap_or_else(Value::unknown))
+            }
             UnaryOp::Plus => {
                 if self.etype_of(&operand.ty).is_some_and(signed_arithmetic) {
                     return Ok(operand);

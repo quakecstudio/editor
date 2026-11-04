@@ -2303,6 +2303,9 @@ impl<'a> Compiler<'a> {
         match unary.op().at(span)? {
             ast::UnaryOp::Neg => {
                 let value = self.expr(&operand)?;
+                if let Some(lowered) = self.lowered_unary(&value, span)? {
+                    return Ok(lowered);
+                }
                 let zero = match self.type_of(&value).etype() {
                     Etype::Vector => {
                         let place = self
@@ -2327,6 +2330,9 @@ impl<'a> Compiler<'a> {
             // FTEQCC's `~x` on the vanilla opcodes, `-1 - x` (`OP_BITNOT_F`'s emulation).
             ast::UnaryOp::BitNot => {
                 let value = self.expr(&operand)?;
+                if let Some(lowered) = self.lowered_unary(&value, span)? {
+                    return Ok(lowered);
+                }
                 let minus_one = match self.type_of(&value).etype() {
                     Etype::Vector => {
                         let place = self

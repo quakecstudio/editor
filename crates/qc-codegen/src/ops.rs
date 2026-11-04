@@ -161,11 +161,41 @@ pub(crate) const ROWS: [Row; 46] = [
 
 /// The `NOT_*` rows (QC-16.4): one operand, a float truth.
 const NOT_ROWS: [Row; 5] = [
-    row(Operator::Not, Opcode::NotF, Etype::Float, Etype::Void, Etype::Float),
-    row(Operator::Not, Opcode::NotV, Etype::Vector, Etype::Void, Etype::Float),
-    row(Operator::Not, Opcode::NotS, Etype::String, Etype::Void, Etype::Float),
-    row(Operator::Not, Opcode::NotEnt, Etype::Entity, Etype::Void, Etype::Float),
-    row(Operator::Not, Opcode::NotFnc, Etype::Function, Etype::Void, Etype::Float),
+    row(
+        Operator::Not,
+        Opcode::NotF,
+        Etype::Float,
+        Etype::Void,
+        Etype::Float,
+    ),
+    row(
+        Operator::Not,
+        Opcode::NotV,
+        Etype::Vector,
+        Etype::Void,
+        Etype::Float,
+    ),
+    row(
+        Operator::Not,
+        Opcode::NotS,
+        Etype::String,
+        Etype::Void,
+        Etype::Float,
+    ),
+    row(
+        Operator::Not,
+        Opcode::NotEnt,
+        Etype::Entity,
+        Etype::Void,
+        Etype::Float,
+    ),
+    row(
+        Operator::Not,
+        Opcode::NotFnc,
+        Etype::Function,
+        Etype::Void,
+        Etype::Float,
+    ),
 ];
 
 /// The row of the opcode numbered `number` in id's table (QC-16.1, QC-16.4), if it has one.
