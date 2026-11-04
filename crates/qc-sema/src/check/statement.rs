@@ -14,7 +14,7 @@ use qc_syntax::ast::{self, AstNode as _, Negation};
 
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
-use crate::check::expr::{Checker, Fatal};
+use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::flow::{Finding, Mark, Step};
 use crate::check::member;
 use crate::check::reference::eval_int;
@@ -285,13 +285,28 @@ impl Checker<'_> {
         let before = self.emitted;
         let value = self.value(Some(expr.clone()))?;
         self.generated(&expr, &value, line, before);
+        // The value is made the return type first (`QCC_EvaluateCast`), then returned.
+        let returned = self.returned_as(value, &ret, (void, &name, &ret_name), &expr)?;
         self.jump(Step::Return, Op::Return, None, line);
-        self.name_last(Op::Return, self.name_of(&value), None);
-        if value.ty == Type::Unknown || ret == Type::Unknown || value.null() {
-            return Ok(());
+        self.name_last(Op::Return, self.name_of(&returned), None);
+        Ok(())
+    }
+
+    /// FTEF-34.1: `value` returned from a function returning `ret`: as it is when the types
+    /// agree, it is a null or either is unknown; from a `void` function with the warning that it
+    /// returned a value; else cast to `ret`.
+    fn returned_as(
+        &mut self,
+        value: Value,
+        ret: &Type,
+        (void, name, ret_name): (bool, &str, &str),
+        expr: &ast::Expr,
+    ) -> Checked {
+        if value.ty == Type::Unknown || *ret == Type::Unknown || value.null() {
+            return Ok(value);
         }
-        if self.etype_of(&value.ty) == self.etype_of(&ret) {
-            return Ok(());
+        if self.etype_of(&value.ty) == self.etype_of(ret) {
+            return Ok(value);
         }
         let value_span = expr.syntax().span();
         if void {
@@ -300,10 +315,9 @@ impl Checker<'_> {
                 self.own_name(&value.ty)
             );
             self.env.report(Code::W0257, value_span, message);
-            return Ok(());
+            return Ok(value);
         }
-        self.cast_to(&value, &ret, value_span)?;
-        Ok(())
+        self.cast_to(&value, ret, value_span)
     }
 
     /// A condition of `if`, `while`, `do` or `switch`: an assignment at its top, outside
