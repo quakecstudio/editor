@@ -151,6 +151,18 @@ impl Checker<'_> {
             | Etype::Boolean
             | Etype::Float => {}
         }
+        // FTEF-34.16: an `IFNOT` of the temporary the statement before made by `NOT_F`,
+        // `NOT_FNC` or `NOT_ENT` drops that statement and is an `IF` of its operand.
+        if jump == Jump::IfNot
+            && value.temp.is_some()
+            && value.temp == self.last_temp
+            && self
+                .generated
+                .last()
+                .is_some_and(|op| matches!(op, Op::NotF | Op::NotFnc | Op::NotEnt))
+        {
+            self.generated.pop();
+        }
         Ok(())
     }
 

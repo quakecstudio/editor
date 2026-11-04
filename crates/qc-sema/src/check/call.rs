@@ -328,8 +328,12 @@ impl Checker<'_> {
         // In a function, the statements of the call: each argument a parameter takes stored to
         // its slot unless the statement before made it (FTE-18.12), then the call.
         if !self.global {
+            // `copyop[2] = OP_LOAD_V; copyop[0] = OP_LOAD_F;`: by the field's size, not its type.
             for (_, load) in field_loads.iter().filter(|(slot, _)| *slot < passed) {
-                self.generated.extend_from_slice(load);
+                let by_size = load
+                    .iter()
+                    .map(|&op| if op == Op::LoadV { op } else { Op::LoadF });
+                self.generated.extend(by_size);
             }
             for (slot, value) in values.iter().take(passed).enumerate() {
                 if field_loads.iter().any(|(at, _)| *at == slot) {
@@ -558,6 +562,20 @@ impl Checker<'_> {
                     {
                         let message = format!("type mismatch on parm {}", at.saturating_add(1));
                         return self.fatal(Code::E0340, span, message).map(Some);
+                    }
+                }
+                // The call of the builtin, then its value scaled: `* scale` for one argument,
+                // `low + (high - low) * value` for two.
+                if !self.global {
+                    self.generated.push(qc_preproc::Op::Call0);
+                    match args.len() {
+                        1 => self.generated.push(qc_preproc::Op::MulF),
+                        2 => self.generated.extend([
+                            qc_preproc::Op::SubF,
+                            qc_preproc::Op::MulF,
+                            qc_preproc::Op::AddF,
+                        ]),
+                        _ => {}
                     }
                 }
                 Ok(Some(Value::of(Type::Simple(SimpleType::Float))))
