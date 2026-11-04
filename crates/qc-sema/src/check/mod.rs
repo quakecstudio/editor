@@ -739,6 +739,7 @@ pub struct TypedBody {
     strings: Vec<Vec<u8>>,
     origins: Vec<(u32, usize)>,
     locals: Vec<(u32, DefId)>,
+    start: usize,
 }
 
 impl TypedBody {
@@ -767,6 +768,12 @@ impl TypedBody {
     #[must_use]
     pub fn generated(&self) -> &[ir::BodyStatement] {
         &self.generated
+    }
+
+    /// Where the body starts in its file, a byte offset: which of a definition's bodies it is.
+    #[must_use]
+    pub const fn start(&self) -> usize {
+        self.start
     }
 
     /// Each local the body declares, in order, with the index of the generated statement it is
@@ -879,5 +886,8 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
     checker
         .generated
         .push(ir::BodyStatement::bare(qc_preproc::Op::Done));
-    checker.finish()
+    TypedBody {
+        start: body.syntax().span().start,
+        ..checker.finish()
+    }
 }

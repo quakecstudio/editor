@@ -99,8 +99,12 @@ pub struct ModuleIndex {
     pub(crate) redeclarations: Vec<Reference>,
     /// The semantic diagnostics, in the order found, each with its file.
     pub(crate) diagnostics: Vec<FileDiagnostic>,
-    /// Each function body's types, by the function's definition (`crate::check`).
+    /// Each function body's types, by the function's definition (`crate::check`): its last
+    /// body.
     pub(crate) bodies: HashMap<DefId, TypedBody>,
+    /// The bodies a later body of the same definition replaced in `bodies`, a function that
+    /// `__wrap` wraps among them, in the order read.
+    pub(crate) earlier_bodies: Vec<(DefId, TypedBody)>,
     /// What each global whose initialiser is an expression, not a literal, folds to under an
     /// FTEQCC profile (FTEF-34.9), and each enum's item whose value the model computes
     /// (FTEF-19.10), which a compiler writes to the global's words.
@@ -204,6 +208,21 @@ impl ModuleIndex {
     #[must_use]
     pub fn body(&self, def: DefId) -> Option<&TypedBody> {
         self.bodies.get(&def)
+    }
+
+    /// The types of the body of the function `def` that starts at byte `start` of its file:
+    /// its last, or one a later body of `def` replaced.
+    #[must_use]
+    pub fn body_at(&self, def: DefId, start: usize) -> Option<&TypedBody> {
+        self.bodies
+            .get(&def)
+            .filter(|body| body.start() == start)
+            .or_else(|| {
+                self.earlier_bodies
+                    .iter()
+                    .find(|(of, body)| *of == def && body.start() == start)
+                    .map(|(_, body)| body)
+            })
     }
 
     /// What the initialiser of `def` folds to, when it is an expression the model folds or an

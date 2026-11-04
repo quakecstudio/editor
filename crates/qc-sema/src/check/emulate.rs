@@ -149,6 +149,7 @@ impl Checker<'_> {
             // Its value decides no folding or emulation; the comparison warnings read no value.
             if self.env.target_at(span.start).valid(op) {
                 self.compare(op, lhs, rhs, span);
+                self.generate(op, span);
             }
             let result = self.statement_temps(op, lhs, rhs, result);
             return Ok(Value {

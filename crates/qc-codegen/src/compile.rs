@@ -197,6 +197,8 @@ pub(crate) struct Compiler<'a> {
     s_file: i32,
     /// The function whose body is being compiled, `pr_scope`.
     scope: Option<DefId>,
+    /// Where the body being compiled starts, which of its function's bodies it is.
+    body_start: Option<usize>,
     /// The end of the last `local` declaration's globals, `locals_end` (QC-21.4).
     locals_end: u32,
     /// The type of the last call's value, `def_ret.type` (QC-18.4).
@@ -282,6 +284,7 @@ impl<'a> Compiler<'a> {
             file: FileId::new(0),
             s_file: 0,
             scope: None,
+            body_start: None,
             locals_end: 0,
             return_type: ValueType::simple(Etype::Void),
             dialect: Dialect::Vanilla,
@@ -805,6 +808,10 @@ impl<'a> Compiler<'a> {
             .checked_add(usize::from(wrapped.is_none()))
             .at(span)?;
         self.scope = Some(id);
+        self.body_start = match init {
+            FunctionInit::Body(body) => Some(body.syntax().span().start),
+            FunctionInit::Builtin(_) => None,
+        };
         // FTE-18.13: `QCC_PurgeTemps` at a function's end drops its aliases.
         self.aliases.clear();
         self.last_read = None;
@@ -2447,8 +2454,7 @@ impl<'a> Compiler<'a> {
     fn cast(&mut self, cast: &ast::CastExpr, span: Span) -> Lowered<Value> {
         let value = self.expr(&cast.operand().at(span)?)?;
         let target = self
-            .scope
-            .and_then(|function| self.index.body(function))
+            .typed_body()
             .and_then(|body| body.type_at(span))
             .cloned()
             .map(ValueType::Of)
@@ -3092,7 +3098,11 @@ impl<'a> Compiler<'a> {
     /// The typed body of the function being compiled, as the semantic model checked it.
     fn typed_body(&self) -> Option<&'a qc_sema::TypedBody> {
         let index = self.index;
-        self.scope.and_then(|function| index.body(function))
+        let function = self.scope?;
+        match self.body_start {
+            Some(start) => index.body_at(function, start),
+            None => index.body(function),
+        }
     }
 
     /// The global a fragment's `operand` is: an input's, a temporary's the fragment has taken

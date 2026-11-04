@@ -165,6 +165,7 @@ impl<'e> Checker<'e> {
             strings: self.strings,
             origins: self.origins,
             locals: self.locals,
+            start: 0,
         }
     }
 

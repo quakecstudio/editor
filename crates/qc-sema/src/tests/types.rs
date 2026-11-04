@@ -1342,6 +1342,27 @@ fn a_generated_assignment_of_a_call_stays_its_value() {
     assert_eq!(statements[3].1, Some(Name::Made(2)));
 }
 
+// FTEF-26.12: an operand the model knows only as opaque decides no folding, and its statement
+// is generated: a store of a global array's element at a constant index
+#[test]
+fn a_generated_store_of_an_opaque_value_is_a_statement() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "string face; string fb[2] = {\"a\", \"b\"}; void() t = { face = fb[1]; };";
+    let index = super::fte_index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let generated = index.bodies[&def("t")].generated();
+    assert_eq!(generated[0].op, Op::StoreS);
+    assert_eq!(generated[0].a, Some(Name::Def(def("fb"), 1)));
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]

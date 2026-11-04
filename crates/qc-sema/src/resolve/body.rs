@@ -339,7 +339,9 @@ impl<'a> Resolver<'a> {
                 nameless,
             };
             let typed = check_body(&mut env, syntax);
-            self.index.bodies.insert(owner, typed);
+            if let Some(earlier) = self.index.bodies.insert(owner, typed) {
+                self.index.earlier_bodies.push((owner, earlier));
+            }
         }
         self.resolve_nested(file, reported, nested);
     }
