@@ -1069,6 +1069,42 @@ fn a_generated_variadic_body_starts_with_its_va_list() {
     assert_eq!(generated[24].op, Op::State);
 }
 
+// FTEF-24.2, FTEF-26.2: a vector field's component reads the vector by `LOAD_V` and names its
+// word; a global's component is the global's word; a field read once is not read again when
+// `x + 0` folds to it
+#[test]
+fn a_generated_body_names_vector_components_and_reads_a_field_once() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "entity self; .vector fv; .float f; vector v; float g; \
+        void() t = { g = (self.fv).y + 1; g = v.z * 2; g = self.f + 0; };";
+    let index = super::fte_index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let statements: Vec<_> = index.bodies[&def("t")]
+        .generated()
+        .iter()
+        .map(|s| (s.op, s.a))
+        .collect();
+    let field = Some(Name::Def(def("self"), 0));
+    assert_eq!(
+        statements,
+        [
+            (Op::LoadV, field),
+            (Op::AddF, Some(Name::MadeWord(0, 1))),
+            (Op::MulF, Some(Name::Def(def("v"), 2))),
+            (Op::LoadF, field),
+            (Op::Done, None),
+        ]
+    );
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]

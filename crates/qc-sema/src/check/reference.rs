@@ -135,9 +135,11 @@ impl Checker<'_> {
                     statement.a = entity;
                     statement.b = field.def.map(|def| ir::Name::Def(def, 0));
                 }
+                // The loaded value is the load's, which no later read loads again.
                 Ok(Value {
                     temp: loaded.temp,
                     made: loaded.made,
+                    reference: Reference::Global,
                     ..value
                 })
             }

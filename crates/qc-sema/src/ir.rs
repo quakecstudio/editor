@@ -174,6 +174,8 @@ pub enum Name {
     Immediate(Immediate),
     /// The value of the body's statement at this index.
     Made(u32),
+    /// A word of the vector the body's statement at this index made: the index and the word.
+    MadeWord(u32, u32),
     /// The return global, a call's value (QC-18.4).
     Return,
     /// A call's parameter slot by its number, `OFS_PARM0 + 3 * n` (QC-18.3), and past the
@@ -226,7 +228,7 @@ impl BodyStatement {
             .into_iter()
             .flatten()
         {
-            if let Name::Made(at) = name
+            if let Name::Made(at) | Name::MadeWord(at, _) = name
                 && *at >= from
             {
                 *at = at.saturating_add(by);

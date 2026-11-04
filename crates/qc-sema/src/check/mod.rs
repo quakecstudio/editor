@@ -238,6 +238,8 @@ pub(crate) struct Value {
     pub(crate) string: Option<u32>,
     /// The index of the generated `CALL` whose value in the return global this is.
     pub(crate) call: Option<u32>,
+    /// The word of the value [`Value::made`] names that this is, a vector's component.
+    pub(crate) word: u32,
 }
 
 /// FTEQCC's temporaries (`tempsinfo`), kept across the module's functions: each one's word
@@ -363,6 +365,7 @@ impl Value {
             made: None,
             string: None,
             call: None,
+            word: 0,
         }
     }
 
@@ -379,7 +382,10 @@ impl Value {
     /// made it, the return global for a call's value, a definition's word, or an immediate.
     pub(crate) fn name(&self) -> Option<ir::Name> {
         if let Some(made) = self.made {
-            return Some(ir::Name::Made(made));
+            return Some(match self.word {
+                0 => ir::Name::Made(made),
+                word => ir::Name::MadeWord(made, word),
+            });
         }
         if self.returned {
             return Some(ir::Name::Return);

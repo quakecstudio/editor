@@ -351,6 +351,23 @@ impl Checker<'_> {
                     ..Value::constant(Constant::float(value))
                 }
             }
+            // Another vector is read, a field's by `LOAD_V`, and the component is its word.
+            (_, Some(word)) if !self.global => {
+                let span = selector.syntax().span();
+                let read = self.read(base.clone(), span)?;
+                let word = u32::try_from(word).unwrap_or_default();
+                match read.made {
+                    Some(made) => Value {
+                        made: Some(made),
+                        word,
+                        ..component
+                    },
+                    None => Value {
+                        sym: read.sym.at(word),
+                        ..component
+                    },
+                }
+            }
             _ => component,
         })
     }
