@@ -194,6 +194,8 @@ impl Checker<'_> {
                 return self.fatal(Code::E0329, span, message);
             }
         };
+        // The step's opcode, which the code generator reads.
+        self.opcodes.insert((span.start, span.end), op);
         let updated = self.emit(op, &variable, &by, span)?;
         let updated = self.bit_copy(&updated, operand, span)?;
         self.store_reference(operand, &updated, span)?;

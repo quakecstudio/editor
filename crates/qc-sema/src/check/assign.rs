@@ -660,7 +660,11 @@ impl Checker<'_> {
         };
         let by = |constant: Constant| Value::constant(constant);
         let updated = match etype {
-            Etype::Float => self.emit(Op::AddF, &old, &by(Constant::float(step.into())), span)?,
+            Etype::Float => {
+                // The step's opcode, which the code generator reads.
+                self.opcodes.insert((span.start, span.end), Op::AddF);
+                self.emit(Op::AddF, &old, &by(Constant::float(step.into())), span)?
+            }
             Etype::Double => self.emit(Op::AddD, &old, &by(Constant::double(step.into())), span)?,
             Etype::String | Etype::Integer => {
                 self.emit(Op::AddI, &old, &by(Constant::int(step.into())), span)?
