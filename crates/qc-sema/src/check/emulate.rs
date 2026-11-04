@@ -695,6 +695,8 @@ impl Checker<'_> {
     /// The vector operator whose float one of each word is `word_op` (`Emulation::ByWord`):
     /// `result`, a vector temporary, its three words written in turn.
     fn by_word(&mut self, word_op: Op, (lhs, rhs): (&Value, &Value), result: Value) -> Value {
+        // Its three statements are the fragment's; the body does not follow them.
+        self.followed = false;
         let temp = self.env.temps().take(3);
         // A store of the vector folds into no word's statement (`opt_assignments` reads c).
         self.last_temp = None;

@@ -403,6 +403,13 @@ impl Checker<'_> {
             self.emit(Op::DivF, &float, &three, span)?;
             return Ok(false);
         }
+        // A vector array's getter takes the element's index, its words' divided by 3.
+        let float = if self.etype_of(&element.ty) == Some(Etype::Vector) && !self.global {
+            let three = Value::constant(Constant::float(3.0));
+            self.emit(Op::DivF, &float, &three, span)?
+        } else {
+            float
+        };
         // FTEF-6.24: a struct's member array is read by the struct's `ArrayGet`, which returns
         // the struct: one of more than three words is returned through storage `OP_PUSH`
         // makes.
