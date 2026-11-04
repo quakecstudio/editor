@@ -864,7 +864,11 @@ fn a_checked_body_keeps_the_statements_it_generated() {
         .map(DefId::new)
         .unwrap();
     assert_eq!(
-        index.bodies[&t].generated(),
+        index.bodies[&t]
+            .generated()
+            .iter()
+            .map(|statement| statement.op)
+            .collect::<Vec<_>>(),
         [Op::AddF, Op::MulVf, Op::NotF, Op::Done]
     );
 }
@@ -885,7 +889,11 @@ fn a_generated_body_holds_its_jumps() {
         .map(DefId::new)
         .unwrap();
     assert_eq!(
-        index.bodies[&t].generated(),
+        index.bodies[&t]
+            .generated()
+            .iter()
+            .map(|statement| statement.op)
+            .collect::<Vec<_>>(),
         [
             Op::IfnotI,
             Op::StoreF,
