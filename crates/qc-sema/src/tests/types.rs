@@ -794,3 +794,38 @@ fn a_vanilla_not_lowers_to_its_statement() {
         );
     }
 }
+
+// spec QC-16.1: a field read is the `LOAD_*` of the field's type, of the entity and the field,
+// the fragment kept by the `.`'s span, under id's rules and FTEQCC's (FTEF-34.9)
+#[test]
+fn a_field_read_lowers_to_its_load() {
+    use crate::ir::{Destination, Input, Operand, Statement};
+    use qc_preproc::Op;
+    let source = ".float hp; .vector org; .string nm; entity e; float a; vector v; string s; \
+                  void() t = { a = e.hp; v = e.org; s = e.nm; };";
+    let load = |op| Statement {
+        op,
+        a: Some(Operand::Input(Input::Left)),
+        b: Some(Operand::Input(Input::Right)),
+        c: Destination::Value,
+    };
+    for index in [super::index_of(source), super::fte_index_of(source)] {
+        let t = index
+            .defs
+            .iter()
+            .position(|d| d.name == "t")
+            .map(DefId::new)
+            .unwrap();
+        for (text, op) in [
+            ("e.hp", Op::LoadF),
+            ("e.org", Op::LoadV),
+            ("e.nm", Op::LoadS),
+        ] {
+            let dot = source.find(text).unwrap() + 1;
+            let fragment = index.bodies[&t]
+                .fragment_at(Span::new(dot, dot + 1))
+                .unwrap();
+            assert_eq!(fragment.statements, [load(op)], "{text}");
+        }
+    }
+}

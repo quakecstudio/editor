@@ -134,6 +134,9 @@ struct FieldSlot {
     load: Opcode,
     loaded: Etype,
     ty: ValueType,
+    /// The span of the `.` of `e.f` and the selector's value, by which the semantic model keeps
+    /// the load as a fragment of the intermediate layer.
+    selected: Option<(Span, Value)>,
 }
 
 impl FieldSlot {
@@ -2757,6 +2760,29 @@ impl<'a> Compiler<'a> {
         Ok(Some(value))
     }
 
+    /// The load of `selector` of `entity` kept by the `.` at `dot`, written from its fragment;
+    /// `None` for one the model did not keep or [`Compiler::plan_fragment`] refuses.
+    fn lowered_load(
+        &mut self,
+        entity: &Value,
+        selector: &Value,
+        dot: Span,
+        span: Span,
+    ) -> Lowered<Option<Value>> {
+        let Some(body) = self.typed_body() else {
+            return Ok(None);
+        };
+        let Some(fragment) = body.fragment_at(dot) else {
+            return Ok(None);
+        };
+        let types = (self.type_of(entity).etype(), self.type_of(selector).etype());
+        let Some(steps) = self.plan_fragment(fragment, None, types) else {
+            return Ok(None);
+        };
+        self.emit_fragment(fragment, &steps, entity, selector, span)
+            .map(Some)
+    }
+
     /// The basic types `left` and `right` have once [`Compiler::floats_of`] has made an integer
     /// operand of a float operator a float, worked out without emitting the conversion.
     fn converted_types(&self, operator: Operator, left: &Value, right: &Value) -> (Etype, Etype) {
@@ -3069,7 +3095,8 @@ impl<'a> Compiler<'a> {
             .typed_body()
             .and_then(|body| body.opcode_at(op_span))
             .and_then(|op| u32::try_from(op.number()).ok())
-            .and_then(ops::row_of);
+            .and_then(ops::row_of)
+            .filter(|row| row.operator == operator && (row.a, row.b) == (a, b));
         let Some(row) = chosen
             .or_else(|| ops::select(operator, a, b, None))
             .or_else(|| self.null_row(operator, left, right))
@@ -3491,6 +3518,15 @@ impl<'a> Compiler<'a> {
 
     /// `LOAD_*` of the field `slot` into a temporary of its type (QC-16.1).
     fn read_field(&mut self, slot: &FieldSlot, span: Span) -> Lowered<Value> {
+        // The load as the semantic model lowered it, its value of the field's type.
+        if let Some((dot, selector)) = &slot.selected
+            && let Some(loaded) = self.lowered_load(&slot.entity, selector, *dot, span)?
+        {
+            return Ok(Value {
+                kind: ValueKind::Temp(slot.ty.clone()),
+                ..loaded
+            });
+        }
         let entity = self.operand_of(&slot.entity);
         let ofs = self
             .program
@@ -3550,6 +3586,7 @@ impl<'a> Compiler<'a> {
             load: row.opcode,
             loaded: row.c,
             ty,
+            selected: Some((op_span, selector)),
         })
     }
 
@@ -3908,6 +3945,7 @@ impl<'a> Compiler<'a> {
             load: Opcode::LoadF,
             loaded: Etype::Float,
             ty: ValueType::simple(Etype::Float),
+            selected: None,
         }))
     }
 

@@ -117,6 +117,10 @@ pub(crate) trait Env {
     /// The definition named `name` visible where the body is, as
     /// `QCC_PR_GetSRef(NULL, name, pr_scope, false, ...)` finds an emulation's helper.
     fn helper(&self, name: &str) -> Option<DefId>;
+    /// Whether [`Env::helper`] finds a definition named `name`.
+    fn defines(&self, name: &str) -> bool {
+        self.helper(name).is_some()
+    }
     /// Whether the body is a member function's (`pr_classtype`).
     fn in_class(&self) -> bool;
     /// The class of `this` in a member function's body, `pr_classtype` (FTEF-17.14).
@@ -564,6 +568,9 @@ pub(crate) struct FieldRef {
     pub(crate) field: String,
     /// The field's definition, when it is one; an array of fields is indexed (FTEF-31.2).
     pub(crate) def: Option<DefId>,
+    /// The span of the `.` of the `e.f` it was read from, by which its load is kept as a
+    /// fragment of the intermediate layer.
+    pub(crate) dot: Option<Span>,
 }
 
 /// An array's element or a vector's component; the index is the model's to read only when it is
@@ -590,7 +597,12 @@ pub(crate) struct PointerRef {
 impl Reference {
     /// The field `field` of the entity labelled `base`, `def` its definition.
     pub(crate) fn field(base: String, field: String, def: Option<DefId>) -> Self {
-        Self::Field(Box::new(FieldRef { base, field, def }))
+        Self::Field(Box::new(FieldRef {
+            base,
+            field,
+            def,
+            dot: None,
+        }))
     }
 
     /// The element at `index` of the definition labelled `base`, a vector's component when

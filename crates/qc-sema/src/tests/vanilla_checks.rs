@@ -259,3 +259,20 @@ fn a_return_value_is_not_checked() {
         assert_eq!(vanilla(&source), [], "{statement}");
     }
 }
+
+// spec QC-16.1: a field access whose entity has a type that did not resolve is checked no
+// further, the type's own error reported where it is written; a `.void` field reads as a
+// float (QC-16.8)
+#[test]
+fn a_field_of_an_unresolved_type_is_not_checked() {
+    let mismatch = d(Code::E0302, "type mismatch for .");
+    let unresolved_entity = vanilla("bogus b; .float hp; void() g = { local float a; a = b.hp; };");
+    assert!(
+        !unresolved_entity.contains(&mismatch),
+        "{unresolved_entity:?}"
+    );
+    assert_eq!(
+        vanilla(".void fv; entity e; void() g = { local float a; a = e.fv; };"),
+        []
+    );
+}

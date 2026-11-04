@@ -422,7 +422,7 @@ impl Checker<'_> {
                 let entity = self.value(args.first().cloned())?;
                 let one = Value::constant(Constant::int(1));
                 let index = self.emit(qc_preproc::Op::DivI, &entity, &one, span)?;
-                if !self.env.helper("nextent").is_some() {
+                if !self.env.defines("nextent") {
                     let message = "the nextent builtin is not defined".to_owned();
                     return self.fatal(Code::E0347, span, message).map(Some);
                 }

@@ -219,15 +219,8 @@ pub(crate) fn select(operator: Operator, a: Etype, b: Etype, c: Option<Etype>) -
 
 /// The `NOT_*` opcode `PR_Term` emits for an operand of basic type `t` (QC-16.4), or `None`
 /// for "type mismatch for !".
-pub(crate) const fn not_opcode(t: Etype) -> Option<Opcode> {
-    match t {
-        Etype::Float => Some(Opcode::NotF),
-        Etype::String => Some(Opcode::NotS),
-        Etype::Entity => Some(Opcode::NotEnt),
-        Etype::Vector => Some(Opcode::NotV),
-        Etype::Function => Some(Opcode::NotFnc),
-        Etype::Void | Etype::Field | Etype::Pointer => None,
-    }
+pub(crate) fn not_opcode(t: Etype) -> Option<Opcode> {
+    NOT_ROWS.iter().find(|row| row.a == t).map(|row| row.opcode)
 }
 
 /// The `CALLn` opcode for `n` arguments, `n` at most 8 (QC-18.3).

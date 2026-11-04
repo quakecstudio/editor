@@ -85,7 +85,13 @@ impl Checker<'_> {
             // `QCC_PR_ParseField` reads the entity to select its field.
             Etype::Entity => {
                 let entity = self.read(base, field.syntax().span())?;
-                let value = self.entity_field(&entity, &selector)?;
+                let mut value = self.entity_field(&entity, &selector)?;
+                if let Reference::Field(slot) = &mut value.reference {
+                    slot.dot = field
+                        .syntax()
+                        .token_of(qc_syntax::SyntaxKind::Dot)
+                        .map(|dot| dot.span());
+                }
                 // FTEF-31.6: an array of fields with no index after it is its head, whose
                 // address is taken.
                 let indexed = field

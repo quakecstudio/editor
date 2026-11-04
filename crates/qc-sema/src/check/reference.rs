@@ -104,7 +104,22 @@ impl Checker<'_> {
                 // `OP_LOAD_I` and `OP_LOAD_P` as `OP_LOAD_F`, `OP_LOAD_I64` as two plain
                 // `OP_LOAD_FLD`s (FTEF-27.9, FTEF-27.11).
                 // The value read is the load's temporary (FTEF-27.16).
-                let loaded = self.emit(load, &Value::unknown(), &Value::unknown(), span)?;
+                // The load, of the entity and the field as inputs, is the fragment kept by the
+                // `.`'s span.
+                let dot = match &value.reference {
+                    Reference::Field(field) => field.dot,
+                    _ => None,
+                };
+                let loaded = match dot {
+                    Some(dot) => {
+                        let unknown = Value::unknown();
+                        self.lowering(dot, &unknown, &unknown, |checker, entity, field| {
+                            checker.emit(load, entity, field, span).map(Some)
+                        })?
+                        .unwrap_or_else(Value::unknown)
+                    }
+                    _ => self.emit(load, &Value::unknown(), &Value::unknown(), span)?,
+                };
                 Ok(Value {
                     temp: loaded.temp,
                     ..value

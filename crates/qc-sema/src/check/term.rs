@@ -131,6 +131,9 @@ impl Checker<'_> {
             Etype::Uint64 => (Op::SubU64, Constant::int64(0)),
             _ => return self.fatal(Code::E0302, span, "type mismatch for -".to_owned()),
         };
+        // The zero is an immediate made before the subtraction (`QCC_MakeFloatConst(0)`), also
+        // when the subtraction folds.
+        self.made(zero);
         self.emit(op, &Value::constant(zero), operand, span)
     }
 
