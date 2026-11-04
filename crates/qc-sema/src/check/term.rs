@@ -199,6 +199,7 @@ impl Checker<'_> {
         self.opcodes.insert((span.start, span.end), op);
         let updated = self.emit(op, &variable, &by, span)?;
         let updated = self.bit_copy(&updated, operand, span)?;
+        self.update_stores(operand, &updated, &ty, span)?;
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
         self.freed_again(operand, span);

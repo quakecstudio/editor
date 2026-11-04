@@ -780,11 +780,7 @@ impl Checker<'_> {
             operand.ty.clone()
         };
         self.store_mismatch(&updated, operand, &target, span)?;
-        self.array_set(operand, &updated, &target, span)?;
-        self.field_store(operand, &updated, &target);
-        self.definition_store(operand, &updated, &target, span)?;
-        let folded = updated.temp.is_some() && updated.temp == self.last_temp;
-        self.element_store(operand, &updated, &target, folded);
+        self.update_stores(operand, &updated, &target, span)?;
         let updated = self.bit_copy(&updated, operand, span)?;
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
@@ -855,6 +851,24 @@ impl Checker<'_> {
         });
         self.read_returned(stored);
         self.last_temp = None;
+    }
+
+    /// The store an update, a postfix's or a prefix's, makes of `updated` to `operand` of type
+    /// `target`: by the array's setter, through the field's address, to the definition, or to
+    /// a constant-index element, folding into the statement that made the value where it can.
+    pub(super) fn update_stores(
+        &mut self,
+        operand: &Value,
+        updated: &Value,
+        target: &Type,
+        span: Span,
+    ) -> Result<(), Fatal> {
+        self.array_set(operand, updated, target, span)?;
+        self.field_store(operand, updated, target);
+        let folded = updated.temp.is_some() && updated.temp == self.last_temp;
+        self.definition_store(operand, updated, target, span)?;
+        self.element_store(operand, updated, target, folded);
+        Ok(())
     }
 
     /// FTEF-29.13: the store of `stored` to the definition `lhs` of type `target` by a compound

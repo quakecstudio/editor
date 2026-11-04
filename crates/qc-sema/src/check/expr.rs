@@ -315,7 +315,26 @@ impl<'e> Checker<'e> {
                         Some(_) | None => Value::of(Type::Simple(SimpleType::Float)),
                     };
                 }
-                Value::constant(Constant::of_number(&text, flags))
+                let constant = Constant::of_number(&text, flags);
+                // The code generator places a number as the lexer reads it, a float.
+                let lexed = qc_lexer::lex_with(token.text(), qc_syntax::Dialect::Fteqcc);
+                let literal = match lexed.tokens.as_slice() {
+                    [lexed] => match lexed.kind {
+                        qc_lexer::TokenKind::Float(value) => Some((
+                            constant,
+                            ir::Immediate {
+                                kind: ir::ImmediateKind::Float,
+                                words: [value.to_bits(), 0, 0],
+                            },
+                        )),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                Value {
+                    literal,
+                    ..Value::constant(constant)
+                }
             }
             None => Value::unknown(),
         }

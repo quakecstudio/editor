@@ -1589,6 +1589,34 @@ fn an_integer_constant_folds_to_its_number() {
     assert_eq!(stored, [float(3.0), float(-2.0)]);
 }
 
+// FTE-19.4, FTEF-29.13: `++x` folds its store into the step; a number literal such as `0i` is
+// named by the immediate the lexer reads it as, a float
+#[test]
+fn a_generated_prefix_folds_and_a_literal_names_its_float() {
+    use crate::ir::{Immediate, ImmediateKind, Name};
+    use qc_preproc::Op;
+    let source = "float a; var void() g; void() t = { ++a; g = 0i; };";
+    let index = super::fte_index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let generated = index.bodies[&def("t")].generated();
+    assert_eq!(
+        (generated[0].op, generated[0].c),
+        (Op::AddF, Some(Name::Def(def("a"), 0)))
+    );
+    let zero = Name::Immediate(Immediate {
+        kind: ImmediateKind::Float,
+        words: [0, 0, 0],
+    });
+    assert_eq!(generated[1].a, Some(zero));
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]
