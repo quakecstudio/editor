@@ -1315,6 +1315,33 @@ fn a_generated_body_names_a_word_of_a_calls_vector() {
     assert_eq!(statements[4], (Op::IfnotI, Some(Name::MadeWord(3, 2))));
 }
 
+// FTE-18.13: an assignment of a call's value whose value is read is still the call's value
+// in the return global, which a jump copies before it tests the copy
+#[test]
+fn a_generated_assignment_of_a_call_stays_its_value() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "string() f; string s; void() t = { while ((s = f())) s = \"\"; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let statements: Vec<_> = index.bodies[&t]
+        .generated()
+        .iter()
+        .map(|s| (s.op, s.a, s.b))
+        .collect();
+    assert_eq!(
+        statements[2],
+        (Op::StoreF, Some(Name::Return), Some(Name::Made(2)))
+    );
+    assert_eq!(statements[3].0, Op::IfnotI);
+    assert_eq!(statements[3].1, Some(Name::Made(2)));
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]
