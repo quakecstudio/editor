@@ -247,6 +247,10 @@ impl Checker<'_> {
             let returned = Value::of(reference.ty.clone());
             self.store_reference(reference, &returned, span)?;
         }
+        let words = self.env.layout(&function.ret).map_or(1, |l| l.words);
+        if !self.global && words > 0 && function.ret != Type::Simple(SimpleType::Void) {
+            self.live_return = Some(words);
+        }
         // FTEF-29.15: the value is an alias of `def_ret`, which may be assigned to, unless a
         // return larger than a vector is read back into a temporary.
         Ok(Value {
@@ -336,6 +340,9 @@ impl Checker<'_> {
                 self.generated.extend(by_size);
             }
             for (slot, value) in values.iter().take(passed).enumerate() {
+                if value.returned {
+                    self.live_return = None;
+                }
                 if field_loads.iter().any(|(at, _)| *at == slot) {
                     continue;
                 }
@@ -360,6 +367,7 @@ impl Checker<'_> {
                 Op::Call8,
             ];
             if let Some(&call) = call.get(passed) {
+                self.clobber_return();
                 self.generated.push(call);
             }
         }
@@ -418,6 +426,7 @@ impl Checker<'_> {
         if self.global {
             return;
         }
+        self.clobber_return();
         self.generated.push(Op::Call0);
         match count {
             1 => self.generated.push(Op::MulF),

@@ -151,6 +151,8 @@ impl Checker<'_> {
             | Etype::Boolean
             | Etype::Float => {}
         }
+        // FTE-18.13: the jump copies a call's value still to be read, its own condition's too.
+        self.clobber_return();
         // FTEF-34.16: an `IFNOT` of the temporary the statement before made by `NOT_F`,
         // `NOT_FNC` or `NOT_ENT` drops that statement and is an `IF` of its operand.
         if jump == Jump::IfNot

@@ -118,6 +118,10 @@ impl Checker<'_> {
         rhs: &Value,
         span: Span,
     ) -> Result<Value, Fatal> {
+        // A statement reading a call's value reads it from the return global.
+        if lhs.returned || rhs.returned {
+            self.live_return = None;
+        }
         let result = replaced(op);
         // A function's definition is a constant FTEQCC folds no opcode of (FTEF-26.12).
         let opaque =
@@ -248,6 +252,15 @@ impl Checker<'_> {
 
     /// FTEF-34.9: the statement `op` generated, which at global scope (`!pr_scope`) is the error
     /// "Unable to generate statements at global scope (OPNAME).".
+    /// FTE-18.13: `QCC_ClobberDef(&def_ret)`: a call's value still to be read is copied out of
+    /// the return global, by its size, before a call or a jump overwrites or leaves it.
+    pub(super) fn clobber_return(&mut self) {
+        if let Some(words) = self.live_return.take() {
+            self.generated
+                .push(if words == 3 { Op::StoreV } else { Op::StoreF });
+        }
+    }
+
     pub(super) fn generate(&mut self, op: Op, span: Span) {
         self.generated.push(op);
         if self.global {

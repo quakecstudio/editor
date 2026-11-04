@@ -36,6 +36,9 @@ pub(super) struct Checker<'e> {
     pub(super) fragments: ir::Fragments,
     /// Every statement the body generates, in order (`docs/design/back-end.md`).
     pub(super) generated: Vec<Op>,
+    /// The words of a call's value still to be read from the return global, which a call or
+    /// a jump made before it is read copies out first (FTE-18.13).
+    pub(super) live_return: Option<u32>,
     /// The fragment of the binary operator being checked, if any.
     pub(super) fragment: Option<ir::Builder>,
     /// Whether the checker is in a condition of `if`, `while` or `do`, outside parentheses
@@ -92,6 +95,7 @@ impl<'e> Checker<'e> {
             opcodes: HashMap::new(),
             fragments: ir::Fragments::default(),
             generated: Vec::new(),
+            live_return: None,
             fragment: None,
             in_condition: false,
             addressed: HashSet::new(),
