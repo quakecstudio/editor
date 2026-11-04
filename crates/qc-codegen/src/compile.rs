@@ -2809,6 +2809,19 @@ impl<'a> Compiler<'a> {
             .map(Some)
     }
 
+    /// The opcode of the statement of the call at `span` the semantic model kept whose operand
+    /// b is `slot`: an argument's store to its parameter, or with `None` the `CALLn` itself.
+    fn lowered_call_op(&self, span: Span, slot: Option<ir::Operand>) -> Option<Opcode> {
+        let fragment = self.typed_body()?.fragment_at(span)?;
+        let statement = fragment
+            .statements
+            .iter()
+            .find(|statement| statement.b == slot)?;
+        u32::try_from(statement.op.number())
+            .ok()
+            .and_then(Opcode::from_number)
+    }
+
     /// The basic types `left` and `right` have once [`Compiler::floats_of`] has made an integer
     /// operand of a float operator a float, worked out without emitting the conversion.
     fn converted_types(&self, operator: Operator, left: &Value, right: &Value) -> (Etype, Etype) {
@@ -4485,6 +4498,18 @@ impl Compiler<'_> {
             }
         }
         let passed = fixed.map_or(values.len(), |n| n.min(values.len()));
+        // The call the semantic model kept, when it passes as many arguments as are stored here.
+        let kept = self
+            .typed_body()
+            .and_then(|body| body.fragment_at(span))
+            .is_some_and(|fragment| {
+                let stores = fragment
+                    .statements
+                    .iter()
+                    .filter(|s| matches!(s.b, Some(ir::Operand::Parameter(_))))
+                    .count();
+                stores == passed
+            });
         // FTE-18.11: a field still a reference is read straight into its slot, in argument
         // order, before any argument is stored.
         for (slot, (argument, arg_span)) in values.iter().take(passed).enumerate() {
@@ -4542,6 +4567,12 @@ impl Compiler<'_> {
             } else {
                 Opcode::StoreF
             };
+            // The store the semantic model lowered for the slot, when it kept the call.
+            let store = u8::try_from(slot)
+                .ok()
+                .filter(|_| kept)
+                .and_then(|slot| self.lowered_call_op(span, Some(ir::Operand::Parameter(slot))))
+                .unwrap_or(store);
             let from = self.operand_of(value);
             self.program.emit(
                 store,
@@ -4549,7 +4580,11 @@ impl Compiler<'_> {
                 operand(to).at(*arg_span)?,
             );
         }
-        let Some(op) = ops::call_opcode(passed) else {
+        let Some(op) = kept
+            .then(|| self.lowered_call_op(span, None))
+            .flatten()
+            .or_else(|| ops::call_opcode(passed))
+        else {
             return Self::error(Code::E0307, "More than eight parameters".to_owned(), span);
         };
         // FTE-18.13: `QCC_ClobberDef(&def_ret)` before the call: an earlier call's value still

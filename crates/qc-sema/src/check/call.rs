@@ -22,6 +22,7 @@ use crate::check::fold;
 use crate::check::reference::expected_after;
 use crate::check::term::string_immediate;
 use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Value};
+use crate::ir;
 use crate::ty::{FunctionType, SimpleType, Type};
 
 /// `MAX_PARMS`: the parameters a call passes in the parameter globals.
@@ -224,6 +225,7 @@ impl Checker<'_> {
         }
         self.verify_arguments(&name, &values, span);
         self.generate_call(&values, span);
+        self.call_fragment(&function, count, &values, span);
         // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
         for (reference, param) in passed.iter().zip(&params) {
             let Some(reference) = reference.as_ref().filter(|_| param.out) else {
@@ -294,6 +296,74 @@ impl Checker<'_> {
     /// than three words is copied three at a time, each three a parameter, by the widest store
     /// the target has for the words left (`QCC_PR_GenerateFunctionCallRef`). Only at global
     /// scope do they matter.
+    /// QC-18.3, FTE-18.9: a call of `function` as a fragment of the intermediate layer kept by
+    /// the call's span: each argument a parameter takes stored to its slot by its size,
+    /// `STORE_V` for three words or a variant's and `STORE_F` for one, then `CALLn` of the
+    /// callee, the fragment's left input; its value the return global. An argument of more
+    /// than three words leaves no fragment.
+    fn call_fragment(
+        &mut self,
+        function: &FunctionType,
+        count: usize,
+        values: &[Value],
+        span: Span,
+    ) {
+        // The arguments written and each parameter after them that takes its default
+        // (FTE-18.7), of which a parameter takes its own.
+        let count = count.max(values.len());
+        let passed = if function.variadic {
+            count
+        } else {
+            count.min(function.params.len())
+        };
+        let mut builder = ir::Builder::new();
+        for slot in 0..passed {
+            let ty = values
+                .get(slot)
+                .map(|value| &value.ty)
+                .or_else(|| function.params.get(slot));
+            let words = ty.and_then(|ty| self.env.layout(ty)).map_or(1, |l| l.words);
+            let variant = function.params.get(slot).is_some_and(|param| {
+                let held = match param {
+                    Type::Field(inner) => inner.as_ref(),
+                    other => other,
+                };
+                matches!(held, Type::Named(name) if &**name == "__variant")
+            });
+            let store = match words {
+                3 => Op::StoreV,
+                _ if variant => Op::StoreV,
+                1 => Op::StoreF,
+                _ => return,
+            };
+            let Ok(slot) = u8::try_from(slot) else {
+                return;
+            };
+            let reads = [
+                Some(Some(ir::Operand::Input(ir::Input::Argument(slot)))),
+                Some(Some(ir::Operand::Parameter(slot))),
+            ];
+            builder.push(store, reads, ir::Destination::Nothing);
+        }
+        let call = match passed {
+            0 => Op::Call0,
+            1 => Op::Call1,
+            2 => Op::Call2,
+            3 => Op::Call3,
+            4 => Op::Call4,
+            5 => Op::Call5,
+            6 => Op::Call6,
+            7 => Op::Call7,
+            8 => Op::Call8,
+            _ => return,
+        };
+        let callee = [Some(Some(ir::Operand::Input(ir::Input::Left))), None];
+        builder.push(call, callee, ir::Destination::Nothing);
+        if let Some(fragment) = builder.finish(Some(ir::Operand::Return), [None, None]) {
+            self.fragments.insert(span, fragment);
+        }
+    }
+
     pub(super) fn generate_call(&mut self, values: &[Value], span: Span) {
         if !self.global {
             return;
