@@ -1776,6 +1776,13 @@ issues:
   - P2-158
   - P2-159
   - P2-160
+  - P2-161
+  - P2-162
+  - P2-163
+  - P2-164
+  - P2-165
+  - P2-166
+  - P2-167
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -3343,3 +3350,164 @@ issues:
   verify:
   - cargo xtask readiness spec --out spec.json qc-builtins
   - cargo doc -p qc-builtins --no-deps
+- key: P2-161
+  title: Convert URIs and positions in the language server by the host's own rules
+  labels:
+  - apps
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-7
+  - LANG-9
+  summary: |
+    Found by the P2-RA readiness review (#88). Two conversions in quakec-lsp disagree with themselves. (1) `apps/lsp/src/uri.rs` treats every host as Windows: `to_path` strips the leading `/` of any path whose first component is a letter and a colon, and `from_path` turns every `\` into `/`. On Linux and macOS the path `/c:/x.qc` is written as `file:///c%3A/x.qc` and read back as the relative path `c:/x.qc`, and the file `/p/a\b.qc` (a legal name there) is written as `file:///p/a/b.qc`, another file. Both were reproduced on main at cf169599 with `from_path` and `to_path`. (2) `apps/lsp/src/lines.rs` `LineIndex::position` of a byte offset inside a multi-byte character counts the partial sequence as a whole U+FFFD: in UTF-8 positions, for the text `é` (C3 A9), offset 1 is character 3 and offset 2 is character 2, so positions go backwards and point past the line's end. No answer the server sends today was found to name such an offset (spans start and end on token boundaries), so (2) is latent. The property tests `paths_convert_to_uris_and_back` and `positions_follow_the_text` in `apps/lsp/src/tests/properties.rs` leave both cases out and name this issue.
+  environment: |
+    main at cf169599, macOS; apps/lsp/src/uri.rs (`to_path`, `from_path`) and apps/lsp/src/lines.rs (`LineIndex::position`)
+  depends: []
+  deliverable:
+  - 'apps/lsp/src/uri.rs: the drive-letter reading of `/x:/...` and the `\` separator only where the host is Windows, so every absolute path of the host round-trips'
+  - 'apps/lsp/src/lines.rs: `position` of an offset inside a character is the position of that character''s start, as `offset` already rounds a position inside a UTF-16 surrogate pair down'
+  - 'apps/lsp/src/tests/properties.rs: the two property tests without their P2-161 exclusions'
+  acceptance:
+  - '`paths_convert_to_uris_and_back` generates components with `\` and a leading `x:` and passes on Linux, macOS and Windows'
+  - '`positions_follow_the_text` iterates every byte offset, not only character starts, and passes; each fails when its fix is reverted'
+  verify:
+  - cargo test -p quakec-lsp
+- key: P2-162
+  title: Read quakec-ide's arguments without panicking on text that is not UTF-8
+  labels:
+  - apps
+  - area:compiler
+  - type:feature
+  size: S
+  reqs:
+  - PRIN-7
+  - GOAL-4
+  summary: |
+    Found by the P2-RA readiness review (#88). `apps/cli/src/main.rs` collects its arguments with `std::env::args()`, which panics on an argument that is not valid Unicode, so `quakec-ide check "$(printf 'a\377')"` on main at cf169599 ends with "thread 'main' panicked at library/std/src/env.rs:878:51: called `Result::unwrap()` on an `Err` value: \"a\\xFF\"" and exit status 101 instead of 0, 1 or 2 (the README's exit statuses). A project directory on Linux may have such a name. The desktop app reads its argument with `std::env::args_os()` (apps/desktop/src/main.rs); `quakec-ide` should too: clap's `try_parse_from` takes `impl Into<OsString>` and the project path is a `PathBuf`.
+  environment: |
+    main at cf169599, macOS, target/debug/quakec-ide
+  depends: []
+  deliverable:
+  - 'apps/cli/src/main.rs and apps/cli/src/lib.rs: the arguments as `OsString`s from `std::env::args_os()` through `run` and `parse`, the project path kept as the bytes given'
+  - 'apps/cli/src/tests.rs: a test that runs `build` and `check` with a project path that is not UTF-8 (on Unix, `OsStr::from_bytes`) and gets exit status 2 with a message naming the path, not a panic'
+  acceptance:
+  - 'The new test passes on Linux and macOS; `quakec-ide check "$(printf ''a\377'')"` exits 2 with an error, recorded in the PR'
+  verify:
+  - cargo test -p quakec-ide
+- key: P2-163
+  title: Make Shift+Cmd+Z redo outside the editor
+  labels:
+  - apps
+  - area:editor
+  - type:feature
+  size: S
+  reqs:
+  - PRIN-3
+  - UI-10
+  summary: |
+    Found by the P2-RA readiness review (#88). `Shell::keys` (apps/desktop/src/shell.rs) checks `keymap::BINDINGS` in order with egui's `consume_shortcut`, which "uses [`Modifiers::matches_logically`] to match modifiers, meaning extra Shift and Alt modifiers are ignored. Therefore, you should match most specific shortcuts first" (egui 0.36.2, `InputState::consume_shortcut`). `BINDINGS` lists `edit.undo` (Cmd+Z) before `edit.redo` (Shift+Cmd+Z), so Shift+Cmd+Z outside the editor runs `edit.undo`, and redo cannot be reached from the keyboard there, against the README's key table. Reproduced on main at cf169599 by a test: after a `symbol.rename` (undo depth 1, redo depth 0), Cmd+Z leaves the depths at (0, 1), and Shift+Cmd+Z leaves them at (0, 1) instead of (1, 0). The test, `each_shortcut_runs_only_its_own_command`, is quoted in docs/readiness/p2-ra.md for this fix to commit. The same rule applies to the other bindings and to the editor's own keys (apps/desktop/src/editor.rs `keys`: Shift+Cmd+S saves, Shift+Arrow moves the completion choice).
+  environment: |
+    main at cf169599, macOS; apps/desktop/src/keymap.rs BINDINGS and apps/desktop/src/shell.rs `keys`
+  depends: []
+  deliverable:
+  - 'apps/desktop/src/shell.rs (or keymap.rs): bindings matched with exact modifiers, or most specific first, so no binding''s keys run another''s command'
+  - 'apps/desktop/src/tests.rs: `each_shortcut_runs_only_its_own_command`, and a test that no binding''s shortcut, pressed with an extra Shift or Alt, runs another binding''s command'
+  acceptance:
+  - 'Both tests pass, and fail when `BINDINGS` is put back in its current order'
+  verify:
+  - cargo test -p quakec-studio
+- key: P2-164
+  title: Keep a project file's dialect over the CLI's and the language server's default
+  labels:
+  - apps
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - GOAL-4
+  - LANG-9
+  summary: |
+    Found by the P2-RA readiness review (#88). The CLI's `--help` and README say `--dialect` is "The dialect a project with no quakec.toml is read in; vanilla otherwise", and the language server's README says "A project with a `quakec.toml` gives each module its dialect and target engine. A project with none ... is vanilla unless the client says otherwise in `initializationOptions`". Both pass the option to `qc_ide::Config`, whose `dialect` and `target` apply "over the project file's" to every module (crates/qc-ide/src/host.rs `add_project`: `self.config.dialect.unwrap_or(module.dialect)`). So `quakec-ide check <dir> --dialect fteqcc` reads a project whose `quakec.toml` names no dialect (vanilla, PRJ-2.8) as FTEQCC and passes code vanilla rejects; a mixed project (a vanilla SSQC and an FTEQCC CSQC module) is read in one dialect; and an editor extension that sends `{"dialect": "fteqcc"}` for every workspace does the same through the server. Reproduced on main at cf169599 by the CLI test `the_project_file_dialect_wins_over_the_option`, quoted in docs/readiness/p2-ra.md for this fix to commit: `check --dialect fteqcc` on such a project exits 0 instead of 1. The documented contract is the one to keep (PRJ-2.8: a module's dialect is its own, else the project's), unless Justin prefers the override and the READMEs change instead.
+  environment: |
+    main at cf169599; apps/cli/src/lib.rs `run`, apps/lsp/src/server.rs `initialize`, crates/qc-ide/src/host.rs `Config`
+  depends: []
+  deliverable:
+  - 'The dialect and target from the command line and from `initializationOptions` applied only to a project with no `quakec.toml` (in the apps, or as a default field of `qc_ide::Config` beside the override), with the READMEs and `--help` saying so'
+  - 'apps/cli/src/tests.rs: `the_project_file_dialect_wins_over_the_option`; apps/lsp/src/tests: the same for `initializationOptions`, `target` included'
+  acceptance:
+  - 'The tests pass, and fail when the option is applied over the project file again'
+  verify:
+  - cargo test -p quakec-ide -p quakec-lsp
+- key: P2-165
+  title: Fuzz the language server's message reader and handler
+  labels:
+  - apps
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - TEST-5
+  - TEST-4
+  summary: |
+    Found by the P2-RA readiness review (#88). TEST-5 asks for fuzzing of every parser or decoder that reads files or network input, 24 hours without a crash. quakec-lsp reads its client's byte stream: the base protocol's header part and `Content-Length` (`transport::read_message`), then JSON-RPC messages of any shape (`Server::handle`), with positions, ranges and URIs from the client (`lines`, `uri`). No target in `fuzz/fuzz_targets/` reaches any of it; the review's property tests in `apps/lsp/src/tests/properties.rs` run 256 cases each. `read_message` also reads a header line with no bound (`read_until(b'\n')`), so a stream with no line break grows one buffer until memory runs out, while `MAX_CONTENT` bounds the content part.
+  environment: |
+    main at cf169599; fuzz/fuzz_targets/ (no quakec-lsp target), apps/lsp/src/transport.rs
+  depends: []
+  deliverable:
+  - 'fuzz/fuzz_targets/quakec_lsp.rs: `quakec_lsp::run` over arbitrary bytes on a small in-memory project, and over a structured input of `initialize`, then requests and notifications with positions, ranges and URIs drawn from the input, checking no panic, one answer per request id, and positions inside the documents'
+  - 'apps/lsp/src/transport.rs: a bound on a header line, as on the content part, with its test'
+  - 'fuzz/README.md and the nightly Fuzz workflow running the new target'
+  acceptance:
+  - 'The new target runs 24 hours in the nightly Fuzz workflow (or the sum of its nightly runs) with no crash, linked in the PR'
+  verify:
+  - cargo xtask fuzz quakec-lsp --time 10m
+- key: P2-166
+  title: Activate the editor's keystroke and open-project budgets
+  labels:
+  - apps
+  - area:editor
+  - type:test
+  size: S
+  reqs:
+  - TEST-8
+  - PRIN-5
+  summary: |
+    Found by the P2-RA readiness review (#88). TEST-8 asks that performance budgets be checked where they apply and that a regression over 10% fail. The desktop app's two budgets, `open_project_and_type` (1 s, p95) and `keystroke` (8.33 ms, p99), are still `pending` placeholders in docs/perf-budgets.md and `crates/qs-bench/benches/budgets.rs`, although #74 (P2-18), named there to fill them in, closed on 2026-10-30, so `cargo xtask bench` and the weekly Bench workflow neither check them nor compare them with history. The one measurement, `cargo run --release -p quakec-studio --example editor_bench`, recorded in docs/spikes/data/ref-mac/ref-mac-editor.md on ref-mac only, meets open (223 ms) and type (p99 1.61 ms) but reports the check phase "missed": one frame of 85.63 ms when the project is checked again after typing stops, ten times the frame budget, which the modder sees as a stall.
+  environment: |
+    main at cf169599; docs/perf-budgets.md, crates/qs-bench/benches/budgets.rs, docs/spikes/data/ref-mac/ref-mac-editor.md
+  depends: []
+  deliverable:
+  - 'crates/qs-bench/benches/budgets.rs: `open_project_and_type` and `keystroke` measuring the editor headless on the editor_bench project of 50,000 lines, and their docs/perf-budgets.md rows `active`'
+  - 'The check after typing kept off the frame, or within one frame, or a budget of its own with its reason in docs/perf-budgets.md'
+  - 'editor_bench results for each reference machine in docs/spikes/data/'
+  acceptance:
+  - 'cargo xtask bench checks both rows against their budgets and the 10% regression rule, linked from a Bench workflow run'
+  verify:
+  - cargo xtask bench
+- key: P2-167
+  title: Measure quakec-studio in the Readiness workflow
+  labels:
+  - apps
+  - area:process
+  - type:test
+  size: S
+  reqs:
+  - TEST-1
+  - TEST-2
+  - TEST-3
+  - TEST-7
+  summary: |
+    Found by the P2-RA readiness review (#88). The Readiness workflow cannot measure the desktop app. Its Linux jobs install no Vulkan driver, while pull-request CI installs `mesa-vulkan-drivers` for the snapshot harness (.github/workflows/ci.yml, "Install a software Vulkan driver for the snapshot harness"), so in Readiness run 41906749573 every wgpu test of quakec-studio fails with `Failed to create render state: CustomNativeAdapterSelectionError("No adapter found")` (egui_kittest 0.36.2, src/wgpu.rs:77): the `Readiness coverage` job's `cargo llvm-cov` fails, which also leaves quakec-ide and quakec-lsp with no coverage numbers; the `Readiness mutation (quakec-studio 0/1)` job's unmutated baseline fails; and `Readiness flakes (linux)` records 0 of 20 for quakec-studio (macOS and Windows pass 20 of 20). Then `cargo xtask readiness spec` stops with "readiness: section UI-2 has no active statements in docs/spec/requirements.tsv": apps/desktop/README.md's `**Spec sections:**` line, "none; it implements plan requirements UI-2, UI-14, UI-15 and CONV-16.", names plan requirements, which `spec_sections` (xtask/src/readiness.rs) reads as spec sections, so `cargo xtask ratchet` never runs. The desktop crate's whole suite (coverage of the non-rendering code, mutation, the Linux flake runs) has never been measured.
+  environment: |
+    Readiness run 41906749573 on 4144a658 (test/88-apps-readiness), crates="quakec-ide quakec-lsp quakec-studio"
+  depends: []
+  deliverable:
+  - '.github/workflows/readiness.yml: the software Vulkan driver installed on the Linux coverage, mutation and flakes runners, as in ci.yml'
+  - 'apps/desktop/README.md: a `**Spec sections:**` line that names no plan requirement as a section (the requirements on a line of their own)'
+  - 'If quakec-studio''s mutants exceed one runner''s 6 hours, its shard count in the workflow''s `crates` job'
+  acceptance:
+  - 'A Readiness run with crates="quakec-ide quakec-lsp quakec-studio" measures every check of the three crates and reaches `cargo xtask ratchet`, linked in the PR'
+  verify:
+  - gh workflow run readiness.yml -f crates="quakec-ide quakec-lsp quakec-studio"
