@@ -453,6 +453,11 @@ impl Checker<'_> {
         };
         let operand = Value::of(value.ty.clone());
         let named = self.name_of(value);
+        // The store reads a call's value out of the return global, which holds it no longer.
+        if value.returned {
+            self.live_return = None;
+            self.live_call = None;
+        }
         self.emit(op, &operand, &operand, span)?;
         let stored = into.or_else(|| self.last_made());
         self.name_last(op, named, stored.map(ir::Name::Made));
