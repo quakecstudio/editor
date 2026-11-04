@@ -1567,12 +1567,12 @@ impl MockBuiltins {
         write_return_float(context, value)
     }
 
-    /// `stof(s)`, vkQuake's `PF_stof` (BUILTIN-18.19): C's `atof` of `s`, as a float.
+    /// `stof(s)`, vkQuake's `PF_stof` (BUILTIN-18.25): C's `atof` of `s`, as a float.
     fn b_stof(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let text = read_parm_string(context, &self.engine, 0)?;
         #[expect(
             clippy::cast_possible_truncation,
-            reason = "BUILTIN-18.19: G_FLOAT of a double rounds it to the nearest float, as this does"
+            reason = "BUILTIN-18.25: G_FLOAT of a double rounds it to the nearest float, as this does"
         )]
         let value = atof::atof(&text) as f32;
         write_return_float(context, value)

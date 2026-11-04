@@ -396,7 +396,7 @@ fn q_atof_spec_examples_and_empty_prefixes() {
     assert_eq!(math::q_atof(".5"), 0.5);
 }
 
-// spec BUILTIN-18.19: C's atof reads a `+` sign, and a hexadecimal number's binary exponent
+// spec BUILTIN-18.25: C's atof reads a `+` sign, and a hexadecimal number's binary exponent
 // with its sign
 #[test]
 fn atof_signs() {
@@ -411,7 +411,7 @@ fn atof_signs() {
     assert_eq!(atof(b"0x.8"), 0.5);
 }
 
-// spec BUILTIN-18.19: a hexadecimal number needs a digit after `0x`, else the `0` alone is
+// spec BUILTIN-18.25: a hexadecimal number needs a digit after `0x`, else the `0` alone is
 // read; its point and exponent letters take either case (P2-R1B re-review)
 #[test]
 fn rereview_atof_hexadecimal_edges() {
@@ -422,6 +422,49 @@ fn rereview_atof_hexadecimal_edges() {
     assert_eq!(atof(b"0X1P+3"), 8.0);
     assert_eq!(atof(b"0x1.8p1"), 3.0);
     assert_eq!(atof(b" \t-0xA.8"), -10.5);
+}
+
+// spec BUILTIN-18.25: a hexadecimal number is correctly rounded whatever its length and
+// exponent (C99 7.20.1.3 paragraph 5), never NaN for a finite input, the cases of #717
+#[test]
+fn a_hexadecimal_number_is_correctly_rounded() {
+    use crate::atof::atof;
+    let zeros = |n: usize| "0".repeat(n);
+    assert_eq!(atof(format!("0x1.{}p0", zeros(300)).as_bytes()), 1.0);
+    assert_eq!(atof(format!("0x1{}p-1200", zeros(300)).as_bytes()), 1.0);
+    assert_eq!(
+        atof(format!("0x1{}p-1100", zeros(256)).as_bytes()),
+        2.0_f64.powi(-76)
+    );
+    assert_eq!(
+        atof(b"0x1.000001000000081").to_bits(),
+        0x3FF0_0000_1000_0001
+    );
+    // A tie rounds to even, and any later nonzero digit breaks it upward.
+    assert_eq!(atof(b"0x1.00000000000008").to_bits(), 0x3FF0_0000_0000_0000);
+    assert_eq!(atof(b"0x1.00000000000018").to_bits(), 0x3FF0_0000_0000_0002);
+    assert_eq!(
+        atof(b"0x1.000000000000080001").to_bits(),
+        0x3FF0_0000_0000_0001
+    );
+    // Past the largest double is infinity, below half the least is 0, the least is itself.
+    assert_eq!(atof(b"0x1p1024"), f64::INFINITY);
+    assert_eq!(atof(b"0x1p-1076"), 0.0);
+    assert_eq!(atof(b"0x1p-1074").to_bits(), 1);
+    assert_eq!(atof(b"0x1.8p-1074").to_bits(), 2);
+    assert_eq!(atof(b"0x0.0000000000001p-1022").to_bits(), 1);
+    assert_eq!(atof(format!("0x0.{}1p-1", zeros(300)).as_bytes()), 0.0);
+    // A tie whose later digits are all zero stays a tie; a round-up that carries into the
+    // next power of two is that power; the largest exponent is finite and past it infinite;
+    // a value 128 bits below the least subnormal is 0.
+    assert_eq!(
+        atof(b"0x1.000000000000080000").to_bits(),
+        0x3FF0_0000_0000_0000
+    );
+    assert_eq!(atof(b"0x1.fffffffffffff8"), 2.0);
+    assert_eq!(atof(b"0x1p1023"), 2.0_f64.powi(1023));
+    assert_eq!(atof(b"0x1p2000"), f64::INFINITY);
+    assert_eq!(atof(b"0x1p-1202").to_bits(), 0);
 }
 
 // spec BUILTIN-18.17: each row of strconv's table is reached by a byte of its own: the white,
@@ -2454,7 +2497,7 @@ mod bodies {
         }
     }
 
-    // spec BUILTIN-18.19: stof is C's atof of the longest numeric prefix
+    // spec BUILTIN-18.25: stof is C's atof of the longest numeric prefix
     #[test]
     fn stof_is_c_atof() {
         let texts = [
