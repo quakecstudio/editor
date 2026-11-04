@@ -1774,6 +1774,8 @@ issues:
   - P2-156
   - P2-157
   - P2-158
+  - P2-159
+  - P2-160
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -3293,3 +3295,51 @@ issues:
   - 'qc-preproc tests show, each citing FTEF-14.77 and QCD-1.5, that a macro whose body holds an invalid UTF-8 byte reports E0123 once at that byte when used twice, used through another macro, or used from another file; that two bad bytes in one body, and a bad byte in a body and one in an argument of the same use, are two reports at their two places; and that an argument''s bad byte written twice into one expansion is one report at the byte the use wrote'
   verify:
   - cargo test -p qc-preproc
+- key: P2-159
+  title: Fuzz the rerelease localization file parser and the vkQuake string builtins
+  labels:
+  - L1-vm
+  - area:vm
+  - type:bug
+  size: S
+  reqs:
+  - TEST-5
+  - TEST-4
+  summary: |
+    Found by the P2-R1B readiness review (#676). #680 and #682, merged after #659's measurement, added `qc_builtins::localization::Localization::loc_load_file`, a port of QuakeSpasm's `LOC_LoadFile` that parses `localization/loc_english.txt` from the game's files in place (RRE-1.7, RRE-1.2), and `qc_builtins::tokenize` (BUILTIN-18.23, BUILTIN-18.24), whose `tokenize` reads client command text. TEST-5 asks for fuzzing of every parser or decoder that reads files or network input, 24 hours without a crash. No fuzz target reaches either: `fuzz/fuzz_targets/qc_vm.rs` runs generated progs on the mock engine's id profile (`qs_differential::generate`), which never loads a localization file and never dispatches the vkQuake builtins, so the localization parser, the tokenizer, the `sprintf` directive reader (`printf.rs`, BUILTIN-18.8) and C's `atof` (`atof.rs`, BUILTIN-18.19) have no fuzzing at all, and the crate has no property test (proptest) of any of them. The nightly Fuzz run 41626179616 and Differential run 41635634171 on main both predate #680 and #682.
+  environment: |
+    main at ce1d22e2; found reading fuzz/fuzz_targets/ and crates/qc-builtins/src during the P2-R1B review
+  depends: []
+  deliverable:
+  - 'fuzz/fuzz_targets/qc_builtins.rs (or one target per parser): `Localization::loc_load_file` of arbitrary bytes, then `loc_get_raw_string`, `loc_has_placeholders` and `pf_var_string` over keys and parameters taken from the input; `Tokens::tokenize` and `Tokens::split`, then `argv`, `start` and `end` of every index; and the `sprintf` and `atof` builtins of `MockBuiltins` on the vkQuake profile, each checking no panic and the stated bounds (a token''s start and end inside the text, at most 64 tokens, `pf_var_string` at most 1023 bytes)'
+  - 'crates/qc-builtins: proptest properties for the invariants the targets check, listed in the crate README'
+  - 'fuzz/README.md and the nightly Fuzz workflow running the new target'
+  acceptance:
+  - 'The new target runs 24 hours in the nightly Fuzz workflow (or the sum of its nightly runs) with no crash, and the run is linked in the PR'
+  - 'Each property test cites the RRE-1 or BUILTIN-18 statement it pins and fails when the invariant is broken by hand'
+  verify:
+  - cargo xtask fuzz qc-builtins --time 10m
+  - cargo test -p qc-builtins
+- key: P2-160
+  title: Claim BUILTIN-18 in the qc-builtins README and restore the Cvars rustdoc
+  labels:
+  - L1-vm
+  - area:vm
+  - type:bug
+  size: S
+  reqs:
+  - TEST-3
+  summary: |
+    Found by the P2-R1B readiness review (#676). Three documentation defects in qc-builtins. (1) The README's `**Spec sections:**` line lists BUILTIN-1 to BUILTIN-16, RRE-1 and DIFF-6, DIFF-7, but not BUILTIN-18 (vkQuake's profile), whose 24 statements the crate implements (`printf.rs`, `atof.rs`, `strconv.rs`, `cstring.rs`, `strftime.rs`, `tokenize.rs`, `dispatch.rs`); `cargo xtask readiness spec` reads that line (xtask/src/readiness.rs, `spec_sections`), so the per-crate TEST-3 number (89 of 89 in Readiness run 41574437732, 97 of 97 on main at ce1d22e2 with RRE-1) does not count BUILTIN-18 at all. Every BUILTIN-18 statement is cited by a qc-builtins test today, so claiming the section raises the count without lowering the score, but nothing holds a later BUILTIN-18 statement to a qc-builtins test. (2) The README's RRE-1 claim includes RRE-1.10 (the file lookup), which `qs-vfs` implements and cites, with no `**Not this crate's:**` line; and its module list does not name `localization`, `tokenize`, `printf`, `atof`, `strconv`, `cstring` or `strftime`. (3) #682 inserted `use crate::localization::Localization;` above the rustdoc of the public `mock::Cvars` and `use crate::tokenize::Tokens;` below it, in crates/qc-builtins/src/mock.rs, so the `/// The settings the mock keeps ...` comment now documents the `use` item and `Cvars` has no rustdoc (the definition of done asks every public item to have one; `missing_docs` is not enabled, so no lint caught it).
+  environment: |
+    main at ce1d22e2; crates/qc-builtins/README.md (Spec sections) and crates/qc-builtins/src/mock.rs lines 18 to 24
+  depends: []
+  deliverable:
+  - 'crates/qc-builtins/README.md: BUILTIN-18 on the `**Spec sections:**` line, RRE-1.10 on a `**Not this crate''s:**` line naming qs-vfs, and the module list naming every module'
+  - 'crates/qc-builtins/src/mock.rs: the two `use` lines above the Cvars rustdoc, so the comment documents `Cvars` again'
+  acceptance:
+  - '`cargo xtask readiness spec` for qc-builtins counts the BUILTIN-18 statements and reports 100%, recorded in the PR'
+  - '`cargo doc -p qc-builtins` shows the Cvars rustdoc on `mock::Cvars`'
+  verify:
+  - cargo xtask readiness spec --out spec.json qc-builtins
+  - cargo doc -p qc-builtins --no-deps

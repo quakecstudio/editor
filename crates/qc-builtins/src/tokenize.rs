@@ -362,4 +362,44 @@ mod tests {
         let text = format!("x{many}");
         assert!(tokens.split(text.as_bytes(), &[b",".to_vec()]) <= MAX_QC_TOKENS);
     }
+
+    // spec BUILTIN-18.23: tokenizeqc's own skip reads bytes as unsigned, so a word after a
+    // byte from 0x80 up starts at that byte, which COM_Parse then skips; a text of such bytes
+    // alone has no word (P2-R1B review)
+    #[test]
+    fn reviewer_a_high_byte_before_a_word_is_its_start() {
+        let mut tokens = Tokens::default();
+        assert_eq!(tokens.tokenize(b" \xe9ab"), 1);
+        assert_eq!((tokens.start(0), tokens.end(0)), (1, 4));
+        assert_eq!(tokens.argv(0).unwrap(), b"ab");
+        assert_eq!(tokens.tokenize(b"\xe9\xff"), 0);
+        // A quoted word's end is past its closing quote; an unclosed one's is the text's end.
+        assert_eq!(tokens.tokenize(b"\"a b\"c \"d"), 3);
+        assert_eq!(tokens.argv(1).unwrap(), b"c");
+        assert_eq!((tokens.start(2), tokens.end(2)), (7, 9));
+    }
+
+    // spec BUILTIN-18.24: an empty separator matches at every byte, so each byte is a token
+    // after an empty first one; the list stops at exactly 64 tokens, the last ending at a
+    // separator; the first separator listed that matches is taken, not the longest (P2-R1B
+    // review)
+    #[test]
+    fn reviewer_split_with_an_empty_separator_and_at_the_cap() {
+        let mut tokens = Tokens::default();
+        assert_eq!(tokens.split(b"abc", &[Vec::new()]), 4);
+        let all: Vec<Vec<u8>> = (0..4).map(|i| tokens.argv(i).unwrap()).collect();
+        assert_eq!(
+            all,
+            [b"".to_vec(), b"a".to_vec(), b"b".to_vec(), b"c".to_vec()]
+        );
+        let text = "ab,".repeat(70);
+        assert_eq!(
+            tokens.split(text.as_bytes(), &[b",".to_vec()]),
+            MAX_QC_TOKENS
+        );
+        assert_eq!(tokens.argv(-1).unwrap(), b"ab");
+        assert_eq!((tokens.start(-1), tokens.end(-1)), (189, 191));
+        assert_eq!(tokens.split(b"a::b", &[b":".to_vec(), b"::".to_vec()]), 2);
+        assert_eq!(tokens.argv(1).unwrap(), b":b");
+    }
 }

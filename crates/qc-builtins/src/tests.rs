@@ -2254,6 +2254,61 @@ mod bodies {
         assert_eq!(f.builtins.engine().tokens.argv(2), Some(b"c".to_vec()));
     }
 
+    // spec BUILTIN-18.24: tokenizebyseparator reads a separator from each of the seven
+    // parameters after the text, the eighth parameter slot being the last; with none the text
+    // is one token (P2-R1B review)
+    #[test]
+    fn reviewer_tokenizebyseparator_reads_seven_separators() {
+        let (strings, offsets) =
+            string_table(&["a1b2c3d4e5f6g7h8i", "1", "2", "3", "4", "5", "6", "7"]);
+        let mut f = Fixture::new(479, 8, strings.clone(), 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        for (n, offset) in offsets.iter().enumerate() {
+            f.set_parm_i(u16::try_from(n).unwrap(), *offset);
+        }
+        f.run_ok(ServerState::Active);
+        assert_eq!(f.return_f(), 8.0);
+        assert_eq!(f.builtins.engine().tokens.argv(7), Some(b"h8i".to_vec()));
+        let mut f = Fixture::new(479, 1, strings, 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.set_parm_i(0, offsets[0]);
+        f.run_ok(ServerState::Active);
+        assert_eq!(f.return_f(), 1.0);
+    }
+
+    // spec BUILTIN-18.23: argv and its index builtins take the index as C's `(int)` of the
+    // float: -0.5 truncates to 0, -1.5 to -1 (the last token), and NaN or a value past the int
+    // range is out of the list (P2-R1B review)
+    #[test]
+    fn reviewer_argv_truncates_its_float_index() {
+        let (strings, offsets) = string_table(&["one two three"]);
+        let call = |engine: &mut MockEngine, number: u32, parm: Result<i32, f32>| {
+            let mut f = Fixture::new(number, 1, strings.clone(), 0);
+            *f.builtins.engine_mut() = engine.clone();
+            match parm {
+                Ok(string) => f.set_parm_i(0, string),
+                Err(float) => f.set_parm_f(0, float),
+            }
+            f.run_ok(ServerState::Active);
+            *engine = f.builtins.engine().clone();
+            (f.return_f(), f.return_i())
+        };
+        let mut engine = MockEngine::new("test", 0, 1);
+        engine.profile = EngineProfile::VkQuake;
+        assert_eq!(call(&mut engine, 441, Ok(offsets[0])).0, 3.0);
+        let value = call(&mut engine, 442, Err(-0.5)).1;
+        assert_eq!(engine.strings.text(value), Some(&b"one"[..]));
+        let value = call(&mut engine, 442, Err(-1.5)).1;
+        assert_eq!(engine.strings.text(value), Some(&b"three"[..]));
+        assert_eq!(call(&mut engine, 442, Err(f32::NAN)).1, 0);
+        assert_eq!(call(&mut engine, 442, Err(3e9)).1, 0);
+        let value = call(&mut engine, 442, Err(-3.0)).1;
+        assert_eq!(engine.strings.text(value), Some(&b"one"[..]));
+        assert_eq!(call(&mut engine, 515, Err(-0.9)).0, 0.0);
+        assert_eq!(call(&mut engine, 516, Err(f32::NAN)).0, -1.0);
+        assert_eq!(call(&mut engine, 515, Err(-4.0)).0, -1.0);
+    }
+
     // spec BUILTIN-18.22: strncmp and strcasecmp answer C's differences; strstrofs finds an
     // offset from firstofs
     #[test]

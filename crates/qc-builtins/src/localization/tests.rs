@@ -215,3 +215,53 @@ fn the_text_is_cut_to_1023_bytes() {
     let short = loc.pf_var_string(&strings(&["$k", "ab"]));
     assert_eq!(short, b"[ab]ab");
 }
+
+// spec RRE-1.2: a key whose probe starts at the table's last slot wraps to slot 0, and both
+// keys that start there are found again (P2-R1B review)
+#[test]
+fn reviewer_a_probe_wraps_past_the_last_slot() {
+    let last: Vec<String> = (0..10_000)
+        .map(|i| format!("k{i}"))
+        .filter(|key| hash_slot(com_hash_string(key.as_bytes()), 4) == 3)
+        .take(2)
+        .collect();
+    assert_eq!(last.len(), 2);
+    let file = format!("{} = first\n{} = second\n", last[0], last[1]);
+    let loc = Localization::loc_load_file(file.as_bytes());
+    assert_eq!(loc.len(), 2);
+    assert_eq!(value(&loc, &format!("${}", last[0])).unwrap(), b"first");
+    assert_eq!(value(&loc, &format!("${}", last[1])).unwrap(), b"second");
+    // A missing key that starts at the last slot probes 3, then 0, then stops at an empty slot.
+    let missing = (0..10_000)
+        .map(|i| format!("m{i}"))
+        .find(|key| hash_slot(com_hash_string(key.as_bytes()), 4) == 3)
+        .unwrap();
+    assert_eq!(value(&loc, &format!("${missing}")), None);
+}
+
+// spec RRE-1.3: `$` alone looks up the empty key, which a line starting with `=` defines; a
+// second `$` is part of the key (P2-R1B review)
+#[test]
+fn reviewer_the_empty_key_and_a_doubled_dollar() {
+    let loc = Localization::loc_load_file(b"= empty\n$k = dollar\nk = plain\n");
+    assert_eq!(value(&loc, "$").unwrap(), b"empty");
+    assert_eq!(value(&loc, "$$k").unwrap(), b"dollar");
+    assert_eq!(value(&loc, "$k").unwrap(), b"plain");
+    assert_eq!(value(&loc, ""), None);
+    assert_eq!(Localization::default().loc_get_string(b"$k"), b"$k");
+}
+
+// spec RRE-1.7: the file's text ends at its first zero, so an entry after it is not read; an
+// `=` on a comment line makes no entry; a value that ends the line or the file is empty
+// (P2-R1B review)
+#[test]
+fn reviewer_the_text_ends_at_its_first_zero() {
+    let loc = Localization::loc_load_file(b"a = 1\n/b = 2\nc =\nd = \"\0e = 3\n");
+    assert_eq!(value(&loc, "$a").unwrap(), b"1");
+    assert_eq!(value(&loc, "$b"), None);
+    assert_eq!(value(&loc, "$/b"), None);
+    assert_eq!(value(&loc, "$c").unwrap(), b"");
+    assert_eq!(value(&loc, "$d").unwrap(), b"");
+    assert_eq!(value(&loc, "$e"), None);
+    assert_eq!(loc.len(), 3);
+}

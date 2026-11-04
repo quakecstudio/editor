@@ -519,6 +519,8 @@ groups:
     - P2-R1
     - P2-150
     - P2-156
+    - P2-159
+    - P2-160
     deliverable:
     - docs/readiness/p2-r1b.md following docs/readiness/_template.md for qc-builtins, linking the measurement run
     - 'ratchets.toml: [crates.qc-builtins] re-measured on the P2-150 code, its readiness key P2-R1B and its equivalent_mutants holding only mutants cargo-mutants still produces'

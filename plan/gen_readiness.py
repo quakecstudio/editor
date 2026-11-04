@@ -31,10 +31,11 @@ PHASES = ["P1", "P2", "P3", "P4", "P5", "P6", "P7"]
 # Re-reviews: a crate's ratchets re-measured after a later change to its layer, recorded under a
 # key of their own, since `cargo xtask ratchet` holds a recorded crate's minimums and equivalent
 # mutants to the review that set them (xtask/src/ratchet.rs, check_change). Each names the
-# phase, the layer, the crates, the work that changed them and the review it follows.
+# phase, the layer, the crates, the work that changed them and the review it follows; `work` lists
+# the issues the re-review waits on, its own defects among them.
 REREVIEWS = [
     {"key": "P2-R1B", "phase": "P2", "layer": "L1-vm", "crates": "qc-builtins", "after": "P2-150",
-     "follows": "P2-R1", "work": "P2-156"},
+     "follows": "P2-R1", "work": ["P2-156", "P2-159", "P2-160"]},
 ]
 
 all_issues = [(g["milestone"], i) for d in files.values() for g in groups(d) for i in g["issues"]]
@@ -77,7 +78,7 @@ for ph in PHASES:
             "labels": [rr["layer"], "area:process", "type:readiness"],
             "size": "S",
             "reqs": ["TEST-2", "TEST-6", "TEST-9"],
-            "depends": [rr["follows"], rr["after"], rr["work"]],
+            "depends": [rr["follows"], rr["after"], *rr["work"]],
             "deliverable": [f"docs/readiness/{note}.md following docs/readiness/_template.md for {rr['crates']}, linking the measurement run",
                             f"ratchets.toml: [crates.{rr['crates']}] re-measured on the {rr['after']} code, its readiness key {rr['key']} and its equivalent_mutants holding only mutants cargo-mutants still produces"],
             "acceptance": [
