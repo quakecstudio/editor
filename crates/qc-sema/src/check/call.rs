@@ -399,12 +399,9 @@ impl Checker<'_> {
                     });
                 }
             }
-            // FTE-18.7: each parameter after the arguments that takes its default is stored it.
-            // Which defaults the code generator keeps (FTE-18.8) the model does not know, so a
-            // call that takes one is not followed.
-            if values.len() < passed {
-                self.followed = false;
-            }
+            // FTE-18.7: each parameter after the arguments that takes its default is stored it,
+            // named as the default, which the code generator reads; which defaults it keeps under
+            // autoprototyping (FTE-18.8) the model does not know.
             for slot in values.len()..passed {
                 let words = function
                     .params

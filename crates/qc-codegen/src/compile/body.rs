@@ -11,8 +11,9 @@ use std::collections::HashMap;
 
 use qc_diag::Span;
 use qc_progs::opcode::Opcode;
-use qc_sema::TypedBody;
 use qc_sema::ir::{BodyStatement, Effect, Name};
+use qc_sema::{FileId, TypedBody};
+use qc_syntax::ast;
 
 use super::{At, Compiler, Lowered};
 use crate::Internal;
@@ -23,7 +24,7 @@ impl Compiler<'_> {
     /// of its name, the origin of the statements before its first source statement. Whether it
     /// wrote them: a body [`writable`] refuses is left to the syntax walk.
     pub(super) fn write_body(&mut self, body: &TypedBody, named: Span) -> Lowered<bool> {
-        if !writable(body, self.returns_value()) || self.calls_with_defaults(body) {
+        if !writable(body, self.returns_value()) || !self.defaults_kept(body) {
             return Ok(false);
         }
         let generated = body.generated();
@@ -112,16 +113,58 @@ impl Compiler<'_> {
         Ok(())
     }
 
-    /// Whether `body` calls a function this compiler holds parameter defaults of (FTE-18.7),
-    /// which ones it keeps under autoprototyping (FTE-18.8) the semantic model does not know.
-    fn calls_with_defaults(&self, body: &TypedBody) -> bool {
-        body.generated().iter().any(|statement| match statement.a {
-            Some(Name::Def(callee, _)) => self
-                .defaults
-                .get(&callee)
-                .is_some_and(|defaults| defaults.iter().any(Option::is_some)),
-            _ => false,
+    /// Whether `body` passes the parameter defaults this compiler keeps (FTE-18.7), which under
+    /// autoprototyping the semantic model does not know (FTE-18.8): each it passes is kept and
+    /// read with no statement of its own, and no call stops before a parameter whose default is
+    /// kept.
+    fn defaults_kept(&self, body: &TypedBody) -> bool {
+        let generated = body.generated();
+        generated.iter().enumerate().all(|(at, statement)| {
+            let passed = [statement.a, statement.b, statement.c]
+                .into_iter()
+                .flatten()
+                .all(|name| match name {
+                    Name::Default(slot) => self.default_of(generated, at, slot).is_some(),
+                    _ => true,
+                });
+            let stops = match (call_count(statement.op), statement.a) {
+                (Some(count), Some(Name::Def(callee, _))) => self
+                    .defaults
+                    .get(&callee)
+                    .and_then(|defaults| defaults.get(count))
+                    .is_some_and(Option::is_some),
+                _ => false,
+            };
+            passed && !stops
         })
+    }
+
+    /// The default value of parameter `slot` of the function the first `CALL` from the
+    /// statement at `at` calls, with the file it is written in, when this compiler keeps one
+    /// that is a literal or a name, its casts taken off: a cast within its basic type makes no
+    /// statement (FTEF-30.6), and the default is stored by its words.
+    fn default_of(
+        &self,
+        generated: &[BodyStatement],
+        at: usize,
+        slot: u8,
+    ) -> Option<(FileId, ast::Expr)> {
+        let call = generated
+            .get(at..)?
+            .iter()
+            .find(|s| call_count(s.op).is_some())?;
+        let Some(Name::Def(callee, _)) = call.a else {
+            return None;
+        };
+        let (file, mut default) = self
+            .defaults
+            .get(&callee)?
+            .get(usize::from(slot))?
+            .clone()?;
+        while let ast::Expr::Cast(cast) = &default {
+            default = cast.operand()?;
+        }
+        matches!(default, ast::Expr::Literal(_) | ast::Expr::Name(_)).then_some((file, default))
     }
 
     /// Whether the function being compiled returns a value, which a bare `return` of
@@ -204,7 +247,17 @@ impl Compiler<'_> {
                     .map_err(|_| Internal::TooLarge)
                     .at(span);
             }
-            Name::Default(_) => return Err(Internal::Unlowered).at(span),
+            Name::Default(slot) => {
+                let at = usize::try_from(index)
+                    .map_err(|_| Internal::TooLarge)
+                    .at(span)?;
+                let (file, default) = self.default_of(body.generated(), at, slot).at(span)?;
+                let here = std::mem::replace(&mut self.file, file);
+                let value = self.expr(&default);
+                self.file = here;
+                let value = value?;
+                self.operand_of(&value)
+            }
         };
         operand(ofs).at(span)
     }
@@ -212,7 +265,7 @@ impl Compiler<'_> {
 
 /// Whether the writer can write `body`: the checker followed every statement it generates,
 /// each statement names every operand its opcode uses, each value read is one a statement
-/// makes, no statement reads a parameter's default, and a bare `return` of a function that
+/// makes, and a bare `return` of a function that
 /// `returns_value` names its `ret*` local.
 fn writable(body: &TypedBody, returns_value: bool) -> bool {
     if !body.followed() {
@@ -235,10 +288,27 @@ fn writable(body: &TypedBody, returns_value: bool) -> bool {
             .all(|(&uses, name)| !uses || name.is_some());
         let reads = named.into_iter().flatten().all(|name| match name {
             Name::Made(made) | Name::MadeWord(made, _) => makes(made),
-            Name::Default(_) => false,
             _ => true,
         });
         used && reads && !bare_return(statement, returns_value)
+    })
+}
+
+/// The arguments a call the semantic model generates passes, `CALL0` to `CALL8`; `None` for
+/// any other opcode.
+fn call_count(op: qc_preproc::Op) -> Option<usize> {
+    use qc_preproc::Op;
+    Some(match op {
+        Op::Call0 => 0,
+        Op::Call1 => 1,
+        Op::Call2 => 2,
+        Op::Call3 => 3,
+        Op::Call4 => 4,
+        Op::Call5 => 5,
+        Op::Call6 => 6,
+        Op::Call7 => 7,
+        Op::Call8 => 8,
+        _ => return None,
     })
 }
 
