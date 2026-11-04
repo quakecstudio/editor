@@ -190,6 +190,8 @@ pub(crate) struct FunctionFacts {
     pub(crate) accumulate: bool,
     /// Whether it takes `...`, so it has a `__va_list`.
     pub(crate) variadic: bool,
+    /// The parameters it names before any `...`.
+    pub(crate) params: usize,
 }
 
 /// What a type is at bottom, as FTEQCC's checker reads it.
@@ -805,6 +807,11 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         .ancestors()
         .skip(1)
         .any(|node| node.kind() == qc_syntax::SyntaxKind::FunctionBody);
+    // FTE-18.6: a variadic function first stores, before its `STATE`, each parameter slot after its named ones to
+    // its `__va_list`.
+    if checker.function.variadic {
+        checker.variadic_prologue();
+    }
     // QC-13.6: `[frame, think]` is the body's first statement, `STATE`.
     // QC-13.6: `STATE` of the frame number and the think function.
     if let Some(state) = body.state() {

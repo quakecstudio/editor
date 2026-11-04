@@ -356,6 +356,7 @@ impl Checker<'_> {
                     continue;
                 }
                 let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
+                let vector = words == 3 || variant_parameter(function, slot);
                 let folded = first && value.temp.is_some() && value.temp == self.last_temp;
                 first = false;
                 if folded {
@@ -366,7 +367,7 @@ impl Checker<'_> {
                     self.generated.push(ir::BodyStatement {
                         a: self.name_of(value),
                         b: u8::try_from(slot).ok().map(ir::Name::Parameter),
-                        ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
+                        ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
                     });
                 }
             }
@@ -397,13 +398,7 @@ impl Checker<'_> {
                 .map(|value| &value.ty)
                 .or_else(|| function.params.get(slot));
             let words = ty.and_then(|ty| self.env.layout(ty)).map_or(1, |l| l.words);
-            let variant = function.params.get(slot).is_some_and(|param| {
-                let held = match param {
-                    Type::Field(inner) => inner.as_ref(),
-                    other => other,
-                };
-                matches!(held, Type::Named(name) if &**name == "__variant")
-            });
+            let variant = variant_parameter(function, slot);
             let store = match words {
                 3 => Op::StoreV,
                 _ if variant => Op::StoreV,
@@ -936,4 +931,16 @@ fn type_params(function: &FunctionType) -> Vec<ParamFacts> {
                 })
         })
         .collect()
+}
+
+/// FTE-18.9: whether `function`'s parameter `slot` is a variant or a field of one, which an
+/// argument is stored to by three words, its `size`.
+fn variant_parameter(function: &FunctionType, slot: usize) -> bool {
+    function.params.get(slot).is_some_and(|param| {
+        let held = match param {
+            Type::Field(inner) => inner.as_ref(),
+            other => other,
+        };
+        matches!(held, Type::Named(name) if &**name == "__variant")
+    })
 }

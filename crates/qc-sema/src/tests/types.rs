@@ -1037,6 +1037,38 @@ fn a_generated_body_updates_an_element_by_its_array_functions() {
     assert_eq!(generated[6].a, Some(Name::ArraySet(arr)));
 }
 
+// FTE-18.6: a variadic function's body starts, before its `STATE`, with `STORE_V` of each of
+// the 24 parameter slots after its named ones to the element of its `__va_list`
+#[test]
+fn a_generated_variadic_body_starts_with_its_va_list() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "void() n; void(float a, ...) t = [1, n] { };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let generated = index.bodies[&t].generated();
+    let stores: Vec<_> = generated
+        .iter()
+        .take_while(|s| s.op == Op::StoreV)
+        .map(|s| (s.a, s.b))
+        .collect();
+    assert_eq!(stores.len(), 24);
+    assert_eq!(
+        stores.first(),
+        Some(&(Some(Name::Parameter(1)), Some(Name::VaList(0))))
+    );
+    assert_eq!(
+        stores.last(),
+        Some(&(Some(Name::Parameter(24)), Some(Name::VaList(69))))
+    );
+    assert_eq!(generated[24].op, Op::State);
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]

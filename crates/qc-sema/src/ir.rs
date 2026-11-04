@@ -176,8 +176,11 @@ pub enum Name {
     Made(u32),
     /// The return global, a call's value (QC-18.4).
     Return,
-    /// A call's parameter slot by its number, `OFS_PARM0 + 3 * n` (QC-18.3).
+    /// A call's parameter slot by its number, `OFS_PARM0 + 3 * n` (QC-18.3), and past the
+    /// eighth FTEQCC's `$parmN` global (FTE-18.6).
     Parameter(u8),
+    /// A word of the variadic function's `__va_list` (FTE-18.6).
+    VaList(u32),
     /// The body's statement at this index, a jump's target; the body's length is its end.
     Jump(u32),
     /// The string immediate of the body's string literal at this index

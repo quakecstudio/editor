@@ -55,6 +55,20 @@ impl Checker<'_> {
         u32::try_from(self.generated.len()).unwrap_or(u32::MAX)
     }
 
+    /// FTE-18.6: `STORE_V` of each of the 24 parameter slots after the named ones to the
+    /// element of the function's `__va_list`.
+    pub(super) fn variadic_prologue(&mut self) {
+        const VA_COUNT: u8 = 24;
+        let named = u8::try_from(self.function.params).unwrap_or(u8::MAX);
+        for i in 0..VA_COUNT {
+            self.generated.push(ir::BodyStatement {
+                a: named.checked_add(i).map(ir::Name::Parameter),
+                b: Some(ir::Name::VaList(u32::from(i).saturating_mul(3))),
+                ..ir::BodyStatement::bare(Op::StoreV)
+            });
+        }
+    }
+
     /// The point of the next statement, in the layout and among the generated statements.
     fn here(&self) -> Mark {
         self.layout.mark(self.next_made())
