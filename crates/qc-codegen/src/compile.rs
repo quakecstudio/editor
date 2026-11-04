@@ -97,7 +97,7 @@ pub(crate) struct Compiler<'a> {
     body_start: Option<usize>,
     /// The syntax of the body being written from the semantic model, whose declarations a name
     /// or an effect of the model refers the writer to.
-    writing: Option<ast::FunctionBody>,
+    writing: Option<std::rc::Rc<body::BodySyntax>>,
     /// The end of the last `local` declaration's globals, `locals_end` (QC-21.4).
     locals_end: u32,
     /// The dialect the files are read in, whose lexer reads each literal and builtin number.
@@ -647,18 +647,12 @@ impl<'a> Compiler<'a> {
                 self.body_first = self.program.statements.len();
                 self.body_return = Some(ValueType::Of(function_type.ret.clone()));
                 self.ret_local = None;
-                // A body the semantic model followed in full is written from its
-                // generated statements, the intermediate layer's whole body; any other is
-                // walked.
-                let written = match self.typed_body() {
-                    Some(typed) => self.write_body(typed, body, span)?,
-                    None => false,
-                };
-                // Every body is written from the semantic model; one it did not follow is no
-                // body this compiler lowers.
-                if !written {
-                    return Err(Abort::Internal(Internal::Unlowered, span));
-                }
+                // Every body is written from its generated statements, the intermediate
+                // layer's whole body; one the semantic model did not check is not lowered.
+                let typed = self
+                    .typed_body()
+                    .ok_or(Abort::Internal(Internal::Unfollowed, span))?;
+                self.write_body(typed, body, span)?;
                 code
             }
         };

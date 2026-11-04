@@ -1044,12 +1044,13 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
   FTEQCC refuses a wrapper that does not call `prior` ("Wrapper function ... does not refer to
   its prior function"). An emptied function that returns a value returns nothing, which FTEQCC
   warns of (Q206) and both compilers compile.
-- **DIFF-15.2** The functions kept for a function `f` are `f` and every function it calls by
-  name, through any depth of calls: the calls of a function are read from the codebase's progs
-  compiled by the pinned FTEQCC, the function whose index is held by the global each `CALL0` to
-  `CALL8` of its body calls; a call through a variable or a field, whose global holds no
-  function, keeps none, so the function such a call reaches is emptied in the cut and called
-  empty.
+- **DIFF-15.2** The functions kept for a function `f` are `f`, `worldspawn`, and every function
+  either calls by name, through any depth of calls (`worldspawn`'s precaches are what the
+  world's setup needs, or the mock refuses its `setmodel` and `sound` and no call is made): the
+  calls of a function are read from the codebase's progs compiled by the pinned FTEQCC, the
+  function whose index is held by the global each `CALL0` to `CALL8` of its body calls; a call
+  through a variable or a field, whose global holds no function, keeps none, so the function
+  such a call reaches is emptied in the cut and called empty.
 - **DIFF-15.3** Each cut program is compiled in a copy of the codebase's directory by the fixed
   FTEQCC (DIFF-14.12) and the pinned FTEQCC with the arguments the codebase is compiled with
   (DIFF-12.30, DIFF-12.18), and by `qc-codegen` in the FTEQCC dialect. A cut either FTEQCC
@@ -1059,9 +1060,10 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
 - **DIFF-15.4** The `compiler-diff` binary's `--function-pairs <file> --executed <file>` reads
   lines of the function, the pinned FTEQCC's progs, ours and the fixed FTEQCC's, and calls only
   that function, in `FUNCTION_ROUNDS` (256) rounds, twice DIFF-12.29's nightly 128, with
-  DIFF-12.16's further batches, from the world of the first scenario of DIFF-12.20 alone,
-  comparing the calls as DIFF-12.3 and DIFF-12.11 say and a divergence the fixed FTEQCC agrees
-  with as DIFF-14.5 says. The xtask passes the cut programs 64 at a time.
+  DIFF-12.16's further batches, from the world of each scenario of DIFF-12.20, as a
+  whole-codebase run calls every function, comparing the calls as DIFF-12.3 and DIFF-12.11 say
+  and a divergence the fixed FTEQCC agrees with as DIFF-14.5 says. The xtask passes the cut
+  programs 64 at a time.
 - **DIFF-15.5** Each run adds the statements of the pinned FTEQCC's progs its calls and its
   world's setup executed to the `--executed` file as `<name>\t<offset>` lines: the function
   whose body holds the statement, a body running from its first statement to the next

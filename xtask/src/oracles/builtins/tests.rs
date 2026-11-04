@@ -1171,14 +1171,15 @@ fn check_passes_when_the_oracles_give_the_recording() {
             .any(|line| line == "fteqcc -Tid")
     );
     assert!(fake.seen.lock().unwrap().iter().any(|line| line == "qcc"));
-    // The oracles ran across the cores, each thread in a work directory of its own.
+    // The oracles ran across the cores, each thread in a work directory of its own; which
+    // threads took a case is the scheduler's choice, so only that some did is checked.
     let work = repo.join("work").join("builtins");
-    assert!(work.join("thread0").join("progs.src").is_file());
-    assert!(
-        !work
-            .join(format!("thread{}", threads().get().min(recorded.len())))
-            .exists()
-    );
+    let used = threads().get().min(recorded.len());
+    assert!((0..used).any(|thread| {
+        let dir = work.join(format!("thread{thread}"));
+        dir.join("progs.src").is_file() || dir.join("project").join("progs.src").is_file()
+    }));
+    assert!(!work.join(format!("thread{used}")).exists());
     assert!(!work.join("progs.src").exists());
 }
 

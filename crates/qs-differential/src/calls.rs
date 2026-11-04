@@ -339,6 +339,23 @@ pub fn run_codebase(
     profile: EngineProfile,
     progress: &Progress<'_>,
 ) -> Result<CodebaseReport, CallsError> {
+    run_scenarios(
+        oracle,
+        (theirs, ours),
+        (rounds, profile),
+        Called::Every,
+        progress,
+    )
+}
+
+/// [`run_codebase`] of the functions `called` names.
+fn run_scenarios(
+    oracle: Oracle,
+    (theirs, ours): (&[u8], &[u8]),
+    (rounds, profile): (u32, EngineProfile),
+    called: Called<'_>,
+    progress: &Progress<'_>,
+) -> Result<CodebaseReport, CallsError> {
     let mut worlds = Vec::new();
     for spec in scenarios("") {
         let text = format!("progs progs.dat\n{}", spec.directives);
@@ -360,7 +377,7 @@ pub fn run_codebase(
                         ours,
                         (scenario, entities),
                         (rounds, profile),
-                        Called::Every,
+                        called,
                         &report,
                     )
                 });
@@ -392,8 +409,8 @@ pub fn run_codebase(
 }
 
 /// The function of a per-function run (DIFF-15.4), named `function`, called in `rounds` rounds
-/// from the world of the first scenario of [`crate::runner::scenarios`] alone, in `theirs` and
-/// `ours` as [`run_codebase`] calls every function; its report holds that one scenario.
+/// from the world of each scenario of [`crate::runner::scenarios`], in `theirs` and `ours` as
+/// [`run_codebase`] calls every function.
 ///
 /// # Errors
 ///
@@ -406,28 +423,13 @@ pub fn run_function(
     profile: EngineProfile,
     function: &[u8],
 ) -> Result<CodebaseReport, CallsError> {
-    let spec = scenarios("")
-        .into_iter()
-        .next()
-        .ok_or_else(|| CallsError::Scenario("no scenario".to_owned()))?;
-    let text = format!("progs progs.dat\n{}", spec.directives);
-    let scenario = scenario::read(text.as_bytes(), Path::new("."))
-        .map_err(|e| CallsError::Scenario(format!("{}: {e}", spec.name)))?;
-    let entities = spec.entities.unwrap_or_default();
-    let report = run_calls_reporting(
+    run_scenarios(
         oracle,
-        theirs,
-        ours,
-        (&scenario, &entities),
+        (theirs, ours),
         (rounds, profile),
         Called::Only(function),
-        &|_, _| {},
-    )?;
-    Ok(CodebaseReport {
-        executed: report.executed.clone(),
-        total_statements: report.total_statements,
-        scenarios: vec![(spec.name, report)],
-    })
+        &|_, _, _| {},
+    )
 }
 
 /// The functions a run calls.

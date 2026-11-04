@@ -5,7 +5,8 @@
 //! statement the body declares it at, each value a statement makes given a slot of its own by
 //! the allocation pass, in the order the statements make them (QC-21.5), and each name
 //! resolved to its global. A body the semantic model did not follow in full, or that names
-//! something the writer cannot resolve, is left to the syntax walk.
+//! something the writer cannot resolve, is an internal error: there is no other way to lower
+//! it.
 
 use qc_diag::Span;
 use qc_progs::opcode::Opcode;
@@ -13,6 +14,9 @@ use qc_sema::ir::{BodyStatement, Effect, Name};
 use qc_sema::lower::{Qualifier, declares};
 use qc_sema::{DefId, FileId, TypedBody};
 use qc_syntax::ast::{self, AstNode as _};
+
+use std::collections::HashMap;
+use std::rc::Rc;
 
 use super::allocate::CreationOrder;
 use super::{At, Compiler, Lowered, Written, literal_of};
@@ -22,24 +26,31 @@ use crate::program::{Literal, OFS_RETURN, operand, type_words};
 
 impl Compiler<'_> {
     /// Writes `body`'s statements as the code of the function being compiled, `named` the span
-    /// of its name, the origin of the statements before its first source statement. Whether it
-    /// wrote them: a body [`writable`] refuses is left to the syntax walk.
+    /// of its name, the origin of the statements before its first source statement.
+    ///
+    /// [`Internal::Unfollowed`] for a body [`writable`] refuses, and
+    /// [`Internal::DefaultUnknown`] for one whose calls pass a default the semantic model did
+    /// not know of.
     pub(super) fn write_body(
         &mut self,
         body: &TypedBody,
         syntax: &ast::FunctionBody,
         named: Span,
-    ) -> Lowered<bool> {
+    ) -> Lowered<()> {
         // A bare `return` names the `ret*` local under FTEQCC (FTE-18.10); id's `qcc` writes
         // `RETURN` of nothing whatever the function returns (QC-13.8).
         let ret_local = self.returns_value() && self.dialect.has_fteqcc_extensions();
-        if !writable(body, ret_local) || !self.defaults_kept(body) {
-            return Ok(false);
+        if !writable(body, ret_local) {
+            return Err(Internal::Unfollowed).at(named);
         }
-        self.writing = Some(syntax.clone());
-        let written = self.write_statements(body, syntax, named);
+        if !self.defaults_kept(body) {
+            return Err(Internal::DefaultUnknown).at(named);
+        }
+        let syntax = Rc::new(BodySyntax::of(syntax));
+        self.writing = Some(Rc::clone(&syntax));
+        let written = self.write_statements(body, &syntax, named);
         self.writing = None;
-        written.map(|()| true)
+        written
     }
 
     /// The statements of `body`, whose syntax is `syntax`, written in turn with what the body
@@ -47,7 +58,7 @@ impl Compiler<'_> {
     fn write_statements(
         &mut self,
         body: &TypedBody,
-        syntax: &ast::FunctionBody,
+        syntax: &BodySyntax,
         named: Span,
     ) -> Lowered<()> {
         let generated = body.generated();
@@ -64,26 +75,12 @@ impl Compiler<'_> {
             while let Some(&&(at, effect)) = effects.peek()
                 && at <= index
             {
-                match effect {
-                    // A block taken before its words are written, the value of this statement.
-                    Effect::Block(words) => {
-                        slots.block(&mut self.program, index, words).at(named)?;
-                    }
-                    Effect::ForBegin => loops.push(self.array_functions.len()),
-                    // FTEF-19.78: the local arrays' functions the loop made are forgotten.
-                    Effect::ForEnd => {
-                        let mark = loops.pop().unwrap_or(self.array_functions.len());
-                        self.forget_local_array_functions(mark);
-                    }
-                    Effect::Constant(local) => self.constant_local(syntax, local, named)?,
-                    Effect::Autocvar(cvar) => self.autocvar_default(syntax, cvar, named)?,
-                    Effect::Nested(Name::Def(local, _)) => {
-                        self.nested_local(syntax, local, named)?;
-                    }
-                    Effect::Make(_) | Effect::Temp(_) | Effect::Nested(_) => {
-                        self.effect(effect, index, (body, &slots), named)?;
-                    }
-                }
+                self.effect(
+                    effect,
+                    index,
+                    (body, &mut slots, &mut loops),
+                    (syntax, named),
+                )?;
                 effects.next();
             }
             let at = usize::try_from(index)
@@ -128,21 +125,7 @@ impl Compiler<'_> {
             .map_err(|_| Internal::TooLarge)
             .at(named)?;
         for &(_, effect) in effects {
-            match effect {
-                Effect::ForBegin => loops.push(self.array_functions.len()),
-                Effect::ForEnd => {
-                    let mark = loops.pop().unwrap_or(self.array_functions.len());
-                    self.forget_local_array_functions(mark);
-                }
-                Effect::Constant(local) => self.constant_local(syntax, local, named)?,
-                Effect::Autocvar(cvar) => self.autocvar_default(syntax, cvar, named)?,
-                Effect::Nested(Name::Def(local, _)) => {
-                    self.nested_local(syntax, local, named)?;
-                }
-                Effect::Make(_) | Effect::Temp(_) | Effect::Block(_) | Effect::Nested(_) => {
-                    self.effect(effect, end, (body, &slots), named)?;
-                }
-            }
+            self.effect(effect, end, (body, &mut slots, &mut loops), (syntax, named))?;
         }
         Ok(())
     }
@@ -175,21 +158,12 @@ impl Compiler<'_> {
     /// it each time the function runs, else a `static` local's value, set now.
     fn nested_local(
         &mut self,
-        syntax: &ast::FunctionBody,
+        syntax: &BodySyntax,
         local: DefId,
         span: Span,
     ) -> Lowered<Option<usize>> {
         let at = self.index.def(local).at(span)?.location.span.start;
-        let declarator = syntax
-            .syntax()
-            .descendants()
-            .filter_map(ast::Declarator::cast)
-            .find(|declarator| {
-                declarator
-                    .name()
-                    .is_some_and(|name| name.span().start == at)
-            })
-            .at(span)?;
+        let declarator = syntax.declarators.get(&at).cloned().at(span)?;
         let name = declarator.name().at(span)?;
         let decl = declarator
             .syntax()
@@ -221,15 +195,17 @@ impl Compiler<'_> {
         Ok(Some(constant))
     }
 
-    /// Makes what `effect` makes without a statement reading it (`TypedBody::effects`): a
-    /// local declared, after which the locals end, a definition, immediate or array function,
-    /// or a temporary a dropped statement took.
+    /// Makes what `effect`, before the statement at `index` of `body`, makes without a statement
+    /// reading it (`TypedBody::effects`): a local declared, after which the locals end, a
+    /// definition, immediate or array function, a temporary a dropped statement took, a block
+    /// taken before its words are written, a `for` loop's bounds, or a local's or a cvar's value
+    /// set from the body `syntax`.
     fn effect(
         &mut self,
         effect: Effect,
         index: u32,
-        made: (&TypedBody, &CreationOrder),
-        span: Span,
+        (body, slots, loops): (&TypedBody, &mut CreationOrder, &mut Vec<usize>),
+        (syntax, span): (&BodySyntax, Span),
     ) -> Lowered<()> {
         let name = match effect {
             Effect::Make(name) => name,
@@ -237,20 +213,27 @@ impl Compiler<'_> {
                 self.program.allocate(words).at(span)?;
                 return Ok(());
             }
-            // A block whose statements were dropped is still taken (QC-21.5).
-            Effect::Block(words) => {
-                self.program.allocate(words).at(span)?;
+            // A block taken before its words are written, the value of this statement; one
+            // whose statements were dropped is still taken (QC-21.5).
+            Effect::Block(words) => return slots.block(&mut self.program, index, words).at(span),
+            Effect::ForBegin => {
+                loops.push(self.array_functions.len());
                 return Ok(());
             }
-            Effect::ForBegin
-            | Effect::ForEnd
-            | Effect::Constant(_)
-            | Effect::Autocvar(_)
-            | Effect::Nested(_) => {
+            // FTEF-19.78: the local arrays' functions the loop made are forgotten.
+            Effect::ForEnd => {
+                let mark = loops.pop().unwrap_or(self.array_functions.len());
+                self.forget_local_array_functions(mark);
                 return Ok(());
             }
+            Effect::Constant(local) => return self.constant_local(syntax, local, span),
+            Effect::Autocvar(cvar) => return self.autocvar_default(syntax, cvar, span),
+            Effect::Nested(Name::Def(local, _)) => {
+                return self.nested_local(syntax, local, span).map(|_| ());
+            }
+            Effect::Nested(_) => return Ok(()),
         };
-        self.resolve(name, index, made, span)?;
+        self.resolve(name, index, (body, slots), span)?;
         if let Name::Def(id, _) = name
             && self.index.def(id).is_some_and(|d| d.owner.is_some())
         {
@@ -262,26 +245,15 @@ impl Compiler<'_> {
     /// FTEF-32.13, QC-11.10: the local `local` of the body `syntax` holds its initialiser's
     /// words at compile time, as a global does: a constant's aggregate, or under id's `qcc` any
     /// local's literal.
-    fn constant_local(
-        &mut self,
-        syntax: &ast::FunctionBody,
-        local: Name,
-        span: Span,
-    ) -> Lowered<()> {
+    fn constant_local(&mut self, syntax: &BodySyntax, local: Name, span: Span) -> Lowered<()> {
         let Name::Def(id, _) = local else {
             return Err(Internal::Unlowered).at(span);
         };
         let at = self.index.def(id).at(span)?.location.span.start;
         let initializer = syntax
-            .syntax()
-            .descendants()
-            .filter_map(ast::Declarator::cast)
-            .find(|declarator| {
-                declarator
-                    .name()
-                    .is_some_and(|name| name.span().start == at)
-            })
-            .and_then(|declarator| declarator.initializer())
+            .declarators
+            .get(&at)
+            .and_then(ast::Declarator::initializer)
             .at(span)?;
         let place = self.program.get_def(self.index, id).at(span)?;
         let aggregate = match initializer {
@@ -303,13 +275,10 @@ impl Compiler<'_> {
     }
 
     /// FTEF-32.12: the `autocvar_NAME` global `cvar` that an `autocvar(NAME, default)` call of the
-    /// body `syntax` reads holds the call's default when nothing initialised it before.
-    fn autocvar_default(
-        &mut self,
-        syntax: &ast::FunctionBody,
-        cvar: Name,
-        span: Span,
-    ) -> Lowered<()> {
+    /// body `syntax` reads holds the call's default when nothing initialised it before. Which of
+    /// the body's calls of `NAME` gives it does not matter: a call whose default differs from
+    /// the value the cvar already has is an error (QCD-4.69).
+    fn autocvar_default(&mut self, syntax: &BodySyntax, cvar: Name, span: Span) -> Lowered<()> {
         let Name::Def(id, _) = cvar else {
             return Err(Internal::Unlowered).at(span);
         };
@@ -320,21 +289,7 @@ impl Compiler<'_> {
         }
         let ty = def.ty.clone();
         let name = def.name.strip_prefix("autocvar_").at(span)?.to_owned();
-        let default = syntax
-            .syntax()
-            .descendants()
-            .filter_map(ast::CallExpr::cast)
-            .filter(|call| {
-                matches!(call.callee(), Some(ast::Expr::Name(callee))
-                    if callee.name().is_some_and(|t| t.text_lossless() == "autocvar"))
-            })
-            .filter_map(|call| call.args().map(|args| args.args().collect::<Vec<_>>()))
-            .find(|args| {
-                matches!(args.first(), Some(ast::Expr::Name(first))
-                    if first.name().is_some_and(|t| t.text_lossless() == name))
-            })
-            .and_then(|args| args.get(1).cloned())
-            .at(span)?;
+        let default = syntax.autocvars.get(&name).cloned().at(span)?;
         let words = self.value_words(&ty, &default)?;
         self.program.initialise_words(place, &words).at(span)?;
         Ok(())
@@ -565,6 +520,48 @@ fn is_call(op: Opcode) -> bool {
 /// Whether `statement` is a `RETURN` of nothing in a function that `returns_value`.
 fn bare_return(statement: &BodyStatement, returns_value: bool) -> bool {
     statement.op == qc_preproc::Op::Return && statement.a.is_none() && returns_value
+}
+
+/// What the writer looks up in a body's syntax, read in one pass over it: each declarator by
+/// where its name starts, and the default of the first `autocvar(NAME, default)` call of each
+/// `NAME`.
+pub(super) struct BodySyntax {
+    declarators: HashMap<usize, ast::Declarator>,
+    autocvars: HashMap<String, ast::Expr>,
+}
+
+impl BodySyntax {
+    /// The declarators and `autocvar` defaults of `body`, nested functions' included.
+    fn of(body: &ast::FunctionBody) -> Self {
+        let mut declarators = HashMap::new();
+        let mut autocvars = HashMap::new();
+        for node in body.syntax().descendants() {
+            if let Some(declarator) = ast::Declarator::cast(node.clone()) {
+                if let Some(name) = declarator.name() {
+                    declarators.entry(name.span().start).or_insert(declarator);
+                }
+                continue;
+            }
+            let Some(call) = ast::CallExpr::cast(node) else {
+                continue;
+            };
+            let is_autocvar = matches!(call.callee(), Some(ast::Expr::Name(callee))
+                if callee.name().is_some_and(|t| t.text_lossless() == "autocvar"));
+            let args: Vec<ast::Expr> = call.args().map(|a| a.args().collect()).unwrap_or_default();
+            if let (true, Some(ast::Expr::Name(first)), Some(default)) =
+                (is_autocvar, args.first(), args.get(1))
+                && let Some(token) = first.name()
+            {
+                autocvars
+                    .entry(token.text_lossless())
+                    .or_insert_with(|| default.clone());
+            }
+        }
+        Self {
+            declarators,
+            autocvars,
+        }
+    }
 }
 
 #[cfg(test)]
