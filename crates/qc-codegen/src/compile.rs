@@ -38,6 +38,7 @@ use crate::program::{
     self, Literal, OFS_PARM0, OFS_RETURN, Program, ValueType, operand, type_words,
 };
 
+mod allocate;
 mod arrays;
 
 /// Why a declaration's code stopped: an error in the program, which abandons the declaration
@@ -2866,16 +2867,10 @@ impl<'a> Compiler<'a> {
         for immediate in &fragment.immediates {
             self.immediate_place(*immediate, span)?;
         }
-        let mut temps: Vec<Option<(u32, Etype)>> = vec![None; fragment.temps.len()];
+        let temps = allocate::creation_order(fragment, rows, &mut self.program).at(span)?;
         for (index, (statement, row)) in fragment.statements.iter().zip(rows).enumerate() {
             let index =
                 u16::try_from(index).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
-            for (temp, kind) in fragment.temps.iter().enumerate() {
-                if *kind == ir::Temp::Vector(index) {
-                    let ofs = self.program.allocate(3).at(span)?;
-                    *temps.get_mut(temp).at(span)? = Some((ofs, Etype::Vector));
-                }
-            }
             let a = self.fragment_operand(statement.a, left, right, &temps, span)?;
             let b = self.fragment_operand(statement.b, left, right, &temps, span)?;
             let row = match *row {
@@ -2895,16 +2890,16 @@ impl<'a> Compiler<'a> {
             };
             match statement.c {
                 ir::Destination::Value => {
-                    let ofs = self.program.emit_result(row.opcode, a, b, row.c).at(span)?;
                     let made = fragment
                         .temps
                         .iter()
                         .position(|kind| *kind == ir::Temp::Made(index))
                         .at(span)?;
-                    *temps.get_mut(made).at(span)? = Some((ofs, row.c));
+                    let (c, _) = temps.get(made).copied().at(span)?;
+                    self.program.emit_into(row.opcode, a, b, c).at(span)?;
                 }
                 ir::Destination::Word(temp, word) => {
-                    let (ofs, _) = temps.get(temp.index()).copied().flatten().at(span)?;
+                    let (ofs, _) = temps.get(temp.index()).copied().at(span)?;
                     let c = ofs.checked_add(u32::from(word)).at(span)?;
                     self.program.emit_into(row.opcode, a, b, c).at(span)?;
                 }
@@ -2930,7 +2925,7 @@ impl<'a> Compiler<'a> {
         }
         match fragment.value {
             Some(ir::Operand::Temp(n)) => {
-                let (ofs, etype) = temps.get(n.index()).copied().flatten().at(span)?;
+                let (ofs, etype) = temps.get(n.index()).copied().at(span)?;
                 Ok(Value {
                     ofs,
                     kind: ValueKind::Temp(ValueType::simple(etype)),
@@ -2979,7 +2974,7 @@ impl<'a> Compiler<'a> {
         operand: Option<ir::Operand>,
         left: &Value,
         right: &Value,
-        temps: &[Option<(u32, Etype)>],
+        temps: &[allocate::Slot],
         span: Span,
     ) -> Lowered<u32> {
         let (whole, word) = match operand {
@@ -3002,7 +2997,7 @@ impl<'a> Compiler<'a> {
         let base = match whole {
             ir::Whole::Input(ir::Input::Left) => self.operand_of(left),
             ir::Whole::Input(ir::Input::Right) => self.operand_of(right),
-            ir::Whole::Temp(n) => temps.get(n.index()).copied().flatten().at(span)?.0,
+            ir::Whole::Temp(n) => temps.get(n.index()).copied().at(span)?.0,
             ir::Whole::Immediate(immediate) => {
                 let place = self.immediate_place(immediate, span)?;
                 self.program.def(place).at(span)?.ofs
