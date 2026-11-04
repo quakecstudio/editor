@@ -2,7 +2,8 @@
 
 #![expect(
     clippy::unwrap_used,
-    reason = "test code: a failed unwrap is a failed test"
+    clippy::panic,
+    reason = "test code: a failed unwrap or match is a failed test"
 )]
 
 use std::path::{Path, PathBuf};
@@ -10,7 +11,7 @@ use std::path::{Path, PathBuf};
 use qs_workbench::FsLoader;
 use serde_json::Value;
 
-use super::{Exit, Open, Request, parse, run};
+use super::{Exit, Open, Refused, Request, parse, run};
 
 fn args(list: &[&str]) -> Vec<String> {
     list.iter().map(|s| (*s).to_owned()).collect()
@@ -112,26 +113,63 @@ fn each_command_line_is_read() {
 #[test]
 fn a_wrong_command_line_is_refused() {
     for (list, says) in [
-        (&[][..], "no command given"),
-        (&["frobnicate"][..], "unknown command"),
-        (&["build", "a", "b"][..], "at most 1"),
-        (&["build", "--project", "p"][..], "not --project"),
-        (&["build", "--dialect"][..], "needs a value"),
-        (&["build", "--dialect", "gmqcc"][..], "vanilla or fteqcc"),
-        (&["check", "--fast"][..], "unknown option"),
-        (&["run"][..], "needs a command id"),
-        (&["run", "a.b", "{"][..], "not JSON"),
-        (&["run", "a.b", "{}", "c"][..], "at most 2"),
-        (&["commands", "x"][..], "at most 0"),
-        (&["commands", "--dialect", "fteqcc"][..], "no options"),
+        (&[][..], "Usage: quakec-ide <COMMAND>"),
+        (&["frobnicate"][..], "unrecognized subcommand 'frobnicate'"),
+        (&["build", "a", "b"][..], "unexpected argument 'b'"),
+        (
+            &["build", "--project", "p"][..],
+            "unexpected argument '--project'",
+        ),
+        (
+            &["build", "--dialect"][..],
+            "a value is required for '--dialect",
+        ),
+        (
+            &["build", "--dialect", "gmqcc"][..],
+            "invalid value 'gmqcc'",
+        ),
+        (&["check", "--fast"][..], "unexpected argument '--fast'"),
+        (
+            &["run"][..],
+            "the following required arguments were not provided",
+        ),
+        (&["run", "a.b", "{"][..], "the parameters are not JSON"),
+        (&["run", "a.b", "{}", "c"][..], "unexpected argument 'c'"),
+        (
+            &["run", "a.b", "--dialect", "fteqcc"][..],
+            "--project <PROJECT>",
+        ),
+        (&["commands", "x"][..], "unexpected argument 'x'"),
+        (
+            &["commands", "--dialect", "fteqcc"][..],
+            "unexpected argument '--dialect'",
+        ),
     ] {
-        let error = parse(&args(list)).unwrap_err();
+        let Err(Refused::Wrong(error)) = parse(&args(list)) else {
+            panic!("{list:?} was not refused");
+        };
         assert!(error.contains(says), "{list:?}: {error}");
         let (exit, out, err) = cli(list);
         assert_eq!(exit, Exit::Failure);
         assert!(out.is_empty());
-        assert!(err.contains("usage: quakec-ide build"), "{err}");
+        assert!(err.contains(says), "{err}");
     }
+}
+
+#[test]
+fn help_and_version_are_printed_and_succeed() {
+    let (exit, out, err) = cli(&["--help"]);
+    assert_eq!(exit, Exit::Success);
+    assert!(err.is_empty());
+    for subcommand in ["build", "check", "run", "commands"] {
+        assert!(out.contains(subcommand), "{out}");
+    }
+    let (exit, out, _) = cli(&["build", "--help"]);
+    assert_eq!(exit, Exit::Success);
+    assert!(out.contains("--dialect <DIALECT>"), "{out}");
+    let (exit, out, _) = cli(&["--version"]);
+    assert_eq!(exit, Exit::Success);
+    assert_eq!(out, format!("quakec-ide {}\n", env!("CARGO_PKG_VERSION")));
 }
 
 #[test]

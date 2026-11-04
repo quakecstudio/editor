@@ -6,7 +6,9 @@ any command of the IDE by its id. The binary is `quakec-ide`
 
 - **Layer:** apps. It depends on `qs-commands` and `qs-workbench` (L5): every subcommand runs
   a command of the registry the window, the palette and the agent use (PRIN-3), so the
-  command line does nothing the IDE does not.
+  command line does nothing the IDE does not. It reads its arguments with `clap`, which also
+  prints `--help`, each subcommand's help and `--version`, and says what is wrong with a
+  command line.
 - **Spec sections:** none of `docs/spec/`; the build is `qs-workbench`'s `project.build`
   (PRJ-3.2, LNO-1.4).
 - **Shipped:** yes.
@@ -16,7 +18,7 @@ any command of the IDE by its id. The binary is `quakec-ide`
 ```text
 quakec-ide build [<project>] [--dialect <vanilla|fteqcc>]
 quakec-ide check [<project>] [--dialect <vanilla|fteqcc>]
-quakec-ide run <command> [<json>] [--project <project>] [--dialect <vanilla|fteqcc>]
+quakec-ide run <command> [<json>] [--project <project> [--dialect <vanilla|fteqcc>]]
 quakec-ide commands
 ```
 

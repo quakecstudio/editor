@@ -8,7 +8,7 @@
 //! ```text
 //! quakec-ide build [<project>] [--dialect <vanilla|fteqcc>]
 //! quakec-ide check [<project>] [--dialect <vanilla|fteqcc>]
-//! quakec-ide run <command> [<json>] [--project <project>] [--dialect <vanilla|fteqcc>]
+//! quakec-ide run <command> [<json>] [--project <project> [--dialect <vanilla|fteqcc>]]
 //! quakec-ide commands
 //! ```
 //!
@@ -18,10 +18,14 @@
 //! object `<json>` as its parameters (`{}` when absent), after opening `--project` when given,
 //! and prints what it returned as JSON. `commands` lists every command (`commands.list`). The
 //! project is the current directory when none is named; `--dialect` reads a project with no
-//! `quakec.toml` in that dialect (PRJ-2.8), vanilla otherwise.
+//! `quakec.toml` in that dialect (PRJ-2.8), vanilla otherwise. The arguments are read with
+//! clap, which prints `--help` and `--version` and says what is wrong with a command line.
 
 use std::io::Write;
 use std::path::PathBuf;
+
+use clap::error::ErrorKind;
+use clap::{Parser, Subcommand, ValueEnum};
 
 use qs_commands::{CommandError, Registry, Session};
 use qs_workbench::{
@@ -54,11 +58,72 @@ impl Exit {
     }
 }
 
-const USAGE: &str = "usage: quakec-ide build [<project>] [--dialect <vanilla|fteqcc>]\n       \
-                     quakec-ide check [<project>] [--dialect <vanilla|fteqcc>]\n       \
-                     quakec-ide run <command> [<json>] [--project <project>] \
-                     [--dialect <vanilla|fteqcc>]\n       \
-                     quakec-ide commands";
+/// The command line as clap reads it.
+#[derive(Debug, Parser)]
+#[command(
+    name = "quakec-ide",
+    version,
+    about = "QuakeC Studio's command line: build and check a QuakeC project, and run any \
+             command of the IDE by its id"
+)]
+struct Args {
+    #[command(subcommand)]
+    verb: Verb,
+}
+
+/// The subcommands.
+#[derive(Debug, Subcommand)]
+enum Verb {
+    /// Compile each module of a project and write its progs.dat and .lno.
+    Build(ProjectArgs),
+    /// List every error and warning of a project.
+    Check(ProjectArgs),
+    /// Run any command by its id with JSON parameters, and print what it returns as JSON.
+    Run {
+        /// The command's id, as `quakec-ide commands` lists it.
+        command: String,
+        /// The parameters, a JSON object; `{}` when absent.
+        params: Option<String>,
+        /// A project to open first.
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// The dialect a project with no quakec.toml is read in.
+        #[arg(long, value_enum, requires = "project")]
+        dialect: Option<DialectArg>,
+    },
+    /// List every command with its id, summary and parameter schema, as JSON.
+    Commands,
+}
+
+/// The project a subcommand opens.
+#[derive(Debug, clap::Args)]
+struct ProjectArgs {
+    /// The project directory: the one holding quakec.toml, or progs.src and csprogs.src.
+    #[arg(default_value = ".")]
+    project: PathBuf,
+    /// The dialect a project with no quakec.toml is read in; vanilla otherwise.
+    #[arg(long, value_enum)]
+    dialect: Option<DialectArg>,
+}
+
+/// The dialects `--dialect` names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum DialectArg {
+    /// id's QuakeC.
+    Vanilla,
+    /// FTEQCC's QuakeC.
+    Fteqcc,
+}
+
+impl DialectArg {
+    /// The project dialect it names.
+    const fn dialect(self) -> Dialect {
+        match self {
+            Self::Vanilla => Dialect::Vanilla,
+            Self::Fteqcc => Dialect::Fteqcc,
+        }
+    }
+}
 
 /// What the command line asks for.
 #[derive(Clone, Debug, PartialEq)]
@@ -108,9 +173,13 @@ pub fn run<L: Loader + 'static>(
 ) -> Exit {
     let request = match parse(args) {
         Ok(request) => request,
-        Err(problem) => {
-            // Nothing more can be told when the error output itself fails.
-            writeln!(err, "quakec-ide: {problem}\n{USAGE}").unwrap_or(());
+        Err(Refused::Shown(text)) => {
+            // Nothing more can be told when the output itself fails.
+            write!(out, "{text}").unwrap_or(());
+            return Exit::Success;
+        }
+        Err(Refused::Wrong(text)) => {
+            write!(err, "{text}").unwrap_or(());
             return Exit::Failure;
         }
     };
@@ -290,83 +359,55 @@ fn print_problems(out: &mut impl Write, problems: &[Reported]) -> Result<(), Sto
     Ok(())
 }
 
-/// The request `args` make.
-fn parse(args: &[String]) -> Result<Request, String> {
-    let Some((verb, rest)) = args.split_first() else {
-        return Err("no command given".to_owned());
-    };
-    let mut positional = Vec::new();
-    let mut dialect = None;
-    let mut project = None;
-    let mut rest = rest.iter();
-    while let Some(arg) = rest.next() {
-        let mut value = || rest.next().ok_or_else(|| format!("{arg} needs a value"));
-        match arg.as_str() {
-            "--dialect" => {
-                dialect = Some(match value()?.as_str() {
-                    "vanilla" => Dialect::Vanilla,
-                    "fteqcc" => Dialect::Fteqcc,
-                    other => {
-                        return Err(format!("--dialect takes vanilla or fteqcc, not {other:?}"));
-                    }
-                });
-            }
-            "--project" => project = Some(PathBuf::from(value()?)),
-            flag if flag.starts_with("--") => return Err(format!("unknown option {flag:?}")),
-            _ => positional.push(arg.as_str()),
+/// Why the command line ran no request.
+#[derive(Debug, PartialEq, Eq)]
+enum Refused {
+    /// It asked for the help or the version, this text.
+    Shown(String),
+    /// It is wrong, as this text says, with the usage.
+    Wrong(String),
+}
+
+/// The request `args`, the arguments after the program's name, make.
+fn parse(args: &[String]) -> Result<Request, Refused> {
+    let program = std::iter::once("quakec-ide".to_owned());
+    let parsed = Args::try_parse_from(program.chain(args.iter().cloned())).map_err(|error| {
+        let text = error.render().to_string();
+        match error.kind() {
+            ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => Refused::Shown(text),
+            _ => Refused::Wrong(text),
         }
-    }
-    let open = |path: Option<PathBuf>| Open {
-        path: path.unwrap_or_else(|| PathBuf::from(".")),
-        dialect,
+    })?;
+    let open = |project: PathBuf, dialect: Option<DialectArg>| Open {
+        path: project,
+        dialect: dialect.map(DialectArg::dialect),
     };
-    let at_most = |count: usize| {
-        if positional.len() > count {
-            Err(format!("{verb} takes at most {count} arguments"))
-        } else {
-            Ok(())
-        }
-    };
-    match verb.as_str() {
-        "build" | "check" => {
-            at_most(1)?;
-            if project.is_some() {
-                return Err(format!(
-                    "{verb} takes the project as its argument, not --project"
-                ));
-            }
-            let open = open(positional.first().map(PathBuf::from));
-            Ok(if verb == "build" {
-                Request::Build(open)
-            } else {
-                Request::Check(open)
-            })
-        }
-        "run" => {
-            at_most(2)?;
-            let Some(command) = positional.first() else {
-                return Err("run needs a command id".to_owned());
-            };
-            let params = match positional.get(1) {
-                Some(text) => serde_json::from_str(text)
-                    .map_err(|e| format!("the parameters are not JSON: {e}"))?,
+    Ok(match parsed.verb {
+        Verb::Build(args) => Request::Build(open(args.project, args.dialect)),
+        Verb::Check(args) => Request::Check(open(args.project, args.dialect)),
+        Verb::Run {
+            command,
+            params,
+            project,
+            dialect,
+        } => {
+            let params = match params {
+                Some(text) => serde_json::from_str(&text).map_err(|e| {
+                    Refused::Wrong(format!(
+                        "error: the parameters are not JSON: {e}\n\nFor more information, try \
+                         'quakec-ide run --help'.\n"
+                    ))
+                })?,
                 None => json!({}),
             };
-            Ok(Request::Run {
-                command: (*command).to_owned(),
+            Request::Run {
+                command,
                 params,
-                project: project.map(|path| open(Some(path))),
-            })
-        }
-        "commands" => {
-            at_most(0)?;
-            if project.is_some() || dialect.is_some() {
-                return Err("commands takes no options".to_owned());
+                project: project.map(|path| open(path, dialect)),
             }
-            Ok(Request::Commands)
         }
-        other => Err(format!("unknown command {other:?}")),
-    }
+        Verb::Commands => Request::Commands,
+    })
 }
 
 #[cfg(test)]

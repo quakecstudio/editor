@@ -17,6 +17,7 @@ name = "quakec-ide"
 path = "src/main.rs"
 
 [dependencies]
+clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 qs-commands = { workspace = true }
 qs-workbench = { workspace = true }
 serde_json = { workspace = true, features = ["std"] }
