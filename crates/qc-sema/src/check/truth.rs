@@ -136,14 +136,17 @@ impl Checker<'_> {
             return Ok(());
         };
         let mut condition = self.name_of(value);
+        let mut flipped = false;
         match etype {
             Etype::String => {
                 let stop = if jump == Jump::If { "." } else { "" };
                 let message = format!("if (string) tests for null, not empty{stop}");
                 self.env.report(Code::W0245, span, message);
             }
+            // `OP_NOT_V`, then the other jump: `OP_IF_I` for `IFNOT`, `OP_IFNOT_I` for `IF`.
             Etype::Vector if self.env.flags_at(span.start).has(FteFlag::Ifvector) => {
                 condition = self.emit(Op::NotV, value, &Value::unknown(), span)?.name();
+                flipped = true;
             }
             Etype::Vector => {
                 let message =
@@ -181,7 +184,7 @@ impl Checker<'_> {
         // FTEF-34.16: an `IFNOT` of the temporary the statement before made by `NOT_F`,
         // `NOT_FNC` or `NOT_ENT` drops that statement and is an `IF` of its operand, a call's
         // value it read then live again.
-        self.branch_op = Some(if jump == Jump::If {
+        self.branch_op = Some(if (jump == Jump::If) != flipped {
             Op::IfI
         } else {
             Op::IfnotI

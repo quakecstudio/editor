@@ -1131,6 +1131,35 @@ fn a_generated_call_stores_its_defaults() {
     assert_eq!(statements[2].0, Op::Call2);
 }
 
+// FTEF-30.2: under `ifvector` a vector's test is `NOT_V` then the other jump: `if (v)`'s
+// `IFNOT` an `IF` of `!v`, and `if (!v)`'s `IF` an `IFNOT` of it
+#[test]
+fn a_generated_vector_test_flips_its_jump() {
+    use qc_preproc::Op;
+    let source = "#pragma flag enable ifvector\nvector v; float k; \
+        void() t = { if (v) k = 1; if (!v) k = 2; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let ops: Vec<_> = index.bodies[&t].generated().iter().map(|s| s.op).collect();
+    assert_eq!(
+        ops,
+        [
+            Op::NotV,
+            Op::IfI,
+            Op::StoreF,
+            Op::NotV,
+            Op::IfnotI,
+            Op::StoreF,
+            Op::Done
+        ]
+    );
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]
