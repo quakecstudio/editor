@@ -34,6 +34,8 @@ pub(super) struct Checker<'e> {
     pub(super) opcodes: HashMap<(usize, usize), Op>,
     /// The fragments lowered so far.
     pub(super) fragments: ir::Fragments,
+    /// Every statement the body generates, in order (`docs/design/back-end.md`).
+    pub(super) generated: Vec<Op>,
     /// The fragment of the binary operator being checked, if any.
     pub(super) fragment: Option<ir::Builder>,
     /// Whether the checker is in a condition of `if`, `while` or `do`, outside parentheses
@@ -89,6 +91,7 @@ impl<'e> Checker<'e> {
             types: HashMap::new(),
             opcodes: HashMap::new(),
             fragments: ir::Fragments::default(),
+            generated: Vec::new(),
             fragment: None,
             in_condition: false,
             addressed: HashSet::new(),
@@ -120,6 +123,7 @@ impl<'e> Checker<'e> {
             types: self.types,
             opcodes: self.opcodes,
             fragments: self.fragments,
+            generated: self.generated,
         }
     }
 

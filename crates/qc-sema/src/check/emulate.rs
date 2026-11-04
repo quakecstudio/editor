@@ -249,6 +249,7 @@ impl Checker<'_> {
     /// FTEF-34.9: the statement `op` generated, which at global scope (`!pr_scope`) is the error
     /// "Unable to generate statements at global scope (OPNAME).".
     pub(super) fn generate(&mut self, op: Op, span: Span) {
+        self.generated.push(op);
         if self.global {
             let message = format!(
                 "Unable to generate statements at global scope ({}).",

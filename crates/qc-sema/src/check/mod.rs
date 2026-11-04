@@ -695,6 +695,7 @@ pub struct TypedBody {
     types: HashMap<(usize, usize), Type>,
     opcodes: HashMap<(usize, usize), qc_preproc::Op>,
     fragments: ir::Fragments,
+    generated: Vec<qc_preproc::Op>,
 }
 
 impl TypedBody {
@@ -716,6 +717,13 @@ impl TypedBody {
     #[must_use]
     pub fn fragment_at(&self, span: Span) -> Option<&ir::Fragment> {
         self.fragments.at(span)
+    }
+
+    /// The opcodes of the statements the check generated for the body, in order: the model of
+    /// the whole body the intermediate layer is being built from (`docs/design/back-end.md`).
+    #[must_use]
+    pub fn generated(&self) -> &[qc_preproc::Op] {
+        &self.generated
     }
 }
 

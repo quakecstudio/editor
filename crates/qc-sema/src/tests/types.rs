@@ -848,3 +848,22 @@ fn a_vector_constructor_stores_its_components() {
     assert_eq!(fragment.temps, [Temp::Vector(0)]);
     assert_eq!(fragment.value, Some(Operand::Temp(TempId::new(0))));
 }
+
+// The checked body keeps the opcodes of the statements it generated, in order: the model of
+// the whole body the intermediate layer is built from (`docs/design/back-end.md`)
+#[test]
+fn a_checked_body_keeps_the_statements_it_generated() {
+    use qc_preproc::Op;
+    let source = "float a; vector v; void() t = { a = a + 1; v = v * a; a = !a; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    assert_eq!(
+        index.bodies[&t].generated(),
+        [Op::AddF, Op::MulVf, Op::NotF]
+    );
+}
