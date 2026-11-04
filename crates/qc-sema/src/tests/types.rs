@@ -1363,6 +1363,38 @@ fn a_generated_store_of_an_opaque_value_is_a_statement() {
     assert_eq!(generated[0].a, Some(Name::Def(def("fb"), 1)));
 }
 
+// FTEF-31.4, FTEF-31.3: `&e.f` is `ADDRESS` of the entity and the field, into which a store
+// to a pointer folds, and `*p = v` is `STOREP_*` of the value through the pointer
+#[test]
+fn a_generated_body_takes_a_fields_address_and_stores_through_it() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "entity world; .float sounds; float *cd; float k; \
+        void() t = { cd = &world.sounds; *cd = k; };";
+    let index = super::fte_index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let statements: Vec<_> = index.bodies[&def("t")]
+        .generated()
+        .iter()
+        .map(|s| (s.op, s.a, s.b, s.c))
+        .collect();
+    let named = |name| Some(Name::Def(def(name), 0));
+    assert_eq!(
+        statements[..2],
+        [
+            (Op::Address, named("world"), named("sounds"), named("cd")),
+            (Op::StorepF, named("k"), named("cd"), None),
+        ]
+    );
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]

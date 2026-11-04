@@ -226,7 +226,7 @@ impl Checker<'_> {
         match (etype, &operand.ty) {
             (Some(Etype::Pointer), Type::Pointer(pointee)) => Ok(Value {
                 readonly: false,
-                reference: Reference::pointer(operand.label(), None),
+                reference: Reference::dereferenced(operand.label(), self.name_of(&operand)),
                 name: operand.name,
                 ..Value::of(pointee.as_ref().clone())
             }),

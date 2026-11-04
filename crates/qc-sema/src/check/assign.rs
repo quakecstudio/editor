@@ -330,6 +330,9 @@ impl Checker<'_> {
             self.array_set(&lhs, &stored, &target);
         }
         self.field_store(&lhs, &stored, &target);
+        if matches!(kind, Assign::Store) {
+            self.pointer_store(&lhs, &stored, &target);
+        }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
         if lhs.readonly {
             let message = format!("Assignment to constant {}", lhs.label());
@@ -799,14 +802,7 @@ impl Checker<'_> {
         if self.global {
             return;
         }
-        let storep = match self.etype(target) {
-            Some(Etype::Vector) => Op::StorepV,
-            Some(Etype::String) => Op::StorepS,
-            Some(Etype::Entity) => Op::StorepEnt,
-            Some(Etype::Field) => Op::StorepFld,
-            Some(Etype::Function) => Op::StorepFnc,
-            _ => Op::StorepF,
-        };
+        let storep = self.storep_op(target);
         let address = u32::try_from(self.generated.len()).ok().map(ir::Name::Made);
         self.generated.push(ir::BodyStatement {
             a: self.copied(field.entity, field.entity_call),
@@ -817,6 +813,37 @@ impl Checker<'_> {
         self.generated.push(ir::BodyStatement {
             a: self.name_of(stored),
             b: address,
+            ..ir::BodyStatement::bare(storep)
+        });
+        self.read_returned(stored);
+        self.last_temp = None;
+    }
+
+    /// `STOREP_*` of a value of type `target`, by its basic type.
+    fn storep_op(&self, target: &Type) -> Op {
+        match self.etype(target) {
+            Some(Etype::Vector) => Op::StorepV,
+            Some(Etype::String) => Op::StorepS,
+            Some(Etype::Entity) => Op::StorepEnt,
+            Some(Etype::Field) => Op::StorepFld,
+            Some(Etype::Function) => Op::StorepFnc,
+            _ => Op::StorepF,
+        }
+    }
+
+    /// FTEF-31.3: the store of `stored` through the pointer `lhs`, `*p = v`, of type `target`:
+    /// `STOREP_*` of the value through the pointer.
+    fn pointer_store(&mut self, lhs: &Value, stored: &Value, target: &Type) {
+        let Reference::Pointer(pointer) = &lhs.reference else {
+            return;
+        };
+        if self.global || pointer.index.is_some() || pointer.named.is_none() {
+            return;
+        }
+        let storep = self.storep_op(target);
+        self.generated.push(ir::BodyStatement {
+            a: self.name_of(stored),
+            b: pointer.named,
             ..ir::BodyStatement::bare(storep)
         });
         self.read_returned(stored);

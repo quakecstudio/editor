@@ -642,6 +642,8 @@ pub(crate) struct PointerRef {
     pub(crate) base: String,
     /// The index, an element's.
     pub(crate) index: Option<Value>,
+    /// What the pointer names as an operand of a generated body's statement, `*p`'s `p`.
+    pub(crate) named: Option<ir::Name>,
 }
 
 impl Reference {
@@ -662,7 +664,20 @@ impl Reference {
 
     /// What the pointer labelled `base` points at, at `index`.
     pub(crate) fn pointer(base: String, index: Option<Value>) -> Self {
-        Self::Pointer(Box::new(PointerRef { base, index }))
+        Self::Pointer(Box::new(PointerRef {
+            base,
+            index,
+            named: None,
+        }))
+    }
+
+    /// `*p` of the pointer labelled `base` that names `named` as an operand.
+    pub(crate) fn dereferenced(base: String, named: Option<ir::Name>) -> Self {
+        Self::Pointer(Box::new(PointerRef {
+            base,
+            index: None,
+            named,
+        }))
     }
 }
 
