@@ -444,7 +444,6 @@ impl Checker<'_> {
                 }
             }
             self.clobber_return();
-            self.local_array_function(element.sym.def());
             self.generated.push(ir::BodyStatement {
                 a: element.sym.def().map(ir::Name::ArrayGet),
                 ..ir::BodyStatement::bare(Op::Call1)

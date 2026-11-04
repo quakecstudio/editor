@@ -532,6 +532,9 @@ impl Checker<'_> {
     /// its type, and the step follows the body.
     fn for_stmt(&mut self, s: &ast::ForStmt, line: u32) -> Result<(), Fatal> {
         let (breaks, continues) = self.layout.marks();
+        // FTEF-19.78: the local arrays' functions the loop makes are forgotten at its end.
+        let begin = self.next_made();
+        self.effects.push((begin, ir::Effect::ForBegin));
         if let Some(init) = s.init() {
             self.layout.push(Step::Other, None, line, None);
             // The clause's expressions and the locals it declares, in order.
@@ -604,6 +607,8 @@ impl Checker<'_> {
         }
         self.layout.patch_breaks(breaks, end);
         self.layout.patch_continues(continues, next);
+        let after = self.next_made();
+        self.effects.push((after, ir::Effect::ForEnd));
         Ok(())
     }
 

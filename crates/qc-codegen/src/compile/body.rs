@@ -32,17 +32,28 @@ impl Compiler<'_> {
         // The global the first parameter slot was last stored from, which a precache records.
         let mut first_argument = None;
         let mut effects = body.effects().iter().peekable();
+        // How many array functions there were as each `for` loop open here began.
+        let mut loops = Vec::new();
         for (index, statement) in (0_u32..).zip(generated) {
             while let Some(&&(at, effect)) = effects.peek()
                 && at <= index
             {
                 // QC-21.5: a vector taken before its words are written, the value of this
                 // statement, which writes its first word.
-                if effect == Effect::Vector {
-                    let slot = self.program.allocate(3).at(named)?;
-                    slots.insert(index, slot);
-                } else {
-                    self.effect(effect, index, (body, &slots), named)?;
+                match effect {
+                    Effect::Vector => {
+                        let slot = self.program.allocate(3).at(named)?;
+                        slots.insert(index, slot);
+                    }
+                    Effect::ForBegin => loops.push(self.array_functions.len()),
+                    // FTEF-19.78: the local arrays' functions the loop made are forgotten.
+                    Effect::ForEnd => {
+                        let mark = loops.pop().unwrap_or(self.array_functions.len());
+                        self.forget_local_array_functions(mark);
+                    }
+                    Effect::Make(_) | Effect::Temp(_) => {
+                        self.effect(effect, index, (body, &slots), named)?;
+                    }
                 }
                 effects.next();
             }
@@ -89,7 +100,16 @@ impl Compiler<'_> {
             .map_err(|_| Internal::TooLarge)
             .at(named)?;
         for &(_, effect) in effects {
-            self.effect(effect, end, (body, &slots), named)?;
+            match effect {
+                Effect::ForBegin => loops.push(self.array_functions.len()),
+                Effect::ForEnd => {
+                    let mark = loops.pop().unwrap_or(self.array_functions.len());
+                    self.forget_local_array_functions(mark);
+                }
+                Effect::Make(_) | Effect::Temp(_) | Effect::Vector => {
+                    self.effect(effect, end, (body, &slots), named)?;
+                }
+            }
         }
         Ok(true)
     }
@@ -115,6 +135,7 @@ impl Compiler<'_> {
                 self.program.allocate(3).at(span)?;
                 return Ok(());
             }
+            Effect::ForBegin | Effect::ForEnd => return Ok(()),
         };
         self.resolve(name, index, made, span)?;
         if let Name::Def(id, _) = name

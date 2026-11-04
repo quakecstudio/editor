@@ -218,6 +218,11 @@ pub enum Effect {
     /// A vector temporary taken before its words are written (QC-21.5), the value of the
     /// statement it is made at, which writes its first word and the next two the others.
     Vector,
+    /// A `for` loop begins, whose end forgets the local arrays' functions made in it.
+    ForBegin,
+    /// The `for` loop begun last ends: the getters and setters of local arrays made since it
+    /// began are forgotten, and a later use makes new ones (FTEF-19.78).
+    ForEnd,
 }
 
 impl Name {
