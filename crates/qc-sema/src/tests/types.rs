@@ -1563,6 +1563,32 @@ fn a_generated_body_says_whether_it_followed_every_statement() {
     assert!(body("void() t = { vector v = { 1, 2, 3 }; };"));
 }
 
+// spec FTE-15.8: an integer constant initialised by a number holds the integer, so read as a
+// float it folds to the number, not to its float's bits read as an integer
+#[test]
+fn an_integer_constant_folds_to_its_number() {
+    use crate::ir::{Immediate, ImmediateKind, Name};
+    let source = "const __uint32 U = 3; const int I = -2; float g; void() t = { g = U; g = I; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let float = |value: f32| {
+        Some(Name::Immediate(Immediate {
+            kind: ImmediateKind::Float,
+            words: [value.to_bits(), 0, 0],
+        }))
+    };
+    let stored: Vec<_> = index.bodies[&t].generated()[..2]
+        .iter()
+        .map(|s| s.a)
+        .collect();
+    assert_eq!(stored, [float(3.0), float(-2.0)]);
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]

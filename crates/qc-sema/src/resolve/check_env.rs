@@ -109,6 +109,28 @@ impl BodyEnv<'_, '_> {
     }
 }
 
+impl BodyEnv<'_, '_> {
+    /// FTE-15.8: the constant a number literal initialising `def` is: for an `int` or an
+    /// `unsigned`, the integer it converts to, C's conversion of the float, not its bits.
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "spec FTE-15.8: the conversion is C's (int) or (unsigned) of the float"
+    )]
+    fn number_constant(&self, def: DefId, value: f32) -> Constant {
+        let scalar = self
+            .resolver
+            .index
+            .def(def)
+            .and_then(|d| self.resolver.resolved(&d.ty).fteqcc_scalar());
+        match scalar {
+            Some(CScalar::Integer) => Constant::int(value as i32),
+            Some(CScalar::Uint) => Constant::uint(value as u32),
+            _ => Constant::float(value),
+        }
+    }
+}
+
 impl Env for BodyEnv<'_, '_> {
     fn temps(&mut self) -> &mut Temps {
         &mut self.resolver.temps
@@ -419,7 +441,7 @@ impl Env for BodyEnv<'_, '_> {
         }
         match self.resolver.literals.get(&def) {
             Some(LiteralValue::Float(bits)) => {
-                Constness::Known(Constant::float(f32::from_bits(*bits)))
+                Constness::Known(self.number_constant(def, f32::from_bits(*bits)))
             }
             Some(LiteralValue::Vector(bits)) => {
                 Constness::Known(Constant::vector(bits.map(f32::from_bits)))
