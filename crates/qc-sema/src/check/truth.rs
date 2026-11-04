@@ -455,6 +455,13 @@ impl Checker<'_> {
     /// the aliases, a call's return value among them, to temporaries first (`QCC_ClobberDef`).
     fn clobber_returned(&mut self, op: Option<Op>, value: &Value, span: Span) -> Result<(), Fatal> {
         if let Some(op) = op.filter(|_| value.returned) {
+            // FTE-18.13: the copy is of the call's whole value, a vector's by `STORE_V`, though
+            // the arm reads one word of it (`QCC_ClobberDef`).
+            let op = match self.live_return {
+                Some(3) => Op::StoreV,
+                Some(_) => Op::StoreF,
+                None => op,
+            };
             let operand = Value::of(value.ty.clone());
             self.emit(op, &operand, &operand, span)?;
             let copy = self.last_made();
@@ -605,7 +612,7 @@ impl Checker<'_> {
 }
 
 /// The words a value of basic type `etype` takes, `type->size`.
-const fn words(etype: Etype) -> u32 {
+pub(super) const fn words(etype: Etype) -> u32 {
     match etype {
         Etype::Vector => 3,
         Etype::Int64 | Etype::Uint64 | Etype::Double => 2,

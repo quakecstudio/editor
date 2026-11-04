@@ -358,15 +358,14 @@ impl Checker<'_> {
                 let read = self.read(base.clone(), span)?;
                 let word = u32::try_from(word).unwrap_or_default();
                 match read.made {
-                    // Which stores fold into the load of the vector the body does not follow.
-                    Some(made) => {
-                        self.followed = false;
-                        Value {
-                            made: Some(made),
-                            word,
-                            ..component
-                        }
-                    }
+                    // The component is a word of the load's temporary: its first word is the
+                    // temporary a later statement may fold into (FTE-18.12).
+                    Some(made) => Value {
+                        made: Some(made),
+                        word,
+                        temp: read.temp.map(|temp| temp.saturating_add(word)),
+                        ..component
+                    },
                     // A call's vector is the return global, whose word the component is.
                     None if read.returned => Value {
                         returned: true,

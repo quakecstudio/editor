@@ -18,9 +18,11 @@ use crate::check::constant::Constant;
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
+use crate::check::opcodes;
 use crate::check::opcodes::row;
 use crate::check::reference::{eval_int, word_type};
 use crate::check::truth::Test;
+use crate::check::truth::words;
 use crate::check::{Constness, Reference, Value};
 use crate::ir;
 use crate::ty::{SimpleType, Type};
@@ -299,7 +301,14 @@ impl Checker<'_> {
         };
         // FTEF-29.13: a store to a definition is its `OP_STORE_*`, unless it folds into the
         // statement that made the value's temporary (`opt_assignments`).
-        let folded = stored.temp.is_some() && stored.temp == self.last_temp;
+        // DIFF-14.11: not into a statement whose result is wider than the value, a vector whose
+        // first word is stored.
+        let wider = self.generated.last().is_some_and(|last| {
+            let made = opcodes::row(last.op).map(|row| row.types[2].etype());
+            let stored = self.etype(&target);
+            made.map_or(1, words) > stored.map_or(1, words)
+        });
+        let folded = stored.temp.is_some() && stored.temp == self.last_temp && !wider;
         if matches!(kind, Assign::Store) {
             let store = Checker::store_op(self.etype(&target));
             // The store chosen for the `=`, which the code generator reads.
