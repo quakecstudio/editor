@@ -432,6 +432,41 @@ pub fn run_function(
     )
 }
 
+/// The functions the world of each scenario of [`crate::runner::scenarios`] runs while it is
+/// set up in the progs `bytes` (DIFF-12.20): the spawn functions of the map's entities, the
+/// client functions and the frames' functions, each by its name, once (DIFF-15.2). A setup
+/// that ends in an error gives the functions it ran before it.
+///
+/// # Errors
+///
+/// [`CallsError`] when a scenario cannot be read or the progs is refused.
+pub fn setup_functions(
+    bytes: &[u8],
+    profile: EngineProfile,
+) -> Result<BTreeSet<Vec<u8>>, CallsError> {
+    let progs =
+        Progs::read(bytes).map_err(|e| CallsError::Refused(RunRefused::Progs(e.to_string())))?;
+    let bodies = bodies(bytes)?;
+    let mut names = BTreeSet::new();
+    for spec in scenarios("") {
+        let text = format!("progs progs.dat\n{}", spec.directives);
+        let scenario = scenario::read(text.as_bytes(), Path::new("."))
+            .map_err(|e| CallsError::Scenario(format!("{}: {e}", spec.name)))?;
+        let entities = spec.entities.unwrap_or_default();
+        let executed = match World::new(&progs, &scenario, &entities, profile) {
+            Ok(world) => world.setup_executed,
+            Err(CallsError::Setup(_)) => continue,
+            Err(error) => return Err(error),
+        };
+        for (body, name) in &bodies {
+            if body.clone().any(|s| executed.contains(&s)) {
+                names.insert(name.clone());
+            }
+        }
+    }
+    Ok(names)
+}
+
 /// The functions a run calls.
 #[derive(Clone, Copy, Debug)]
 enum Called<'a> {

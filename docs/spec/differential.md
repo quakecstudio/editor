@@ -1044,13 +1044,17 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
   FTEQCC refuses a wrapper that does not call `prior` ("Wrapper function ... does not refer to
   its prior function"). An emptied function that returns a value returns nothing, which FTEQCC
   warns of (Q206) and both compilers compile.
-- **DIFF-15.2** The functions kept for a function `f` are `f`, `worldspawn`, and every function
-  either calls by name, through any depth of calls (`worldspawn`'s precaches are what the
-  world's setup needs, or the mock refuses its `setmodel` and `sound` and no call is made): the
-  calls of a function are read from the codebase's progs compiled by the pinned FTEQCC, the
-  function whose index is held by the global each `CALL0` to `CALL8` of its body calls; a call
-  through a variable or a field, whose global holds no function, keeps none, so the function
-  such a call reaches is emptied in the cut and called empty.
+- **DIFF-15.2** The functions kept for a function `f` are `f`, the functions the setup of each
+  scenario of DIFF-12.20 runs in the codebase's whole progs (the spawn functions of the map's
+  entities, `worldspawn` among them, the client functions and the frames' functions, which the
+  `compiler-diff` binary's `--setup-functions <progs>` lists), and every function any of them
+  calls by name, through any depth of calls, so each call starts from the world a whole-codebase
+  run starts from: with the setup's bodies emptied, `worldspawn` precaches nothing, the mock
+  refuses `setmodel` and `sound`, and no entity holds the functions a `touch` or `think` names
+  (DIFF-12.15). The calls of a function are read from the codebase's progs compiled by the
+  pinned FTEQCC, the function whose index is held by the global each `CALL0` to `CALL8` of its
+  body calls; a call through a variable or a field, whose global holds no function, keeps none,
+  so the function such a call reaches is emptied in the cut and called empty.
 - **DIFF-15.3** Each cut program is compiled in a copy of the codebase's directory by the fixed
   FTEQCC (DIFF-14.12) and the pinned FTEQCC with the arguments the codebase is compiled with
   (DIFF-12.30, DIFF-12.18), and by `qc-codegen` in the FTEQCC dialect. A cut either FTEQCC

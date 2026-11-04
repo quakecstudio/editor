@@ -37,7 +37,8 @@
 //! called and a bounded loop is left early by its counter. `--function-pairs` reads the same
 //! lines, each named by the one function of a cut program its comparison calls (DIFF-15.4),
 //! and adds the statements of the oracle's progs those calls executed to the `--executed`
-//! file, by function and offset (DIFF-15.5).
+//! file, by function and offset (DIFF-15.5). `--setup-functions` prints the name of each
+//! function the scenarios' setups run in a progs, one a line (DIFF-15.2).
 
 #![expect(
     clippy::print_stdout,
@@ -52,7 +53,7 @@ use qc_builtins::EngineProfile;
 
 use qs_differential::calls::{
     CodebaseReport, FAST_ROUNDS, FULL_ROUNDS, FUNCTION_ROUNDS, Oracle, executed_by_function,
-    run_codebase, run_function, uncovered,
+    run_codebase, run_function, setup_functions, uncovered,
 };
 use qs_differential::source::{self, FORMS};
 
@@ -65,7 +66,8 @@ const USAGE: &str = "usage: compiler-diff --mode <fast|full> --codebase <id> \
                      --ours <progs> [--ours <progs>...]\n\
        compiler-diff --generate <dir> --seed <n> --count <n>\n\
        compiler-diff --pairs <file> [--mode <fast|full>] [--oracle <qcc|fteqcc>] [--engine <id|vkquake>]\n\
-       compiler-diff --function-pairs <file> --executed <file> [--oracle <qcc|fteqcc>] [--engine <id|vkquake>]";
+       compiler-diff --function-pairs <file> --executed <file> [--oracle <qcc|fteqcc>] [--engine <id|vkquake>]\n\
+       compiler-diff --setup-functions <progs> [--engine <id|vkquake>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -106,6 +108,11 @@ enum Run {
     Suite(Options),
     /// Programs of a seed written out (DIFF-14.1).
     Generate(Generate),
+    /// The functions each scenario's setup runs in a progs, one name a line (DIFF-15.2).
+    SetupFunctions {
+        progs: PathBuf,
+        engine: EngineProfile,
+    },
     /// The pairs a file lists, each compared (DIFF-14.9, DIFF-15.4).
     Pairs {
         file: PathBuf,
@@ -139,6 +146,7 @@ fn parse(args: &[String]) -> Result<Run, String> {
     let mut pairs = None;
     let mut function_pairs = None;
     let mut executed = None;
+    let mut setup = None;
     let mut rest = args.iter();
     while let Some(flag) = rest.next() {
         let mut value = || rest.next().ok_or_else(|| format!("{flag} needs a value"));
@@ -187,6 +195,7 @@ fn parse(args: &[String]) -> Result<Run, String> {
             "--pairs" => pairs = Some(PathBuf::from(value()?)),
             "--function-pairs" => function_pairs = Some(PathBuf::from(value()?)),
             "--executed" => executed = Some(PathBuf::from(value()?)),
+            "--setup-functions" => setup = Some(PathBuf::from(value()?)),
             other => return Err(format!("unknown argument {other:?}\n{USAGE}")),
         }
     }
@@ -196,6 +205,9 @@ fn parse(args: &[String]) -> Result<Run, String> {
             seed: seed.ok_or(USAGE)?,
             count: count.ok_or(USAGE)?,
         }));
+    }
+    if let Some(progs) = setup {
+        return Ok(Run::SetupFunctions { progs, engine });
     }
     if let Some(file) = pairs {
         return Ok(Run::Pairs {
@@ -416,6 +428,14 @@ fn run(args: &[String]) -> Result<bool, String> {
     let options = match parse(args)? {
         Run::Suite(options) => options,
         Run::Generate(request) => return generate(&request),
+        Run::SetupFunctions { progs, engine } => {
+            let bytes = std::fs::read(&progs).map_err(|e| format!("{}: {e}", progs.display()))?;
+            let names = setup_functions(&bytes, engine).map_err(|e| e.to_string())?;
+            for name in names {
+                println!("{}", String::from_utf8_lossy(&name));
+            }
+            return Ok(true);
+        }
         Run::Pairs {
             file,
             calls,
@@ -595,7 +615,9 @@ mod tests {
             Run::Generate(Generate { dir, seed, count }) => {
                 assert_eq!((dir, seed, count), (PathBuf::from("out"), 7, 3));
             }
-            Run::Suite(_) | Run::Pairs { .. } => unreachable!("not a generate run"),
+            Run::Suite(_) | Run::Pairs { .. } | Run::SetupFunctions { .. } => {
+                unreachable!("not a generate run")
+            }
         }
         assert!(parse(&args(&["--generate", "out", "--seed", "7"])).is_err());
         match parse(&args(&[
@@ -614,7 +636,7 @@ mod tests {
                 assert_eq!(oracle, Oracle::Fteqcc);
                 assert_eq!(engine, EngineProfile::Id);
             }
-            Run::Pairs { .. } | Run::Suite(_) | Run::Generate(_) => {
+            Run::Pairs { .. } | Run::Suite(_) | Run::Generate(_) | Run::SetupFunctions { .. } => {
                 unreachable!("not a pairs run")
             }
         }
@@ -640,11 +662,28 @@ mod tests {
                 assert_eq!(executed, PathBuf::from("e.tsv"));
                 assert_eq!(engine, EngineProfile::VkQuake);
             }
-            Run::Pairs { .. } | Run::Suite(_) | Run::Generate(_) => {
+            Run::Pairs { .. } | Run::Suite(_) | Run::Generate(_) | Run::SetupFunctions { .. } => {
                 unreachable!("not a function-pairs run")
             }
         }
         assert!(parse(&args(&["--function-pairs", "f.tsv"])).is_err());
+        // spec DIFF-15.2: the setup functions of a progs are listed on their own
+        match parse(&args(&[
+            "--setup-functions",
+            "w.dat",
+            "--engine",
+            "vkquake",
+        ]))
+        .unwrap()
+        {
+            Run::SetupFunctions { progs, engine } => {
+                assert_eq!(progs, PathBuf::from("w.dat"));
+                assert_eq!(engine, EngineProfile::VkQuake);
+            }
+            Run::Pairs { .. } | Run::Suite(_) | Run::Generate(_) => {
+                unreachable!("not a setup-functions run")
+            }
+        }
     }
 
     // spec DIFF-14.5: a divergence from the oracle passes only when the fixed oracle agrees with

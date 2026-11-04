@@ -1321,6 +1321,22 @@ fn uncovered_lists_each_functions_unexecuted_statements() {
     assert!(!lines.iter().any(|l| l.ends_with("\tb")), "{text}");
 }
 
+// spec DIFF-15.2: the setup's functions are those the scenarios' setups run, the spawn and
+// client functions and the functions they call; a function nothing runs while the world is set
+// up is not one
+#[test]
+fn the_setup_functions_are_those_the_setups_run() {
+    let bytes = compile(
+        "float n;\nvoid() helper = { n = 1; };\nvoid() worldspawn = { helper(); };\n\
+         void() PutClientInServer = { n = 2; };\nvoid() unused = { n = 3; };\n",
+    );
+    let names = super::setup_functions(&bytes, EngineProfile::Id).unwrap();
+    for name in ["worldspawn", "helper", "PutClientInServer"] {
+        assert!(names.contains(name.as_bytes()), "{name}: {names:?}");
+    }
+    assert!(!names.contains(b"unused".as_slice()), "{names:?}");
+}
+
 // spec DIFF-15.5: each executed statement is listed by the function whose body holds it and its
 // offset from that body's first statement, and nothing else is
 #[test]
