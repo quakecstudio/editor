@@ -17,6 +17,7 @@ use qc_syntax::ast::{self, AstNode as _};
 use super::allocate::CreationOrder;
 use super::{At, Compiler, Lowered, Written, literal_of};
 use crate::Internal;
+use crate::back_end::Allocation;
 use crate::program::{Literal, OFS_RETURN, operand, type_words};
 
 impl Compiler<'_> {
@@ -50,9 +51,10 @@ impl Compiler<'_> {
         named: Span,
     ) -> Lowered<()> {
         let generated = body.generated();
-        // QC-21.5: the allocation pass the profile chooses, each value a new slot in creation
-        // order (ADR-0020).
-        let mut slots = CreationOrder::default();
+        // QC-21.5: the allocation pass the profile chooses (ADR-0020).
+        let mut slots = match self.back_end.allocation {
+            Allocation::CreationOrder => CreationOrder::default(),
+        };
         // The global the first parameter slot was last stored from, which a precache records.
         let mut first_argument = None;
         let mut effects = body.effects().iter().peekable();

@@ -14,6 +14,7 @@
 //! (QC-16 to QC-19): an operator's operands select its opcode by their basic types, a call's
 //! arguments must have its parameters' types.
 
+use crate::back_end::{BackEnd, Layout};
 use std::collections::HashMap;
 
 use qc_diag::Span;
@@ -101,6 +102,8 @@ pub(crate) struct Compiler<'a> {
     locals_end: u32,
     /// The dialect the files are read in, whose lexer reads each literal and builtin number.
     pub(crate) dialect: Dialect,
+    /// The back end's passes the dialect's profile chooses.
+    pub(crate) back_end: BackEnd,
     /// The compiler flags of the file being compiled, each from the byte it holds from
     /// (FTEF-21.1).
     flags: Vec<(usize, qc_syntax::CompilerFlags)>,
@@ -165,6 +168,7 @@ impl<'a> Compiler<'a> {
             writing: None,
             locals_end: 0,
             dialect: Dialect::Vanilla,
+            back_end: BackEnd::of(Dialect::Vanilla),
             flags: Vec::new(),
             lex_flags: Vec::new(),
             array_functions: Vec::new(),
@@ -597,9 +601,10 @@ impl<'a> Compiler<'a> {
         }
         let locals_start = self.program.next_global().at(span)?;
         self.locals_end = locals_start;
-        // FTE-21.7: under FTEQCC the parameters, locals and temporaries of a body form a block
-        // laid out after every global, static and immediate of the module (`QCC_UnmarshalLocals`).
-        let block = self.dialect.has_fteqcc_extensions() && matches!(init, FunctionInit::Body(_));
+        // FTE-21.7: under the block layout the parameters, locals and temporaries of a body form
+        // a block laid out after every global, static and immediate of the module
+        // (`QCC_UnmarshalLocals`).
+        let block = self.back_end.layout == Layout::Blocks && matches!(init, FunctionInit::Body(_));
         if block {
             self.program.open_block();
         }
