@@ -135,8 +135,9 @@ jobs:
     name: Compiler differential (${{ matrix.codebase }})
     runs-on: ubuntu-latest
     # Arcane Dimensions' 128 rounds, with the accessor and extra rounds (DIFF-12.16,
-    # DIFF-12.24), run past two hours on a hosted runner.
-    timeout-minutes: 300
+    # DIFF-12.24), ran past five hours on a hosted runner (run 41830900852); six is the
+    # hosted runners' limit.
+    timeout-minutes: 360
     permissions:
       contents: read
     strategy:
@@ -210,7 +211,7 @@ jobs:
   functions:
     name: Per-function differential (${{ matrix.codebase }})
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 360
     permissions:
       contents: read
     strategy:
