@@ -3607,3 +3607,26 @@ fn a_call_value_read_word_by_word_is_copied_by_the_next_statement() {
         ]
     );
 }
+
+// spec FTEF-27.4: a folded `||` of constants is an `int` 1, and its product with a float, on a
+// target with no `OP_MUL_IF`, is the float itself: the `?:` stored to the setter's value
+// parameter is the temporary its arms store to, not a new one no statement writes
+#[test]
+fn an_int_constant_times_a_value_is_the_value() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nfloat arr[4]; float d; entity e; .float ff;\n\
+         const float k = 9;\nvoid() t = { arr[d & 3] = ((495 || 0) * (k ? 3 : e.ff)); };\n",
+    );
+    let t = body(&p, "t");
+    let ternary = t
+        .iter()
+        .find(|s| s.op == u32::from(StoreF.number()) && s.a == immediate(&p, 3.0))
+        .map(|s| s.b)
+        .unwrap();
+    let value = t
+        .iter()
+        .find(|s| s.op == u32::from(StoreF.number()) && s.b == 7)
+        .map(|s| s.a)
+        .unwrap();
+    assert_eq!(value, ternary, "{t:?}");
+}
