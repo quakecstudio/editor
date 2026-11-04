@@ -20,6 +20,7 @@ use crate::check::member;
 use crate::check::reference::eval_int;
 use crate::check::truth::{Jump, Test, is_truth};
 use crate::check::{Constness, Reference, Value};
+use crate::ir;
 use crate::ty::{SimpleType, Type};
 
 /// The words of a vector, `type_vector->size`.
@@ -39,7 +40,7 @@ impl Checker<'_> {
     /// A jump of `step` to `target` at `line` in the layout, and its opcode `op` among the
     /// statements the body generates.
     fn jump(&mut self, step: Step, op: Op, target: Option<usize>, line: u32) -> usize {
-        self.generated.push(op);
+        self.generated.push(ir::BodyStatement::bare(op));
         self.last_temp = None;
         self.layout.push(step, target, line)
     }

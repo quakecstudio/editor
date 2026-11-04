@@ -22,6 +22,7 @@ use crate::check::opcodes::row;
 use crate::check::reference::word_type;
 use crate::check::truth::Test;
 use crate::check::{Constness, Reference, Value};
+use crate::ir;
 use crate::ty::{SimpleType, Type};
 
 /// What an assignment operator stores (FTEF-29.2).
@@ -293,7 +294,10 @@ impl Checker<'_> {
             && !self.global
             && !folded
         {
-            self.generated.push(Checker::store_op(self.etype(&target)));
+            self.generated
+                .push(ir::BodyStatement::bare(Checker::store_op(
+                    self.etype(&target),
+                )));
             self.last_temp = None;
         }
         // FTEF-19.78: an element at an index that is no constant is stored by the array's
@@ -306,13 +310,16 @@ impl Checker<'_> {
         {
             let index_folded = element.index.temp.is_some() && element.index.temp == self.last_temp;
             if !index_folded {
-                self.generated.push(Op::StoreF);
+                self.generated.push(ir::BodyStatement::bare(Op::StoreF));
             }
             let words = self.env.layout(&target).map_or(1, |l| l.words);
-            self.generated
-                .push(if words == 3 { Op::StoreV } else { Op::StoreF });
+            self.generated.push(ir::BodyStatement::bare(if words == 3 {
+                Op::StoreV
+            } else {
+                Op::StoreF
+            }));
             self.clobber_return();
-            self.generated.push(Op::Call2);
+            self.generated.push(ir::BodyStatement::bare(Op::Call2));
             self.last_temp = None;
         }
         // FTE-6.4: a field's store, a compound one's too, is its `ADDRESS`, made after the
@@ -326,8 +333,8 @@ impl Checker<'_> {
                 Some(Etype::Function) => Op::StorepFnc,
                 _ => Op::StorepF,
             };
-            self.generated.push(Op::Address);
-            self.generated.push(storep);
+            self.generated.push(ir::BodyStatement::bare(Op::Address));
+            self.generated.push(ir::BodyStatement::bare(storep));
             self.last_temp = None;
         }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
@@ -856,7 +863,8 @@ impl Checker<'_> {
             }
             let folded = value.temp.is_some() && value.temp == self.last_temp;
             if !folded {
-                self.generated.push(Checker::store_op(self.etype(&ty)));
+                self.generated
+                    .push(ir::BodyStatement::bare(Checker::store_op(self.etype(&ty))));
                 self.last_temp = None;
             }
         }

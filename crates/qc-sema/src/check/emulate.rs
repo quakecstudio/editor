@@ -192,6 +192,36 @@ impl Checker<'_> {
             return result;
         };
         let result = self.lowered(op, row, lhs, rhs, result);
+        // The generated statement's operands: what each value it reads names, and its own value.
+        let made = self
+            .generated
+            .len()
+            .checked_sub(1)
+            .and_then(|index| u32::try_from(index).ok())
+            .filter(|&index| {
+                usize::try_from(index)
+                    .ok()
+                    .and_then(|index| self.generated.get(index))
+                    .is_some_and(|statement| statement.op == op)
+            });
+        let reads = |slot: usize| {
+            row.types
+                .get(slot)
+                .is_some_and(|t| t.etype() != Etype::Void)
+        };
+        if let Some(index) = made {
+            let (a, b) = (
+                reads(0).then(|| lhs.name()).flatten(),
+                reads(1).then(|| rhs.name()).flatten(),
+            );
+            let c = row.makes_value().then_some(ir::Name::Made(index));
+            if let Some(statement) = usize::try_from(index)
+                .ok()
+                .and_then(|index| self.generated.get_mut(index))
+            {
+                *statement = ir::BodyStatement { op, a, b, c };
+            }
+        }
         if !row.makes_value() {
             return result;
         }
@@ -202,7 +232,11 @@ impl Checker<'_> {
         };
         let temp = Some(self.env.temps().take(words));
         self.last_temp = temp;
-        Value { temp, ..result }
+        Value {
+            temp,
+            made,
+            ..result
+        }
     }
 
     /// Records `constant` as an immediate the fragment being lowered made, when there is one; a
@@ -260,14 +294,17 @@ impl Checker<'_> {
     /// the return global, by its size, before a call or a jump overwrites or leaves it.
     pub(super) fn clobber_return(&mut self) {
         if let Some(words) = self.live_return.take() {
-            self.generated
-                .push(if words == 3 { Op::StoreV } else { Op::StoreF });
+            self.generated.push(ir::BodyStatement::bare(if words == 3 {
+                Op::StoreV
+            } else {
+                Op::StoreF
+            }));
             self.last_temp = None;
         }
     }
 
     pub(super) fn generate(&mut self, op: Op, span: Span) {
-        self.generated.push(op);
+        self.generated.push(ir::BodyStatement::bare(op));
         if self.global {
             let message = format!(
                 "Unable to generate statements at global scope ({}).",

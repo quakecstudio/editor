@@ -4,6 +4,7 @@ enum qc_sema::cast::Source
 enum qc_sema::ir::Destination
 enum qc_sema::ir::ImmediateKind
 enum qc_sema::ir::Input
+enum qc_sema::ir::Name
 enum qc_sema::ir::Operand
 enum qc_sema::ir::Temp
 enum qc_sema::ir::Whole
@@ -29,6 +30,10 @@ field qc_sema::expand::ModuleInput.dir
 field qc_sema::expand::ModuleInput.include_dirs
 field qc_sema::expand::ModuleInput.names
 field qc_sema::expand::ModuleInput.prelude
+field qc_sema::ir::BodyStatement.a
+field qc_sema::ir::BodyStatement.b
+field qc_sema::ir::BodyStatement.c
+field qc_sema::ir::BodyStatement.op
 field qc_sema::ir::Fragment.immediates
 field qc_sema::ir::Fragment.inputs
 field qc_sema::ir::Fragment.statements
@@ -129,6 +134,7 @@ fn qc_sema::db::ModuleAnalysis::diagnostics
 fn qc_sema::expand::ModuleInput::from_graph
 fn qc_sema::expand::ModuleInput::from_module
 fn qc_sema::expand::OriginMap::locate
+fn qc_sema::ir::BodyStatement::bare
 fn qc_sema::ir::Fragments::at
 fn qc_sema::ir::Operand::word
 fn qc_sema::ir::TempId::index
@@ -180,6 +186,7 @@ struct qc_sema::db::ModuleAnalysis
 struct qc_sema::db::QueryCounts
 struct qc_sema::expand::ModuleInput
 struct qc_sema::expand::OriginMap
+struct qc_sema::ir::BodyStatement
 struct qc_sema::ir::Fragment
 struct qc_sema::ir::Fragments
 struct qc_sema::ir::Immediate
@@ -262,6 +269,10 @@ variant qc_sema::ir::ImmediateKind::Vector
 variant qc_sema::ir::Input::Argument
 variant qc_sema::ir::Input::Left
 variant qc_sema::ir::Input::Right
+variant qc_sema::ir::Name::Def
+variant qc_sema::ir::Name::Immediate
+variant qc_sema::ir::Name::Made
+variant qc_sema::ir::Name::Return
 variant qc_sema::ir::Operand::Def
 variant qc_sema::ir::Operand::Immediate
 variant qc_sema::ir::Operand::Input

@@ -118,7 +118,7 @@ impl Checker<'_> {
             && self
                 .generated
                 .last()
-                .is_some_and(|op| matches!(op, Op::NotF | Op::NotFnc | Op::NotEnt));
+                .is_some_and(|s| matches!(s.op, Op::NotF | Op::NotFnc | Op::NotEnt));
         if drops {
             self.generated.pop();
             if let Some(words) = self.not_of_return.take() {

@@ -230,6 +230,8 @@ pub(crate) struct Value {
     /// Whether it is a call's return value, an alias of `OFS_RETURN` that a statement which
     /// clobbers the aliases copies to a temporary first (`QCC_ClobberDef`, FTEF-30.13).
     pub(crate) returned: bool,
+    /// The index of the statement of the generated body that made the value, if one did.
+    pub(crate) made: Option<u32>,
 }
 
 /// FTEQCC's temporaries (`tempsinfo`), kept across the module's functions: each one's word
@@ -352,6 +354,7 @@ impl Value {
             temp: None,
             ir: None,
             returned: false,
+            made: None,
         }
     }
 
@@ -361,6 +364,22 @@ impl Value {
             constness: Constness::Known(constant),
             sym: Sym::Immediate(constant),
             ..Self::of(constant.ty.value_type())
+        }
+    }
+
+    /// What the value names as an operand of a generated body's statement: the statement that
+    /// made it, the return global for a call's value, a definition's word, or an immediate.
+    pub(crate) fn name(&self) -> Option<ir::Name> {
+        if let Some(made) = self.made {
+            return Some(ir::Name::Made(made));
+        }
+        if self.returned {
+            return Some(ir::Name::Return);
+        }
+        match self.sym {
+            Sym::Def(def, _, word) => Some(ir::Name::Def(def, word)),
+            Sym::Immediate(constant) => constant.immediate().map(ir::Name::Immediate),
+            Sym::Temp => None,
         }
     }
 
@@ -695,7 +714,7 @@ pub struct TypedBody {
     types: HashMap<(usize, usize), Type>,
     opcodes: HashMap<(usize, usize), qc_preproc::Op>,
     fragments: ir::Fragments,
-    generated: Vec<qc_preproc::Op>,
+    generated: Vec<ir::BodyStatement>,
 }
 
 impl TypedBody {
@@ -722,7 +741,7 @@ impl TypedBody {
     /// The opcodes of the statements the check generated for the body, in order: the model of
     /// the whole body the intermediate layer is being built from (`docs/design/back-end.md`).
     #[must_use]
-    pub fn generated(&self) -> &[qc_preproc::Op] {
+    pub fn generated(&self) -> &[ir::BodyStatement] {
         &self.generated
     }
 }
@@ -768,7 +787,9 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         .any(|node| node.kind() == qc_syntax::SyntaxKind::FunctionBody);
     // QC-13.6: `[frame, think]` is the body's first statement, `STATE`.
     if body.state().is_some() {
-        checker.generated.push(qc_preproc::Op::State);
+        checker
+            .generated
+            .push(ir::BodyStatement::bare(qc_preproc::Op::State));
     }
     if let Some(block) = body.block()
         && checker.start_function(block.syntax().span())
@@ -781,6 +802,8 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         checker.finish_function(end);
     }
     // QC-13.7: the body ends with `DONE`.
-    checker.generated.push(qc_preproc::Op::Done);
+    checker
+        .generated
+        .push(ir::BodyStatement::bare(qc_preproc::Op::Done));
     checker.finish()
 }

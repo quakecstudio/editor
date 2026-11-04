@@ -142,7 +142,7 @@ impl Checker<'_> {
         let mut passed = Vec::new();
         // FTE-18.11: a field argument is loaded straight into its slot after every argument is
         // read, so its load is held back from the generated statements until then.
-        let mut field_loads: Vec<(usize, Vec<Op>)> = Vec::new();
+        let mut field_loads: Vec<(usize, Vec<ir::BodyStatement>)> = Vec::new();
         let mut values = Vec::new();
         for (at, slot) in slots.iter().enumerate() {
             let Some(arg) = slot else {
@@ -318,7 +318,7 @@ impl Checker<'_> {
         function: &FunctionType,
         count: usize,
         values: &[Value],
-        field_loads: &[(usize, Vec<Op>)],
+        field_loads: &[(usize, Vec<ir::BodyStatement>)],
         span: Span,
     ) {
         // The arguments written and each parameter after them that takes its default
@@ -334,9 +334,10 @@ impl Checker<'_> {
         if !self.global {
             // `copyop[2] = OP_LOAD_V; copyop[0] = OP_LOAD_F;`: by the field's size, not its type.
             for (_, load) in field_loads.iter().filter(|(slot, _)| *slot < passed) {
-                let by_size = load
-                    .iter()
-                    .map(|&op| if op == Op::LoadV { op } else { Op::LoadF });
+                let by_size = load.iter().map(|&s| ir::BodyStatement {
+                    op: if s.op == Op::LoadV { s.op } else { Op::LoadF },
+                    ..s
+                });
                 self.generated.extend(by_size);
             }
             // FTE-18.12: only the first store can fold, into the statement that made its
@@ -353,8 +354,11 @@ impl Checker<'_> {
                 let folded = first && value.temp.is_some() && value.temp == self.last_temp;
                 first = false;
                 if !folded {
-                    self.generated
-                        .push(if words == 3 { Op::StoreV } else { Op::StoreF });
+                    self.generated.push(ir::BodyStatement::bare(if words == 3 {
+                        Op::StoreV
+                    } else {
+                        Op::StoreF
+                    }));
                 }
             }
             let call = [
@@ -370,7 +374,7 @@ impl Checker<'_> {
             ];
             if let Some(&call) = call.get(passed) {
                 self.clobber_return();
-                self.generated.push(call);
+                self.generated.push(ir::BodyStatement::bare(call));
                 self.last_temp = None;
             }
         }
@@ -430,14 +434,16 @@ impl Checker<'_> {
             return;
         }
         self.clobber_return();
-        self.generated.push(Op::Call0);
+        self.generated.push(ir::BodyStatement::bare(Op::Call0));
         self.last_temp = None;
         if count == 0 {
             self.live_return = Some(1);
         }
         match count {
-            1 => self.generated.push(Op::MulF),
-            2 => self.generated.extend([Op::SubF, Op::MulF, Op::AddF]),
+            1 => self.generated.push(ir::BodyStatement::bare(Op::MulF)),
+            2 => self
+                .generated
+                .extend([Op::SubF, Op::MulF, Op::AddF].map(ir::BodyStatement::bare)),
             _ => {}
         }
     }

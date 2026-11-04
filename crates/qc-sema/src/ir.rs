@@ -165,6 +165,47 @@ pub struct Fragment {
     pub inputs: [Option<Immediate>; 2],
 }
 
+/// What an operand of a whole body's statement names (`docs/design/back-end.md`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Name {
+    /// A word of a definition: the definition and the word.
+    Def(DefId, u32),
+    /// An immediate constant.
+    Immediate(Immediate),
+    /// The value of the body's statement at this index.
+    Made(u32),
+    /// The return global, a call's value (QC-18.4).
+    Return,
+}
+
+/// One statement of a whole body as the semantic model generated it: its opcode and what each
+/// operand names, `None` where the statement has no such operand or the model does not name
+/// it yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BodyStatement {
+    /// The opcode.
+    pub op: Op,
+    /// Operand a.
+    pub a: Option<Name>,
+    /// Operand b.
+    pub b: Option<Name>,
+    /// Operand c.
+    pub c: Option<Name>,
+}
+
+impl BodyStatement {
+    /// The statement `op` with no operand named yet.
+    #[must_use]
+    pub const fn bare(op: Op) -> Self {
+        Self {
+            op,
+            a: None,
+            b: None,
+            c: None,
+        }
+    }
+}
+
 /// A function body's fragments, by the span of the token each was lowered at.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Fragments {

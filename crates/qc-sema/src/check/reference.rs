@@ -21,6 +21,7 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::pointer::{Pointee, int};
 use crate::check::{Bitfield, ElementRef, MemberArray, Reference, Sym, Value};
+use crate::ir;
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -359,10 +360,10 @@ impl Checker<'_> {
         // it folds, `CALL1`, the value the call's in the return global.
         if !self.global {
             if !(float.temp.is_some() && float.temp == self.last_temp) {
-                self.generated.push(Op::StoreF);
+                self.generated.push(ir::BodyStatement::bare(Op::StoreF));
             }
             self.clobber_return();
-            self.generated.push(Op::Call1);
+            self.generated.push(ir::BodyStatement::bare(Op::Call1));
             self.last_temp = None;
             self.live_return = Some(self.env.layout(&element.ty).map_or(1, |l| l.words));
         }

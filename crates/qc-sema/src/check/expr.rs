@@ -35,7 +35,7 @@ pub(super) struct Checker<'e> {
     /// The fragments lowered so far.
     pub(super) fragments: ir::Fragments,
     /// Every statement the body generates, in order (`docs/design/back-end.md`).
-    pub(super) generated: Vec<Op>,
+    pub(super) generated: Vec<ir::BodyStatement>,
     /// The words of a call's value still to be read from the return global, which a call or
     /// a jump made before it is read copies out first (FTE-18.13).
     pub(super) live_return: Option<u32>,
