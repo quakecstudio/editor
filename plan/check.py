@@ -127,6 +127,10 @@ def add_readiness_dependencies(issues: list[dict]) -> None:
             if ld is None or ld == lx or LAYER_RANK[ld] > LAYER_RANK[lx]:
                 continue
             r = readiness.get((di["milestone"], ld), [None])[0]
+            # A phase with no readiness issue of any layer, P3 on, has its gate review alone.
+            reviewed = any(m == di["milestone"] for (m, _) in readiness)
+            if r is None and not reviewed:
+                continue
             if r is None:
                 x.setdefault("_errors", []).append(
                     f"builds on {d} ({ld}, {di['milestone']}) but no readiness issue exists for that layer and phase; run plan/gen_readiness.py")

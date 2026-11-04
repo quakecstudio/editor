@@ -102,16 +102,27 @@ fn open_project_and_type(group: &mut BenchmarkGroup<'_, WallTime>) {
 
 /// One keystroke in the code editor to the end of the next frame (P2-18), the project's text
 /// highlighted, headless: each iteration types the next character of `bench::TYPED`. A run of
-/// keystrokes never pauses long enough for the check after typing, which has no budget here.
+/// keystrokes never pauses long enough for the check after typing, which `check_after_typing`
+/// times on its own.
+///
+/// Each sample reflects single keystrokes, not their average (`docs/perf-budgets.md`,
+/// "Percentiles and samples"): every keystroke of a sample is timed alone, and the sample's
+/// time per iteration is its slowest keystroke's, so the p99 is over the slowest single events.
 fn keystroke(group: &mut BenchmarkGroup<'_, WallTime>) {
     let (dir, file) = project();
     let ctx = egui::Context::default();
     let mut app = opened(&ctx, &dir, &file);
     let mut typed = bench::TYPED.chars().cycle();
     group.bench_function("keystroke", |bencher| {
-        bencher.iter(|| {
-            let c = typed.next().expect("a cycle never ends");
-            frame(&ctx, &mut app, vec![egui::Event::Text(c.to_string())]);
+        bencher.iter_custom(|iterations| {
+            let mut slowest = Duration::ZERO;
+            for _ in 0..iterations {
+                let c = typed.next().expect("a cycle never ends");
+                let start = std::time::Instant::now();
+                frame(&ctx, &mut app, vec![egui::Event::Text(c.to_string())]);
+                slowest = slowest.max(start.elapsed());
+            }
+            slowest.saturating_mul(u32::try_from(iterations).unwrap_or(u32::MAX))
         });
     });
 }
