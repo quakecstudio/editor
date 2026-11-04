@@ -24,7 +24,10 @@ impl Compiler<'_> {
     /// of its name, the origin of the statements before its first source statement. Whether it
     /// wrote them: a body [`writable`] refuses is left to the syntax walk.
     pub(super) fn write_body(&mut self, body: &TypedBody, named: Span) -> Lowered<bool> {
-        if !writable(body, self.returns_value()) || !self.defaults_kept(body) {
+        // A bare `return` names the `ret*` local under FTEQCC (FTE-18.10); id's `qcc` writes
+        // `RETURN` of nothing whatever the function returns (QC-13.8).
+        let ret_local = self.returns_value() && self.dialect.has_fteqcc_extensions();
+        if !writable(body, ret_local) || !self.defaults_kept(body) {
             return Ok(false);
         }
         let generated = body.generated();
