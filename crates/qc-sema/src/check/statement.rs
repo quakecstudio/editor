@@ -113,6 +113,14 @@ impl Checker<'_> {
         let dropped = self.dropped_effects(from);
         self.generated.truncate(from);
         let kept = self.next_made();
+        // The effects the dropped statements' own constructs recorded, a `for` loop's bounds
+        // among them, are now before the next statement too, so the effects stay in the order
+        // of the statements the writer reads them before.
+        for (at, _) in &mut self.effects {
+            if *at > kept {
+                *at = kept;
+            }
+        }
         self.effects
             .extend(dropped.into_iter().map(|effect| (kept, effect)));
         self.live_return = None;

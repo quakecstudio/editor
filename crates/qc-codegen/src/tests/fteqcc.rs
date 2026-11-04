@@ -3630,3 +3630,15 @@ fn an_int_constant_times_a_value_is_the_value() {
         .unwrap();
     assert_eq!(value, ternary, "{t:?}");
 }
+
+// spec FTE-13.8: the setter a store in a stripped `if (0)` arm needs is made as that arm is
+// read, before the getter a later compound store needs, even after a `for` loop in the arm
+#[test]
+fn a_stripped_arm_still_makes_its_setter_first() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nfloat arr[4]; float g;\nvoid() t = { local float n; \
+         if (0) { for (n = 0; n < 3; n++) { g -= 1; } arr[g & 3] = 1; } arr[g & 3] |= 1; };\n",
+    );
+    let (set, get) = (global(&p, "ArraySet*arr"), global(&p, "ArrayGet*arr"));
+    assert!(set < get, "the setter at {set}, the getter at {get}");
+}
