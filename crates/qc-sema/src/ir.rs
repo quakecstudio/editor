@@ -215,6 +215,15 @@ impl BodyStatement {
         if matches!(self.c, Some(Name::MadeWord(..))) {
             return None;
         }
+        // FTE-18.11: a field argument is loaded straight into its parameter slot, with no
+        // temporary.
+        let load = matches!(
+            self.op,
+            Op::LoadF | Op::LoadV | Op::LoadS | Op::LoadEnt | Op::LoadFld | Op::LoadFnc
+        );
+        if load && matches!(self.c, Some(Name::Parameter(_))) {
+            return None;
+        }
         let etype = if row.makes_value() {
             row.types[2].etype()
         } else if self.b == Some(Name::Made(index)) {
@@ -271,8 +280,28 @@ impl BodyStatement {
 
 #[cfg(test)]
 mod tests {
-    use super::{Immediate, ImmediateKind, Name};
+    use qc_preproc::Op;
+
+    use super::{BodyStatement, Immediate, ImmediateKind, Name};
     use crate::DefId;
+
+    // spec FTE-18.11, QC-21.5: a field argument loaded straight into its parameter slot takes no
+    // temporary; the same load into a value of its own takes its result's words, and so does a
+    // value a store then folded into a parameter
+    #[test]
+    fn a_load_into_a_parameter_takes_no_temporary() {
+        let load = |c| BodyStatement {
+            c: Some(c),
+            ..BodyStatement::bare(Op::LoadV)
+        };
+        assert_eq!(load(Name::Parameter(0)).temp_words(4), None);
+        assert_eq!(load(Name::Made(4)).temp_words(4), Some(3));
+        let folded = BodyStatement {
+            c: Some(Name::Parameter(1)),
+            ..BodyStatement::bare(Op::AddF)
+        };
+        assert_eq!(folded.temp_words(5), Some(1));
+    }
 
     // A word of a definition, a value, an immediate or the return global is named, offset from
     // the word already named; a parameter slot or a jump has no words
