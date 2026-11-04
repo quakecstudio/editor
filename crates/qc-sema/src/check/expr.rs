@@ -44,6 +44,9 @@ pub(super) struct Checker<'e> {
     pub(super) not_of_return: Option<u32>,
     /// The opcode of the jump the last [`Checker::branch`] tested for, `IF` or `IFNOT`.
     pub(super) branch_op: Option<Op>,
+    /// The statement that copied the last call's value out of the return global, which a
+    /// statement reading the value after the copy reads (FTE-18.13).
+    pub(super) return_copy: Option<u32>,
     /// The fragment of the binary operator being checked, if any.
     pub(super) fragment: Option<ir::Builder>,
     /// Whether the checker is in a condition of `if`, `while` or `do`, outside parentheses
@@ -103,6 +106,7 @@ impl<'e> Checker<'e> {
             live_return: None,
             not_of_return: None,
             branch_op: None,
+            return_copy: None,
             fragment: None,
             in_condition: false,
             addressed: HashSet::new(),

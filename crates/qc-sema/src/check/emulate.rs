@@ -210,9 +210,15 @@ impl Checker<'_> {
                 .is_some_and(|t| t.etype() != Etype::Void)
         };
         if let Some(index) = made {
+            // A call's value read after its copy is the copy (FTE-18.13).
+            let copy = self.return_copy;
+            let name = |value: &Value| match (value.returned, value.made, copy) {
+                (true, None, Some(copy)) => Some(ir::Name::Made(copy)),
+                _ => value.name(),
+            };
             let (a, b) = (
-                reads(0).then(|| lhs.name()).flatten(),
-                reads(1).then(|| rhs.name()).flatten(),
+                reads(0).then(|| name(lhs)).flatten(),
+                reads(1).then(|| name(rhs)).flatten(),
             );
             let c = row.makes_value().then_some(ir::Name::Made(index));
             if let Some(statement) = usize::try_from(index)
@@ -290,15 +296,29 @@ impl Checker<'_> {
 
     /// FTEF-34.9: the statement `op` generated, which at global scope (`!pr_scope`) is the error
     /// "Unable to generate statements at global scope (OPNAME).".
+    /// FTEF-29.13: the store of `value` folded into the statement that made it, which then
+    /// writes `to` instead.
+    pub(super) fn fold_into(&mut self, value: &Value, to: Option<ir::Name>) {
+        if let Some(statement) = value
+            .made
+            .and_then(|made| usize::try_from(made).ok())
+            .and_then(|made| self.generated.get_mut(made))
+        {
+            statement.c = to;
+        }
+    }
+
     /// FTE-18.13: `QCC_ClobberDef(&def_ret)`: a call's value still to be read is copied out of
     /// the return global, by its size, before a call or a jump overwrites or leaves it.
     pub(super) fn clobber_return(&mut self) {
         if let Some(words) = self.live_return.take() {
-            self.generated.push(ir::BodyStatement::bare(if words == 3 {
-                Op::StoreV
-            } else {
-                Op::StoreF
-            }));
+            let copy = u32::try_from(self.generated.len()).ok();
+            self.generated.push(ir::BodyStatement {
+                a: Some(ir::Name::Return),
+                b: copy.map(ir::Name::Made),
+                ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
+            });
+            self.return_copy = copy;
             self.last_temp = None;
         }
     }

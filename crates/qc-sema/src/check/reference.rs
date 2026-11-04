@@ -123,6 +123,7 @@ impl Checker<'_> {
                 };
                 Ok(Value {
                     temp: loaded.temp,
+                    made: loaded.made,
                     ..value
                 })
             }
@@ -366,6 +367,7 @@ impl Checker<'_> {
             self.generated.push(ir::BodyStatement::bare(Op::Call1));
             self.last_temp = None;
             self.live_return = Some(self.env.layout(&element.ty).map_or(1, |l| l.words));
+            self.return_copy = None;
         }
         Ok(true)
     }

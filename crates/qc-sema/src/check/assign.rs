@@ -285,6 +285,9 @@ impl Checker<'_> {
             if lhs.reference == Reference::Global && !folded {
                 self.emit(store, &stored, &Value::unknown(), span)?;
             }
+            if lhs.reference == Reference::Global && folded {
+                self.fold_into(&stored, lhs.name());
+            }
         }
         // FTEF-31.10: an element at a constant index is a word of the array's definition, stored
         // as a definition is, unless the value folds into the statement that made it.
@@ -862,6 +865,13 @@ impl Checker<'_> {
                 self.live_return = None;
             }
             let folded = value.temp.is_some() && value.temp == self.last_temp;
+            if folded {
+                let local = declarator
+                    .name()
+                    .and_then(|name| self.env.reference(name.span().start))
+                    .map(|def| ir::Name::Def(def, 0));
+                self.fold_into(&value, local);
+            }
             if !folded {
                 self.generated
                     .push(ir::BodyStatement::bare(Checker::store_op(self.etype(&ty))));

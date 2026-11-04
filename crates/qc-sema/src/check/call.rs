@@ -250,6 +250,7 @@ impl Checker<'_> {
         let words = self.env.layout(&function.ret).map_or(1, |l| l.words);
         if !self.global && words > 0 && function.ret != Type::Simple(SimpleType::Void) {
             self.live_return = Some(words);
+            self.return_copy = None;
         }
         // FTEF-29.15: the value is an alias of `def_ret`, which may be assigned to, unless a
         // return larger than a vector is read back into a temporary.
@@ -333,9 +334,11 @@ impl Checker<'_> {
         // its slot unless the statement before made it (FTE-18.12), then the call.
         if !self.global {
             // `copyop[2] = OP_LOAD_V; copyop[0] = OP_LOAD_F;`: by the field's size, not its type.
-            for (_, load) in field_loads.iter().filter(|(slot, _)| *slot < passed) {
+            for (slot, load) in field_loads.iter().filter(|(slot, _)| *slot < passed) {
+                let slot = u8::try_from(*slot).ok().map(ir::Name::Parameter);
                 let by_size = load.iter().map(|&s| ir::BodyStatement {
                     op: if s.op == Op::LoadV { s.op } else { Op::LoadF },
+                    c: slot,
                     ..s
                 });
                 self.generated.extend(by_size);
@@ -353,6 +356,10 @@ impl Checker<'_> {
                 let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
                 let folded = first && value.temp.is_some() && value.temp == self.last_temp;
                 first = false;
+                if folded {
+                    let slot = u8::try_from(slot).ok().map(ir::Name::Parameter);
+                    self.fold_into(value, slot);
+                }
                 if !folded {
                     self.generated.push(ir::BodyStatement::bare(if words == 3 {
                         Op::StoreV
@@ -438,6 +445,7 @@ impl Checker<'_> {
         self.last_temp = None;
         if count == 0 {
             self.live_return = Some(1);
+            self.return_copy = None;
         }
         match count {
             1 => self.generated.push(ir::BodyStatement::bare(Op::MulF)),

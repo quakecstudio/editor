@@ -272,6 +272,7 @@ variant qc_sema::ir::Input::Right
 variant qc_sema::ir::Name::Def
 variant qc_sema::ir::Name::Immediate
 variant qc_sema::ir::Name::Made
+variant qc_sema::ir::Name::Parameter
 variant qc_sema::ir::Name::Return
 variant qc_sema::ir::Operand::Def
 variant qc_sema::ir::Operand::Immediate

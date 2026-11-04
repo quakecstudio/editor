@@ -176,6 +176,8 @@ pub enum Name {
     Made(u32),
     /// The return global, a call's value (QC-18.4).
     Return,
+    /// A call's parameter slot by its number, `OFS_PARM0 + 3 * n` (QC-18.3).
+    Parameter(u8),
 }
 
 /// One statement of a whole body as the semantic model generated it: its opcode and what each
