@@ -153,7 +153,7 @@ impl Checker<'_> {
         let mut passed = Vec::new();
         // FTE-18.11: a field argument is loaded straight into its slot after every argument is
         // read, so its load is held back from the generated statements until then.
-        let mut field_loads: Vec<(usize, Vec<ir::BodyStatement>)> = Vec::new();
+        let mut field_loads: Vec<FieldLoad> = Vec::new();
         let mut values = Vec::new();
         for (at, slot) in slots.iter().enumerate() {
             let Some(arg) = slot else {
@@ -185,9 +185,19 @@ impl Checker<'_> {
             }
             let mark = self.generated.len();
             let mut value = self.read(reference.clone(), arg_span)?;
-            if matches!(reference.reference, Reference::Field(_)) {
+            if let Reference::Field(field) = &reference.reference {
                 let load = self.generated.split_off(mark.min(self.generated.len()));
-                field_loads.push((at, load));
+                // FTE-18.13: an entity that is a call's value stays referenced until the field is
+                // loaded, so a later call's clobber copies it first.
+                if let Some(call) = field.entity_call {
+                    self.live_return = Some(1);
+                    self.live_call = Some(call);
+                }
+                field_loads.push(FieldLoad {
+                    slot: at,
+                    load,
+                    entity_call: field.entity_call,
+                });
             }
             if let Some(param) = function.params.get(at)
                 && value.ty != Type::Unknown
@@ -202,11 +212,6 @@ impl Checker<'_> {
             }
             // A field argument of a call's entity stays referenced across later calls, which
             // the body does not follow (FTE-18.13).
-            if let Reference::Field(field) = &reference.reference
-                && field.entity_call.is_some()
-            {
-                self.followed = false;
-            }
             passed.push(Some(reference));
             self.record_call_path(&name, at, arg);
             values.push(value);
@@ -349,7 +354,7 @@ impl Checker<'_> {
         function: &FunctionType,
         count: usize,
         (callee, values): (Option<ir::Name>, &[Value]),
-        field_loads: &[(usize, Vec<ir::BodyStatement>)],
+        field_loads: &[FieldLoad],
         span: Span,
     ) {
         // The arguments written and each parameter after them that takes its default
@@ -364,23 +369,34 @@ impl Checker<'_> {
         // its slot unless the statement before made it (FTE-18.12), then the call.
         if !self.global {
             // `copyop[2] = OP_LOAD_V; copyop[0] = OP_LOAD_F;`: by the field's size, not its type.
-            for (slot, load) in field_loads.iter().filter(|(slot, _)| *slot < passed) {
-                let slot = u8::try_from(*slot).ok().map(ir::Name::Parameter);
-                let by_size = load.iter().map(|&s| ir::BodyStatement {
-                    op: if s.op == Op::LoadV { s.op } else { Op::LoadF },
-                    c: slot,
-                    ..s
-                });
+            for field in field_loads.iter().filter(|field| field.slot < passed) {
+                let slot = u8::try_from(field.slot).ok().map(ir::Name::Parameter);
+                // The entity read, a copy of a call's value when a later call copied it.
+                let by_size: Vec<ir::BodyStatement> = field
+                    .load
+                    .iter()
+                    .map(|&s| ir::BodyStatement {
+                        op: if s.op == Op::LoadV { s.op } else { Op::LoadF },
+                        a: self.copied(s.a, field.entity_call),
+                        c: slot,
+                        ..s
+                    })
+                    .collect();
                 self.generated.extend(by_size);
+                // The load reads the entity, which is no longer referenced after it.
+                if field.entity_call.is_some() && self.live_call == field.entity_call {
+                    self.live_return = None;
+                    self.live_call = None;
+                }
             }
             // FTE-18.12: only the first store can fold, into the statement that made its
             // value; every later one follows a store or a load.
-            let mut first = field_loads.iter().all(|(slot, _)| *slot >= passed);
+            let mut first = field_loads.iter().all(|field| field.slot >= passed);
             for (slot, value) in values.iter().take(passed).enumerate() {
                 if value.returned {
                     self.live_return = None;
                 }
-                if field_loads.iter().any(|(at, _)| *at == slot) {
+                if field_loads.iter().any(|field| field.slot == slot) {
                     continue;
                 }
                 let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
@@ -1040,4 +1056,12 @@ pub(super) const fn call_opcode(passed: usize) -> Option<Op> {
         8 => Op::Call8,
         _ => return None,
     })
+}
+
+/// A field argument's load, held back until every argument is read (FTE-18.11): its parameter
+/// slot, its statements, and the call whose value its entity is, if it is one.
+pub(super) struct FieldLoad {
+    slot: usize,
+    load: Vec<ir::BodyStatement>,
+    entity_call: Option<u32>,
 }
