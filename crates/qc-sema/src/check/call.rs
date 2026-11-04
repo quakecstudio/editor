@@ -266,7 +266,23 @@ impl Checker<'_> {
         } else {
             func.name()
         };
-        self.call_fragment(&function, count, (callee, &values), &field_loads, span);
+        // FTE-18.7, FTE-18.8: the parameters the code generator passes, each after the arguments
+        // that takes a default it keeps.
+        let mut passed_count = slots.len();
+        while passed_count < params.len()
+            && params
+                .get(passed_count)
+                .is_some_and(|p| p.kept_default && !p.optional)
+        {
+            passed_count = passed_count.saturating_add(1);
+        }
+        self.call_fragment(
+            &function,
+            passed_count,
+            (callee, &values),
+            &field_loads,
+            span,
+        );
         let call = self.last_made();
         // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
         for (reference, param) in passed.iter().zip(&params) {
@@ -1023,6 +1039,8 @@ fn type_params(function: &FunctionType) -> Vec<ParamFacts> {
                 .map_or_else(ParamFacts::default, |label| ParamFacts {
                     name: label.name.clone(),
                     has_default: label.default.is_some(),
+                    // The code generator passes defaults only to a function it calls by name.
+                    kept_default: false,
                     optional: label.optional,
                     out: label.out,
                 })

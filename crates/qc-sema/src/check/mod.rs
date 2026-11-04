@@ -541,6 +541,9 @@ pub(crate) struct ParamFacts {
     pub(crate) name: Option<String>,
     /// Whether it has a default value, `defltvalue`.
     pub(crate) has_default: bool,
+    /// Whether the code generator passes the default: under autoprototyping one naming any
+    /// definition but a field is none (FTE-18.8).
+    pub(crate) kept_default: bool,
     /// Whether `optional` marks it.
     pub(crate) optional: bool,
     /// Whether it is an `out` parameter, stored back after the call.

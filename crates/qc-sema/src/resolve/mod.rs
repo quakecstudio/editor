@@ -499,16 +499,24 @@ pub(crate) fn resolve_mapped(
 /// Each declaration of `files` as FTEQCC reads it with `autoprototype` as `proto` says: only the
 /// ones it is on for, prototyped (FTEF-12.18), the others `None`.
 fn prototyped(files: &[FileDecls], proto: Prototyping<'_>) -> Vec<Vec<Option<RawDecl>>> {
-    files
-        .iter()
-        .enumerate()
-        .map(|(index, file)| {
-            file.decls
-                .iter()
-                .map(|decl| proto.at(index, decl.span.start).then(|| decl.prototyped()))
-                .collect()
-        })
-        .collect()
+    // The fields declared so far, in compilation order, which a default may name (FTEF-12.22).
+    let mut fields = HashSet::new();
+    let mut prototyped = Vec::with_capacity(files.len());
+    for (index, file) in files.iter().enumerate() {
+        let mut decls = Vec::with_capacity(file.decls.len());
+        for decl in &file.decls {
+            decls.push(
+                proto
+                    .at(index, decl.span.start)
+                    .then(|| decl.prototyped(&fields)),
+            );
+            if matches!(decl.ty, Type::Field(_)) && !decl.type_only {
+                fields.insert(decl.name.clone());
+            }
+        }
+        prototyped.push(decls);
+    }
+    prototyped
 }
 
 /// The names `QCC_main` registers with `QCC_PR_NewType` that are in the table `QCC_TypeForName`

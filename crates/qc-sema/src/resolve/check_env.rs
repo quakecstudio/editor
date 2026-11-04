@@ -18,6 +18,7 @@ use crate::check::etype::Etype;
 use crate::check::{
     Constness, CvarValue, Env, FunctionFacts, ParamFacts, PathList, Shape, StructMemberFacts, Temps,
 };
+use crate::lower::ValueKind;
 use crate::lower::{ArrayDim, LiteralValue, RawLocal};
 use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, DefKind, Definition, FileId};
@@ -398,6 +399,20 @@ impl Env for BodyEnv<'_, '_> {
                 .map(|p| ParamFacts {
                     name: p.name.clone(),
                     has_default: p.default.is_some(),
+                    kept_default: p.default.as_ref().is_some_and(|default| {
+                        !self.resolver.profile.two_passes()
+                            || match &default.kind {
+                                ValueKind::Literal(_) | ValueKind::Cast(_) => true,
+                                ValueKind::Name(name) => self
+                                    .resolver
+                                    .lookup_global(name)
+                                    .and_then(|id| self.resolver.index.def(id))
+                                    .is_some_and(|def| def.kind == DefKind::Field),
+                                ValueKind::Translate(_)
+                                | ValueKind::Indexed(_)
+                                | ValueKind::Other => false,
+                            }
+                    }),
                     optional: p.optional,
                     out: p.out,
                 })
