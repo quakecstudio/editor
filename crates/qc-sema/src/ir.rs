@@ -191,6 +191,8 @@ pub enum Name {
     Default(u8),
     /// The function's `ret*` local, which a bare `return` returns (FTE-18.10).
     RetLocal,
+    /// The function a `__wrap` body wraps, its `prior` (FTEF-15.11).
+    Prior,
     /// The body's statement at this index, a jump's target; the body's length is its end.
     Jump(u32),
     /// The string immediate of the body's string literal at this index

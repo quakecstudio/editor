@@ -46,7 +46,7 @@ use crate::cast::{ConstType, Literal, Source};
 use crate::lower::LiteralValue;
 use crate::resolve::{AccessorFacts, Layout};
 use crate::symbol::{DefId, Definition};
-use crate::ty::Type;
+use crate::ty::{FunctionType, Type};
 use constant::{Constant, unquoted};
 
 use crate::ir;
@@ -194,6 +194,8 @@ pub(crate) struct FunctionFacts {
     pub(crate) variadic: bool,
     /// The parameters it names before any `...`.
     pub(crate) params: usize,
+    /// Its type, which a `__wrap` body's `prior` has (FTEF-15.11).
+    pub(crate) own: Option<FunctionType>,
 }
 
 /// What a type is at bottom, as FTEQCC's checker reads it.

@@ -85,7 +85,18 @@ impl Checker<'_> {
                     Some(format!("{}::{}", self.env.definition(class)?.name, d.name))
                 }),
         };
-        let mut func = self.read(callee, callee_span)?;
+        // FTEF-15.11: in a `__wrap` body `prior`, which no definition names, is the function it
+        // wraps, of the function's own type.
+        let prior = match call.callee() {
+            Some(ast::Expr::Name(name)) => name.name().is_some_and(|token| {
+                token.text_lossless() == "prior" && self.env.reference(token.span().start).is_none()
+            }),
+            _ => false,
+        };
+        let mut func = match self.function.own.clone().filter(|_| prior) {
+            Some(own) => Value::of(Type::Function(own.into())),
+            None => self.read(callee, callee_span)?,
+        };
         if method_name.is_some() {
             func.name = method_name;
         }
@@ -233,7 +244,12 @@ impl Checker<'_> {
         }
         self.verify_arguments(&name, &values, span);
         self.generate_call(&values, span);
-        self.call_fragment(&function, count, (func.name(), &values), &field_loads, span);
+        let callee = if prior {
+            Some(ir::Name::Prior)
+        } else {
+            func.name()
+        };
+        self.call_fragment(&function, count, (callee, &values), &field_loads, span);
         let call = self.last_made();
         // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
         for (reference, param) in passed.iter().zip(&params) {

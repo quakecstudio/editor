@@ -1519,6 +1519,29 @@ fn a_generated_conversion_calls_its_helper() {
     );
 }
 
+// FTEF-15.11: a `__wrap` body's `prior` is the function it wraps, called with the wrapper's
+// own type
+#[test]
+fn a_generated_wrap_calls_its_prior() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "void(string m) objerror = #11; \
+        __wrap void(string msg) objerror = { prior(msg); };";
+    let index = super::fte_index_of(source);
+    let objerror = index
+        .defs
+        .iter()
+        .position(|d| d.name == "objerror")
+        .map(DefId::new)
+        .unwrap();
+    let statements: Vec<_> = index.bodies[&objerror]
+        .generated()
+        .iter()
+        .map(|s| (s.op, s.a))
+        .collect();
+    assert_eq!(statements[1], (Op::Call1, Some(Name::Prior)));
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]

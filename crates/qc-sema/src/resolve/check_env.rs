@@ -272,14 +272,13 @@ impl Env for BodyEnv<'_, '_> {
 
     fn function(&self) -> FunctionFacts {
         let def = self.owner.and_then(|owner| self.resolver.index.def(owner));
-        let (ret, variadic, params) = match def.map(|d| self.resolver.resolved(&d.ty)) {
-            Some(Type::Function(function)) => (
-                function.ret.clone(),
-                function.variadic,
-                function.params.len(),
-            ),
-            Some(_) | None => (Type::Unknown, false, 0),
+        let own = match def.map(|d| self.resolver.resolved(&d.ty)) {
+            Some(Type::Function(function)) => Some(function.as_ref().clone()),
+            Some(_) | None => None,
         };
+        let (ret, variadic, params) = own.as_ref().map_or((Type::Unknown, false, 0), |f| {
+            (f.ret.clone(), f.variadic, f.params.len())
+        });
         FunctionFacts {
             // `pr_scope->name`, a member function's `CLASS::NAME` (FTEF-21.23), and a nested
             // function's `def?def->name:""` (FTEF-18.39).
@@ -298,6 +297,7 @@ impl Env for BodyEnv<'_, '_> {
                 .is_some_and(|f| f.accumulate),
             variadic,
             params,
+            own,
         }
     }
 
