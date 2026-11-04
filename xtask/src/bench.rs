@@ -176,7 +176,7 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     let mut history = load_history(&history_path)?;
     let host = host();
     let baseline = baseline(&history, &host.key);
-    let outcome = evaluate(&results, baseline);
+    let outcome = evaluate(&results, baseline, Machine::of(&host.key));
     let passed = outcome.passed(options.accept);
     print!("{}", format_results(&host, &results, baseline));
     let github = on_github(std::env::var_os("GITHUB_ACTIONS").as_deref());
@@ -445,7 +445,33 @@ impl Outcome {
     }
 }
 
-fn evaluate(results: &[BenchResult], baseline: Option<&Run>) -> Outcome {
+/// Whether a host is one of the reference machines the budgets hold on (`docs/perf-budgets.md`,
+/// "Reference machines"): a run elsewhere, a CI runner among them, is judged by the regression
+/// rule alone, since its numbers are not the modder's (decided by Justin on 2026-11-04 for
+/// P2-166).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Machine {
+    /// `ref-mac`, `ref-windows` or `ref-linux`, named by `QS_BENCH_HOST`.
+    Reference,
+    /// Any other host.
+    Other,
+}
+
+/// The reference machines' host keys.
+const REFERENCE_MACHINES: [&str; 3] = ["ref-mac", "ref-windows", "ref-linux"];
+
+impl Machine {
+    /// The machine the host keyed `key` is.
+    fn of(key: &str) -> Self {
+        if REFERENCE_MACHINES.contains(&key) {
+            Self::Reference
+        } else {
+            Self::Other
+        }
+    }
+}
+
+fn evaluate(results: &[BenchResult], baseline: Option<&Run>, machine: Machine) -> Outcome {
     let mut outcome = Outcome::default();
     for result in results {
         if result.status == Status::Pending {
@@ -453,7 +479,7 @@ fn evaluate(results: &[BenchResult], baseline: Option<&Run>) -> Outcome {
         }
         let statistic = result.statistic;
         let value = statistic.of(result);
-        if value > result.budget_ns {
+        if machine == Machine::Reference && value > result.budget_ns {
             outcome.failures.push(format!(
                 "{}: {} {} is over the budget of {}",
                 result.benchmark,

@@ -250,16 +250,20 @@ fn pending_budgets_are_never_checked() {
         true,
         vec![result("a", Status::Pending, Statistic::Median, 1.0)],
     );
-    let outcome = evaluate(&[slow], Some(&baseline));
+    let outcome = evaluate(&[slow], Some(&baseline), Machine::Reference);
     assert!(outcome.failures.is_empty() && outcome.regressions.is_empty());
 }
 
 #[test]
 fn an_active_budget_over_its_budget_fails() {
     let at_budget = result("a", Status::Active, Statistic::P95, 1e6);
-    assert!(evaluate(&[at_budget], None).failures.is_empty());
+    assert!(
+        evaluate(&[at_budget], None, Machine::Reference)
+            .failures
+            .is_empty()
+    );
     let over = result("a", Status::Active, Statistic::P95, 1.01e6);
-    let failures = evaluate(&[over], None).failures;
+    let failures = evaluate(&[over], None, Machine::Reference).failures;
     assert_eq!(failures, ["a: p95 1.01 ms is over the budget of 1.00 ms"]);
 }
 
@@ -267,9 +271,16 @@ fn an_active_budget_over_its_budget_fails() {
 fn the_budget_statistic_is_the_one_checked() {
     let mut mixed = result("a", Status::Active, Statistic::Median, 5e5);
     mixed.p99_ns = 5e6;
-    assert!(evaluate(&[mixed.clone()], None).failures.is_empty());
+    assert!(
+        evaluate(&[mixed.clone()], None, Machine::Reference)
+            .failures
+            .is_empty()
+    );
     mixed.statistic = Statistic::P99;
-    assert_eq!(evaluate(&[mixed], None).failures.len(), 1);
+    assert_eq!(
+        evaluate(&[mixed], None, Machine::Reference).failures.len(),
+        1
+    );
 }
 
 #[test]
@@ -280,9 +291,13 @@ fn a_regression_over_ten_percent_is_reported() {
         vec![result("a", Status::Active, Statistic::Median, 1000.0)],
     );
     let within = result("a", Status::Active, Statistic::Median, 1100.0);
-    assert!(evaluate(&[within], Some(&baseline)).regressions.is_empty());
+    assert!(
+        evaluate(&[within], Some(&baseline), Machine::Reference)
+            .regressions
+            .is_empty()
+    );
     let over = result("a", Status::Active, Statistic::Median, 1101.0);
-    let outcome = evaluate(&[over], Some(&baseline));
+    let outcome = evaluate(&[over], Some(&baseline), Machine::Reference);
     assert!(outcome.failures.is_empty());
     assert_eq!(
         outcome.regressions,
@@ -299,7 +314,7 @@ fn a_benchmark_pending_in_the_baseline_is_not_compared() {
     );
     let now_active = result("a", Status::Active, Statistic::Median, 1000.0);
     assert!(
-        evaluate(&[now_active], Some(&baseline))
+        evaluate(&[now_active], Some(&baseline), Machine::Reference)
             .regressions
             .is_empty()
     );
@@ -309,7 +324,11 @@ fn a_benchmark_pending_in_the_baseline_is_not_compared() {
         vec![result("b", Status::Active, Statistic::Median, 1.0)],
     );
     let unrelated = result("a", Status::Active, Statistic::Median, 1000.0);
-    assert!(evaluate(&[unrelated], Some(&other)).regressions.is_empty());
+    assert!(
+        evaluate(&[unrelated], Some(&other), Machine::Reference)
+            .regressions
+            .is_empty()
+    );
 }
 
 #[test]
@@ -616,4 +635,21 @@ fn the_default_host_key_names_the_os_arch_and_cpu() {
     let host = host();
     assert_eq!(host.os, std::env::consts::OS);
     assert!(!host.key.is_empty());
+}
+
+// No spec statement: a host that is no reference machine, a CI runner, is judged by the 10%
+// regression rule alone; on a reference machine a result over its budget fails.
+#[test]
+fn only_a_reference_machine_judges_the_budget() {
+    let over = result("keystroke", Status::Active, Statistic::P99, 2e7);
+    assert_eq!(Machine::of("ref-mac"), Machine::Reference);
+    assert_eq!(Machine::of("ref-linux"), Machine::Reference);
+    assert_eq!(Machine::of("linux-x86_64-amd-epyc"), Machine::Other);
+    assert_eq!(
+        evaluate(std::slice::from_ref(&over), None, Machine::Reference)
+            .failures
+            .len(),
+        1
+    );
+    assert!(evaluate(&[over], None, Machine::Other).failures.is_empty());
 }

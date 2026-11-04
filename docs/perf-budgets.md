@@ -57,8 +57,11 @@ name.
    fresh `target/xtask/bench/criterion/`;
 2. reads each benchmark's samples and computes the median, p95 and p99 time per iteration
    (nearest rank over criterion's samples);
-3. for each **active** row, fails if the row's statistic is over its budget, or more than 10%
-   slower than the last passing run recorded on the same host;
+3. for each **active** row, fails if the row's statistic is over its budget on a reference
+   machine (`QS_BENCH_HOST` set to `ref-mac`, `ref-windows` or `ref-linux`), or more than 10%
+   slower than the last passing run recorded on the same host. Another host, a CI runner among
+   them, is judged by the 10% rule alone: the budgets are the modder's, and hold on the
+   reference machines (decided by Justin on 2026-11-04 for P2-166);
 4. appends the run to the JSON history, passed or not, and prints the results.
 
 `pending` rows still run, so every budget's benchmark exists and is exercised, but they are
