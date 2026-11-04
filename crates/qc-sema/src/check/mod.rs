@@ -114,9 +114,9 @@ pub(crate) trait Env {
     fn lex_flags_at(&self, at: usize) -> LexFlags;
     /// The output target and the opcodes it has at offset `at` (FTEF-25).
     fn target_at(&self, at: usize) -> OpcodeTarget;
-    /// Whether a definition named `name` is visible where the body is, as
+    /// The definition named `name` visible where the body is, as
     /// `QCC_PR_GetSRef(NULL, name, pr_scope, false, ...)` finds an emulation's helper.
-    fn defines(&self, name: &str) -> bool;
+    fn helper(&self, name: &str) -> Option<DefId>;
     /// Whether the body is a member function's (`pr_classtype`).
     fn in_class(&self) -> bool;
     /// The class of `this` in a member function's body, `pr_classtype` (FTEF-17.14).

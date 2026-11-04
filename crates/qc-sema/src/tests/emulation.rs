@@ -971,3 +971,21 @@ fn a_constant_vectors_component_compares_as_a_constant() {
         }
     }
 }
+
+// spec FTEF-27.4: a float shift is emulated with `pow` or `powf` and `floor`, or with
+// `bitshift`; with only one of `pow` and `floor` it is refused
+#[test]
+fn a_shift_needs_pow_and_floor_or_bitshift() {
+    let warned = |helpers: &str| {
+        diags(&format!("{helpers}{}", body("a = a << a;")))
+            .iter()
+            .any(|(code, _)| *code == Code::W0235)
+    };
+    let pow = "float(float a, float b) pow = { return a; };\n";
+    let floor = "float(float a) floor = { return a; };\n";
+    let bitshift = "float(float a, float b) bitshift = { return a; };\n";
+    assert!(warned(pow), "pow alone");
+    assert!(warned(floor), "floor alone");
+    assert!(!warned(&format!("{pow}{floor}")), "pow and floor");
+    assert!(!warned(bitshift), "bitshift");
+}

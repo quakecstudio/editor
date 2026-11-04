@@ -13,6 +13,7 @@
 use qc_diag::{Code, Span};
 use qc_preproc::{FteFlag, Op, OpcodeTarget, TargetFormat};
 
+use crate::DefId;
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
@@ -285,6 +286,39 @@ impl Checker<'_> {
         Ok((lhs, rhs))
     }
 
+    /// `QCC_PR_EmulationFunc` (FTE-19.8): the program's `function` called with the two
+    /// operands, each stored to its parameter, its value the return; the value takes a
+    /// temporary as the opcode's statement would (FTEF-27.16), which the warnings that name one
+    /// count.
+    fn helper_call(
+        &mut self,
+        function: DefId,
+        (lhs, rhs): (&Value, &Value),
+        result: Value,
+    ) -> Value {
+        if let Some(builder) = &mut self.fragment {
+            for (operand, slot) in [(lhs, 0), (rhs, 1)] {
+                let reads = [
+                    Some(operand.operand()),
+                    Some(Some(ir::Operand::Parameter(slot))),
+                ];
+                builder.push(Op::StoreF, reads, ir::Destination::Nothing);
+            }
+            let callee = [Some(Some(ir::Operand::Def(function))), None];
+            builder.push(Op::Call2, callee, ir::Destination::Nothing);
+        }
+        for offset in [lhs.temp, rhs.temp].into_iter().flatten() {
+            self.env.temps().free(offset);
+        }
+        let temp = Some(self.env.temps().take(1));
+        self.last_temp = temp;
+        Value {
+            ir: Some(ir::Operand::Return),
+            temp,
+            ..result
+        }
+    }
+
     /// FTEF-27.2: the emulation of `op`, which the target lacks.
     fn emulate(
         &mut self,
@@ -323,7 +357,7 @@ impl Checker<'_> {
                 self.emit(then, &lhs, rhs, span)
             }
             Emulation::Helper(names, what) => {
-                if names.iter().any(|name| self.env.defines(name)) {
+                if names.iter().any(|name| self.env.helper(name).is_some()) {
                     return Ok(result);
                 }
                 let name = names.first().copied().unwrap_or_default();
@@ -357,12 +391,8 @@ impl Checker<'_> {
                 self.emit(join, &low, &high, span)
             }
             Emulation::Remainder(helper, steps) => {
-                // The call of the helper is not held by the intermediate layer yet.
-                if self.env.defines(helper) {
-                    if let Some(builder) = &mut self.fragment {
-                        builder.give_up();
-                    }
-                    return Ok(result);
+                if let Some(function) = self.env.helper(helper) {
+                    return Ok(self.helper_call(function, (lhs, rhs), result));
                 }
                 let &[div, ref rest @ .., mul, sub] = steps else {
                     return Ok(result);
@@ -524,7 +554,7 @@ impl Checker<'_> {
         span: Span,
         result: Value,
     ) -> Result<Value, Fatal> {
-        if helper.is_some_and(|helper| self.env.defines(helper)) {
+        if helper.is_some_and(|helper| self.env.helper(helper).is_some()) {
             if let Some(builder) = &mut self.fragment {
                 builder.give_up();
             }
@@ -565,7 +595,7 @@ impl Checker<'_> {
             ),
             _ => return Ok(result),
         };
-        if helpers.iter().any(|name| self.env.defines(name)) {
+        if helpers.iter().any(|name| self.env.helper(name).is_some()) {
             return Ok(result);
         }
         if op == Op::ConvUf {
@@ -615,7 +645,7 @@ impl Checker<'_> {
             }
             _ => ("RShiftUInt", Op::DivU),
         };
-        if self.env.defines(helper) {
+        if self.env.helper(helper).is_some() {
             return Ok(result);
         }
         // A shift by a constant is a product or quotient by `QCC_MakeIntConst(1<<n)`; by
@@ -665,7 +695,7 @@ impl Checker<'_> {
         let qccx = self.env.flags_at(span.start).has(FteFlag::Qccx);
         match op {
             Op::AddSf => {
-                if self.env.defines("AddStringFloat") {
+                if self.env.helper("AddStringFloat").is_some() {
                     return Ok(result);
                 }
                 if lhs.constness == Constness::Variable {
@@ -704,7 +734,7 @@ impl Checker<'_> {
                 if qccx {
                     let message = "qccx entity offsets are unsafe".to_owned();
                     self.env.report(Code::W0235, span, message);
-                } else if !self.env.defines("nextent") {
+                } else if !self.env.helper("nextent").is_some() {
                     let message = "the nextent builtin is not defined".to_owned();
                     self.env.report(Code::W0235, span, message);
                     self.refuse_emitted(op, span);
@@ -729,8 +759,10 @@ impl Checker<'_> {
                     self.emit(int_op, &lhs, &rhs, span)?;
                     return Ok(result);
                 }
-                let pow = self.env.defines("powf") || self.env.defines("pow");
-                if (pow && self.env.defines("floor")) || self.env.defines("bitshift") {
+                let pow = self.env.helper("powf").is_some() || self.env.helper("pow").is_some();
+                if (pow && self.env.helper("floor").is_some())
+                    || self.env.helper("bitshift").is_some()
+                {
                     return Ok(result);
                 }
                 let message = format!("bitshift function not defined: cannot emulate {what}");
@@ -739,7 +771,7 @@ impl Checker<'_> {
                 Ok(result)
             }
             Op::SpaceshipS => {
-                if self.env.defines("strcmp") {
+                if self.env.helper("strcmp").is_some() {
                     return Ok(result);
                 }
                 let message = "strcmp function not defined: cannot emulate string<=>string";
@@ -851,7 +883,7 @@ impl Checker<'_> {
                 if self.env.target_at(span.start).valid(Op::SubI) {
                     return Ok(replaced(Op::SubI));
                 }
-                if !self.env.defines("SubInt") {
+                if !self.env.helper("SubInt").is_some() {
                     let message = "SubInt function not defined: cannot emulate ~int";
                     self.env.report(Code::W0235, span, message.to_owned());
                     self.refuse_emitted(Op::SubI, span);

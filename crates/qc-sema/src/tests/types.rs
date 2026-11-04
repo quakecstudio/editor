@@ -490,24 +490,45 @@ fn a_binary_operator_lowers_to_a_fragment() {
     );
 }
 
-// spec FTEF-27.4: with a `mod` function defined, `a % b` calls it, which the intermediate layer
-// does not hold yet, so the operator has no fragment
+// spec FTE-19.8: with a `mod` function defined, `a % b` is a call of it: each operand stored
+// to its parameter, then `CALL2` of the function, the value its return
 #[test]
-fn a_helper_call_is_no_fragment_yet() {
+fn a_helper_call_is_its_fragment() {
+    use crate::ir::{Destination, Input, Operand, Statement};
+    use qc_preproc::Op;
     let source =
         "float(float a, float b) mod = { return a; };\nfloat a; void() t = { a = a % 2; };";
     let index = super::fte_index_of(source);
-    let t = index
+    let function = index
         .defs
         .iter()
-        .position(|d| d.name == "t")
+        .position(|d| d.name == "mod")
         .map(DefId::new)
         .unwrap();
-    let start = source.find("a % 2").unwrap() + 2;
+    let fragment = fte_fragment_at(source, "a % 2", "%");
+    let statement = |op, a, b| Statement {
+        op,
+        a,
+        b,
+        c: Destination::Nothing,
+    };
     assert_eq!(
-        index.bodies[&t].fragment_at(Span::new(start, start + 1)),
-        None
+        fragment.statements,
+        [
+            statement(
+                Op::StoreF,
+                Some(Operand::Input(Input::Left)),
+                Some(Operand::Parameter(0))
+            ),
+            statement(
+                Op::StoreF,
+                Some(Operand::Input(Input::Right)),
+                Some(Operand::Parameter(1))
+            ),
+            statement(Op::Call2, Some(Operand::Def(function)), None),
+        ]
     );
+    assert_eq!(fragment.value, Some(Operand::Return));
 }
 
 // spec FTEF-26.13: a word of a constant vector is a constant, so an operator of it and a
@@ -671,4 +692,105 @@ fn logic_of_other_types_reads_their_truths() {
         fte_fragment_at(source, "a || e", "||").statements,
         [statement(Op::OrF, left, right)]
     );
+}
+
+// spec FTEF-30.1: `!e` lowers to the `NOT_*` of its operand's type, its operand the fragment's
+// input; FTEF-26.3: of a constant it folds to the float of its truth, with no statement
+#[test]
+fn a_not_lowers_to_a_fragment() {
+    use crate::ir::{Destination, Input, Operand, Statement};
+    use qc_preproc::Op;
+    let source = "float a; string s; void() t = { a = !a; a = !s; a = !0; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let at = |text: &str| {
+        let start = source.find(text).unwrap();
+        index.bodies[&t]
+            .fragment_at(Span::new(start, start + text.len()))
+            .cloned()
+    };
+    let not = |op| Statement {
+        op,
+        a: Some(Operand::Input(Input::Left)),
+        b: None,
+        c: Destination::Value,
+    };
+    assert_eq!(at("!a").unwrap().statements, [not(Op::NotF)]);
+    assert_eq!(at("!s").unwrap().statements, [not(Op::NotS)]);
+    let folded = at("!0").unwrap();
+    assert!(folded.statements.is_empty());
+    assert_eq!(folded.value, Some(Operand::Immediate(float_immediate(1.0))));
+}
+
+// spec FTEF-30.4: `-e` lowers to the subtraction of its operand from its type's zero
+// spec FTEF-27.9: `~e` of a float on the vanilla opcodes is `-1 - e`
+#[test]
+fn a_negation_and_a_complement_lower_to_fragments() {
+    use crate::ir::{Destination, Input, Operand, Statement};
+    use qc_preproc::Op;
+    let source = "float a; void() t = { a = -a; a = ~a; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let at = |text: &str| {
+        let start = source.find(text).unwrap();
+        index.bodies[&t]
+            .fragment_at(Span::new(start, start + text.len()))
+            .cloned()
+    };
+    let minus = |from: f32| Statement {
+        op: Op::SubF,
+        a: Some(Operand::Immediate(float_immediate(from))),
+        b: Some(Operand::Input(Input::Left)),
+        c: Destination::Value,
+    };
+    assert_eq!(at("-a").unwrap().statements, [minus(0.0)]);
+    assert_eq!(at("~a").unwrap().statements, [minus(-1.0)]);
+}
+
+// spec QC-16.4: under id's rules `!e` lowers to the `NOT_*` of its operand's type
+#[test]
+fn a_vanilla_not_lowers_to_its_statement() {
+    use crate::ir::{Destination, Input, Operand, Statement};
+    use qc_preproc::Op;
+    let source = "float a; vector v; string s; entity e; void() g = { a = !a; a = !v; a = !s; \
+                  a = !e; a = !g; };";
+    let index = super::index_of(source);
+    let g = index
+        .defs
+        .iter()
+        .position(|d| d.name == "g")
+        .map(DefId::new)
+        .unwrap();
+    for (text, op) in [
+        ("!a", Op::NotF),
+        ("!v", Op::NotV),
+        ("!s", Op::NotS),
+        ("!e", Op::NotEnt),
+        ("!g", Op::NotFnc),
+    ] {
+        let start = source.find(text).unwrap();
+        let fragment = index.bodies[&g]
+            .fragment_at(Span::new(start, start + 2))
+            .unwrap();
+        assert_eq!(
+            fragment.statements,
+            [Statement {
+                op,
+                a: Some(Operand::Input(Input::Left)),
+                b: None,
+                c: Destination::Value,
+            }],
+            "{text}"
+        );
+    }
 }

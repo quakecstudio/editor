@@ -505,8 +505,8 @@ impl Env for BodyEnv<'_, '_> {
         false
     }
 
-    fn defines(&self, name: &str) -> bool {
-        self.resolver.lookup_global(name).is_some()
+    fn helper(&self, name: &str) -> Option<DefId> {
+        self.resolver.lookup_global(name)
     }
 
     fn in_class(&self) -> bool {

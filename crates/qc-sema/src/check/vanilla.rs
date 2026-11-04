@@ -251,12 +251,23 @@ impl Vanilla<'_> {
         let Some(ty) = self.expr_of(not.operand())? else {
             return Ok(None);
         };
-        match Basic::of(&ty) {
-            Some(
-                Basic::Float | Basic::String | Basic::Entity | Basic::Vector | Basic::Function,
-            ) => Ok(Some(Type::Simple(SimpleType::Float))),
-            _ => self.mismatch("!", not.syntax().span()),
+        let opcode = match Basic::of(&ty) {
+            Some(Basic::Float) => Op::NotF,
+            Some(Basic::Vector) => Op::NotV,
+            Some(Basic::String) => Op::NotS,
+            Some(Basic::Entity) => Op::NotEnt,
+            Some(Basic::Function) => Op::NotFnc,
+            _ => return self.mismatch("!", not.syntax().span()),
+        };
+        // QC-16.4: `NOT_*` of the operand into a new temporary, the fragment kept by the
+        // expression's span.
+        let mut fragment = ir::Builder::new();
+        let input = Some(Some(ir::Operand::Input(ir::Input::Left)));
+        let made = fragment.push(opcode, [input, None], ir::Destination::Value);
+        if let Some(fragment) = fragment.finish(made, [None, None]) {
+            self.fragments.insert(not.syntax().span(), fragment);
         }
+        Ok(Some(Type::Simple(SimpleType::Float)))
     }
 
     /// QC-16.1, QC-16.2, QC-17: a binary operator's row by its operands' basic types, an
