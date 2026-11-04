@@ -399,12 +399,16 @@ impl Checker<'_> {
             None => None,
         };
         let step = s.step();
+        // The step is read before the body and its statements emitted after it.
+        let before_step = self.generated.len();
         if let Some(step) = &step {
             for expr in step.children().filter_map(ast::Expr::cast) {
                 self.value(Some(expr))?;
             }
         }
+        let step_statements = self.generated.split_off(before_step.min(self.generated.len()));
         self.statement_of(s.body());
+        self.generated.extend(step_statements);
         let next = self.layout.here();
         if step.is_some() {
             self.layout.push(Step::Other, None, line);
