@@ -16,6 +16,10 @@
 //! - `cargo xtask compiler-diff --full <codebase>`: the nightly run's 128 rounds over one
 //!   codebase, id 1.01, a rerelease codebase or a corpus mod, which the nightly workflow runs
 //!   as one job per codebase; `--full` may also name a corpus mod not yet at the bar.
+//! - `cargo xtask compiler-diff --generated <count> [--seed <n>]`: generated programs (DIFF-14).
+//! - `cargo xtask compiler-diff --functions <codebase>...`: each function of a codebase the
+//!   pinned FTEQCC compiles, cut into a program of its own and called alone (DIFF-15,
+//!   `functions.rs`).
 //!
 //! Both fail on any divergence and on a codebase whose oracle progs has less than 90% of its
 //! statements executed (DIFF-12.5). The codebases come from the asset cache
