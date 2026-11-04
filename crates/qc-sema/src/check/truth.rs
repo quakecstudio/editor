@@ -114,7 +114,9 @@ impl Checker<'_> {
     /// `NOT_FNC` or `NOT_ENT`, drops that statement and is an `IF` of its operand, a call's
     /// value it read then live again; the dropped statement's operand when it dropped one.
     pub(super) fn drops_not(&mut self, value: &Value) -> Option<Option<ir::Name>> {
-        let drops = value.temp.is_some()
+        // At global scope no statement is generated, so there is none to drop.
+        let drops = !self.global
+            && value.temp.is_some()
             && value.temp == self.last_temp
             && self
                 .generated
@@ -280,10 +282,10 @@ impl Checker<'_> {
     #[inline(never)]
     fn test_condition(&mut self, condition: &Value, span: Span) -> Result<Option<u32>, Fatal> {
         self.branch(condition, Jump::IfNot, span)?;
-        // `QCC_Generate_OP_IFNOT` of a vector under `ifvector` tests `!v` by `OP_IF_I`.
-        let vector = self.etype_of(&condition.ty) == Some(Etype::Vector)
-            && self.env.flags_at(span.start).has(FteFlag::Ifvector);
-        self.generate(if vector { Op::IfI } else { Op::IfnotI }, span);
+        // The jump `branch` chose: `OP_IF_I` of a vector's `!v` under `ifvector`, or of a `NOT`
+        // the short `IFNOT` dropped (FTEF-34.16).
+        let op = self.branch_op.take().unwrap_or(Op::IfnotI);
+        self.generate(op, span);
         let jump = self.last_made();
         let tested = self.branch_condition.take();
         if let Some(statement) = self.generated.last_mut() {

@@ -1264,6 +1264,33 @@ fn a_generated_body_lists_its_locals_and_returns_its_ret_local() {
     assert_eq!(generated[2].uses(), [false; 3]);
 }
 
+// FTEF-34.16, FTEF-30.3: a ternary's test of `!x` drops the `NOT` and jumps by `IF`, as a
+// statement's test does
+#[test]
+fn a_generated_ternary_test_drops_a_not() {
+    use qc_preproc::Op;
+    let source = "float a, b, k; void() t = { k = (!a) ? b : 2; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let ops: Vec<_> = index.bodies[&t].generated().iter().map(|s| s.op).collect();
+    assert_eq!(
+        ops,
+        [
+            Op::IfI,
+            Op::StoreF,
+            Op::Goto,
+            Op::StoreF,
+            Op::StoreF,
+            Op::Done
+        ]
+    );
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]
