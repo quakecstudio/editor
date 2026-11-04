@@ -1428,6 +1428,30 @@ fn a_generated_update_folds_into_its_definition() {
     );
 }
 
+// FTEF-34.4, FTEF-29.13: a local a `for`'s initialiser clause declares is stored its value
+// before the loop's test
+#[test]
+fn a_generated_for_stores_the_local_its_clause_declares() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "float k; void() t = { for (float i = 0; i < k; i++) k = 1; };";
+    let index = super::fte_index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let body = &index.bodies[&def("t")];
+    let first = &body.generated()[0];
+    assert_eq!(first.op, Op::StoreF);
+    let i = body.locals().first().map(|&(_, id)| Name::Def(id, 0));
+    assert_eq!(first.b, i);
+    assert_eq!(body.generated()[1].op, Op::LtF);
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]

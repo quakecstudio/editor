@@ -484,8 +484,13 @@ impl Checker<'_> {
         let (breaks, continues) = self.layout.marks();
         if let Some(init) = s.init() {
             self.layout.push(Step::Other, None, line, None);
-            for expr in init.children().filter_map(ast::Expr::cast) {
-                self.value(Some(expr))?;
+            // The clause's expressions and the locals it declares, in order.
+            for child in init.children() {
+                if let Some(local) = ast::LocalDecl::cast(child.clone()) {
+                    self.local(&local)?;
+                } else if let Some(expr) = ast::Expr::cast(child) {
+                    self.value(Some(expr))?;
+                }
             }
         }
         let top = self.here();
