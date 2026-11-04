@@ -249,7 +249,7 @@ pub(crate) struct Value {
     pub(crate) word: u32,
     /// A number literal's constant and the immediate the code generator places it in, the
     /// lexer's float of its text: the value's name while it is still that constant.
-    pub(crate) literal: Option<Box<(Constant, ir::Immediate)>>,
+    pub(crate) literal: Option<Box<(Constant, ir::Name)>>,
 }
 
 /// FTEQCC's temporaries (`tempsinfo`), kept across the module's functions: each one's word
@@ -407,10 +407,10 @@ impl Value {
         if let Some(string) = self.string {
             return Some(ir::Name::String(string));
         }
-        if let Some(&(constant, immediate)) = self.literal.as_deref()
+        if let Some(&(constant, name)) = self.literal.as_deref()
             && self.known() == Some(constant)
         {
-            return Some(ir::Name::Immediate(immediate));
+            return Some(name);
         }
         match self.sym {
             Sym::Def(def, _, word) => Some(ir::Name::Def(def, word)),

@@ -3452,3 +3452,23 @@ fn a_negated_constant_folds_after_its_zero() {
         "the zero is made just before the value"
     );
 }
+
+// spec FTE-3.6, FTEF-31.9: a constant vector's component is a constant, so an `if` of it keeps
+// only the branch it selects, as the pinned FTEQCC compiles `if (('0 0.245 3').x)` and
+// `if (('0 0.245 3').y)` (2026-11-04)
+#[test]
+fn an_if_of_a_constant_vectors_component_keeps_one_branch() {
+    let p = fte_progs(
+        "float gf0;\nvoid() t = { if (('0 0.245 3').x) { gf0 = 7; } else { gf0 = 1; } };\n\
+         void() u = { if (('0 0.245 3').y) { gf0 = 8; } else { gf0 = 2; } };\n",
+    );
+    let gf0 = global(&p, "gf0");
+    assert_eq!(
+        body(&p, "t"),
+        [st(StoreF, immediate(&p, 1.0), gf0, 0), st(Done, 0, 0, 0)]
+    );
+    assert_eq!(
+        body(&p, "u"),
+        [st(StoreF, immediate(&p, 8.0), gf0, 0), st(Done, 0, 0, 0)]
+    );
+}

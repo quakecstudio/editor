@@ -332,7 +332,9 @@ impl<'e> Checker<'e> {
                     _ => None,
                 };
                 Value {
-                    literal: literal.map(Box::new),
+                    literal: literal.map(|(constant, immediate)| {
+                        Box::new((constant, ir::Name::Immediate(immediate)))
+                    }),
                     ..Value::constant(constant)
                 }
             }

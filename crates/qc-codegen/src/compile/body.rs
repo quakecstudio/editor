@@ -160,6 +160,15 @@ impl Compiler<'_> {
                 let place = self.immediate_place(immediate, span)?;
                 self.program.def(place).at(span)?.ofs
             }
+            Name::ImmediateWord(immediate, word) => {
+                let place = self.immediate_place(immediate, span)?;
+                self.program
+                    .def(place)
+                    .at(span)?
+                    .ofs
+                    .checked_add(word)
+                    .at(span)?
+            }
             Name::String(string) => {
                 let bytes = body.string(string).at(span)?.to_vec();
                 let place = self.program.immediate(&Literal::String(bytes)).at(span)?;

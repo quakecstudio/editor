@@ -174,6 +174,9 @@ pub enum Name {
     Def(DefId, u32),
     /// An immediate constant.
     Immediate(Immediate),
+    /// A word of a vector immediate, a constant vector's component (FTEF-31.9): the
+    /// immediate and the word.
+    ImmediateWord(Immediate, u32),
     /// The value of the body's statement at this index.
     Made(u32),
     /// A word of the vector the body's statement at this index made: the index and the word.
@@ -222,6 +225,7 @@ impl Name {
         match self {
             Self::Def(..)
             | Self::Immediate(_)
+            | Self::ImmediateWord(..)
             | Self::String(_)
             | Self::ArrayGet(_)
             | Self::ArraySet(_)
