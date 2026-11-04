@@ -1105,6 +1105,32 @@ fn a_generated_body_names_vector_components_and_reads_a_field_once() {
     );
 }
 
+// FTE-18.7: a parameter after the arguments that takes its default is stored its default
+// before the call, which counts it
+#[test]
+fn a_generated_call_stores_its_defaults() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "float(float a, string b = \"x\") f; void() t = { f(1); };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let statements: Vec<_> = index.bodies[&t]
+        .generated()
+        .iter()
+        .map(|s| (s.op, s.a, s.b))
+        .collect();
+    assert_eq!(
+        statements[1],
+        (Op::StoreF, Some(Name::Default(1)), Some(Name::Parameter(1)))
+    );
+    assert_eq!(statements[2].0, Op::Call2);
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]

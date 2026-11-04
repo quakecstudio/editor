@@ -371,6 +371,21 @@ impl Checker<'_> {
                     });
                 }
             }
+            // FTE-18.7: each parameter after the arguments that takes its default is stored it.
+            for slot in values.len()..passed {
+                let words = function
+                    .params
+                    .get(slot)
+                    .and_then(|param| self.env.layout(param))
+                    .map_or(1, |l| l.words);
+                let vector = words == 3 || variant_parameter(function, slot);
+                let slot = u8::try_from(slot).ok();
+                self.generated.push(ir::BodyStatement {
+                    a: slot.map(ir::Name::Default),
+                    b: slot.map(ir::Name::Parameter),
+                    ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
+                });
+            }
             let call = [
                 Op::Call0,
                 Op::Call1,

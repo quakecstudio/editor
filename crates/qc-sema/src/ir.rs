@@ -183,6 +183,8 @@ pub enum Name {
     Parameter(u8),
     /// A word of the variadic function's `__va_list` (FTE-18.6).
     VaList(u32),
+    /// The default value of this parameter of the function the next `CALL` calls (FTE-18.7).
+    Default(u8),
     /// The body's statement at this index, a jump's target; the body's length is its end.
     Jump(u32),
     /// The string immediate of the body's string literal at this index

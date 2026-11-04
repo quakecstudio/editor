@@ -273,6 +273,7 @@ variant qc_sema::ir::Input::Right
 variant qc_sema::ir::Name::ArrayGet
 variant qc_sema::ir::Name::ArraySet
 variant qc_sema::ir::Name::Def
+variant qc_sema::ir::Name::Default
 variant qc_sema::ir::Name::Immediate
 variant qc_sema::ir::Name::Jump
 variant qc_sema::ir::Name::Made

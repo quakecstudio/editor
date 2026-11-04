@@ -415,6 +415,9 @@ impl Checker<'_> {
             if let (Some(call), Some(copy)) = (value.call, copy) {
                 self.copies.push((call, copy));
             }
+            // The copy is `QCC_ClobberDef`'s, after which the return global holds nothing live.
+            self.live_return = None;
+            self.live_call = None;
         }
         Ok(())
     }
