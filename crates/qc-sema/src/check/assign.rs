@@ -314,6 +314,7 @@ impl Checker<'_> {
                     b: to,
                     ..ir::BodyStatement::bare(Checker::store_op(self.etype(&target)))
                 });
+                self.read_returned(&stored);
                 self.last_temp = None;
             }
         }
@@ -812,7 +813,16 @@ impl Checker<'_> {
             b: address,
             ..ir::BodyStatement::bare(storep)
         });
+        self.read_returned(stored);
         self.last_temp = None;
+    }
+
+    /// A store's read of `value`: a call's value is then out of the return global's keeping.
+    fn read_returned(&mut self, value: &Value) {
+        if value.returned {
+            self.live_return = None;
+            self.live_call = None;
+        }
     }
 
     /// FTEF-19.78: the store of `stored` to the element `lhs` at an index that is no constant,
