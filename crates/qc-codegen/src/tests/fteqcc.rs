@@ -3498,3 +3498,24 @@ fn a_vector_bitwise_operator_writes_each_word_of_its_temporary() {
     }
     assert_eq!((t[3].a, t[3].b), (first, c));
 }
+
+// spec FTE-18.12, QC-21.5: a vector constructor stores each component to its word of a vector
+// temporary, the first folded into the statement that made it when that is the last one, and a
+// component left out is the float 0
+#[test]
+fn a_vector_constructor_folds_its_first_word() {
+    let p = fte_progs("float a, b;\nvector() t = { return [a * b, b]; };\n");
+    let t = body(&p, "t");
+    let (a, b) = (global(&p, "a"), global(&p, "b"));
+    let v = t[0].c;
+    assert_eq!(
+        t,
+        [
+            st(MulF, a, b, v),
+            st(StoreF, b, v + 1, 0),
+            st(StoreF, immediate(&p, 0.0), v + 2, 0),
+            st(Return, v, 0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}

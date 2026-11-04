@@ -480,9 +480,37 @@ impl Checker<'_> {
                 return self.emit(Op::MulVf, &Value::constant(axis), &float, span);
             }
         }
-        // Each component stored to its word of a vector temporary (`QCC_GetTemp(type_vector)`).
+        // Each component stored to its word of a vector temporary (`QCC_GetTemp(type_vector)`),
+        // taken before the first store (QC-21.5).
         let temp = self.fragment.as_mut().and_then(ir::Builder::vector);
+        // FTE-18.12: the first word's store folds into the statement that made its value when
+        // that is the last one (`opt_assignments`), which then writes the word; every later
+        // store follows a store. The vector is then taken before that statement.
+        let folds = values.first().and_then(|value| {
+            value.made.filter(|&made| {
+                value.temp.is_some()
+                    && value.temp == self.last_temp
+                    && Some(made) == self.last_made()
+                    && value.word == 0
+                    // Only a statement that writes its value to `c` folds (`last.c != made`).
+                    && self.generated.last().is_some_and(|last| last.c == Some(ir::Name::Made(made)))
+            })
+        });
+        let first = folds.unwrap_or_else(|| self.next_made());
+        if !self.global {
+            let at = self.effects.partition_point(|&(at, _)| at <= first);
+            self.effects.insert(at, (first, ir::Effect::Vector));
+            if let Some(statement) = folds
+                .and_then(|made| usize::try_from(made).ok())
+                .and_then(|made| self.generated.get_mut(made))
+            {
+                statement.c = Some(ir::Name::MadeWord(first, 0));
+            }
+        }
         for (word, value) in (0_u8..).zip(&values) {
+            if word == 0 && folds.is_some() {
+                continue;
+            }
             if self.etype_of(&value.ty) == Some(Etype::Integer) {
                 if let Some(builder) = &mut self.fragment {
                     builder.give_up();
@@ -490,6 +518,8 @@ impl Checker<'_> {
                 self.emit(Op::StoreIf, value, &Value::unknown(), span)?;
             } else {
                 self.generate(Op::StoreF, span);
+                let to = ir::Name::MadeWord(first, u32::from(word));
+                self.name_last(Op::StoreF, self.name_of(value), Some(to));
                 if let (Some(builder), Some(temp)) = (&mut self.fragment, temp) {
                     let to = ir::Operand::Temp(temp).word(word);
                     builder.push(
@@ -502,6 +532,7 @@ impl Checker<'_> {
         }
         Ok(Value {
             ir: temp.map(ir::Operand::Temp),
+            made: (!self.global).then_some(first),
             ..Value::of(Type::Simple(SimpleType::Vector))
         })
     }

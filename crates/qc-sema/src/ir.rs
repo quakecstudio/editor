@@ -346,8 +346,9 @@ impl BodyStatement {
     /// its own, `c`, and a copy's for a store into a value of its own, `b`.
     #[must_use]
     pub fn made_words(&self, index: u32) -> Option<u32> {
-        // The first word of a vector an `Effect::Vector` took, which is the vector.
-        if self.c == Some(Name::MadeWord(index, 0)) {
+        // The first word of a vector an `Effect::Vector` took, which is the vector, written as
+        // a result or stored.
+        if self.c == Some(Name::MadeWord(index, 0)) || self.b == Some(Name::MadeWord(index, 0)) {
             return Some(3);
         }
         let made = Some(Name::Made(index));
