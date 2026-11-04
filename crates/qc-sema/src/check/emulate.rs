@@ -118,9 +118,18 @@ impl Checker<'_> {
         rhs: &Value,
         span: Span,
     ) -> Result<Value, Fatal> {
-        // A statement reading a call's value reads it from the return global.
+        // A statement reading a call's value reads it from the return global; a fold that
+        // gives an operand back reads nothing.
         self.not_of_return = None;
-        if lhs.returned || rhs.returned {
+        let opaque =
+            |value: &Value| value.constness == Constness::Opaque && !value.ty.is_function();
+        let folds_to_operand = !opaque(lhs)
+            && !opaque(rhs)
+            && matches!(
+                fold(op, lhs.known(), rhs.known(), &mut Vec::new()),
+                Some(Folded::Left | Folded::Right)
+            );
+        if (lhs.returned || rhs.returned) && !folds_to_operand {
             if matches!(op, Op::NotF | Op::NotFnc | Op::NotEnt) {
                 self.not_of_return = self.live_return.map(|words| (words, self.live_call));
             }
@@ -128,8 +137,6 @@ impl Checker<'_> {
         }
         let result = replaced(op);
         // A function's definition is a constant FTEQCC folds no opcode of (FTEF-26.12).
-        let opaque =
-            |value: &Value| value.constness == Constness::Opaque && !value.ty.is_function();
         if opaque(lhs) || opaque(rhs) {
             self.emitted = self.emitted.saturating_add(1);
             // An opcode the target lacks is emulated by the code generator, which follows the
