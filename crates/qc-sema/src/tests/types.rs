@@ -1580,7 +1580,7 @@ fn a_generated_body_names_a_ternary() {
 
 // QC-13.6, FTEF-29.13: the generated body names STATE's think function, a local's initialiser
 // store the local, a string literal argument its bytes, and `random`'s call its builtin, its scaling
-// `low + (high - low) * value` reading the return global
+// `low + (high - low) * value` reading the return global, the store folding into its last step
 #[test]
 fn a_generated_body_names_states_locals_strings_and_random() {
     use crate::ir::{Immediate, ImmediateKind, Name};
@@ -1630,7 +1630,7 @@ fn a_generated_body_names_states_locals_strings_and_random() {
         [
             (Op::SubF, Some(Name::Immediate(float(5.0))), made(1)),
             (Op::MulF, Some(Name::Return), made(2)),
-            (Op::AddF, made(2), made(3)),
+            (Op::AddF, made(2), named("l")),
         ]
     );
 }

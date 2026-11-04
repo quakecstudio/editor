@@ -535,9 +535,15 @@ impl Checker<'_> {
                 statement(Op::AddF, scaled.map(ir::Name::Made), low.name())
             }
         };
+        // A scaled value is its last statement's temporary, which a store may fold into.
+        let temp = made.map(|_| self.env.temps().take(1));
+        if temp.is_some() {
+            self.last_temp = temp;
+        }
         Value {
             made,
             call,
+            temp,
             ..float
         }
     }
