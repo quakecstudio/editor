@@ -111,6 +111,7 @@ similar_names = "allow"
 
 [workspace.dependencies]
 cc = { version = "=1.8.0", default-features = false }
+clap = { version = "=4.6.7", default-features = false }
 criterion = { version = "=0.8.2", default-features = false }
 eframe = { version = "=0.36.2", default-features = false }
 egui = { version = "=0.36.2", default-features = false }
@@ -159,6 +160,7 @@ qs-vfs = { path = "crates/qs-vfs" }
 qs-workbench = { path = "crates/qs-workbench" }
 qs-wad = { path = "crates/qs-wad" }
 qs-wav = { path = "crates/qs-wav" }
+quakec-ide = { path = "apps/cli" }
 quakec-lsp = { path = "apps/lsp" }
 schemars = { version = "=1.2.2", default-features = false }
 serde = { version = "=1.0.229", default-features = false }

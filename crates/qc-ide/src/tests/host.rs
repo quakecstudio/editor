@@ -91,3 +91,22 @@ fn reloading_keeps_unchanged_modules() {
     // The kept database parsed nothing again.
     assert_eq!(host.modules[0].db.counts().parse, parses);
 }
+
+// spec PRJ-3.2, QC-25.4: each project module is given to the build with its name, its output
+// and each file named as its `progs.src` lists it; a file no module compiles is not built
+#[test]
+fn the_build_gets_each_project_module() {
+    let mut host = host(&ProjectSpec {
+        files: &[("a.qc", "float a;\n"), ("sub/b.qc", "float b;\n")],
+        ..ProjectSpec::default()
+    });
+    host.set_overlay(&path("loose.qc"), b"float c;\n".to_vec())
+        .unwrap();
+    let modules = host.project_modules();
+    assert_eq!(modules.len(), 1, "the loose file is not a module to build");
+    let module = &modules[0];
+    assert_eq!(module.name, "progs");
+    assert_eq!(module.output, path("build/p/progs.dat"));
+    assert_eq!(module.names, ["a.qc", "sub/b.qc"]);
+    assert_eq!(module.input.compiled.len(), 2);
+}

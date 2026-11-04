@@ -19,6 +19,11 @@ field qc_ide::hints::ParameterHint.offset
 field qc_ide::host::Config.autoproto
 field qc_ide::host::Config.dialect
 field qc_ide::host::Config.target
+field qc_ide::host::ModuleBuild.db
+field qc_ide::host::ModuleBuild.input
+field qc_ide::host::ModuleBuild.name
+field qc_ide::host::ModuleBuild.names
+field qc_ide::host::ModuleBuild.output
 field qc_ide::hover::BuiltinInfo.engines
 field qc_ide::hover::BuiltinInfo.key
 field qc_ide::hover::BuiltinInfo.kind
@@ -50,6 +55,7 @@ fn qc_ide::hints::AnalysisHost::parameter_hints
 fn qc_ide::host::AnalysisHost::files
 fn qc_ide::host::AnalysisHost::new
 fn qc_ide::host::AnalysisHost::open
+fn qc_ide::host::AnalysisHost::project_modules
 fn qc_ide::host::AnalysisHost::reload
 fn qc_ide::host::AnalysisHost::remove_overlay
 fn qc_ide::host::AnalysisHost::set_config
@@ -74,6 +80,7 @@ struct qc_ide::highlight::Modifiers
 struct qc_ide::hints::ParameterHint
 struct qc_ide::host::AnalysisHost
 struct qc_ide::host::Config
+struct qc_ide::host::ModuleBuild
 struct qc_ide::hover::BuiltinInfo
 struct qc_ide::hover::Hover
 struct qc_ide::rename::FileEdit
@@ -97,6 +104,7 @@ use qc_ide::HighlightKind = highlight::HighlightKind
 use qc_ide::Hover = hover::Hover
 use qc_ide::Modifier = highlight::Modifier
 use qc_ide::Modifiers = highlight::Modifiers
+use qc_ide::ModuleBuild = host::ModuleBuild
 use qc_ide::ParameterHint = hints::ParameterHint
 use qc_ide::Rename = rename::Rename
 use qc_ide::RenameError = rename::RenameError

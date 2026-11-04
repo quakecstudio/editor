@@ -1,3 +1,5 @@
+const qs_workbench::commands::BUILD_PROJECT
+const qs_workbench::commands::CHECK_PROJECT
 const qs_workbench::commands::COMPLETE
 const qs_workbench::commands::DEFINITION
 const qs_workbench::commands::HOVER
@@ -9,6 +11,7 @@ const qs_workbench::commands::SAVE_FILE
 const qs_workbench::commands::UPDATE_FILE
 enum qs_workbench::EntryKind
 enum qs_workbench::WorkbenchError
+enum qs_workbench::build::Gravity
 enum qs_workbench::commands::CandidateKind
 field qs_workbench::Problem.diagnostic
 field qs_workbench::Problem.location
@@ -16,6 +19,14 @@ field qs_workbench::Problem.path
 field qs_workbench::TreeEntry.depth
 field qs_workbench::TreeEntry.kind
 field qs_workbench::TreeEntry.name
+field qs_workbench::build::ModuleBuilt.built
+field qs_workbench::build::ModuleBuilt.name
+field qs_workbench::build::ModuleBuilt.output
+field qs_workbench::build::ModuleBuilt.problems
+field qs_workbench::build::Reported.code
+field qs_workbench::build::Reported.gravity
+field qs_workbench::build::Reported.message
+field qs_workbench::build::Reported.place
 field qs_workbench::commands::AtParams.offset
 field qs_workbench::commands::AtParams.path
 field qs_workbench::commands::Candidate.detail
@@ -64,6 +75,8 @@ fn qs_workbench::Workbench::project_symbols
 fn qs_workbench::Workbench::root
 fn qs_workbench::Workbench::set_config
 fn qs_workbench::Workbench::tree
+fn qs_workbench::build::Workbench::build
+fn qs_workbench::build::Workbench::check
 fn qs_workbench::commands::HasWorkbench::workbench
 fn qs_workbench::commands::register
 fn qs_workbench::editing::Workbench::completions
@@ -82,6 +95,8 @@ struct qs_workbench::OpenFile
 struct qs_workbench::Problem
 struct qs_workbench::TreeEntry
 struct qs_workbench::Workbench
+struct qs_workbench::build::ModuleBuilt
+struct qs_workbench::build::Reported
 struct qs_workbench::commands::AtParams
 struct qs_workbench::commands::Candidate
 struct qs_workbench::commands::HoverInfo
@@ -107,13 +122,17 @@ use qs_workbench::Dialect = qc_project::Dialect
 use qs_workbench::FileEdit = qc_ide::FileEdit
 use qs_workbench::FileRange = qc_ide::FileRange
 use qs_workbench::FsLoader = qc_project::FsLoader
+use qs_workbench::Gravity = crate::build::Gravity
 use qs_workbench::Highlight = qc_ide::Highlight
 use qs_workbench::HighlightKind = qc_ide::HighlightKind
 use qs_workbench::Hover = qc_ide::Hover
+use qs_workbench::Loader = qc_project::Loader
 use qs_workbench::Modifier = qc_ide::Modifier
 use qs_workbench::Modifiers = qc_ide::Modifiers
+use qs_workbench::ModuleBuilt = crate::build::ModuleBuilt
 use qs_workbench::RenameError = qc_ide::RenameError
 use qs_workbench::Renamed = crate::editing::Renamed
+use qs_workbench::Reported = crate::build::Reported
 use qs_workbench::Severity = qc_ide::Severity
 use qs_workbench::Span = qc_ide::Span
 use qs_workbench::Symbol = qc_ide::Symbol
@@ -123,10 +142,13 @@ use qs_workbench::Target = qc_project::Target
 variant qs_workbench::EntryKind::Directory
 variant qs_workbench::EntryKind::File
 variant qs_workbench::WorkbenchError::NoFile
+variant qs_workbench::WorkbenchError::NoProject
 variant qs_workbench::WorkbenchError::Offset
 variant qs_workbench::WorkbenchError::Project
 variant qs_workbench::WorkbenchError::Rename
 variant qs_workbench::WorkbenchError::Save
+variant qs_workbench::build::Gravity::Error
+variant qs_workbench::build::Gravity::Warning
 variant qs_workbench::commands::CandidateKind::Field
 variant qs_workbench::commands::CandidateKind::Function
 variant qs_workbench::commands::CandidateKind::Global

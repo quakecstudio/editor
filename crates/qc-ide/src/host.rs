@@ -57,6 +57,34 @@ pub(crate) struct ModuleState {
     data: Option<ModuleData>,
     /// The project graph's diagnostics for the module (PRJ-6.5).
     pub(crate) graph_diagnostics: Vec<qc_project::Diagnostic>,
+    /// Where a project module is built to, and the names its files are recorded by; `None`
+    /// for an open file no module compiles.
+    output: Option<Output>,
+}
+
+/// Where a project module's program goes (PRJ-3.2), and the directory its files are named from
+/// in the progs, its `progs.src`'s (QC-25.4).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Output {
+    name: String,
+    path: PathBuf,
+    base: PathBuf,
+}
+
+/// One project module as the build compiles it: its name, where its program goes, its
+/// database with the editor's text of each open file, what it compiles, and the name each of
+/// its files is recorded by in the progs, as its `progs.src` lists it (QC-25.4).
+pub struct ModuleBuild<'a> {
+    /// The module's name (PRJ-2.4).
+    pub name: &'a str,
+    /// Where its program goes (PRJ-3.2).
+    pub output: &'a Path,
+    /// Its database.
+    pub db: &'a mut Db,
+    /// The files it preprocesses and compiles.
+    pub input: &'a ModuleInput,
+    /// The name of each of its files, `names[i]` being `FileId::new(i)`'s.
+    pub names: Vec<String>,
 }
 
 /// Where a module comes from.
@@ -294,6 +322,11 @@ impl<L: Loader> AnalysisHost<L> {
             state
                 .graph_diagnostics
                 .clone_from(&module.graph.diagnostics);
+            state.output = Some(Output {
+                name: module.name.clone(),
+                path: module.output.clone(),
+                base: module.src.parent().map_or_else(PathBuf::new, normalize),
+            });
             self.modules.push(state);
         }
     }
@@ -368,6 +401,7 @@ impl<L: Loader> AnalysisHost<L> {
             db,
             data: None,
             graph_diagnostics: Vec::new(),
+            output: None,
         }
     }
 
@@ -443,6 +477,34 @@ impl<L: Loader> AnalysisHost<L> {
             }
         }
         self.loader.load(&path).ok()
+    }
+
+    /// The project's modules, in the order declared or found, each as the build compiles it.
+    pub fn project_modules(&mut self) -> Vec<ModuleBuild<'_>> {
+        let mut builds = Vec::new();
+        for module in &mut self.modules {
+            let Some(output) = &module.output else {
+                continue;
+            };
+            let names = module
+                .files
+                .iter()
+                .map(|path| {
+                    path.strip_prefix(&output.base)
+                        .unwrap_or(path)
+                        .to_string_lossy()
+                        .replace('\\', "/")
+                })
+                .collect();
+            builds.push(ModuleBuild {
+                name: &output.name,
+                output: &output.path,
+                db: &mut module.db,
+                input: &module.input,
+                names,
+            });
+        }
+        builds
     }
 
     /// Every file some module reads, once each, in module and then graph order.
