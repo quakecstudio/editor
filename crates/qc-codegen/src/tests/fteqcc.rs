@@ -3576,3 +3576,34 @@ fn an_autocvar_call_gives_its_global_the_default() {
     assert_eq!(text(bar), "1");
     assert_eq!(body(&p, "t"), [st(StoreS, bar, s, 0), st(Done, 0, 0, 0)]);
 }
+
+// spec FTE-19.12, FTE-18.13: a vector `&` of a call's value reads the return global word by
+// word and frees it not, so the next statement's clobber copies the value out first
+#[test]
+fn a_call_value_read_word_by_word_is_copied_by_the_next_statement() {
+    let p = fte_progs(
+        "vector() f = #1;\nfloat() g = #2;\nvector v; float x;\nvoid() t = { v = v & f(); x = g(); };\n",
+    );
+    let (f, g, v, x) = (
+        global(&p, "f"),
+        global(&p, "g"),
+        global(&p, "v"),
+        global(&p, "x"),
+    );
+    let t = body(&p, "t");
+    let and = t[1].c;
+    assert_eq!(
+        t,
+        [
+            st(Opcode::Call0, f, 0, 0),
+            st(BitAnd, v, 1, and),
+            st(BitAnd, v + 1, 2, and + 1),
+            st(BitAnd, v + 2, 3, and + 2),
+            st(StoreV, and, v, 0),
+            st(StoreV, 1, t[5].b, 0),
+            st(Opcode::Call0, g, 0, 0),
+            st(StoreF, 1, x, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}

@@ -727,10 +727,10 @@ impl Checker<'_> {
     /// `result`, a vector temporary, its three words written in turn.
     fn by_word(&mut self, word_op: Op, (lhs, rhs): (&Value, &Value), result: Value) -> Value {
         let temp = self.env.temps().take(3);
-        // A call's vector read word by word stays the return global's to copy later, which the
-        // body does not follow.
+        // A call's vector read word by word is freed not (`QCC_PR_SimpleStatement`), so the
+        // next statement copies it out of the return global (FTE-18.13).
         if lhs.returned || rhs.returned {
-            self.followed = false;
+            self.unfreed = Some(3);
         }
         // In a function, the vector is taken, then each word's statement writes its word.
         let first = self.next_made();

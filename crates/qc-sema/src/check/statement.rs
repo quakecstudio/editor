@@ -153,8 +153,19 @@ impl Checker<'_> {
         // The statements it generates are recorded at its start.
         let made = self.next_made();
         self.origins.push((made, stmt.syntax().span().start));
-        // A value the statement before left is discarded with it (FTE-18.13).
+        // A value the statement before left is discarded with it (FTE-18.13), but one it read
+        // word by word and freed not is copied out of the return global by this statement's
+        // `QCC_ClobberDef(NULL)`.
         self.live_return = None;
+        if let Some(words) = self.unfreed.take() {
+            let copy = self.next_made();
+            self.generated.push(ir::BodyStatement {
+                a: Some(ir::Name::Return),
+                b: Some(ir::Name::Made(copy)),
+                ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
+            });
+            self.last_temp = None;
+        }
         let ended = self.statement_parts(stmt);
         // So is a value the statement itself leaves, which a test after it does not copy.
         self.live_return = None;

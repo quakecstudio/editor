@@ -67,6 +67,9 @@ pub(super) struct Checker<'e> {
     /// The generated statement whose block a struct element read through an array's getter
     /// last filled, word by word, which the read's value is.
     pub(super) block_read: Option<u32>,
+    /// The words of a call's value a statement read word by word and freed not, which the
+    /// next statement's clobber copies out of the return global (FTE-18.13).
+    pub(super) unfreed: Option<u32>,
     /// The generated `CALL` whose value [`Checker::live_return`] is.
     pub(super) live_call: Option<u32>,
     /// Each call whose value a statement copied out of the return global, and the copy, which
@@ -140,6 +143,7 @@ impl<'e> Checker<'e> {
             followed: true,
             effects: Vec::new(),
             block_read: None,
+            unfreed: None,
             live_call: None,
             copies: Vec::new(),
             fragment: None,
