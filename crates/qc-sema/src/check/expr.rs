@@ -48,6 +48,9 @@ pub(super) struct Checker<'e> {
     pub(super) branch_condition: Option<ir::Name>,
     /// The bytes of each string literal the generated body names, by [`ir::Name::String`].
     pub(super) strings: Vec<Vec<u8>>,
+    /// Whether an update reads an element it stores to again, whose index is then held and so
+    /// not folded into the read's parameter.
+    pub(super) index_held: bool,
     /// The generated `CALL` whose value [`Checker::live_return`] is.
     pub(super) live_call: Option<u32>,
     /// Each call whose value a statement copied out of the return global, and the copy, which
@@ -114,6 +117,7 @@ impl<'e> Checker<'e> {
             branch_op: None,
             branch_condition: None,
             strings: Vec::new(),
+            index_held: false,
             live_call: None,
             copies: Vec::new(),
             fragment: None,

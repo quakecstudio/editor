@@ -988,6 +988,47 @@ fn a_generated_body_names_copies_of_values() {
     assert_eq!(element.b, Some(Name::Def(def("r"), 2)));
 }
 
+// FTEF-19.78: an update of an element at a variable index reads it by `ArrayGet`, the index
+// stored to its parameter and held for the store, and stores it by `ArraySet`: the index and
+// the value to its parameters, then `CALL2`; a plain read folds the index into the parameter
+#[test]
+fn a_generated_body_updates_an_element_by_its_array_functions() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "float i, k; float arr[4]; void() t = { arr[i * 2] -= 1; k = arr[i * 3]; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let generated = index.bodies[&t].generated();
+    let ops: Vec<_> = generated.iter().map(|s| s.op).collect();
+    assert_eq!(
+        ops,
+        [
+            Op::MulF,
+            Op::StoreF,
+            Op::Call1,
+            Op::SubF,
+            Op::StoreF,
+            Op::StoreF,
+            Op::Call2,
+            Op::MulF,
+            Op::Call1,
+            Op::StoreF,
+            Op::Done,
+        ]
+    );
+    let made = |at: u32| Some(Name::Made(at));
+    let parameter = |slot| Some(Name::Parameter(slot));
+    assert_eq!((generated[1].a, generated[1].b), (made(0), parameter(0)));
+    assert_eq!((generated[4].a, generated[4].b), (made(0), parameter(0)));
+    assert_eq!((generated[5].a, generated[5].b), (made(3), parameter(1)));
+    assert_eq!(generated[7].c, parameter(0));
+}
+
 // QC-13.6, FTEF-29.13: the generated body names STATE's think function, a local's initialiser
 // store the local, a string literal argument its bytes, and `random`'s call its builtin, its scaling
 // `low + (high - low) * value` reading the return global

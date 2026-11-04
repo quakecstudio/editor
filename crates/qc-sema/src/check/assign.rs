@@ -319,25 +319,8 @@ impl Checker<'_> {
         }
         // FTEF-19.78: an element at an index that is no constant is stored by the array's
         // `ArraySet*` function: the index and the value stored to its parameters, then `CALL2`.
-        if let Reference::Element(element) = &lhs.reference
-            && element.index.known().is_none()
-            && !element.vector
-            && matches!(kind, Assign::Store)
-            && !self.global
-        {
-            let index_folded = element.index.temp.is_some() && element.index.temp == self.last_temp;
-            if !index_folded {
-                self.generated.push(ir::BodyStatement::bare(Op::StoreF));
-            }
-            let words = self.env.layout(&target).map_or(1, |l| l.words);
-            self.generated.push(ir::BodyStatement::bare(if words == 3 {
-                Op::StoreV
-            } else {
-                Op::StoreF
-            }));
-            self.clobber_return();
-            self.generated.push(ir::BodyStatement::bare(Op::Call2));
-            self.last_temp = None;
+        if matches!(kind, Assign::Store | Assign::Compound(..)) {
+            self.array_set(&lhs, &stored, &target);
         }
         // FTE-6.4: a field's store, a compound one's too, is its `ADDRESS`, made after the
         // value, and `STOREP_*` of the field's type through it.
@@ -381,6 +364,22 @@ impl Checker<'_> {
         if matches!(kind, Assign::Compound(..)) {
             self.freed_again(&lhs, span);
         }
+        // A store folded into the statement that made the value leaves the value in the
+        // definition, which a store of the assignment's own value reads and no store folds
+        // into again.
+        let stored = if folded && lhs.reference == Reference::Global && !self.global {
+            Value {
+                sym: lhs.sym,
+                temp: None,
+                made: None,
+                call: None,
+                returned: false,
+                string: None,
+                ..stored
+            }
+        } else {
+            stored
+        };
         Ok(Value {
             ty: lhs.ty,
             readonly: true,
@@ -453,7 +452,11 @@ impl Checker<'_> {
         }
         // `lhsd = QCC_RefToDef(lhsr, false)`: the left side read, which for a string's character
         // is the load's own type (FTEF-31.18).
-        let read = self.read(lhs.clone(), span)?;
+        // The update stores to the element again, so its index is held.
+        self.index_held = true;
+        let read = self.read(lhs.clone(), span);
+        self.index_held = false;
+        let read = read?;
         let (to, read_ty) = match lhs.reference {
             Reference::Character(_) => (self.etype(&read.ty).unwrap_or(to), read.ty.clone()),
             _ => (to, lhs.ty.clone()),
@@ -722,9 +725,12 @@ impl Checker<'_> {
             let message = "post increment operator on bitfield".to_owned();
             return self.fatal(Code::E0322, span, message).map(|_| None);
         }
+        self.index_held = true;
+        let old = self.read(operand.clone(), span);
+        self.index_held = false;
         let old = Value {
             constness: Constness::Variable,
-            ..self.read(operand.clone(), span)?
+            ..old?
         };
         // FTEF-29.13: a value the postfix gives is the old one, copied to a temporary first.
         let mut copy = None;
@@ -793,11 +799,43 @@ impl Checker<'_> {
             operand.ty.clone()
         };
         self.store_mismatch(&updated, operand, &target, span)?;
+        self.array_set(operand, &updated, &target);
         let updated = self.bit_copy(&updated, operand, span)?;
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
         self.freed_again(operand, span);
         Ok(copy)
+    }
+
+    /// FTEF-19.78: the store of `stored` to the element `lhs` at an index that is no constant,
+    /// by the array's `ArraySet*` function: the index stored to its first parameter unless it
+    /// folds, the value to its second, then `CALL2`.
+    fn array_set(&mut self, lhs: &Value, stored: &Value, target: &Type) {
+        let Reference::Element(element) = &lhs.reference else {
+            return;
+        };
+        if element.index.known().is_some() || element.vector || self.global {
+            return;
+        }
+        let parameter = |slot| Some(ir::Name::Parameter(slot));
+        if element.index.temp.is_some() && element.index.temp == self.last_temp {
+            self.fold_into(&element.index, parameter(0));
+        } else {
+            self.generated.push(ir::BodyStatement {
+                a: self.name_of(&element.index),
+                b: parameter(0),
+                ..ir::BodyStatement::bare(Op::StoreF)
+            });
+        }
+        let words = self.env.layout(target).map_or(1, |l| l.words);
+        self.generated.push(ir::BodyStatement {
+            a: self.name_of(stored),
+            b: parameter(1),
+            ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
+        });
+        self.clobber_return();
+        self.generated.push(ir::BodyStatement::bare(Op::Call2));
+        self.last_temp = None;
     }
 
     /// FTEF-29.3: a store to an array named bare, its head, is "left operand must be an

@@ -375,8 +375,14 @@ impl Checker<'_> {
         // FTEF-19.78: the read is `ArrayGet*`'s call: the index stored to its parameter unless
         // it folds, `CALL1`, the value the call's in the return global.
         if !self.global {
-            if !(float.temp.is_some() && float.temp == self.last_temp) {
-                self.generated.push(ir::BodyStatement::bare(Op::StoreF));
+            if float.temp.is_some() && float.temp == self.last_temp && !self.index_held {
+                self.fold_into(&float, Some(ir::Name::Parameter(0)));
+            } else {
+                self.generated.push(ir::BodyStatement {
+                    a: self.name_of(&float),
+                    b: Some(ir::Name::Parameter(0)),
+                    ..ir::BodyStatement::bare(Op::StoreF)
+                });
             }
             self.clobber_return();
             self.generated.push(ir::BodyStatement::bare(Op::Call1));
