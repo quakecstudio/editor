@@ -869,10 +869,6 @@ impl Checker<'_> {
         if self.global {
             return;
         }
-        // A store through a call's entity is not followed (FTE-18.13).
-        if field.entity_call.is_some() {
-            self.followed = false;
-        }
         let storep = self.storep_op(target);
         let address = u32::try_from(self.generated.len()).ok().map(ir::Name::Made);
         self.generated.push(ir::BodyStatement {

@@ -1039,6 +1039,52 @@ fn a_generated_body_holds_a_switch() {
     assert_eq!(generated[13].a, Some(Name::Made(12)));
 }
 
+// spec FTE-6.4, FTE-18.13: a store to a field of a call's entity takes the field's `ADDRESS` of
+// the return global after the value; when the value is another call, the entity is copied out
+// of the return global first and the `ADDRESS` reads the copy
+#[test]
+fn a_generated_body_stores_through_a_calls_entity() {
+    use crate::ir::{Immediate, ImmediateKind, Name};
+    use qc_preproc::Op;
+    let source = "entity() f; float() g; .float fl; void() t = { f().fl = 2; f().fl = g(); };";
+    let index = super::fte_index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let body = &index.bodies[&def("t")];
+    assert!(body.followed());
+    let fl = Some(Name::Def(def("fl"), 0));
+    assert_eq!(
+        body.generated()
+            .iter()
+            .map(|s| (s.op, s.a, s.b))
+            .collect::<Vec<_>>(),
+        [
+            (Op::Call0, Some(Name::Def(def("f"), 0)), None),
+            (Op::Address, Some(Name::Return), fl),
+            (
+                Op::StorepF,
+                Some(Name::Immediate(Immediate {
+                    kind: ImmediateKind::Float,
+                    words: [2.0_f32.to_bits(), 0, 0],
+                })),
+                Some(Name::Made(1))
+            ),
+            (Op::Call0, Some(Name::Def(def("f"), 0)), None),
+            (Op::StoreF, Some(Name::Return), Some(Name::Made(4))),
+            (Op::Call0, Some(Name::Def(def("g"), 0)), None),
+            (Op::Address, Some(Name::Made(4)), fl),
+            (Op::StorepF, Some(Name::Return), Some(Name::Made(6))),
+            (Op::Done, None, None),
+        ]
+    );
+}
+
 // QC-14.4, QC-14.5, FTEF-34.16: the generated body holds its jumps: an `if`'s `IFNOT`, an
 // `IF` where the test was `!x` of a float, a `while`'s test and `GOTO` back, a `return`'s
 // `RETURN`
