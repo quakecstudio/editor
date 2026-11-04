@@ -109,6 +109,25 @@ impl Checker<'_> {
     /// warns "if (string) tests for null, not empty" (with a full stop for `jump` `If`); a vector
     /// is `!v` under `ifvector`, else warns that only its first element is tested; a double or
     /// 64-bit value is compared with 0; anything else warns "conditional type mismatch".
+    /// FTEF-34.16: an `IFNOT` of `value`, the temporary the statement before made by `NOT_F`,
+    /// `NOT_FNC` or `NOT_ENT`, drops that statement and is an `IF` of its operand, a call's
+    /// value it read then live again; whether it dropped one.
+    pub(super) fn drops_not(&mut self, value: &Value) -> bool {
+        let drops = value.temp.is_some()
+            && value.temp == self.last_temp
+            && self
+                .generated
+                .last()
+                .is_some_and(|op| matches!(op, Op::NotF | Op::NotFnc | Op::NotEnt));
+        if drops {
+            self.generated.pop();
+            if let Some(words) = self.not_of_return.take() {
+                self.live_return = Some(words);
+            }
+        }
+        drops
+    }
+
     pub(super) fn branch(&mut self, value: &Value, jump: Jump, span: Span) -> Result<(), Fatal> {
         let Some(etype) = self.env.shape(&value.ty).map(|shape| shape.etype) else {
             return Ok(());
@@ -154,18 +173,13 @@ impl Checker<'_> {
         // FTEF-34.16: an `IFNOT` of the temporary the statement before made by `NOT_F`,
         // `NOT_FNC` or `NOT_ENT` drops that statement and is an `IF` of its operand, a call's
         // value it read then live again.
-        if jump == Jump::IfNot
-            && value.temp.is_some()
-            && value.temp == self.last_temp
-            && self
-                .generated
-                .last()
-                .is_some_and(|op| matches!(op, Op::NotF | Op::NotFnc | Op::NotEnt))
-        {
-            self.generated.pop();
-            if let Some(words) = self.not_of_return.take() {
-                self.live_return = Some(words);
-            }
+        self.branch_op = Some(if jump == Jump::If {
+            Op::IfI
+        } else {
+            Op::IfnotI
+        });
+        if jump == Jump::IfNot && self.drops_not(value) {
+            self.branch_op = Some(Op::IfI);
         }
         // FTE-18.13: the jump copies a call's value still to be read, its own condition's too.
         self.clobber_return();

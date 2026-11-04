@@ -42,6 +42,8 @@ pub(super) struct Checker<'e> {
     /// The words of the call's value the last statement generated, a `NOT_*`, read: live again
     /// if a short `IFNOT` drops the `NOT` (FTEF-34.16).
     pub(super) not_of_return: Option<u32>,
+    /// The opcode of the jump the last [`Checker::branch`] tested for, `IF` or `IFNOT`.
+    pub(super) branch_op: Option<Op>,
     /// The fragment of the binary operator being checked, if any.
     pub(super) fragment: Option<ir::Builder>,
     /// Whether the checker is in a condition of `if`, `while` or `do`, outside parentheses
@@ -100,6 +102,7 @@ impl<'e> Checker<'e> {
             generated: Vec::new(),
             live_return: None,
             not_of_return: None,
+            branch_op: None,
             fragment: None,
             in_condition: false,
             addressed: HashSet::new(),

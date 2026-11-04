@@ -780,5 +780,7 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
             .map_or_else(|| block.syntax().span(), |brace| brace.span());
         checker.finish_function(end);
     }
+    // QC-13.7: the body ends with `DONE`.
+    checker.generated.push(qc_preproc::Op::Done);
     checker.finish()
 }

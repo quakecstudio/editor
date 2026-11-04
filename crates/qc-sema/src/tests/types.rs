@@ -849,8 +849,9 @@ fn a_vector_constructor_stores_its_components() {
     assert_eq!(fragment.value, Some(Operand::Temp(TempId::new(0))));
 }
 
-// The checked body keeps the opcodes of the statements it generated, in order: the model of
-// the whole body the intermediate layer is built from (`docs/design/back-end.md`)
+// The checked body keeps the opcodes of the statements it generated, in order, its closing
+// `DONE` included (QC-13.7): the model of the whole body the intermediate layer is built from
+// (`docs/design/back-end.md`)
 #[test]
 fn a_checked_body_keeps_the_statements_it_generated() {
     use qc_preproc::Op;
@@ -864,6 +865,37 @@ fn a_checked_body_keeps_the_statements_it_generated() {
         .unwrap();
     assert_eq!(
         index.bodies[&t].generated(),
-        [Op::AddF, Op::MulVf, Op::NotF]
+        [Op::AddF, Op::MulVf, Op::NotF, Op::Done]
+    );
+}
+
+// QC-14.4, QC-14.5, FTEF-34.16: the generated body holds its jumps: an `if`'s `IFNOT`, an
+// `IF` where the test was `!x` of a float, a `while`'s test and `GOTO` back, a `return`'s
+// `RETURN`
+#[test]
+fn a_generated_body_holds_its_jumps() {
+    use qc_preproc::Op;
+    let source =
+        "float a; void() t = { if (a) a = 1; if (!a) a = 2; while (a) a = a - 1; return; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    assert_eq!(
+        index.bodies[&t].generated(),
+        [
+            Op::IfnotI,
+            Op::StoreF,
+            Op::IfI,
+            Op::StoreF,
+            Op::IfnotI,
+            Op::SubF,
+            Op::Goto,
+            Op::Return,
+            Op::Done,
+        ]
     );
 }
