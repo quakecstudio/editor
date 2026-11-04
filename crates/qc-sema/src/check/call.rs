@@ -411,6 +411,21 @@ impl Checker<'_> {
         }
     }
 
+    /// The statements of `random` with `count` arguments in a function: the call of the
+    /// builtin, then its value scaled, `* scale` for one argument and
+    /// `low + (high - low) * value` for two.
+    fn random_statements(&mut self, count: usize) {
+        if self.global {
+            return;
+        }
+        self.generated.push(Op::Call0);
+        match count {
+            1 => self.generated.push(Op::MulF),
+            2 => self.generated.extend([Op::SubF, Op::MulF, Op::AddF]),
+            _ => {}
+        }
+    }
+
     pub(super) fn generate_call(&mut self, values: &[Value], span: Span) {
         if !self.global {
             return;
@@ -564,20 +579,7 @@ impl Checker<'_> {
                         return self.fatal(Code::E0340, span, message).map(Some);
                     }
                 }
-                // The call of the builtin, then its value scaled: `* scale` for one argument,
-                // `low + (high - low) * value` for two.
-                if !self.global {
-                    self.generated.push(qc_preproc::Op::Call0);
-                    match args.len() {
-                        1 => self.generated.push(qc_preproc::Op::MulF),
-                        2 => self.generated.extend([
-                            qc_preproc::Op::SubF,
-                            qc_preproc::Op::MulF,
-                            qc_preproc::Op::AddF,
-                        ]),
-                        _ => {}
-                    }
-                }
+                self.random_statements(args.len());
                 Ok(Some(Value::of(Type::Simple(SimpleType::Float))))
             }
             "alloca" => {
