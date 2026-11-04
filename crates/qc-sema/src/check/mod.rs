@@ -622,17 +622,6 @@ pub(crate) struct PointerRef {
 }
 
 impl Reference {
-    /// The field `field` of the entity labelled `base`, `def` its definition.
-    pub(crate) fn field(base: String, field: String, def: Option<DefId>) -> Self {
-        Self::Field(Box::new(FieldRef {
-            base,
-            field,
-            def,
-            dot: None,
-            entity: None,
-        }))
-    }
-
     /// The element at `index` of the definition labelled `base`, a vector's component when
     /// `vector`.
     pub(crate) fn element(base: String, index: Value, vector: bool) -> Self {
