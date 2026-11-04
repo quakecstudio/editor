@@ -321,8 +321,9 @@ impl Checker<'_> {
         if !self.global {
             for (slot, value) in values.iter().take(passed).enumerate() {
                 let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
-                let folded =
-                    value.temp.is_some() && value.temp == self.last_temp && slot + 1 == passed;
+                let folded = value.temp.is_some()
+                    && value.temp == self.last_temp
+                    && slot.saturating_add(1) == passed;
                 if !folded {
                     self.generated
                         .push(if words == 3 { Op::StoreV } else { Op::StoreF });
