@@ -182,9 +182,14 @@ impl Checker<'_> {
         }
         let before = self.generated.len();
         let emulated = self.emulate(op, lhs, rhs, span, result)?;
-        // An emulation that generated no statement and left no constant is one the code
-        // generator lowers itself, which the body does not follow.
-        if self.generated.len() == before && emulated.known().is_none() && !self.global {
+        // An emulation that generated no statement and left no constant or other value it names,
+        // as `1i * f` folds to `f`, is one the code generator lowers itself, which the body does
+        // not follow.
+        if self.generated.len() == before
+            && emulated.known().is_none()
+            && self.name_of(&emulated).is_none()
+            && !self.global
+        {
             self.followed = false;
         }
         // A refused opcode is still the statement it was (`badopcode`), its result a temporary;
