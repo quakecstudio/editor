@@ -339,6 +339,9 @@ impl Checker<'_> {
                     .map(|&op| if op == Op::LoadV { op } else { Op::LoadF });
                 self.generated.extend(by_size);
             }
+            // FTE-18.12: only the first store can fold, into the statement that made its
+            // value; every later one follows a store or a load.
+            let mut first = field_loads.iter().all(|(slot, _)| *slot >= passed);
             for (slot, value) in values.iter().take(passed).enumerate() {
                 if value.returned {
                     self.live_return = None;
@@ -347,9 +350,8 @@ impl Checker<'_> {
                     continue;
                 }
                 let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
-                let folded = value.temp.is_some()
-                    && value.temp == self.last_temp
-                    && slot.saturating_add(1) == passed;
+                let folded = first && value.temp.is_some() && value.temp == self.last_temp;
+                first = false;
                 if !folded {
                     self.generated
                         .push(if words == 3 { Op::StoreV } else { Op::StoreF });

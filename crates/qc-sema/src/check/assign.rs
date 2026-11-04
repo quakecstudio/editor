@@ -814,6 +814,20 @@ impl Checker<'_> {
         {
             self.constant_initialiser(&value, &name.text_lossless(), span);
         }
+        // FTEF-29.13: a local's value is stored to it unless it folds into the statement that
+        // made it (`opt_assignments`); a `static` one is its initial value instead.
+        let is_static = declarator
+            .name()
+            .is_some_and(|name| self.env.local_static(name.span().start));
+        if !self.global && !is_static && declarator.array_suffixes().next().is_none() {
+            if value.returned {
+                self.live_return = None;
+            }
+            let folded = value.temp.is_some() && value.temp == self.last_temp;
+            if !folded {
+                self.generated.push(Checker::store_op(self.etype(&ty)));
+            }
+        }
         // FTEF-2.12: an 8- or 16-bit local is initialised as a bitfield at bit 0
         // (`QCC_PR_GenerateInitializerType`), packed into its word; an array of 8-bit ones
         // by a string, a character, then zeros, to each element.
