@@ -3538,3 +3538,23 @@ fn a_comma_discards_its_left_call() {
         ]
     );
 }
+
+// spec FTE-14.8: a struct local initialised with a struct definition of its type is copied a
+// word at a time by STORE_FLD, written from the semantic model
+#[test]
+fn a_struct_local_copies_a_definition_word_by_word() {
+    let p = fte_progs(
+        "typedef struct { float f; string s; } P;\nP a; float x;\n\
+         void() t = { P p = a; x = p.f; };\n",
+    );
+    let (a, x, local) = (global(&p, "a"), global(&p, "x"), global(&p, "p"));
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(Opcode::StoreFld, a, local, 0),
+            st(Opcode::StoreFld, a + 1, local + 1, 0),
+            st(StoreF, local, x, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}

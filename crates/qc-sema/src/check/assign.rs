@@ -1208,8 +1208,37 @@ impl Checker<'_> {
         if value.ty == Type::Unknown {
             return Ok(());
         }
-        // A struct's or a union's initialiser is copied in word groups the body does not follow.
+        // A struct's or a union's initialiser of its own type is copied a word at a time by
+        // `STORE_FLD`, the words being fields of the struct to `QCC_PR_ParseInitializerType`;
+        // any other is not followed.
         if matches!(self.etype(&ty), Some(Etype::Struct | Etype::Union)) {
+            let local = declarator
+                .name()
+                .filter(|name| !self.env.local_static(name.span().start))
+                .and_then(|name| self.env.reference(name.span().start));
+            // The value a definition holds, whose words are its own; a struct read word by word,
+            // through an array's getter, is not followed yet.
+            let from = self
+                .name_of(&value)
+                .filter(|name| matches!(name, ir::Name::Def(..)));
+            if let Some(local) = local.filter(|_| self.env.typecmp(&value.ty, &ty) && !self.global)
+                && from.is_some()
+                && declarator.array_suffixes().next().is_none()
+            {
+                let words = self.env.layout(&ty).map_or(0, |l| l.words);
+                for word in 0..words {
+                    self.generated.push(ir::BodyStatement {
+                        a: from.and_then(|name| name.word(word)),
+                        b: Some(ir::Name::Def(local, word)),
+                        ..ir::BodyStatement::bare(Op::StoreFld)
+                    });
+                }
+                if value.returned {
+                    self.live_return = None;
+                }
+                self.last_temp = None;
+                return Ok(());
+            }
             self.followed = false;
         }
         let span = init.syntax().span();
