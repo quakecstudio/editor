@@ -60,6 +60,7 @@ impl Compiler<'_> {
                         self.forget_local_array_functions(mark);
                     }
                     Effect::Constant(local) => self.constant_local(syntax, local, named)?,
+                    Effect::Autocvar(cvar) => self.autocvar_default(syntax, cvar, named)?,
                     Effect::Make(_) | Effect::Temp(_) => {
                         self.effect(effect, index, (body, &slots), named)?;
                     }
@@ -116,6 +117,7 @@ impl Compiler<'_> {
                     self.forget_local_array_functions(mark);
                 }
                 Effect::Constant(local) => self.constant_local(syntax, local, named)?,
+                Effect::Autocvar(cvar) => self.autocvar_default(syntax, cvar, named)?,
                 Effect::Make(_) | Effect::Temp(_) | Effect::Vector => {
                     self.effect(effect, end, (body, &slots), named)?;
                 }
@@ -145,7 +147,9 @@ impl Compiler<'_> {
                 self.program.allocate(3).at(span)?;
                 return Ok(());
             }
-            Effect::ForBegin | Effect::ForEnd | Effect::Constant(_) => return Ok(()),
+            Effect::ForBegin | Effect::ForEnd | Effect::Constant(_) | Effect::Autocvar(_) => {
+                return Ok(());
+            }
         };
         self.resolve(name, index, made, span)?;
         if let Name::Def(id, _) = name
@@ -186,6 +190,44 @@ impl Compiler<'_> {
         let def = self.program.def(place).at(span)?;
         let (ty, count) = (def.ty.clone(), def.count);
         let words = self.aggregate_words(&ty, count, &aggregate)?;
+        self.program.initialise_words(place, &words).at(span)?;
+        Ok(())
+    }
+
+    /// FTEF-32.12: the `autocvar_NAME` global `cvar` that an `autocvar(NAME, default)` call of the
+    /// body `syntax` reads holds the call's default when nothing initialised it before.
+    fn autocvar_default(
+        &mut self,
+        syntax: &ast::FunctionBody,
+        cvar: Name,
+        span: Span,
+    ) -> Lowered<()> {
+        let Name::Def(id, _) = cvar else {
+            return Err(Internal::Unlowered).at(span);
+        };
+        let place = self.program.get_def(self.index, id).at(span)?;
+        let def = self.program.def(place).at(span)?;
+        if def.initialized {
+            return Ok(());
+        }
+        let ty = def.ty.clone();
+        let name = def.name.strip_prefix("autocvar_").at(span)?.to_owned();
+        let default = syntax
+            .syntax()
+            .descendants()
+            .filter_map(ast::CallExpr::cast)
+            .filter(|call| {
+                matches!(call.callee(), Some(ast::Expr::Name(callee))
+                    if callee.name().is_some_and(|t| t.text_lossless() == "autocvar"))
+            })
+            .filter_map(|call| call.args().map(|args| args.args().collect::<Vec<_>>()))
+            .find(|args| {
+                matches!(args.first(), Some(ast::Expr::Name(first))
+                    if first.name().is_some_and(|t| t.text_lossless() == name))
+            })
+            .and_then(|args| args.get(1).cloned())
+            .at(span)?;
+        let words = self.value_words(&ty, &default)?;
         self.program.initialise_words(place, &words).at(span)?;
         Ok(())
     }

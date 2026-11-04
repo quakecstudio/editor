@@ -221,6 +221,9 @@ pub enum Effect {
     /// The constant local the name names is given its aggregate initialiser's words at compile
     /// time, as a global is (FTEF-32.13).
     Constant(Name),
+    /// The `autocvar_NAME` global the name names, which `autocvar(NAME, default)` reads, given
+    /// the default as its value when nothing initialised it before (FTEF-32.12).
+    Autocvar(Name),
     /// A `for` loop begins, whose end forgets the local arrays' functions made in it.
     ForBegin,
     /// The `for` loop begun last ends: the getters and setters of local arrays made since it

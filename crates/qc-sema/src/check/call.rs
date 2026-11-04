@@ -21,7 +21,7 @@ use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::fold;
 use crate::check::reference::expected_after;
 use crate::check::term::string_immediate;
-use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Value};
+use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Sym, Value};
 use crate::ir;
 use crate::ty::{FunctionType, SimpleType, Type};
 
@@ -657,8 +657,8 @@ impl Checker<'_> {
         call: &ast::CallExpr,
     ) -> Result<Option<Value>, Fatal> {
         let value = self.intrinsic_value(name, args, written, call)?;
-        // Of the intrinsics only `random` and `_` are followed statement by statement.
-        if value.is_some() && !matches!(name, "random" | "_") {
+        // Of the intrinsics only `random`, `_` and `autocvar` are followed statement by statement.
+        if value.is_some() && !matches!(name, "random" | "_" | "autocvar") {
             self.followed = false;
         }
         Ok(value)
@@ -789,7 +789,17 @@ impl Checker<'_> {
                 if self.env.autocvar(&name, &value.ty, cvar, span) {
                     return Err(Fatal);
                 }
-                Ok(Some(Value::of(value.ty)))
+                // The value is the `autocvar_NAME` global, given the default if it has none.
+                let def = self.env.helper(&format!("autocvar_{name}"));
+                if let Some(def) = def.filter(|_| !self.global) {
+                    let at = self.next_made();
+                    self.effects
+                        .push((at, ir::Effect::Autocvar(ir::Name::Def(def, 0))));
+                }
+                Ok(Some(Value {
+                    sym: def.map_or(Sym::Temp, |def| Sym::Def(def, false, 0)),
+                    ..Value::of(value.ty)
+                }))
             }
             "used_sound" | "used_model" => {
                 let list = if name == "used_sound" {

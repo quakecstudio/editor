@@ -3558,3 +3558,21 @@ fn a_struct_local_copies_a_definition_word_by_word() {
         ]
     );
 }
+
+// spec FTEF-32.12: `autocvar(NAME, default)` reads the global `autocvar_NAME`, given the default
+// when nothing initialised it, a call whose value is discarded too, as the pinned FTEQCC
+// compiles `autocvar(foo, "0");` (2026-11-04)
+#[test]
+fn an_autocvar_call_gives_its_global_the_default() {
+    let p =
+        fte_progs("string s;\nvoid() t = { autocvar(foo, \"0\"); s = autocvar(bar, \"1\"); };\n");
+    let (foo, bar, s) = (
+        global(&p, "autocvar_foo"),
+        global(&p, "autocvar_bar"),
+        global(&p, "s"),
+    );
+    let text = |global: i32| string(&p, i32::try_from(words(&p, global, 1)[0]).unwrap());
+    assert_eq!(text(foo), "0");
+    assert_eq!(text(bar), "1");
+    assert_eq!(body(&p, "t"), [st(StoreS, bar, s, 0), st(Done, 0, 0, 0)]);
+}
