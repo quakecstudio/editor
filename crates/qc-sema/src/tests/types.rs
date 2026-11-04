@@ -1395,6 +1395,39 @@ fn a_generated_body_takes_a_fields_address_and_stores_through_it() {
     );
 }
 
+// FTEF-29.13: a compound assignment's and a postfix's store to a definition, a constant-index
+// element's too, folds into the statement that made the value
+#[test]
+fn a_generated_update_folds_into_its_definition() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "float k; float arr[3]; void() t = { k += 2; k++; arr[1]--; };";
+    let index = super::fte_index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let statements: Vec<_> = index.bodies[&def("t")]
+        .generated()
+        .iter()
+        .map(|s| (s.op, s.c))
+        .collect();
+    let k = Some(Name::Def(def("k"), 0));
+    assert_eq!(
+        statements,
+        [
+            (Op::AddF, k),
+            (Op::AddF, k),
+            (Op::AddF, Some(Name::Def(def("arr"), 1))),
+            (Op::Done, None),
+        ]
+    );
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]

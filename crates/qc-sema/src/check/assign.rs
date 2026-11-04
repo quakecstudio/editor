@@ -296,33 +296,11 @@ impl Checker<'_> {
                 self.fold_into(&stored, lhs.name());
             }
         }
-        // FTEF-31.10: an element at a constant index is a word of the array's definition, stored
-        // as a definition is, unless the value folds into the statement that made it.
-        if let Reference::Element(element) = &lhs.reference
-            && let Some(index) = element.index.known()
-            && matches!(kind, Assign::Store)
-            && !self.global
-        {
-            // The element's word, as a read of it at a constant index names it.
-            let word = eval_int(index).map(|word| u32::from_le_bytes(word.to_le_bytes()));
-            let to = word.and_then(|word| {
-                Value {
-                    sym: lhs.sym.at(word),
-                    ..Value::of(Type::Unknown)
-                }
-                .name()
-            });
-            if folded {
-                self.fold_into(&stored, to);
-            } else {
-                self.generated.push(ir::BodyStatement {
-                    a: self.name_of(&stored),
-                    b: to,
-                    ..ir::BodyStatement::bare(Checker::store_op(self.etype(&target)))
-                });
-                self.read_returned(&stored);
-                self.last_temp = None;
-            }
+        if matches!(kind, Assign::Compound(..)) {
+            self.definition_store(&lhs, &stored, &target, span)?;
+        }
+        if matches!(kind, Assign::Store | Assign::Compound(..)) {
+            self.element_store(&lhs, &stored, &target, folded);
         }
         // FTEF-19.78: an element at an index that is no constant is stored by the array's
         // `ArraySet*` function: the index and the value stored to its parameters, then `CALL2`.
@@ -785,6 +763,9 @@ impl Checker<'_> {
         self.store_mismatch(&updated, operand, &target, span)?;
         self.array_set(operand, &updated, &target);
         self.field_store(operand, &updated, &target);
+        self.definition_store(operand, &updated, &target, span)?;
+        let folded = updated.temp.is_some() && updated.temp == self.last_temp;
+        self.element_store(operand, &updated, &target, folded);
         let updated = self.bit_copy(&updated, operand, span)?;
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
@@ -817,6 +798,64 @@ impl Checker<'_> {
         });
         self.read_returned(stored);
         self.last_temp = None;
+    }
+
+    /// FTEF-29.13: the store of `stored` to the definition `lhs` of type `target` by a compound
+    /// assignment or a postfix: folded into the statement that made the value
+    /// (`opt_assignments`), else its `OP_STORE_*`.
+    fn definition_store(
+        &mut self,
+        lhs: &Value,
+        stored: &Value,
+        target: &Type,
+        span: Span,
+    ) -> Result<(), Fatal> {
+        if self.global || lhs.reference != Reference::Global {
+            return Ok(());
+        }
+        if stored.temp.is_some() && stored.temp == self.last_temp {
+            self.fold_into(stored, lhs.name());
+            return Ok(());
+        }
+        let store = Checker::store_op(self.etype(target));
+        self.emit(store, stored, &Value::unknown(), span)?;
+        self.name_last(store, self.name_of(stored), lhs.name());
+        Ok(())
+    }
+
+    /// FTEF-31.10: the store of `stored` to the element `lhs` at a constant index, a word of
+    /// the array's definition, stored as a definition is unless the value folds into the
+    /// statement that made it (`folded`).
+    fn element_store(&mut self, lhs: &Value, stored: &Value, target: &Type, folded: bool) {
+        let Reference::Element(element) = &lhs.reference else {
+            return;
+        };
+        let Some(index) = element.index.known() else {
+            return;
+        };
+        if self.global {
+            return;
+        }
+        // The element's word, as a read of it at a constant index names it.
+        let word = eval_int(index).map(|word| u32::from_le_bytes(word.to_le_bytes()));
+        let to = word.and_then(|word| {
+            Value {
+                sym: lhs.sym.at(word),
+                ..Value::of(Type::Unknown)
+            }
+            .name()
+        });
+        if folded {
+            self.fold_into(stored, to);
+        } else {
+            self.generated.push(ir::BodyStatement {
+                a: self.name_of(stored),
+                b: to,
+                ..ir::BodyStatement::bare(Checker::store_op(self.etype(target)))
+            });
+            self.read_returned(stored);
+            self.last_temp = None;
+        }
     }
 
     /// `STOREP_*` of a value of type `target`, by its basic type.
