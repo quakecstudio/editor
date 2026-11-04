@@ -907,3 +907,41 @@ fn a_generated_body_holds_its_jumps() {
         ]
     );
 }
+
+// QC-14.4, QC-14.5: each jump names its target, the generated statement it goes to, and a
+// conditional jump its condition: an `if`'s `IFNOT` past its arm, a `while`'s test to its end,
+// `break` to the loop's end, `continue` and the loop's `GOTO` back to its test
+#[test]
+fn a_generated_body_names_its_jumps() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "float a; void() t = { if (a) a = 1; while (a) { if (a) break; continue; } };";
+    let index = super::fte_index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let a = Some(Name::Def(def("a"), 0));
+    let jumps: Vec<_> = index.bodies[&def("t")]
+        .generated()
+        .iter()
+        .map(|statement| (statement.op, statement.a, statement.b))
+        .filter(|(op, _, _)| matches!(op, Op::IfnotI | Op::Goto))
+        .collect();
+    let to = |at| Some(Name::Jump(at));
+    assert_eq!(
+        jumps,
+        [
+            (Op::IfnotI, a, to(2)),
+            (Op::IfnotI, a, to(7)),
+            (Op::IfnotI, a, to(5)),
+            (Op::Goto, to(7), None),
+            (Op::Goto, to(2), None),
+            (Op::Goto, to(2), None),
+        ]
+    );
+}

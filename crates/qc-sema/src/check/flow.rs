@@ -24,12 +24,36 @@ pub(super) enum Step {
     Other,
 }
 
-/// One statement: what it does, where it jumps if it jumps, and its line.
+/// A point a jump can go to: the index of the layout's next statement, and the index of the
+/// next statement the body generates (`TypedBody::generated`), which may be several per
+/// statement of the layout.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Mark {
+    at: usize,
+    made: u32,
+}
+
+impl Mark {
+    /// The index of the layout's statement.
+    pub(super) fn at(self) -> usize {
+        self.at
+    }
+
+    /// The index among the generated statements.
+    pub(super) fn made(self) -> u32 {
+        self.made
+    }
+}
+
+/// One statement: what it does, where it jumps if it jumps, and its line; for a jump, its index
+/// among the generated statements and that of its target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Statement {
     step: Step,
     target: Option<usize>,
     line: u32,
+    made: Option<u32>,
+    made_target: Option<u32>,
 }
 
 /// What the check of the finished function finds, in the order FTEQCC reports it.
@@ -48,7 +72,7 @@ pub(super) struct Layout {
     code: Vec<Statement>,
     breaks: Vec<usize>,
     continues: Vec<usize>,
-    labels: Vec<(String, usize)>,
+    labels: Vec<(String, Mark)>,
     gotos: Vec<(String, usize)>,
 }
 
@@ -58,18 +82,59 @@ impl Layout {
         self.code.len()
     }
 
-    /// Adds a statement that does `step`, jumping to `target`; returns its index.
-    pub(super) fn push(&mut self, step: Step, target: Option<usize>, line: u32) -> usize {
+    /// The point of the next statement, where the body has generated `made` statements.
+    pub(super) fn mark(&self, made: u32) -> Mark {
+        Mark {
+            at: self.here(),
+            made,
+        }
+    }
+
+    /// Adds a statement that does `step`, jumping to `target`, the generated statement `made`
+    /// when it jumps; returns its index.
+    pub(super) fn push(
+        &mut self,
+        step: Step,
+        target: Option<Mark>,
+        line: u32,
+        made: Option<u32>,
+    ) -> usize {
         let at = self.here();
-        self.code.push(Statement { step, target, line });
+        self.code.push(Statement {
+            step,
+            target: target.map(|mark| mark.at),
+            line,
+            made,
+            made_target: target.map(|mark| mark.made),
+        });
         at
     }
 
     /// Sets the target of the jump at `at`.
-    pub(super) fn patch(&mut self, at: usize, target: usize) {
+    pub(super) fn patch(&mut self, at: usize, target: Mark) {
         if let Some(statement) = self.code.get_mut(at) {
-            statement.target = Some(target);
+            statement.target = Some(target.at);
+            statement.made_target = Some(target.made);
         }
+    }
+
+    /// Each jump whose target is known, by their indexes among the generated statements: the
+    /// `goto`s to a label once the labels are all read.
+    pub(super) fn jumps(&self) -> Vec<(u32, u32)> {
+        let mut jumps = Vec::new();
+        for statement in &self.code {
+            if let (Some(made), Some(target)) = (statement.made, statement.made_target) {
+                jumps.push((made, target));
+            }
+        }
+        for (name, at) in &self.gotos {
+            let made = self.code.get(*at).and_then(|statement| statement.made);
+            let target = self.labels.iter().find(|(label, _)| label == name);
+            if let (Some(made), Some((_, target))) = (made, target) {
+                jumps.push((made, target.made));
+            }
+        }
+        jumps
     }
 
     /// `QCC_UngenerateStatements(from)`: drops the statements from `from` on, and the jumps among
@@ -88,10 +153,10 @@ impl Layout {
 
     /// `QCC_AStatementJumpsTo(target, from, numstatements)`: whether a statement from `from` on
     /// jumps to `target`.
-    pub(super) fn jumps_to(&self, from: usize, target: usize) -> bool {
+    pub(super) fn jumps_to(&self, from: usize, target: Mark) -> bool {
         self.code
             .get(from..)
-            .is_some_and(|code| code.iter().any(|s| s.target == Some(target)))
+            .is_some_and(|code| code.iter().any(|s| s.target == Some(target.at)))
     }
 
     /// The labels defined so far, `num_labels`.
@@ -100,14 +165,14 @@ impl Layout {
     }
 
     /// `break;`: a `goto` to the end of the innermost loop or `switch`.
-    pub(super) fn break_(&mut self, line: u32) {
-        let at = self.push(Step::Goto, None, line);
+    pub(super) fn break_(&mut self, line: u32, made: u32) {
+        let at = self.push(Step::Goto, None, line, Some(made));
         self.breaks.push(at);
     }
 
     /// `continue;`: a `goto` to the next pass of the innermost loop.
-    pub(super) fn continue_(&mut self, line: u32) {
-        let at = self.push(Step::Goto, None, line);
+    pub(super) fn continue_(&mut self, line: u32, made: u32) {
+        let at = self.push(Step::Goto, None, line, Some(made));
         self.continues.push(at);
     }
 
@@ -124,28 +189,28 @@ impl Layout {
     }
 
     /// Points the `break`s after `mark` at `target`.
-    pub(super) fn patch_breaks(&mut self, mark: usize, target: usize) {
+    pub(super) fn patch_breaks(&mut self, mark: usize, target: Mark) {
         for at in self.breaks.split_off(mark.min(self.breaks.len())) {
             self.patch(at, target);
         }
     }
 
     /// Points the `continue`s after `mark` at `target`.
-    pub(super) fn patch_continues(&mut self, mark: usize, target: usize) {
+    pub(super) fn patch_continues(&mut self, mark: usize, target: Mark) {
         for at in self.continues.split_off(mark.min(self.continues.len())) {
             self.patch(at, target);
         }
     }
 
-    /// A label `name:`, at the next statement.
-    pub(super) fn label(&mut self, name: String) {
-        let at = self.here();
+    /// A label `name:`, at the next statement, where the body has generated `made` statements.
+    pub(super) fn label(&mut self, name: String, made: u32) {
+        let at = self.mark(made);
         self.labels.push((name, at));
     }
 
     /// `goto name;`.
-    pub(super) fn goto(&mut self, name: String, line: u32) {
-        let at = self.push(Step::Goto, None, line);
+    pub(super) fn goto(&mut self, name: String, line: u32, made: u32) {
+        let at = self.push(Step::Goto, None, line, Some(made));
         self.gotos.push((name, at));
     }
 
@@ -184,10 +249,10 @@ impl Layout {
             }
         }
         if returned {
-            self.push(Step::Return, None, line);
+            self.push(Step::Return, None, line, None);
         }
         if !matches!(self.last(), Some(Step::Return | Step::Done)) {
-            self.push(Step::Done, None, line);
+            self.push(Step::Done, None, line, None);
         }
         self.dead_and_missing_returns(void)
     }

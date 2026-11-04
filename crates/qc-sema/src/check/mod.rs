@@ -803,6 +803,7 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         && checker.start_function(block.syntax().span())
     {
         checker.block(&block);
+        checker.name_jumps();
         let end = block
             .syntax()
             .token_of(qc_syntax::SyntaxKind::RBrace)

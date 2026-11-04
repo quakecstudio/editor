@@ -15,7 +15,7 @@ use qc_syntax::ast::{self, AstNode as _, Negation};
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
-use crate::check::flow::{Finding, Step};
+use crate::check::flow::{Finding, Mark, Step};
 use crate::check::member;
 use crate::check::reference::eval_int;
 use crate::check::truth::{Jump, Test, is_truth};
@@ -32,21 +32,73 @@ pub(super) struct Case {
     value: Option<Value>,
     range_end: Option<Value>,
     span: Span,
-    at: usize,
+    at: Mark,
 }
 
 impl Checker<'_> {
     /// Checks `stmt`; a fatal error in one of its expressions ends its checks (FTEF-23.6).
     /// A jump of `step` to `target` at `line` in the layout, and its opcode `op` among the
     /// statements the body generates.
-    fn jump(&mut self, step: Step, op: Op, target: Option<usize>, line: u32) -> usize {
+    fn jump(&mut self, step: Step, op: Op, target: Option<Mark>, line: u32) -> usize {
+        let made = self.goto_made(op);
+        if matches!(op, Op::IfI | Op::IfnotI)
+            && let Some(statement) = self.generated.last_mut()
+        {
+            statement.a = self.branch_condition.take();
+        }
+        self.layout.push(step, target, line, Some(made))
+    }
+
+    /// The index among the generated statements of the next one, which a jump to the next
+    /// statement goes to.
+    fn next_made(&self) -> u32 {
+        u32::try_from(self.generated.len()).unwrap_or(u32::MAX)
+    }
+
+    /// The point of the next statement, in the layout and among the generated statements.
+    fn here(&self) -> Mark {
+        self.layout.mark(self.next_made())
+    }
+
+    /// Generates the jump `op`, its operands named once the body is read; returns its index.
+    fn goto_made(&mut self, op: Op) -> u32 {
+        let made = self.next_made();
         self.generated.push(ir::BodyStatement::bare(op));
         self.last_temp = None;
-        self.layout.push(step, target, line)
+        made
+    }
+
+    /// `QCC_UngenerateStatements` back to `mark`: drops what the layout and the body generated
+    /// after it.
+    fn truncate(&mut self, mark: Mark) {
+        self.layout.truncate(mark.at());
+        self.generated
+            .truncate(usize::try_from(mark.made()).unwrap_or(usize::MAX));
+        self.live_return = None;
+        self.return_copy = None;
+    }
+
+    /// Names the target of each jump of the body whose target is known, and its condition
+    /// once [`Checker::branch`] named it: `b` of `IF`, `IFNOT` and `CASE`, `a` of `GOTO`.
+    pub(super) fn name_jumps(&mut self) {
+        for (made, target) in self.layout.jumps() {
+            let Some(statement) = usize::try_from(made)
+                .ok()
+                .and_then(|at| self.generated.get_mut(at))
+            else {
+                continue;
+            };
+            let target = Some(ir::Name::Jump(target));
+            match statement.op {
+                Op::Goto => statement.a = target,
+                Op::IfI | Op::IfnotI => statement.b = target,
+                _ => {}
+            }
+        }
     }
 
     /// [`Checker::jump`] of the conditional jump the last [`Checker::branch`] chose.
-    fn branch_jump(&mut self, target: Option<usize>, line: u32) -> usize {
+    fn branch_jump(&mut self, target: Option<Mark>, line: u32) -> usize {
         let op = self.branch_op.take().unwrap_or(Op::IfnotI);
         self.jump(Step::Branch, op, target, line)
     }
@@ -86,7 +138,7 @@ impl Checker<'_> {
             ast::Stmt::Expr(s) => {
                 let expr = s.expr();
                 if expr.as_ref().is_some_and(generates) {
-                    self.layout.push(Step::Other, None, line);
+                    self.layout.push(Step::Other, None, line, None);
                 }
                 // `QCC_PR_DiscardExpression`: the value is discarded, never read.
                 self.expr_of(expr)?;
@@ -97,10 +149,10 @@ impl Checker<'_> {
             ast::Stmt::Do(s) => self.do_stmt(s, line)?,
             ast::Stmt::Loop(s) => {
                 let (breaks, continues) = self.layout.marks();
-                let top = self.layout.here();
+                let top = self.here();
                 self.statement_of(s.body());
                 self.jump(Step::Goto, Op::Goto, Some(top), line);
-                let end = self.layout.here();
+                let end = self.here();
                 self.layout.patch_breaks(breaks, end);
                 self.layout.patch_continues(continues, top);
             }
@@ -109,30 +161,38 @@ impl Checker<'_> {
             ast::Stmt::Local(local) => {
                 let initialised = local.declarators().any(|d| d.initializer().is_some());
                 if initialised {
-                    self.layout.push(Step::Other, None, line);
+                    self.layout.push(Step::Other, None, line, None);
                 }
                 self.local(local)?;
                 for inner in inner_functions(local.syntax()) {
                     self.inner_function(&inner)?;
                 }
             }
-            ast::Stmt::Break(_) => self.layout.break_(line),
-            ast::Stmt::Continue(_) => self.layout.continue_(line),
+            ast::Stmt::Break(_) => {
+                let made = self.goto_made(Op::Goto);
+                self.layout.break_(line, made);
+            }
+            ast::Stmt::Continue(_) => {
+                let made = self.goto_made(Op::Goto);
+                self.layout.continue_(line, made);
+            }
             ast::Stmt::Label(s) => {
                 if let Some(name) = s.name() {
-                    self.layout.label(name.text_lossless());
+                    let made = self.next_made();
+                    self.layout.label(name.text_lossless(), made);
                 }
             }
             ast::Stmt::Goto(s) => {
                 let name = s.label().map(|t| t.text_lossless()).unwrap_or_default();
-                self.layout.goto(name, line);
+                let made = self.goto_made(Op::Goto);
+                self.layout.goto(name, line, made);
             }
             ast::Stmt::Thinktime(s) => self.thinktime(s, line)?,
             ast::Stmt::Exit(_) => {
                 self.jump(Step::Done, Op::Done, None, line);
             }
             ast::Stmt::State(_) | ast::Stmt::Asm(_) => {
-                self.layout.push(Step::Other, None, line);
+                self.layout.push(Step::Other, None, line, None);
             }
             ast::Stmt::Empty(_) | ast::Stmt::Using(_) | ast::Stmt::Extern(_) => {}
         }
@@ -155,7 +215,7 @@ impl Checker<'_> {
                 return self.fatal(Code::E0341, span, message).map(drop);
             }
             self.returned = true;
-            self.layout.push(Step::Other, None, line);
+            self.layout.push(Step::Other, None, line, None);
             self.value(s.value())?;
             return Ok(());
         }
@@ -231,7 +291,7 @@ impl Checker<'_> {
             return;
         }
         if generates(expr) && value.known().is_none() {
-            self.layout.push(Step::Other, None, line);
+            self.layout.push(Step::Other, None, line, None);
         }
     }
 
@@ -275,7 +335,7 @@ impl Checker<'_> {
             value = self.test(Test::Not, &value, condition_span, "Type mismatch: !%s")?;
             negate = false;
         }
-        let start = self.layout.here();
+        let start = self.here();
         let (patch1, strip_truth, strip_false) = match self.constant_zero(&value) {
             Some(zero) => {
                 let strip_truth = zero != negate;
@@ -291,28 +351,28 @@ impl Checker<'_> {
         let labels = self.layout.labels();
         self.statement_of(s.then_branch());
         let (patch1, strip_truth) = if strip_truth && labels == self.layout.labels() {
-            self.layout.truncate(start);
+            self.truncate(start);
             (None, true)
         } else {
             (patch1, false)
         };
         let Some(else_branch) = s.else_branch() else {
             if let Some(patch1) = patch1 {
-                let end = self.layout.here();
+                let end = self.here();
                 self.layout.patch(patch1, end);
             }
             return Ok(());
         };
-        let here = self.layout.here();
+        let here = self.here();
         let patch2 = (!strip_truth).then(|| self.jump(Step::Goto, Op::Goto, None, line));
-        let after_goto = self.layout.here();
+        let after_goto = self.here();
         if let Some(patch1) = patch1 {
             self.layout.patch(patch1, after_goto);
         }
         let labels = self.layout.labels();
         self.statement(&else_branch);
         let patch2 = if strip_false && labels == self.layout.labels() {
-            self.layout.truncate(here);
+            self.truncate(here);
             if let Some(patch1) = patch1 {
                 self.layout.patch(patch1, here);
             }
@@ -321,7 +381,7 @@ impl Checker<'_> {
             patch2
         };
         if let Some(patch2) = patch2 {
-            let end = self.layout.here();
+            let end = self.here();
             self.layout.patch(patch2, end);
         }
         Ok(())
@@ -331,7 +391,7 @@ impl Checker<'_> {
     /// `goto` past the loop when it never holds.
     fn while_stmt(&mut self, s: &ast::WhileStmt, line: u32) -> Result<(), Fatal> {
         let (breaks, continues) = self.layout.marks();
-        let top = self.layout.here();
+        let top = self.here();
         let until = s.until();
         let condition_span = s
             .condition()
@@ -351,7 +411,7 @@ impl Checker<'_> {
         };
         self.statement_of(s.body());
         self.jump(Step::Goto, Op::Goto, Some(top), line);
-        let end = self.layout.here();
+        let end = self.here();
         if let Some(patch1) = patch1 {
             self.layout.patch(patch1, end);
         }
@@ -364,10 +424,10 @@ impl Checker<'_> {
     /// or a `goto` back when it holds.
     fn do_stmt(&mut self, s: &ast::DoStmt, line: u32) -> Result<(), Fatal> {
         let (breaks, continues) = self.layout.marks();
-        let top = self.layout.here();
+        let top = self.here();
         self.statement_of(s.body());
         let until = s.until();
-        let test = self.layout.here();
+        let test = self.here();
         let condition_span = s
             .condition()
             .map_or(s.syntax().span(), |c| c.syntax().span());
@@ -384,7 +444,7 @@ impl Checker<'_> {
                 self.branch_jump(Some(top), line);
             }
         }
-        let end = self.layout.here();
+        let end = self.here();
         self.layout.patch_breaks(breaks, end);
         self.layout.patch_continues(continues, test);
         Ok(())
@@ -395,12 +455,12 @@ impl Checker<'_> {
     fn for_stmt(&mut self, s: &ast::ForStmt, line: u32) -> Result<(), Fatal> {
         let (breaks, continues) = self.layout.marks();
         if let Some(init) = s.init() {
-            self.layout.push(Step::Other, None, line);
+            self.layout.push(Step::Other, None, line, None);
             for expr in init.children().filter_map(ast::Expr::cast) {
                 self.value(Some(expr))?;
             }
         }
-        let top = self.layout.here();
+        let top = self.here();
         let patch1 = match s.condition() {
             Some(condition) => {
                 let mut last = None;
@@ -408,10 +468,14 @@ impl Checker<'_> {
                     last = Some(self.condition(Some(expr))?);
                 }
                 // The test is the last condition's `IFNOT`, short as FTEF-34.16 makes it.
-                let op = match last {
-                    Some(value) if self.drops_not(&value) => Op::IfI,
-                    _ => Op::IfnotI,
+                let (op, condition) = match last {
+                    Some(value) => match self.drops_not(&value) {
+                        Some(operand) => (Op::IfI, operand),
+                        None => (Op::IfnotI, value.name()),
+                    },
+                    None => (Op::IfnotI, None),
                 };
+                self.branch_condition = condition;
                 Some(self.jump(Step::Branch, op, None, line))
             }
             None => None,
@@ -424,17 +488,24 @@ impl Checker<'_> {
                 self.value(Some(expr))?;
             }
         }
-        let step_statements = self
+        let mut step_statements = self
             .generated
             .split_off(before_step.min(self.generated.len()));
         self.statement_of(s.body());
+        let next = self.here();
+        // The step's statements move after the body's, and the values they make with them.
+        let moved = self
+            .next_made()
+            .saturating_sub(u32::try_from(before_step).unwrap_or(0));
+        for statement in &mut step_statements {
+            statement.shift_made(u32::try_from(before_step).unwrap_or(0), moved);
+        }
         self.generated.extend(step_statements);
-        let next = self.layout.here();
         if step.is_some() {
-            self.layout.push(Step::Other, None, line);
+            self.layout.push(Step::Other, None, line, None);
         }
         self.jump(Step::Goto, Op::Goto, Some(top), line);
-        let end = self.layout.here();
+        let end = self.here();
         if let Some(patch1) = patch1 {
             self.layout.patch(patch1, end);
         }
@@ -468,8 +539,9 @@ impl Checker<'_> {
         let target = self.env.target_at(span.start);
         let hcstyle = op.is_some_and(|op| target.valid(op));
         let step = if hcstyle { Step::Branch } else { Step::Goto };
-        let patch1 = self.layout.push(step, None, line);
-        let body = self.layout.here();
+        let switch_op = op.filter(|_| hcstyle).unwrap_or(Op::Goto);
+        let patch1 = self.jump(step, switch_op, None, line);
+        let body = self.here();
         // FTEF-16.16: each `case` read while the body is, at any depth, is this switch's.
         self.switches.push(Vec::new());
         if let Some(block) = s.block() {
@@ -480,14 +552,14 @@ impl Checker<'_> {
             self.statement_of(s.statement());
         }
         let cases = self.switches.pop().unwrap_or_default();
-        let here = self.layout.here();
+        let here = self.here();
         let jumps_out = match self.layout.last() {
-            Some(Step::Return | Step::Done | Step::Goto) => here != body,
+            Some(Step::Return | Step::Done | Step::Goto) => here.at() != body.at(),
             Some(Step::Branch | Step::Other) | None => false,
         };
         let patch2 = (!jumps_out || self.layout.jumps_to(0, here))
             .then(|| self.jump(Step::Goto, Op::Goto, None, line));
-        let table = self.layout.here();
+        let table = self.here();
         self.layout.patch(patch1, table);
         self.uncovered_items(&value, &cases, span);
         // FTEF-22.9: the cases are converted once the body is read, where FTEQCC's lexer is at
@@ -533,7 +605,7 @@ impl Checker<'_> {
         if let Some(at) = default {
             self.jump(Step::Goto, Op::Goto, Some(at), line);
         }
-        let end = self.layout.here();
+        let end = self.here();
         if let Some(patch2) = patch2 {
             self.layout.patch(patch2, end);
         }
@@ -572,7 +644,7 @@ impl Checker<'_> {
     /// not use formulas".
     fn case(&mut self, label: &ast::CaseLabel, cases: &mut Vec<Case>) -> Result<(), Fatal> {
         let span = label.syntax().span();
-        let at = self.layout.here();
+        let at = self.here();
         if label.is_default() {
             cases.push(Case {
                 value: None,
@@ -621,7 +693,7 @@ impl Checker<'_> {
         etype: Etype,
         case: &Value,
         span: Span,
-        at: usize,
+        at: Mark,
     ) -> Result<(), Fatal> {
         let line = self.env.line(span);
         if case.known().is_some_and(|c| c.i() == 0) {
@@ -650,7 +722,7 @@ impl Checker<'_> {
                     .map(drop);
             }
         };
-        self.emit(op, value, case, span)?;
+        self.branch_condition = self.emit(op, value, case, span)?.name();
         self.jump(Step::Branch, Op::IfI, Some(at), line);
         Ok(())
     }
@@ -663,7 +735,7 @@ impl Checker<'_> {
         etype: Etype,
         (min, max): (&Value, &Value),
         span: Span,
-        at: usize,
+        at: Mark,
     ) -> Result<(), Fatal> {
         let line = self.env.line(span);
         let (ge, le, and) = match etype {
@@ -690,7 +762,7 @@ impl Checker<'_> {
     /// FTEF-34.7: `thinktime e : t;`: the time made a float, then an entity and a float or the
     /// fatal error "thinktime type mismatch".
     fn thinktime(&mut self, s: &ast::ThinktimeStmt, line: u32) -> Result<(), Fatal> {
-        self.layout.push(Step::Other, None, line);
+        self.layout.push(Step::Other, None, line, None);
         let mut operands = s.operands();
         let entity = self.value(operands.next())?;
         let time_expr = operands.next();

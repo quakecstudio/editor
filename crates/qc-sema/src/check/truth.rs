@@ -17,6 +17,7 @@ use crate::check::constant::Constant;
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
+use crate::ir;
 use crate::ty::Type;
 
 /// Which of FTEQCC's tests of a value is made.
@@ -111,27 +112,29 @@ impl Checker<'_> {
     /// 64-bit value is compared with 0; anything else warns "conditional type mismatch".
     /// FTEF-34.16: an `IFNOT` of `value`, the temporary the statement before made by `NOT_F`,
     /// `NOT_FNC` or `NOT_ENT`, drops that statement and is an `IF` of its operand, a call's
-    /// value it read then live again; whether it dropped one.
-    pub(super) fn drops_not(&mut self, value: &Value) -> bool {
+    /// value it read then live again; the dropped statement's operand when it dropped one.
+    pub(super) fn drops_not(&mut self, value: &Value) -> Option<Option<ir::Name>> {
         let drops = value.temp.is_some()
             && value.temp == self.last_temp
             && self
                 .generated
                 .last()
                 .is_some_and(|s| matches!(s.op, Op::NotF | Op::NotFnc | Op::NotEnt));
-        if drops {
-            self.generated.pop();
-            if let Some(words) = self.not_of_return.take() {
-                self.live_return = Some(words);
-            }
+        if !drops {
+            return None;
         }
-        drops
+        let dropped = self.generated.pop();
+        if let Some(words) = self.not_of_return.take() {
+            self.live_return = Some(words);
+        }
+        Some(dropped.and_then(|statement| statement.a))
     }
 
     pub(super) fn branch(&mut self, value: &Value, jump: Jump, span: Span) -> Result<(), Fatal> {
         let Some(etype) = self.env.shape(&value.ty).map(|shape| shape.etype) else {
             return Ok(());
         };
+        let mut condition = value.name();
         match etype {
             Etype::String => {
                 let stop = if jump == Jump::If { "." } else { "" };
@@ -139,7 +142,7 @@ impl Checker<'_> {
                 self.env.report(Code::W0245, span, message);
             }
             Etype::Vector if self.env.flags_at(span.start).has(FteFlag::Ifvector) => {
-                self.emit(Op::NotV, value, &Value::unknown(), span)?;
+                condition = self.emit(Op::NotV, value, &Value::unknown(), span)?.name();
             }
             Etype::Vector => {
                 let message =
@@ -147,15 +150,19 @@ impl Checker<'_> {
                 self.env.report(Code::W0246, span, message.to_owned());
             }
             Etype::Double => {
-                self.emit(
-                    Op::NeD,
-                    value,
-                    &Value::constant(Constant::double(0.0)),
-                    span,
-                )?;
+                condition = self
+                    .emit(
+                        Op::NeD,
+                        value,
+                        &Value::constant(Constant::double(0.0)),
+                        span,
+                    )?
+                    .name();
             }
             Etype::Int64 | Etype::Uint64 => {
-                self.emit(Op::NeI64, value, &Value::constant(Constant::int64(0)), span)?;
+                condition = self
+                    .emit(Op::NeI64, value, &Value::constant(Constant::int64(0)), span)?
+                    .name();
             }
             Etype::Variant | Etype::Struct | Etype::Union | Etype::Void | Etype::Enum => {
                 let message = format!("conditional type mismatch: {}", etype.basic_name());
@@ -178,11 +185,19 @@ impl Checker<'_> {
         } else {
             Op::IfnotI
         });
-        if jump == Jump::IfNot && self.drops_not(value) {
+        if jump == Jump::IfNot
+            && let Some(operand) = self.drops_not(value)
+        {
             self.branch_op = Some(Op::IfI);
+            condition = operand;
         }
         // FTE-18.13: the jump copies a call's value still to be read, its own condition's too.
+        let copies = self.live_return.is_some();
         self.clobber_return();
+        if copies && condition == Some(ir::Name::Return) {
+            condition = self.return_copy.map(ir::Name::Made);
+        }
+        self.branch_condition = condition;
         Ok(())
     }
 

@@ -178,6 +178,8 @@ pub enum Name {
     Return,
     /// A call's parameter slot by its number, `OFS_PARM0 + 3 * n` (QC-18.3).
     Parameter(u8),
+    /// The body's statement at this index, a jump's target; the body's length is its end.
+    Jump(u32),
 }
 
 /// One statement of a whole body as the semantic model generated it: its opcode and what each
@@ -204,6 +206,21 @@ impl BodyStatement {
             a: None,
             b: None,
             c: None,
+        }
+    }
+
+    /// Moves each value this statement names that a statement from `from` on made `by`
+    /// statements on, as when statements are moved after others.
+    pub(crate) fn shift_made(&mut self, from: u32, by: u32) {
+        for name in [&mut self.a, &mut self.b, &mut self.c]
+            .into_iter()
+            .flatten()
+        {
+            if let Name::Made(at) = name
+                && *at >= from
+            {
+                *at = at.saturating_add(by);
+            }
         }
     }
 }

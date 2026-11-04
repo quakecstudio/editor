@@ -44,6 +44,8 @@ pub(super) struct Checker<'e> {
     pub(super) not_of_return: Option<u32>,
     /// The opcode of the jump the last [`Checker::branch`] tested for, `IF` or `IFNOT`.
     pub(super) branch_op: Option<Op>,
+    /// What the conditional jump the last [`Checker::branch`] chose tests.
+    pub(super) branch_condition: Option<ir::Name>,
     /// The statement that copied the last call's value out of the return global, which a
     /// statement reading the value after the copy reads (FTE-18.13).
     pub(super) return_copy: Option<u32>,
@@ -106,6 +108,7 @@ impl<'e> Checker<'e> {
             live_return: None,
             not_of_return: None,
             branch_op: None,
+            branch_condition: None,
             return_copy: None,
             fragment: None,
             in_condition: false,
