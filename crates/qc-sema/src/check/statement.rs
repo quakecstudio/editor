@@ -153,8 +153,19 @@ impl Checker<'_> {
         // The statements it generates are recorded at its start.
         let made = self.next_made();
         self.origins.push((made, stmt.syntax().span().start));
-        // A value the statement before left is discarded with it (FTE-18.13).
+        // A value the statement before left is discarded with it (FTE-18.13), but one it read
+        // word by word and freed not is copied out of the return global by this statement's
+        // `QCC_ClobberDef(NULL)`.
         self.live_return = None;
+        if let Some(words) = self.unfreed.take() {
+            let copy = self.next_made();
+            self.generated.push(ir::BodyStatement {
+                a: Some(ir::Name::Return),
+                b: Some(ir::Name::Made(copy)),
+                ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
+            });
+            self.last_temp = None;
+        }
         let ended = self.statement_parts(stmt);
         // So is a value the statement itself leaves, which a test after it does not copy.
         self.live_return = None;
@@ -373,9 +384,10 @@ impl Checker<'_> {
     /// `_float`, anything else as `_int`.
     fn constant_zero(&mut self, value: &Value) -> Option<bool> {
         let constant = value.known()?;
-        // A string constant's test is not followed statement by statement.
+        // FTE-3.6: a string constant's word is its offset in the string table, which no string,
+        // the empty one included, has at 0.
         if self.etype_of(&value.ty) == Some(Etype::String) {
-            self.followed = false;
+            return Some(false);
         }
         Some(if self.etype_of(&value.ty) == Some(Etype::Float) {
             constant.f() == 0.0
@@ -532,6 +544,9 @@ impl Checker<'_> {
     /// its type, and the step follows the body.
     fn for_stmt(&mut self, s: &ast::ForStmt, line: u32) -> Result<(), Fatal> {
         let (breaks, continues) = self.layout.marks();
+        // FTEF-19.78: the local arrays' functions the loop makes are forgotten at its end.
+        let begin = self.next_made();
+        self.effects.push((begin, ir::Effect::ForBegin));
         if let Some(init) = s.init() {
             self.layout.push(Step::Other, None, line, None);
             // The clause's expressions and the locals it declares, in order.
@@ -574,6 +589,16 @@ impl Checker<'_> {
         let mut step_statements = self
             .generated
             .split_off(before_step.min(self.generated.len()));
+        // A vector the step took is made where the step was read, which the moved statements
+        // would no longer follow.
+        let from = u32::try_from(before_step).unwrap_or(u32::MAX);
+        if self
+            .effects
+            .iter()
+            .any(|&(at, effect)| at >= from && matches!(effect, ir::Effect::Block(_)))
+        {
+            self.followed = false;
+        }
         self.statement_of(s.body());
         let next = self.here();
         // The step's statements move after the body's, and the values they make with them.
@@ -594,6 +619,8 @@ impl Checker<'_> {
         }
         self.layout.patch_breaks(breaks, end);
         self.layout.patch_continues(continues, next);
+        let after = self.next_made();
+        self.effects.push((after, ir::Effect::ForEnd));
         Ok(())
     }
 

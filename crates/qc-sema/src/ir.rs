@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The intermediate layer (`docs/design/back-end.md`): the statements the checker lowers a
-//! construct to, with operands that are values rather than global offsets, for the code
-//! generator to lay out and write. An opcode the target lacks is already emulated here
-//! (FTEF-27), once, where the checker also raises the warnings the emulation gives.
-//!
-//! So far it holds the binary operators: each one's [`Fragment`], the statements
-//! `QCC_PR_StatementFlags` emits for it, its operands' conversions included (FTEF-23.9).
-
-use std::collections::HashMap;
+//! The intermediate layer (`docs/design/back-end.md`): each checked body's statements as the
+//! semantic model generates them, in order ([`BodyStatement`]), with operands that name values
+//! rather than global offsets ([`Name`]), and what the body makes without a statement that reads
+//! it ([`Effect`]), for the code generator's passes to allocate, lay out and write. An opcode the
+//! target lacks is already emulated here (FTEF-27), once, where the checker also raises the
+//! warnings the emulation gives.
 
 use qc_preproc::Op;
 
@@ -16,94 +13,7 @@ use crate::DefId;
 use crate::check::etype::Etype;
 use crate::check::opcodes::row as opcode_row;
 
-/// What a statement reads or what a fragment's value is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Operand {
-    /// One of the fragment's inputs, the operands of its operator, as the code generator holds
-    /// them.
-    Input(Input),
-    /// One of the fragment's temporaries.
-    Temp(TempId),
-    /// An immediate constant (FTEF-26): its kind and its words.
-    Immediate(Immediate),
-    /// One word of a vector input, temporary or immediate: `var.ofs++` (FTE-9.3).
-    Word(Whole, u8),
-    /// A call's parameter slot by its number, `OFS_PARM0 + 3 * n` (QC-18.3).
-    Parameter(u8),
-    /// A definition, by its identity: the function a call calls.
-    Def(DefId),
-    /// The return global after a call (`OFS_RETURN`, QC-18.4), the call's value.
-    Return,
-}
-
-/// An operand of the operator a fragment is lowered from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Input {
-    /// The left operand.
-    Left,
-    /// The right operand.
-    Right,
-    /// One of a construct's other inputs, by its number: a vector constructor's components.
-    Argument(u8),
-}
-
-/// A temporary of a fragment: its number in [`Fragment::temps`], the order the lowering took
-/// them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct TempId(u16);
-
-impl TempId {
-    /// The temporary of index `n`.
-    #[must_use]
-    pub const fn new(n: u16) -> Self {
-        Self(n)
-    }
-
-    /// Its index in [`Fragment::temps`].
-    #[must_use]
-    pub fn index(self) -> usize {
-        usize::from(self.0)
-    }
-}
-
-/// A value whose words a [`Operand::Word`] names.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Whole {
-    /// One of the fragment's inputs.
-    Input(Input),
-    /// One of the fragment's temporaries.
-    Temp(TempId),
-    /// An immediate.
-    Immediate(Immediate),
-}
-
-impl Operand {
-    /// Word `word` of this operand, a vector.
-    #[must_use]
-    pub const fn word(self, word: u8) -> Option<Self> {
-        let whole = match self {
-            Self::Input(n) => Whole::Input(n),
-            Self::Temp(n) => Whole::Temp(n),
-            Self::Immediate(immediate) => Whole::Immediate(immediate),
-            Self::Word(..) | Self::Parameter(_) | Self::Def(_) | Self::Return => return None,
-        };
-        Some(Self::Word(whole, word))
-    }
-}
-
-/// Where a statement writes, its operand c.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Destination {
-    /// Nowhere: a store, a jump, an opcode of no result.
-    Nothing,
-    /// A new temporary of its opcode's result type, the fragment's next.
-    Value,
-    /// A word of a vector temporary of the fragment, by the temporary's number and the
-    /// word's, taken before (`QCC_GetTemp(type_vector)`, [`Temp::Vector`]).
-    Word(TempId, u8),
-}
-
-/// A constant a fragment names: the words of its value and the kind of immediate that holds
+/// A constant a statement names: the words of its value and the kind of immediate that holds
 /// them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Immediate {
@@ -113,7 +23,7 @@ pub struct Immediate {
     pub words: [u32; 3],
 }
 
-/// The kinds of immediate a fragment names.
+/// The kinds of immediate a statement names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ImmediateKind {
     /// A float.
@@ -124,49 +34,6 @@ pub enum ImmediateKind {
     Integer,
 }
 
-/// One statement: its opcode's number (`pr_opcodes`), its operands, and where it writes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Statement {
-    /// The opcode.
-    pub op: Op,
-    /// Operand a.
-    pub a: Option<Operand>,
-    /// Operand b.
-    pub b: Option<Operand>,
-    /// Operand c.
-    pub c: Destination,
-}
-
-/// A temporary of a fragment: one a statement made, or a vector taken before its words are
-/// written.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Temp {
-    /// The value of the statement at this index.
-    Made(u16),
-    /// A vector taken (`QCC_GetTemp(type_vector)`) before the statement at this index.
-    Vector(u16),
-}
-
-/// The statements a construct lowers to, in emission order, the immediates its lowering made,
-/// and the operand its value is.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Fragment {
-    /// The statements.
-    pub statements: Vec<Statement>,
-    /// The immediates the lowering made, in order: a constant an emulation names
-    /// (`QCC_MakeFloatConst`) and each folded value, which FTEQCC makes a global of whether or
-    /// not a statement reads it (FTEF-26.2).
-    pub immediates: Vec<Immediate>,
-    /// The temporaries, in the order the lowering took them, which [`Operand::Temp`] numbers.
-    pub temps: Vec<Temp>,
-    /// The construct's value: an input, a temporary, or a constant.
-    pub value: Option<Operand>,
-    /// The constant each input was when a fold consumed it, left then right: an input no
-    /// statement or value names, which the fragment then depends on being that constant. A
-    /// writer whose inputs are other values does not hold the fragment.
-    pub inputs: [Option<Immediate>; 2],
-}
-
 /// What an operand of a whole body's statement names (`docs/design/back-end.md`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Name {
@@ -174,6 +41,9 @@ pub enum Name {
     Def(DefId, u32),
     /// An immediate constant.
     Immediate(Immediate),
+    /// A word of a vector immediate, a constant vector's component (FTEF-31.9): the
+    /// immediate and the word.
+    ImmediateWord(Immediate, u32),
     /// The value of the body's statement at this index.
     Made(u32),
     /// A word of the vector the body's statement at this index made: the index and the word.
@@ -202,6 +72,9 @@ pub enum Name {
     ArrayGet(DefId),
     /// The array definition's setter, `ArraySet*NAME` (FTE-13.11).
     ArraySet(DefId),
+    /// The immediate holding the number of the nested function the local definition is given,
+    /// which the code generator numbers (FTEF-18.2).
+    Nested(DefId),
 }
 
 /// What a body makes without a statement of its own that reads it (`TypedBody::effects`).
@@ -212,9 +85,54 @@ pub enum Effect {
     Make(Name),
     /// A temporary of this many words a dropped statement took (QC-21.5).
     Temp(u32),
+    /// A temporary of this many words taken before its words are written (QC-21.5), a vector's
+    /// or a struct's, the value of the statement it is made at: the words the statements after
+    /// it write, `MadeWord` of that statement.
+    Block(u32),
+    /// The constant local the name names is given its aggregate initialiser's words at compile
+    /// time, as a global is (FTEF-32.13).
+    Constant(Name),
+    /// The `static` local the name names is given the number of the nested function its
+    /// declaration defines (FTEF-18.2).
+    Nested(Name),
+    /// The `autocvar_NAME` global the name names, which `autocvar(NAME, default)` reads, given
+    /// the default as its value when nothing initialised it before (FTEF-32.12).
+    Autocvar(Name),
+    /// A `for` loop begins, whose end forgets the local arrays' functions made in it.
+    ForBegin,
+    /// The `for` loop begun last ends: the getters and setters of local arrays made since it
+    /// began are forgotten, and a later use makes new ones (FTEF-19.78).
+    ForEnd,
 }
 
 impl Name {
+    /// Word `word` of what it names, if it names something by words: a definition's, a
+    /// value's, an immediate's or the return global's.
+    #[must_use]
+    pub const fn word(self, word: u32) -> Option<Self> {
+        Some(match self {
+            Self::Def(def, at) => Self::Def(def, at.saturating_add(word)),
+            Self::Made(made) => Self::MadeWord(made, word),
+            Self::MadeWord(made, at) => Self::MadeWord(made, at.saturating_add(word)),
+            Self::Immediate(immediate) => Self::ImmediateWord(immediate, word),
+            Self::ImmediateWord(immediate, at) => {
+                Self::ImmediateWord(immediate, at.saturating_add(word))
+            }
+            Self::Return => Self::ReturnWord(word),
+            Self::ReturnWord(at) => Self::ReturnWord(at.saturating_add(word)),
+            Self::Parameter(_)
+            | Self::VaList(_)
+            | Self::Default(_)
+            | Self::RetLocal
+            | Self::Prior
+            | Self::Jump(_)
+            | Self::String(_)
+            | Self::ArrayGet(_)
+            | Self::ArraySet(_)
+            | Self::Nested(_) => return None,
+        })
+    }
+
     /// Whether it names something the compiler makes the first time it is named: a
     /// definition, an immediate, an array function, an extra parameter slot, the `ret*` local.
     #[must_use]
@@ -222,9 +140,11 @@ impl Name {
         match self {
             Self::Def(..)
             | Self::Immediate(_)
+            | Self::ImmediateWord(..)
             | Self::String(_)
             | Self::ArrayGet(_)
             | Self::ArraySet(_)
+            | Self::Nested(_)
             | Self::RetLocal => true,
             Self::Parameter(slot) => *slot >= 8,
             Self::Made(_)
@@ -291,6 +211,19 @@ impl BodyStatement {
     #[must_use]
     pub fn temp_words(&self, index: u32) -> Option<u32> {
         let row = opcode_row(self.op)?;
+        // A word of a block an `Effect::Block` took takes none of its own.
+        if matches!(self.c, Some(Name::MadeWord(..))) {
+            return None;
+        }
+        // FTE-18.11: a field argument is loaded straight into its parameter slot, with no
+        // temporary.
+        let load = matches!(
+            self.op,
+            Op::LoadF | Op::LoadV | Op::LoadS | Op::LoadEnt | Op::LoadFld | Op::LoadFnc
+        );
+        if load && matches!(self.c, Some(Name::Parameter(_))) {
+            return None;
+        }
         let etype = if row.makes_value() {
             row.types[2].etype()
         } else if self.b == Some(Name::Made(index)) {
@@ -309,6 +242,11 @@ impl BodyStatement {
     /// its own, `c`, and a copy's for a store into a value of its own, `b`.
     #[must_use]
     pub fn made_words(&self, index: u32) -> Option<u32> {
+        // The first word of a block an `Effect::Block` took, which is the block, written as a
+        // result or stored.
+        if self.c == Some(Name::MadeWord(index, 0)) || self.b == Some(Name::MadeWord(index, 0)) {
+            return Some(3);
+        }
         let made = Some(Name::Made(index));
         let etype = if self.c == made {
             opcode_row(self.op)?.types[2].etype()
@@ -340,219 +278,49 @@ impl BodyStatement {
     }
 }
 
-/// A function body's fragments, by the span of the token each was lowered at.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Fragments {
-    by_span: HashMap<(usize, usize), Fragment>,
-}
-
-impl Fragments {
-    /// The fragment lowered at `span`, if one was.
-    #[must_use]
-    pub fn at(&self, span: qc_diag::Span) -> Option<&Fragment> {
-        self.by_span.get(&(span.start, span.end))
-    }
-
-    pub(crate) fn insert(&mut self, span: qc_diag::Span, fragment: Fragment) {
-        self.by_span.insert((span.start, span.end), fragment);
-    }
-}
-
-/// A fragment being lowered: the statements so far, or nothing when a step was one the layer
-/// does not hold yet, which the code generator then lowers itself.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct Builder {
-    statements: Vec<Statement>,
-    immediates: Vec<Immediate>,
-    temps: Vec<Temp>,
-    held: bool,
-}
-
-impl Builder {
-    /// A builder holding nothing yet.
-    pub(crate) const fn new() -> Self {
-        Self {
-            statements: Vec::new(),
-            immediates: Vec::new(),
-            temps: Vec::new(),
-            held: true,
-        }
-    }
-
-    /// Adds the statement `op` of the operands it `reads`, each `None` when the opcode has no
-    /// such operand and `Some(None)` when the fragment cannot name it, which leaves the
-    /// fragment one the layer does not hold, writing to `c`; the operand of the temporary it
-    /// makes, when it makes one.
-    pub(crate) fn push(
-        &mut self,
-        op: Op,
-        reads: [Option<Option<Operand>>; 2],
-        c: Destination,
-    ) -> Option<Operand> {
-        let [a, b] = reads;
-        let (Ok(index), Ok(temp)) = (
-            u16::try_from(self.statements.len()),
-            u16::try_from(self.temps.len()),
-        ) else {
-            self.held = false;
-            return None;
-        };
-        if a == Some(None) || b == Some(None) {
-            self.held = false;
-            return None;
-        }
-        self.statements.push(Statement {
-            op,
-            a: a.flatten(),
-            b: b.flatten(),
-            c,
-        });
-        if c != Destination::Value {
-            return None;
-        }
-        self.temps.push(Temp::Made(index));
-        Some(Operand::Temp(TempId(temp)))
-    }
-
-    /// Takes a vector temporary before the next statement, whose words statements then write
-    /// ([`Destination::Word`]); its number.
-    pub(crate) fn vector(&mut self) -> Option<TempId> {
-        let (Ok(index), Ok(temp)) = (
-            u16::try_from(self.statements.len()),
-            u16::try_from(self.temps.len()),
-        ) else {
-            self.held = false;
-            return None;
-        };
-        self.temps.push(Temp::Vector(index));
-        Some(TempId(temp))
-    }
-
-    /// Records an immediate the lowering made.
-    pub(crate) fn made(&mut self, immediate: Immediate) {
-        self.immediates.push(immediate);
-    }
-
-    /// Marks the fragment as one the layer does not hold.
-    pub(crate) const fn give_up(&mut self) {
-        self.held = false;
-    }
-
-    /// The fragment, valued `value`, if every step was held; of the constants `inputs` the
-    /// inputs were, those of the inputs it does not name, which a fold consumed.
-    pub(crate) fn finish(
-        self,
-        value: Option<Operand>,
-        inputs: [Option<Immediate>; 2],
-    ) -> Option<Fragment> {
-        let names = |side: Input| {
-            let named = |operand: &Option<Operand>| matches!(operand, Some(Operand::Input(n) | Operand::Word(Whole::Input(n), _)) if *n == side);
-            named(&value) || self.statements.iter().any(|s| named(&s.a) || named(&s.b))
-        };
-        let [left, right] = inputs;
-        let inputs = [
-            left.filter(|_| !names(Input::Left)),
-            right.filter(|_| !names(Input::Right)),
-        ];
-        self.held.then_some(Fragment {
-            statements: self.statements,
-            immediates: self.immediates,
-            temps: self.temps,
-            value,
-            inputs,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{Builder, Destination, Fragment, Input, Operand, Statement, Temp, TempId};
     use qc_preproc::Op;
 
-    // A statement's value is the next temporary and a vector taken before its words is one too;
-    // a statement writing nothing or a word names none; and an operand the fragment cannot name
-    // leaves it unheld.
+    use super::{BodyStatement, Immediate, ImmediateKind, Name};
+    use crate::DefId;
+
+    // spec FTE-18.11, QC-21.5: a field argument loaded straight into its parameter slot takes no
+    // temporary; the same load into a value of its own takes its result's words, and so does a
+    // value a store then folded into a parameter
     #[test]
-    fn a_builder_numbers_temporaries_and_refuses_an_unnamed_operand() {
-        let mut builder = Builder::new();
-        let inputs = [
-            Some(Some(Operand::Input(Input::Left))),
-            Some(Some(Operand::Input(Input::Right))),
-        ];
-        let made = builder.push(Op::AddF, inputs, Destination::Value);
-        assert_eq!(made, Some(Operand::Temp(TempId(0))));
-        assert_eq!(builder.vector(), Some(TempId(1)));
-        assert_eq!(
-            builder.push(Op::BitandF, inputs, Destination::Word(TempId(1), 2)),
-            None
-        );
-        assert_eq!(
-            builder.push(
-                Op::StoreF,
-                [made.map(Some), inputs[1]],
-                Destination::Nothing
-            ),
-            None
-        );
-        let statement = |op, a, b, c| Statement {
-            op,
-            a: Some(a),
-            b: Some(b),
-            c,
+    fn a_load_into_a_parameter_takes_no_temporary() {
+        let load = |c| BodyStatement {
+            c: Some(c),
+            ..BodyStatement::bare(Op::LoadV)
         };
-        assert_eq!(
-            builder
-                .clone()
-                .finish(Some(Operand::Temp(TempId(1))), [None, None]),
-            Some(Fragment {
-                statements: vec![
-                    statement(
-                        Op::AddF,
-                        Operand::Input(Input::Left),
-                        Operand::Input(Input::Right),
-                        Destination::Value
-                    ),
-                    statement(
-                        Op::BitandF,
-                        Operand::Input(Input::Left),
-                        Operand::Input(Input::Right),
-                        Destination::Word(TempId(1), 2)
-                    ),
-                    statement(
-                        Op::StoreF,
-                        Operand::Temp(TempId(0)),
-                        Operand::Input(Input::Right),
-                        Destination::Nothing
-                    ),
-                ],
-                immediates: Vec::new(),
-                temps: vec![Temp::Made(0), Temp::Vector(1)],
-                value: Some(Operand::Temp(TempId(1))),
-                inputs: [None, None],
-            })
-        );
-        for reads in [[Some(None), None], [None, Some(None)]] {
-            let mut unnamed = builder.clone();
-            assert_eq!(unnamed.push(Op::MulF, reads, Destination::Value), None);
-            assert_eq!(unnamed.finish(None, [None, None]), None);
-        }
-        let mut given_up = Builder::new();
-        given_up.give_up();
-        assert_eq!(given_up.finish(None, [None, None]), None);
+        assert_eq!(load(Name::Parameter(0)).temp_words(4), None);
+        assert_eq!(load(Name::Made(4)).temp_words(4), Some(3));
+        let folded = BodyStatement {
+            c: Some(Name::Parameter(1)),
+            ..BodyStatement::bare(Op::AddF)
+        };
+        assert_eq!(folded.temp_words(5), Some(1));
     }
 
-    // A word of an input, a temporary or an immediate is named; a word of a word is not.
+    // A word of a definition, a value, an immediate or the return global is named, offset from
+    // the word already named; a parameter slot or a jump has no words
     #[test]
-    fn a_word_is_of_a_whole_value() {
-        use super::Whole;
+    fn a_name_names_its_words() {
+        let def = DefId::new(4);
+        let immediate = Immediate {
+            kind: ImmediateKind::Vector,
+            words: [1, 2, 3],
+        };
+        assert_eq!(Name::Def(def, 1).word(2), Some(Name::Def(def, 3)));
+        assert_eq!(Name::Made(5).word(2), Some(Name::MadeWord(5, 2)));
+        assert_eq!(Name::MadeWord(5, 1).word(1), Some(Name::MadeWord(5, 2)));
         assert_eq!(
-            Operand::Input(Input::Right).word(2),
-            Some(Operand::Word(Whole::Input(Input::Right), 2))
+            Name::Immediate(immediate).word(1),
+            Some(Name::ImmediateWord(immediate, 1))
         );
-        assert_eq!(
-            Operand::Temp(TempId(3)).word(0),
-            Some(Operand::Word(Whole::Temp(TempId(3)), 0))
-        );
-        assert_eq!(Operand::Word(Whole::Temp(TempId(3)), 0).word(1), None);
+        assert_eq!(Name::Return.word(2), Some(Name::ReturnWord(2)));
+        assert_eq!(Name::Parameter(0).word(1), None);
+        assert_eq!(Name::Jump(3).word(1), None);
     }
 }

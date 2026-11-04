@@ -105,22 +105,7 @@ impl Checker<'_> {
                 // `OP_LOAD_I` and `OP_LOAD_P` as `OP_LOAD_F`, `OP_LOAD_I64` as two plain
                 // `OP_LOAD_FLD`s (FTEF-27.9, FTEF-27.11).
                 // The value read is the load's temporary (FTEF-27.16).
-                // The load, of the entity and the field as inputs, is the fragment kept by the
-                // `.`'s span.
-                let dot = match &value.reference {
-                    Reference::Field(field) => field.dot,
-                    _ => None,
-                };
-                let loaded = match dot {
-                    Some(dot) => {
-                        let unknown = Value::unknown();
-                        self.lowering(dot, &unknown, &unknown, |checker, entity, field| {
-                            checker.emit(load, entity, field, span).map(Some)
-                        })?
-                        .unwrap_or_else(Value::unknown)
-                    }
-                    _ => self.emit(load, &Value::unknown(), &Value::unknown(), span)?,
-                };
+                let loaded = self.emit(load, &Value::unknown(), &Value::unknown(), span)?;
                 // The load reads the entity and the field.
                 let entity = match &value.reference {
                     Reference::Field(field) => self.copied(field.entity, field.entity_call),
@@ -152,35 +137,7 @@ impl Checker<'_> {
                 let address = self.address_of(value, span)?;
                 Ok(address)
             }
-            Reference::Element(element) => {
-                if let Some(bits) = narrow_bits(&value.ty) {
-                    return self.narrow_element(value, &element.index, bits, span);
-                }
-                let called = element.index.known().is_none()
-                    && self.load_from_array(&value, &element.index, element.vector, span)?;
-                // A constant index is the array's own definition at that word; any other is
-                // loaded into a temporary, and by the `ArrayGet` function into its return.
-                // A constant vector's component at a constant index is still the immediate it
-                // folded to (FTEF-31.9), a constant as `sym->constant` of the vector says.
-                let sym = match element.index.known().and_then(eval_int) {
-                    _ if element.vector && value.known().is_some() => value.sym,
-                    Some(words) => value.sym.at(u32::from_le_bytes(words.to_le_bytes())),
-                    None => Sym::Temp,
-                };
-                let name = if called {
-                    Some("return".to_owned())
-                } else {
-                    value.name.clone()
-                };
-                Ok(Value {
-                    reference: Reference::Global,
-                    sym,
-                    name,
-                    returned: called,
-                    call: if called { self.live_call } else { value.call },
-                    ..value
-                })
-            }
+            Reference::Element(element) => self.read_element(value, &element, span),
             Reference::Pointer(pointer) => {
                 // `QCC_SupplyConversion(ref->index, ev_integer, true)`.
                 let index = match &pointer.index {
@@ -424,6 +381,19 @@ impl Checker<'_> {
         if big_struct {
             self.simple_statement(Op::Push, span)?;
         }
+        // A struct element of more than one word is read a word at a time into a block taken
+        // first: the index stored to the parameter, read again for the next words and so not
+        // folded, each word's index `ADD_F` of the word into the parameter, and each `CALL1`'s
+        // value stored to its word (FTE-13.12).
+        let size = self.env.layout(&element.ty).map_or(1, |l| l.words);
+        let structured = matches!(
+            self.etype_of(&element.ty),
+            Some(Etype::Struct | Etype::Union)
+        );
+        if !self.global && structured && size > 1 && !divided && !big_struct {
+            self.struct_element(element, &float, size);
+            return Ok(true);
+        }
         // FTEF-19.78: the read is `ArrayGet*`'s call: the index stored to its parameter unless
         // it folds, `CALL1`, the value the call's in the return global.
         if !self.global {
@@ -444,7 +414,6 @@ impl Checker<'_> {
                 }
             }
             self.clobber_return();
-            self.local_array_function(element.sym.def());
             self.generated.push(ir::BodyStatement {
                 a: element.sym.def().map(ir::Name::ArrayGet),
                 ..ir::BodyStatement::bare(Op::Call1)
@@ -454,6 +423,92 @@ impl Checker<'_> {
             self.live_call = self.last_made();
         }
         Ok(true)
+    }
+
+    /// An element read: a narrow one by its bits, one at a constant index the array's own
+    /// definition at that word, any other loaded (FTEF-31.2).
+    fn read_element(&mut self, value: Value, element: &ElementRef, span: Span) -> Checked {
+        if let Some(bits) = narrow_bits(&value.ty) {
+            return self.narrow_element(value, &element.index, bits, span);
+        }
+        let called = element.index.known().is_none()
+            && self.load_from_array(&value, &element.index, element.vector, span)?;
+        // A struct read word by word is the block its words were stored to.
+        if let Some(block) = self.block_read.take() {
+            return Ok(Value {
+                reference: Reference::Global,
+                sym: Sym::Temp,
+                made: Some(block),
+                word: 0,
+                temp: None,
+                returned: false,
+                call: None,
+                ..value
+            });
+        }
+        // A constant index is the array's own definition at that word; any other is
+        // loaded into a temporary, and by the `ArrayGet` function into its return.
+        // A constant vector's component at a constant index is still the immediate it
+        // folded to (FTEF-31.9), a constant as `sym->constant` of the vector says.
+        let sym = match element.index.known().and_then(eval_int) {
+            _ if element.vector && value.known().is_some() => value.sym,
+            Some(words) => value.sym.at(u32::from_le_bytes(words.to_le_bytes())),
+            None => Sym::Temp,
+        };
+        let name = if called {
+            Some("return".to_owned())
+        } else {
+            value.name.clone()
+        };
+        Ok(Value {
+            reference: Reference::Global,
+            sym,
+            name,
+            returned: called,
+            call: if called { self.live_call } else { value.call },
+            ..value
+        })
+    }
+
+    /// FTE-13.12: the struct element of `size` words at the float index `index`, read by the
+    /// array's getter a word at a time into a block, which [`Checker::block_read`] names.
+    fn struct_element(&mut self, element: &Value, index: &Value, size: u32) {
+        let first = self.next_made();
+        self.effects.push((first, ir::Effect::Block(size)));
+        let getter = element.sym.def().map(ir::Name::ArrayGet);
+        let index_name = self.name_of(index);
+        if index.returned {
+            self.live_return = None;
+            self.live_call = None;
+        }
+        for word in 0..size {
+            if word == 0 {
+                self.generated.push(ir::BodyStatement {
+                    a: index_name,
+                    b: Some(ir::Name::Parameter(0)),
+                    ..ir::BodyStatement::bare(Op::StoreF)
+                });
+            } else {
+                let offset = Constant::float(f32::from(u16::try_from(word).unwrap_or(u16::MAX)));
+                self.generated.push(ir::BodyStatement {
+                    op: Op::AddF,
+                    a: index_name,
+                    b: offset.immediate().map(ir::Name::Immediate),
+                    c: Some(ir::Name::Parameter(0)),
+                });
+            }
+            self.generated.push(ir::BodyStatement {
+                a: getter,
+                ..ir::BodyStatement::bare(Op::Call1)
+            });
+            self.generated.push(ir::BodyStatement {
+                a: Some(ir::Name::Return),
+                b: Some(ir::Name::MadeWord(first, word)),
+                ..ir::BodyStatement::bare(Op::StoreF)
+            });
+        }
+        self.last_temp = None;
+        self.block_read = Some(first);
     }
 
     /// FTEF-31.3: `QCC_LoadFromPointer`: the index made an integer, then the load of the

@@ -68,305 +68,7 @@ pub(super) struct ArrayFunction {
     visible: bool,
 }
 
-/// A store to an array's element by an index that is a value, made by its setter after the
-/// value is read (FTE-13.11).
-#[derive(Clone, Debug)]
-pub(super) struct ElementStore {
-    /// The array, whose setter stores the element and whose getter reads one an operator
-    /// stores again (FTEF-29.14).
-    array: Array,
-    /// The index in words, a float.
-    words: u32,
-    /// Whether the array holds vectors, whose setter takes the element's index.
-    vector: bool,
-    /// The type of the word stored.
-    pub(super) ty: ValueType,
-}
-
-/// Which way a shift goes (FTE-19.11).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Shift {
-    /// `<<`.
-    Left,
-    /// `>>`.
-    Right,
-}
-
-/// Where a subscript's element is.
-pub(super) enum Slot {
-    /// At this global, for a constant index.
-    At(u32),
-    /// At the word this float global holds, for any other index.
-    Words(u32),
-}
-
 impl Compiler<'_> {
-    /// The array `expr` names, when it is the bare name of an array definition.
-    pub(super) fn array_named(&mut self, expr: &ast::Expr) -> Lowered<Option<Array>> {
-        let ast::Expr::Name(name) = expr else {
-            return Ok(None);
-        };
-        let span = expr.syntax().span();
-        let id = self.def_of(&name.name().at(span)?)?;
-        let ValueKind::Def(place) = self.expr(expr)?.kind else {
-            return Ok(None);
-        };
-        let def = self.program.def(place).at(span)?;
-        let Some(count) = def.count else {
-            return Ok(None);
-        };
-        Ok(Some(Array {
-            place,
-            ofs: def.ofs,
-            elem: def.ty.clone(),
-            count,
-            words: type_words(self.index, &def.ty),
-            location: self.index.def(id).at(span)?.location,
-        }))
-    }
-
-    /// FTE-13.9: `name.length` is the array's element count, a float immediate.
-    pub(super) fn length(&mut self, array: &Array, span: Span) -> Lowered<Value> {
-        let count = f32_of(array.count).at(span)?;
-        let place = self.program.immediate(&Literal::Float(count)).at(span)?;
-        self.def_value(place, span)
-    }
-
-    /// The member `name` of a value of struct type `ty`: its word and its type (FTE-14.5).
-    pub(super) fn member_of(&self, ty: &ValueType, name: &str) -> Option<(u32, ValueType)> {
-        let ValueType::Of(ty) = ty else {
-            return None;
-        };
-        let member = self
-            .index
-            .struct_shape(ty)?
-            .members
-            .iter()
-            .find(|m| m.name == name)?;
-        Some((member.word, ValueType::Of(member.ty.clone())))
-    }
-
-    /// `name[i]`, or with `member` its element's member `name[i].m` (FTE-13.6, FTE-13.12): a
-    /// constant index the element's words, any other a call of the array's getter for each
-    /// word of the value, the index in words. A store through an index by a value needs
-    /// FTEQCC's setter, which is not lowered.
-    pub(super) fn element(
-        &mut self,
-        array: &Array,
-        index: &ast::Expr,
-        member: Option<(u32, ValueType)>,
-    ) -> Lowered<Value> {
-        let span = index.syntax().span();
-        let (word, ty) = member.unwrap_or((0, array.elem.clone()));
-        let words = match self.slot(array, index, word)? {
-            Slot::At(ofs) => {
-                return Ok(Value {
-                    ofs,
-                    kind: ValueKind::Temp(ty),
-                });
-            }
-            Slot::Words(words) => words,
-        };
-        self.read_words(array, words, ty, span)
-    }
-
-    /// FTEF-29.14: the element a compound assignment or `++`/`--` stores by `store` read first
-    /// by the array's getter, at the index words the store takes, as `QCC_LoadFromArray` reads
-    /// it before the operator.
-    pub(super) fn read_stored(&mut self, store: &ElementStore, span: Span) -> Lowered<Value> {
-        let array = store.array.clone();
-        if store.vector || type_words(self.index, &store.ty) != 1 {
-            return self.read_words(&array, store.words, store.ty.clone(), span);
-        }
-        // The setter reads the index again (its refcount is above 1 in FTEQCC), so its store
-        // to the first parameter is not folded into the statement that made it.
-        let getter = self.array_function(&array, Access::Get, span)?;
-        self.program.emit(
-            Opcode::StoreF,
-            operand(store.words).at(span)?,
-            operand(OFS_PARM0).at(span)?,
-        );
-        self.call_stored(getter, store.ty.clone(), span)
-    }
-
-    /// The element of `array` at index `words`, a value of type `ty`, read by its getter: a
-    /// vector array's by its element's index, `DIV_F` 3, and a value of more than one word a
-    /// word at a time into a temporary.
-    fn read_words(
-        &mut self,
-        array: &Array,
-        words: u32,
-        ty: ValueType,
-        span: Span,
-    ) -> Lowered<Value> {
-        let getter = self.array_function(array, Access::Get, span)?;
-        if array.elem.etype() == Etype::Vector {
-            let elements = self.float_op(Opcode::DivF, words, 3, span)?;
-            return self.call1(getter, elements, ty, span);
-        }
-        let size = type_words(self.index, &ty);
-        if size == 1 {
-            return self.call1(getter, words, ty, span);
-        }
-        // A value of more than one word is read a word at a time into a temporary.
-        let temp = self.program.allocate(size).at(span)?;
-        for w in 0..size {
-            let arg = if w == 0 {
-                // The index is read again for the next words (its refcount is above 1 in
-                // FTEQCC), so its store is not folded into the statement that made it.
-                let to = OFS_PARM0;
-                self.program.emit(
-                    Opcode::StoreF,
-                    operand(words).at(span)?,
-                    operand(to).at(span)?,
-                );
-                None
-            } else {
-                Some(self.float_op(Opcode::AddF, words, w, span)?)
-            };
-            let word = match arg {
-                Some(arg) => self.call1(getter, arg, ValueType::simple(Etype::Float), span)?,
-                None => self.call_stored(getter, ValueType::simple(Etype::Float), span)?,
-            };
-            let to = temp.checked_add(w).at(span)?;
-            let from = self.operand_of(&word);
-            self.program.emit(
-                Opcode::StoreF,
-                operand(from).at(span)?,
-                operand(to).at(span)?,
-            );
-        }
-        Ok(Value {
-            ofs: temp,
-            kind: ValueKind::Temp(ty),
-        })
-    }
-
-    /// The element `name[i]`, or with `member` its member, as the target of a store: the
-    /// element's global for a constant index, else a store by the array's setter, the index
-    /// in words read now (FTE-13.11).
-    pub(super) fn element_target(
-        &mut self,
-        array: &Array,
-        index: &ast::Expr,
-        member: Option<(u32, ValueType)>,
-    ) -> Lowered<Result<Value, ElementStore>> {
-        let (word, ty) = member.unwrap_or((0, array.elem.clone()));
-        Ok(match self.slot(array, index, word)? {
-            Slot::At(ofs) => Ok(Value {
-                ofs,
-                kind: ValueKind::Temp(ty),
-            }),
-            Slot::Words(words) => Err(ElementStore {
-                array: array.clone(),
-                words,
-                vector: array.elem.etype() == Etype::Vector,
-                ty,
-            }),
-        })
-    }
-
-    /// FTE-13.11: `QCC_StoreToArray` on the vanilla opcodes, the stored `value` passed to the
-    /// setter after the index, a vector array's index made its element's by `DIV_F` 3: `STORE_F`
-    /// of the index to the first parameter, the value to the second by its type, and `CALL2`.
-    /// A null is a float 0, or a vector array's `'0 0 0'`.
-    pub(super) fn store_element(
-        &mut self,
-        store: &ElementStore,
-        value: &Value,
-        span: Span,
-    ) -> Lowered<()> {
-        let mut value = value.clone();
-        let mut b = self.type_of(&value).etype();
-        if store.vector && b == Etype::Float && self.constant_word(&value) == Some(0) {
-            let place = self
-                .program
-                .immediate(&Literal::Vector([0.0; 3]))
-                .at(span)?;
-            value = self.def_value(place, span)?;
-            b = Etype::Vector;
-        }
-        let null = b == Etype::Float && self.constant_word(&value) == Some(0);
-        if b != store.ty.etype() && !null {
-            return Self::mismatch(Operator::Assign, span);
-        }
-        let index = if store.vector {
-            self.float_op(Opcode::DivF, store.words, 3, span)?
-        } else {
-            store.words
-        };
-        self.store_word(index, OFS_PARM0, Etype::Float, span)?;
-        let second = OFS_PARM0.checked_add(3).at(span)?;
-        // FTE-13.15: a call's value stored to an element is stored to the second slot from the
-        // return global and then, still referenced, copied to a temporary by the clobber before
-        // the setter's call (`arr[i] = f(x)` is `STORE_F i`, `STORE_F` of the return global to
-        // the second slot, `STORE_F` of it to a temporary, `CALL2`).
-        let from = self.operand_of(&value);
-        // `QCC_PR_GenerateFunctionCall2` stores the value by its size, `STORE_F` for one word.
-        let by_size = if b == Etype::Vector {
-            Etype::Vector
-        } else {
-            Etype::Float
-        };
-        self.store_word(from, second, by_size, span)?;
-        self.keep_alive(&value);
-        // `QCC_StoreToArray` asks for the setter when it stores, after the value is read; the
-        // call's `QCC_ClobberDef(&def_ret)` copies the value's alias (FTE-18.13).
-        let array = store.array.clone();
-        let setter = self.array_function(&array, Access::Set, span)?;
-        let setter = self.program.def(setter).at(span)?.ofs;
-        self.clobber_aliases(span)?;
-        self.program
-            .emit(Opcode::Call2, operand(setter).at(span)?, 0);
-        Ok(())
-    }
-
-    /// Where the element `index` names is, the member at `word` of it: the global for a
-    /// constant whole number within the array (FTE-13.6), else the index in words, multiplied
-    /// by an element's words and the member's word added, by `MUL_F` and `ADD_F` (FTE-13.12).
-    pub(super) fn slot(&mut self, array: &Array, index: &ast::Expr, word: u32) -> Lowered<Slot> {
-        let span = index.syntax().span();
-        let at = self.expr(index)?;
-        let constant = match at.kind {
-            ValueKind::Def(place)
-                if self.constant(place) && self.type_of(&at).etype() == Etype::Float =>
-            {
-                Some(f32::from_bits(self.program.word(at.ofs)))
-            }
-            ValueKind::Def(_)
-            | ValueKind::Temp(_)
-            | ValueKind::Return(_)
-            | ValueKind::ReturnWord(..)
-            | ValueKind::Cast(_) => None,
-        };
-        if let Some(i) = constant {
-            let element = element_number(i, array.count).at(span)?;
-            let ofs = element
-                .checked_mul(array.words)
-                .and_then(|w| w.checked_add(word))
-                .and_then(|w| w.checked_add(array.ofs))
-                .at(span)?;
-            return Ok(Slot::At(ofs));
-        }
-        if self.type_of(&at).etype() != Etype::Float {
-            return Err(Abort::Internal(Internal::Unsupported, span));
-        }
-        let mut words = self.operand_of(&at);
-        if array.words != 1 {
-            words = self.float_op(Opcode::MulF, words, array.words, span)?;
-        }
-        if word != 0 {
-            words = self.float_op(Opcode::AddF, words, word, span)?;
-        }
-        Ok(Slot::Words(words))
-    }
-
-    /// `OP a, n` of the float at `a` and the immediate `n`, into a new temporary.
-    fn float_op(&mut self, op: Opcode, a: u32, n: u32, span: Span) -> Lowered<u32> {
-        let b = self.float_immediate(n, span)?;
-        self.program.emit_result(op, a, b, Etype::Float).at(span)
-    }
-
     /// The offset of the float immediate `n`.
     fn float_immediate(&mut self, n: u32, span: Span) -> Lowered<u32> {
         let place = self
@@ -374,37 +76,6 @@ impl Compiler<'_> {
             .immediate(&Literal::Float(f32_of(n).at(span)?))
             .at(span)?;
         Ok(self.program.def(place).at(span)?.ofs)
-    }
-
-    /// `CALL1` of the function at `function` with its argument already in the first slot, the
-    /// value the return global as `ret`.
-    fn call_stored(&mut self, function: usize, ret: ValueType, span: Span) -> Lowered<Value> {
-        let ofs = self.program.def(function).at(span)?.ofs;
-        self.clobber_aliases(span)?;
-        self.program.emit(Opcode::Call1, operand(ofs).at(span)?, 0);
-        Ok(self.alias(ret))
-    }
-
-    /// `QCC_PR_GenerateFunctionCall1`: the argument at `arg` stored to the first parameter by
-    /// its type, `CALL1` of the function at `function`, the value the return global as `ret`.
-    pub(super) fn call1(
-        &mut self,
-        function: usize,
-        arg: u32,
-        ret: ValueType,
-        span: Span,
-    ) -> Lowered<Value> {
-        if !self.fold_word_into(arg, OFS_PARM0) {
-            self.program.emit(
-                Opcode::StoreF,
-                operand(arg).at(span)?,
-                operand(OFS_PARM0).at(span)?,
-            );
-        }
-        let ofs = self.program.def(function).at(span)?.ofs;
-        self.clobber_aliases(span)?;
-        self.program.emit(Opcode::Call1, operand(ofs).at(span)?, 0);
-        Ok(self.alias(ret))
     }
 
     /// The getter of the array definition `id`, or with `set` its setter, which a body the
@@ -495,13 +166,8 @@ impl Compiler<'_> {
                 Access::Get => self.emit_getter(&made),
                 Access::Set => self.emit_setter(&made),
             };
-            match emitted {
-                Ok(()) => {}
-                Err(Abort::Internal(internal, at)) => return Err((internal, file, at)),
-                Err(Abort::Error(diagnostic)) => {
-                    self.errors
-                        .push(qc_sema::FileDiagnostic { file, diagnostic });
-                }
+            if let Err(Abort::Internal(internal, at)) = emitted {
+                return Err((internal, file, at));
             }
         }
         Ok(())
@@ -781,87 +447,6 @@ impl Compiler<'_> {
         Ok(())
     }
 
-    /// FTEQCC's `a << b` and `a >> b` of floats (FTE-19.11): two constants folded as FTEQCC
-    /// folds them, else on the vanilla opcodes `floor(a * pow(2, b))` or `floor(a / pow(2, b))`
-    /// with the program's `powf` or `pow` and `floor`, else `bitshift(a, b)` or `bitshift(a, 0 -
-    /// b)`.
-    pub(super) fn shift(
-        &mut self,
-        shift: Shift,
-        left: &Value,
-        right: &Value,
-        (op_span, span): (Span, Span),
-    ) -> Lowered<Value> {
-        if self.type_of(left).etype() != Etype::Float || self.type_of(right).etype() != Etype::Float
-        {
-            return Err(Abort::Internal(Internal::Unsupported, op_span));
-        }
-        let op = match shift {
-            Shift::Left => qc_preproc::Op::LshiftF,
-            Shift::Right => qc_preproc::Op::RshiftF,
-        };
-        if let (Some(a), Some(b)) = (self.constant_word(left), self.constant_word(right))
-            && let Some(folded) = qc_sema::fold_floats(op, f32::from_bits(a), f32::from_bits(b))
-        {
-            let place = self.program.immediate(&Literal::Float(folded)).at(span)?;
-            return self.def_value(place, span);
-        }
-        let float = ValueType::simple(Etype::Float);
-        let power = self.defined("powf").or_else(|| self.defined("pow"));
-        if let (Some(power), Some(floor)) = (power, self.defined("floor")) {
-            let two = self.float_immediate(2, span)?;
-            self.store_word(two, OFS_PARM0, Etype::Float, span)?;
-            let count = self.operand_of(right);
-            self.store_word(
-                count,
-                OFS_PARM0.checked_add(3).at(span)?,
-                Etype::Float,
-                span,
-            )?;
-            self.clobber_aliases(span)?;
-            self.program
-                .emit(Opcode::Call2, operand(power).at(span)?, 0);
-            let powered = self.alias(float.clone());
-            let scale = match shift {
-                Shift::Left => Operator::Mul,
-                Shift::Right => Operator::Div,
-            };
-            // `QCC_PR_Statement` of the scale, so `1 << n` is the power itself (FTEF-26.15).
-            let scaled = self.operate(scale, left, &powered, (span, span))?;
-            let scaled = self.operand_of(&scaled);
-            self.store_word(scaled, OFS_PARM0, Etype::Float, span)?;
-            self.clobber_aliases(span)?;
-            self.program
-                .emit(Opcode::Call1, operand(floor).at(span)?, 0);
-            return Ok(self.alias(float));
-        }
-        let bitshift = self
-            .defined("bitshift")
-            .ok_or(Abort::Internal(Internal::Unsupported, op_span))?;
-        let right_ofs = self.operand_of(right);
-        let count = match shift {
-            Shift::Left => right_ofs,
-            Shift::Right => {
-                let zero = self.float_immediate(0, span)?;
-                self.program
-                    .emit_result(Opcode::SubF, zero, right_ofs, Etype::Float)
-                    .at(span)?
-            }
-        };
-        let left_ofs = self.operand_of(left);
-        self.store_word(left_ofs, OFS_PARM0, Etype::Float, span)?;
-        self.store_word(
-            count,
-            OFS_PARM0.checked_add(3).at(span)?,
-            Etype::Float,
-            span,
-        )?;
-        self.clobber_aliases(span)?;
-        self.program
-            .emit(Opcode::Call2, operand(bitshift).at(span)?, 0);
-        Ok(self.alias(float))
-    }
-
     /// The global offset of the global `name` the program has made, as
     /// `QCC_PR_GetSRef(NULL, name, NULL, false, ...)` finds it.
     fn defined(&self, name: &str) -> Option<u32> {
@@ -915,37 +500,6 @@ impl Compiler<'_> {
             kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
         };
         self.fold_into(&temp, to)
-    }
-
-    /// FTE-14.6: a struct value copied to `to`, `STORE_V` for each three words and `STORE_F`
-    /// for the rest, when `ty` is a struct.
-    pub(super) fn copy_struct(
-        &mut self,
-        ty: &ValueType,
-        from: u32,
-        to: u32,
-        span: Span,
-    ) -> Lowered<bool> {
-        let ValueType::Of(t) = ty else {
-            return Ok(false);
-        };
-        let Some(shape) = self.index.struct_shape(t) else {
-            return Ok(false);
-        };
-        let mut w = 0;
-        while w < shape.words {
-            let (op, n) = if shape.words.saturating_sub(w) >= 3 {
-                (Opcode::StoreV, 3)
-            } else {
-                (Opcode::StoreF, 1)
-            };
-            let a = from.checked_add(w).at(span)?;
-            let b = to.checked_add(w).at(span)?;
-            self.program
-                .emit(op, operand(a).at(span)?, operand(b).at(span)?);
-            w = w.saturating_add(n);
-        }
-        Ok(true)
     }
 
     /// FTE-13.10, FTE-14.7: the words of an aggregate initialiser of a value of `ty`, `count`
@@ -1038,15 +592,9 @@ impl Compiler<'_> {
     /// `QCC_PR_GenerateInitializerType` copies `QCC_SRef_EvalConst`.
     fn constant_words(&mut self, ty: &ValueType, expr: &ast::Expr) -> Lowered<Vec<u32>> {
         let span = expr.syntax().span();
-        let before = self.program.statements.len();
-        let value = self.expr(expr)?;
-        let ValueKind::Def(place) = value.kind else {
-            return Err(Abort::Internal(Internal::Unsupported, span));
-        };
-        if self.program.statements.len() != before
-            || !self.constant(place)
-            || self.type_of(&value).etype() != ty.etype()
-        {
+        let place = self.constant_place(self.file, expr, span)?;
+        let value = self.def_value(place, span)?;
+        if !self.constant(place) || self.type_of(&value).etype() != ty.etype() {
             return Err(Abort::Internal(Internal::Unsupported, span));
         }
         let ofs = self.program.def(place).at(span)?.ofs;
@@ -1054,12 +602,6 @@ impl Compiler<'_> {
             .map(|i| self.program.word(ofs.saturating_add(i)))
             .collect())
     }
-}
-
-/// The element a constant index names, when it is a whole number within the array.
-fn element_number(i: f32, count: u32) -> Option<u32> {
-    let n = (0..count).find(|&n| f32_of(n).is_some_and(|f| f.to_bits() == i.to_bits()))?;
-    Some(n)
 }
 
 /// `n` as the float an immediate holds, when it is exact.

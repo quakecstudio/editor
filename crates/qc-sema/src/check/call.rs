@@ -21,7 +21,7 @@ use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::fold;
 use crate::check::reference::expected_after;
 use crate::check::term::string_immediate;
-use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Value};
+use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Sym, Value};
 use crate::ir;
 use crate::ty::{FunctionType, SimpleType, Type};
 
@@ -153,7 +153,7 @@ impl Checker<'_> {
         let mut passed = Vec::new();
         // FTE-18.11: a field argument is loaded straight into its slot after every argument is
         // read, so its load is held back from the generated statements until then.
-        let mut field_loads: Vec<(usize, Vec<ir::BodyStatement>)> = Vec::new();
+        let mut field_loads: Vec<FieldLoad> = Vec::new();
         let mut values = Vec::new();
         for (at, slot) in slots.iter().enumerate() {
             let Some(arg) = slot else {
@@ -185,28 +185,51 @@ impl Checker<'_> {
             }
             let mark = self.generated.len();
             let mut value = self.read(reference.clone(), arg_span)?;
-            if matches!(reference.reference, Reference::Field(_)) {
+            let mut continue_after_conversion = false;
+            if let Reference::Field(field) = &reference.reference {
                 let load = self.generated.split_off(mark.min(self.generated.len()));
-                field_loads.push((at, load));
+                // FTE-18.13: an entity that is a call's value stays referenced until the field is
+                // loaded, so a later call's clobber copies it first.
+                if let Some(call) = field.entity_call {
+                    self.live_return = Some(1);
+                    self.live_call = Some(call);
+                }
+                field_loads.push(FieldLoad {
+                    slot: at,
+                    load,
+                    entity_call: field.entity_call,
+                });
             }
             if let Some(param) = function.params.get(at)
                 && value.ty != Type::Unknown
                 && !self.env.typecmp(&value.ty, param)
             {
-                // A field argument converted is loaded into the conversion's own slot
-                // (FTE-18.11), which the body does not follow.
-                if matches!(reference.reference, Reference::Field(_)) {
-                    self.followed = false;
+                // FTEF-26.3: a float field of an `int` parameter is loaded straight into the
+                // slot of `ftoi`, whose value is the argument; any other converted field
+                // argument is not followed.
+                let ftoi = (self.etype_of(&value.ty) == Some(Etype::Float)
+                    && self.etype_of(param) == Some(Etype::Integer))
+                .then(|| self.env.helper("ftoi"))
+                .flatten();
+                let held = field_loads.last().is_some_and(|field| field.slot == at);
+                match ftoi.filter(|_| held && !self.global) {
+                    Some(ftoi) => {
+                        let field = field_loads.pop();
+                        value = self.ftoi_field(field, ftoi, param);
+                        continue_after_conversion = true;
+                    }
+                    None => {
+                        if matches!(reference.reference, Reference::Field(_)) {
+                            self.followed = false;
+                        }
+                    }
                 }
-                value = self.cast_to(&value, param, arg_span)?;
+                if !continue_after_conversion {
+                    value = self.cast_to(&value, param, arg_span)?;
+                }
             }
             // A field argument of a call's entity stays referenced across later calls, which
             // the body does not follow (FTE-18.13).
-            if let Reference::Field(field) = &reference.reference
-                && field.entity_call.is_some()
-            {
-                self.followed = false;
-            }
             passed.push(Some(reference));
             self.record_call_path(&name, at, arg);
             values.push(value);
@@ -261,7 +284,24 @@ impl Checker<'_> {
         } else {
             func.name()
         };
-        self.call_fragment(&function, count, (callee, &values), &field_loads, span);
+        // FTE-18.7, FTE-18.8: the parameters the code generator passes, each after the arguments
+        // that takes a default it keeps.
+        let mut passed_count = slots.len();
+        while passed_count < params.len()
+            && params
+                .get(passed_count)
+                .is_some_and(|p| p.kept_default && !p.optional)
+        {
+            passed_count = passed_count.saturating_add(1);
+        }
+        // FTE-18.7: an empty slot is given its parameter's default.
+        let defaulted: Vec<bool> = passed.iter().map(Option::is_none).collect();
+        self.call_statements(
+            &function,
+            passed_count,
+            (callee, &values, &defaulted),
+            &field_loads,
+        );
         let call = self.last_made();
         // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
         for (reference, param) in passed.iter().zip(&params) {
@@ -332,25 +372,17 @@ impl Checker<'_> {
         Ok(Value::of(param.clone()))
     }
 
-    /// FTEF-34.9: the statements a call generates, each argument stored to its parameter by its
-    /// words, `OP_STORE_V`, `OP_STORE_I64` where the target has it, else `OP_STORE_F`, then
-    /// `OP_CALLn`; on a target with `OP_CALL1H` the first two arguments of at most three words
-    /// are passed as they are, with no store, and the call is `OP_CALLnH`. An argument of more
-    /// than three words is copied three at a time, each three a parameter, by the widest store
-    /// the target has for the words left (`QCC_PR_GenerateFunctionCallRef`). Only at global
-    /// scope do they matter.
-    /// QC-18.3, FTE-18.9: a call of `function` as a fragment of the intermediate layer kept by
-    /// the call's span: each argument a parameter takes stored to its slot by its size,
-    /// `STORE_V` for three words or a variant's and `STORE_F` for one, then `CALLn` of the
-    /// callee, the fragment's left input; its value the return global. An argument of more
-    /// than three words leaves no fragment.
-    fn call_fragment(
+    /// QC-18.3, FTE-18.9, FTE-18.11, FTE-18.12: the statements a call of `function` generates
+    /// in a function: each field argument loaded into its slot, then each other argument a
+    /// parameter takes stored to its slot by its size, `STORE_V` for three words or a variant's
+    /// and `STORE_F` for one, the first folded into the statement that made it, then each
+    /// default a parameter takes, then `CALLn` of the callee; its value the return global.
+    fn call_statements(
         &mut self,
         function: &FunctionType,
         count: usize,
-        (callee, values): (Option<ir::Name>, &[Value]),
-        field_loads: &[(usize, Vec<ir::BodyStatement>)],
-        span: Span,
+        (callee, values, defaulted): (Option<ir::Name>, &[Value], &[bool]),
+        field_loads: &[FieldLoad],
     ) {
         // The arguments written and each parameter after them that takes its default
         // (FTE-18.7), of which a parameter takes its own.
@@ -364,23 +396,34 @@ impl Checker<'_> {
         // its slot unless the statement before made it (FTE-18.12), then the call.
         if !self.global {
             // `copyop[2] = OP_LOAD_V; copyop[0] = OP_LOAD_F;`: by the field's size, not its type.
-            for (slot, load) in field_loads.iter().filter(|(slot, _)| *slot < passed) {
-                let slot = u8::try_from(*slot).ok().map(ir::Name::Parameter);
-                let by_size = load.iter().map(|&s| ir::BodyStatement {
-                    op: if s.op == Op::LoadV { s.op } else { Op::LoadF },
-                    c: slot,
-                    ..s
-                });
+            for field in field_loads.iter().filter(|field| field.slot < passed) {
+                let slot = u8::try_from(field.slot).ok().map(ir::Name::Parameter);
+                // The entity read, a copy of a call's value when a later call copied it.
+                let by_size: Vec<ir::BodyStatement> = field
+                    .load
+                    .iter()
+                    .map(|&s| ir::BodyStatement {
+                        op: if s.op == Op::LoadV { s.op } else { Op::LoadF },
+                        a: self.copied(s.a, field.entity_call),
+                        c: slot,
+                        ..s
+                    })
+                    .collect();
                 self.generated.extend(by_size);
+                // The load reads the entity, which is no longer referenced after it.
+                if field.entity_call.is_some() && self.live_call == field.entity_call {
+                    self.live_return = None;
+                    self.live_call = None;
+                }
             }
             // FTE-18.12: only the first store can fold, into the statement that made its
             // value; every later one follows a store or a load.
-            let mut first = field_loads.iter().all(|(slot, _)| *slot >= passed);
+            let mut first = field_loads.iter().all(|field| field.slot >= passed);
             for (slot, value) in values.iter().take(passed).enumerate() {
                 if value.returned {
                     self.live_return = None;
                 }
-                if field_loads.iter().any(|(at, _)| *at == slot) {
+                if field_loads.iter().any(|field| field.slot == slot) {
                     continue;
                 }
                 let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
@@ -392,19 +435,23 @@ impl Checker<'_> {
                     self.fold_into(value, slot);
                 }
                 if !folded {
+                    // An empty slot's value is its parameter's default, which the code generator
+                    // reads (FTE-18.7).
+                    let from = if defaulted.get(slot).copied().unwrap_or(false) {
+                        u8::try_from(slot).ok().map(ir::Name::Default)
+                    } else {
+                        self.name_of(value)
+                    };
                     self.generated.push(ir::BodyStatement {
-                        a: self.name_of(value),
+                        a: from,
                         b: u8::try_from(slot).ok().map(ir::Name::Parameter),
                         ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
                     });
                 }
             }
-            // FTE-18.7: each parameter after the arguments that takes its default is stored it.
-            // Which defaults the code generator keeps (FTE-18.8) the model does not know, so a
-            // call that takes one is not followed.
-            if values.len() < passed {
-                self.followed = false;
-            }
+            // FTE-18.7: each parameter after the arguments that takes its default is stored it,
+            // named as the default, which the code generator reads; which defaults it keeps under
+            // autoprototyping (FTE-18.8) the model does not know.
             for slot in values.len()..passed {
                 let words = function
                     .params
@@ -438,37 +485,6 @@ impl Checker<'_> {
                 });
                 self.last_temp = None;
             }
-        }
-        let mut builder = ir::Builder::new();
-        for slot in 0..passed {
-            let ty = values
-                .get(slot)
-                .map(|value| &value.ty)
-                .or_else(|| function.params.get(slot));
-            let words = ty.and_then(|ty| self.env.layout(ty)).map_or(1, |l| l.words);
-            let variant = variant_parameter(function, slot);
-            let store = match words {
-                3 => Op::StoreV,
-                _ if variant => Op::StoreV,
-                1 => Op::StoreF,
-                _ => return,
-            };
-            let Ok(slot) = u8::try_from(slot) else {
-                return;
-            };
-            let reads = [
-                Some(Some(ir::Operand::Input(ir::Input::Argument(slot)))),
-                Some(Some(ir::Operand::Parameter(slot))),
-            ];
-            builder.push(store, reads, ir::Destination::Nothing);
-        }
-        let Some(call) = call_opcode(passed) else {
-            return;
-        };
-        let callee = [Some(Some(ir::Operand::Input(ir::Input::Left))), None];
-        builder.push(call, callee, ir::Destination::Nothing);
-        if let Some(fragment) = builder.finish(Some(ir::Operand::Return), [None, None]) {
-            self.fragments.insert(span, fragment);
         }
     }
 
@@ -660,8 +676,8 @@ impl Checker<'_> {
         call: &ast::CallExpr,
     ) -> Result<Option<Value>, Fatal> {
         let value = self.intrinsic_value(name, args, written, call)?;
-        // Of the intrinsics only `random` and `_` are followed statement by statement.
-        if value.is_some() && !matches!(name, "random" | "_") {
+        // Of the intrinsics only `random`, `_` and `autocvar` are followed statement by statement.
+        if value.is_some() && !matches!(name, "random" | "_" | "autocvar") {
             self.followed = false;
         }
         Ok(value)
@@ -792,7 +808,17 @@ impl Checker<'_> {
                 if self.env.autocvar(&name, &value.ty, cvar, span) {
                     return Err(Fatal);
                 }
-                Ok(Some(Value::of(value.ty)))
+                // The value is the `autocvar_NAME` global, given the default if it has none.
+                let def = self.env.helper(&format!("autocvar_{name}"));
+                if let Some(def) = def.filter(|_| !self.global) {
+                    let at = self.next_made();
+                    self.effects
+                        .push((at, ir::Effect::Autocvar(ir::Name::Def(def, 0))));
+                }
+                Ok(Some(Value {
+                    sym: def.map_or(Sym::Temp, |def| Sym::Def(def, false, 0)),
+                    ..Value::of(value.ty)
+                }))
             }
             "used_sound" | "used_model" => {
                 let list = if name == "used_sound" {
@@ -1000,6 +1026,8 @@ fn type_params(function: &FunctionType) -> Vec<ParamFacts> {
                 .map_or_else(ParamFacts::default, |label| ParamFacts {
                     name: label.name.clone(),
                     has_default: label.default.is_some(),
+                    // The code generator passes defaults only to a function it calls by name.
+                    kept_default: false,
                     optional: label.optional,
                     out: label.out,
                 })
@@ -1033,4 +1061,43 @@ pub(super) const fn call_opcode(passed: usize) -> Option<Op> {
         8 => Op::Call8,
         _ => return None,
     })
+}
+
+impl Checker<'_> {
+    /// FTEF-26.3: the held field load `field` into the first slot, then `CALL1` of `ftoi`, whose
+    /// value, an `int` of type `param`, is the argument.
+    fn ftoi_field(&mut self, field: Option<FieldLoad>, ftoi: crate::DefId, param: &Type) -> Value {
+        if let Some(field) = field {
+            for statement in field.load {
+                self.generated.push(ir::BodyStatement {
+                    op: Op::LoadF,
+                    a: self.copied(statement.a, field.entity_call),
+                    c: Some(ir::Name::Parameter(0)),
+                    ..statement
+                });
+            }
+        }
+        self.clobber_return();
+        self.generated.push(ir::BodyStatement {
+            a: Some(ir::Name::Def(ftoi, 0)),
+            ..ir::BodyStatement::bare(Op::Call1)
+        });
+        let call = self.last_made();
+        self.last_temp = None;
+        self.live_return = Some(1);
+        self.live_call = call;
+        Value {
+            returned: true,
+            call,
+            ..Value::of(param.clone())
+        }
+    }
+}
+
+/// A field argument's load, held back until every argument is read (FTE-18.11): its parameter
+/// slot, its statements, and the call whose value its entity is, if it is one.
+pub(super) struct FieldLoad {
+    slot: usize,
+    load: Vec<ir::BodyStatement>,
+    entity_call: Option<u32>,
 }

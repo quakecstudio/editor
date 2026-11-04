@@ -4,6 +4,8 @@
 //! values of initialisers, as `QCC_PR_ParseDefs` and `PR_ParseDefs` read them (QC-11, FTEF-15,
 //! FTEF-19).
 
+use std::collections::HashSet;
+
 use qc_diag::Span;
 use qc_preproc::{FteFlag, PragmaDefault};
 use qc_syntax::ast::{self, AstNode as _};
@@ -344,15 +346,17 @@ impl RawDecl {
     /// builtin number or a `_(\"...\")`, as `QCC_PR_ParseDefs` does with `if (autoprototype ||
     /// ...) { /* ignore the code and stuff */ }`.
     ///
-    /// A parameter's default that names a definition is dropped (FTEF-12.21): what it names is
+    /// A parameter's default that names a definition is dropped (FTEF-12.22): what it names is
     /// not initialised in this pass, and `QCC_PR_ParseDefaultInitialiser` returns no default for
-    /// it `if (autoprototype)`.
+    /// it `if (autoprototype)`; one naming a field of `fields`, declared before and so given its
+    /// offset, stays.
     #[must_use]
-    pub(crate) fn prototyped(&self) -> Self {
+    pub(crate) fn prototyped(&self, fields: &HashSet<String>) -> Self {
         let params = self
             .params
             .iter()
             .map(|param| match param.default.as_ref().map(|d| &d.kind) {
+                Some(ValueKind::Name(name)) if fields.contains(name) => param.clone(),
                 Some(ValueKind::Name(_) | ValueKind::Indexed(_) | ValueKind::Translate(_)) => {
                     RawParamInfo {
                         default: None,

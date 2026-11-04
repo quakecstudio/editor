@@ -1156,12 +1156,19 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   constant", `string s = B;` after an enum of `float` names, with `assumeint` on at the end,
   reads `B` as an `__int32` (F314), and `[[eraseable]] float x;` before a last `#pragma flag
   enable attributes` is refused by the first pass, where `attributes` is off.
-- **FTEF-12.21** The first pass gives a parameter no default that names a definition:
-  `QCC_PR_ParseDefaultInitialiser` reads it, and of a value not initialised `if (autoprototype)
-  return nullsref;`, and the pass initialises no definition (FTEF-12.19). The definition keeps
-  the first pass's type, which the second pass's, with the default, matches (FTEF-19.7), so a
-  call that leaves the parameter out warns "too few parameters" (FTEF-32.3). A literal default
-  is initialised and stays. Copper's `T_RadiusDamage` takes `float dmgtype = DMGTYPE_EXPLOSION`.
+- **FTEF-12.21** **Withdrawn** (P2-L14, #685): it said the first pass gives a parameter no default
+  that names a definition, but a field is initialised when the first pass declares it, with its
+  offset, so a default naming a field declared before stays (`dialect-fteqcc-rerelease.md`
+  FTE-18.8). Replaced by FTEF-12.22.
+- **FTEF-12.22** The first pass gives a parameter no default that names a definition it has not
+  initialised: `QCC_PR_ParseDefaultInitialiser` reads it, and of a value not initialised `if
+  (autoprototype) return nullsref;`, and the pass initialises no definition but a field, which
+  its declaration gives its offset (FTEF-12.19, FTE-18.8). The definition keeps the first
+  pass's type, which the second pass's, with the default, matches (FTEF-19.7), so a call that
+  leaves the parameter out warns "too few parameters" (FTEF-32.3). A literal default, and one
+  naming a field declared before, is initialised and stays. Copper's `T_RadiusDamage` takes
+  `float dmgtype = DMGTYPE_EXPLOSION`, and `rerelease-mg3`'s `GetFogInfoEntity` takes `.string
+  field = fog_info_entity`.
 
 ## FTEF-13 Further tokens
 

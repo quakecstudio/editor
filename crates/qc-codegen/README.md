@@ -5,18 +5,20 @@ version 6 `progs.dat`, the progs id's `qcc` writes for the same program, byte fo
 where [`docs/spec/language.md`](../../docs/spec/language.md) QC-27 says otherwise (GOAL-2,
 COMP-1).
 
-`qcc` emits code while it parses. This crate walks each compiled file's syntax tree, the
-expansion `qc_sema::Db::analyze_module` read (QC-9.16), in the order `qcc`'s parser meets its
-parts, and takes the definition each name is from the semantic model (QC-12). As it goes it
-builds what `qcc` builds, in the same order: the definition list and the global area, each
-definition placed when first met (QC-21), literals shared by value (QC-20), the statements of
-each construct with a new temporary for every result (QC-14 to QC-19, QC-22), the functions in
-the order their definitions end (QC-25.2) and the string table (QC-25.4); then `progdefs.h`,
-whose CRC the header carries, and the progs tables (QC-25). The type rules of expressions are
-the compiler's, as `qcc`'s are: an operator's opcode is the first row of its spelling whose
-operand types are the operands' basic types (QC-16.8, QC-17.6), and a call's arguments must
-have exactly its parameters' types (QC-18.8). Their errors have `qcc`'s texts (QCD-4.2 to
-QCD-4.7). The precache lists `qcc -copy` reads are kept beside the progs (QC-26).
+The semantic model lowers each function body into its intermediate layer as it checks it
+(`qc_sema::ir`, `TypedBody::generated`, [`docs/design/back-end.md`](../../docs/design/back-end.md)):
+the statements `qcc` or FTEQCC emits for it, in order, emulations included, with operands that
+name values. This crate reads each compiled file's declarations, the expansion
+`qc_sema::Db::analyze_module` read (QC-9.16), in the order `qcc`'s parser meets them, and takes
+the definition each name is from the semantic model (QC-12). It builds what `qcc` builds, in
+the same order: the definition list and the global area, each definition placed when first met
+(QC-21), literals shared by value (QC-20), each body written from the layer by the passes its
+dialect's profile chooses (`back_end.rs`: allocation by creation order, QC-21.5, and the layout
+of locals and temporaries, QC-21.4 or FTE-21.7), the functions in the order their definitions
+end (QC-25.2) and the string table (QC-25.4); then `progdefs.h`, whose CRC the header carries,
+and the progs tables (QC-25). The type rules of expressions and their errors are the semantic
+model's (QC-16 to QC-19, QCD-4). The precache lists `qcc -copy` reads are kept beside the
+progs (QC-26).
 
 - **Layer:** L4 bridges. It depends on `qc-sema` (L3), `qc-syntax` and `qc-lexer` (L2), and
   `qc-progs`, `qc-lno`, `qc-types` and `qc-diag` (L0).
@@ -55,11 +57,11 @@ QCD-4.7). The precache lists `qcc -copy` reads are kept beside the progs (QC-26)
 
 ## What it is not, yet
 
-Under FTEQCC it lowers what the six rerelease codebases and most of the corpus mods' server
-modules use, on the vanilla opcodes (FTE-1.1); FTE's extended opcodes and the rest of FTEQCC
-are not lowered: among them a function defined inside another, a read through a pointer, a
-compound assignment to an element its setter stores, and casts that convert between basic
-types.
+Under FTEQCC it writes the bodies the semantic model follows, on the vanilla opcodes (FTE-1.1):
+every body of the rerelease codebases, the corpus mods that compile and the generated programs.
+FTE's extended opcodes and the rest of FTEQCC are not lowered: among them a read through a
+pointer, a compound assignment to an element its setter stores, a builtin local, and casts
+that convert between basic types.
 `cargo xtask codegen-corpus <dir>...` compiles codebases under the FTEQCC profile.
 
 ## Tests

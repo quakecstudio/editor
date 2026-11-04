@@ -3452,3 +3452,158 @@ fn a_negated_constant_folds_after_its_zero() {
         "the zero is made just before the value"
     );
 }
+
+// spec FTE-3.6, FTEF-31.9: a constant vector's component is a constant, so an `if` of it keeps
+// only the branch it selects, as the pinned FTEQCC compiles `if (('0 0.245 3').x)` and
+// `if (('0 0.245 3').y)` (2026-11-04)
+#[test]
+fn an_if_of_a_constant_vectors_component_keeps_one_branch() {
+    let p = fte_progs(
+        "float gf0;\nvoid() t = { if (('0 0.245 3').x) { gf0 = 7; } else { gf0 = 1; } };\n\
+         void() u = { if (('0 0.245 3').y) { gf0 = 8; } else { gf0 = 2; } };\n",
+    );
+    let gf0 = global(&p, "gf0");
+    assert_eq!(
+        body(&p, "t"),
+        [st(StoreF, immediate(&p, 1.0), gf0, 0), st(Done, 0, 0, 0)]
+    );
+    assert_eq!(
+        body(&p, "u"),
+        [st(StoreF, immediate(&p, 8.0), gf0, 0), st(Done, 0, 0, 0)]
+    );
+}
+
+// spec QC-21.5, FTE-19.12: a vector `&` or `|` with no opcode of its own on the target is each
+// word's float opcode into a vector temporary taken before its words are written, which the
+// store then copies
+#[test]
+fn a_vector_bitwise_operator_writes_each_word_of_its_temporary() {
+    let p = fte_progs("vector a, b, c;\nvoid() t = { c = a & b; c = (a | b) & a; };\n");
+    let t = body(&p, "t");
+    let (a, b, c) = (global(&p, "a"), global(&p, "b"), global(&p, "c"));
+    assert_eq!(
+        opcodes(&t),
+        ops(&[
+            BitAnd, BitAnd, BitAnd, StoreV, BitOr, BitOr, BitOr, BitAnd, BitAnd, BitAnd, StoreV,
+            Done
+        ])
+    );
+    let first = t[0].c;
+    for word in 0..3 {
+        let w = usize::try_from(word).unwrap();
+        assert_eq!((t[w].a, t[w].b, t[w].c), (a + word, b + word, first + word));
+        let or = t[4 + w].c;
+        assert_eq!(or, first + 3 + word, "the next vector follows the first");
+        assert_eq!((t[7 + w].a, t[7 + w].b), (or, a + word));
+    }
+    assert_eq!((t[3].a, t[3].b), (first, c));
+}
+
+// spec FTE-18.12, QC-21.5: a vector constructor stores each component to its word of a vector
+// temporary, the first folded into the statement that made it when that is the last one, and a
+// component left out is the float 0
+#[test]
+fn a_vector_constructor_folds_its_first_word() {
+    let p = fte_progs("float a, b;\nvector() t = { return [a * b, b]; };\n");
+    let t = body(&p, "t");
+    let (a, b) = (global(&p, "a"), global(&p, "b"));
+    let v = t[0].c;
+    assert_eq!(
+        t,
+        [
+            st(MulF, a, b, v),
+            st(StoreF, b, v + 1, 0),
+            st(StoreF, immediate(&p, 0.0), v + 2, 0),
+            st(Return, v, 0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-18.5, FTE-18.13: `a, b` reads `a`, discards it, and is `b`, so a call's value on
+// the left is freed and no later call copies it out of the return global
+#[test]
+fn a_comma_discards_its_left_call() {
+    let p = fte_progs(
+        "float() g = #1;\nvoid(float x) h = #2;\nfloat a;\nvoid() t = { h((g(), a)); };\n",
+    );
+    let (a, g, h) = (global(&p, "a"), global(&p, "g"), global(&p, "h"));
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(Opcode::Call0, g, 0, 0),
+            st(StoreF, a, 4, 0),
+            st(Opcode::Call1, h, 0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTE-14.8: a struct local initialised with a struct definition of its type is copied a
+// word at a time by STORE_FLD, written from the semantic model
+#[test]
+fn a_struct_local_copies_a_definition_word_by_word() {
+    let p = fte_progs(
+        "typedef struct { float f; string s; } P;\nP a; float x;\n\
+         void() t = { P p = a; x = p.f; };\n",
+    );
+    let (a, x, local) = (global(&p, "a"), global(&p, "x"), global(&p, "p"));
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(Opcode::StoreFld, a, local, 0),
+            st(Opcode::StoreFld, a + 1, local + 1, 0),
+            st(StoreF, local, x, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-32.12: `autocvar(NAME, default)` reads the global `autocvar_NAME`, given the default
+// when nothing initialised it, a call whose value is discarded too, as the pinned FTEQCC
+// compiles `autocvar(foo, "0");` (2026-11-04)
+#[test]
+fn an_autocvar_call_gives_its_global_the_default() {
+    let p =
+        fte_progs("string s;\nvoid() t = { autocvar(foo, \"0\"); s = autocvar(bar, \"1\"); };\n");
+    let (foo, bar, s) = (
+        global(&p, "autocvar_foo"),
+        global(&p, "autocvar_bar"),
+        global(&p, "s"),
+    );
+    let text = |global: i32| string(&p, i32::try_from(words(&p, global, 1)[0]).unwrap());
+    assert_eq!(text(foo), "0");
+    assert_eq!(text(bar), "1");
+    assert_eq!(body(&p, "t"), [st(StoreS, bar, s, 0), st(Done, 0, 0, 0)]);
+}
+
+// spec FTE-19.12, FTE-18.13: a vector `&` of a call's value reads the return global word by
+// word and frees it not, so the next statement's clobber copies the value out first
+#[test]
+fn a_call_value_read_word_by_word_is_copied_by_the_next_statement() {
+    let p = fte_progs(
+        "vector() f = #1;\nfloat() g = #2;\nvector v; float x;\nvoid() t = { v = v & f(); x = g(); };\n",
+    );
+    let (f, g, v, x) = (
+        global(&p, "f"),
+        global(&p, "g"),
+        global(&p, "v"),
+        global(&p, "x"),
+    );
+    let t = body(&p, "t");
+    let and = t[1].c;
+    assert_eq!(
+        t,
+        [
+            st(Opcode::Call0, f, 0, 0),
+            st(BitAnd, v, 1, and),
+            st(BitAnd, v + 1, 2, and + 1),
+            st(BitAnd, v + 2, 3, and + 2),
+            st(StoreV, and, v, 0),
+            st(StoreV, 1, t[5].b, 0),
+            st(Opcode::Call0, g, 0, 0),
+            st(StoreF, 1, x, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}

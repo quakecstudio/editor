@@ -312,24 +312,26 @@ impl Checker<'_> {
         });
         Ok(match (base.constness, word) {
             (Constness::Known(constant), Some(word)) if constant.is_vector() => {
-                // Where FTEQCC reads the word as a constant the body does not follow (FTEF-31.9).
-                self.followed = false;
                 // The vector is placed before its word is read.
-                if !self.global
-                    && let Some(immediate) = constant.immediate()
-                {
+                let immediate = constant.immediate().filter(|_| !self.global);
+                if let Some(immediate) = immediate {
                     let at = self.next_made();
                     self.effects
                         .push((at, ir::Effect::Make(ir::Name::Immediate(immediate))));
                 }
-                let value = constant.v().get(word).copied().unwrap_or_default();
+                let value = Constant::float(constant.v().get(word).copied().unwrap_or_default());
+                // FTEF-31.9: the component is read as a constant, and named as the vector's
+                // word while it still is that constant.
+                let word = u32::try_from(word).unwrap_or_default();
+                let name = immediate.map(|immediate| ir::Name::ImmediateWord(immediate, word));
                 Value {
                     reference: Reference::element(
                         base.label(),
                         pointer::int(i32::try_from(word).unwrap_or_default()),
                         true,
                     ),
-                    ..Value::constant(Constant::float(value))
+                    literal: name.map(|name| Box::new((value, name))),
+                    ..Value::constant(value)
                 }
             }
             // A field named bare, `e.fv.y`, is its component's field, which a statement of it

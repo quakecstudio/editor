@@ -234,8 +234,6 @@ pub(crate) struct Value {
     pub(crate) bitfield: Option<Bitfield>,
     /// The word offset of the temporary that holds it, `temp_N` (FTEF-27.16).
     pub(crate) temp: Option<u32>,
-    /// The operand it is in the fragment being lowered (`docs/design/back-end.md`), if any.
-    pub(crate) ir: Option<ir::Operand>,
     /// Whether it is a call's return value, an alias of `OFS_RETURN` that a statement which
     /// clobbers the aliases copies to a temporary first (`QCC_ClobberDef`, FTEF-30.13).
     pub(crate) returned: bool,
@@ -249,7 +247,7 @@ pub(crate) struct Value {
     pub(crate) word: u32,
     /// A number literal's constant and the immediate the code generator places it in, the
     /// lexer's float of its text: the value's name while it is still that constant.
-    pub(crate) literal: Option<Box<(Constant, ir::Immediate)>>,
+    pub(crate) literal: Option<Box<(Constant, ir::Name)>>,
 }
 
 /// FTEQCC's temporaries (`tempsinfo`), kept across the module's functions: each one's word
@@ -348,15 +346,6 @@ impl Sym {
 }
 
 impl Value {
-    /// The operand it is in the fragment being lowered: the one it was given, else a constant's
-    /// immediate (`docs/design/back-end.md`).
-    pub(crate) fn operand(&self) -> Option<ir::Operand> {
-        self.ir.or_else(|| match self.constness {
-            Constness::Known(constant) => constant.immediate().map(ir::Operand::Immediate),
-            Constness::Variable | Constness::Opaque => None,
-        })
-    }
-
     /// A value of `ty` that is no literal.
     pub(crate) const fn of(ty: Type) -> Self {
         Self {
@@ -370,7 +359,6 @@ impl Value {
             text: None,
             bitfield: None,
             temp: None,
-            ir: None,
             returned: false,
             made: None,
             string: None,
@@ -407,10 +395,10 @@ impl Value {
         if let Some(string) = self.string {
             return Some(ir::Name::String(string));
         }
-        if let Some(&(constant, immediate)) = self.literal.as_deref()
+        if let Some(&(constant, name)) = self.literal.as_deref()
             && self.known() == Some(constant)
         {
-            return Some(ir::Name::Immediate(immediate));
+            return Some(name);
         }
         match self.sym {
             Sym::Def(def, _, word) => Some(ir::Name::Def(def, word)),
@@ -541,6 +529,9 @@ pub(crate) struct ParamFacts {
     pub(crate) name: Option<String>,
     /// Whether it has a default value, `defltvalue`.
     pub(crate) has_default: bool,
+    /// Whether the code generator passes the default: under autoprototyping one naming any
+    /// definition but a field is none (FTE-18.8).
+    pub(crate) kept_default: bool,
     /// Whether `optional` marks it.
     pub(crate) optional: bool,
     /// Whether it is an `out` parameter, stored back after the call.
@@ -765,7 +756,6 @@ impl CvarValue {
 pub struct TypedBody {
     types: HashMap<(usize, usize), Type>,
     opcodes: HashMap<(usize, usize), qc_preproc::Op>,
-    fragments: ir::Fragments,
     generated: Vec<ir::BodyStatement>,
     strings: Vec<Vec<u8>>,
     origins: Vec<(u32, usize)>,
@@ -787,13 +777,6 @@ impl TypedBody {
     #[must_use]
     pub fn opcode_at(&self, span: Span) -> Option<qc_preproc::Op> {
         self.opcodes.get(&(span.start, span.end)).copied()
-    }
-
-    /// The statements the binary operator whose token is at `span` lowers to, its emulation
-    /// included (FTEF-27), when the intermediate layer holds them (`docs/design/back-end.md`).
-    #[must_use]
-    pub fn fragment_at(&self, span: Span) -> Option<&ir::Fragment> {
-        self.fragments.at(span)
     }
 
     /// The opcodes of the statements the check generated for the body, in order: the model of

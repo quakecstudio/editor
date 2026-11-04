@@ -51,34 +51,9 @@ pub(crate) enum Operator {
     BitAnd,
     /// `|`.
     BitOr,
-    /// `!`, of one operand (QC-16.4).
-    Not,
 }
 
-impl Operator {
-    /// The spelling id's messages use, as in "type mismatch for OP" (QCD-4.2).
-    pub(crate) const fn spelling(self) -> &'static str {
-        match self {
-            Self::Mul => "*",
-            Self::Div => "/",
-            Self::Add => "+",
-            Self::Sub => "-",
-            Self::Eq => "==",
-            Self::Ne => "!=",
-            Self::Le => "<=",
-            Self::Ge => ">=",
-            Self::Lt => "<",
-            Self::Gt => ">",
-            Self::Dot => ".",
-            Self::Assign => "=",
-            Self::And => "&&",
-            Self::Or => "||",
-            Self::BitAnd => "&",
-            Self::BitOr => "|",
-            Self::Not => "!",
-        }
-    }
-}
+impl Operator {}
 
 /// One row of `pr_opcodes`: an opcode and the basic types of its operands and result.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -159,54 +134,6 @@ pub(crate) const ROWS: [Row; 46] = [
     row(Operator::BitOr, Opcode::BitOr, F, F, F),
 ];
 
-/// The `NOT_*` rows (QC-16.4): one operand, a float truth.
-const NOT_ROWS: [Row; 5] = [
-    row(
-        Operator::Not,
-        Opcode::NotF,
-        Etype::Float,
-        Etype::Void,
-        Etype::Float,
-    ),
-    row(
-        Operator::Not,
-        Opcode::NotV,
-        Etype::Vector,
-        Etype::Void,
-        Etype::Float,
-    ),
-    row(
-        Operator::Not,
-        Opcode::NotS,
-        Etype::String,
-        Etype::Void,
-        Etype::Float,
-    ),
-    row(
-        Operator::Not,
-        Opcode::NotEnt,
-        Etype::Entity,
-        Etype::Void,
-        Etype::Float,
-    ),
-    row(
-        Operator::Not,
-        Opcode::NotFnc,
-        Etype::Function,
-        Etype::Void,
-        Etype::Float,
-    ),
-];
-
-/// The row of the opcode numbered `number` in id's table (QC-16.1, QC-16.4), if it has one.
-pub(crate) fn row_of(number: u32) -> Option<Row> {
-    let opcode = Opcode::from_number(number)?;
-    ROWS.iter()
-        .chain(&NOT_ROWS)
-        .find(|row| row.opcode == opcode)
-        .copied()
-}
-
 /// The row `operator` selects for operands of basic types `a` and `b`, and for a field access
 /// the field's own type `c` (QC-16.1): `PR_Expression`'s walk from the first row of the
 /// spelling. `None` is "type mismatch for OP" (QC-16.2, QCD-4.2).
@@ -215,26 +142,4 @@ pub(crate) fn select(operator: Operator, a: Etype, b: Etype, c: Option<Etype>) -
         .filter(|r| r.operator == operator)
         .find(|r| r.a == a && r.b == b && c.is_none_or(|c| r.c == c))
         .copied()
-}
-
-/// The `NOT_*` opcode `PR_Term` emits for an operand of basic type `t` (QC-16.4), or `None`
-/// for "type mismatch for !".
-pub(crate) fn not_opcode(t: Etype) -> Option<Opcode> {
-    NOT_ROWS.iter().find(|row| row.a == t).map(|row| row.opcode)
-}
-
-/// The `CALLn` opcode for `n` arguments, `n` at most 8 (QC-18.3).
-pub(crate) const fn call_opcode(n: usize) -> Option<Opcode> {
-    match n {
-        0 => Some(Opcode::Call0),
-        1 => Some(Opcode::Call1),
-        2 => Some(Opcode::Call2),
-        3 => Some(Opcode::Call3),
-        4 => Some(Opcode::Call4),
-        5 => Some(Opcode::Call5),
-        6 => Some(Opcode::Call6),
-        7 => Some(Opcode::Call7),
-        8 => Some(Opcode::Call8),
-        _ => None,
-    }
 }

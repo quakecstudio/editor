@@ -336,8 +336,9 @@ fn an_error_skips_the_return_checks() {
     );
 }
 
-// spec FTEF-12.21: autoprototyping's first pass gives a parameter no default that names a
-// definition, which that pass does not initialise; a literal default stays
+// spec FTEF-12.22: autoprototyping's first pass gives a parameter no default that names a
+// definition, which that pass does not initialise; a literal default stays, and so does one
+// naming a field declared before, which the pass gives its offset
 #[test]
 fn autoprototyping_drops_named_defaults() {
     let too_few = d(
@@ -362,6 +363,13 @@ fn autoprototyping_drops_named_defaults() {
     assert_eq!(
         analyze(
             "void(float x, float b = 1) f = {}; void() g = { f(1); };\n",
+            true
+        ),
+        []
+    );
+    assert_eq!(
+        analyze(
+            ".float fl; void(float x, .float b = fl) f = {}; void() g = { f(1); };\n",
             true
         ),
         []

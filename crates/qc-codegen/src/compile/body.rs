@@ -7,35 +7,83 @@
 //! resolved to its global. A body the semantic model did not follow in full, or that names
 //! something the writer cannot resolve, is left to the syntax walk.
 
-use std::collections::HashMap;
-
 use qc_diag::Span;
 use qc_progs::opcode::Opcode;
-use qc_sema::TypedBody;
 use qc_sema::ir::{BodyStatement, Effect, Name};
+use qc_sema::lower::{Qualifier, declares};
+use qc_sema::{DefId, FileId, TypedBody};
+use qc_syntax::ast::{self, AstNode as _};
 
-use super::{At, Compiler, Lowered};
+use super::allocate::CreationOrder;
+use super::{At, Compiler, Lowered, Written, literal_of};
 use crate::Internal;
+use crate::back_end::Allocation;
 use crate::program::{Literal, OFS_RETURN, operand, type_words};
 
 impl Compiler<'_> {
     /// Writes `body`'s statements as the code of the function being compiled, `named` the span
     /// of its name, the origin of the statements before its first source statement. Whether it
     /// wrote them: a body [`writable`] refuses is left to the syntax walk.
-    pub(super) fn write_body(&mut self, body: &TypedBody, named: Span) -> Lowered<bool> {
-        if !writable(body, self.returns_value()) || self.calls_with_defaults(body) {
+    pub(super) fn write_body(
+        &mut self,
+        body: &TypedBody,
+        syntax: &ast::FunctionBody,
+        named: Span,
+    ) -> Lowered<bool> {
+        // A bare `return` names the `ret*` local under FTEQCC (FTE-18.10); id's `qcc` writes
+        // `RETURN` of nothing whatever the function returns (QC-13.8).
+        let ret_local = self.returns_value() && self.dialect.has_fteqcc_extensions();
+        if !writable(body, ret_local) || !self.defaults_kept(body) {
             return Ok(false);
         }
+        self.writing = Some(syntax.clone());
+        let written = self.write_statements(body, syntax, named);
+        self.writing = None;
+        written.map(|()| true)
+    }
+
+    /// The statements of `body`, whose syntax is `syntax`, written in turn with what the body
+    /// makes between them.
+    fn write_statements(
+        &mut self,
+        body: &TypedBody,
+        syntax: &ast::FunctionBody,
+        named: Span,
+    ) -> Lowered<()> {
         let generated = body.generated();
-        let mut slots: HashMap<u32, u32> = HashMap::new();
+        // QC-21.5: the allocation pass the profile chooses (ADR-0020).
+        let mut slots = match self.back_end.allocation {
+            Allocation::CreationOrder => CreationOrder::default(),
+        };
         // The global the first parameter slot was last stored from, which a precache records.
         let mut first_argument = None;
         let mut effects = body.effects().iter().peekable();
+        // How many array functions there were as each `for` loop open here began.
+        let mut loops = Vec::new();
         for (index, statement) in (0_u32..).zip(generated) {
             while let Some(&&(at, effect)) = effects.peek()
                 && at <= index
             {
-                self.effect(effect, index, (body, &slots), named)?;
+                match effect {
+                    // A block taken before its words are written, the value of this statement.
+                    Effect::Block(words) => {
+                        slots.block(&mut self.program, index, words).at(named)?;
+                    }
+                    Effect::ForBegin => loops.push(self.array_functions.len()),
+                    // FTEF-19.78: the local arrays' functions the loop made are forgotten.
+                    Effect::ForEnd => {
+                        let mark = loops.pop().unwrap_or(self.array_functions.len());
+                        self.forget_local_array_functions(mark);
+                    }
+                    Effect::Constant(local) => self.constant_local(syntax, local, named)?,
+                    Effect::Autocvar(cvar) => self.autocvar_default(syntax, cvar, named)?,
+                    Effect::Nested(Name::Def(local, _)) => {
+                        self.nested_local(syntax, local, named)?;
+                    }
+                    Effect::Make(_) | Effect::Temp(_) | Effect::Nested(_) => {
+                        self.effect(effect, index, (body, &slots), named)?;
+                    }
+                }
                 effects.next();
             }
             let at = usize::try_from(index)
@@ -43,10 +91,9 @@ impl Compiler<'_> {
                 .at(named)?;
             let origin = body.origin(at).unwrap_or(named.start);
             self.program.origin = Some((self.file, origin));
-            if let Some(words) = statement.temp_words(index) {
-                let slot = self.program.allocate(words).at(named)?;
-                slots.insert(index, slot);
-            }
+            slots
+                .statement(&mut self.program, statement, index)
+                .at(named)?;
             let op = u32::try_from(statement.op.number())
                 .ok()
                 .and_then(Opcode::from_number)
@@ -81,9 +128,97 @@ impl Compiler<'_> {
             .map_err(|_| Internal::TooLarge)
             .at(named)?;
         for &(_, effect) in effects {
-            self.effect(effect, end, (body, &slots), named)?;
+            match effect {
+                Effect::ForBegin => loops.push(self.array_functions.len()),
+                Effect::ForEnd => {
+                    let mark = loops.pop().unwrap_or(self.array_functions.len());
+                    self.forget_local_array_functions(mark);
+                }
+                Effect::Constant(local) => self.constant_local(syntax, local, named)?,
+                Effect::Autocvar(cvar) => self.autocvar_default(syntax, cvar, named)?,
+                Effect::Nested(Name::Def(local, _)) => {
+                    self.nested_local(syntax, local, named)?;
+                }
+                Effect::Make(_) | Effect::Temp(_) | Effect::Block(_) | Effect::Nested(_) => {
+                    self.effect(effect, end, (body, &slots), named)?;
+                }
+            }
         }
-        Ok(true)
+        Ok(())
+    }
+
+    /// The global holding `expr` of file `file` with no statement: a literal's immediate, made now
+    /// if there is none (QC-20), or a name's definition, as a parameter's default and an
+    /// initialiser's constant read them.
+    pub(super) fn constant_place(
+        &mut self,
+        file: FileId,
+        expr: &ast::Expr,
+        span: Span,
+    ) -> Lowered<usize> {
+        match expr {
+            ast::Expr::Literal(_) => {
+                let literal = literal_of(expr, self.dialect).at(span)?;
+                self.program.immediate(&literal).at(span)
+            }
+            ast::Expr::Name(name) => {
+                let token = name.name().at(span)?;
+                let id = self.names.def(file, token.span(), None).at(span)?;
+                self.program.get_def(self.index, id).at(span)
+            }
+            _ => Err(Internal::Unlowered).at(span),
+        }
+    }
+
+    /// FTEF-18.2: the nested function the local `local` of the body `syntax` is given, numbered
+    /// and kept to compile after this one: the immediate of its number when the local stores
+    /// it each time the function runs, else a `static` local's value, set now.
+    fn nested_local(
+        &mut self,
+        syntax: &ast::FunctionBody,
+        local: DefId,
+        span: Span,
+    ) -> Lowered<Option<usize>> {
+        let at = self.index.def(local).at(span)?.location.span.start;
+        let declarator = syntax
+            .syntax()
+            .descendants()
+            .filter_map(ast::Declarator::cast)
+            .find(|declarator| {
+                declarator
+                    .name()
+                    .is_some_and(|name| name.span().start == at)
+            })
+            .at(span)?;
+        let name = declarator.name().at(span)?;
+        let decl = declarator
+            .syntax()
+            .parent()
+            .and_then(ast::LocalDecl::cast)
+            .at(span)?;
+        let Some(ast::Initializer::Body(nested_body)) = declarator.initializer() else {
+            return Err(Internal::Unlowered).at(span);
+        };
+        let nested = !declares(decl.syntax(), &Qualifier::Static);
+        let written = Written {
+            ty: decl.ty(),
+            wrap: false,
+            nested,
+        };
+        let place = self.program.get_def(self.index, local).at(span)?;
+        let word =
+            self.register_nested(written, &declarator, &name, (local, place), &nested_body)?;
+        if !nested {
+            let ofs = self.program.def(place).at(span)?.ofs;
+            self.program.set_words(ofs, &[word]).at(span)?;
+            return Ok(None);
+        }
+        // `tmp = QCC_MakeIntConst(f - functions)`, stored as any local's initialiser.
+        let constant = self
+            .program
+            .immediate(&Literal::Float(f32::from_bits(word)))
+            .at(span)?;
+        Ok(Some(constant))
     }
 
     /// Makes what `effect` makes without a statement reading it (`TypedBody::effects`): a
@@ -93,13 +228,25 @@ impl Compiler<'_> {
         &mut self,
         effect: Effect,
         index: u32,
-        made: (&TypedBody, &HashMap<u32, u32>),
+        made: (&TypedBody, &CreationOrder),
         span: Span,
     ) -> Lowered<()> {
         let name = match effect {
             Effect::Make(name) => name,
             Effect::Temp(words) => {
                 self.program.allocate(words).at(span)?;
+                return Ok(());
+            }
+            // A block whose statements were dropped is still taken (QC-21.5).
+            Effect::Block(words) => {
+                self.program.allocate(words).at(span)?;
+                return Ok(());
+            }
+            Effect::ForBegin
+            | Effect::ForEnd
+            | Effect::Constant(_)
+            | Effect::Autocvar(_)
+            | Effect::Nested(_) => {
                 return Ok(());
             }
         };
@@ -112,16 +259,139 @@ impl Compiler<'_> {
         Ok(())
     }
 
-    /// Whether `body` calls a function this compiler holds parameter defaults of (FTE-18.7),
-    /// which ones it keeps under autoprototyping (FTE-18.8) the semantic model does not know.
-    fn calls_with_defaults(&self, body: &TypedBody) -> bool {
-        body.generated().iter().any(|statement| match statement.a {
-            Some(Name::Def(callee, _)) => self
-                .defaults
-                .get(&callee)
-                .is_some_and(|defaults| defaults.iter().any(Option::is_some)),
-            _ => false,
+    /// FTEF-32.13, QC-11.10: the local `local` of the body `syntax` holds its initialiser's
+    /// words at compile time, as a global does: a constant's aggregate, or under id's `qcc` any
+    /// local's literal.
+    fn constant_local(
+        &mut self,
+        syntax: &ast::FunctionBody,
+        local: Name,
+        span: Span,
+    ) -> Lowered<()> {
+        let Name::Def(id, _) = local else {
+            return Err(Internal::Unlowered).at(span);
+        };
+        let at = self.index.def(id).at(span)?.location.span.start;
+        let initializer = syntax
+            .syntax()
+            .descendants()
+            .filter_map(ast::Declarator::cast)
+            .find(|declarator| {
+                declarator
+                    .name()
+                    .is_some_and(|name| name.span().start == at)
+            })
+            .and_then(|declarator| declarator.initializer())
+            .at(span)?;
+        let place = self.program.get_def(self.index, id).at(span)?;
+        let aggregate = match initializer {
+            ast::Initializer::Aggregate(aggregate) => aggregate,
+            ast::Initializer::Value(expr) => {
+                let literal = literal_of(&expr, self.dialect).at(span)?;
+                self.program.initialise(place, &literal).at(span)?;
+                return Ok(());
+            }
+            ast::Initializer::Body(_) | ast::Initializer::Builtin(_) => {
+                return Err(Internal::Unlowered).at(span);
+            }
+        };
+        let def = self.program.def(place).at(span)?;
+        let (ty, count) = (def.ty.clone(), def.count);
+        let words = self.aggregate_words(&ty, count, &aggregate)?;
+        self.program.initialise_words(place, &words).at(span)?;
+        Ok(())
+    }
+
+    /// FTEF-32.12: the `autocvar_NAME` global `cvar` that an `autocvar(NAME, default)` call of the
+    /// body `syntax` reads holds the call's default when nothing initialised it before.
+    fn autocvar_default(
+        &mut self,
+        syntax: &ast::FunctionBody,
+        cvar: Name,
+        span: Span,
+    ) -> Lowered<()> {
+        let Name::Def(id, _) = cvar else {
+            return Err(Internal::Unlowered).at(span);
+        };
+        let place = self.program.get_def(self.index, id).at(span)?;
+        let def = self.program.def(place).at(span)?;
+        if def.initialized {
+            return Ok(());
+        }
+        let ty = def.ty.clone();
+        let name = def.name.strip_prefix("autocvar_").at(span)?.to_owned();
+        let default = syntax
+            .syntax()
+            .descendants()
+            .filter_map(ast::CallExpr::cast)
+            .filter(|call| {
+                matches!(call.callee(), Some(ast::Expr::Name(callee))
+                    if callee.name().is_some_and(|t| t.text_lossless() == "autocvar"))
+            })
+            .filter_map(|call| call.args().map(|args| args.args().collect::<Vec<_>>()))
+            .find(|args| {
+                matches!(args.first(), Some(ast::Expr::Name(first))
+                    if first.name().is_some_and(|t| t.text_lossless() == name))
+            })
+            .and_then(|args| args.get(1).cloned())
+            .at(span)?;
+        let words = self.value_words(&ty, &default)?;
+        self.program.initialise_words(place, &words).at(span)?;
+        Ok(())
+    }
+
+    /// Whether `body` passes the parameter defaults this compiler keeps (FTE-18.7), which under
+    /// autoprototyping the semantic model does not know (FTE-18.8): each it passes is kept and
+    /// read with no statement of its own, and no call stops before a parameter whose default is
+    /// kept.
+    fn defaults_kept(&self, body: &TypedBody) -> bool {
+        let generated = body.generated();
+        generated.iter().enumerate().all(|(at, statement)| {
+            let passed = [statement.a, statement.b, statement.c]
+                .into_iter()
+                .flatten()
+                .all(|name| match name {
+                    Name::Default(slot) => self.default_of(generated, at, slot).is_some(),
+                    _ => true,
+                });
+            let stops = match (call_count(statement.op), statement.a) {
+                (Some(count), Some(Name::Def(callee, _))) => self
+                    .defaults
+                    .get(&callee)
+                    .and_then(|defaults| defaults.get(count))
+                    .is_some_and(Option::is_some),
+                _ => false,
+            };
+            passed && !stops
         })
+    }
+
+    /// The default value of parameter `slot` of the function the first `CALL` from the
+    /// statement at `at` calls, with the file it is written in, when this compiler keeps one
+    /// that is a literal or a name, its casts taken off: a cast within its basic type makes no
+    /// statement (FTEF-30.6), and the default is stored by its words.
+    fn default_of(
+        &self,
+        generated: &[BodyStatement],
+        at: usize,
+        slot: u8,
+    ) -> Option<(FileId, ast::Expr)> {
+        let call = generated
+            .get(at..)?
+            .iter()
+            .find(|s| call_count(s.op).is_some())?;
+        let Some(Name::Def(callee, _)) = call.a else {
+            return None;
+        };
+        let (file, mut default) = self
+            .defaults
+            .get(&callee)?
+            .get(usize::from(slot))?
+            .clone()?;
+        while let ast::Expr::Cast(cast) = &default {
+            default = cast.operand()?;
+        }
+        matches!(default, ast::Expr::Literal(_) | ast::Expr::Name(_)).then_some((file, default))
     }
 
     /// Whether the function being compiled returns a value, which a bare `return` of
@@ -138,7 +408,7 @@ impl Compiler<'_> {
         &mut self,
         name: Name,
         index: u32,
-        (body, slots): (&TypedBody, &HashMap<u32, u32>),
+        (body, slots): (&TypedBody, &CreationOrder),
         span: Span,
     ) -> Lowered<i32> {
         let ofs = match name {
@@ -160,13 +430,22 @@ impl Compiler<'_> {
                 let place = self.immediate_place(immediate, span)?;
                 self.program.def(place).at(span)?.ofs
             }
+            Name::ImmediateWord(immediate, word) => {
+                let place = self.immediate_place(immediate, span)?;
+                self.program
+                    .def(place)
+                    .at(span)?
+                    .ofs
+                    .checked_add(word)
+                    .at(span)?
+            }
             Name::String(string) => {
                 let bytes = body.string(string).at(span)?.to_vec();
                 let place = self.program.immediate(&Literal::String(bytes)).at(span)?;
                 self.program.def(place).at(span)?.ofs
             }
-            Name::Made(made) => *slots.get(&made).at(span)?,
-            Name::MadeWord(made, word) => slots.get(&made).at(span)?.checked_add(word).at(span)?,
+            Name::Made(made) => slots.slot(made).at(span)?,
+            Name::MadeWord(made, word) => slots.slot(made).at(span)?.checked_add(word).at(span)?,
             Name::Return => OFS_RETURN,
             Name::ReturnWord(word) => OFS_RETURN.checked_add(word).at(span)?,
             Name::Parameter(slot) => self.parameter_slot(usize::from(slot), span)?,
@@ -195,7 +474,20 @@ impl Compiler<'_> {
                     .map_err(|_| Internal::TooLarge)
                     .at(span);
             }
-            Name::Default(_) => return Err(Internal::Unlowered).at(span),
+            // FTEF-18.2: the nested function's number, its immediate made as it is stored.
+            Name::Nested(local) => {
+                let syntax = self.writing.clone().at(span)?;
+                let place = self.nested_local(&syntax, local, span)?.at(span)?;
+                self.program.def(place).at(span)?.ofs
+            }
+            Name::Default(slot) => {
+                let at = usize::try_from(index)
+                    .map_err(|_| Internal::TooLarge)
+                    .at(span)?;
+                let (file, default) = self.default_of(body.generated(), at, slot).at(span)?;
+                let place = self.constant_place(file, &default, span)?;
+                self.program.def(place).at(span)?.ofs
+            }
         };
         operand(ofs).at(span)
     }
@@ -203,7 +495,7 @@ impl Compiler<'_> {
 
 /// Whether the writer can write `body`: the checker followed every statement it generates,
 /// each statement names every operand its opcode uses, each value read is one a statement
-/// makes, no statement reads a parameter's default, and a bare `return` of a function that
+/// makes, and a bare `return` of a function that
 /// `returns_value` names its `ret*` local.
 fn writable(body: &TypedBody, returns_value: bool) -> bool {
     if !body.followed() {
@@ -216,6 +508,10 @@ fn writable(body: &TypedBody, returns_value: bool) -> bool {
             .and_then(|at| generated.get(at))
             .and_then(|statement| statement.made_words(made))
             .is_some()
+            || body
+                .effects()
+                .iter()
+                .any(|&(at, effect)| at == made && matches!(effect, Effect::Block(_)))
     };
     generated.iter().all(|statement| {
         let named = [statement.a, statement.b, statement.c];
@@ -226,10 +522,27 @@ fn writable(body: &TypedBody, returns_value: bool) -> bool {
             .all(|(&uses, name)| !uses || name.is_some());
         let reads = named.into_iter().flatten().all(|name| match name {
             Name::Made(made) | Name::MadeWord(made, _) => makes(made),
-            Name::Default(_) => false,
             _ => true,
         });
         used && reads && !bare_return(statement, returns_value)
+    })
+}
+
+/// The arguments a call the semantic model generates passes, `CALL0` to `CALL8`; `None` for
+/// any other opcode.
+fn call_count(op: qc_preproc::Op) -> Option<usize> {
+    use qc_preproc::Op;
+    Some(match op {
+        Op::Call0 => 0,
+        Op::Call1 => 1,
+        Op::Call2 => 2,
+        Op::Call3 => 3,
+        Op::Call4 => 4,
+        Op::Call5 => 5,
+        Op::Call6 => 6,
+        Op::Call7 => 7,
+        Op::Call8 => 8,
+        _ => return None,
     })
 }
 

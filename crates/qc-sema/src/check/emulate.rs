@@ -18,7 +18,7 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
 use crate::check::fold::{Folded, fold};
-use crate::check::opcodes::{Opcode, row};
+use crate::check::opcodes::row;
 use crate::check::{Constness, Sym, Value};
 use crate::ir;
 use crate::ty::Type;
@@ -143,9 +143,6 @@ impl Checker<'_> {
             // value; the intermediate layer holds no fragment of it.
             if !self.env.target_at(span.start).valid(op) {
                 self.followed = false;
-                if let Some(builder) = &mut self.fragment {
-                    builder.give_up();
-                }
             }
             // Its value decides no folding or emulation; the comparison warnings read no value.
             if self.env.target_at(span.start).valid(op) {
@@ -182,9 +179,14 @@ impl Checker<'_> {
         }
         let before = self.generated.len();
         let emulated = self.emulate(op, lhs, rhs, span, result)?;
-        // An emulation that generated no statement and left no constant is one the code
-        // generator lowers itself, which the body does not follow.
-        if self.generated.len() == before && emulated.known().is_none() && !self.global {
+        // An emulation that generated no statement and left no constant or other value it names,
+        // as `1i * f` folds to `f`, is one the code generator lowers itself, which the body does
+        // not follow.
+        if self.generated.len() == before
+            && emulated.known().is_none()
+            && self.name_of(&emulated).is_none()
+            && !self.global
+        {
             self.followed = false;
         }
         // A refused opcode is still the statement it was (`badopcode`), its result a temporary;
@@ -206,12 +208,8 @@ impl Checker<'_> {
             self.env.temps().free(offset);
         }
         let Some(row) = row(op) else {
-            if let Some(builder) = &mut self.fragment {
-                builder.give_up();
-            }
             return result;
         };
-        let result = self.lowered(op, row, lhs, rhs, result);
         // The generated statement's operands: what each value it reads names, and its own value.
         let made = self
             .generated
@@ -259,8 +257,8 @@ impl Checker<'_> {
         }
     }
 
-    /// Records `constant` as an immediate the fragment being lowered made, when there is one; a
-    /// kind of constant the layer does not hold leaves the fragment unheld.
+    /// Records `constant` as an immediate the body makes where it is (FTEF-26.2), in a
+    /// function.
     pub(super) fn made(&mut self, constant: Constant) {
         if !self.global
             && let Some(immediate) = constant.immediate()
@@ -269,35 +267,6 @@ impl Checker<'_> {
             self.effects
                 .push((at, ir::Effect::Make(ir::Name::Immediate(immediate))));
         }
-        let Some(builder) = &mut self.fragment else {
-            return;
-        };
-        match constant.immediate() {
-            Some(immediate) => builder.made(immediate),
-            None => builder.give_up(),
-        }
-    }
-
-    /// The statement `op` of `lhs` and `rhs` added to the fragment being lowered, when there is
-    /// one: an operand its row reads that the fragment cannot name means it holds the
-    /// operator no longer. `result` is given the statement's value as its operand.
-    fn lowered(&mut self, op: Op, row: &Opcode, lhs: &Value, rhs: &Value, result: Value) -> Value {
-        let Some(builder) = &mut self.fragment else {
-            return result;
-        };
-        let reads = |value: &Value, slot: usize| {
-            row.types
-                .get(slot)
-                .is_some_and(|t| t.etype() != Etype::Void)
-                .then(|| value.operand())
-        };
-        let c = if row.makes_value() {
-            ir::Destination::Value
-        } else {
-            ir::Destination::Nothing
-        };
-        let ir = builder.push(op, [reads(lhs, 0), reads(rhs, 1)], c);
-        Value { ir, ..result }
     }
 
     /// FTEF-34.9: the store a value of basic type `etype` is copied by, `OP_STORE_*`.
@@ -435,17 +404,6 @@ impl Checker<'_> {
         (lhs, rhs): (&Value, &Value),
         result: Value,
     ) -> Value {
-        if let Some(builder) = &mut self.fragment {
-            for (operand, slot) in [(lhs, 0), (rhs, 1)] {
-                let reads = [
-                    Some(operand.operand()),
-                    Some(Some(ir::Operand::Parameter(slot))),
-                ];
-                builder.push(Op::StoreF, reads, ir::Destination::Nothing);
-            }
-            let callee = [Some(Some(ir::Operand::Def(function))), None];
-            builder.push(Op::Call2, callee, ir::Destination::Nothing);
-        }
         let call = self.helper_statements(function, &[lhs, rhs]);
         for offset in [lhs.temp, rhs.temp].into_iter().flatten() {
             self.env.temps().free(offset);
@@ -455,12 +413,24 @@ impl Checker<'_> {
         // into.
         self.last_temp = if call.is_some() { None } else { temp };
         Value {
-            ir: Some(ir::Operand::Return),
             temp,
             returned: call.is_some(),
             call,
             made: None,
             ..result
+        }
+    }
+
+    /// The value of the call of the helper `function` of `operands`, `result` in the return
+    /// global (FTE-19.11).
+    fn helper_value(&mut self, function: DefId, operands: &[&Value], result: &Value) -> Value {
+        let call = self.helper_statements(function, operands);
+        Value {
+            returned: call.is_some(),
+            call,
+            made: None,
+            temp: None,
+            ..result.clone()
         }
     }
 
@@ -514,24 +484,6 @@ impl Checker<'_> {
         result: Value,
     ) -> Result<Value, Fatal> {
         let emulation = emulation(op);
-        // The intermediate layer holds the emulations that are statements emitted in turn;
-        // the others the code generator still lowers itself.
-        if !matches!(
-            emulation,
-            Emulation::ConvertRight(..)
-                | Emulation::ConvertLeft(..)
-                | Emulation::Remainder(..)
-                | Emulation::Reciprocal(..)
-                | Emulation::Complement(_)
-                | Emulation::ByWord(_)
-                | Emulation::Clear { .. }
-                | Emulation::Xor { .. }
-                | Emulation::Instead(_)
-                | Emulation::Swapped(_)
-        ) && let Some(builder) = &mut self.fragment
-        {
-            builder.give_up();
-        }
         match emulation {
             Emulation::ConvertRight(conv, then) => {
                 let rhs = self.emit(conv, rhs, &Value::unknown(), span)?;
@@ -583,9 +535,6 @@ impl Checker<'_> {
                         return Ok(self.helper_call(function, (lhs, rhs), result));
                     }
                     self.followed = false;
-                    if let Some(builder) = &mut self.fragment {
-                        builder.give_up();
-                    }
                     return Ok(result);
                 }
                 let &[div, ref rest @ .., mul, sub] = steps else {
@@ -681,9 +630,6 @@ impl Checker<'_> {
         let target = self.env.target_at(span.start);
         if let Some(store) = store.filter(|&store| target.valid(store)) {
             // The store opcode is not held by the intermediate layer yet.
-            if let Some(builder) = &mut self.fragment {
-                builder.give_up();
-            }
             self.generate(store, span);
             return Ok(replaced(store));
         }
@@ -708,33 +654,35 @@ impl Checker<'_> {
     /// The vector operator whose float one of each word is `word_op` (`Emulation::ByWord`):
     /// `result`, a vector temporary, its three words written in turn.
     fn by_word(&mut self, word_op: Op, (lhs, rhs): (&Value, &Value), result: Value) -> Value {
-        // Its three statements are the fragment's; the body does not follow them.
-        self.followed = false;
         let temp = self.env.temps().take(3);
-        // A store of the vector folds into no word's statement (`opt_assignments` reads c).
-        self.last_temp = None;
-        let mut ir = None;
-        if let Some(builder) = &mut self.fragment {
-            match (lhs.operand(), rhs.operand()) {
-                (Some(a), Some(b)) => {
-                    if let Some(vector) = builder.vector() {
-                        for word in 0..3 {
-                            builder.push(
-                                word_op,
-                                [Some(a.word(word)), Some(b.word(word))],
-                                ir::Destination::Word(vector, word),
-                            );
-                        }
-                        ir = Some(ir::Operand::Temp(vector));
-                    }
-                }
-                _ => builder.give_up(),
+        // A call's vector read word by word is freed not (`QCC_PR_SimpleStatement`), so the
+        // next statement copies it out of the return global (FTE-18.13).
+        if lhs.returned || rhs.returned {
+            self.unfreed = Some(3);
+        }
+        // In a function, the vector is taken, then each word's statement writes its word.
+        let first = self.next_made();
+        let made = (!self.global).then_some(first);
+        if made.is_some() {
+            let operands = [self.name_of(lhs), self.name_of(rhs)];
+            self.effects.push((first, ir::Effect::Block(3)));
+            for word in 0..3 {
+                let [a, b] = operands.map(|name| name.and_then(|name| name.word(word)));
+                self.generated.push(ir::BodyStatement {
+                    op: word_op,
+                    a,
+                    b,
+                    c: Some(ir::Name::MadeWord(first, word)),
+                });
             }
         }
+        // A store of the vector folds into no word's statement (`opt_assignments` reads c).
+        self.last_temp = None;
         // Plain statements, which report nothing at global scope (FTEF-34.9).
         Value {
             temp: Some(temp),
-            ir,
+            made,
+            word: 0,
             ..result
         }
     }
@@ -752,9 +700,6 @@ impl Checker<'_> {
     ) -> Result<Value, Fatal> {
         if helper.is_some_and(|helper| self.env.defines(helper)) {
             self.followed = false;
-            if let Some(builder) = &mut self.fragment {
-                builder.give_up();
-            }
             return Ok(result);
         }
         let not_b = self.emit(not, rhs, &Value::unknown(), span)?;
@@ -828,21 +773,48 @@ impl Checker<'_> {
             self.emit(Op::ConvItof, value, &Value::unknown(), span)?;
         }
         self.env.report(code, span, message);
-        // `5i / 1i` and `5.0 * 1i`, then the store a `STORE_*` conversion is.
-        match op {
-            Op::ConvItof => self.generate(Op::DivF, span),
-            Op::StoreIf => {
-                self.generate(Op::DivF, span);
-                self.generate(Op::StoreF, span);
-            }
-            Op::ConvFtoi => self.generate(Op::MulF, span),
-            Op::StoreFi => {
-                self.generate(Op::MulF, span);
-                self.generate(Op::StoreI, span);
-            }
-            _ => {}
+        // `5i / 1i` and `5.0 * 1i` of the integer constant 1 (`QCC_MakeIntConst(1)`), made
+        // before the statement, into a temporary; then the store a `STORE_*` conversion is.
+        let (arith, store) = match op {
+            Op::ConvItof => (Op::DivF, None),
+            Op::StoreIf => (Op::DivF, Some(Op::StoreF)),
+            Op::ConvFtoi => (Op::MulF, None),
+            Op::StoreFi => (Op::MulF, Some(Op::StoreI)),
+            _ => return Ok(result),
+        };
+        let one = ir::Name::Immediate(ir::Immediate {
+            kind: ir::ImmediateKind::Integer,
+            words: [1, 0, 0],
+        });
+        // A store's conversion folds into the statement (FTEF-29.13), which the model does not
+        // name yet.
+        if let Some(store) = store {
+            self.generate(arith, span);
+            self.generate(store, span);
+            return Ok(result);
         }
-        Ok(result)
+        let at = self.next_made();
+        if !self.global {
+            self.effects.push((at, ir::Effect::Make(one)));
+        }
+        self.generate(arith, span);
+        self.name_last(arith, self.name_of(value), Some(one));
+        if let Some(statement) = self.generated.last_mut() {
+            statement.c = Some(ir::Name::Made(at));
+        }
+        // FTEF-27.16: the statement frees its operand's temporary and takes one for its value,
+        // which a store folds into (FTEF-29.13).
+        if let Some(offset) = value.temp {
+            self.env.temps().free(offset);
+        }
+        let temp = Some(self.env.temps().take(1));
+        self.last_temp = temp;
+        Ok(Value {
+            made: Some(at),
+            word: 0,
+            temp,
+            ..result
+        })
     }
 
     /// FTEF-27.15: `OP_LSHIFT_I`, `OP_RSHIFT_I` and `OP_RSHIFT_U` on a target without them, by
@@ -986,9 +958,27 @@ impl Checker<'_> {
                     self.emit(int_op, &lhs, &rhs, span)?;
                     return Ok(result);
                 }
-                let pow = self.env.defines("powf") || self.env.defines("pow");
-                if (pow && self.env.defines("floor")) || self.env.defines("bitshift") {
-                    return Ok(result);
+                // FTE-19.11: `floor(a * pow(2, b))` or `floor(a / pow(2, b))` with `powf` or
+                // `pow` and `floor`; else `bitshift(a, b)` or `bitshift(a, 0 - b)`.
+                let pow = self.env.helper("powf").or_else(|| self.env.helper("pow"));
+                if let (Some(pow), Some(floor)) = (pow, self.env.helper("floor")) {
+                    let two = Value::constant(Constant::float(2.0));
+                    let power = self.helper_value(pow, &[&two, rhs], &result);
+                    let scale = if op == Op::LshiftF {
+                        Op::MulF
+                    } else {
+                        Op::DivF
+                    };
+                    let scaled = self.emit(scale, lhs, &power, span)?;
+                    return Ok(self.helper_value(floor, &[&scaled], &result));
+                }
+                if let Some(bitshift) = self.env.helper("bitshift") {
+                    if op == Op::LshiftF {
+                        return Ok(self.helper_value(bitshift, &[lhs, rhs], &result));
+                    }
+                    let zero = Value::constant(Constant::float(0.0));
+                    let negated = self.emit(Op::SubF, &zero, rhs, span)?;
+                    return Ok(self.helper_value(bitshift, &[lhs, &negated], &result));
                 }
                 let message = format!("bitshift function not defined: cannot emulate {what}");
                 self.env.report(Code::W0235, span, message);

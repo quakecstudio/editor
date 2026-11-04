@@ -141,7 +141,7 @@ struct Vanilla<'e> {
     /// The opcode of each binary operator, by its token's span (QC-16.1).
     opcodes: HashMap<(usize, usize), Op>,
     /// Each binary operator's fragment, its one statement (`docs/design/back-end.md`).
-    fragments: ir::Fragments,
+
     /// The return value's type, `def_ret.type`, which each call sets (QC-18.9).
     returned: Option<Type>,
 }
@@ -160,7 +160,6 @@ pub(super) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         strings: Vec::new(),
         followed: true,
         opcodes: HashMap::new(),
-        fragments: ir::Fragments::default(),
         returned: None,
     };
     // QC-13.6: `STATE` of the frame number and the think function, the body's first.
@@ -180,7 +179,6 @@ pub(super) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
     TypedBody {
         types: checker.types,
         opcodes: checker.opcodes,
-        fragments: checker.fragments,
         generated: checker.generated,
         strings: checker.strings,
         origins: checker.origins,
@@ -265,20 +263,26 @@ impl Vanilla<'_> {
     }
 
     /// A `local` declaration: each local declared where it is (QC-11.10); one with an
-    /// initialiser is initialised once, as a global is, which the body does not follow.
+    /// initialiser is initialised once, as a global is, which the code generator writes.
     fn local(&mut self, local: &ast::LocalDecl) {
         for declarator in local.declarators() {
-            if declarator.initializer().is_some() {
-                self.followed = false;
-            }
-            if let Some(def) = declarator
+            let def = declarator
                 .name()
-                .and_then(|name| self.env.reference(name.span().start))
-            {
+                .and_then(|name| self.env.reference(name.span().start));
+            if let Some(def) = def {
                 let at = self.next();
                 self.locals.push((at, def));
                 self.effects
                     .push((at, ir::Effect::Make(ir::Name::Def(def, 0))));
+            }
+            match (declarator.initializer(), def) {
+                (None, _) => {}
+                (Some(ast::Initializer::Value(_)), Some(def)) => {
+                    let at = self.next();
+                    self.effects
+                        .push((at, ir::Effect::Constant(ir::Name::Def(def, 0))));
+                }
+                (Some(_), _) => self.followed = false,
             }
         }
     }
@@ -336,9 +340,12 @@ impl Vanilla<'_> {
 
     /// QC-17.3: turns the last statement, a `LOAD_*` of the assignment's `target`, into
     /// `ADDRESS`, whether it did; a vector's keeps the three words its value took (QC-17.7).
-    /// A last `LOAD_*` that is not the target's retypes the target (QC-17.4), which the model
-    /// does not follow.
     fn address_of_last(&mut self, target: Option<&ast::Expr>) -> bool {
+        // QC-27.11: only a field on the left is made an address; an earlier statement's load is
+        // never rewritten, where id's `qcc` retypes the target (QC-17.4).
+        if !target.is_some_and(is_field) {
+            return false;
+        }
         let Some(last) = self.generated.last_mut() else {
             return false;
         };
@@ -351,9 +358,6 @@ impl Vanilla<'_> {
         if words > 0 {
             let at = self.next();
             self.effects.push((at, ir::Effect::Temp(words)));
-        }
-        if !target.is_some_and(is_field) {
-            self.followed = false;
         }
         true
     }
@@ -469,14 +473,7 @@ impl Vanilla<'_> {
             Some(Basic::Function) => Op::NotFnc,
             _ => return self.mismatch("!", not.syntax().span()),
         };
-        // QC-16.4: `NOT_*` of the operand into a new temporary, the fragment kept by the
-        // expression's span.
-        let mut fragment = ir::Builder::new();
-        let input = Some(Some(ir::Operand::Input(ir::Input::Left)));
-        let made = fragment.push(opcode, [input, None], ir::Destination::Value);
-        if let Some(fragment) = fragment.finish(made, [None, None]) {
-            self.fragments.insert(not.syntax().span(), fragment);
-        }
+        // QC-16.4: `NOT_*` of the operand into a new temporary.
         let operand = not.operand().and_then(|operand| self.name(&operand));
         let named = self.made(opcode, operand, None);
         self.name_span(not.syntax().span(), Some(named));
@@ -561,13 +558,6 @@ impl Vanilla<'_> {
                 self.opcodes.insert((span.start, span.end), opcode);
                 // QC-16.1: the operator is its opcode's one statement of its two operands,
                 // into a new temporary.
-                let mut fragment = ir::Builder::new();
-                let inputs =
-                    [ir::Input::Left, ir::Input::Right].map(|n| Some(Some(ir::Operand::Input(n))));
-                let made = fragment.push(opcode, inputs, ir::Destination::Value);
-                if let Some(fragment) = fragment.finish(made, [None, None]) {
-                    self.fragments.insert(span, fragment);
-                }
                 let [left, right] = named;
                 let value = self.made(opcode, left, right);
                 self.name_span(binary.syntax().span(), Some(value));
@@ -608,8 +598,7 @@ impl Vanilla<'_> {
             (None, _) => return Ok(None),
             _ => return self.mismatch(".", span),
         };
-        // QC-16.1: the `LOAD_*` of the field's type, of the entity and the field, the fragment
-        // kept by the `.`'s span, which a read of the field writes.
+        // QC-16.1: the `LOAD_*` of the field's type, of the entity and the field.
         let opcode = match Basic::of(&loaded) {
             Some(Basic::Vector) => Op::LoadV,
             Some(Basic::String) => Op::LoadS,
@@ -618,12 +607,6 @@ impl Vanilla<'_> {
             Some(Basic::Function) => Op::LoadFnc,
             Some(Basic::Float | Basic::Void) | None => Op::LoadF,
         };
-        let mut fragment = ir::Builder::new();
-        let inputs = [ir::Input::Left, ir::Input::Right].map(|n| Some(Some(ir::Operand::Input(n))));
-        let made = fragment.push(opcode, inputs, ir::Destination::Value);
-        if let Some(fragment) = fragment.finish(made, [None, None]) {
-            self.fragments.insert(span, fragment);
-        }
         let [entity, selected] = named;
         let value = self.made(opcode, entity, selected);
         self.name_span(field.syntax().span(), Some(value));

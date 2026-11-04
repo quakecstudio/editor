@@ -25,6 +25,7 @@ use crate::check::truth::Test;
 use crate::check::truth::words;
 use crate::check::{Constness, Reference, Value};
 use crate::ir;
+use crate::lower::{Qualifier, declares};
 use crate::ty::{SimpleType, Type};
 
 /// What an assignment operator stores (FTEF-29.2).
@@ -309,7 +310,14 @@ impl Checker<'_> {
             made.map_or(1, words) > stored.map_or(1, words)
         });
         let folded = stored.temp.is_some() && stored.temp == self.last_temp && !wider;
-        if matches!(kind, Assign::Store) {
+        let structured = matches!(self.etype(&target), Some(Etype::Struct | Etype::Union));
+        // FTE-14.6: a struct stored to a definition is copied by `STORE_V` for each three words
+        // and `STORE_F` for the rest, from a definition's or a block's words.
+        let copied = matches!(kind, Assign::Store)
+            && structured
+            && lhs.reference == Reference::Global
+            && self.copy_struct(&stored, lhs.name(), &target);
+        if matches!(kind, Assign::Store) && !copied {
             let store = Checker::store_op(self.etype(&target));
             // The store chosen for the `=`, which the code generator reads.
             self.opcodes.insert((span.start, span.end), store);
@@ -348,8 +356,9 @@ impl Checker<'_> {
         if matches!(kind, Assign::Store) {
             self.pointer_store(&lhs, &stored, &target);
         }
-        // A struct's or a union's store is word groups the body does not follow (FTE-14.5).
-        if matches!(self.etype(&target), Some(Etype::Struct | Etype::Union)) {
+        // Any other store of a struct or a union is word groups the body does not follow
+        // (FTE-14.5).
+        if structured && !copied {
             self.followed = false;
         }
         // An accessor's store, and a compound one through a pointer, are not followed.
@@ -512,15 +521,10 @@ impl Checker<'_> {
             ty: read_ty.clone(),
             ..read
         };
-        // The opcode on the value read and the right side is a fragment of the intermediate
-        // layer, by the operator's span, as a binary operator's is, and the opcode the one chosen
-        // there (FTEF-23.4).
+        // The opcode on the value read and the right side, the one chosen as a binary operator's
+        // is (FTEF-23.4).
         self.opcodes.insert((span.start, span.end), op);
-        let value = self
-            .lowering(span, &read, &rhs, |checker, read, rhs| {
-                checker.emit(op, read, rhs, span).map(Some)
-            })?
-            .unwrap_or_else(Value::unknown);
+        let value = self.emit(op, &read, &rhs, span)?;
         let flags = self.env.flags_at(span.start);
         let supply = Source::Typed(&value.ty).supply_for_assignment(&lhs.ty, flags);
         let message = || {
@@ -841,6 +845,12 @@ impl Checker<'_> {
         if self.global {
             return Ok(());
         }
+        let local = self.env.reference(start);
+        let array = local.is_some_and(|def| self.env.is_array(def));
+        let nested = aggregate.syntax().children().count() != elements.len();
+        if array && !vector && !nested && !self.env.local_static(start) {
+            return self.array_aggregate(declarator, local, &elements);
+        }
         if !vector || self.env.local_static(start) || elements.len() != 3 {
             self.followed = false;
             return Ok(());
@@ -868,10 +878,6 @@ impl Checker<'_> {
         };
         if self.global {
             return;
-        }
-        // A store through a call's entity is not followed (FTE-18.13).
-        if field.entity_call.is_some() {
-            self.followed = false;
         }
         let storep = self.storep_op(target);
         let address = u32::try_from(self.generated.len()).ok().map(ir::Name::Made);
@@ -1001,15 +1007,98 @@ impl Checker<'_> {
         self.last_temp = None;
     }
 
-    /// A local array's getter or setter, which a `for` forgets at its end (FTEF-19.78), is not
-    /// followed statement by statement.
-    pub(super) fn local_array_function(&mut self, array: Option<crate::DefId>) {
-        if array
-            .and_then(|def| self.env.definition(def))
-            .is_some_and(|d| d.owner.is_some())
-        {
-            self.followed = false;
+    /// FTE-14.6: the struct `stored` of type `target` copied to the definition `to` by `STORE_V`
+    /// for each three words and `STORE_F` for the rest, when it is a definition's or a block's
+    /// words; whether it was.
+    fn copy_struct(&mut self, stored: &Value, to: Option<ir::Name>, target: &Type) -> bool {
+        let from = self
+            .name_of(stored)
+            .filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
+        let (Some(from), Some(to)) = (from, to) else {
+            return false;
+        };
+        if self.global {
+            return false;
         }
+        let size = self.env.layout(target).map_or(0, |l| l.words);
+        let mut word = 0;
+        while word < size {
+            let (op, step) = if size.saturating_sub(word) >= 3 {
+                (Op::StoreV, 3)
+            } else {
+                (Op::StoreF, 1)
+            };
+            self.generated.push(ir::BodyStatement {
+                a: from.word(word),
+                b: to.word(word),
+                ..ir::BodyStatement::bare(op)
+            });
+            word = word.saturating_add(step);
+        }
+        self.last_temp = None;
+        true
+    }
+
+    /// A local array's aggregate initialiser: a constant one is its value at compile time, as a
+    /// global's is (FTEF-32.13), which the code generator writes; any other stores each element's
+    /// value to its element in turn by the `STORE_*` of its type, or folds it into the statement
+    /// that made it (FTEF-32.15, FTEF-29.13).
+    fn array_aggregate(
+        &mut self,
+        declarator: &ast::Declarator,
+        local: Option<crate::DefId>,
+        elements: &[ast::Expr],
+    ) -> Result<(), Fatal> {
+        let constant = declarator
+            .syntax()
+            .parent()
+            .is_some_and(|decl| declares(&decl, &Qualifier::Const));
+        // Its words are its value at compile time, which the code generator writes.
+        if constant {
+            match local {
+                Some(local) => {
+                    let at = self.next_made();
+                    self.effects
+                        .push((at, ir::Effect::Constant(ir::Name::Def(local, 0))));
+                }
+                None => self.followed = false,
+            }
+            return Ok(());
+        }
+        let Some(ty) = declarator
+            .name()
+            .and_then(|name| self.env.local_type(name.span().start))
+        else {
+            self.followed = false;
+            return Ok(());
+        };
+        let width = self.env.layout(&ty).map_or(1, |l| l.words);
+        let store = Checker::store_op(self.etype(&ty));
+        for (at, element) in (0_u32..).zip(elements) {
+            let value = self.value(Some(element.clone()))?;
+            // An element of another type is converted as it is stored, which the body does not
+            // follow; the check reports one no cast takes.
+            if self.etype(&value.ty) != self.etype(&ty) {
+                self.followed = false;
+            }
+            let to = local.map(|def| ir::Name::Def(def, at.saturating_mul(width)));
+            let wider = self.generated.last().is_some_and(|last| {
+                let made = opcodes::row(last.op).map(|row| row.types[2].etype());
+                made.map_or(1, words) > self.etype(&ty).map_or(1, words)
+            });
+            if value.temp.is_some() && value.temp == self.last_temp && !wider {
+                self.fold_into(&value, to);
+            } else {
+                self.generated.push(ir::BodyStatement {
+                    a: self.name_of(&value),
+                    b: to,
+                    ..ir::BodyStatement::bare(store)
+                });
+            }
+            self.read_returned(&value);
+            self.last_temp = None;
+        }
+        Ok(())
     }
 
     /// A store's read of `value`: a call's value is then out of the return global's keeping.
@@ -1065,7 +1154,6 @@ impl Checker<'_> {
             ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
         });
         self.clobber_return();
-        self.local_array_function(lhs.sym.def());
         self.generated.push(ir::BodyStatement {
             a: lhs.sym.def().map(ir::Name::ArraySet),
             ..ir::BodyStatement::bare(Op::Call2)
@@ -1125,6 +1213,32 @@ impl Checker<'_> {
         Ok(())
     }
 
+    /// FTEF-18.2: a local given a nested function's body: the function's number stored to it
+    /// each time the function runs, which the code generator numbers, or a `static` local's
+    /// value.
+    fn nested_local(&mut self, declarator: &ast::Declarator) {
+        let local = declarator
+            .name()
+            .and_then(|name| self.env.reference(name.span().start));
+        let is_static = declarator
+            .syntax()
+            .parent()
+            .is_some_and(|decl| declares(&decl, &Qualifier::Static));
+        match local {
+            Some(local) if is_static => {
+                let at = self.next_made();
+                self.effects
+                    .push((at, ir::Effect::Nested(ir::Name::Def(local, 0))));
+            }
+            Some(local) => self.generated.push(ir::BodyStatement {
+                a: Some(ir::Name::Nested(local)),
+                b: Some(ir::Name::Def(local, 0)),
+                ..ir::BodyStatement::bare(Op::StoreFnc)
+            }),
+            None => self.followed = false,
+        }
+    }
+
     /// [`Checker::local`] of one declarator: its size, then its value cast to its type.
     fn local_declarator(&mut self, declarator: &ast::Declarator) -> Result<(), Fatal> {
         // The local is declared before its value is read, where the next statement goes.
@@ -1142,7 +1256,12 @@ impl Checker<'_> {
             Some(ast::Initializer::Aggregate(aggregate)) => {
                 return self.vector_aggregate(declarator, &aggregate);
             }
-            // A nested function and a builtin local are compiled from the syntax tree.
+            // FTEF-18.2: a nested function is compiled after this one, its number stored to its
+            // local each time the function runs, or a `static` local's value.
+            Some(ast::Initializer::Body(_)) if self.env.fteqcc() && !self.global => {
+                self.nested_local(declarator);
+            }
+            // A builtin local and a nested function elsewhere are compiled from the syntax tree.
             Some(ast::Initializer::Body(_) | ast::Initializer::Builtin(_)) => {
                 self.followed = false;
             }
@@ -1161,8 +1280,37 @@ impl Checker<'_> {
         if value.ty == Type::Unknown {
             return Ok(());
         }
-        // A struct's or a union's initialiser is copied in word groups the body does not follow.
+        // A struct's or a union's initialiser of its own type is copied a word at a time by
+        // `STORE_FLD`, the words being fields of the struct to `QCC_PR_ParseInitializerType`;
+        // any other is not followed.
         if matches!(self.etype(&ty), Some(Etype::Struct | Etype::Union)) {
+            let local = declarator
+                .name()
+                .filter(|name| !self.env.local_static(name.span().start))
+                .and_then(|name| self.env.reference(name.span().start));
+            // The value a definition holds, whose words are its own; a struct read word by word,
+            // through an array's getter, is not followed yet.
+            let from = self
+                .name_of(&value)
+                .filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
+            if let Some(local) = local.filter(|_| self.env.typecmp(&value.ty, &ty) && !self.global)
+                && from.is_some()
+                && declarator.array_suffixes().next().is_none()
+            {
+                let words = self.env.layout(&ty).map_or(0, |l| l.words);
+                for word in 0..words {
+                    self.generated.push(ir::BodyStatement {
+                        a: from.and_then(|name| name.word(word)),
+                        b: Some(ir::Name::Def(local, word)),
+                        ..ir::BodyStatement::bare(Op::StoreFld)
+                    });
+                }
+                if value.returned {
+                    self.live_return = None;
+                }
+                self.last_temp = None;
+                return Ok(());
+            }
             self.followed = false;
         }
         let span = init.syntax().span();

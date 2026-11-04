@@ -3,23 +3,24 @@
 //! The QuakeC compiler's code generator: a module the semantic model resolved, lowered to a
 //! version 6 `progs.dat` as id's `qcc` writes it.
 //!
-//! `qcc` emits code while it parses. This crate walks each compiled file's syntax tree, the
-//! expansion the semantic model read (QC-9.16), in the order `qcc`'s parser meets its parts,
-//! and takes the definition each name is from the semantic model (QC-12). It builds what `qcc`
-//! builds as it goes, in the same order: the definition list and the global area, where each
-//! definition is placed when first met (QC-21), literals shared by value (QC-20), the
-//! statements each construct emits with a new temporary for every result (QC-14 to QC-19,
-//! QC-22), the functions in the order their definitions end (QC-25.2) and the string table
-//! (QC-25.4); then `progdefs.h`, whose CRC the header carries, and the tables of the progs
-//! (QC-25). The code is ported from `qcc/pr_comp.c` and `qcc/qcc.c` at
+//! The semantic model lowers each function body into its intermediate layer as it checks it
+//! (`qc_sema::ir`, `TypedBody::generated`): the statements `qcc` or FTEQCC emits for it, in
+//! order, emulations included, with operands that name values. This crate reads each compiled
+//! file's declarations, the expansion the semantic model read (QC-9.16), in the order `qcc`'s
+//! parser meets them, and takes the definition each name is from the semantic model (QC-12). It
+//! builds what `qcc` builds, in the same order: the definition list and the global area, where
+//! each definition is placed when first met (QC-21), literals shared by value (QC-20), each
+//! body written from the layer by the passes its dialect's profile chooses (`back_end.rs`:
+//! allocation, QC-21.5, and layout, QC-21.4 and FTE-21.7), the functions in the order their
+//! definitions end (QC-25.2) and the string table (QC-25.4); then `progdefs.h`, whose CRC the
+//! header carries, and the tables of the progs (QC-25). The behaviour is ported from
+//! `qcc/pr_comp.c` and `qcc/qcc.c` at
 //! id-Software/Quake-Tools@`c0d1b91c74eb654365ac7755bc837e497caaca73`, function by function as
 //! `docs/spec/inventory-l4.md` lists. For every program id's `qcc` compiles, the progs is the
 //! one `qcc` writes, byte for byte, but where QC-27 says otherwise.
 //!
-//! The type rules of expressions are the compiler's (QC-16 to QC-19): an operator's opcode is
-//! the first of its spelling whose operand types are the operands' basic types (QC-16.8,
-//! QC-17.6), and a call's arguments must have exactly its parameters' types (QC-18.8). Their
-//! errors are reported as `qcc` reports them (QCD-4).
+//! The type rules of expressions, and the errors they give, are the semantic model's (QC-16 to
+//! QC-19, QCD-4).
 //!
 //! # Layer
 //!
@@ -33,6 +34,7 @@
 //! QC-27 of `docs/spec/language.md`, and the expression errors QCD-4.2 to QCD-4.7 of
 //! `docs/spec/language-diagnostics.md`.
 
+mod back_end;
 mod compile;
 mod names;
 mod ops;
@@ -189,6 +191,7 @@ fn compile_lowered(
     let names = Names::new(&index);
     let mut compiler = Compiler::new(&index, &names);
     compiler.dialect = resolve.dialect;
+    compiler.back_end = back_end::BackEnd::of(resolve.dialect);
     compiler.autoproto = resolve.autoproto;
     if resolve.dialect.has_fteqcc_extensions() && resolve.autoproto {
         for (i, unit) in units.iter().enumerate() {
@@ -214,7 +217,8 @@ fn compile_lowered(
             })?;
     }
     // FTE-21.7: every function's block of private locals is laid out after the globals,
-    // statics and immediates of the module, before the array functions' own.
+    // statics and immediates of the module, before the array functions' own; under id's layout
+    // there is none.
     compiler
         .program
         .resolve_blocks()
