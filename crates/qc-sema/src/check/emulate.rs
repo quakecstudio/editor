@@ -180,8 +180,13 @@ impl Checker<'_> {
             return Ok(self.statement_temps(op, lhs, rhs, result));
         }
         let emulated = self.emulate(op, lhs, rhs, span, result)?;
-        // A refused opcode is still the statement it was (`badopcode`), its result a temporary.
-        if emulated.temp.is_none() && emulated.known().is_none() && emulated.sym == Sym::Temp {
+        // A refused opcode is still the statement it was (`badopcode`), its result a temporary;
+        // a helper's call leaves its value in the return global instead.
+        if emulated.temp.is_none()
+            && emulated.known().is_none()
+            && emulated.sym == Sym::Temp
+            && !emulated.returned
+        {
             return Ok(self.statement_temps(op, lhs, rhs, emulated));
         }
         Ok(emulated)
@@ -781,6 +786,22 @@ impl Checker<'_> {
                     made: None,
                     temp: None,
                     ..result
+                });
+            }
+            // A store's conversion is the call, then the store of its value, which the
+            // assignment names the target of.
+            if let (Some(function), Op::StoreIf | Op::StoreFi) = (helper, op)
+                && self.helper_statements(function, &[value]).is_some()
+            {
+                self.live_return = None;
+                self.live_call = None;
+                self.generated.push(ir::BodyStatement {
+                    a: Some(ir::Name::Return),
+                    ..ir::BodyStatement::bare(if op == Op::StoreIf {
+                        Op::StoreF
+                    } else {
+                        Op::StoreI
+                    })
                 });
             }
             return Ok(result);

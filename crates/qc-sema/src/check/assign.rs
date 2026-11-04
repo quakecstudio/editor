@@ -285,6 +285,12 @@ impl Checker<'_> {
             if lhs.reference == Reference::Global && !folded {
                 self.emit(store, &stored, &Value::unknown(), span)?;
                 self.name_last(store, self.name_of(&stored), lhs.name());
+                // A converting store a helper emulates ends with a plain store of its value.
+                match store {
+                    Op::StoreIf => self.name_last(Op::StoreF, None, lhs.name()),
+                    Op::StoreFi => self.name_last(Op::StoreI, None, lhs.name()),
+                    _ => {}
+                }
                 // An assignment whose value is read is still the call's, in the return global
                 // (FTE-18.13).
                 if stored.returned && !self.global && !discarded(binary.syntax()) {

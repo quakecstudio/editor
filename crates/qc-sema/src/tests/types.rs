@@ -1484,6 +1484,41 @@ fn a_generated_aggregate_stores_each_component() {
     );
 }
 
+// FTE-19.8, FTEF-27.4: an int converted to a float by the program's itof is the helper's
+// call of the value, which the assignment then stores from the return global
+#[test]
+fn a_generated_conversion_calls_its_helper() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "float(__int i) itof = #0; float b; void(__int x) t = { b = x; };";
+    let index = super::fte_index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let statements: Vec<_> = index.bodies[&def("t")]
+        .generated()
+        .iter()
+        .map(|s| (s.op, s.a, s.b))
+        .collect();
+    assert_eq!(
+        statements[..3],
+        [
+            (
+                Op::StoreF,
+                Some(Name::Def(def("x"), 0)),
+                Some(Name::Parameter(0))
+            ),
+            (Op::Call1, Some(Name::Def(def("itof"), 0)), None),
+            (Op::StoreF, Some(Name::Return), Some(Name::Def(def("b"), 0))),
+        ]
+    );
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]
