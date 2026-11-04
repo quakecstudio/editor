@@ -40,6 +40,7 @@ use crate::program::{
 
 mod allocate;
 mod arrays;
+mod body;
 
 /// Why a declaration's code stopped: an error in the program, which abandons the declaration
 /// as `PR_ParseError` does (QC-24.2), or a construct the compiler cannot lower.
@@ -881,25 +882,18 @@ impl<'a> Compiler<'a> {
                 self.body_first = self.program.statements.len();
                 self.body_return = Some(ValueType::Of(function_type.ret.clone()));
                 self.ret_local = None;
-                if self.dialect.has_fteqcc_extensions() && function_type.variadic {
-                    self.variadic_prologue(function_type.params.len(), span)?;
-                }
-                if let Some(state) = body.state() {
-                    self.state(&state)?;
-                }
-                if let Some(block) = body.block() {
-                    for statement in block.statements() {
-                        self.statement(&statement)?;
+                // Under FTEQCC a body the semantic model followed in full is written from its
+                // generated statements, the intermediate layer's whole body; any other is
+                // walked.
+                let written = match self.typed_body() {
+                    Some(typed) if self.dialect.has_fteqcc_extensions() => {
+                        self.write_body(typed, span)?
                     }
+                    Some(_) | None => false,
+                };
+                if !written {
+                    self.walk_body(body, &function_type, span)?;
                 }
-                // FTE-18.10: a body that made a `ret*` local ends with `RETURN` of it before
-                // `DONE` (`if (f->returndef.cast ...) QCC_PR_Statement(OP_RETURN, f->returndef)`).
-                if let Some(place) = self.ret_local {
-                    let ofs = self.program.def(place).at(span)?.ofs;
-                    self.program.emit(Opcode::Return, operand(ofs).at(span)?, 0);
-                }
-                // QC-13.7: the body ends with `DONE`.
-                self.program.emit(Opcode::Done, 0, 0);
                 code
             }
         };
@@ -991,8 +985,6 @@ impl<'a> Compiler<'a> {
     /// the `named` ones to the element of a new static `__va_list` of 24 vectors, a slot past
     /// the eighth from its `$parmN` global.
     fn variadic_prologue(&mut self, named: usize, span: Span) -> Lowered<()> {
-        const MAX_PARMS: usize = 8;
-        let vector = ValueType::simple(Etype::Vector);
         let list = self.va_list.at(span)?;
         let base = self.program.def(list).at(span)?.ofs;
         for i in 0..VA_COUNT {
@@ -1001,19 +993,7 @@ impl<'a> Compiler<'a> {
                     usize::try_from(i).map_err(|_| Abort::Internal(Internal::TooLarge, span))?,
                 )
                 .at(span)?;
-            let slot = if u < MAX_PARMS {
-                parm_slot(u).at(span)?
-            } else if let Some(&slot) = self.extra_parms.get(&u) {
-                slot
-            } else {
-                let made = self
-                    .program
-                    .generated(&format!("$parm{u}"), vector.clone(), 3)
-                    .at(span)?;
-                let slot = self.program.def(made).at(span)?.ofs;
-                self.extra_parms.insert(u, slot);
-                slot
-            };
+            let slot = self.parameter_slot(u, span)?;
             let to = i
                 .checked_mul(3)
                 .and_then(|w| w.checked_add(base))
@@ -1025,6 +1005,56 @@ impl<'a> Compiler<'a> {
             );
         }
         Ok(())
+    }
+
+    /// The statements of `body` of a function of type `function_type`, `span` its name's, from
+    /// its syntax tree: a variadic function's prologue, its state header, its statements, the
+    /// `RETURN` of a `ret*` local it made and its `DONE`.
+    fn walk_body(
+        &mut self,
+        body: &ast::FunctionBody,
+        function_type: &FunctionType,
+        span: Span,
+    ) -> Lowered<()> {
+        if self.dialect.has_fteqcc_extensions() && function_type.variadic {
+            self.variadic_prologue(function_type.params.len(), span)?;
+        }
+        if let Some(state) = body.state() {
+            self.state(&state)?;
+        }
+        if let Some(block) = body.block() {
+            for statement in block.statements() {
+                self.statement(&statement)?;
+            }
+        }
+        // FTE-18.10: a body that made a `ret*` local ends with `RETURN` of it before `DONE`
+        // (`if (f->returndef.cast ...) QCC_PR_Statement(OP_RETURN, f->returndef)`).
+        if let Some(place) = self.ret_local {
+            let ofs = self.program.def(place).at(span)?.ofs;
+            self.program.emit(Opcode::Return, operand(ofs).at(span)?, 0);
+        }
+        // QC-13.7: the body ends with `DONE`.
+        self.program.emit(Opcode::Done, 0, 0);
+        Ok(())
+    }
+
+    /// The global of parameter slot `u`: `OFS_PARM0 + 3 * u` for the first eight, after them
+    /// FTEQCC's `$parmN` global, made the first time it is needed (FTE-18.6).
+    pub(super) fn parameter_slot(&mut self, u: usize, span: Span) -> Lowered<u32> {
+        const MAX_PARMS: usize = 8;
+        if u < MAX_PARMS {
+            return parm_slot(u).at(span);
+        }
+        if let Some(&slot) = self.extra_parms.get(&u) {
+            return Ok(slot);
+        }
+        let made = self
+            .program
+            .generated(&format!("$parm{u}"), ValueType::simple(Etype::Vector), 3)
+            .at(span)?;
+        let slot = self.program.def(made).at(span)?.ofs;
+        self.extra_parms.insert(u, slot);
+        Ok(slot)
     }
 
     /// FTE-18.10: what a bare `return;` returns: under FTEQCC, in a function that returns a
