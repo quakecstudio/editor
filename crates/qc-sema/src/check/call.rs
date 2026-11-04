@@ -316,6 +316,33 @@ impl Checker<'_> {
         } else {
             count.min(function.params.len())
         };
+        // In a function, the statements of the call: each argument a parameter takes stored to
+        // its slot unless the statement before made it (FTE-18.12), then the call.
+        if !self.global {
+            for (slot, value) in values.iter().take(passed).enumerate() {
+                let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
+                let folded =
+                    value.temp.is_some() && value.temp == self.last_temp && slot + 1 == passed;
+                if !folded {
+                    self.generated
+                        .push(if words == 3 { Op::StoreV } else { Op::StoreF });
+                }
+            }
+            let call = [
+                Op::Call0,
+                Op::Call1,
+                Op::Call2,
+                Op::Call3,
+                Op::Call4,
+                Op::Call5,
+                Op::Call6,
+                Op::Call7,
+                Op::Call8,
+            ];
+            if let Some(&call) = call.get(passed) {
+                self.generated.push(call);
+            }
+        }
         let mut builder = ir::Builder::new();
         for slot in 0..passed {
             let ty = values
