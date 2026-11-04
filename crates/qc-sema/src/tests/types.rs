@@ -756,3 +756,41 @@ fn a_negation_and_a_complement_lower_to_fragments() {
     assert_eq!(at("-a").unwrap().statements, [minus(0.0)]);
     assert_eq!(at("~a").unwrap().statements, [minus(-1.0)]);
 }
+
+// spec QC-16.4: under id's rules `!e` lowers to the `NOT_*` of its operand's type
+#[test]
+fn a_vanilla_not_lowers_to_its_statement() {
+    use crate::ir::{Destination, Input, Operand, Statement};
+    use qc_preproc::Op;
+    let source = "float a; vector v; string s; entity e; void() g = { a = !a; a = !v; a = !s; \
+                  a = !e; a = !g; };";
+    let index = super::index_of(source);
+    let g = index
+        .defs
+        .iter()
+        .position(|d| d.name == "g")
+        .map(DefId::new)
+        .unwrap();
+    for (text, op) in [
+        ("!a", Op::NotF),
+        ("!v", Op::NotV),
+        ("!s", Op::NotS),
+        ("!e", Op::NotEnt),
+        ("!g", Op::NotFnc),
+    ] {
+        let start = source.find(text).unwrap();
+        let fragment = index.bodies[&g]
+            .fragment_at(Span::new(start, start + 2))
+            .unwrap();
+        assert_eq!(
+            fragment.statements,
+            [Statement {
+                op,
+                a: Some(Operand::Input(Input::Left)),
+                b: None,
+                c: Destination::Value,
+            }],
+            "{text}"
+        );
+    }
+}
