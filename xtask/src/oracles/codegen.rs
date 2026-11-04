@@ -51,6 +51,13 @@ pub(crate) enum Profile {
 /// module, or of several the server module, `progs.src`, which FTEQCC compiles when no
 /// `-srcfile` is given.
 pub(crate) fn compile_codebase(dir: &Path, profile: Profile) -> Result<Compiled, String> {
+    compile_analysed(dir, profile).map(|(compiled, _)| compiled)
+}
+
+/// [`compile_codebase`], with the semantic model that compiled it, its files analysed, so that
+/// their expansions and where each span of them came from can be read
+/// ([`Db::expanded_parse`], [`Db::expanded_origins`]).
+pub(crate) fn compile_analysed(dir: &Path, profile: Profile) -> Result<(Compiled, Db), String> {
     let project = qc_project::open(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let module = match project.modules.as_slice() {
         [module] => module,
@@ -82,10 +89,11 @@ pub(crate) fn compile_codebase(dir: &Path, profile: Profile) -> Result<Compiled,
         })
         .collect();
     let input = ModuleInput::from_module(module);
-    compile_module(&mut db, &input, |id| {
+    let compiled = compile_module(&mut db, &input, |id| {
         names.get(id.index()).cloned().unwrap_or_default()
     })
-    .map_err(|e| describe(&db, &e))
+    .map_err(|e| describe(&db, &e))?;
+    Ok((compiled, db))
 }
 
 /// A compile error as text, each diagnostic with its file.

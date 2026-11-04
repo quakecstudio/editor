@@ -29,6 +29,8 @@ use crate::differential::asset_root;
 use crate::oracles::codegen::Profile;
 use crate::oracles::{self, Oracles, codegen, id101, rerelease};
 
+mod functions;
+
 /// The vanilla corpus codebases, the ones id's `qcc` compiles (`corpus/manifest.toml`).
 const VANILLA: [&str; 1] = ["id-1.01"];
 
@@ -69,17 +71,24 @@ fn engine(id: &str) -> &'static str {
 }
 
 const USAGE: &str = "usage: cargo xtask compiler-diff [--fast [<codebase>...] | --full <codebase>]\n\
-       cargo xtask compiler-diff --generated <count> [--seed <n>]";
+       cargo xtask compiler-diff --generated <count> [--seed <n>]\n\
+       cargo xtask compiler-diff --functions <codebase>...";
 
 /// Runs `cargo xtask compiler-diff [--fast [<codebase>...] | --full <codebase>]`: the CI
 /// subset over id 1.01, or 128 rounds over the one codebase named, which runs for up to an
 /// hour on its own, so that the codebases run one at a time or in parallel, each in its own
 /// directory under `target/compiler-diff/<id>/` with its own results table (DIFF-12.29); or
-/// `--generated <count> [--seed <n>]`, the generated-program differential (DIFF-14).
+/// `--generated <count> [--seed <n>]`, the generated-program differential (DIFF-14); or
+/// `--functions <codebase>...`, each function of each codebase run on its own (DIFF-15).
 pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     if args.first().is_some_and(|flag| flag == "--generated") {
         let (count, seed) = parse_generated(args)?;
         return generated(root, count, seed);
+    }
+    if let Some((flag, ids)) = args.split_first()
+        && flag == "--functions"
+    {
+        return functions::run(root, ids);
     }
     let (mode, selected) = parse(args)?;
     let oracles = oracles::build(root)?;

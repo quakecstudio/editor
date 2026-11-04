@@ -1321,6 +1321,30 @@ fn uncovered_lists_each_functions_unexecuted_statements() {
     assert!(!lines.iter().any(|l| l.ends_with("\tb")), "{text}");
 }
 
+// spec DIFF-15.5: each executed statement is listed by the function whose body holds it and its
+// offset from that body's first statement, and nothing else is
+#[test]
+fn executed_statements_are_listed_by_function_and_offset() {
+    let bytes = compile("float x;\nvoid() a = { x = 1; x = 2; x = 3; };\nvoid() b = { x = 4; };\n");
+    let progs = Progs::read(&bytes).unwrap();
+    let start = |name: &str| {
+        progs
+            .functions()
+            .iter()
+            .find(|f| progs.string(f.s_name) == Some(name.as_bytes()))
+            .unwrap()
+            .first_statement
+    };
+    let (a, b) = (start("a"), start("b"));
+    let executed: BTreeSet<i32> = [a + 1, b].into_iter().collect();
+    let text = super::executed_by_function(&bytes, &executed).unwrap();
+    assert_eq!(text, "a\t1\nb\t0\n");
+    assert_eq!(
+        super::executed_by_function(&bytes, &BTreeSet::new()).unwrap(),
+        ""
+    );
+}
+
 // spec DIFF-12.15: each function is listed with the edicts whose function fields hold it, the
 // edicts `self` is drawn from one time in two
 #[test]
