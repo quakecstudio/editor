@@ -26,7 +26,9 @@ NAMES = {"L0-formats": "L0 formats", "L1-vm": "L1 VM", "L2-syntax": "L2 syntax",
          "L4-bridges": "L4 bridges", "L5-commands": "L5 commands", "L6-agent": "L6 agent", "L7-ui": "L7 UI",
          "apps": "apps", "c-tools": "C tools"}
 BUILD_TYPES = {"type:feature", "type:test"}
-PHASES = ["P1", "P2", "P3", "P4", "P5", "P6", "P7"]
+# Readiness reviews per layer are for P1 and P2 only: from P3 on each phase has its gate review
+# alone (Justin, 2026-11-04: focus on the MVP and move through the phases faster).
+PHASES = ["P1", "P2"]
 
 # Re-reviews: a crate's ratchets re-measured after a later change to its layer, recorded under a
 # key of their own, since `cargo xtask ratchet` holds a recorded crate's minimums and equivalent

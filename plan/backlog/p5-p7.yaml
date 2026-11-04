@@ -659,6 +659,26 @@ groups:
     - The gate report merged with `Closes`, linking the CI runs; the reviewer's closing comment lists the phase's issues, all closed
 - milestone: LATER
   issues:
+  - key: P2-151
+    title: Record IME composition in the code editor through each OS's input method
+    labels:
+    - L7-ui
+    - area:editor
+    - type:test
+    - needs:human
+    size: S
+    reqs:
+    - UI-4
+    summary: |
+      Split from P2-18 (#74). The editor takes IME preedit and commit events through winit and places the candidate window at the caret (qs-editor-view, tested with synthetic events), but only a person typing through the real input method can show Japanese and Chinese composition working, as ADR-0003 asks. Moved to LATER by Justin on 2026-11-04, to close P2 for the MVP; decided 2026-11-02: macOS now, on the reference Mac; Windows and Linux at the MVP acceptance demo (P4-24), where those machines are in hand.
+    depends:
+    - P2-18
+    deliverable:
+    - 'docs/spikes/data/ref-mac/: a recording or screenshots of Japanese and Chinese text composed in the code editor through macOS''s input method, with the steps followed'
+    acceptance:
+    - Japanese and Chinese text composed through the real input method of macOS appears in the editor as committed, with the candidate window at the caret (ADR-0003)
+    verify:
+    - The recordings or screenshots under docs/spikes/data/ref-mac/
   - key: L-01
     title: 'Spec: FTEQCC code generation beyond the rerelease subset'
     labels:
