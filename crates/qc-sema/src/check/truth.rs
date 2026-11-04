@@ -234,38 +234,60 @@ impl Checker<'_> {
         // each is a function of its own, so that a nested ternary's frame stays small (QC-27.15).
         let span = ternary.syntax().span();
         let (middle, last) = ternary.arms();
-        #[expect(
-            clippy::question_mark,
-            reason = "QC-27.15: `?` adds a copy of the value to the frame each nested ternary adds"
-        )]
-        let condition = match self.value(ternary.condition()) {
-            Ok(condition) => condition,
+        let test = match self.ternary_condition(ternary, middle.is_some(), span) {
+            Ok(Tested::Jump(test)) => test,
+            Ok(Tested::Kept(kept, test)) => return self.ternary_last(*kept, test, last, span),
+            Ok(Tested::Constant(condition, constant)) => {
+                return self.constant_ternary(*condition, constant, middle, last);
+            }
             Err(fatal) => return Err(fatal),
         };
+        let before = self.emitted;
+        let kept = match self.value(middle) {
+            Ok(value) => self.middle_arm(value, before, span),
+            Err(fatal) => Err(fatal),
+        };
+        match kept {
+            Ok(kept) => self.ternary_last(kept, test, last, span),
+            Err(fatal) => Err(fatal),
+        }
+    }
+
+    /// A ternary's condition, read and tested: the `IFNOT` past the middle arm when there is
+    /// one, else the condition kept as the first arm (`a ?: b`); a constant one in an
+    /// initialiser chooses an arm. A function of its own, so that the condition is not in the
+    /// frame the middle arm's nesting adds (QC-27.15).
+    #[inline(never)]
+    fn ternary_condition(
+        &mut self,
+        ternary: &ast::TernaryExpr,
+        middle: bool,
+        span: Span,
+    ) -> Result<Tested, Fatal> {
+        let condition = self.value(ternary.condition())?;
         if self.global
             && let Some(constant) = condition.known()
         {
-            return self.constant_ternary(condition, constant, middle, last);
+            return Ok(Tested::Constant(Box::new(condition), constant));
+        }
+        if middle {
+            return self.test_condition(&condition, span).map(Tested::Jump);
         }
         let mut test = None;
-        let kept = match middle {
-            None => self.condition_arm(condition, &mut test, span),
-            Some(middle) => {
-                let tested = self.test_condition(&condition, span);
-                drop(condition);
-                let before = self.emitted;
-                match tested.and_then(|jump| {
-                    test = jump;
-                    self.value(Some(middle))
-                }) {
-                    Ok(value) => self.middle_arm(value, before, span),
-                    Err(fatal) => Err(fatal),
-                }
-            }
-        };
-        let Ok((kept, kept_null, result)) = kept else {
-            return Err(Fatal);
-        };
+        let kept = self.condition_arm(condition, &mut test, span)?;
+        Ok(Tested::Kept(Box::new(kept), test))
+    }
+
+    /// A ternary's `GOTO` past its last arm, the arm, and the jumps named; a function of its
+    /// own, so that what it holds is not in the frame the middle arm's nesting adds (QC-27.15).
+    #[inline(never)]
+    fn ternary_last(
+        &mut self,
+        (kept, kept_null, result): (Value, bool, Option<u32>),
+        test: Option<u32>,
+        last: Option<ast::Expr>,
+        span: Span,
+    ) -> Checked {
         self.generate(Op::Goto, span);
         let goto = self.last_made();
         let before = self.emitted;
@@ -594,4 +616,14 @@ const fn words(etype: Etype) -> u32 {
 /// Whether `ty` is a truth value, `__bfloat` or `__bint`.
 pub(super) fn is_truth(ty: &Type) -> bool {
     matches!(ty.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat))
+}
+
+/// A ternary's condition once read (`Checker::ternary_condition`).
+enum Tested {
+    /// Tested by the `IFNOT` generated at this index, if one was.
+    Jump(Option<u32>),
+    /// Kept as the first arm, with whether it is null and its temporary, and its test.
+    Kept(Box<(Value, bool, Option<u32>)>, Option<u32>),
+    /// A constant, in an initialiser, which chooses the arm.
+    Constant(Box<Value>, Constant),
 }

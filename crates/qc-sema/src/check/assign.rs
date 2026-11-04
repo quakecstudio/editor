@@ -235,19 +235,41 @@ impl Checker<'_> {
             .map_or_else(|| binary.syntax().span(), |t| t.span());
         let in_condition = self.in_condition;
         let lhs = self.expr_of(binary.lhs())?;
-        // FTEF-29.1: `lhsr->postinc` and `lhsr->readonly`, before the value is read.
+        self.assignable(&lhs, span)?;
+        #[expect(
+            clippy::question_mark,
+            reason = "QC-27.16: `?` adds a copy of the value to the frame each nested `=` adds"
+        )]
+        let rhs = match self.value(binary.rhs()) {
+            Ok(rhs) => rhs,
+            Err(fatal) => return Err(fatal),
+        };
+        self.store_assigned(binary, (kind, span, in_condition), lhs, rhs)
+    }
+
+    /// FTEF-29.1: `lhsr->postinc` and `lhsr->readonly`, before the value is read.
+    fn assignable(&mut self, lhs: &Value, span: Span) -> Result<(), Fatal> {
         if lhs.postinc {
-            return self.fatal(
-                Code::E0322,
-                span,
-                "Assignment to post-inc result".to_owned(),
-            );
+            let message = "Assignment to post-inc result".to_owned();
+            return self.fatal(Code::E0322, span, message).map(drop);
         }
         if lhs.readonly && lhs.ty != Type::Unknown {
             self.env
                 .report(Code::W0241, span, "Assignment to const".to_owned());
         }
-        let rhs = self.value(binary.rhs())?;
+        Ok(())
+    }
+
+    /// The store of an assignment's value `rhs` to `lhs`, of `kind` at `span`; a function of
+    /// its own, so that what it holds is not in the frame each nested `=` adds (QC-27.16).
+    #[inline(never)]
+    fn store_assigned(
+        &mut self,
+        binary: &ast::BinaryExpr,
+        (kind, span, in_condition): (Assign, Span, bool),
+        lhs: Value,
+        rhs: Value,
+    ) -> Checked {
         if in_condition {
             let message = "suggest parenthesis for assignment used as truth value".to_owned();
             self.env.report(Code::W0242, span, message);
