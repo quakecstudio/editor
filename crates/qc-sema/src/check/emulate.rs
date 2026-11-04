@@ -849,21 +849,48 @@ impl Checker<'_> {
             self.emit(Op::ConvItof, value, &Value::unknown(), span)?;
         }
         self.env.report(code, span, message);
-        // `5i / 1i` and `5.0 * 1i`, then the store a `STORE_*` conversion is.
-        match op {
-            Op::ConvItof => self.generate(Op::DivF, span),
-            Op::StoreIf => {
-                self.generate(Op::DivF, span);
-                self.generate(Op::StoreF, span);
-            }
-            Op::ConvFtoi => self.generate(Op::MulF, span),
-            Op::StoreFi => {
-                self.generate(Op::MulF, span);
-                self.generate(Op::StoreI, span);
-            }
-            _ => {}
+        // `5i / 1i` and `5.0 * 1i` of the integer constant 1 (`QCC_MakeIntConst(1)`), made
+        // before the statement, into a temporary; then the store a `STORE_*` conversion is.
+        let (arith, store) = match op {
+            Op::ConvItof => (Op::DivF, None),
+            Op::StoreIf => (Op::DivF, Some(Op::StoreF)),
+            Op::ConvFtoi => (Op::MulF, None),
+            Op::StoreFi => (Op::MulF, Some(Op::StoreI)),
+            _ => return Ok(result),
+        };
+        let one = ir::Name::Immediate(ir::Immediate {
+            kind: ir::ImmediateKind::Integer,
+            words: [1, 0, 0],
+        });
+        // A store's conversion folds into the statement (FTEF-29.13), which the model does not
+        // name yet.
+        if let Some(store) = store {
+            self.generate(arith, span);
+            self.generate(store, span);
+            return Ok(result);
         }
-        Ok(result)
+        let at = self.next_made();
+        if !self.global {
+            self.effects.push((at, ir::Effect::Make(one)));
+        }
+        self.generate(arith, span);
+        self.name_last(arith, self.name_of(value), Some(one));
+        if let Some(statement) = self.generated.last_mut() {
+            statement.c = Some(ir::Name::Made(at));
+        }
+        // FTEF-27.16: the statement frees its operand's temporary and takes one for its value,
+        // which a store folds into (FTEF-29.13).
+        if let Some(offset) = value.temp {
+            self.env.temps().free(offset);
+        }
+        let temp = Some(self.env.temps().take(1));
+        self.last_temp = temp;
+        Ok(Value {
+            made: Some(at),
+            word: 0,
+            temp,
+            ..result
+        })
     }
 
     /// FTEF-27.15: `OP_LSHIFT_I`, `OP_RSHIFT_I` and `OP_RSHIFT_U` on a target without them, by
