@@ -227,4 +227,31 @@ fn a_directive_edit_while_the_project_does_not_open_keeps_the_analysis() {
         host.set_overlay(&path("a.qc"), text.as_bytes().to_vec())
             .is_ok()
     );
+
+// spec PRJ-2.9: the editor's target is a bare project's; a project file's target, id's engine
+// when it names none, wins over it, so a builtin id's engine lacks is still W0311 there
+#[test]
+fn a_project_files_target_wins_over_the_editors() {
+    const FILES: &[(&str, &str)] = &[(
+        "a.qc",
+        "void() print_it = #0:ex_bprint;\nvoid() f = { print_it(); };\n",
+    )];
+    const NAMES_NO_TARGET: &[(&str, &str)] = &[(
+        "quakec.toml",
+        "[project]\ndialect = \"fteqcc\"\n\n[[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n",
+    )];
+    let w0311 = |extra: &'static [(&'static str, &'static str)]| {
+        let mut host = host(&ProjectSpec {
+            files: FILES,
+            extra,
+            dialect: Some(qc_project::Dialect::Fteqcc),
+            target: Some(qc_project::Target::Rerelease),
+        });
+        host.diagnostics(&path("a.qc"))
+            .iter()
+            .filter(|d| d.code == qc_diag::Code::W0311)
+            .count()
+    };
+    assert_eq!(w0311(&[]), 0, "a bare project takes the editor's target");
+    assert_eq!(w0311(NAMES_NO_TARGET), 1, "the project file's default wins");
 }

@@ -380,6 +380,92 @@ issues:
   - 'Frame time at p99 is no worse than QuakeSpasm''s recorded budget on the same route and machine, within that margin, checked by `cargo xtask bench`; no CI job builds or runs QuakeSpasm'
   verify:
   - cargo xtask bench on ref-mac; the bench history
+- key: P3-35
+  title: Check the project again after typing within its 100 ms budget
+  labels:
+  - apps
+  - area:editor
+  - type:feature
+  size: M
+  reqs:
+  - TEST-8
+  - PRIN-5
+  summary: |
+    Found by the P2-RA re-review (#88) of #718. #718 (P2-166) makes `check_after_typing` an active budget of 100 ms at the 95th percentile (docs/perf-budgets.md, decided by Justin on 2026-11-04), but no run meets it. `cargo xtask bench` on the branch at 1abc2984 gives p95 357.32 ms on the Bench workflow's Linux runner (run 41915842630, "check_after_typing: p95 357.32 ms is over the budget of 100.00 ms") and p95 369.89 ms, median 306.18 ms, on a GitHub macOS 15 arm64 runner (run 41918385426, the same commit with only the runner changed); the one ref-mac reading, in #718's body, is 119 ms "on a machine busy with two other long runs", with no idle run recorded. The same runners give `open_project_and_type` 2.5 to 2.8 times ref-mac's 297 ms, which puts ref-mac's check near 130 ms. TEST-8 asks for each budget "within budget on the reference machines". Once #718 merges, the weekly Bench workflow on main fails on this row every Monday, so a real regression in another row no longer shows as a new failure.
+  environment: |
+    fix/p2ra-apps-findings at 1abc2984; crates/qs-bench/benches/budgets.rs `check_after_typing`, apps/desktop (the frame after the editor's settle time that sends the text to the project and checks it)
+  depends: []
+  deliverable:
+  - 'apps/desktop (and the qc-ide calls it makes): the check after a pause in typing within 100 ms at the 95th percentile on ref-mac, by making the recheck cheaper (incremental) or moving it off the frame as docs/perf-budgets.md says, where its budget becomes one frame''s'
+  - 'docs/spikes/data/ref-mac/: the `cargo xtask bench` results of all three editor rows on an idle ref-mac, with the commit'
+  - 'The weekly Bench workflow green on main with every active row checked'
+  acceptance:
+  - '`cargo xtask bench` on ref-mac meets `check_after_typing`''s budget, recorded in docs/spikes/data/ref-mac/ and linked in the PR, and a Bench workflow run on the PR branch passes'
+  verify:
+  - cargo xtask bench
+- key: P3-36
+  title: Time each keystroke on its own in the keystroke benchmark
+  labels:
+  - apps
+  - area:editor
+  - type:test
+  size: S
+  reqs:
+  - TEST-8
+  - PRIN-5
+  summary: |
+    Found by the P2-RA re-review (#88) of #718. docs/perf-budgets.md, "Percentiles and samples": "For a fast operation whose tail matters (`keystroke`), averaging hides the slow events, so its benchmark must make each sample reflect single events rather than an average of many, and say how in its doc comment." #718's `keystroke` (crates/qs-bench/benches/budgets.rs) times keystrokes with `bencher.iter` in a group of `sample_size(10)` and 500 ms: the Bench run 41915842630 collected "10 samples in estimated 500.88 ms (1815 iterations)", so each sample is the mean of about 180 keystrokes, and the p99 `cargo xtask bench` checks against 8.33 ms is the largest of ten means. A single slow keystroke (a highlight rebuild, an allocation spike) is divided by the keystrokes around it. The doc comment does not say how a sample reflects one event.
+  environment: |
+    fix/p2ra-apps-findings at 1abc2984; crates/qs-bench/benches/budgets.rs `keystroke`
+  depends: []
+  deliverable:
+  - 'crates/qs-bench/benches/budgets.rs: `keystroke` timing each keystroke''s frame on its own (for example `iter_custom` recording one keystroke per sample, or enough samples of one iteration each for a p99 over at least 100 keystrokes), its doc comment saying how'
+  acceptance:
+  - 'A Bench workflow run shows `keystroke` with at least 100 samples of one keystroke each, and its p99 within 8.33 ms'
+  verify:
+  - cargo xtask bench
+- key: P3-37
+  title: Read and write a Windows UNC path's file URI as clients do
+  labels:
+  - apps
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-7
+  - LANG-9
+  summary: |
+    Found by the P2-RA re-review (#88) of #718 (P2-161, "by the host's own rules"). On a Windows host, `uri::to_path` (apps/lsp/src/uri.rs) refuses every `file` URI with an authority other than `localhost`, so `file://server/share/x.qc` is `None`: a workspace on a network share opens no project, and every request on its files answers nothing. VS Code writes a UNC path that way: vscode-uri's `URI.file` (https://raw.githubusercontent.com/microsoft/vscode-uri/main/src/uri.ts, fetched 2026-11-04) says "check for authority as used in UNC shares" and sets `authority = path.substring(2, idx)`, and `uriToFsPath` reads it back: "unc path: file://shares/c$/far/boo". RFC 8089 Appendix E.3.1 (non-normative) describes the same mapping: "\\host.example.com\Share\path\to\file.txt" is "file://host.example.com/Share/path/to/file.txt". `from_path` meanwhile writes `\\server\share\x.qc` as `file:////server/share/x.qc` (the E.3.2 form), another string than the client's URI for the same file, so diagnostics are published under a URI the client did not open. Reproduced by `to_path_on("file://server/share/x.qc", Host::Windows)`, which gives `None`; the test is quoted in docs/readiness/p2-ra.md.
+  environment: |
+    fix/p2ra-apps-findings at 1abc2984; apps/lsp/src/uri.rs `to_path_on`, `from_path_on`
+  depends: []
+  deliverable:
+  - 'apps/lsp/src/uri.rs: on a Windows host, a `file` URI with a host other than `localhost` read as the UNC path `\\host\share\...`, and a UNC path written with its host as the authority; other hosts unchanged'
+  - 'apps/lsp/src/tests: the quoted test, and the property `paths_convert_to_uris_and_back` drawing UNC paths for the Windows host'
+  acceptance:
+  - 'The tests pass on Linux, macOS and Windows, and fail when the authority is refused again'
+  verify:
+  - cargo test -p quakec-lsp
+- key: P3-38
+  title: Make the language server's fuzz target check every answer and edit across lines
+  labels:
+  - apps
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - TEST-5
+  summary: |
+    Found by the P2-RA re-review (#88) of #718 (P2-165, whose deliverable asks the target to check "one answer per request id, and positions inside the documents"). `fuzz/fuzz_targets/quakec_lsp.rs` counts the answers that arrive and fails on two for one id, but never fails when a request gets none. Its `didChange` text is drawn from `b' ' + byte % 95`, printable ASCII only, so no edit ever adds or removes a line break or a multi-byte character, the cases that move positions and that P2-161 fixed in `LineIndex`. And its position check allows any line up to the source's lines plus the input's length plus 2, which no answer of the five-line project can exceed. The target has not yet run in the nightly Fuzz workflow (#718 is not merged).
+  environment: |
+    fix/p2ra-apps-findings at 1abc2984; fuzz/fuzz_targets/quakec_lsp.rs
+  depends: []
+  deliverable:
+  - 'fuzz/fuzz_targets/quakec_lsp.rs: every request id sent answered exactly once; `didChange` text drawn to include line breaks and multi-byte characters; each answered position checked against the open document''s text as the target tracks it from the edits'
+  acceptance:
+  - 'The target runs in the nightly Fuzz workflow with no crash, linked in the PR, and fails when the server is made to drop one answer by hand, recorded in the PR'
+  verify:
+  - cargo xtask fuzz quakec-lsp --time 10m
 - key: P3-18
   title: Phase 3 gate review
   labels:
@@ -394,6 +480,10 @@ issues:
   - P3-31
   - P3-32
   - P3-33
+  - P3-35
+  - P3-36
+  - P3-37
+  - P3-38
   - P3-22
   - P3-23
   - P3-24
