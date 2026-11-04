@@ -39,6 +39,9 @@ pub(super) struct Checker<'e> {
     /// The words of a call's value still to be read from the return global, which a call or
     /// a jump made before it is read copies out first (FTE-18.13).
     pub(super) live_return: Option<u32>,
+    /// The words of the call's value the last statement generated, a `NOT_*`, read: live again
+    /// if a short `IFNOT` drops the `NOT` (FTEF-34.16).
+    pub(super) not_of_return: Option<u32>,
     /// The fragment of the binary operator being checked, if any.
     pub(super) fragment: Option<ir::Builder>,
     /// Whether the checker is in a condition of `if`, `while` or `do`, outside parentheses
@@ -96,6 +99,7 @@ impl<'e> Checker<'e> {
             fragments: ir::Fragments::default(),
             generated: Vec::new(),
             live_return: None,
+            not_of_return: None,
             fragment: None,
             in_condition: false,
             addressed: HashSet::new(),

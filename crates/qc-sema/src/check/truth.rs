@@ -151,10 +151,9 @@ impl Checker<'_> {
             | Etype::Boolean
             | Etype::Float => {}
         }
-        // FTE-18.13: the jump copies a call's value still to be read, its own condition's too.
-        self.clobber_return();
         // FTEF-34.16: an `IFNOT` of the temporary the statement before made by `NOT_F`,
-        // `NOT_FNC` or `NOT_ENT` drops that statement and is an `IF` of its operand.
+        // `NOT_FNC` or `NOT_ENT` drops that statement and is an `IF` of its operand, a call's
+        // value it read then live again.
         if jump == Jump::IfNot
             && value.temp.is_some()
             && value.temp == self.last_temp
@@ -164,7 +163,12 @@ impl Checker<'_> {
                 .is_some_and(|op| matches!(op, Op::NotF | Op::NotFnc | Op::NotEnt))
         {
             self.generated.pop();
+            if let Some(words) = self.not_of_return.take() {
+                self.live_return = Some(words);
+            }
         }
+        // FTE-18.13: the jump copies a call's value still to be read, its own condition's too.
+        self.clobber_return();
         Ok(())
     }
 

@@ -119,7 +119,11 @@ impl Checker<'_> {
         span: Span,
     ) -> Result<Value, Fatal> {
         // A statement reading a call's value reads it from the return global.
+        self.not_of_return = None;
         if lhs.returned || rhs.returned {
+            if matches!(op, Op::NotF | Op::NotFnc | Op::NotEnt) {
+                self.not_of_return = self.live_return;
+            }
             self.live_return = None;
         }
         let result = replaced(op);
