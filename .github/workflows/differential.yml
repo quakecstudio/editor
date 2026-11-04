@@ -102,7 +102,9 @@ jobs:
   generated:
     name: Compiler differential (generated programs)
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # 10,000 programs, each compiled by both FTEQCCs and qc-codegen and called, ran past two
+    # hours on a hosted runner (run 41877684070).
+    timeout-minutes: 300
     permissions:
       contents: read
     defaults:
