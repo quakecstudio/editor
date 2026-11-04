@@ -51,6 +51,9 @@ pub(super) struct Checker<'e> {
     /// Whether an update reads an element it stores to again, whose index is then held and so
     /// not folded into the read's parameter.
     pub(super) index_held: bool,
+    /// Where each statement of the source starts, by the index of the first generated
+    /// statement after it starts: the line each generated statement is recorded at.
+    pub(super) origins: Vec<(u32, usize)>,
     /// The generated `CALL` whose value [`Checker::live_return`] is.
     pub(super) live_call: Option<u32>,
     /// Each call whose value a statement copied out of the return global, and the copy, which
@@ -118,6 +121,7 @@ impl<'e> Checker<'e> {
             branch_condition: None,
             strings: Vec::new(),
             index_held: false,
+            origins: Vec::new(),
             live_call: None,
             copies: Vec::new(),
             fragment: None,
@@ -153,6 +157,7 @@ impl<'e> Checker<'e> {
             fragments: self.fragments,
             generated: self.generated,
             strings: self.strings,
+            origins: self.origins,
         }
     }
 

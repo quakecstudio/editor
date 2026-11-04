@@ -1208,6 +1208,28 @@ fn a_generated_struct_element_member_adds_its_word_to_the_index() {
     assert_eq!(generated[add.wrapping_add(1)].op, Op::Call1);
 }
 
+// spec QC-27.19: each generated statement is recorded at the source statement the compiler was
+// reading, the body's `DONE` at the last one, and a state header before any at none (the
+// function's name)
+#[test]
+fn a_generated_body_records_each_statements_origin() {
+    let source = "float k; void() n; void() t = [1, n] { k = 1;\n  k = k * 2; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let body = &index.bodies[&t];
+    let first = source.find("k = 1").unwrap();
+    let second = source.find("k = k * 2").unwrap();
+    let origins: Vec<_> = (0..body.generated().len())
+        .map(|i| body.origin(i))
+        .collect();
+    assert_eq!(origins, [None, Some(first), Some(second), Some(second)]);
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]

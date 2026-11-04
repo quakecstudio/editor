@@ -112,6 +112,7 @@ fn qc_sema::cast::Type::fteqcc_scalar
 fn qc_sema::check::TypedBody::fragment_at
 fn qc_sema::check::TypedBody::generated
 fn qc_sema::check::TypedBody::opcode_at
+fn qc_sema::check::TypedBody::origin
 fn qc_sema::check::TypedBody::string
 fn qc_sema::check::TypedBody::type_at
 fn qc_sema::check::fold::fold_builtin_call

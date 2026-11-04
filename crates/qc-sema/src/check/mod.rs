@@ -734,6 +734,7 @@ pub struct TypedBody {
     fragments: ir::Fragments,
     generated: Vec<ir::BodyStatement>,
     strings: Vec<Vec<u8>>,
+    origins: Vec<(u32, usize)>,
 }
 
 impl TypedBody {
@@ -762,6 +763,17 @@ impl TypedBody {
     #[must_use]
     pub fn generated(&self) -> &[ir::BodyStatement] {
         &self.generated
+    }
+
+    /// Where the source statement the generated statement `index` was recorded at starts, a
+    /// byte offset; `None` before the body's first statement, which the function's name is.
+    #[must_use]
+    pub fn origin(&self, index: usize) -> Option<usize> {
+        let index = u32::try_from(index).ok()?;
+        let at = self.origins.partition_point(|&(first, _)| first <= index);
+        self.origins
+            .get(at.checked_sub(1)?)
+            .map(|&(_, origin)| origin)
     }
 
     /// The bytes of the string literal [`ir::Name::String`] `index` names, as FTEQCC's lexer

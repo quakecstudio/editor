@@ -149,6 +149,7 @@ pub(super) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         fragments: checker.fragments,
         generated: Vec::new(),
         strings: Vec::new(),
+        origins: Vec::new(),
     }
 }
 

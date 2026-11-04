@@ -91,6 +91,11 @@ impl Checker<'_> {
         let kept = self.next_made();
         self.live_return = None;
         self.copies.retain(|&(call, _)| call < kept);
+        // What follows is still recorded where the last statement read started.
+        if let Some(&(_, origin)) = self.origins.last() {
+            self.origins.retain(|&(at, _)| at < kept);
+            self.origins.push((kept, origin));
+        }
     }
 
     /// Names the target of each jump of the body whose target is known, and its condition
@@ -119,6 +124,9 @@ impl Checker<'_> {
     }
 
     pub(super) fn statement(&mut self, stmt: &ast::Stmt) {
+        // The statements it generates are recorded at its start.
+        let made = self.next_made();
+        self.origins.push((made, stmt.syntax().span().start));
         // A value the statement before left is discarded with it (FTE-18.13).
         self.live_return = None;
         let ended = self.statement_parts(stmt);
