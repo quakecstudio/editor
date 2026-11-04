@@ -834,7 +834,10 @@ impl Checker<'_> {
             ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
         });
         self.clobber_return();
-        self.generated.push(ir::BodyStatement::bare(Op::Call2));
+        self.generated.push(ir::BodyStatement {
+            a: lhs.sym.def().map(ir::Name::ArraySet),
+            ..ir::BodyStatement::bare(Op::Call2)
+        });
         self.last_temp = None;
     }
 

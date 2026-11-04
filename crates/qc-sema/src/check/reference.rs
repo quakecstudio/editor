@@ -385,7 +385,10 @@ impl Checker<'_> {
                 });
             }
             self.clobber_return();
-            self.generated.push(ir::BodyStatement::bare(Op::Call1));
+            self.generated.push(ir::BodyStatement {
+                a: element.sym.def().map(ir::Name::ArrayGet),
+                ..ir::BodyStatement::bare(Op::Call1)
+            });
             self.last_temp = None;
             self.live_return = Some(self.env.layout(&element.ty).map_or(1, |l| l.words));
             self.live_call = self.last_made();

@@ -226,62 +226,97 @@ impl Checker<'_> {
         {
             return self.constant_ternary(condition, constant, middle, last);
         }
+        let mut test = None;
         let kept = match middle {
-            None => self.condition_arm(condition, span),
+            None => self.condition_arm(condition, &mut test, span),
             Some(middle) => {
                 let tested = self.test_condition(&condition, span);
                 drop(condition);
                 let before = self.emitted;
-                match tested.and_then(|()| self.value(Some(middle))) {
+                match tested.and_then(|jump| {
+                    test = jump;
+                    self.value(Some(middle))
+                }) {
                     Ok(value) => self.middle_arm(value, before, span),
                     Err(fatal) => Err(fatal),
                 }
             }
         };
-        let Ok((kept, kept_null)) = kept else {
+        let Ok((kept, kept_null, result)) = kept else {
             return Err(Fatal);
         };
         self.generate(Op::Goto, span);
+        let goto = self.last_made();
         let before = self.emitted;
-        match self.value(last) {
-            Ok(other) => self.last_arm(kept, kept_null, other, before, span),
+        let value = match self.value(last) {
+            Ok(other) => self.last_arm((kept, kept_null), other, before, result, span),
             Err(fatal) => Err(fatal),
+        }?;
+        self.name_ternary_jumps(test, goto);
+        Ok(Value {
+            made: result,
+            ..value
+        })
+    }
+
+    /// Names the jumps of a `?:`: the test's `IFNOT` to the last arm, after the `GOTO` at
+    /// `goto`, and the `GOTO` to the end.
+    fn name_ternary_jumps(&mut self, test: Option<u32>, goto: Option<u32>) {
+        let end = self.next_made();
+        let after_goto = goto.map(|goto| goto.saturating_add(1));
+        let at = |index: Option<u32>| index.and_then(|index| usize::try_from(index).ok());
+        if let Some(statement) = at(test).and_then(|index| self.generated.get_mut(index)) {
+            statement.b = after_goto.map(ir::Name::Jump);
+        }
+        if let Some(statement) = at(goto).and_then(|index| self.generated.get_mut(index)) {
+            statement.a = Some(ir::Name::Jump(end));
         }
     }
 
     /// The `IFNOT` (or `IF` of a vector under `ifvector`) that skips the first arm.
     #[inline(never)]
-    fn test_condition(&mut self, condition: &Value, span: Span) -> Result<(), Fatal> {
+    fn test_condition(&mut self, condition: &Value, span: Span) -> Result<Option<u32>, Fatal> {
         self.branch(condition, Jump::IfNot, span)?;
         // `QCC_Generate_OP_IFNOT` of a vector under `ifvector` tests `!v` by `OP_IF_I`.
         let vector = self.etype_of(&condition.ty) == Some(Etype::Vector)
             && self.env.flags_at(span.start).has(FteFlag::Ifvector);
         self.generate(if vector { Op::IfI } else { Op::IfnotI }, span);
-        Ok(())
+        let jump = self.last_made();
+        let tested = self.branch_condition.take();
+        if let Some(statement) = self.generated.last_mut() {
+            statement.a = tested;
+        }
+        Ok(jump)
     }
 
-    /// `c ?: b`: the condition stored as the first arm, and whether it is a null.
+    /// `c ?: b`: the condition stored as the first arm, whether it is a null, and the
+    /// generated statement whose value is the result; `test` the test's `IFNOT`.
     #[inline(never)]
-    fn condition_arm(&mut self, condition: Value, span: Span) -> Result<(Value, bool), Fatal> {
-        self.test_condition(&condition, span)?;
+    fn condition_arm(
+        &mut self,
+        condition: Value,
+        test: &mut Option<u32>,
+        span: Span,
+    ) -> Result<(Value, bool, Option<u32>), Fatal> {
+        *test = self.test_condition(&condition, span)?;
         let null = condition.known().is_some_and(Constant::null);
         // `(r.cast->size>=3)?OP_STORE_V:OP_STORE_F`, after the `IFNOT`.
         let words = self.env.layout(&condition.ty).map_or(1, |l| l.words);
         let op = if words >= 3 { Op::StoreV } else { Op::StoreF };
         self.clobber_returned(Some(op), &condition, span)?;
-        self.arm_store(Some(op), &condition, self.emitted, span)?;
-        Ok((condition, null))
+        let result = self.arm_store(Some(op), &condition, self.emitted, None, span)?;
+        Ok((condition, null, result))
     }
 
-    /// The middle arm read since `before` emitted statements, stored by its size, and whether it
-    /// is a null.
+    /// The middle arm read since `before` emitted statements, stored by its size, whether it
+    /// is a null, and the generated statement whose value is the result.
     #[inline(never)]
     fn middle_arm(
         &mut self,
         value: Value,
         before: usize,
         span: Span,
-    ) -> Result<(Value, bool), Fatal> {
+    ) -> Result<(Value, bool, Option<u32>), Fatal> {
         let value = self.stored_arm(value, span)?;
         let null = value.known().is_some_and(Constant::null);
         // `switch(r.cast->size)`: the first arm is stored by its size, and one of more than three
@@ -298,19 +333,19 @@ impl Checker<'_> {
             }
         };
         self.clobber_returned(op, &value, span)?;
-        self.arm_store(op, &value, before, span)?;
-        Ok((value, null))
+        let result = self.arm_store(op, &value, before, None, span)?;
+        Ok((value, null, result))
     }
 
-    /// The last arm read since `before` emitted statements, stored by its type, after the arms'
-    /// types are compared.
+    /// The last arm read since `before` emitted statements, stored by its type to the first
+    /// arm's `result`, after the arms' types are compared.
     #[inline(never)]
     fn last_arm(
         &mut self,
-        kept: Value,
-        kept_null: bool,
+        (kept, kept_null): (Value, bool),
         other: Value,
         before: usize,
+        result: Option<u32>,
         span: Span,
     ) -> Checked {
         let other = self.stored_arm(other, span)?;
@@ -320,7 +355,7 @@ impl Checker<'_> {
             Some(Etype::Double | Etype::Struct | Etype::Union | Etype::Enum) => None,
             etype => Some(Self::store_op(etype)),
         };
-        self.compare_then_store(kept, kept_null, other, op, before, span)
+        self.compare_then_store((kept, kept_null), other, op, (before, result), span)
     }
 
     /// FTEF-30.15: at global scope a constant condition picks its arm, the other read and
@@ -357,16 +392,15 @@ impl Checker<'_> {
     #[inline(never)]
     fn compare_then_store(
         &mut self,
-        kept: Value,
-        kept_null: bool,
+        (kept, kept_null): (Value, bool),
         other: Value,
         op: Option<Op>,
-        before: usize,
+        (before, result): (usize, Option<u32>),
         span: Span,
     ) -> Checked {
         let stored = other.clone();
         let value = self.arms(kept, kept_null, other, span)?;
-        self.arm_store(op, &stored, before, span)?;
+        self.arm_store(op, &stored, before, result, span)?;
         Ok(value)
     }
 
@@ -376,6 +410,11 @@ impl Checker<'_> {
         if let Some(op) = op.filter(|_| value.returned) {
             let operand = Value::of(value.ty.clone());
             self.emit(op, &operand, &operand, span)?;
+            let copy = self.last_made();
+            self.name_last(op, Some(ir::Name::Return), copy.map(ir::Name::Made));
+            if let (Some(call), Some(copy)) = (value.call, copy) {
+                self.copies.push((call, copy));
+            }
         }
         Ok(())
     }
@@ -383,22 +422,35 @@ impl Checker<'_> {
     /// FTEF-30.3: an arm's store, `op` through `QCC_PR_StatementFlags`, which folds it into the
     /// statement that made the arm's temporary when the arm made one since `before` emitted
     /// statements (`opt_assignments`); a call's return value is no such temporary (FTEF-30.13).
+    /// The store writes the value of the generated statement `into`, the first arm's, or for
+    /// the first arm its own; returns the statement whose value the store wrote.
     fn arm_store(
         &mut self,
         op: Option<Op>,
         value: &Value,
         before: usize,
+        into: Option<u32>,
         span: Span,
-    ) -> Result<(), Fatal> {
+    ) -> Result<Option<u32>, Fatal> {
         let folded = value.temp.is_some()
             && value.temp == self.last_temp
             && self.emitted > before
             && !value.returned;
-        if let Some(op) = op.filter(|_| !folded && value.ty != Type::Unknown) {
-            let operand = Value::of(value.ty.clone());
-            self.emit(op, &operand, &operand, span)?;
+        if folded {
+            if into.is_some() {
+                self.fold_into(value, into.map(ir::Name::Made));
+            }
+            return Ok(into.or(value.made));
         }
-        Ok(())
+        let Some(op) = op.filter(|_| value.ty != Type::Unknown) else {
+            return Ok(into);
+        };
+        let operand = Value::of(value.ty.clone());
+        let named = self.name_of(value);
+        self.emit(op, &operand, &operand, span)?;
+        let stored = into.or_else(|| self.last_made());
+        self.name_last(op, named, stored.map(ir::Name::Made));
+        Ok(stored)
     }
 
     /// FTEF-30.3: the type of `?:` from its arms, `kept` the condition or middle arm and

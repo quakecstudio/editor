@@ -183,6 +183,10 @@ pub enum Name {
     /// The string immediate of the body's string literal at this index
     /// (`TypedBody::string`).
     String(u32),
+    /// The array definition's getter, `ArrayGet*NAME` (FTE-13.8).
+    ArrayGet(DefId),
+    /// The array definition's setter, `ArraySet*NAME` (FTE-13.11).
+    ArraySet(DefId),
 }
 
 /// One statement of a whole body as the semantic model generated it: its opcode and what each

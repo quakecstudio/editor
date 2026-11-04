@@ -1027,6 +1027,50 @@ fn a_generated_body_updates_an_element_by_its_array_functions() {
     assert_eq!((generated[4].a, generated[4].b), (made(0), parameter(0)));
     assert_eq!((generated[5].a, generated[5].b), (made(3), parameter(1)));
     assert_eq!(generated[7].c, parameter(0));
+    let arr = index
+        .defs
+        .iter()
+        .position(|d| d.name == "arr")
+        .map(DefId::new)
+        .unwrap();
+    assert_eq!(generated[2].a, Some(Name::ArrayGet(arr)));
+    assert_eq!(generated[6].a, Some(Name::ArraySet(arr)));
+}
+
+// FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
+// the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
+#[test]
+fn a_generated_body_names_a_ternary() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "float a, b, k; void() t = { k = a ? b : a * b; };";
+    let index = super::fte_index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let named = |name| Some(Name::Def(def(name), 0));
+    let statements: Vec<_> = index.bodies[&def("t")]
+        .generated()
+        .iter()
+        .map(|s| (s.op, s.a, s.b, s.c))
+        .collect();
+    let made = Some(Name::Made(1));
+    assert_eq!(
+        statements,
+        [
+            (Op::IfnotI, named("a"), Some(Name::Jump(3)), None),
+            (Op::StoreF, named("b"), made, None),
+            (Op::Goto, Some(Name::Jump(4)), None, None),
+            (Op::MulF, named("a"), named("b"), made),
+            (Op::StoreF, made, named("k"), None),
+            (Op::Done, None, None, None),
+        ]
+    );
 }
 
 // QC-13.6, FTEF-29.13: the generated body names STATE's think function, a local's initialiser

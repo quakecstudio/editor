@@ -51,7 +51,7 @@ impl Checker<'_> {
 
     /// The index among the generated statements of the next one, which a jump to the next
     /// statement goes to.
-    fn next_made(&self) -> u32 {
+    pub(super) fn next_made(&self) -> u32 {
         u32::try_from(self.generated.len()).unwrap_or(u32::MAX)
     }
 
