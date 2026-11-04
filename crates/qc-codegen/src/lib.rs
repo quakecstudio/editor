@@ -69,15 +69,6 @@ pub struct Unit<'a> {
     pub parse: &'a Parse,
 }
 
-/// How a module is compiled: the optimisations turned on (COMP-5), each off by default, where
-/// the output is `qcc`'s.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Options {
-    /// `--opt fold`: an arithmetic operator of two float or vector literals is the literal of
-    /// its value, computed as the VM computes it, rather than a statement.
-    pub fold: bool,
-}
-
 /// A compiled program.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Compiled {
@@ -151,7 +142,7 @@ pub enum Internal {
 ///
 /// [`CompileError::Diagnostics`] when the module has errors, [`CompileError::Internal`] when a
 /// construct cannot be lowered.
-pub fn compile(units: &[Unit<'_>], options: Options) -> Result<Compiled, CompileError> {
+pub fn compile(units: &[Unit<'_>]) -> Result<Compiled, CompileError> {
     let decls: Vec<FileDecls> = units
         .iter()
         .map(|u| lower_file(u.parse, Dialect::Vanilla))
@@ -162,7 +153,7 @@ pub fn compile(units: &[Unit<'_>], options: Options) -> Result<Compiled, Compile
     };
     // Each unit is indexed by line once, the first time a statement comes from it.
     let mut lines: HashMap<FileId, LineIndex> = HashMap::new();
-    compile_lowered(units, &decls, vanilla, options, |file, at| {
+    compile_lowered(units, &decls, vanilla, |file, at| {
         let Some(unit) = units.get(file.index()) else {
             return 0;
         };
@@ -178,7 +169,6 @@ fn compile_lowered(
     units: &[Unit<'_>],
     decls: &[FileDecls],
     resolve: ResolveOptions,
-    options: Options,
     mut line_of: impl FnMut(FileId, usize) -> i32,
 ) -> Result<Compiled, CompileError> {
     let index = resolve_module(decls, resolve);
@@ -198,7 +188,6 @@ fn compile_lowered(
     }
     let names = Names::new(&index);
     let mut compiler = Compiler::new(&index, &names);
-    compiler.fold = options.fold;
     compiler.dialect = resolve.dialect;
     compiler.autoproto = resolve.autoproto;
     if resolve.dialect.has_fteqcc_extensions() && resolve.autoproto {
@@ -308,7 +297,6 @@ pub fn compile_module(
     db: &mut Db,
     input: &ModuleInput,
     name_of: impl Fn(FileId) -> String,
-    options: Options,
 ) -> Result<Compiled, CompileError> {
     if db.dialect() == Dialect::Gmqcc {
         return Err(CompileError::Dialect(db.dialect()));
@@ -332,7 +320,7 @@ pub fn compile_module(
     }
     // Each source file is indexed by line once, the first time a statement comes from it.
     let mut lines: HashMap<FileId, LineIndex> = HashMap::new();
-    let mut compiled = compile_lowered(&units, &decls, analysis.options, options, |file, at| {
+    let mut compiled = compile_lowered(&units, &decls, analysis.options, |file, at| {
         // QC-27.19: the line in the source file the expansion's text came from (QC-9.7).
         let id = input.compiled.get(file.index()).copied().unwrap_or(file);
         let (source, at) = db

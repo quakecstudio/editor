@@ -17,6 +17,7 @@
 use std::collections::HashMap;
 
 use qc_diag::{Code, Diagnostic, Span};
+use qc_preproc::Op;
 use qc_progs::Function;
 use qc_progs::opcode::Opcode;
 use qc_sema::ir;
@@ -196,9 +197,6 @@ pub(crate) struct Compiler<'a> {
     locals_end: u32,
     /// The type of the last call's value, `def_ret.type` (QC-18.4).
     return_type: ValueType,
-    /// Whether an operator of two literals is folded into the literal of its value
-    /// (`--opt fold`, COMP-5).
-    pub(crate) fold: bool,
     /// The dialect the files are read in, whose lexer reads each literal and builtin number.
     pub(crate) dialect: Dialect,
     /// The compiler flags of the file being compiled, each from the byte it holds from
@@ -282,7 +280,6 @@ impl<'a> Compiler<'a> {
             scope: None,
             locals_end: 0,
             return_type: ValueType::simple(Etype::Void),
-            fold: false,
             dialect: Dialect::Vanilla,
             flags: Vec::new(),
             lex_flags: Vec::new(),
@@ -2652,9 +2649,11 @@ impl<'a> Compiler<'a> {
     /// an integer operand of a float operator made a float first, as [`Compiler::operate`]
     /// makes it (FTEF-27.8). An emulation (FTEF-27) is written as lowered; a plain operator
     /// after this code generator's own folds, which follow FTEQCC's constants further than the
-    /// checker does (a vector literal's component, FTEF-26.13). `None`, for
-    /// [`Compiler::operate`] to lower it, under the vanilla profile, with `--opt fold`, and for
-    /// a fragment the model did not keep or [`Compiler::plan_fragment`] refuses.
+    /// checker does (a vector literal's component, FTEF-26.13). `None` for a fragment the
+    /// model did not keep, one whose recorded input constants these inputs are not, or one
+    /// [`Compiler::plan_fragment`] refuses: [`Compiler::operate`] lowers a plain operator then,
+    /// and an emulation the model lowers (FTE-19.7, FTE-19.9, FTE-19.10, FTE-19.12) is an
+    /// internal error.
     fn lowered_binary(
         &mut self,
         operator: Operator,
@@ -2662,31 +2661,27 @@ impl<'a> Compiler<'a> {
         right: &Value,
         (op_span, span): (Span, Span),
     ) -> Lowered<Option<Value>> {
-        if self.fold || !self.dialect.has_fteqcc_extensions() {
-            return Ok(None);
-        }
         let Some(body) = self.typed_body() else {
             return Ok(None);
         };
         let Some(fragment) = body.fragment_at(op_span) else {
             return Ok(None);
         };
-        // FTEF-26.15: a fold to no statement of a value that is not two constants may drop a
-        // call's value, which this code generator's own fold frees.
-        if fragment.statements.is_empty()
-            && (fragment.immediates.is_empty() || !self.both_constant(left, right))
-        {
+        // The fragment's folds read its inputs as the constants it records; an input that is
+        // another value here, such as a call the model folded, leaves it to `operate`.
+        let [assumed_left, assumed_right] = fragment.inputs;
+        if !self.is_immediate(left, assumed_left) || !self.is_immediate(right, assumed_right) {
             return Ok(None);
         }
         let types = self.converted_types(operator, left, right);
-        let Some(rows) = self.plan_fragment(fragment, types) else {
+        let chosen = body.opcode_at(op_span);
+        let Some(rows) = self.plan_fragment(fragment, chosen, types) else {
             return Ok(None);
         };
         let (left, right) = &self.floats_of(operator, left, right, op_span)?;
         // An emulation is a fragment other than the one statement of the opcode chosen
         // (FTEF-23.4); an operand's conversion folded by the checker is this code generator's
         // own, so it is not one.
-        let chosen = body.opcode_at(op_span);
         let emulated = !matches!(fragment.statements.as_slice(), [only] if Some(only.op) == chosen);
         if let ([only], false) = (rows.as_slice(), emulated) {
             if self.both_constant(left, right)
@@ -2698,8 +2693,35 @@ impl<'a> Compiler<'a> {
                 return Ok(Some(value));
             }
         }
-        self.emit_fragment(fragment, &rows, left, right, span)
-            .map(Some)
+        let value = self.emit_fragment(fragment, &rows, left, right, span)?;
+        // FTEF-26.15: a fold to no statement frees the operands it drops (`QCC_FreeTemp`): a
+        // call's value among them is read by nothing more, so no clobber copies it
+        // (FTE-18.13); the operand that is the value stays live.
+        if fragment.statements.is_empty() {
+            self.drop_value(left);
+            self.drop_value(right);
+            self.keep_alive(&value);
+        }
+        Ok(Some(value))
+    }
+
+    /// Whether `value` is the constant `assumed` names, or `assumed` names none.
+    fn is_immediate(&self, value: &Value, assumed: Option<ir::Immediate>) -> bool {
+        let Some(assumed) = assumed else {
+            return true;
+        };
+        match (assumed.kind, self.constant_literal(value)) {
+            (ir::ImmediateKind::Float, Some(Literal::Float(f))) => {
+                assumed.words.first() == Some(&f.to_bits())
+            }
+            (ir::ImmediateKind::Vector, Some(Literal::Vector(v))) => {
+                assumed.words == v.map(f32::to_bits)
+            }
+            (ir::ImmediateKind::Integer, _) => {
+                self.constant_word(value) == assumed.words.first().copied()
+            }
+            (ir::ImmediateKind::Float | ir::ImmediateKind::Vector, _) => false,
+        }
     }
 
     /// The basic types `left` and `right` have once [`Compiler::floats_of`] has made an integer
@@ -2736,20 +2758,29 @@ impl<'a> Compiler<'a> {
 
     /// The rows of `fragment`'s statements, when this code generator can write it with inputs of
     /// the basic types `types`: every statement writes a value or a word of a vector temporary
-    /// by an opcode of id's table whose inputs have the types it reads, no immediate is an
-    /// integer, and its value is a temporary, an input or an immediate.
+    /// by an opcode of id's table whose inputs have the types it reads (any type for FTEQCC's
+    /// `AND` and `OR`, FTE-19.10), no immediate is an integer but the truth `AND_F` and `OR_F`
+    /// of two float constants fold to (FTEF-26.14), and its value is a temporary, an input or
+    /// an immediate.
     fn plan_fragment(
         &self,
         fragment: &ir::Fragment,
+        chosen: Option<Op>,
         types: (Etype, Etype),
     ) -> Option<Vec<ops::Row>> {
         let integer = |operand: &ir::Operand| matches!(operand, ir::Operand::Immediate(i) if i.kind == ir::ImmediateKind::Integer);
-        if fragment
+        // An integer immediate is held only as the truth `AND_F` and `OR_F` of two floats fold
+        // to with no statement (FTEF-26.14); the integer operators are not lowered from the
+        // layer yet.
+        let integers = fragment
             .immediates
             .iter()
             .any(|i| i.kind == ir::ImmediateKind::Integer)
-            || fragment.value.as_ref().is_none_or(integer)
-        {
+            || fragment.value.as_ref().is_some_and(integer);
+        let truth = matches!(chosen, Some(Op::AndF | Op::OrF))
+            && fragment.statements.is_empty()
+            && types == (Etype::Float, Etype::Float);
+        if fragment.value.is_none() || (integers && !truth) {
             return None;
         }
         let input = |side: ir::Input| match side {
@@ -2757,8 +2788,7 @@ impl<'a> Compiler<'a> {
             ir::Input::Right => types.1,
         };
         // An input must have the type the row reads, a vector's when a word of it is read: the
-        // model does not yet lower every operand conversion the code generator does (a
-        // vector's truth, FTE-19.10).
+        // model does not yet lower every operand conversion the code generator does.
         let fits = |operand: Option<ir::Operand>, wanted: Etype| match operand {
             Some(ir::Operand::Input(n)) => input(n) == wanted,
             Some(ir::Operand::Word(ir::Whole::Input(n), _)) => input(n) == Etype::Vector,
@@ -2773,20 +2803,22 @@ impl<'a> Compiler<'a> {
         for statement in &fragment.statements {
             let row = u32::try_from(statement.op.number())
                 .ok()
-                .and_then(Opcode::from_number)
-                .and_then(|op| ops::ROWS.iter().find(|row| row.opcode == op))?;
+                .and_then(ops::row_of)?;
             let operands_ok = [statement.a, statement.b]
                 .iter()
                 .flatten()
                 .all(|o| !integer(o));
+            // FTE-19.10: `AND` and `OR` read any operand's word as it is, as `OP_AND_ANY` and
+            // `OP_OR_ANY` do on the vanilla opcodes.
+            let any = self.dialect.has_fteqcc_extensions()
+                && matches!(row.opcode, Opcode::And | Opcode::Or);
             if statement.c == ir::Destination::Nothing
                 || !operands_ok
-                || !fits(statement.a, row.a)
-                || !fits(statement.b, row.b)
+                || (!any && !(fits(statement.a, row.a) && fits(statement.b, row.b)))
             {
                 return None;
             }
-            rows.push(*row);
+            rows.push(row);
         }
         Some(rows)
     }
@@ -2875,7 +2907,14 @@ impl<'a> Compiler<'a> {
         let [x, y, z] = immediate.words.map(f32::from_bits);
         let literal = match immediate.kind {
             ir::ImmediateKind::Vector => Literal::Vector([x, y, z]),
-            ir::ImmediateKind::Float | ir::ImmediateKind::Integer => Literal::Float(x),
+            ir::ImmediateKind::Float => Literal::Float(x),
+            // FTEF-26.14: an integer constant, such as the truth `&&` and `||` of two
+            // constants fold to (`QCC_MakeIntConst`).
+            ir::ImmediateKind::Integer => {
+                let [bits, _, _] = immediate.words;
+                let int = ValueType::Of(Type::Named(CScalar::Integer.name().into()));
+                return self.program.int_immediate(bits, int).at(span);
+            }
         };
         self.program.immediate(&literal).at(span)
     }
@@ -2916,49 +2955,14 @@ impl<'a> Compiler<'a> {
     }
 
     /// FTEQCC's `a ^ b` (FTE-19.7): `OP_BITXOR_F`'s or `OP_BITXOR_V`'s emulation,
-    /// `(a & ~b) | (b & ~a)`, as the semantic model lowered it, else [`Compiler::xor_inline`]
-    /// when it holds no fragment: an operand whose constant it does not follow, or
-    /// `--opt fold`.
+    /// `(a & ~b) | (b & ~a)`, as the semantic model lowered it.
     fn xor(&mut self, left: &Value, right: &Value, spans: (Span, Span)) -> Lowered<Value> {
-        match self.lowered_binary(Operator::BitAnd, left, right, spans)? {
-            Some(value) => Ok(value),
-            None => self.xor_inline(left, right, spans),
-        }
+        self.lowered_binary(Operator::BitAnd, left, right, spans)?
+            .ok_or(Abort::Internal(Internal::Unlowered, spans.0))
     }
 
-    /// FTEQCC's `a ^ b` on the vanilla opcodes (FTE-19.7, FTE-19.12), `OP_BITXOR_F`'s and
-    /// `OP_BITXOR_V`'s emulation: `(a & ~b) | (b & ~a)`, each `~` as `-1 - x`, a vector's
-    /// `'-1 -1 -1' - x`.
-    fn xor_inline(&mut self, left: &Value, right: &Value, spans: (Span, Span)) -> Lowered<Value> {
-        let span = spans.1;
-        let etype = self.type_of(left).etype();
-        if !matches!(etype, Etype::Float | Etype::Vector) || self.type_of(right).etype() != etype {
-            return Err(Abort::Internal(Internal::Unsupported, spans.0));
-        }
-        let minus_one = if etype == Etype::Vector {
-            let place = self
-                .program
-                .immediate(&Literal::Vector([-1.0; 3]))
-                .at(span)?;
-            self.def_value(place, span)?
-        } else {
-            self.float_literal(-1.0, span)?
-        };
-        let not_b = self.operate(Operator::Sub, &minus_one, right, spans)?;
-        let a_only = self.operate(Operator::BitAnd, left, &not_b, spans)?;
-        let not_a = self.operate(Operator::Sub, &minus_one, left, spans)?;
-        let b_only = self.operate(Operator::BitAnd, right, &not_a, spans)?;
-        let result = self.operate(Operator::BitOr, &a_only, &b_only, spans)?;
-        // The emulation reads each operand twice (`QCC_UnFreeTemp`), and FTEQCC frees only one
-        // of a call's value's references, so the alias stays live for the next clobber to
-        // copy (FTE-18.13).
-        self.keep_alive(left);
-        self.keep_alive(right);
-        Ok(result)
-    }
-
-    /// The row of `operator` for the two operands' types, folded under `--opt fold`, else
-    /// emitted into a temporary (QC-16.1).
+    /// The row of `operator` for the two operands' types, folded when both are constants,
+    /// else emitted into a temporary (QC-16.1).
     fn operate(
         &mut self,
         operator: Operator,
@@ -2975,27 +2979,15 @@ impl<'a> Compiler<'a> {
         let Some(row) =
             ops::select(operator, a, b, None).or_else(|| self.null_row(operator, left, right))
         else {
+            // FTE-19.9, FTE-19.10, FTE-19.12: FTEQCC's emulations of `v / f`, `&&` and `||` of
+            // other types and `v & w` are the semantic model's (`lowered_binary`).
             if self.dialect.has_fteqcc_extensions()
-                && matches!(operator, Operator::And | Operator::Or)
+                && (matches!(operator, Operator::And | Operator::Or)
+                    || (matches!(operator, Operator::BitAnd | Operator::BitOr)
+                        && (a, b) == (Etype::Vector, Etype::Vector))
+                    || (operator == Operator::Div && (a, b) == (Etype::Vector, Etype::Float)))
             {
-                return self.any_logic(operator, left, right, op_span);
-            }
-            // FTE-19.12: `v & w` and `v | w` of vectors are `BITAND_F` or `BITOR_F` of each
-            // component into a vector temporary.
-            if self.dialect.has_fteqcc_extensions()
-                && matches!(operator, Operator::BitAnd | Operator::BitOr)
-                && (a, b) == (Etype::Vector, Etype::Vector)
-            {
-                return self.vector_bits(operator, left, right, span);
-            }
-            // FTE-19.9: `v / f` is `OP_DIV_VF`'s emulation, `v * (1 / f)`.
-            if self.dialect.has_fteqcc_extensions()
-                && operator == Operator::Div
-                && (a, b) == (Etype::Vector, Etype::Float)
-            {
-                let one = self.float_literal(1.0, span)?;
-                let reciprocal = self.operate(Operator::Div, &one, right, (op_span, span))?;
-                return self.operate(Operator::Mul, left, &reciprocal, (op_span, span));
+                return Err(Abort::Internal(Internal::Unlowered, op_span));
             }
             return Self::mismatch(operator, op_span);
         };
@@ -3004,8 +2996,8 @@ impl<'a> Compiler<'a> {
         // default optimisation, so on for the pinned FTEQCC's `-Tid`) or outside a function
         // (`!pr_scope`), reading each operand with `QCC_SRef_EvalConst`, which takes a named
         // constant as well as an immediate, so `named[CONST + 3]` folds to `named[3]` and
-        // needs no `ArrayGet*` (FTEF-31.10). `--opt fold` (COMP-5, QC-27.20) folds the rest.
-        if (self.fold || self.both_constant(left, right))
+        // needs no `ArrayGet*` (FTEF-31.10).
+        if self.both_constant(left, right)
             && let Some(value) = self.folded(row.opcode, left, right).at(span)?
         {
             return Ok(value);
@@ -3069,72 +3061,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    /// FTE-19.12: `OP_BITAND_V` or `OP_BITOR_V` on the vanilla opcodes, the float opcode of
-    /// each component pair into the matching word of a vector temporary.
-    fn vector_bits(
-        &mut self,
-        operator: Operator,
-        left: &Value,
-        right: &Value,
-        span: Span,
-    ) -> Lowered<Value> {
-        let op = if operator == Operator::BitAnd {
-            Opcode::BitAnd
-        } else {
-            Opcode::BitOr
-        };
-        let temp = self.program.allocate(3).at(span)?;
-        let (left, right) = (self.operand_of(left), self.operand_of(right));
-        for word in 0..3_u32 {
-            let a = left.checked_add(word).at(span)?;
-            let b = right.checked_add(word).at(span)?;
-            let c = temp.checked_add(word).at(span)?;
-            self.program.emit_into(op, a, b, c).at(span)?;
-        }
-        Ok(Value {
-            ofs: temp,
-            kind: ValueKind::Temp(ValueType::simple(Etype::Vector)),
-        })
-    }
-
-    /// FTEQCC's `&&` and `||` of operands that are not both floats, `OP_AND_ANY` and
-    /// `OP_OR_ANY` on the vanilla opcodes (FTE-19.10): a vector is first its dot product with itself under
-    /// `vectorlogic`, then `AND_F` or `OR_F` of the two words.
-    fn any_logic(
-        &mut self,
-        operator: Operator,
-        left: &Value,
-        right: &Value,
-        span: Span,
-    ) -> Lowered<Value> {
-        let flags = qc_syntax::CompilerFlags::at(&self.flags, span.start);
-        let truth = |compiler: &mut Self, value: &Value| -> Lowered<u32> {
-            let from = compiler.operand_of(value);
-            if compiler.type_of(value).etype() == Etype::Vector
-                && flags.has(qc_preproc::FteFlag::Vectorlogic)
-            {
-                return compiler
-                    .program
-                    .emit_result(Opcode::MulV, from, from, Etype::Float)
-                    .at(span);
-            }
-            Ok(from)
-        };
-        let a = truth(self, left)?;
-        let b = truth(self, right)?;
-        let op = if operator == Operator::And {
-            Opcode::And
-        } else {
-            Opcode::Or
-        };
-        let ofs = self.program.emit_result(op, a, b, Etype::Float).at(span)?;
-        Ok(Value {
-            ofs,
-            kind: ValueKind::Temp(ValueType::simple(Etype::Float)),
-        })
-    }
-
-    /// `--opt fold` (COMP-5): the operator `opcode` of two literals as the literal of its value,
+    /// The operator `opcode` of two constants as the constant of its value (FTEF-26.2),
     /// computed as the VM computes it (VM-5): each product and sum an `f32` rounded in turn, the
     /// dot product `(a0*b0 + a1*b1) + a2*b2`. `None` for any other operator or operand, which is
     /// emitted as it is.
@@ -3190,9 +3117,7 @@ impl<'a> Compiler<'a> {
             // FTEF-26.14: `AND_F` and `OR_F` of two constants fold to an int constant
             // (`QCC_MakeIntConst(eval_a->_float && eval_b->_float)`), made a float where a
             // float is stored (FTEF-27.4).
-            (Opcode::And | Opcode::Or, Literal::Float(x), Literal::Float(y))
-                if self.dialect.has_fteqcc_extensions() =>
-            {
+            (Opcode::And | Opcode::Or, Literal::Float(x), Literal::Float(y)) => {
                 let (x, y) = (x != 0.0, y != 0.0);
                 let truth = if opcode == Opcode::And {
                     x && y
@@ -3324,8 +3249,9 @@ impl<'a> Compiler<'a> {
 
     /// Whether both operands are compile-time constants and the dialect folds their operator
     /// even inside a function: FTEQCC's `opt_constantarithmatic` (`-O1`, a default optimisation)
-    /// does (FTEF-26.2), id's `qcc` does not (QC-27.20). FTEQCC reads each operand with
-    /// `QCC_SRef_EvalConst`, which takes a named constant or an immediate.
+    /// does (FTEF-26.2); under id's `qcc` every operator emits its opcode (QC-16.1). FTEQCC
+    /// reads each operand with `QCC_SRef_EvalConst`, which takes a named constant or an
+    /// immediate.
     fn both_constant(&self, left: &Value, right: &Value) -> bool {
         self.dialect.has_fteqcc_extensions()
             && self.constant_literal(left).is_some()
@@ -3734,6 +3660,7 @@ impl<'a> Compiler<'a> {
         {
             return false;
         }
+        let stored = self.type_of(value).words();
         let Some(last) = self.program.statements.last_mut() else {
             return false;
         };
@@ -3743,6 +3670,14 @@ impl<'a> Compiler<'a> {
         // Only a statement that writes its result to `c` names a temporary there: a store
         // writes to `b`, so a `?:`'s stores to its temporary in each arm (FTE-8.3) never match.
         if last.c != made {
+            return false;
+        }
+        // DIFF-14.11: a result wider than the value stored, a vector whose first word is
+        // stored (`(u * v).x`), is not folded, or the statement would write every word of it
+        // from `to`. FTEQCC folds it (`QCC_CollapseStore`), an oracle defect (ADR-0020).
+        let wider =
+            ops::row_of(last.op).is_some_and(|row| ValueType::simple(row.c).words() > stored);
+        if wider {
             return false;
         }
         last.c = def;

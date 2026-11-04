@@ -51,8 +51,8 @@ depends on it (`layers.toml`); outside the workspace, the `qc_vm` fuzz target
   of calls is compared through the definitions' names and types: the ending, the builtins, the
   named globals and fields, the mock engine and, for the same statements, the statements run.
   The `compiler-diff` binary (`src/bin/compiler-diff.rs`) runs it on progs files;
-  `cargo xtask compiler-diff` compiles id 1.01 three ways and runs it, and with `--full` the
-  rerelease against the pinned FTEQCC (`calls::Oracle`, DIFF-12.14, DIFF-12.11), adding a row of
+  `cargo xtask compiler-diff` compiles id 1.01 with `qcc` and with `qc-codegen` and runs it, and with `--full` the
+  rerelease against the pinned FTEQCC (`calls::Oracle`, DIFF-12.30, DIFF-12.11), adding a row of
   the results table `target/compiler-diff/summary.md` for each pair.
 
 ## Tests
@@ -70,8 +70,8 @@ map spawn, the settle frames, a server frame, a client entering, a refused progs
 entity lump, citing EDICT-8 and DIFF-3 to DIFF-5.
 
 The compiler differential's tests (`src/calls/tests.rs`) compile small programs with
-`qc-codegen` over a `defs.qc` written from the system globals and fields: a program with
-`--opt fold` off and on agrees though its statements and globals differ, and each kind of
+`qc-codegen` over a `defs.qc` written from the system globals and fields: a program and
+the same program folded by hand agree though its statements and globals differ, and each kind of
 difference of DIFF-12.3 and DIFF-12.4 (a global, a field, a string by its text, a function by
 its name, a vector, the ending, the builtins, the engine, a freed edict, the definitions, the
 statements run, the setup) is reported, citing DIFF-12.

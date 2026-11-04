@@ -323,7 +323,8 @@ impl Checker<'_> {
     }
 
     /// A vector's component, `v.x` (FTEF-24.2): of a constant vector, a constant, its float
-    /// (FTEF-26.13; `QCC_SRef_EvalConst` reads the word the reference names).
+    /// (FTEF-26.13; `QCC_SRef_EvalConst` reads the word the reference names), read through the
+    /// vector at the component's index (`REF_ARRAY`, FTEF-32.17).
     fn vector_component(&mut self, base: &Value, selector: &ast::Expr) -> Checked {
         let component = self.swizzle(selector, Type::Simple(SimpleType::Float))?;
         let word = selector_name(selector).and_then(|(name, _)| match name.as_str() {
@@ -335,7 +336,14 @@ impl Checker<'_> {
         Ok(match (base.constness, word) {
             (Constness::Known(constant), Some(word)) if constant.is_vector() => {
                 let value = constant.v().get(word).copied().unwrap_or_default();
-                Value::constant(Constant::float(value))
+                Value {
+                    reference: Reference::element(
+                        base.label(),
+                        pointer::int(i32::try_from(word).unwrap_or_default()),
+                        true,
+                    ),
+                    ..Value::constant(Constant::float(value))
+                }
             }
             _ => component,
         })

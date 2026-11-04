@@ -27,7 +27,7 @@ use qc_progs::opcode::Opcode;
 use qc_progs::{ProgsFile, Statement};
 use qc_sema::{Db, FileId, ModuleInput};
 
-use crate::{CompileError, Compiled, Options, compile_module};
+use crate::{CompileError, Compiled, compile_module};
 
 /// A program of one file, `t.qc`, compiled as `progs.src` lists it.
 pub(crate) fn compile_source(source: &str) -> Result<Compiled, CompileError> {
@@ -36,14 +36,6 @@ pub(crate) fn compile_source(source: &str) -> Result<Compiled, CompileError> {
 
 /// A program of the files `files`, compiled in that order.
 pub(crate) fn compile_files(files: &[(&str, &str)]) -> Result<Compiled, CompileError> {
-    compile_with(files, Options::default())
-}
-
-/// [`compile_files`] with `options`.
-pub(crate) fn compile_with(
-    files: &[(&str, &str)],
-    options: Options,
-) -> Result<Compiled, CompileError> {
     let mut db = Db::new();
     let mut input = ModuleInput::default();
     for (i, (name, text)) in files.iter().enumerate() {
@@ -55,7 +47,7 @@ pub(crate) fn compile_with(
         input.compiled.push(FileId::new(i));
     }
     let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
-    compile_module(&mut db, &input, |id| names[id.index()].clone(), options)
+    compile_module(&mut db, &input, |id| names[id.index()].clone())
 }
 
 /// A program of one file, `t.qc`, compiled under the FTEQCC profile.
@@ -71,7 +63,7 @@ pub(crate) fn compile_fteqcc(source: &str) -> Result<Compiled, CompileError> {
         compiled: vec![FileId::new(0)],
         ..ModuleInput::default()
     };
-    compile_module(&mut db, &input, |_| "t.qc".to_owned(), Options::default())
+    compile_module(&mut db, &input, |_| "t.qc".to_owned())
 }
 
 /// The progs of the files `files`, compiled in that order under the FTEQCC profile.
@@ -88,12 +80,7 @@ pub(crate) fn fte_files(files: &[(&str, &str)]) -> ProgsFile {
         input.compiled.push(FileId::new(i));
     }
     let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
-    match compile_module(
-        &mut db,
-        &input,
-        |id| names[id.index()].clone(),
-        Options::default(),
-    ) {
+    match compile_module(&mut db, &input, |id| names[id.index()].clone()) {
         Ok(compiled) => compiled.progs,
         Err(error) => panic!("{files:?} did not compile: {error:?}"),
     }

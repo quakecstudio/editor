@@ -133,7 +133,7 @@ pub(crate) struct Oracles<'a> {
     pub(crate) vm: PathBuf,
     pub(crate) fteqcc: PathBuf,
     /// FTEQCC with the defects of [`defects::FIXES`] fixed, which proves a divergence an
-    /// FTEQCC defect (DIFF-14.4).
+    /// FTEQCC defect (DIFF-14.12).
     pub(crate) fteqcc_fixed: PathBuf,
     pub(crate) work: PathBuf,
     pub(crate) rerelease: PathBuf,
@@ -475,7 +475,7 @@ fn build_with<'a>(root: &Path, exec: &'a dyn Exec, net: &dyn Net) -> Result<Orac
     // The VM oracle: pr_exec.c whole, id's extracted functions, and our harness.
     let vm_objects = compile_vm(root, &sources, &cache, &objects, &compiler, &[])?;
     compiler.link(&vm_objects, &oracles.vm)?;
-    // DIFF-14.4: the same FTEQCC with its defects fixed, from a copy of the tree whose
+    // DIFF-14.12: the same FTEQCC with its defects fixed, from a copy of the tree whose
     // `qcc_pr_comp.c` has every fix of `defects::FIXES` applied.
     let fixed_dir = cache.join("fteqcc-fixed");
     copy_tree(&fteqcc_dir, &fixed_dir)?;

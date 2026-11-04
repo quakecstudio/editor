@@ -6,7 +6,6 @@ field qc_codegen::Compiled.precaches
 field qc_codegen::Compiled.progdefs
 field qc_codegen::Compiled.progs
 field qc_codegen::Compiled.warnings
-field qc_codegen::Options.fold
 field qc_codegen::Unit.name
 field qc_codegen::Unit.parse
 field qc_codegen::precache::Precache.block
@@ -17,7 +16,6 @@ field qc_codegen::precache::Precaches.sounds
 fn qc_codegen::compile
 fn qc_codegen::compile_module
 struct qc_codegen::Compiled
-struct qc_codegen::Options
 struct qc_codegen::Unit
 struct qc_codegen::precache::Precache
 struct qc_codegen::precache::Precaches

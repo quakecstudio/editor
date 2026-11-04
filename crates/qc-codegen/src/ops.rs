@@ -156,6 +156,12 @@ pub(crate) const ROWS: [Row; 46] = [
     row(Operator::BitOr, Opcode::BitOr, F, F, F),
 ];
 
+/// The row of the opcode numbered `number` in id's table (QC-16.1), if it has one.
+pub(crate) fn row_of(number: u32) -> Option<Row> {
+    let opcode = Opcode::from_number(number)?;
+    ROWS.iter().find(|row| row.opcode == opcode).copied()
+}
+
 /// The row `operator` selects for operands of basic types `a` and `b`, and for a field access
 /// the field's own type `c` (QC-16.1): `PR_Expression`'s walk from the first row of the
 /// spelling. `None` is "type mismatch for OP" (QC-16.2, QCD-4.2).

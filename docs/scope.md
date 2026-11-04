@@ -66,7 +66,7 @@ anything that issue answers no to moves to the post-MVP backlog and onto this pa
 Everything in the design document's "Out (later)" list, each with its issue in the next section:
 
 - GMQCC dialect, CSQC and MenuQC modules.
-- Compiler optimizations beyond constant folding.
+- Compiler optimizations behind `--opt` flags, constant folding among them.
 - Embedded game view, web build, and the map editor (Phases 5 to 7).
 
 ## Post-MVP
@@ -79,7 +79,7 @@ milestone (`MVP-3`). All of them wait for the MVP gate.
 | GMQCC dialect | Non-goals for v1; MVP scope, Out | [L-10](https://github.com/quakecstudio/editor/issues/194) Spec: GMQCC dialect; [L-02](https://github.com/quakecstudio/editor/issues/186) GMQCC dialect |
 | CSQC and MenuQC modules | MVP scope, Out | [L-03](https://github.com/quakecstudio/editor/issues/187) Spec: CSQC and MenuQC modules; [L-09](https://github.com/quakecstudio/editor/issues/193) Implement CSQC and MenuQC modules |
 | The rest of FTEQCC, beyond the features the rerelease uses | Compiler, Dialects in order | [L-01](https://github.com/quakecstudio/editor/issues/185) Spec: FTEQCC code generation beyond the rerelease subset; [L-08](https://github.com/quakecstudio/editor/issues/192) Generate code for full FTEQCC |
-| Compiler optimizations beyond constant folding | MVP scope, Out; Compiler | [L-04](https://github.com/quakecstudio/editor/issues/188) Dead-code removal and string and global deduplication |
+| Compiler optimizations behind `--opt` flags, constant folding among them | MVP scope, Out; Compiler | [L-04](https://github.com/quakecstudio/editor/issues/188) Constant folding, dead-code removal and string and global deduplication |
 | Embedded game view | MVP scope, Out; Engine bridge, Docking | [L-06](https://github.com/quakecstudio/editor/issues/190) Embedded game view |
 | Web build | Non-goals for v1; MVP scope, Out | [L-07](https://github.com/quakecstudio/editor/issues/191) Web build |
 | ericw-tools class advanced lighting | Map editor, Our own map compiler | [L-12](https://github.com/quakecstudio/editor/issues/195) Advanced lighting (ericw-tools class) |

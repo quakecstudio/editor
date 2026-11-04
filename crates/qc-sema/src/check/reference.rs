@@ -122,7 +122,10 @@ impl Checker<'_> {
                     && self.load_from_array(&value, &element.index, element.vector, span)?;
                 // A constant index is the array's own definition at that word; any other is
                 // loaded into a temporary, and by the `ArrayGet` function into its return.
+                // A constant vector's component at a constant index is still the immediate it
+                // folded to (FTEF-31.9), a constant as `sym->constant` of the vector says.
                 let sym = match element.index.known().and_then(eval_int) {
+                    _ if element.vector && value.known().is_some() => value.sym,
                     Some(words) => value.sym.at(u32::from_le_bytes(words.to_le_bytes())),
                     None => Sym::Temp,
                 };
@@ -564,14 +567,19 @@ impl Checker<'_> {
                     let message = "(vector) array index out of bounds".to_owned();
                     return self.fatal(Code::E0333, span, message);
                 }
-                // FTEF-31.9: a constant vector's component at a constant index is a constant.
+                // FTEF-31.9: a constant vector's component at a constant index is a constant,
+                // read through the vector at the index (`REF_ARRAY`), which a call does not fold
+                // (FTEF-32.17).
                 let component = base.known().zip(constant).and_then(|(vector, i)| {
                     usize::try_from(i)
                         .ok()
                         .and_then(|i| vector.v().get(i).copied())
                 });
                 if let Some(component) = component {
-                    return Ok(Value::constant(Constant::float(component)));
+                    return Ok(Value {
+                        reference: Reference::element(label, at, true),
+                        ..Value::constant(Constant::float(component))
+                    });
                 }
                 Ok(Value {
                     reference: Reference::element(label, at, true),

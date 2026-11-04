@@ -1392,14 +1392,16 @@ differential suite lists each of these as an expected divergence.
   name, and the `DONE` a body ends with the line of its last statement (the name's for an
   empty body). The placeholder statement 0 has line 0, no line
   (LNO-3.2). The map's counts are the progs' (LNO-4.1).
-- **QC-27.20** With `--opt fold` (COMP-5), an arithmetic operator whose operands are both float
-  or vector literals is the literal of its value, made as `PR_ParseImmediate` makes a literal
-  (QC-20.2), and emits no statement: `ADD_F`, `SUB_F`, `MUL_F`, `DIV_F`, `ADD_V`, `SUB_V`,
-  `MUL_V`, `MUL_FV` and `MUL_VF`. The value is the one the VM computes for that statement
-  (VM-5): each product and sum an `f32` rounded in turn, the dot product
-  `(a0*b0 + a1*b1) + a2*b2`, a division by zero infinity or NaN. Every other operator, and an
-  operand that is no literal, is emitted as without the option. `qcc` folds nothing, so the
-  option changes the progs but not what it computes (COMP-4).
+- **QC-27.20** **Withdrawn** 2026-11-03: `--opt fold` is removed; constant folding beyond
+  FTEQCC's (FTEF-26.2) returns as a pass over ADR-0020's intermediate layer (L-04). With `--opt
+  fold` (COMP-5), an arithmetic operator whose operands are both float or vector literals is the
+  literal of its value, made as `PR_ParseImmediate` makes a literal (QC-20.2), and emits no
+  statement: `ADD_F`, `SUB_F`, `MUL_F`, `DIV_F`, `ADD_V`, `SUB_V`, `MUL_V`, `MUL_FV` and
+  `MUL_VF`. The value is the one the VM computes for that statement (VM-5): each product and sum
+  an `f32` rounded in turn, the dot product `(a0*b0 + a1*b1) + a2*b2`, a division by zero
+  infinity or NaN. Every other operator, and an operand that is no literal, is emitted as
+  without the option. `qcc` folds nothing, so the option changes the progs but not what it
+  computes (COMP-4).
 
 ### Constants
 

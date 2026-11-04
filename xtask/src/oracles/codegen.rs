@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use qc_codegen::{CompileError, Compiled, Options, compile_module};
+use qc_codegen::{CompileError, Compiled, compile_module};
 use qc_progs::{Progs, ReadOptions};
 use qc_sema::{Db, FileId, ModuleInput};
 
@@ -50,11 +50,7 @@ pub(crate) enum Profile {
 /// Compiles the codebase whose `progs.src` is in `dir` with `qc-codegen` in `profile`: its one
 /// module, or of several the server module, `progs.src`, which FTEQCC compiles when no
 /// `-srcfile` is given.
-pub(crate) fn compile_codebase(
-    dir: &Path,
-    profile: Profile,
-    options: Options,
-) -> Result<Compiled, String> {
+pub(crate) fn compile_codebase(dir: &Path, profile: Profile) -> Result<Compiled, String> {
     let project = qc_project::open(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let module = match project.modules.as_slice() {
         [module] => module,
@@ -86,12 +82,9 @@ pub(crate) fn compile_codebase(
         })
         .collect();
     let input = ModuleInput::from_module(module);
-    compile_module(
-        &mut db,
-        &input,
-        |id| names.get(id.index()).cloned().unwrap_or_default(),
-        options,
-    )
+    compile_module(&mut db, &input, |id| {
+        names.get(id.index()).cloned().unwrap_or_default()
+    })
     .map_err(|e| describe(&db, &e))
 }
 
@@ -305,17 +298,12 @@ pub(crate) fn ours(case: &Case) -> Ours {
         );
         input.compiled.push(FileId::new(index));
     }
-    let result = compile_module(
-        &mut db,
-        &input,
-        |id| {
-            files
-                .get(id.index())
-                .map(|(n, _)| (*n).to_owned())
-                .unwrap_or_default()
-        },
-        Options::default(),
-    );
+    let result = compile_module(&mut db, &input, |id| {
+        files
+            .get(id.index())
+            .map(|(n, _)| (*n).to_owned())
+            .unwrap_or_default()
+    });
     let refused = |message: String| Ours {
         outcome: Outcome::Error(message.clone()),
         messages: vec![message],

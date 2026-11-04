@@ -6,8 +6,8 @@
 
 use qc_diag::Code;
 use qc_progs::opcode::Opcode::{
-    self, AddF, And, BitAnd, BitOr, Call1, Call2, Call3, DivF, Done, EqF, Goto, If, IfNot, Lt,
-    MulF, MulV, MulVf, NotF, NotS, NotV, Return, StoreF, StoreS, StoreV, SubF, SubV,
+    self, AddF, And, BitAnd, BitOr, Call1, Call2, Call3, DivF, Done, EqF, Goto, If, IfNot, LoadV,
+    Lt, MulF, MulV, MulVf, NotF, NotS, NotV, Return, StoreF, StoreS, StoreV, SubF, SubV,
 };
 use qc_progs::{ProgsFile, Statement};
 
@@ -218,15 +218,15 @@ fn a_constant_index_is_the_elements_global() {
     );
 }
 
-// spec FTEF-26.2: with both operands constant the arithmetic opcodes fold even without
-// `--opt fold`, as FTEQCC's default `opt_constantarithmatic` does, reading a named constant
+// spec FTEF-26.2: with both operands constant the arithmetic opcodes fold, as FTEQCC's
+// default `opt_constantarithmatic` does, reading a named constant
 // with QCC_SRef_EvalConst
 // spec FTEF-31.10: the folded constant index is the element's global, so no ArrayGet* is made
 #[test]
 fn a_constant_arithmetic_index_folds_and_needs_no_accessor() {
     // `base` has a float index 0 (a file-level initialised non-var is a constant, FTEF-19.3),
     // so `s[base + 2]` folds to `s[2]` and reads the element directly, as FTEQCC does with
-    // `opt_constantarithmatic` on, its default, even though `--opt fold` is off here.
+    // `opt_constantarithmatic` on, its default.
     let p = fte_progs(
         "float base = 0;\nstring s[] = { \"a\", \"b\", \"c\", \"d\" };\nstring r;\n\
          void() t = { r = s[base + 2]; };\n",
@@ -244,6 +244,38 @@ fn a_constant_arithmetic_index_folds_and_needs_no_accessor() {
             .all(|d| string(&p, d.s_name) != "ArrayGet*s"),
         "a constant-folding index makes no ArrayGet* accessor"
     );
+}
+
+// spec FTEF-26.2: an arithmetic operator of two constants folds to the constant of its value,
+// computed in f32 as the opcode computes it: each product and sum rounded in turn, the dot
+// product `(a0*b0 + a1*b1) + a2*b2`; the store of it is the function's one statement
+#[test]
+fn constant_arithmetic_folds_to_its_value() {
+    for (expr, value) in [
+        ("0.1 + 0.2", 0.1_f32 + 0.2_f32),
+        ("3 - 5", -2.0),
+        ("0.1 * 3", 0.1_f32 * 3.0),
+        ("1 / 3", 1.0_f32 / 3.0),
+        ("'0.1 2 3' * '0.7 5 6'", (0.1_f32 * 0.7 + 10.0) + 18.0),
+        // `(1e8 + -1e8) + 1` is 1; summed from the right, `-1e8 + 1` rounds to `-1e8`.
+        ("'10000 10000 1' * '10000 -10000 1'", 1.0),
+    ] {
+        let p = fte_progs(&format!("float r;\nvoid() f = {{ r = {expr}; }};\n"));
+        let f = body(&p, "f");
+        assert_eq!(opcodes(&f), ops(&[StoreF, Done]), "{expr}");
+        assert_eq!(words(&p, f[0].a, 1), [value.to_bits()], "{expr}");
+    }
+    for (expr, value) in [
+        ("'1 2 3' + '0.5 0.5 0.5'", [1.5_f32, 2.5, 3.5]),
+        ("'1 2 3' - '0.1 1 1'", [1.0 - 0.1, 1.0, 2.0]),
+        ("0.1 * '1 2 3'", [0.1, 0.2, 0.1 * 3.0]),
+        ("'1 2 3' * 0.1", [0.1, 0.2, 3.0 * 0.1]),
+    ] {
+        let p = fte_progs(&format!("vector v;\nvoid() f = {{ v = {expr}; }};\n"));
+        let f = body(&p, "f");
+        assert_eq!(opcodes(&f), ops(&[StoreV, Done]), "{expr}");
+        assert_eq!(words(&p, f[0].a, 3), value.map(f32::to_bits), "{expr}");
+    }
 }
 
 // spec FTE-13.6: a constant index outside the array is not lowered
@@ -3311,5 +3343,76 @@ fn not_of_an_int_and_a_vector_times_an_int_follow_the_vanilla_emulation() {
         p.globals[usize::try_from(t[3].b).unwrap()].bits(),
         0,
         "the int 0"
+    );
+}
+
+// spec DIFF-14.11: the store of a vector result's first word is not folded into the statement
+// that made the vector, which would write all three words from the target; a store of a whole
+// result of the target's width still is (FTE-18.12)
+#[test]
+fn a_part_of_a_wider_result_is_stored_not_folded() {
+    let p = fte_progs("float a; vector v; void() t = { a = (v * a).x; a = a * 2; };\n");
+    let (a, v) = (global(&p, "a"), global(&p, "v"));
+    let f = body(&p, "t");
+    assert_eq!(opcodes(&f), ops(&[MulVf, StoreF, MulF, Done]));
+    assert_eq!((f[0].a, f[0].b), (v, a));
+    assert_eq!(
+        (f[1].a, f[1].b),
+        (f[0].c, a),
+        "the vector's first word is stored to a"
+    );
+    assert_eq!(f[2].c, a, "a whole float result is folded into a");
+}
+
+// spec FTEF-32.17: a call of a constant vector's component, `v[0]` or `v.x`, is made, not
+// folded, so an operator of its value is a statement reading the call's value
+// spec FTEF-31.9: the component at a constant index is still a constant an operator folds
+#[test]
+fn a_call_of_a_vector_component_is_made() {
+    let p = fte_progs(
+        "float(float f) floor = #37; float a;\n\
+         void() t = { a = floor(('3 0 0')[0]) + 1; a = floor(('4 0 0').x) & 1; \
+         a = ('3 0 0')[0] + 1; };\n",
+    );
+    let a = global(&p, "a");
+    let f = body(&p, "t");
+    assert_eq!(
+        opcodes(&f),
+        ops(&[StoreF, Call1, AddF, StoreF, Call1, BitAnd, StoreF, Done])
+    );
+    assert_eq!(f[2].a, 1, "the call's value is added");
+    assert_eq!(f[2].c, a);
+    assert_eq!(f[5].a, 1, "the call's value is masked");
+    assert_eq!(
+        words(&p, f[6].a, 1),
+        [4.0_f32.to_bits()],
+        "3 + 1 folds to 4"
+    );
+    assert_eq!(f[6].b, a);
+}
+
+// spec DIFF-14.11: a field's vector loaded whole by LOAD_V (FTE-9.3) and read at its first
+// word is stored, not folded, as the vector product is
+#[test]
+fn a_loaded_vectors_first_word_is_stored_not_folded() {
+    let p = fte_progs(".vector fv; entity e; float a; void() t = { a = (e.fv).x; };\n");
+    let f = body(&p, "t");
+    assert_eq!(opcodes(&f), ops(&[LoadV, StoreF, Done]));
+    assert_eq!((f[1].a, f[1].b), (f[0].c, global(&p, "a")));
+}
+
+// spec FTEF-32.17: the component at a non-zero constant index is the call's argument, its own
+// word, and the call is made
+#[test]
+fn a_call_of_a_later_component_passes_that_component() {
+    let p = fte_progs(
+        "float(float f) floor = #37; float a;\nvoid() t = { a = floor(('3 4 5')[1]) + 1; };\n",
+    );
+    let f = body(&p, "t");
+    assert_eq!(opcodes(&f), ops(&[StoreF, Call1, AddF, Done]));
+    assert_eq!(
+        words(&p, f[0].a, 1),
+        [4.0_f32.to_bits()],
+        "the second word is passed"
     );
 }

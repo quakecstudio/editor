@@ -12,7 +12,7 @@ use qc_types::Slot;
 
 use super::{compile_files, compile_source, global, progs, string};
 use crate::write::{needs_fte32, wrap_short_operands};
-use crate::{Options, Precache, compile_module};
+use crate::{Precache, compile_module};
 
 // spec QC-25.1: statement 0, function 0, global and field definition 0 and string 0 are
 // placeholders.
@@ -291,8 +291,7 @@ fn an_included_files_statements_map_to_its_own_lines() {
         compiled: vec![FileId::new(0)],
         ..ModuleInput::default()
     };
-    let compiled =
-        compile_module(&mut db, &input, |_| "t.qc".to_owned(), Options::default()).unwrap();
+    let compiled = compile_module(&mut db, &input, |_| "t.qc".to_owned()).unwrap();
     let p = &compiled.progs;
     let lno = &compiled.lno;
     let first = |name: &str| {

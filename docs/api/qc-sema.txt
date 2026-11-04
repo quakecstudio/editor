@@ -30,6 +30,7 @@ field qc_sema::expand::ModuleInput.include_dirs
 field qc_sema::expand::ModuleInput.names
 field qc_sema::expand::ModuleInput.prelude
 field qc_sema::ir::Fragment.immediates
+field qc_sema::ir::Fragment.inputs
 field qc_sema::ir::Fragment.statements
 field qc_sema::ir::Fragment.temps
 field qc_sema::ir::Fragment.value

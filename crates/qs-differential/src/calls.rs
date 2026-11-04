@@ -175,9 +175,9 @@ pub fn coverage(executed: &BTreeSet<i32>, total: u32) -> f64 {
 /// functions to call.
 pub type Progress<'a> = dyn Fn(&str, usize, usize) + Sync + 'a;
 
-/// The rounds of calls to each function in the CI subset (DIFF-12.6).
+/// The rounds of calls to each function in the CI subset (DIFF-12.29).
 pub const FAST_ROUNDS: u32 = 32;
-/// The rounds of calls to each function in the nightly run (DIFF-12.6).
+/// The rounds of calls to each function in the nightly run (DIFF-12.29).
 pub const FULL_ROUNDS: u32 = 128;
 /// The most rounds a function is called in, as a multiple of the rounds asked for, when its
 /// body still has statements no call executed (DIFF-12.16).
@@ -221,7 +221,7 @@ impl CodebaseReport {
         self.divergences() == 0 && self.coverage() >= COVERAGE_BAR
     }
 
-    /// The report's row of the results table (DIFF-12.14): the codebase, the oracle's progs and
+    /// The report's row of the results table (DIFF-12.30): the codebase, the oracle's progs and
     /// ours, the divergences, the statements executed, and whether it passes.
     #[must_use]
     pub fn summary_row(&self, codebase: &str, oracle: &str, ours: &str) -> String {

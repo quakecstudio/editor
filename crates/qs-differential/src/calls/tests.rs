@@ -20,7 +20,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use qc_builtins::EngineProfile;
-use qc_codegen::{Options, compile_module};
+use qc_codegen::compile_module;
 use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
 use qc_progs::Progs;
 use qc_progs::opcode::Opcode;
@@ -92,7 +92,7 @@ fn entry_points(source: &str) -> String {
 }
 
 /// The progs `qc-codegen` writes for `source` after the system defs and the entry points.
-fn compile(source: &str, fold: bool) -> Vec<u8> {
+fn compile(source: &str) -> Vec<u8> {
     let files = [
         ("defs.qc", system_defs()),
         ("entry.qc", entry_points(source)),
@@ -109,13 +109,8 @@ fn compile(source: &str, fold: bool) -> Vec<u8> {
         input.compiled.push(FileId::new(i));
     }
     let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
-    let compiled = compile_module(
-        &mut db,
-        &input,
-        |id| names[id.index()].clone(),
-        Options { fold },
-    )
-    .unwrap_or_else(|e| panic!("{source:?} did not compile: {e:?}"));
+    let compiled = compile_module(&mut db, &input, |id| names[id.index()].clone())
+        .unwrap_or_else(|e| panic!("{source:?} did not compile: {e:?}"));
     qc_progs::write(&compiled.progs).unwrap()
 }
 
@@ -139,13 +134,8 @@ fn compile_fteqcc(source: &str) -> Vec<u8> {
         input.compiled.push(FileId::new(i));
     }
     let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
-    let compiled = compile_module(
-        &mut db,
-        &input,
-        |id| names[id.index()].clone(),
-        Options { fold: false },
-    )
-    .unwrap_or_else(|e| panic!("{source:?} did not compile: {e:?}"));
+    let compiled = compile_module(&mut db, &input, |id| names[id.index()].clone())
+        .unwrap_or_else(|e| panic!("{source:?} did not compile: {e:?}"));
     qc_progs::write(&compiled.progs).unwrap()
 }
 
@@ -196,7 +186,7 @@ fn run(theirs: &[u8], ours: &[u8], rounds: u32) -> Report {
 
 /// The first divergence of a run of the two sources, with the call's function.
 fn first(theirs: &str, ours: &str) -> (Option<String>, Difference) {
-    let report = run(&compile(theirs, false), &compile(ours, false), 16);
+    let report = run(&compile(theirs), &compile(ours), 16);
     let divergence = report
         .divergences
         .first()
@@ -208,17 +198,24 @@ fn first(theirs: &str, ours: &str) -> (Option<String>, Difference) {
     )
 }
 
-const FOLDED: &str = "float x;\nvector v;\n\
+const WITH_ARITHMETIC: &str = "float x;\nvector v;\n\
     void() worldspawn = { x = 1 + 2; };\n\
     void() f = { x = 2 * 3 + time; v = '1 2 3' * 2; };\n\
     void(float a, entity e, string s) g = { if (a > 1 + 1) x = a; else x = 0 - a; \
         if (e) x = x + 1; if (s == \"player\") x = x * 2; };\n";
 
-// spec DIFF-12.20, DIFF-12.3: a program compiled with `--opt fold` off and on has other
-// statements and globals, yet every call agrees by name and type.
+/// [`WITH_ARITHMETIC`] with its constant arithmetic folded by hand.
+const BY_HAND: &str = "float x;\nvector v;\n\
+    void() worldspawn = { x = 3; };\n\
+    void() f = { x = 6 + time; v = '2 4 6'; };\n\
+    void(float a, entity e, string s) g = { if (a > 2) x = a; else x = 0 - a; \
+        if (e) x = x + 1; if (s == \"player\") x = x * 2; };\n";
+
+// spec DIFF-12.20, DIFF-12.3: a program and the same program with its constant arithmetic
+// folded by hand have other statements and globals, yet every call agrees by name and type.
 #[test]
 fn a_program_folded_and_not_agrees() {
-    let (plain, folded) = (compile(FOLDED, false), compile(FOLDED, true));
+    let (plain, folded) = (compile(WITH_ARITHMETIC), compile(BY_HAND));
     let (a, b) = (Progs::read(&plain).unwrap(), Progs::read(&folded).unwrap());
     assert!(a.statements().len() > b.statements().len());
     assert_ne!(a.globals().len(), b.globals().len());
@@ -269,11 +266,8 @@ fn a_field_that_differs_is_a_divergence() {
 #[test]
 fn strings_compare_by_text() {
     let report = run(
-        &compile("string s;\nvoid() f = { s = \"a\"; };\n", false),
-        &compile(
-            "string s;\nvoid() f = { s = \"zzz\"; s = \"a\"; };\n",
-            false,
-        ),
+        &compile("string s;\nvoid() f = { s = \"a\"; };\n"),
+        &compile("string s;\nvoid() f = { s = \"zzz\"; s = \"a\"; };\n"),
         4,
     );
     assert_eq!(report.divergences, []);
@@ -378,8 +372,8 @@ fn other_definitions_are_a_divergence() {
 #[test]
 fn a_missing_function_is_found_at_the_setup() {
     let report = run(
-        &compile("void() f = {};\nvoid() h = {};\n", false),
-        &compile("void() f = {};\n", false),
+        &compile("void() f = {};\nvoid() h = {};\n"),
+        &compile("void() f = {};\n"),
         2,
     );
     let found: Vec<_> = report
@@ -395,7 +389,7 @@ fn a_missing_function_is_found_at_the_setup() {
 #[test]
 fn the_same_statements_must_run_the_same_way() {
     let source = |k: u8| format!("float x;\nvoid() f = {{ if ({k} > 5.5) x = 1; else x = 1; }};\n");
-    let (theirs, ours) = (compile(&source(5), false), compile(&source(6), false));
+    let (theirs, ours) = (compile(&source(5)), compile(&source(6)));
     assert!(
         Progs::read(&theirs)
             .unwrap()
@@ -422,8 +416,8 @@ fn the_same_statements_must_run_the_same_way() {
 #[test]
 fn a_setup_that_differs_is_a_divergence_and_stops_the_run() {
     let report = run(
-        &compile("float x;\nvoid() worldspawn = { x = 1; };\n", false),
-        &compile("float x;\nvoid() worldspawn = { x = 2; };\n", false),
+        &compile("float x;\nvoid() worldspawn = { x = 1; };\n"),
+        &compile("float x;\nvoid() worldspawn = { x = 2; };\n"),
         4,
     );
     assert_eq!(report.calls, 0);
@@ -439,7 +433,7 @@ fn a_setup_that_differs_is_a_divergence_and_stops_the_run() {
 #[test]
 fn the_setup_runs_the_scenarios_frames() {
     let framed = scenario::read(b"progs progs.dat\nclients 1\nframes 3\n", Path::new(".")).unwrap();
-    let frames = |source: &str| compile(source, false);
+    let frames = |source: &str| compile(source);
     let counting = frames("float n;\nvoid() PlayerPreThink = { n = n + 1; };\n");
     let report = run_calls(
         Oracle::Qcc,
@@ -529,7 +523,7 @@ fn the_setup_runs_the_scenarios_frames() {
 // spec DIFF-12.20: a progs that is refused, or a setup that fails, leaves nothing to call.
 #[test]
 fn a_refused_progs_or_a_failed_setup_is_an_error() {
-    let good = compile("void() f = {};\n", false);
+    let good = compile("void() f = {};\n");
     let refused = run_calls(
         Oracle::Qcc,
         b"not a progs",
@@ -556,7 +550,7 @@ fn a_refused_progs_or_a_failed_setup_is_an_error() {
         matches!(refused, Err(CallsError::Refused(_))),
         "{refused:?}"
     );
-    let failing = compile("void() worldspawn = { error(\"x\"); };\n", false);
+    let failing = compile("void() worldspawn = { error(\"x\"); };\n");
     let setup = run_calls(
         Oracle::Qcc,
         &failing,
@@ -567,7 +561,7 @@ fn a_refused_progs_or_a_failed_setup_is_an_error() {
         EngineProfile::Id,
     );
     assert!(matches!(setup, Err(CallsError::Setup(_))), "{setup:?}");
-    let entering = compile("void() PutClientInServer = { error(\"x\"); };\n", false);
+    let entering = compile("void() PutClientInServer = { error(\"x\"); };\n");
     let setup = run_calls(
         Oracle::Qcc,
         &good,
@@ -591,7 +585,7 @@ fn a_refused_progs_or_a_failed_setup_is_an_error() {
 #[test]
 fn coverage_counts_the_first_progs_statements() {
     let source = "float x;\nvoid() worldspawn = { x = 1; };\nvoid(float a) f = { if (a) x = 2; else x = 3; };\n";
-    let progs = compile(source, false);
+    let progs = compile(source);
     let report = run(&progs, &progs, 8);
     let total = Progs::read(&progs).unwrap().statements().len() - 1;
     assert_eq!(usize::try_from(report.total_statements).unwrap(), total);
@@ -644,7 +638,7 @@ fn a_codebase_passes_at_the_bar() {
     assert_eq!(report(nine, true).divergences(), 1);
 }
 
-// spec DIFF-12.14: each pair is a row of the results table: the codebase, the oracle's progs and
+// spec DIFF-12.30: each pair is a row of the results table: the codebase, the oracle's progs and
 // ours, the divergences, the statements executed, and whether it passes.
 #[test]
 fn a_report_is_a_row_of_the_results_table() {
@@ -666,8 +660,8 @@ fn a_report_is_a_row_of_the_results_table() {
     );
     report.executed = (1..=8).collect();
     assert_eq!(
-        report.summary_row("id-1.01", "oracle.dat", "ours-fold.dat"),
-        "| id-1.01 | oracle.dat | ours-fold.dat | 0 | 8 of 10 (80.0%) | fail |\n"
+        report.summary_row("id-1.01", "qcc.dat", "ours.dat"),
+        "| id-1.01 | qcc.dat | ours.dat | 0 | 8 of 10 (80.0%) | fail |\n"
     );
 }
 
@@ -675,8 +669,8 @@ fn a_report_is_a_row_of_the_results_table() {
 // unions their statements; each scenario reports its progress, the last report every function
 #[test]
 fn a_codebase_runs_every_scenario() {
-    let progs = compile(FOLDED, false);
-    let folded = compile(FOLDED, true);
+    let progs = compile(WITH_ARITHMETIC);
+    let folded = compile(BY_HAND);
     let reported = std::sync::Mutex::new(Vec::new());
     let progress = |name: &str, done: usize, of: usize| {
         reported.lock().unwrap().push((name.to_owned(), done, of));
@@ -758,14 +752,14 @@ fn the_float_pool_is_what_it_says() {
     );
 }
 
-/// The drawer over the first world of [`FOLDED`], with a function's record by name.
+/// The drawer over the first world of [`WITH_ARITHMETIC`], with a function's record by name.
 fn with_drawer(test: impl FnOnce(&Drawer<'_, '_>, &Progs<'_>)) {
-    with_drawer_of(FOLDED, test);
+    with_drawer_of(WITH_ARITHMETIC, test);
 }
 
 /// The drawer over the first world of `source`.
 fn with_drawer_of(source: &str, test: impl FnOnce(&Drawer<'_, '_>, &Progs<'_>)) {
-    let bytes = compile(source, false);
+    let bytes = compile(source);
     let progs = Progs::read(&bytes).unwrap();
     let scenario = scenario();
     let world = World::new(&progs, &scenario, WORLD, EngineProfile::Id).unwrap();
@@ -1023,11 +1017,8 @@ fn a_return_value_that_differs_is_a_divergence() {
 #[test]
 fn a_return_value_agrees_by_any_reading() {
     let report = run(
-        &compile("string() f = { return \"a\"; };\n", false),
-        &compile(
-            "string() f = { return \"a\"; };\nvoid() g = { dprint(\"b\"); };\n",
-            false,
-        ),
+        &compile("string() f = { return \"a\"; };\n"),
+        &compile("string() f = { return \"a\"; };\nvoid() g = { dprint(\"b\"); };\n"),
         2,
     );
     assert!(
@@ -1043,8 +1034,8 @@ fn a_return_value_agrees_by_any_reading() {
 #[test]
 fn a_function_that_is_a_builtin_in_the_second_is_missing() {
     let report = run(
-        &compile("void() h = {};\n", false),
-        &compile("void() h = #99;\n", false),
+        &compile("void() h = {};\n"),
+        &compile("void() h = #99;\n"),
         1,
     );
     assert!(
@@ -1060,11 +1051,8 @@ fn a_function_that_is_a_builtin_in_the_second_is_missing() {
 #[test]
 fn a_setup_that_calls_other_builtins_is_a_divergence() {
     let report = run(
-        &compile(
-            "void() worldspawn = { dprint(\"a\"); dprint(\"b\"); };\n",
-            false,
-        ),
-        &compile("void() worldspawn = { dprint(\"a\"); };\n", false),
+        &compile("void() worldspawn = { dprint(\"a\"); dprint(\"b\"); };\n"),
+        &compile("void() worldspawn = { dprint(\"a\"); };\n"),
         1,
     );
     let [divergence] = report.divergences.as_slice() else {
@@ -1081,7 +1069,7 @@ fn a_setup_that_calls_other_builtins_is_a_divergence() {
 // that names neither reads as its bits.
 #[test]
 fn entities_and_fields_read_by_edict_and_name() {
-    let progs = compile("entity e;\n.float f;\n", false);
+    let progs = compile("entity e;\n.float f;\n");
     let progs = Progs::read(&progs).unwrap();
     let scenario = scenario();
     let mut world = World::new(&progs, &scenario, WORLD, EngineProfile::Id).unwrap();
@@ -1122,7 +1110,7 @@ fn entities_and_fields_read_by_edict_and_name() {
 
 /// The divergences of a run of the two sources against the oracle `oracle`.
 fn against(oracle: Oracle, theirs: &str, ours: &str) -> Vec<Difference> {
-    let (theirs, ours) = (compile(theirs, false), compile(ours, false));
+    let (theirs, ours) = (compile(theirs), compile(ours));
     run_calls(
         oracle,
         &theirs,
@@ -1217,11 +1205,8 @@ fn retyped(mut bytes: Vec<u8>, name: &str, ty: u16) -> Vec<u8> {
 // struct-typed global holds the same string at another place in each string table agree
 #[test]
 fn a_struct_typed_global_is_not_compared() {
-    let theirs = compile("string s;\nvoid() f = { s = \"a\"; };\n", false);
-    let ours = compile(
-        "string s;\nvoid() g = { s = \"zz\"; };\nvoid() f = { s = \"a\"; };\n",
-        false,
-    );
+    let theirs = compile("string s;\nvoid() f = { s = \"a\"; };\n");
+    let ours = compile("string s;\nvoid() g = { s = \"zz\"; };\nvoid() f = { s = \"a\"; };\n");
     let run = |theirs: &[u8], ours: &[u8]| {
         run_calls(
             Oracle::Fteqcc,
@@ -1271,7 +1256,7 @@ fn renamed(mut bytes: Vec<u8>, from: u8, to: u8) -> Vec<u8> {
 // name, so a drawn float is not written to a field global of its name
 #[test]
 fn a_global_written_by_name_goes_to_a_scalar_definition() {
-    let bytes = compile(".float z;\nfloat y;\nvoid() f = { y = 1; };\n", false);
+    let bytes = compile(".float z;\nfloat y;\nvoid() f = { y = 1; };\n");
     let bytes = renamed(bytes, b'y', b'z');
     let progs = Progs::read(&bytes).unwrap();
     let program = super::Program::new(&progs);
@@ -1288,7 +1273,7 @@ fn a_global_written_by_name_goes_to_a_scalar_definition() {
 // reads none of what earlier calls left there
 #[test]
 fn a_context_clears_the_slots_past_its_parameters() {
-    let progs = compile("float x;\n", false);
+    let progs = compile("float x;\n");
     let progs = Progs::read(&progs).unwrap();
     let scenario = scenario();
     let mut world = World::new(&progs, &scenario, WORLD, EngineProfile::Id).unwrap();
@@ -1315,10 +1300,7 @@ fn a_context_clears_the_slots_past_its_parameters() {
 // and leaves out a function the calls ran through
 #[test]
 fn uncovered_lists_each_functions_unexecuted_statements() {
-    let bytes = compile(
-        "float x;\nvoid() a = { x = 1; x = 2; x = 3; };\nvoid() b = { x = 4; };\n",
-        false,
-    );
+    let bytes = compile("float x;\nvoid() a = { x = 1; x = 2; x = 3; };\nvoid() b = { x = 4; };\n");
     let progs = Progs::read(&bytes).unwrap();
     let start = |name: &str| {
         progs
@@ -1343,10 +1325,8 @@ fn uncovered_lists_each_functions_unexecuted_statements() {
 // edicts `self` is drawn from one time in two
 #[test]
 fn a_function_is_owned_by_the_edicts_that_hold_it() {
-    let bytes = compile(
-        "void() f = {};\nvoid() g = {};\nvoid() worldspawn = { self.think = f; };\n",
-        false,
-    );
+    let bytes =
+        compile("void() f = {};\nvoid() g = {};\nvoid() worldspawn = { self.think = f; };\n");
     let progs = Progs::read(&bytes).unwrap();
     let scenario = scenario();
     let world = World::new(&progs, &scenario, WORLD, EngineProfile::Id).unwrap();
@@ -1369,7 +1349,7 @@ fn a_function_is_owned_by_the_edicts_that_hold_it() {
 #[test]
 fn a_partly_covered_function_gets_one_more_batch() {
     let calls = |source: &str| {
-        let bytes = compile(source, false);
+        let bytes = compile(source);
         run_calls(
             Oracle::Qcc,
             &bytes,
@@ -1511,7 +1491,7 @@ fn precaching_functions_run_loading() {
     let source = "float x;\nvoid() worldspawn = { x = 1; };\n\
         void(string s) precache_model = #20;\n\
         void() spawn_thing = { precache_model(\"progs/t.mdl\"); x = 2; x = 3; x = 4; };\n";
-    let bytes = compile(source, false);
+    let bytes = compile(source);
     let progs = Progs::read(&bytes).unwrap();
     let report = run(&bytes, &bytes, 4);
     assert!(report.divergences.is_empty(), "{:?}", report.divergences);
@@ -1555,7 +1535,7 @@ fn precaching_through_a_wrapper_runs_loading() {
         void(string s) precache_safe = { precache_model(s); };\n\
         void(string s) precache_twice = { precache_safe(s); };\n\
         void() spawn_thing = { precache_twice(\"progs/t.mdl\"); x = 2; x = 3; x = 4; };\n";
-    let bytes = compile(source, false);
+    let bytes = compile(source);
     let progs = Progs::read(&bytes).unwrap();
     let report = run(&bytes, &bytes, 4);
     assert!(report.divergences.is_empty(), "{:?}", report.divergences);
@@ -1581,7 +1561,7 @@ fn unimplemented_builtins_return_zero() {
     let source = "float x;\nvoid() worldspawn = { x = 1; };\n\
         float(float a) mystery = #5;\n\
         void() f = { x = mystery(2) + 5; x = x + 1; };\n";
-    let bytes = compile(source, false);
+    let bytes = compile(source);
     let progs = Progs::read(&bytes).unwrap();
     let report = run(&bytes, &bytes, 1);
     assert!(report.divergences.is_empty(), "{:?}", report.divergences);
@@ -1655,7 +1635,7 @@ fn a_pair_passes_values_only_between_one_type() {
 fn entity_variables_are_drawn() {
     let source = "float x; entity keeper;\nvoid() worldspawn = { x = 1; };\n\
         void() f = { if (keeper == world) return; x = 2; x = 3; };\n";
-    let bytes = compile(source, false);
+    let bytes = compile(source);
     let progs = Progs::read(&bytes).unwrap();
     let report = run(&bytes, &bytes, 16);
     assert!(report.divergences.is_empty(), "{:?}", report.divergences);
@@ -2123,13 +2103,8 @@ fn debug_compile_file() {
     let mut input = ModuleInput::default();
     db.set_file(FileId::new(0), PathBuf::from("t.qc"), text);
     input.compiled.push(FileId::new(0));
-    let compiled = compile_module(
-        &mut db,
-        &input,
-        |_| "t.qc".to_owned(),
-        Options { fold: false },
-    )
-    .unwrap_or_else(|e| panic!("did not compile: {e:?}"));
+    let compiled = compile_module(&mut db, &input, |_| "t.qc".to_owned())
+        .unwrap_or_else(|e| panic!("did not compile: {e:?}"));
     let out = std::path::Path::new(&file).with_file_name("ours-dbg.dat");
     std::fs::write(&out, qc_progs::write(&compiled.progs).unwrap()).unwrap();
     eprintln!("wrote {}", out.display());

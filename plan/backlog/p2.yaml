@@ -260,7 +260,7 @@ issues:
   verify:
   - Rerelease conformance job (P2-10)
 - key: P2-08
-  title: Emit .lno and add constant folding
+  title: Emit .lno line maps
   labels:
   - L4-bridges
   - area:compiler
@@ -268,17 +268,16 @@ issues:
   size: S
   reqs:
   - COMP-1
-  - COMP-5
   - FND-6
   depends:
   - P2-06
   - P1-28
   deliverable:
-  - Line maps emitted with every build; constant folding behind --opt fold
+  - Line maps emitted with every build. Constant folding behind --opt fold shipped here and was removed on 2026-11-03 (QC-27.20 withdrawn); it returns as a pass over the intermediate layer under L-04
   acceptance:
-  - Every statement maps to a source line; folding produces no divergence in the differential suite
+  - Every statement maps to a source line
   verify:
-  - cargo test; differential job with folding on and off
+  - cargo test
 - key: P2-09
   title: Compiler differential suite against id qcc
   labels:
@@ -295,7 +294,7 @@ issues:
   deliverable:
   - '`cargo xtask compiler-diff` (xtask/src/compiler_diff.rs) with the `compiler-diff` binary and `calls` module of crates/qs-differential (docs/spec/differential.md DIFF-12): compiles each vanilla corpus codebase with our compiler and with oracle qcc, runs scripted function calls in qc-vm on both outputs, compares traces. The project keeps cross-crate tests in crates/qs-tests and oracle runs in xtask (CONV-11), so no tests/compiler-diff directory'
   acceptance:
-  - Zero behavioural divergences on the vanilla corpus, with `--opt fold` off and on (QC-27.20, P2-08)
+  - Zero behavioural divergences on the vanilla corpus (DIFF-12.29)
   - At least 90% of statements executed per corpus codebase
   verify:
   - CI fast subset; nightly full run

@@ -200,7 +200,6 @@ Items that left the root (4): `const qc_builtins::math::BUILTIN_RANDOM_MASK`, `c
 | `fn qc_codegen::compile` | `qc-ide`, `qc-preproc`, `qc-sema`, `qc-diag`, `qc-lexer`, `qs-differential`, `qs-commands`, `qs-sim`, `qc-project`, `xtask` | kept public: used by `qc-ide`, `qc-preproc`, `qc-sema`, `qc-diag`, `qc-lexer`, `qs-differential`, `qs-commands`, `qs-sim`, `qc-project`, `xtask` |
 | `fn qc_codegen::compile_module` | `qs-differential`, `qs-bench`, `qs-sim`, `xtask` | kept public: used by `qs-differential`, `qs-bench`, `qs-sim`, `xtask` |
 | `struct qc_codegen::Compiled` | `qc-preproc`, `qc-project`, `xtask` | kept public: used by `qc-preproc`, `qc-project`, `xtask` |
-| `struct qc_codegen::Options` | `qs-differential`, `qs-bench`, `qc-progs`, `qs-sim`, `xtask` | kept public: used by `qs-differential`, `qs-bench`, `qc-progs`, `qs-sim`, `xtask` |
 | `struct qc_codegen::Unit` | `qc-builtins`, `qs-sim`, `qc-vm`, `xtask` | kept public: used by `qc-builtins`, `qs-sim`, `qc-vm`, `xtask` |
 | `struct qc_codegen::precache::Precache` | `qc-builtins`, `xtask` | kept public: used by `qc-builtins`, `xtask` |
 | `struct qc_codegen::precache::Precaches` | none | kept public: named in a public signature a dependent uses |

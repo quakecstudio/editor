@@ -614,13 +614,21 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   progs executed by its setups and calls in any scenario, divided by `numstatements - 1`
   (DIFF-11.1). A codebase passes with no divergence between the two progs and a coverage of at
   least 90% (TEST-6).
-- **DIFF-12.6** `cargo xtask compiler-diff` compiles each vanilla corpus codebase (`id-1.01`)
-  with id's `qcc` and with `qc-codegen` with `--opt fold` off and on (QC-27.20), and compares
-  `qcc`'s progs with each of the two. `--fast`, which CI runs on every change, makes 32
-  rounds; `--full`, which the nightly differential workflow runs, makes 128 over exactly one
-  codebase, named on the command line, since one full run takes up to an hour: the workflow
-  runs one job per codebase in parallel, and a local run names the codebase it is after. Each
-  codebase's progs and results table are under `target/compiler-diff/<id>/`.
+- **DIFF-12.6** **Withdrawn** 2026-11-03: it compiled with `qc-codegen` with `--opt fold` off
+  and on, but the option is removed (QC-27.20). Replaced by DIFF-12.29. `cargo xtask
+  compiler-diff` compiles each vanilla corpus codebase (`id-1.01`) with id's `qcc` and with
+  `qc-codegen` with `--opt fold` off and on (QC-27.20), and compares `qcc`'s progs with each of
+  the two. `--fast`, which CI runs on every change, makes 32 rounds; `--full`, which the nightly
+  differential workflow runs, makes 128 over exactly one codebase, named on the command line,
+  since one full run takes up to an hour: the workflow runs one job per codebase in parallel,
+  and a local run names the codebase it is after. Each codebase's progs and results table are
+  under `target/compiler-diff/<id>/`.
+- **DIFF-12.29** `cargo xtask compiler-diff` compiles each vanilla corpus codebase (`id-1.01`)
+  with id's `qcc` and with `qc-codegen`, and compares the two progs. `--fast`, which CI runs on
+  every change, makes 32 rounds; `--full`, which the nightly differential workflow runs, makes
+  128 over exactly one codebase, named on the command line, since one full run takes up to an
+  hour: the workflow runs one job per codebase in parallel, and a local run names the codebase
+  it is after. Each codebase's progs and results table are under `target/compiler-diff/<id>/`.
 - **DIFF-12.7** When the two progs' definitions, functions or strings differ, a call's return
   value is compared too, since the return slot is named by neither. A version 6 progs does not
   record a function's return type, so the slot's first word is read as a float, a string, an
@@ -675,7 +683,7 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   element of an array of structs (`dialect-fteqcc-rerelease.md` FTE-13.13), whose first word is
   its first member's, compared by that member's own definition and type, where reading the word
   by its bits would compare a string's place in each string table.
-- **DIFF-12.11** When the first progs is the pinned FTEQCC's (DIFF-12.14), its definitions are
+- **DIFF-12.11** When the first progs is the pinned FTEQCC's (DIFF-12.30), its definitions are
   compared with ours by these rules, which replace DIFF-12.3's same names in the same order.
   FTEQCC names fewer globals: `QCC_WriteData` writes no definition nothing uses (`if (def->strip
   || !def->symbolheader->used) continue;`), no vector component, and no local of a function
@@ -709,19 +717,31 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   the first progs, the statements of its body no call executed, as `<unexecuted>\t<of>\t<name>`
   lines, most unexecuted first, a function's body running from its first statement to the next
   function's: the list a codebase's coverage (DIFF-12.5) is raised from.
-- **DIFF-12.14** `cargo xtask compiler-diff --full` also compares the rerelease codebases (COMP-8): each
-  is compiled with the pinned FTEQCC as `cargo xtask oracles rerelease` compiles it,
-  the oracle progs, and with `qc-codegen` in the FTEQCC dialect, with `--opt fold` off and on,
-  and each pair is held to DIFF-12.5's bar: `rerelease`, Scourge of Armagon, Dissolution of
-  Eternity, Dimension of the Past, Dawn of the Machine, the last with `-Fautoproto`'s
-  prototypes as FTEQCC is given it (FTE-1.2), and Capture the Flag, whose calls reach 90% of
-  its statements with the draws of DIFF-12.21 and DIFF-12.22. Every pair compared adds a row to
-  the codebase's results table `target/compiler-diff/<id>/summary.md`: the codebase, the
-  oracle's progs and ours, the divergences, the statements executed, and whether it passes;
-  the nightly differential workflow publishes each job's table as the run's summary.
+- **DIFF-12.14** **Withdrawn** 2026-11-03: it compiled with `qc-codegen` with `--opt fold` off
+  and on, but the option is removed (QC-27.20). Replaced by DIFF-12.30. `cargo xtask
+  compiler-diff --full` also compares the rerelease codebases (COMP-8): each is compiled with
+  the pinned FTEQCC as `cargo xtask oracles rerelease` compiles it, the oracle progs, and with
+  `qc-codegen` in the FTEQCC dialect, with `--opt fold` off and on, and each pair is held to
+  DIFF-12.5's bar: `rerelease`, Scourge of Armagon, Dissolution of Eternity, Dimension of the
+  Past, Dawn of the Machine, the last with `-Fautoproto`'s prototypes as FTEQCC is given it
+  (FTE-1.2), and Capture the Flag, whose calls reach 90% of its statements with the draws of
+  DIFF-12.21 and DIFF-12.22. Every pair compared adds a row to the codebase's results table
+  `target/compiler-diff/<id>/summary.md`: the codebase, the oracle's progs and ours, the
+  divergences, the statements executed, and whether it passes; the nightly differential workflow
+  publishes each job's table as the run's summary.
+- **DIFF-12.30** `cargo xtask compiler-diff --full` also compares the rerelease codebases
+  (COMP-8): each is compiled with the pinned FTEQCC as `cargo xtask oracles rerelease` compiles
+  it, the oracle progs, and with `qc-codegen` in the FTEQCC dialect, and each pair is held to
+  DIFF-12.5's bar: `rerelease`, Scourge of Armagon, Dissolution of Eternity, Dimension of the
+  Past, Dawn of the Machine, the last with `-Fautoproto`'s prototypes as FTEQCC is given it
+  (FTE-1.2), and Capture the Flag, whose calls reach 90% of its statements with the draws of
+  DIFF-12.21 and DIFF-12.22. Every pair compared adds a row to the codebase's results table
+  `target/compiler-diff/<id>/summary.md`: the codebase, the oracle's progs and ours, the
+  divergences, the statements executed, and whether it passes; the nightly differential workflow
+  publishes each job's table as the run's summary.
 - **DIFF-12.18** `cargo xtask compiler-diff --full` also compares the corpus mods the pinned
   FTEQCC compiles with `-Tid` (COMP-8): Copper, Arcane Dimensions, librequake, crmod7, QC
-  Conduit and SWAB, each compiled with the flags of DIFF-12.14 in a copy of its directory, and
+  Conduit and SWAB, each compiled with the flags of DIFF-12.30 in a copy of its directory, and
   with `qc-codegen` in the FTEQCC dialect, of a codebase with several modules its server module
   `progs.src`, as FTEQCC compiles that one with no `-srcfile`. Each pair is compared as a
   rerelease codebase is, with the FTEQCC rules of DIFF-12.11, and held to DIFF-12.5's bar. A
@@ -932,12 +952,13 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
 - **DIFF-14.3** The short run, 200 programs of seed 1, runs in the `Test Assets (linux)` job
   of every pull request after the fast compiler differential; the long run, 10000 programs of
   seed 1, is a job of the nightly Differential workflow.
-- **DIFF-14.4** The oracles include a second FTEQCC, `fteqcc-fixed`, built from the pinned
-  tree with each defect of DIFF-14.6 and DIFF-14.7 fixed in `engine/qclib/qcc_pr_comp.c` and
-  nothing else changed (ADR-0020, tier 3). The fixes are texts the build replaces
-  (`xtask/src/oracles/defects.rs`); a fix whose text the pinned file does not hold exactly as
-  often as it says stops the build, so a changed upstream cannot build an unfixed oracle.
-  Each generated program is compiled by it as well as by the pinned FTEQCC.
+- **DIFF-14.4** **Withdrawn** 2026-11-03: it named the defects fixed, DIFF-14.6 and DIFF-14.7,
+  so each new fix changed it. Replaced by DIFF-14.12. The oracles include a second FTEQCC,
+  `fteqcc-fixed`, built from the pinned tree with each defect of DIFF-14.6 and DIFF-14.7 fixed
+  in `engine/qclib/qcc_pr_comp.c` and nothing else changed (ADR-0020, tier 3). The fixes are
+  texts the build replaces (`xtask/src/oracles/defects.rs`); a fix whose text the pinned file
+  does not hold exactly as often as it says stops the build, so a changed upstream cannot build
+  an unfixed oracle. Each generated program is compiled by it as well as by the pinned FTEQCC.
 - **DIFF-14.5** A generated program whose pinned FTEQCC progs diverges from ours passes as an
   FTEQCC defect proved when the fixed FTEQCC's progs agrees with ours on every call; it fails
   when the fixed FTEQCC's progs diverges from ours, also where the pinned one agrees, since a
@@ -958,20 +979,54 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
   Generated program 1230 of seed 1 does. The fix frees the operands of `MUL_VF`, `MUL_FV`,
   `MUL_VI` and `MUL_IV`, the opcodes that read a word operand after writing a result word,
   only after their result's temporary is taken.
-- **DIFF-14.8** `cargo xtask compiler-diff --generated <count> [--seed <n>]` writes the
-  programs `0` to `count - 1` of the seed, 1 unless given, under
+- **DIFF-14.8** **Withdrawn** 2026-11-03: it compiled with `qc-codegen` with `--opt fold` off
+  and on, but the option is removed (QC-27.20). Replaced by DIFF-14.9. `cargo xtask
+  compiler-diff --generated <count> [--seed <n>]` writes the programs `0` to `count - 1` of the
+  seed, 1 unless given, under `target/compiler-diff/generated/<seed>/<n>/` with a `progs.src`
+  naming `t.qc`, compiles each with the pinned FTEQCC (`-Tid -srcfile progs.src`), with the
+  fixed FTEQCC of DIFF-14.4 and with `qc-codegen` in the FTEQCC dialect with `--opt fold` off
+  and on, lists the pairs in `pairs.tsv`, and has the `compiler-diff` binary compare every pair
+  in one process (`--pairs`) with the fast rounds of DIFF-12.6. A pair passes when no call
+  diverges, or as DIFF-14.5 allows: a generated program's calls need not reach 90% of its
+  statements, since every function of it is called directly and a bounded loop is left by its
+  counter. The run fails on any divergence DIFF-14.5 does not allow, on a program FTEQCC
+  rejects, which is a defect of the generator, on a program the pinned FTEQCC compiles and the
+  fixed one rejects, which is a defect of a fix, on a program FTEQCC compiles and `qc-codegen`
+  refuses, which is a defect of the compiler, and on a form used by fewer than one program in a
+  hundred; each failure names the program's directory, whose `t.qc` is the case to keep.
+- **DIFF-14.9** `cargo xtask compiler-diff --generated <count> [--seed <n>]` writes the programs
+  `0` to `count - 1` of the seed, 1 unless given, under
   `target/compiler-diff/generated/<seed>/<n>/` with a `progs.src` naming `t.qc`, compiles each
-  with the pinned FTEQCC (`-Tid -srcfile progs.src`), with the fixed FTEQCC of DIFF-14.4 and
-  with `qc-codegen` in the FTEQCC
-  dialect with `--opt fold` off and on, lists the pairs in `pairs.tsv`, and has the
+  with the pinned FTEQCC (`-Tid -srcfile progs.src`), with the fixed FTEQCC of DIFF-14.12 and
+  with `qc-codegen` in the FTEQCC dialect, lists the pairs in `pairs.tsv`, and has the
   `compiler-diff` binary compare every pair in one process (`--pairs`) with the fast rounds of
-  DIFF-12.6. A pair passes when no call diverges, or as DIFF-14.5 allows: a generated program's calls need not reach
-  90% of its statements, since every function of it is called directly and a bounded loop is
-  left by its counter. The run fails on any divergence DIFF-14.5 does not allow, on a program FTEQCC rejects, which
-  is a defect of the generator, on a program the pinned FTEQCC compiles and the fixed one
-  rejects, which is a defect of a fix, on a program FTEQCC compiles and `qc-codegen` refuses, which is
-  a defect of the compiler, and on a form used by fewer than one program in a hundred; each
-  failure names the program's directory, whose `t.qc` is the case to keep.
+  DIFF-12.29. A pair passes when no call diverges, or as DIFF-14.5 allows: a generated program's
+  calls need not reach 90% of its statements, since every function of it is called directly and
+  a bounded loop is left by its counter. The run fails on any divergence DIFF-14.5 does not
+  allow, on a program FTEQCC rejects, which is a defect of the generator, on a program the
+  pinned FTEQCC compiles and the fixed one rejects, which is a defect of a fix, on a program
+  FTEQCC compiles and `qc-codegen` refuses, which is a defect of the compiler, and on a form
+  used by fewer than one program in a hundred; each failure names the program's directory, whose
+  `t.qc` is the case to keep.
+- **DIFF-14.10** FTEQCC defect: a constant `if` whose stripped arm makes no label is parsed and
+  then rewound with `QCC_UngenerateStatements(oldnumst)` (`QCC_PR_ParseStatement`), which
+  forgets every `case` recorded at or after the statement it rewinds to (`if (pr_cases[i] >=
+  newstatementcount)`). A `case` whose first statement is that `if` was recorded at exactly that
+  statement, so its label is forgotten and the `switch` never reaches it, though its statements
+  stay. Generated program 2269 of seed 1 has such a `case 2:`. The fix forgets only the labels
+  after that statement.
+- **DIFF-14.11** FTEQCC defect: `QCC_CollapseStore` folds a store into the statement before it
+  when that statement wrote the stored temporary at the same offset (`opt_assignments`),
+  whatever the width of the statement's result. A store of a vector's first word, `f = (u +
+  v).x`, makes the `ADD_V` write its three words from `f`, the two globals after it included.
+  Generated program 6294 of seed 1 reads a string global it overwrote. The fix does not fold
+  when the statement's result type (`type_c`) is wider than the stored type.
+- **DIFF-14.12** The oracles include a second FTEQCC, `fteqcc-fixed`, built from the pinned tree
+  with each FTEQCC defect a statement of DIFF-14 names fixed in `engine/qclib/qcc_pr_comp.c` and
+  nothing else changed (ADR-0020, tier 3). The fixes are texts the build replaces
+  (`xtask/src/oracles/defects.rs`); a fix whose text the pinned file does not hold exactly as
+  often as it says stops the build, so a changed upstream cannot build an unfixed oracle. Each
+  generated program is compiled by it as well as by the pinned FTEQCC.
 
 ## Test vectors
 

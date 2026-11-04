@@ -14,10 +14,10 @@
 //! ```
 //!
 //! `--theirs` is the oracle compiler's progs: id's `qcc`'s for id 1.01, the pinned FTEQCC's
-//! for the rerelease (DIFF-12.14), named by `--oracle`, `qcc` when it is not given (DIFF-12.11). With `--summary`, a row of the results table is added to the
+//! for the rerelease (DIFF-12.30), named by `--oracle`, `qcc` when it is not given (DIFF-12.11). With `--summary`, a row of the results table is added to the
 //! file for each pair.
 //!
-//! `--mode fast` makes 32 rounds of calls to each function, `--mode full` 128 (DIFF-12.6).
+//! `--mode fast` makes 32 rounds of calls to each function, `--mode full` 128 (DIFF-12.29).
 //! It exits 0 when every pair has no divergence and the calls executed at least 90% of the
 //! `qcc` progs' statements (DIFF-12.5), 1 otherwise, and 2 on a usage or setup error.
 //!
@@ -101,7 +101,7 @@ enum Run {
     Suite(Options),
     /// Programs of a seed written out (DIFF-14.1).
     Generate(Generate),
-    /// The pairs a file lists, each compared (DIFF-14.8).
+    /// The pairs a file lists, each compared (DIFF-14.9).
     Pairs {
         file: PathBuf,
         rounds: u32,
@@ -214,7 +214,7 @@ fn generate(generate: &Generate) -> Result<bool, String> {
             .map_err(|e| format!("{}: {e}", dir.display()))?;
         std::fs::write(dir.join("t.qc"), &program.source)
             .map_err(|e| format!("{}: {e}", dir.display()))?;
-        // DIFF-14.8: how many programs use each form, however often each uses it.
+        // DIFF-14.9: how many programs use each form, however often each uses it.
         for form in program.forms.keys() {
             let entry = forms.entry(form).or_insert(0);
             *entry = entry.saturating_add(1);
@@ -236,7 +236,7 @@ fn generate(generate: &Generate) -> Result<bool, String> {
     Ok(true)
 }
 
-/// DIFF-14.8: compares every pair `file` lists, one per line as `name`, the oracle's progs and
+/// DIFF-14.9: compares every pair `file` lists, one per line as `name`, the oracle's progs and
 /// ours separated by tabs; a pair passes when no call diverges. DIFF-14.5: a line may name a
 /// fourth progs, the oracle with its known defects fixed, and then a pair whose oracle
 /// diverges passes when the fixed oracle agrees with ours, as an oracle defect proved; it
@@ -469,7 +469,7 @@ fn print(codebase: &str, ours: &std::path::Path, same: bool, report: &CodebaseRe
 }
 
 /// Adds the row of `report`, our progs at `ours` against the oracle's, to the results table
-/// at `summary` (DIFF-12.14).
+/// at `summary` (DIFF-12.30).
 fn add_row(
     summary: &std::path::Path,
     options: &Options,
@@ -506,7 +506,7 @@ mod tests {
 
     use super::{Generate, Options, Outcome, Run, add_row, parse};
 
-    // spec DIFF-12.14: each pair compared adds its row to the results table, after the rows
+    // spec DIFF-12.30: each pair compared adds its row to the results table, after the rows
     // already there.
     #[test]
     fn each_pair_adds_a_row_to_the_table() {
@@ -530,22 +530,16 @@ mod tests {
             total_statements: 4,
         };
         add_row(&summary, &options, &PathBuf::from("x/ours.dat"), &report).unwrap();
-        add_row(
-            &summary,
-            &options,
-            &PathBuf::from("x/ours-fold.dat"),
-            &report,
-        )
-        .unwrap();
+        add_row(&summary, &options, &PathBuf::from("x/again.dat"), &report).unwrap();
         assert_eq!(
             std::fs::read_to_string(&summary).unwrap(),
             "head\n| rerelease | oracle.dat | ours.dat | 0 | 0 of 4 (0.0%) | fail |\n\
-             | rerelease | oracle.dat | ours-fold.dat | 0 | 0 of 4 (0.0%) | fail |\n"
+             | rerelease | oracle.dat | again.dat | 0 | 0 of 4 (0.0%) | fail |\n"
         );
         assert!(add_row(&dir.join("no/such/dir.md"), &options, &summary, &report).is_err());
     }
 
-    // spec DIFF-14.8: `--generate` names the directory, the seed and the count, `--pairs` the
+    // spec DIFF-14.9: `--generate` names the directory, the seed and the count, `--pairs` the
     // file, with the rounds, the oracle and the engine of a suite run; either leaves the
     // suite's own arguments unrequired
     #[test]

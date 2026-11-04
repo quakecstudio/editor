@@ -149,6 +149,10 @@ pub struct Fragment {
     pub temps: Vec<Temp>,
     /// The construct's value: an input, a temporary, or a constant.
     pub value: Option<Operand>,
+    /// The constant each input was when a fold consumed it, left then right: an input no
+    /// statement or value names, which the fragment then depends on being that constant. A
+    /// writer whose inputs are other values does not hold the fragment.
+    pub inputs: [Option<Immediate>; 2],
 }
 
 /// A function body's fragments, by the span of the token each was lowered at.
@@ -249,13 +253,28 @@ impl Builder {
         self.held = false;
     }
 
-    /// The fragment, valued `value`, if every step was held.
-    pub(crate) fn finish(self, value: Option<Operand>) -> Option<Fragment> {
+    /// The fragment, valued `value`, if every step was held; of the constants `inputs` the
+    /// inputs were, those of the inputs it does not name, which a fold consumed.
+    pub(crate) fn finish(
+        self,
+        value: Option<Operand>,
+        inputs: [Option<Immediate>; 2],
+    ) -> Option<Fragment> {
+        let names = |side: Input| {
+            let named = |operand: &Option<Operand>| matches!(operand, Some(Operand::Input(n) | Operand::Word(Whole::Input(n), _)) if *n == side);
+            named(&value) || self.statements.iter().any(|s| named(&s.a) || named(&s.b))
+        };
+        let [left, right] = inputs;
+        let inputs = [
+            left.filter(|_| !names(Input::Left)),
+            right.filter(|_| !names(Input::Right)),
+        ];
         self.held.then_some(Fragment {
             statements: self.statements,
             immediates: self.immediates,
             temps: self.temps,
             value,
+            inputs,
         })
     }
 }
@@ -297,7 +316,9 @@ mod tests {
             c,
         };
         assert_eq!(
-            builder.clone().finish(Some(Operand::Temp(TempId(1)))),
+            builder
+                .clone()
+                .finish(Some(Operand::Temp(TempId(1))), [None, None]),
             Some(Fragment {
                 statements: vec![
                     statement(
@@ -322,16 +343,17 @@ mod tests {
                 immediates: Vec::new(),
                 temps: vec![Temp::Made(0), Temp::Vector(1)],
                 value: Some(Operand::Temp(TempId(1))),
+                inputs: [None, None],
             })
         );
         for reads in [[Some(None), None], [None, Some(None)]] {
             let mut unnamed = builder.clone();
             assert_eq!(unnamed.push(Op::MulF, reads, Destination::Value), None);
-            assert_eq!(unnamed.finish(None), None);
+            assert_eq!(unnamed.finish(None, [None, None]), None);
         }
         let mut given_up = Builder::new();
         given_up.give_up();
-        assert_eq!(given_up.finish(None), None);
+        assert_eq!(given_up.finish(None, [None, None]), None);
     }
 
     // A word of an input, a temporary or an immediate is named; a word of a word is not.

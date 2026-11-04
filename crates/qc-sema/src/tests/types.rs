@@ -9,6 +9,7 @@ use qc_syntax::ast;
 use qc_syntax::{Dialect, QC_MAX_NESTING};
 
 use crate::db::Db;
+use crate::ir::{Fragment, Immediate, ImmediateKind};
 use crate::symbol::{DefId, FileId};
 use crate::ty::{FROM_AST_CALLS, FunctionType, ParamLabels, SimpleType, Type, TypeContext};
 use qc_diag::Span;
@@ -267,6 +268,66 @@ fn a_checked_body_keeps_its_operators_opcodes() {
     );
 }
 
+// spec QC-16.1: under id's rules each binary operator keeps the opcode of its row, the first
+// whose operand types are the operands', and lowers to that opcode's one statement of its two
+// operands into a new temporary
+#[test]
+fn a_vanilla_operator_keeps_its_row_and_lowers_to_its_statement() {
+    use crate::ir::{Destination, Fragment, Input, Operand, Statement, Temp, TempId};
+    use qc_preproc::Op;
+    let source = "float a; vector v; string s; entity e; void() g = { a = a * a; a = v * v; \
+                  v = a * v; v = v * a; v = v - v; a = a / a; a = s != s; a = e == e; \
+                  a = a && a; a = a | a; };";
+    let index = super::index_of(source);
+    let g = index
+        .defs
+        .iter()
+        .position(|d| d.name == "g")
+        .map(DefId::new)
+        .unwrap();
+    let body = &index.bodies[&g];
+    let span = |text: &str| {
+        let start = source.find(text).unwrap() + 2;
+        let len = text.len() - 4;
+        Span::new(start, start + len)
+    };
+    for (text, op) in [
+        ("a * a", Op::MulF),
+        ("v * v", Op::MulV),
+        ("a * v", Op::MulFv),
+        ("v * a", Op::MulVf),
+        ("v - v", Op::SubV),
+        ("a / a", Op::DivF),
+        ("s != s", Op::NeS),
+        ("e == e", Op::EqE),
+        ("a && a", Op::AndF),
+        ("a | a", Op::BitorF),
+    ] {
+        assert_eq!(body.opcode_at(span(text)), Some(op), "{text}");
+        let fragment = Fragment {
+            statements: vec![Statement {
+                op,
+                a: Some(Operand::Input(Input::Left)),
+                b: Some(Operand::Input(Input::Right)),
+                c: Destination::Value,
+            }],
+            immediates: Vec::new(),
+            temps: vec![Temp::Made(0)],
+            value: Some(Operand::Temp(TempId::new(0))),
+            inputs: [None, None],
+        };
+        assert_eq!(body.fragment_at(span(text)), Some(&fragment), "{text}");
+    }
+}
+
+/// The float immediate of `value`.
+fn float_immediate(value: f32) -> Immediate {
+    Immediate {
+        kind: ImmediateKind::Float,
+        words: [value.to_bits(), 0, 0],
+    }
+}
+
 // spec FTEF-23.4: a binary operator lowers to the statement of the opcode chosen for it, its
 // operands the operator's inputs, its value the statement's temporary
 // spec FTEF-26.2: an operator of two constants folds, to an immediate with no statement
@@ -300,7 +361,8 @@ fn a_binary_operator_lowers_to_a_fragment() {
             words: [value.to_bits(), 0, 0],
         })
     };
-    let one = |op: Op, a: Operand, b: Operand| Fragment {
+    let constant = |value| Some(float_immediate(value));
+    let one = |op: Op, a: Operand, b: Operand, inputs| Fragment {
         statements: vec![Statement {
             op,
             a: Some(a),
@@ -310,13 +372,15 @@ fn a_binary_operator_lowers_to_a_fragment() {
         immediates: Vec::new(),
         temps: vec![Temp::Made(0)],
         value: Some(Operand::Temp(TempId::new(0))),
+        inputs,
     };
     assert_eq!(
         at("a + 1", "+"),
         Some(&one(
             Op::AddF,
             Operand::Input(Input::Left),
-            Operand::Input(Input::Right)
+            Operand::Input(Input::Right),
+            [None, None]
         )),
         "ADD_F: a literal operand is an input too"
     );
@@ -325,7 +389,8 @@ fn a_binary_operator_lowers_to_a_fragment() {
         Some(&one(
             Op::MulVf,
             Operand::Input(Input::Left),
-            Operand::Input(Input::Right)
+            Operand::Input(Input::Right),
+            [None, None]
         )),
         "MUL_VF"
     );
@@ -339,6 +404,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
             }],
             temps: Vec::new(),
             value: Some(float(5.0)),
+            inputs: [constant(2.0), constant(3.0)],
         }),
         "the folded value is an immediate the lowering made"
     );
@@ -378,6 +444,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
             immediates: Vec::new(),
             temps: (0..4).map(Temp::Made).collect(),
             value: Some(Operand::Temp(TempId::new(3))),
+            inputs: [None, None],
         }),
         "DIV_F, BITOR, MUL_F, SUB_F"
     );
@@ -399,6 +466,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
             }],
             temps: vec![Temp::Made(0), Temp::Made(1)],
             value: Some(Operand::Temp(TempId::new(1))),
+            inputs: [None, None],
         }),
         "DIV_F of 1, MUL_VF"
     );
@@ -416,6 +484,7 @@ fn a_binary_operator_lowers_to_a_fragment() {
             immediates: Vec::new(),
             temps: vec![Temp::Vector(0)],
             value: Some(Operand::Temp(TempId::new(0))),
+            inputs: [None, None],
         }),
         "three BITAND_F"
     );
@@ -518,5 +587,88 @@ fn xor_lowers_with_complements_of_minus_one() {
             c: Destination::Value,
         }),
         "SUB_V of '-1 -1 -1' and w"
+    );
+}
+
+/// The fragment of the operator `operator` at the first `text` in `t` of `source`, under FTEQCC.
+fn fte_fragment_at(source: &str, text: &str, operator: &str) -> Fragment {
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let start = source
+        .find(text)
+        .unwrap()
+        .saturating_add(text.find(operator).unwrap());
+    index.bodies[&t]
+        .fragment_at(Span::new(start, start.saturating_add(operator.len())))
+        .unwrap()
+        .clone()
+}
+
+// spec FTEF-32.17: a call of a constant vector's component is not folded, so an operator of it
+// is a statement; a call of a constant read directly folds, and so does the operator
+#[test]
+fn a_call_of_a_vector_component_is_not_folded() {
+    let source = "float(float f) floor = #37; float a; vector v; \
+                  void() t = { a = floor(('4 0 0').x) & 1; a = floor(4) & 1; \
+                  a = floor(('4 0 0')[0]) | 1; };";
+    let component = fte_fragment_at(source, ") & 1", "&");
+    assert_eq!(component.statements.len(), 1, "{component:?}");
+    let indexed = fte_fragment_at(source, ") | 1", "|");
+    assert_eq!(indexed.statements.len(), 1, "{indexed:?}");
+    let direct = fte_fragment_at(source, "(4) & 1", "&");
+    assert!(direct.statements.is_empty(), "{direct:?}");
+}
+
+// spec FTEF-13.3: a character constant is its character's code, so `a - '0'` subtracts 48 and
+// `'0' + 1` folds to 49
+#[test]
+fn a_character_constant_is_its_code() {
+    use crate::ir::{Immediate, ImmediateKind, Operand};
+    let source = "float a; void() t = { a = a - '0'; a = '0' + 1; };";
+    let subtract = fte_fragment_at(source, "a - '0'", "-");
+    assert_eq!(
+        subtract.statements.len(),
+        1,
+        "a - 48 is no identity: {subtract:?}"
+    );
+    let folded = fte_fragment_at(source, "'0' + 1", "+");
+    assert_eq!(
+        folded.value,
+        Some(Operand::Immediate(Immediate {
+            kind: ImmediateKind::Float,
+            words: [49.0_f32.to_bits(), 0, 0],
+        }))
+    );
+}
+
+// spec FTE-19.10: `&&` and `||` of operands that are not both floats are `AND` and `OR` of
+// their words, a vector first its dot product with itself under `vectorlogic`
+#[test]
+fn logic_of_other_types_reads_their_truths() {
+    use crate::ir::{Destination, Input, Operand, Statement, TempId};
+    use qc_preproc::Op;
+    let source = "vector v; entity e; float a; void() t = { a = a && v; a = a || e; };";
+    let statement = |op, a, b| Statement {
+        op,
+        a: Some(a),
+        b: Some(b),
+        c: Destination::Value,
+    };
+    let (left, right) = (Operand::Input(Input::Left), Operand::Input(Input::Right));
+    assert_eq!(
+        fte_fragment_at(source, "a && v", "&&").statements,
+        [
+            statement(Op::MulV, right, right),
+            statement(Op::AndF, left, Operand::Temp(TempId::new(0))),
+        ]
+    );
+    assert_eq!(
+        fte_fragment_at(source, "a || e", "||").statements,
+        [statement(Op::OrF, left, right)]
     );
 }
