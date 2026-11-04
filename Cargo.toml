@@ -161,6 +161,7 @@ qs-workbench = { path = "crates/qs-workbench" }
 qs-wad = { path = "crates/qs-wad" }
 qs-wav = { path = "crates/qs-wav" }
 quakec-ide = { path = "apps/cli" }
+quakec-studio = { path = "apps/desktop" }
 quakec-lsp = { path = "apps/lsp" }
 schemars = { version = "=1.2.2", default-features = false }
 serde = { version = "=1.0.229", default-features = false }

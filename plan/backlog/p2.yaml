@@ -3482,7 +3482,7 @@ issues:
   deliverable:
   - 'crates/qs-bench/benches/budgets.rs: `open_project_and_type` and `keystroke` measuring the editor headless on the editor_bench project of 50,000 lines, and their docs/perf-budgets.md rows `active`'
   - 'The check after typing kept off the frame, or within one frame, or a budget of its own with its reason in docs/perf-budgets.md'
-  - 'editor_bench results for each reference machine in docs/spikes/data/'
+  - 'editor_bench results for ref-mac in docs/spikes/data/; ref-windows and ref-linux wait for those machines (Justin, 2026-11-04: no Windows or Linux desktop to measure on)'
   acceptance:
   - 'cargo xtask bench checks both rows against their budgets and the 10% regression rule, linked from a Bench workflow run'
   verify:

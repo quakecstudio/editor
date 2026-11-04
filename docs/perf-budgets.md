@@ -15,17 +15,26 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
 <!-- perf-budgets -->
 | Benchmark | Requirement | Budget | Statistic | Filled in by | Status |
 | --- | --- | --- | --- | --- | --- |
-| `open_project_and_type` | PRIN-5 | 1 s | p95 | [#74](https://github.com/quakecstudio/editor/issues/74) P2-18 | pending |
-| `keystroke` | PRIN-5 | 8.33 ms | p99 | [#74](https://github.com/quakecstudio/editor/issues/74) P2-18 | pending |
+| `open_project_and_type` | PRIN-5 | 1 s | p95 | [#714](https://github.com/quakecstudio/editor/issues/714) P2-166 | active |
+| `keystroke` | PRIN-5 | 8.33 ms | p99 | [#714](https://github.com/quakecstudio/editor/issues/714) P2-166 | active |
+| `check_after_typing` | PRIN-5 | 100 ms | p95 | [#714](https://github.com/quakecstudio/editor/issues/714) P2-166 | active |
 | `id1_recompile` | PRIN-5 | 200 ms | median | [#67](https://github.com/quakecstudio/editor/issues/67) P2-11 | active |
 | `save_to_game` | ENG-13 | 1 s | p95 | [#100](https://github.com/quakecstudio/editor/issues/100) P3-12 | pending |
 <!-- /perf-budgets -->
 
 - **`open_project_and_type`:** open a 50,000-line QuakeC project in the editor and type the first
-  character, from launch to that character on screen. At most 1 s at the 95th percentile.
+  character, from launch to that character on screen. At most 1 s at the 95th percentile. The
+  benchmark runs the app headless, as its tests do, so it times everything but the renderer;
+  the `editor_bench` example measures it in a window on each reference machine.
 - **`keystroke`:** one keystroke in the code editor with semantic highlighting on, from the key
   event to the next presented frame. At most one frame at 120 Hz, 8.33 ms, at the 99th
   percentile, the same threshold as the UI framework spike ([#10](https://github.com/quakecstudio/editor/issues/10)).
+- **`check_after_typing`:** the one frame that sends the editor's text to the project and
+  checks it again, once typing has paused for the editor's settle time (0.3 s), on the same
+  50,000-line project. At most 100 ms at the 95th percentile, not one frame: it runs once per
+  pause in typing, not per keystroke, and holds the whole project's check, 85.63 ms on ref-mac
+  in a window (decided by Justin on 2026-11-04 for P2-166). Moving the check off the frame
+  would make it one frame's budget.
 - **`id1_recompile`:** edit one function in id1-sized QuakeC and rebuild `progs.dat`
   incrementally. Median under 200 ms.
 - **`save_to_game`:** save a QuakeC file in the editor until the change is visible in a
