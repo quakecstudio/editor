@@ -3642,3 +3642,18 @@ fn a_stripped_arm_still_makes_its_setter_first() {
     let (set, get) = (global(&p, "ArraySet*arr"), global(&p, "ArrayGet*arr"));
     assert!(set < get, "the setter at {set}, the getter at {get}");
 }
+
+// spec FTE-3.6, DIFF-14.10: a `case` whose first statement is a stripped `if (0)` keeps its
+// label, so the `switch` still tests for it, as the fixed FTEQCC does
+#[test]
+fn a_case_opening_with_a_stripped_if_keeps_its_label() {
+    let p = fte_progs(
+        "float g;\nvoid() t = { switch (g) { case 1: g = 5; break; \
+         case 2: if (0) { g = 7; } g = 9; break; } };\n",
+    );
+    let two = immediate(&p, 2.0);
+    let tests_two = body(&p, "t")
+        .iter()
+        .any(|s| s.op == u32::from(EqF.number()) && (s.a == two || s.b == two));
+    assert!(tests_two, "{:?}", body(&p, "t"));
+}

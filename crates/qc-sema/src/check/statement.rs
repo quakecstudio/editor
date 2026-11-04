@@ -102,10 +102,12 @@ impl Checker<'_> {
     /// after it.
     fn truncate(&mut self, mark: Mark) {
         self.layout.truncate(mark.at());
-        // FTE-3.6: a `case` label the dropped statements recorded is forgotten
-        // (`if (pr_cases[i] >= newstatementcount)`).
+        // FTE-3.6: a `case` label the dropped statements recorded is forgotten; one recorded at
+        // the statement rewound to, whose first statement is what was dropped, is kept, as
+        // the fixed FTEQCC keeps it: FTEQCC's `if (pr_cases[i] >= newstatementcount)` forgets
+        // it too, the defect DIFF-14.10 proves (ADR-0020).
         for cases in &mut self.switches {
-            cases.retain(|case| case.at.at() < mark.at());
+            cases.retain(|case| case.at.at() <= mark.at());
         }
         let from = usize::try_from(mark.made()).unwrap_or(usize::MAX);
         // What the dropped statements named is still made, and the temporaries they took still
