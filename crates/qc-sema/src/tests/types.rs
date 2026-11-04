@@ -263,8 +263,8 @@ fn a_checked_body_keeps_its_operators_opcodes() {
     assert_eq!(at("a < 2", "<"), Some(Op::LtF), "LT_F");
     assert_eq!(
         at("a = a + 1", "="),
-        None,
-        "an assignment is chosen elsewhere"
+        Some(Op::StoreF),
+        "an assignment keeps the store of its target's type"
     );
 }
 
