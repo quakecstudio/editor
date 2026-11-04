@@ -180,6 +180,8 @@ pub enum Name {
     MadeWord(u32, u32),
     /// The return global, a call's value (QC-18.4).
     Return,
+    /// A word after the first of the return global, a component of a call's vector.
+    ReturnWord(u32),
     /// A call's parameter slot by its number, `OFS_PARM0 + 3 * n` (QC-18.3), and past the
     /// eighth FTEQCC's `$parmN` global (FTE-18.6).
     Parameter(u8),

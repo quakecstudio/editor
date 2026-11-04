@@ -388,7 +388,10 @@ impl Value {
             });
         }
         if self.returned {
-            return Some(ir::Name::Return);
+            return Some(match self.word {
+                0 => ir::Name::Return,
+                word => ir::Name::ReturnWord(word),
+            });
         }
         if let Some(string) = self.string {
             return Some(ir::Name::String(string));

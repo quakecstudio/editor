@@ -200,7 +200,7 @@ impl Checker<'_> {
         // FTE-18.13: the jump copies a call's value still to be read, its own condition's too.
         let copies = self.live_return.is_some();
         self.clobber_return();
-        if copies && condition == Some(ir::Name::Return) {
+        if copies && matches!(condition, Some(ir::Name::Return | ir::Name::ReturnWord(_))) {
             condition = self.name_of(value);
         }
         self.branch_condition = condition;

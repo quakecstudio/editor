@@ -343,11 +343,18 @@ impl Checker<'_> {
     /// `name`, or the copy of the value of the generated `CALL` `call` when `name` is the
     /// return global and a statement copied the value out of it (FTE-18.13).
     pub(super) fn copied(&self, name: Option<ir::Name>, call: Option<u32>) -> Option<ir::Name> {
-        if name == Some(ir::Name::Return)
-            && let Some(call) = call
+        let word = match name {
+            Some(ir::Name::Return) => 0,
+            Some(ir::Name::ReturnWord(word)) => word,
+            _ => return name,
+        };
+        if let Some(call) = call
             && let Some(&(_, copy)) = self.copies.iter().rev().find(|(of, _)| *of == call)
         {
-            return Some(ir::Name::Made(copy));
+            return Some(match word {
+                0 => ir::Name::Made(copy),
+                word => ir::Name::MadeWord(copy, word),
+            });
         }
         name
     }

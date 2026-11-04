@@ -285,6 +285,7 @@ variant qc_sema::ir::Name::MadeWord
 variant qc_sema::ir::Name::Parameter
 variant qc_sema::ir::Name::RetLocal
 variant qc_sema::ir::Name::Return
+variant qc_sema::ir::Name::ReturnWord
 variant qc_sema::ir::Name::String
 variant qc_sema::ir::Name::VaList
 variant qc_sema::ir::Operand::Def

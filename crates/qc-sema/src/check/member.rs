@@ -329,6 +329,13 @@ impl Checker<'_> {
                         word,
                         ..component
                     },
+                    // A call's vector is the return global, whose word the component is.
+                    None if read.returned => Value {
+                        returned: true,
+                        call: read.call,
+                        word,
+                        ..component
+                    },
                     None => Value {
                         sym: read.sym.at(word),
                         ..component
