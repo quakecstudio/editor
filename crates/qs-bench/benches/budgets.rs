@@ -197,7 +197,7 @@ fn check_after_typing(group: &mut BenchmarkGroup<'_, WallTime>) {
                 frame_at(&ctx, &mut app, text, Some(time));
                 let start = std::time::Instant::now();
                 frame_at(&ctx, &mut app, Vec::new(), Some(time + 0.4));
-                spent += start.elapsed();
+                spent = spent.saturating_add(start.elapsed());
             }
             spent
         });
