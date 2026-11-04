@@ -285,6 +285,17 @@ impl Checker<'_> {
                 self.emit(store, &stored, &Value::unknown(), span)?;
             }
         }
+        // FTEF-31.10: an element at a constant index is a word of the array's definition, stored
+        // as a definition is, unless the value folds into the statement that made it.
+        if let Reference::Element(element) = &lhs.reference
+            && element.index.known().is_some()
+            && matches!(kind, Assign::Store)
+            && !self.global
+            && !folded
+        {
+            self.generated.push(Checker::store_op(self.etype(&target)));
+            self.last_temp = None;
+        }
         // FTE-6.4: a field's store, a compound one's too, is its `ADDRESS`, made after the
         // value, and `STOREP_*` of the field's type through it.
         if matches!(lhs.reference, Reference::Field(_)) && !self.global {
