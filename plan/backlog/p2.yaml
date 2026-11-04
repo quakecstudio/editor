@@ -1783,6 +1783,7 @@ issues:
   - P2-165
   - P2-166
   - P2-167
+  - P2-168
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -3511,3 +3512,27 @@ issues:
   - 'A Readiness run with crates="quakec-ide quakec-lsp quakec-studio" measures every check of the three crates and reaches `cargo xtask ratchet`, linked in the PR'
   verify:
   - gh workflow run readiness.yml -f crates="quakec-ide quakec-lsp quakec-studio"
+- key: P2-168
+  title: Round a hexadecimal stof correctly, whatever its length
+  labels:
+  - L1-vm
+  - area:vm
+  - type:bug
+  size: S
+  reqs:
+  - TEST-6
+  - TEST-4
+  summary: |
+    Found by the P2-R1B re-review (#676). `qc_builtins::atof::hexadecimal` (crates/qc-builtins/src/atof.rs), behind vkQuake's `stof` (#81, BUILTIN-18.19, C's `atof`), accumulates every hex digit of the mantissa into one f64 with `value.mul_add(16.0, digit)`, rounding after each digit, and applies the exponent at the end with `value * 2.0_f64.powi(scale)`. C requires a correctly rounded result: C99 (N1256) 7.20.1.3 paragraph 5, "If the subject sequence has the hexadecimal form and FLT_RADIX is a power of 2, the value resulting from the conversion is correctly rounded." Two failures, each confirmed on main at cf169599 against Python's `float.fromhex` (correctly rounded) and by hand: (1) a mantissa of more than 256 hex digit positions overflows the accumulator to infinity, and `powi` of the scale underflows to 0, so `atof` gives NaN where C gives a finite value: `0x1.` followed by 300 `0` digits and `p0` is NaN (C: 1.0); `0x1` followed by 300 `0` digits and `p-1200` is NaN (C: 1.0); `0x1` followed by 256 `0` digits and `p-1100` is NaN (C: 2^-76). (2) Past 13 digits the per-digit rounding double-rounds, and the error reaches the float `stof` returns when the exact value lies just past a float tie: `0x1.000001000000081` reads as the f64 `0x1.0000010000000p+0`, whose float is 1.0, where C's correctly rounded `0x1.0000010000001p+0` makes the float 1.0000001192092896 (`0x1.000002p+0`). A random search over 200000 mantissas of 15 to 25 digits found 27068 f64 results that differ from the correctly rounded value. BUILTIN-18.19 says only "a hexadecimal one is exact up to 13 digits", and lists no divergence past that; the property `atof_reads_a_decimal_number_exactly` covers decimal input only.
+  environment: |
+    main at cf169599; crates/qc-builtins/src/atof.rs, `hexadecimal`; found during the P2-R1B re-review
+  depends: []
+  deliverable:
+  - 'crates/qc-builtins/src/atof.rs: `hexadecimal` correctly rounded for any number of digits and any exponent, as C99 7.20.1.3 requires (for example the significant bits kept exactly, with a sticky bit for the rest, and one rounding at the end), never NaN for a finite input'
+  - 'docs/spec/builtins.md: BUILTIN-18.19 states the correct rounding of a hexadecimal number, withdrawing and replacing the "exact up to 13 digits" wording as docs/spec/README.md says'
+  - 'crates/qc-builtins: a proptest property that a hexadecimal number Rust writes exactly (any finite f64, its mantissa padded with leading and trailing zero digits) reads back bit for bit, and unit tests for the three NaN cases and the 0x1.000001000000081 case above'
+  acceptance:
+  - 'The cases in the summary give the correctly rounded values (1.0, 1.0, 2^-76 and the f64 0x1.0000010000001p+0), pinned by tests citing BUILTIN-18.19'
+  - 'The property passes and fails when the rounding is broken by hand, recorded in the PR'
+  verify:
+  - cargo test -p qc-builtins

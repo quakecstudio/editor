@@ -35,7 +35,7 @@ PHASES = ["P1", "P2", "P3", "P4", "P5", "P6", "P7"]
 # the issues the re-review waits on, its own defects among them.
 REREVIEWS = [
     {"key": "P2-R1B", "phase": "P2", "layer": "L1-vm", "crates": "qc-builtins", "after": "P2-150",
-     "follows": "P2-R1", "work": ["P2-156", "P2-159", "P2-160"]},
+     "follows": "P2-R1", "work": ["P2-156", "P2-159", "P2-160", "P2-168"]},
 ]
 
 all_issues = [(g["milestone"], i) for d in files.values() for g in groups(d) for i in g["issues"]]

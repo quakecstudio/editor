@@ -1,62 +1,61 @@
 # Readiness: P2 L1 VM qc-builtins re-review after P2-150 (P2-R1B)
 
 - **Issue:** #676 (`P2-R1B`)
-- **Reviewer:** an independent reviewer agent session (TEST-9); did not write qc-builtins, #654,
-  #659, #680 or #682
-- **Date:** 2026-11-03
-- **Commit measured:** `391e6106afa47071e79092c45a97b5d126c996ea` (`docs/676-p2-r1b-review`:
-  `main` at `ce1d22e2` with this review's tests)
-- **Verdict:** Not ready. Every number meets the bar and the minimums, but the review found two
-  defects, P2-159 (no fuzzing of the parsers #680 and #682 added, TEST-5) and P2-160 (the
-  README does not claim BUILTIN-18, so TEST-3 does not count it, and `mock::Cvars` lost its
-  rustdoc). Each blocks readiness until it is fixed and re-reviewed (TEST-9).
+- **Reviewer:** an independent reviewer agent session (TEST-9); did not write qc-builtins,
+  #654, #659, #680, #682, #702 or #703, nor the first round of this review
+- **Date:** 2026-11-04
+- **Commit measured:** `551b1fc6` (`docs/676-p2-r1b-rereview`: `main` at `cf169599` with this
+  round's tests)
+- **Verdict:** Not ready. Every number meets the bar and the minimums, and the two defects of
+  the first round are fixed, but this round found P2-168: vkQuake's `stof` (C's `atof`) gives
+  NaN, or the wrong float, for a hexadecimal number that C rounds correctly. It blocks
+  readiness until it is fixed and re-reviewed (TEST-9).
 
-#659 measured the crate on `40f17a2a` (Readiness run
-[41574437732](https://github.com/quakecstudio/editor/actions/runs/41574437732)). Since then
-three merges changed `qc-builtins`: #680 added `tokenize.rs` (vkQuake's `tokenize`,
-`tokenizebyseparator`, `argv` and their index builtins, BUILTIN-18.23, BUILTIN-18.24) and the
-`Unimplemented` choice, #682 added `localization.rs` (QuakeSpasm's `LOC_LoadFile`,
-`LOC_GetRawString`, `LOC_Format` and `PF_VarString`, RRE-1) and the localized print and
-`WriteString` paths, and #677 added `math::vector_normalize`. About 1250 lines changed, so this
-review measured again.
+The first round (merged in #698, `c52883e3`; its report is this file at that commit) measured
+`391e6106` and found P2-159 (#699, no fuzzing or property test of the readers of outside text)
+and P2-160 (#700, BUILTIN-18 unclaimed in the README, the `Cvars` rustdoc detached). #702 closed
+#700 and #703 closed #699. Neither changed the crate's shipped code: #702 edits the README and
+moves two `use` lines in `mock.rs`, and #703 adds `src/properties.rs` (test only), a proptest
+dev-dependency and the `qc-builtins` fuzz target. This round measured the crate again because
+the README's new BUILTIN-18 claim changes the spec count.
 
 ## 1. Crates and spec sections
 
 | Crate | Layer | Spec sections (crate README) |
 | --- | --- | --- |
-| `qc-builtins` | L1 | BUILTIN-1 to BUILTIN-16 in `builtins.md`, RRE-1 in `engine/rerelease.md`, DIFF-6 and DIFF-7 in `differential.md`. BUILTIN-18, which the crate implements, is not on the README's line (P2-160) |
+| `qc-builtins` | L1 | BUILTIN-1 to BUILTIN-16 and BUILTIN-18 in `builtins.md`, RRE-1 in `engine/rerelease.md` less RRE-1.10 (on the `**Not this crate's:**` line, `qs-vfs`'s), DIFF-6 and DIFF-7 in `differential.md` |
+
+#700 is met: the README claims BUILTIN-18 and describes each module, RRE-1.10 is on a
+`**Not this crate's:**` line, and the `/// The settings the mock keeps ...` rustdoc sits on
+`pub struct Cvars` again (`crates/qc-builtins/src/mock.rs`).
 
 ## 2. Coverage, mutation score and spec citations
 
 Readiness workflow run:
-[41771811674](https://github.com/quakecstudio/editor/actions/runs/41771811674)
-(`crates="qc-builtins"`, on the commit above; `ratchet: 7 checks passed`).
+[41906216139](https://github.com/quakecstudio/editor/actions/runs/41906216139)
+(`crates="qc-builtins"`, on the commit above; every job green, `ratchet: 7 checks passed`).
 
 | Crate | Lines (bar 90%) | Branches (bar 80%) | Mutation (bar 90%) | Spec citations (bar 100%) |
 | --- | --- | --- | --- | --- |
-| `qc-builtins` | 98.0% (3190 of 3254) [min 94] | 93.9% (575 of 612) [min 84] | 98.5% (1326 of 1345) [min 97] | 100.0% (97 of 97) |
+| `qc-builtins` | 98.2% (3277 of 3336) [min 94] | 94.4% (584 of 618) [min 84] | 98.5% (1326 of 1345) [min 97] | 100.0% (120 of 120) |
 
-The spec number counts BUILTIN-1 to BUILTIN-16, RRE-1 and DIFF-6, DIFF-7 only. Every one of
-BUILTIN-18's 24 statements is cited by a `qc-builtins` test (checked by hand with `rg` over
-`crates/qc-builtins/src`), but the measurement does not count them (P2-160).
+The spec number now counts BUILTIN-18: 120 statements against the first round's 97.
 
-Surviving mutants (TEST-2): 19, over the four shards (4, 9, 3 and 3). They are exactly the 16
+Surviving mutants (TEST-2): 19 over the four shards (4, 9, 3 and 3), from the run's
+`measured-mutation-*` artifacts. They are the same 19 as in the first round, exactly the 16
 keys under `[crates.qc-builtins].equivalent_mutants` (three keys name two mutants each), so
-`ratchets.toml` holds only mutants cargo-mutants still produces. The localization, tokenizer
-and `vector_normalize` code added since #659 left no survivor.
+`ratchets.toml` holds only mutants cargo-mutants still produces. The shipped code is unchanged
+since the first round, so no new mutant exists.
 
 | Crate | Mutant | Outcome |
 | --- | --- | --- |
-| `qc-builtins` | `checked_field`'s guard and `<`, `rint`'s `>`, `component_5_1`'s `<`, the directive reader's three `<`, `wide_bits`' `\|`, `to_u64`'s `<` and `^`, `integer`'s `<`, `strconv`'s `<`, `atof` `decimal`'s two `>`, `b_substring`'s `\|\|`, `b_strncmp`'s `!=`, `>` (to `>=`) and `>` (to `==`), `b_strstrofs`'s `<` | equivalent, each with its reason in `ratchets.toml`. The reviewer checked the `b_strncmp` ones against vkQuake's `PF_strncmp` (`Quake/pr_ext.c` at `27789d73`): `if (aofs < 0 \|\| (aofs && aofs > (int)strlen (a))) aofs = strlen (a);`. With `!=` changed to `==` the clamp never runs for an offset past the end, and `a.get(from..)` gives the same empty tail |
+| `qc-builtins` | `checked_field`'s guard and `<`, `rint`'s `>`, `component_5_1`'s `<`, the directive reader's three `<`, `wide_bits`' `\|`, `to_u64`'s `<` and `^`, `integer`'s `<`, `strconv`'s `<`, `atof` `decimal`'s two `>`, `b_substring`'s `\|\|`, `b_strncmp`'s `!=`, `>` (to `>=`) and `>` (to `==`), `b_strstrofs`'s `<` | equivalent, each with its reason in `ratchets.toml`, as the first round checked |
 
 ## 3. Property, fuzz and differential results
 
 | Crate | Property tests (TEST-4) | Fuzzing (TEST-5) | Differential (TEST-6) |
 | --- | --- | --- | --- |
-| `qc-builtins` | none in the crate. The README states no invariant, but the localization parser and the tokenizer are decoders with stated bounds (P2-159) | `fuzz/fuzz_targets/qc_vm.rs` reaches the id builtins through `qs-differential`'s mock (id profile). No target reaches `Localization::loc_load_file`, which parses a game file (`localization/loc_english.txt`), or the vkQuake tokenizer, `sprintf` reader or `atof`: **fails** (P2-159) | id VM oracle: the nightly Differential run [41635634171](https://github.com/quakecstudio/editor/actions/runs/41635634171) at `4a574967` passes its `Differential` job. That commit predates #680 and #682; the run's `Compiler differential (generated programs)` failure is qc-codegen's E0302 refusals, not this crate |
-
-The last nightly Fuzz run, [41626179616](https://github.com/quakecstudio/editor/actions/runs/41626179616)
-at `4a574967`, passed, also before #680 and #682.
+| `qc-builtins` | `src/properties.rs`: seven properties, one per invariant the README's Properties section lists (RRE-1.7 twice, RRE-1.9, BUILTIN-18.23, BUILTIN-18.24, BUILTIN-18.8, BUILTIN-18.19). The `atof` property covers decimal input only, which is how P2-168 went unseen | `fuzz/fuzz_targets/qc_builtins.rs`: the localization file and `PF_VarString`, both tokenizers, `sprintf` and `stof` through `MockBuiltins` on the vkQuake profile, checking no panic and the stated bounds. Fuzz run [41880839404](https://github.com/quakecstudio/editor/actions/runs/41880839404) on #703's branch (`6688ced1`: the target as merged, the crate less #702's README and `use` lines): 659667 runs in 601 s from an empty corpus, no crash; every other target and the oracle fuzzing also passed. No scheduled Fuzz run on `main` has run since #703 merged. The target checks bounds, not values, so it cannot see P2-168 | id VM oracle: the `Differential` job of run [41836249897](https://github.com/quakecstudio/editor/actions/runs/41836249897) at `bdae8fea`, whose `qc-builtins`, `qc-vm` and `qs-differential` sources equal the measured commit's less this review's tests, passed. The id oracle runs the id profile only; nothing differential checks the vkQuake builtins or the localization (no vkQuake or QuakeSpasm oracle, ADR-0005), so the C was read by hand |
 
 ## 4. Flakes
 
@@ -66,58 +65,61 @@ at `4a574967`, passed, also before #680 and #682.
 | --- | --- | --- | --- |
 | `qc-builtins` | 20 of 20 | 20 of 20 | 20 of 20 |
 
-No test waits on the wall clock. The tests added here are pure, and `strftime` runs at a fixed
-instant (BUILTIN-18.7).
+No test waits on the wall clock: the tests added here are pure functions of their input, and
+`strftime` runs at the mock's fixed instant (BUILTIN-18.7).
 
 ## 5. Independent review (TEST-9)
 
-- **Reviewer and time spent:** an independent agent session, one working session. It read
-  `localization.rs` against QuakeSpasm's `Quake/common.c` and `Quake/pr_cmds.c` at
-  `c9c8ee98` (`COM_HashString`, `LOC_LoadFile`, `LOC_GetRawString`, `LOC_ParseArg`,
-  `LOC_HasPlaceholders`, `LOC_Format`, `PF_GetStringArg`, `PF_VarString`), and `tokenize.rs`
-  and the `strncmp` dispatch against vkQuake's `Quake/pr_ext.c` and `Quake/common.c` at
-  `27789d73` (`tokenizeqc`, `PF_tokenizebyseparator`, `PF_ArgV`, `PF_argv_start_index`,
-  `COM_ParseEx`, `PF_strncmp`). It also re-checked the equivalence reasons against the
-  surviving mutants and checked the crate README and rustdoc against the definition of done.
+- **Reviewer and time spent:** an independent agent session, one working session. It read the
+  diffs of #702 and #703, the fuzz target and the properties against the statements they cite,
+  and read again, with the C open, QuakeSpasm's `LOC_LoadFile` and `LOC_GetRawString`
+  (`Quake/common.c` at `c9c8ee98`) and vkQuake's `tokenizeqc`, `PF_tokenizebyseparator`,
+  `PF_ArgV` (`Quake/pr_ext.c` at `27789d73`) and `COM_ParseEx` (`Quake/common.c` at
+  `27789d73`). It then tried `atof` against a correctly rounded reference (Python's
+  `float.fromhex`, and a simulation of `hexadecimal`'s per-digit `mul_add` over 200000 random
+  mantissas).
 - **Tests added** (seven, all passing on the code as it is):
   - `crates/qc-builtins/src/localization/tests.rs`:
-    `reviewer_a_probe_wraps_past_the_last_slot` (RRE-1.2, two keys hashing to the last slot
-    and a missing one), `reviewer_the_empty_key_and_a_doubled_dollar` (RRE-1.3: `$` alone,
-    `$$k`), `reviewer_the_text_ends_at_its_first_zero` (RRE-1.7: a zero in the file, an `=` on
-    a comment line, values that end the line or the file).
-  - `crates/qc-builtins/src/tokenize.rs`: `reviewer_a_high_byte_before_a_word_is_its_start`
-    (BUILTIN-18.23: tokenizeqc's unsigned skip against COM_Parse's signed one, quoted ends),
-    `reviewer_split_with_an_empty_separator_and_at_the_cap` (BUILTIN-18.24: an empty
-    separator, exactly 64 tokens, the first listed separator wins).
-  - `crates/qc-builtins/src/tests.rs`: `reviewer_tokenizebyseparator_reads_seven_separators`
-    (BUILTIN-18.24, every parameter slot a separator, none) and
-    `reviewer_argv_truncates_its_float_index` (BUILTIN-18.23: -0.5, -1.5, NaN, 3e9 and
-    out-of-range negatives through the dispatch).
+    `rereview_a_quote_or_an_equals_inside_a_value` (RRE-1.7: an unescaped quote ends an
+    unquoted value with no trim; a later `=` is the value's),
+    `rereview_a_vertical_tab_starts_the_key` (RRE-1.7: only blanks start a line, `q_isspace`
+    trims before the `=`), `rereview_an_empty_value_and_an_unclosed_quote` (RRE-1.7: white space
+    to the line's end, an unclosed quote trimmed as an unquoted value, ending the file).
+  - `crates/qc-builtins/src/tokenize.rs`: `rereview_a_comment_is_part_of_the_next_word`
+    (BUILTIN-18.23: a word's start is before the comment `COM_Parse` skips; an unclosed block
+    comment), `rereview_a_quoted_word_at_the_com_token_limit` (BUILTIN-18.23: 4095 bytes fit,
+    4096 end the list; an unclosed quote), `rereview_split_at_a_separator_as_long_as_the_text`
+    (BUILTIN-18.24).
+  - `crates/qc-builtins/src/tests.rs`: `rereview_atof_hexadecimal_edges` (BUILTIN-18.19: `0x`
+    with no digit, `-0x.p1`, case, a fraction, leading white space).
 - **Defects found:**
-  - P2-159: the localization file parser and the vkQuake string builtins have no fuzz target
-    and no property test (TEST-5, TEST-4). This blocks readiness.
-  - P2-160: the README's `**Spec sections:**` line leaves out BUILTIN-18, so the per-crate
-    TEST-3 measurement skips its 24 statements. The README also claims RRE-1.10, which qs-vfs
-    implements, and its module list is out of date. #682 put `use` lines around the rustdoc
-    of the public `mock::Cvars`, so that rustdoc now sits on a `use` item and `Cvars` has
-    none. This blocks readiness.
+  - P2-168: `atof::hexadecimal` accumulates every hex digit into one f64, rounding after each
+    (`value.mul_add(16.0, digit)`), and scales once at the end (`value *
+    2.0_f64.powi(scale)`). C99 (N1256) 7.20.1.3 paragraph 5: "If the subject sequence has the
+    hexadecimal form and FLT_RADIX is a power of 2, the value resulting from the conversion is
+    correctly rounded." On main at `cf169599`: `0x1.` then 300 `0` digits then `p0` gives NaN
+    (C: 1.0), as do `0x1`, 300 zeros, `p-1200` (C: 1.0) and `0x1`, 256 zeros, `p-1100` (C:
+    2^-76); and `0x1.000001000000081` reads as the f64 `0x1.0000010000000p+0`, whose float is
+    1.0, where the correctly rounded `0x1.0000010000001p+0` gives the float
+    `0x1.000002p+0`, so `stof` returns the wrong float. BUILTIN-18.19 says only "a hexadecimal
+    one is exact up to 13 digits" and records no divergence past it. This blocks readiness.
 
-  No behaviour defect was found: every case the new tests try matches the C at the pinned
-  commits.
+  No other behaviour defect was found: every case the new tests try matches the C at the
+  pinned commits.
 
 ## 6. Ratchets
 
-No change in this review. The measured numbers (lines 98, branches 93, mutation 98, spec 100)
-are above the minimums `ratchets.toml` holds under `P2-R1B`, and its 16 equivalent mutants
-are exactly the survivors. The minimums are raised by the re-review that passes, after
-P2-159 and P2-160:
+No change in this round. The measured numbers (lines 98, branches 94, mutation 98, spec 100)
+are above the minimums `ratchets.toml` holds under `P2-R1B`, and its 16 equivalent mutants are
+exactly the survivors. The re-review that passes, after P2-168, commits the values the run
+printed (or that run's own, if P2-168 changes them):
 
 ```toml
 [crates.qc-builtins]
 readiness = "P2-R1B"
-lines = 94
-branches = 84
-mutation = 97
+lines = 98
+branches = 94
+mutation = 98
 spec = 100
 ```
 
@@ -125,5 +127,6 @@ spec = 100
 
 | Gap | Issue | Why it does not block |
 | --- | --- | --- |
-| No fuzz target or property test for the localization parser and the vkQuake string builtins | P2-159 | it blocks: the review stays open until it is fixed |
-| BUILTIN-18 not claimed in the README; the `Cvars` rustdoc detached | P2-160 | it blocks: the review stays open until it is fixed |
+| A hexadecimal `stof` is not correctly rounded and can be NaN | P2-168 | it blocks: the review stays open until it is fixed |
+| TEST-5's 24 hours: the nightly Fuzz workflow gives each target 600 s, and #699's acceptance asked for 24 hours "or the sum of its nightly runs" | none | the same standing as every earlier review (`p2-r1.md`, `p2-r5.md`): each nightly run gives every target 600 s |
+| No oracle for the vkQuake builtins or the localization | none | ADR-0005 keeps id's engine the oracle; QuakeSpasm and vkQuake are ported from, not run (ADR-0018). The ports were read against the C by two independent reviews |

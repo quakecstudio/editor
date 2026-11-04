@@ -402,4 +402,50 @@ mod tests {
         assert_eq!(tokens.split(b"a::b", &[b":".to_vec(), b"::".to_vec()]), 2);
         assert_eq!(tokens.argv(1).unwrap(), b":b");
     }
+
+    // spec BUILTIN-18.23: a comment is passed over by COM_Parse, not by tokenizeqc's own skip,
+    // so the word after it starts at the comment; an unclosed block comment ends the list
+    // (P2-R1B re-review)
+    #[test]
+    fn rereview_a_comment_is_part_of_the_next_word() {
+        let mut tokens = Tokens::default();
+        assert_eq!(tokens.tokenize(b"a // c\nb"), 2);
+        assert_eq!(tokens.argv(1).unwrap(), b"b");
+        assert_eq!((tokens.start(1), tokens.end(1)), (2, 8));
+        assert_eq!(tokens.tokenize(b"x /**/y"), 2);
+        assert_eq!((tokens.start(1), tokens.end(1)), (2, 7));
+        assert_eq!(tokens.tokenize(b"a /* x"), 1);
+        assert_eq!(tokens.tokenize(b"a //"), 1);
+    }
+
+    // spec BUILTIN-18.23: a quoted word holds up to 4095 bytes, com_token less its zero; one
+    // more is COM_Parse's NULL and ends the list; an unclosed quote ends at the text's end
+    // (P2-R1B re-review)
+    #[test]
+    fn rereview_a_quoted_word_at_the_com_token_limit() {
+        let mut tokens = Tokens::default();
+        let fits = format!("\"{}\" b", "q".repeat(4095));
+        assert_eq!(tokens.tokenize(fits.as_bytes()), 2);
+        assert_eq!(tokens.argv(0).unwrap(), "q".repeat(1023).as_bytes());
+        assert_eq!((tokens.start(1), tokens.end(1)), (4098, 4099));
+        let over = format!("\"{}\" b", "q".repeat(4096));
+        assert_eq!(tokens.tokenize(over.as_bytes()), 0);
+        assert_eq!(tokens.tokenize(b"a \"bc"), 2);
+        assert_eq!(tokens.argv(1).unwrap(), b"bc");
+        assert_eq!(tokens.end(1), 5);
+    }
+
+    // spec BUILTIN-18.24: a separator that is the whole text makes one empty token; one longer
+    // than what is left never matches (P2-R1B re-review)
+    #[test]
+    fn rereview_split_at_a_separator_as_long_as_the_text() {
+        let mut tokens = Tokens::default();
+        assert_eq!(tokens.split(b"ab", &[b"ab".to_vec()]), 1);
+        assert_eq!(tokens.argv(0).unwrap(), b"");
+        assert_eq!((tokens.start(0), tokens.end(0)), (0, 0));
+        assert_eq!(tokens.split(b"a,", &[b",,".to_vec()]), 1);
+        assert_eq!(tokens.argv(0).unwrap(), b"a,");
+        assert_eq!(tokens.split(b"", &[b",".to_vec()]), 0);
+        assert_eq!(tokens.argv(0), None);
+    }
 }
