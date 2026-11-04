@@ -3079,7 +3079,7 @@ issues:
   - 'xtask: the oracle-defect proof of ADR-0020 tier 3, with its statement in docs/spec/differential.md: a divergence is reported as an FTEQCC defect only when the harness shows FTEQCC''s progs reading a global that a statement unrelated to the value wrote (as generated program 555 of seed 1 reads the array index a `LOAD_V` into its one-word `ternary` local overwrote); every other divergence fails the run'
   acceptance:
   - 'A run of 10,000 generated programs from a fixed seed finds no divergence but the FTEQCC defects the harness proves (ADR-0020), every form DIFF-13 names appearing in at least 100 of them'
-  - 'Every function of every corpus codebase FTEQCC compiles, run on its own, finds no divergence, and the statements executed across the per-function runs reach at least 98% of each codebase'
+  - 'Every function of every corpus codebase FTEQCC compiles, run on its own, finds no divergence, and the statements executed across the per-function runs reach the DIFF-12.5 bar of 90% of each codebase, crmod7 its accepted 87.7% (#661, P3-33); decided by Justin on 2026-11-04, replacing 98%'
   - 'Each divergence a run finds is fixed in qc-codegen or qc-sema with a citing test, or proved an FTEQCC defect by the harness, and its program kept as a regression case'
   - 'The proof rejects a divergence that is not an oracle defect: a mutant of qc-codegen that changes a value is still reported as a divergence'
   - 'A deliberately broken lowering (a mutant) is caught by the short PR run'
