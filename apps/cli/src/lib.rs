@@ -21,6 +21,7 @@
 //! `quakec.toml` in that dialect (PRJ-2.8), vanilla otherwise. The arguments are read with
 //! clap, which prints `--help` and `--version` and says what is wrong with a command line.
 
+use std::ffi::OsString;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -166,7 +167,7 @@ impl<L: Loader> HasWorkbench for Cli<L> {
 /// Runs the command line `args`, reading files through `loader`, writing what it prints to
 /// `out` and its errors to `err`.
 pub fn run<L: Loader + 'static>(
-    args: &[String],
+    args: &[OsString],
     loader: L,
     out: &mut impl Write,
     err: &mut impl Write,
@@ -225,6 +226,8 @@ enum Stopped {
     Write(std::io::Error),
     /// The directory holds no QuakeC project.
     NoProject(PathBuf),
+    /// A path that is not Unicode, which no command's JSON parameters can name.
+    NotUnicode(PathBuf),
 }
 
 impl core::fmt::Display for Stopped {
@@ -235,6 +238,11 @@ impl core::fmt::Display for Stopped {
                 write!(f, "a command returned what it does not promise: {error}")
             }
             Self::Write(error) => write!(f, "cannot write the output: {error}"),
+            Self::NotUnicode(path) => write!(
+                f,
+                "{}: the path is not Unicode, and the IDE's commands take paths as text",
+                path.display()
+            ),
             Self::NoProject(path) => write!(
                 f,
                 "{}: no QuakeC project here: no quakec.toml, progs.src or csprogs.src",
@@ -254,7 +262,13 @@ fn execute<L: Loader + 'static>(
     // A directory with no project opens, as the window opens one, but there is nothing to
     // build or check in it.
     let mut open = |open: &Open| {
-        let opened = call(OPEN_PROJECT, json!({ "path": open.path }))?;
+        // A command's parameters are JSON, whose strings are Unicode: a path that is not is
+        // refused here, before the registry is asked.
+        let path = open
+            .path
+            .to_str()
+            .ok_or_else(|| Stopped::NotUnicode(open.path.clone()))?;
+        let opened = call(OPEN_PROJECT, json!({ "path": path }))?;
         match opened.get("files").and_then(Value::as_u64) {
             Some(0) => Err(Stopped::NoProject(open.path.clone())),
             _ => Ok(()),
@@ -369,8 +383,8 @@ enum Refused {
 }
 
 /// The request `args`, the arguments after the program's name, make.
-fn parse(args: &[String]) -> Result<Request, Refused> {
-    let program = std::iter::once("quakec-ide".to_owned());
+fn parse(args: &[OsString]) -> Result<Request, Refused> {
+    let program = std::iter::once(OsString::from("quakec-ide"));
     let parsed = Args::try_parse_from(program.chain(args.iter().cloned())).map_err(|error| {
         let text = error.render().to_string();
         match error.kind() {

@@ -6,6 +6,7 @@
     reason = "test code: a failed unwrap or match is a failed test"
 )]
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use qs_workbench::FsLoader;
@@ -13,8 +14,8 @@ use serde_json::Value;
 
 use super::{Exit, Open, Refused, Request, parse, run};
 
-fn args(list: &[&str]) -> Vec<String> {
-    list.iter().map(|s| (*s).to_owned()).collect()
+fn args(list: &[&str]) -> Vec<OsString> {
+    list.iter().map(OsString::from).collect()
 }
 
 /// What a test project holds; the default is one that builds.
@@ -395,4 +396,21 @@ fn the_project_file_dialect_wins_over_the_option() {
         cli(&["check", text(&dir), "--dialect", "vanilla"]).0,
         Exit::Success
     );
+}
+
+// No spec statement: a project path that is not UTF-8 is refused with exit status 2 and a
+// message naming it, not a panic.
+#[cfg(unix)]
+#[test]
+fn a_path_that_is_not_utf8_is_refused() {
+    use std::os::unix::ffi::OsStrExt as _;
+    let path = OsString::from(std::ffi::OsStr::from_bytes(b"a\xff"));
+    for verb in ["build", "check"] {
+        let list = [OsString::from(verb), path.clone()];
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let exit = run(&list, FsLoader, &mut out, &mut err);
+        assert_eq!(exit, Exit::Failure, "{verb}");
+        let err = String::from_utf8(err).unwrap();
+        assert!(err.contains("a\u{fffd}: the path is not Unicode"), "{err}");
+    }
 }
