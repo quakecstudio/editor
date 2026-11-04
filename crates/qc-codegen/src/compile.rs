@@ -3570,7 +3570,20 @@ impl<'a> Compiler<'a> {
         // QC-16.8: `type_c == ev_void` turns the result's check off, so a field of `void`
         // takes the first row, `LOAD_F`.
         let c = Some(inner.etype()).filter(|&c| c != Etype::Void);
-        let Some(row) = ops::select(Operator::Dot, a, b, c) else {
+        // The load the semantic model lowered at the `.`, when it fits the operands.
+        let chosen = self
+            .typed_body()
+            .and_then(|body| body.fragment_at(op_span))
+            .and_then(|fragment| match fragment.statements.as_slice() {
+                [load] => u32::try_from(load.op.number()).ok().and_then(ops::row_of),
+                _ => None,
+            })
+            .filter(|row| {
+                row.operator == Operator::Dot
+                    && (row.a, row.b) == (a, b)
+                    && c.is_none_or(|c| row.c == c)
+            });
+        let Some(row) = chosen.or_else(|| ops::select(Operator::Dot, a, b, c)) else {
             return Self::mismatch(Operator::Dot, op_span);
         };
         // `if (type_c != ev_void) e->type = e2->type->aux_type;`: a `void` field's value keeps
