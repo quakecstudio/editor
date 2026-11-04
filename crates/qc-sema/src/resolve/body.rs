@@ -34,7 +34,8 @@ impl<'a> Resolver<'a> {
     /// Declares, or checks, the next-think name of a state header (QC-13.6).
     ///
     /// If the name does not exist it is declared as a global `void()`. If it exists with a
-    /// different type it is a type mismatch (QCD-3.5).
+    /// different type it is a type mismatch (QCD-3.5). The checker finds the definition at the
+    /// name.
     pub(in crate::resolve) fn declare_next_think(
         &mut self,
         file: FileId,
@@ -67,6 +68,7 @@ impl<'a> Resolver<'a> {
                 );
             }
             self.index.refs.push(Reference { location, def });
+            self.use_defs.insert(span.start, def);
             return;
         }
         // FTEF-19.33: a name found in any case under `-Fcaseinsens` is that definition.
@@ -109,6 +111,7 @@ impl<'a> Resolver<'a> {
         );
         // The name in the header is a reference to the think function.
         self.index.refs.push(Reference { location, def });
+        self.use_defs.insert(span.start, def);
     }
 
     /// Resolves a body for its diagnostics alone: what it adds to the index, its locals and
@@ -223,6 +226,8 @@ impl<'a> Resolver<'a> {
             }
             previous = def;
         }
+        // The body's name uses, the state header's first: its frame and next function.
+        self.use_defs.clear();
         // FTEF-19.14: the state header's frame is read before its next function is declared.
         self.resolve_uses(file, Some(scope), &body.state_uses);
         if self.profile.body_checks() {
@@ -293,6 +298,10 @@ impl<'a> Resolver<'a> {
                 ..scope
             };
             self.declare_local(file, at, local, location);
+            // The checker finds the local at its name, where an initialiser stores to it.
+            if let Some(def) = self.lookup_in_scope_exactly(at, &local.name) {
+                self.use_defs.insert(local.span.start, def);
+            }
             if let Some(inner) = &local.nested
                 && let Some(def) = self.lookup_in_scope_exactly(at, &local.name)
             {
@@ -312,7 +321,6 @@ impl<'a> Resolver<'a> {
             self.declare_alias(file, scope, alias);
         }
         // QC-12.5: resolve each name use against globals and this function's own locals.
-        self.use_defs.clear();
         self.resolve_uses(file, Some(scope), &body.uses);
         if let Some(syntax) = &body.syntax {
             let uses = std::mem::take(&mut self.use_defs);

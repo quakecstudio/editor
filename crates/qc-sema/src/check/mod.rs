@@ -232,6 +232,8 @@ pub(crate) struct Value {
     pub(crate) returned: bool,
     /// The index of the statement of the generated body that made the value, if one did.
     pub(crate) made: Option<u32>,
+    /// The index of a string literal's bytes among the body's strings.
+    pub(crate) string: Option<u32>,
 }
 
 /// FTEQCC's temporaries (`tempsinfo`), kept across the module's functions: each one's word
@@ -355,6 +357,7 @@ impl Value {
             ir: None,
             returned: false,
             made: None,
+            string: None,
         }
     }
 
@@ -375,6 +378,9 @@ impl Value {
         }
         if self.returned {
             return Some(ir::Name::Return);
+        }
+        if let Some(string) = self.string {
+            return Some(ir::Name::String(string));
         }
         match self.sym {
             Sym::Def(def, _, word) => Some(ir::Name::Def(def, word)),
@@ -713,6 +719,7 @@ pub struct TypedBody {
     opcodes: HashMap<(usize, usize), qc_preproc::Op>,
     fragments: ir::Fragments,
     generated: Vec<ir::BodyStatement>,
+    strings: Vec<Vec<u8>>,
 }
 
 impl TypedBody {
@@ -741,6 +748,15 @@ impl TypedBody {
     #[must_use]
     pub fn generated(&self) -> &[ir::BodyStatement] {
         &self.generated
+    }
+
+    /// The bytes of the string literal [`ir::Name::String`] `index` names, as FTEQCC's lexer
+    /// reads them.
+    #[must_use]
+    pub fn string(&self, index: u32) -> Option<&[u8]> {
+        self.strings
+            .get(usize::try_from(index).ok()?)
+            .map(Vec::as_slice)
     }
 }
 

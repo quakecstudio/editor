@@ -13,7 +13,7 @@ use qc_preproc::{FteFlag, Op};
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 
 use crate::cast::Source;
-use crate::check::assign::assign_spelling;
+use crate::check::assign::{assign_spelling, lexed_string};
 use crate::check::constant::{Constant, unquoted};
 use crate::check::convert::{Choice, Operand, choose_opcode};
 use crate::check::emulate::conversion_opcodes;
@@ -46,6 +46,8 @@ pub(super) struct Checker<'e> {
     pub(super) branch_op: Option<Op>,
     /// What the conditional jump the last [`Checker::branch`] chose tests.
     pub(super) branch_condition: Option<ir::Name>,
+    /// The bytes of each string literal the generated body names, by [`ir::Name::String`].
+    pub(super) strings: Vec<Vec<u8>>,
     /// The statement that copied the last call's value out of the return global, which a
     /// statement reading the value after the copy reads (FTE-18.13).
     pub(super) return_copy: Option<u32>,
@@ -109,6 +111,7 @@ impl<'e> Checker<'e> {
             not_of_return: None,
             branch_op: None,
             branch_condition: None,
+            strings: Vec::new(),
             return_copy: None,
             fragment: None,
             in_condition: false,
@@ -142,6 +145,7 @@ impl<'e> Checker<'e> {
             opcodes: self.opcodes,
             fragments: self.fragments,
             generated: self.generated,
+            strings: self.strings,
         }
     }
 
@@ -237,8 +241,14 @@ impl<'e> Checker<'e> {
             Some(ast::LiteralKind::String) => {
                 let written = String::from_utf8_lossy(&literal.syntax().text()).into_owned();
                 let text = unquoted(&written);
+                let string = lexed_string(token.text()).and_then(|bytes| {
+                    let index = u32::try_from(self.strings.len()).ok()?;
+                    self.strings.push(bytes);
+                    Some(index)
+                });
                 Value {
                     text: Some(text.as_str().into()),
+                    string,
                     ..Value::constant(Constant::string(text.is_empty()))
                 }
             }

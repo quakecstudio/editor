@@ -180,6 +180,9 @@ pub enum Name {
     Parameter(u8),
     /// The body's statement at this index, a jump's target; the body's length is its end.
     Jump(u32),
+    /// The string immediate of the body's string literal at this index
+    /// (`TypedBody::string`).
+    String(u32),
 }
 
 /// One statement of a whole body as the semantic model generated it: its opcode and what each

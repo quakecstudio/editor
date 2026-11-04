@@ -436,27 +436,77 @@ impl Checker<'_> {
         }
     }
 
-    /// The statements of `random` with `count` arguments in a function: the call of the
-    /// builtin, then its value scaled, `* scale` for one argument and
-    /// `low + (high - low) * value` for two.
-    fn random_statements(&mut self, count: usize) {
+    /// `random()`, `random(scale)` and `random(low, high)`: each argument made a float, of
+    /// which another type is "type mismatch on parm N".
+    fn random(&mut self, args: &[ast::Expr], call: &ast::CallExpr) -> Checked {
+        let span = call.syntax().span();
+        let mut values = Vec::new();
+        for (at, arg) in args.iter().take(2).enumerate() {
+            let value = self.value(Some(arg.clone()))?;
+            let supplied = self.supplied(
+                &value,
+                &Type::Simple(SimpleType::Float),
+                arg.syntax().span(),
+            )?;
+            if self.etype_of(&value.ty).is_some_and(|e| e != Etype::Float)
+                && self.etype_of(&value.ty) != Some(Etype::Integer)
+            {
+                let message = format!("type mismatch on parm {}", at.saturating_add(1));
+                return self.fatal(Code::E0340, span, message);
+            }
+            values.push(supplied);
+        }
+        let callee = match call.callee() {
+            Some(ast::Expr::Name(name)) => name
+                .name()
+                .and_then(|token| self.env.reference(token.span().start))
+                .map(|def| ir::Name::Def(def, 0)),
+            _ => None,
+        };
+        Ok(self.random_statements(callee, &values))
+    }
+
+    /// The statements of `random` of `callee` with the arguments `args` in a function: the
+    /// call of the builtin, then its value scaled, `* scale` for one argument and
+    /// `low + (high - low) * value` for two; the value, the return global's with none.
+    fn random_statements(&mut self, callee: Option<ir::Name>, args: &[Value]) -> Value {
+        let float = Value {
+            returned: args.is_empty(),
+            ..Value::of(Type::Simple(SimpleType::Float))
+        };
         if self.global {
-            return;
+            return float;
         }
         self.clobber_return();
-        self.generated.push(ir::BodyStatement::bare(Op::Call0));
+        self.generated.push(ir::BodyStatement {
+            a: callee,
+            ..ir::BodyStatement::bare(Op::Call0)
+        });
         self.last_temp = None;
-        if count == 0 {
-            self.live_return = Some(1);
-            self.return_copy = None;
-        }
-        match count {
-            1 => self.generated.push(ir::BodyStatement::bare(Op::MulF)),
-            2 => self
-                .generated
-                .extend([Op::SubF, Op::MulF, Op::AddF].map(ir::BodyStatement::bare)),
-            _ => {}
-        }
+        let mut statement = |op, a, b| {
+            let made = u32::try_from(self.generated.len()).ok();
+            self.generated.push(ir::BodyStatement {
+                a,
+                b,
+                c: made.map(ir::Name::Made),
+                ..ir::BodyStatement::bare(op)
+            });
+            made
+        };
+        let made = match args {
+            [] => {
+                self.live_return = Some(1);
+                self.return_copy = None;
+                None
+            }
+            [scale] => statement(Op::MulF, Some(ir::Name::Return), scale.name()),
+            [low, high, ..] => {
+                let range = statement(Op::SubF, high.name(), low.name());
+                let scaled = statement(Op::MulF, Some(ir::Name::Return), range.map(ir::Name::Made));
+                statement(Op::AddF, scaled.map(ir::Name::Made), low.name())
+            }
+        };
+        Value { made, ..float }
     }
 
     pub(super) fn generate_call(&mut self, values: &[Value], span: Span) {
@@ -597,28 +647,7 @@ impl Checker<'_> {
                 let number = self.emit(qc_preproc::Op::DivI, &index, &first, span)?;
                 Ok(Some(number))
             }
-            "random" => {
-                for (at, arg) in args.iter().take(2).enumerate() {
-                    let value = self.value(Some(arg.clone()))?;
-                    self.supplied(
-                        &value,
-                        &Type::Simple(SimpleType::Float),
-                        arg.syntax().span(),
-                    )?;
-                    if self.etype_of(&value.ty).is_some_and(|e| e != Etype::Float)
-                        && self.etype_of(&value.ty) != Some(Etype::Integer)
-                    {
-                        let message = format!("type mismatch on parm {}", at.saturating_add(1));
-                        return self.fatal(Code::E0340, span, message).map(Some);
-                    }
-                }
-                self.random_statements(args.len());
-                // With no argument the value is the call's, in the return global.
-                Ok(Some(Value {
-                    returned: args.is_empty(),
-                    ..Value::of(Type::Simple(SimpleType::Float))
-                }))
-            }
+            "random" => self.random(args, call).map(Some),
             "alloca" => {
                 if let Some(arg) = args.first() {
                     let size = self.value(Some(arg.clone()))?;
@@ -838,7 +867,7 @@ impl Checker<'_> {
                 .name()
                 .and_then(|t| self.env.reference(t.span().start))
                 .and_then(|def| self.env.string_text(def))
-                .and_then(|text| lexed_string(&format!("\"{text}\""))),
+                .and_then(|text| lexed_string(format!("\"{text}\"").as_bytes())),
             _ => None,
         };
         if let Some(bytes) = bytes {

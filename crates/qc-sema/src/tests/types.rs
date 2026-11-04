@@ -945,3 +945,60 @@ fn a_generated_body_names_its_jumps() {
         ]
     );
 }
+
+// QC-13.6, FTEF-29.13: the generated body names STATE's think function, a local's initialiser
+// store the local, a string literal argument its bytes, and `random`'s call its builtin, its scaling
+// `low + (high - low) * value` reading the return global
+#[test]
+fn a_generated_body_names_states_locals_strings_and_random() {
+    use crate::ir::{Immediate, ImmediateKind, Name};
+    use qc_preproc::Op;
+    let float = |value: f32| Immediate {
+        kind: ImmediateKind::Float,
+        words: [value.to_bits(), 0, 0],
+    };
+    let source = "float() random; void(string s) print; void() n; \
+        void() t = [1, n] { float l = 0; print(\"\\xff\"); l = random(2, 5); };";
+    let index = super::fte_index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let body = &index.bodies[&def("t")];
+    let generated = body.generated();
+    let named = |name| Some(Name::Def(def(name), 0));
+    let at = |op| generated.iter().position(|s| s.op == op).unwrap();
+    let state = &generated[at(Op::State)];
+    assert_eq!(state.b, named("n"));
+    let local = &generated[at(Op::StoreF)];
+    assert_eq!(local.b, named("l"));
+    let string = &generated[at(Op::Call1).wrapping_sub(1)];
+    let Some(Name::String(index)) = string.a else {
+        panic!("the string is unnamed: {string:?}");
+    };
+    assert_eq!(body.string(index), Some(&b"\xff"[..]));
+    assert_eq!(body.string(index.wrapping_add(9)), None);
+    let call = at(Op::Call0);
+    assert_eq!(generated[call].a, named("random"));
+    let made = |offset: usize| {
+        u32::try_from(call.wrapping_add(offset))
+            .ok()
+            .map(Name::Made)
+    };
+    let scaling: Vec<_> = generated[call.wrapping_add(1)..call.wrapping_add(4)]
+        .iter()
+        .map(|s| (s.op, s.a, s.c))
+        .collect();
+    assert_eq!(
+        scaling,
+        [
+            (Op::SubF, Some(Name::Immediate(float(5.0))), made(1)),
+            (Op::MulF, Some(Name::Return), made(2)),
+            (Op::AddF, made(2), made(3)),
+        ]
+    );
+}

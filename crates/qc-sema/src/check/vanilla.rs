@@ -148,6 +148,7 @@ pub(super) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         opcodes: checker.opcodes,
         fragments: checker.fragments,
         generated: Vec::new(),
+        strings: Vec::new(),
     }
 }
 
